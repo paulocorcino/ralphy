@@ -309,7 +309,7 @@ def open_menu(page, from_id):
 
 def open_column(page, from_id, id):
     open_menu(page, from_id)
-    page.locator(f".column-menu .column-item[data-id='{id}']").click()
+    page.locator(f".column-menu .column-open[data-id='{id}']").click()
     page.wait_for_timeout(500)
 
 

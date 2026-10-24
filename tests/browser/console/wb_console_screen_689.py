@@ -313,7 +313,7 @@ def open_column(page, from_id, wid):
     page.evaluate("(id) => __W(id).querySelector('.session-column').click()", from_id)
     wait_for(page, "() => document.querySelector('.column-menu')?.getClientRects().length > 0", 5)
     page.wait_for_timeout(150)
-    page.locator(f".column-menu .column-item[data-id='{wid}']").click()
+    page.locator(f".column-menu .column-open[data-id='{wid}']").click()
     page.wait_for_timeout(1000)
 
 

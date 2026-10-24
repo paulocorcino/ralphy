@@ -60,6 +60,23 @@ const TERMINAL_THEME = {
   selectionBackground: "#423a31", // --surface-hi
 };
 
+// xterm 6.0.0 builds its scrollbar with VS Code's scrollable element at
+// visibility Auto: the bar shows only while the mouse is over the terminal or
+// just after a scroll, and a bar never revealed stays hidden. Measured
+// 2026-10-24: a console with 1051 lines showed no bar. Visible (3) still hides
+// a bar with nothing to scroll (the alternate screen). xterm has no option
+// for it, so this goes through its private path, set by `open`; the path is
+// pinned against the vendored file in `served_vendor.rs`.
+const SCROLLBAR_VISIBLE = 3;
+function showScrollbarWhileNeeded(term: XtermTerminal) {
+  const scrollable = term._core?._viewport?._scrollableElement;
+  if (!scrollable) {
+    console.warn("console scrollbar: xterm has no scrollable element at the expected path");
+    return;
+  }
+  scrollable.updateOptions({ vertical: SCROLLBAR_VISIBLE });
+}
+
 // What the terminal reads from the console, and nothing else.
 export type TerminalDeps = {
   // The console's page: `WBDaemon` (the image paste) and `getShell` (whether
@@ -157,6 +174,7 @@ export function createTerminal(deps: TerminalDeps) {
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(body);
+    showScrollbarWhileNeeded(term);
     // The GPU addon: `terminalGpu`, wb-console-gpu.ts.
     const { useGpu, dropGpu } = terminalGpu(term);
     term.loadAddon(new WebLinksAddon.WebLinksAddon());

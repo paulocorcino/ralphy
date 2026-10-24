@@ -16,9 +16,10 @@ const { dragThreshold, dragBegins } = WBConsoleInput;
 const { FENCE_MIN, fenceMembership, fenceFits, fenceMoveDelta, resizeRect } = WBGeometry;
 
 // A surface a fence carries: a console window or a note card. A card on top
-// floats elsewhere, and its place is the `_noteShadow`.
+// floats elsewhere, and its place is the `_noteShadow`; a console in its own
+// tab is in the pane of the tabs, and its place is the `_tabShadow`.
 type Carried = {
-  el: HTMLElement & { _noteShadow?: HTMLElement | null };
+  el: HTMLElement & { _noteShadow?: HTMLElement | null; _tabShadow?: HTMLElement | null };
   id: string;
   rect: Rect;
 } & ({ kind: "window"; el: ConsoleWin } | { kind: "note"; el: NoteCard });
@@ -43,6 +44,8 @@ export type FenceGestureDeps = {
   renderFences: () => void;
   // The plane; null before the page has it.
   stage: () => HTMLElement | null;
+  // The console windows a fence may hold: the stage's and the console tabs'.
+  fenceWindows: (st: HTMLElement) => ConsoleWin[];
   // Grows or fits the stage to the windows on it.
   applyExtent: (opts?: ExtentOpts) => void;
   // The auto-pan loop of a drag at a viewport edge.
@@ -58,6 +61,15 @@ export type FenceGestureDeps = {
   setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
 };
 
+// A surface shown elsewhere keeps its place as a shadow, which goes where the
+// surface's desk rect goes.
+function moveShadow(m: Carried) {
+  const sh = m.el._noteShadow || m.el._tabShadow;
+  if (!sh) return;
+  sh.style.left = m.el.style.left;
+  sh.style.top = m.el.style.top;
+}
+
 export function createFenceGestures(deps: FenceGestureDeps) {
   const {
     window,
@@ -68,6 +80,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
     clearFenceFlash,
     renderFences,
     stage,
+    fenceWindows,
     applyExtent,
     autoPan,
     saveFences,
@@ -99,7 +112,8 @@ export function createFenceGestures(deps: FenceGestureDeps) {
       // Windows AND cards: a fence carries every surface whose centre it holds
       // (ADR-0064 §8). The ids are NAMESPACED because the two collections are
       // keyed independently and `fenceMembership` sees one flat list.
-      const all = [...st.querySelectorAll<ConsoleWin>(".session-window")]
+      // A console in its own tab is carried too: its shadow is its place.
+      const all = fenceWindows(st)
         .map((w): Carried => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
         .concat(
           [...st.querySelectorAll<NoteCard>(".note-card")].map((el): Carried => ({
@@ -156,11 +170,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           for (const m of carried) {
             m.el.style.left = m.rect.left + d.dx + "px";
             m.el.style.top = m.rect.top + d.dy + "px";
-            // A card on top floats elsewhere; its place is the shadow.
-            if (m.el._noteShadow) {
-              m.el._noteShadow.style.left = m.el.style.left;
-              m.el._noteShadow.style.top = m.el.style.top;
-            }
+            moveShadow(m);
           }
         }
         applyExtent({ grow: true });
@@ -202,10 +212,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           for (const m of carried) {
             m.el.style.left = m.rect.left + "px";
             m.el.style.top = m.rect.top + "px";
-            if (m.el._noteShadow) {
-              m.el._noteShadow.style.left = m.el.style.left;
-              m.el._noteShadow.style.top = m.el.style.top;
-            }
+            moveShadow(m);
           }
           applyExtent();
           return;

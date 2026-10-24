@@ -37,7 +37,8 @@ fn render_windows_commands() {
         shell: PowerShellFlavor::WindowsPowerShell,
         ..spec()
     };
-    let exe = "'/usr/local/bin/ralphy' daemon *>>";
+    // `&` is the call operator: without it PowerShell rejects the command.
+    let exe = "\"& '/usr/local/bin/ralphy' daemon *>>";
     // (case, rendered argv, text it carries, text it must not carry)
     let rows = [
         (

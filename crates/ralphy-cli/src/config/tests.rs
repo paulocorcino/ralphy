@@ -511,7 +511,7 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             "claude.max_minutes_per_issue" => "45",
             "runs.keep" => "50",
             "files.upload_max_mb" => "25",
-            "claude.console_name" => "true",
+            "claude.console_name" | "claude.console_classic_screen" => "true",
             // Validated against effort vocabularies, so `x` is refused.
             "claude.plan_effort"
             | "claude.exec_effort"

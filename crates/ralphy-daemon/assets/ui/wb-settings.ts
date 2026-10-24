@@ -370,6 +370,13 @@ export const WB_SETTINGS: Section[] = [
         default: false,
         help: "Start Claude with the console name as its session name, such as wb-fincal-1. Other Claude sessions use that name to send it messages. When off, Claude picks the name.",
       },
+      {
+        key: "claude.console_classic_screen",
+        label: "Keep Claude's text in the console",
+        type: "toggle",
+        default: false,
+        help: "Start Claude in its classic view. The conversation stays in the console's text, with a scrollbar. When off, Claude follows its own settings; its full-screen view scrolls by itself and shows no scrollbar. Applies to consoles opened after the change.",
+      },
     ],
   },
   {

@@ -136,8 +136,10 @@ pub fn render_install(p: Platform, spec: &AutostartSpec) -> Vec<String> {
             // Single-quote the paths so PowerShell tolerates spaces; the outer
             // double-quotes belong to the `-Command` argument, not to `reg`
             // shell-quoting (we pass this argv straight to CreateProcess).
+            // The `&` call operator is required: a quoted path followed by
+            // arguments is a ParserError in pwsh 7 and Windows PowerShell 5.1.
             let tr = format!(
-                "{shell} -NoProfile -WindowStyle Hidden -Command \"'{exe}' daemon *>> '{log}'\""
+                "{shell} -NoProfile -WindowStyle Hidden -Command \"& '{exe}' daemon *>> '{log}'\""
             );
             vec![
                 "reg".into(),

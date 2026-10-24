@@ -9,10 +9,13 @@
    columns do (ADR-0051 §5): `--tab-col-*` and `--tab-row-*` place a window in
    it, and `.tab-grid` marks a window of a tab with two consoles or more. The
    window keeps its inline rect, which is its desk rect, so nothing about the
-   stage is written.
+   stage is written. In its place the stage shows its shadow, `.console-shadow`
+   (`win._tabShadow`): the desk rect, the tab's icon and the console name. A
+   click on it asks for the console's tab.
    --------------------------------------------------------------------------- */
 import { sendDocument } from "./wb-events.ts";
 import { WBColumns } from "./wb-columns.ts";
+import { WBConsoleName } from "./wb-console-name.ts";
 import { PHONE_MAX_WIDTH } from "./wb-viewport.ts";
 import type { Grid, Painted } from "./wb-columns.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
@@ -20,6 +23,29 @@ import type { ConsoleWin } from "./wb-types.d.ts";
 // Whether the window is in the pane of the console tabs.
 export function inTab(win: Element) {
   return win.classList.contains("in-tab");
+}
+
+// The shadow follows the window's desk rect and its name. A window with no
+// shadow is left as it is.
+export function paintTabShadow(win: ConsoleWin) {
+  const sh = win._tabShadow;
+  if (!sh) return;
+  for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = win.style[side];
+  const name = sh.querySelector(".console-shadow-name");
+  if (name) name.textContent = WBConsoleName.consoleLabel(win._deskConsoleName || "", win._deskAgent);
+}
+
+function buildShadow(document: Document, win: ConsoleWin) {
+  const sh = document.createElement("div");
+  sh.className = "console-shadow";
+  sh.title = "In its own tab. Click to show the tab.";
+  const icon = document.createElement("i");
+  icon.className = "bi bi-terminal";
+  const name = document.createElement("span");
+  name.className = "console-shadow-name";
+  sh.append(icon, name);
+  sh.addEventListener("click", () => sendDocument(document, "workbench:console-tab-show", { id: win._deskId }));
+  return sh;
 }
 
 export type PlaceDeps = {
@@ -102,6 +128,31 @@ export function createPlace(deps: PlaceDeps) {
     if (first) focusWin(first);
     // A column that goes into a tab leaves the grid, as a detached one does.
     if (entered.length) sendDocument(document, "workbench:columns-leave", { ids: entered });
+    keepShadows(st);
+  }
+
+  // Each window in a tab has its shadow on the stage. A shadow whose window
+  // went back to the stage, or left the page, goes.
+  function keepShadows(st: HTMLElement) {
+    const kept = new Set<Element>();
+    for (const win of pageWindows()) {
+      if (inTab(win)) kept.add(shadowOn(st, win));
+      else dropShadow(win);
+    }
+    for (const sh of st.querySelectorAll(".console-shadow")) if (!kept.has(sh)) sh.remove();
+  }
+
+  function shadowOn(st: HTMLElement, win: ConsoleWin) {
+    const sh = win._tabShadow || buildShadow(document, win);
+    win._tabShadow = sh;
+    if (sh.parentElement !== st) st.append(sh);
+    paintTabShadow(win);
+    return sh;
+  }
+
+  function dropShadow(win: ConsoleWin) {
+    win._tabShadow?.remove();
+    win._tabShadow = null;
   }
 
   // Whether the window went into the pane, and whether it is shown now and

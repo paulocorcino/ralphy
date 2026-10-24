@@ -33,10 +33,15 @@ use ralphy_core::{git, gitignore, Effort, Settings, Workspace};
 use crate::runlock;
 
 mod resolve;
+mod view;
+
 pub use resolve::{
     parse_branch_mode, resolve_assignee, resolve_effort, resolve_opencode_model,
     resolve_optional_model, resolve_remote_control, resolve_str, resolve_u64,
 };
+#[cfg(test)]
+use view::config_json;
+pub use view::get;
 
 #[derive(Args)]
 pub struct ConfigArgs {
@@ -121,6 +126,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.exec_effort",
     "claude.max_minutes_per_issue",
     "claude.console_name",
+    "claude.console_classic_screen",
     "copilot.plan_model",
     "copilot.exec_model",
     "copilot.plan_effort",
@@ -162,6 +168,9 @@ repository that still allows Cursor to upload its code for indexing. \
 claude.console_name=true starts a Claude console in the workbench with its \
 console name as the session name, such as wb-fincal-1. Other Claude sessions \
 use that name to send it messages. When off, Claude picks the name. \
+claude.console_classic_screen=true starts a Claude console in the workbench in \
+Claude's classic view, so the conversation stays in the console's text, with a \
+scrollbar. When off, Claude follows its own settings. \
 gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
 without them, Gemini makes one extra, billed call per turn to choose a model.)";
 
@@ -340,6 +349,12 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
                 .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_claude(s, |c| c.console_name = b)?
         }
+        "claude.console_classic_screen" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_claude(s, |c| c.console_classic_screen = b)?
+        }
         "copilot.plan_model" => with_copilot(s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(s, |c| c.exec_model = Some(value.to_owned()))?,
         "copilot.plan_effort" | "copilot.exec_effort" => set_copilot_effort(s, key, value)?,
@@ -459,6 +474,9 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = None)?,
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
         "claude.console_name" => with_claude(&mut s, |c| c.console_name = false)?,
+        "claude.console_classic_screen" => {
+            with_claude(&mut s, |c| c.console_classic_screen = false)?
+        }
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,
@@ -476,141 +494,6 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
     s.save(ws)?;
     println!("{key}: unset");
     Ok(())
-}
-
-pub fn get(ws: &Workspace, json: bool) -> Result<()> {
-    if json {
-        println!("{}", serde_json::to_string(&config_json(ws)?)?);
-        return Ok(());
-    }
-    let s = Settings::load(ws)?;
-    let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
-    let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
-    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
-    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
-    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
-    print_str("opencode.model", opencode.model);
-    print_str("verify.command", s.verify.command);
-    match s.verify.require_verify_gate {
-        Some(b) => println!("verify.require_verify_gate = {b}"),
-        None => println!("verify.require_verify_gate: not set"),
-    }
-    print_str("base_branch", s.base_branch);
-    print_str("branch_mode", s.branch_mode);
-    print_str("files.encoding", s.files.encoding);
-    match s.files.upload_max_mb {
-        Some(n) => println!("files.upload_max_mb = {n}"),
-        None => println!("files.upload_max_mb: not set"),
-    }
-    match s.runs.keep {
-        Some(n) => println!("runs.keep = {n}"),
-        None => println!("runs.keep: not set"),
-    }
-    match s.remote_control {
-        Some(b) => println!("remote_control = {b}"),
-        None => println!("remote_control: not set"),
-    }
-    print_str("queue.assignee", s.queue.assignee);
-    match s.queue.trust_all_comments {
-        Some(b) => println!("queue.trust_all_comments = {b}"),
-        None => println!("queue.trust_all_comments: not set"),
-    }
-    print_str("claude.plan_model", claude.plan_model);
-    print_str("claude.plan_effort", claude.plan_effort);
-    print_str("claude.default_exec_model", claude.default_exec_model);
-    print_str("claude.exec_effort", claude.exec_effort);
-    match claude.max_minutes_per_issue {
-        Some(n) => println!("claude.max_minutes_per_issue = {n}"),
-        None => println!("claude.max_minutes_per_issue: not set"),
-    }
-    println!("claude.console_name = {}", claude.console_name);
-    print_str("copilot.plan_model", copilot.plan_model);
-    print_str("copilot.exec_model", copilot.exec_model);
-    print_str("copilot.plan_effort", copilot.plan_effort);
-    print_str("copilot.exec_effort", copilot.exec_effort);
-    println!(
-        "copilot.allow_builtin_mcp_servers_i_understand_the_risk = {}",
-        copilot.allow_builtin_mcp_servers_i_understand_the_risk
-    );
-    println!(
-        "cursor.allow_codebase_indexing_i_understand_the_risk = {}",
-        cursor.allow_codebase_indexing_i_understand_the_risk
-    );
-    print_str("gemini.plan_model", gemini.plan_model);
-    print_str("gemini.exec_model", gemini.exec_model);
-    // The CloudEvents sink knobs come from the global per-repo store, printed for
-    // the current repo's slug (the token masked).
-    let slug = git::project_slug(ws.repo_root());
-    let events = crate::events::config::EventsStore::load().unwrap_or_default();
-    let entry = events.entry(&slug);
-    print_str("events.url", entry.and_then(|e| e.url.clone()));
-    match entry.and_then(|e| e.token.as_deref()) {
-        Some(t) => println!(
-            "events.token = {}",
-            crate::telegram::config::masked_token(t)
-        ),
-        None => println!("events.token: not set"),
-    }
-    Ok(())
-}
-
-/// Build the resolved-config JSON object the daemon's config Query verb reads:
-/// every supported key mapped to its resolved value or JSON `null`. `events.token`
-/// is MASKED (never echoed in full), mirroring the human `get`. Keys match
-/// [`SUPPORTED_KEYS`]; the daemon parses this verbatim.
-fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
-    let s = Settings::load(ws)?;
-    let opencode: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
-    let claude: ClaudeSettings = s.agent_settings(ClaudeSettings::SECTION)?;
-    let copilot: CopilotSettings = s.agent_settings(CopilotSettings::SECTION)?;
-    let cursor: CursorSettings = s.agent_settings(CursorSettings::SECTION)?;
-    let gemini: GeminiSettings = s.agent_settings(GeminiSettings::SECTION)?;
-    let slug = git::project_slug(ws.repo_root());
-    let events = crate::events::config::EventsStore::load().unwrap_or_default();
-    let entry = events.entry(&slug);
-    let masked_token = entry
-        .and_then(|e| e.token.as_deref())
-        .map(crate::telegram::config::masked_token);
-    Ok(serde_json::json!({
-        "opencode.model": opencode.model,
-        "base_branch": s.base_branch,
-        "branch_mode": s.branch_mode,
-        "remote_control": s.remote_control,
-        "queue.assignee": s.queue.assignee,
-        "queue.trust_all_comments": s.queue.trust_all_comments,
-        "verify.command": s.verify.command,
-        "verify.require_verify_gate": s.verify.require_verify_gate,
-        "files.encoding": s.files.encoding,
-        "files.upload_max_mb": s.files.upload_max_mb,
-        "runs.keep": s.runs.keep,
-        "events.url": entry.and_then(|e| e.url.clone()),
-        "events.token": masked_token,
-        "claude.plan_model": claude.plan_model,
-        "claude.plan_effort": claude.plan_effort,
-        "claude.default_exec_model": claude.default_exec_model,
-        "claude.exec_effort": claude.exec_effort,
-        "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
-        "claude.console_name": claude.console_name,
-        "copilot.plan_model": copilot.plan_model,
-        "copilot.exec_model": copilot.exec_model,
-        "copilot.plan_effort": copilot.plan_effort,
-        "copilot.exec_effort": copilot.exec_effort,
-        "copilot.allow_builtin_mcp_servers_i_understand_the_risk":
-            copilot.allow_builtin_mcp_servers_i_understand_the_risk,
-        "cursor.allow_codebase_indexing_i_understand_the_risk":
-            cursor.allow_codebase_indexing_i_understand_the_risk,
-        "gemini.plan_model": gemini.plan_model,
-        "gemini.exec_model": gemini.exec_model,
-    }))
-}
-
-/// Print one `key = value` / `key: not set` line for an optional string knob,
-/// treating an empty string as unset.
-fn print_str(key: &str, value: Option<String>) {
-    match value.filter(|v| !v.is_empty()) {
-        Some(v) => println!("{key} = {v}"),
-        None => println!("{key}: not set"),
-    }
 }
 
 /// The host of an `http://` URL that is not loopback — the one shape of

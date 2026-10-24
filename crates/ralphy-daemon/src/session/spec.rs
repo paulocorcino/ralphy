@@ -121,6 +121,12 @@ impl Agent {
 /// test's binary is not reachable from a `#[cfg(test)]` path in the compiled lib.
 const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 
+/// Claude Code's switch to its classic renderer. Its docs
+/// (code.claude.com/docs/en/env-vars.md, read 2026-10-24) say it takes
+/// precedence over `CLAUDE_CODE_NO_FLICKER` and the `tui` setting, so the
+/// opt-in holds whatever the operator's own Claude settings say.
+const CLAUDE_CLASSIC_SCREEN_ENV: &str = "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN";
+
 /// Build the launch spec for `agent` at the given terminal size. The program
 /// is resolved through `ralphy_proc_util::resolve_program` (Windows
 /// `.cmd`/`.exe` shims included), unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a
@@ -189,37 +195,7 @@ pub fn spec_with_status(
         Some(over) => over,
         None => agent.resolve_program(),
     };
-    let mut name = None;
-    let mut status_used = None;
     let (args, env) = match agent {
-        Agent::Claude => {
-            let mut args = Vec::new();
-            let mut env = Vec::new();
-            if claude_console_named(root) {
-                let chosen = claude_session_name(repo_slug, console);
-                args.push(OsString::from("--name"));
-                args.push(OsString::from(&chosen));
-                name = Some(chosen);
-            }
-            if let Some(files) = status {
-                let exe = PathBuf::from(crate::dispatch::ralphy_exe());
-                match files.write(&exe) {
-                    Ok(()) => {
-                        args.push(OsString::from("--settings"));
-                        args.push(files.settings.clone().into_os_string());
-                        env.push((
-                            OsString::from(crate::agent_state::STATUS_ENV),
-                            files.status.clone().into_os_string(),
-                        ));
-                        status_used = Some(files);
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "could not write the console's agent-state hooks; launching without them");
-                    }
-                }
-            }
-            (args, env)
-        }
         Agent::Gemini => (
             vec![
                 OsString::from("--policy"),
@@ -232,15 +208,59 @@ pub fn spec_with_status(
         ),
         _ => (Vec::new(), Vec::new()),
     };
-    SessionSpec {
+    let mut spec = SessionSpec {
         program,
         args,
         cwd,
         rows,
         cols,
         env,
-        name,
-        status: status_used,
+        name: None,
+        status: None,
+    };
+    if agent == Agent::Claude {
+        add_claude_launch(&mut spec, root, repo_slug, console, status);
+    }
+    spec
+}
+
+/// The Claude part of [`spec_with_status`]: the opt-in name, the opt-in
+/// classic screen and the agent-state hooks.
+fn add_claude_launch(
+    spec: &mut SessionSpec,
+    root: &Path,
+    repo_slug: &str,
+    console: Option<&str>,
+    status: Option<crate::agent_state::StatusFiles>,
+) {
+    if claude_console_named(root) {
+        let chosen = claude_session_name(repo_slug, console);
+        spec.args.push(OsString::from("--name"));
+        spec.args.push(OsString::from(&chosen));
+        spec.name = Some(chosen);
+    }
+    if claude_console_classic_screen(root) {
+        spec.env.push((
+            OsString::from(CLAUDE_CLASSIC_SCREEN_ENV),
+            OsString::from("1"),
+        ));
+    }
+    if let Some(files) = status {
+        let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+        match files.write(&exe) {
+            Ok(()) => {
+                spec.args.push(OsString::from("--settings"));
+                spec.args.push(files.settings.clone().into_os_string());
+                spec.env.push((
+                    OsString::from(crate::agent_state::STATUS_ENV),
+                    files.status.clone().into_os_string(),
+                ));
+                spec.status = Some(files);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "could not write the console's agent-state hooks; launching without them");
+            }
+        }
     }
 }
 
@@ -358,13 +378,28 @@ pub fn cursor_indexing_allowed(repo_root: &Path) -> bool {
 /// type — yields `false`. Absent is off: a name is what the operator asks for,
 /// and a settings file that cannot be read is not an answer.
 pub fn claude_console_named(repo_root: &Path) -> bool {
+    claude_opt_in(repo_root, "console_name")
+}
+
+/// Whether the operator opted in to starting this repo's Claude consoles in
+/// Claude Code's classic renderer, read from `["claude"]["console_classic_screen"]`
+/// with the same reparse and the same invariant as [`claude_console_named`].
+/// `the_classic_screen_key_matches_the_adapters_own_schema` reds if the
+/// adapter renames the key.
+fn claude_console_classic_screen(repo_root: &Path) -> bool {
+    claude_opt_in(repo_root, "console_classic_screen")
+}
+
+/// A `bool` opt-in of the `claude` section of `<repo_root>/.ralphy/settings.json`.
+/// Every failure path yields `false`.
+fn claude_opt_in(repo_root: &Path, key: &str) -> bool {
     let path = repo_root.join(".ralphy").join("settings.json");
     let Ok(text) = std::fs::read_to_string(path) else {
         return false;
     };
     serde_json::from_str::<serde_json::Value>(&text)
         .ok()
-        .and_then(|v| v.get("claude")?.get("console_name")?.as_bool())
+        .and_then(|v| v.get("claude")?.get(key)?.as_bool())
         .unwrap_or(false)
 }
 

@@ -170,9 +170,18 @@ test("listFold: loose first, then fences in the Fence menu order, empty fences l
     [null, "f2", "f1", "f4"],
   );
   assert.deepEqual(groups[2].fence, { id: "f1", name: "One" });
-  const ids = groups.flatMap((g) => g.rows.map((r) => r.id));
-  assert.ok(!ids.includes("L1"), "the column that opened the list is left out");
-  assert.deepEqual(groups[0].rows.map((r) => r.id), ["L2", "W"]);
+  assert.deepEqual(groups[0].rows.map((r) => r.id), ["L1", "L2", "W"]);
+});
+
+// The maximized console opens the list: without its row it looked gone.
+test("listFold: the console that opened the list is a row that cannot be opened or swapped", () => {
+  const C = load();
+  const self = C.listFold(roster()).flatMap((g) => g.rows).find((r) => r.id === "L1");
+  assert.deepEqual(
+    { enabled: self.enabled, reason: self.reason, swappable: self.swappable },
+    { enabled: false, reason: C.REASON_SELF, swappable: false },
+  );
+  assert.equal(C.REASON_SELF, "This console");
 });
 
 test("listFold: rows carry agent, repo, state and the reason they are disabled", () => {
@@ -233,7 +242,7 @@ test("filterGroups: console name, agent, repo text and fence name match; empty g
   assert.equal(C.filterGroups(groups, "   ", label), groups);
   const ids = (gs) => gs.flatMap((g) => g.rows.map((r) => r.id));
   assert.deepEqual(ids(C.filterGroups(groups, "CODEX", label)), ["D1"], "agent, case-insensitive");
-  assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L2", "W"], "repo text");
+  assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L1", "L2", "W"], "repo text");
   const byName = C.filterGroups(groups, "two", label);
   assert.deepEqual(byName.map((g) => g.fence?.id), ["f2"], "a fence name keeps its whole group");
   assert.deepEqual(ids(C.filterGroups(groups, "back", label)), ["L2"], "console name");
@@ -300,13 +309,13 @@ test("listFold: at the cap a row cannot open a column but can be swapped in", ()
   assert.equal(rows.get("D1").swappable, false, "a detached fence's console cannot be swapped in");
 });
 
-test("listFold: the list leaves out the column that opened it, not the leftmost", () => {
+test("listFold: the row that cannot be swapped is the column that opened the list, not the leftmost", () => {
   const C = load();
   const r = roster();
   r.from = "F2a";
-  const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
-  assert.ok(!ids.includes("F2a"));
-  assert.ok(ids.includes("L1"), "the leftmost can be swapped with");
+  const rows = new Map(C.listFold(r).flatMap((g) => g.rows).map((x) => [x.id, x]));
+  assert.equal(rows.get("F2a").reason, C.REASON_SELF);
+  assert.equal(rows.get("L1").swappable, true, "the leftmost can be swapped with");
 });
 
 test("toStored: a grid of two or more, as a copy; below two, nothing", () => {

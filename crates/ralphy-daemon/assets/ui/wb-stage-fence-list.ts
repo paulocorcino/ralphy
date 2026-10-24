@@ -15,6 +15,7 @@
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
+import { inTab } from "./wb-console-place.ts";
 import type { PopupRegistry } from "./wb-desk-popups.ts";
 import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, NoteCard, Rect } from "./wb-types.d.ts";
 
@@ -50,6 +51,8 @@ export type FenceListDeps = {
   // The plane and the viewport; null before the page has them.
   stage: () => HTMLElement | null;
   workspace: () => HTMLElement | null;
+  // The pane of the console tabs; null when the page has none.
+  tabsPane: () => HTMLElement | null;
   // An element's rect read from the DOM.
   restoreRect: (el: HTMLElement) => Rect;
   // Grows or fits the stage to the windows on it.
@@ -82,6 +85,7 @@ export function createFenceList(deps: FenceListDeps) {
     notes,
     stage,
     workspace,
+    tabsPane,
     restoreRect,
     applyExtent,
     columnMeasure,
@@ -153,7 +157,8 @@ export function createFenceList(deps: FenceListDeps) {
     const count = el.querySelector<HTMLElement>(".fence-count");
     if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
     const cols = el.querySelector<HTMLButtonElement>(".fence-columns");
-    if (cols) cols.disabled = s.count === 0;
+    // A console in its own tab does not open as a column of its fence.
+    if (cols) cols.disabled = s.onStage === 0;
   }
 
   // A console HELD by a locked fence wears the fence's lock (the class drops
@@ -202,11 +207,19 @@ export function createFenceList(deps: FenceListDeps) {
     }));
   }
 
+  // The windows of the stage and of the console tabs: a console in its own tab
+  // is still a member of its fence, by its desk rect (ADR-0037 §3d).
+  function fenceWindows(st: HTMLElement): ConsoleWin[] {
+    const tabbed = tabsPane()?.querySelectorAll<ConsoleWin>(".session-window") ?? [];
+    return [...st.querySelectorAll<ConsoleWin>(".session-window"), ...tabbed];
+  }
+
   function readWindowRects(st: HTMLElement) {
-    return [...st.querySelectorAll<ConsoleWin>(".session-window")].map((w) => ({
+    return fenceWindows(st).map((w) => ({
       id: w._deskId,
       repo: w._deskRepo,
       rect: restoreRect(w),
+      inTab: inTab(w),
     }));
   }
 
@@ -441,6 +454,7 @@ export function createFenceList(deps: FenceListDeps) {
     refreshFenceChrome,
     paintFenceColumns,
     readFenceRects,
+    fenceWindows,
     readWindowRects,
     fenceRecords,
     renderNotes,

@@ -34,6 +34,49 @@ async fn root_serves_vendored_xterm() {
     );
 }
 
+/// `showScrollbarWhileNeeded` (wb-console-terminal.ts) reaches the scrollbar
+/// through xterm's private fields. An xterm that renames them would bring
+/// back the bar that hides by itself, so every link of the path is pinned
+/// against the vendored file, each with the class it is set in, and each must
+/// be the only assignment of its field.
+#[test]
+fn the_console_scrollbar_path_matches_the_vendored_xterm() {
+    let xterm = include_str!("../../assets/ui/vendor/xterm.js");
+    for link in [
+        "this._core=this._register(new r.CoreBrowserTerminal(e))",
+        "this._viewport=this._register(this._instantiationService.createInstance(o.Viewport,",
+        "this._scrollableElement=this._register(new h.SmoothScrollableElement(t,{vertical:1,",
+        "void 0!==e.vertical&&(this._options.vertical=e.vertical)",
+        "this._horizontalScrollbar.updateOptions(this._options),this._verticalScrollbar.updateOptions(this._options)",
+        "this._visibilityController.setVisibility(e.vertical)",
+        "e[e.Visible=3]=\"Visible\"",
+    ] {
+        assert!(
+            xterm.contains(link),
+            "the vendored xterm no longer has `{link}`"
+        );
+    }
+    for field in ["this._viewport=", "this._scrollableElement="] {
+        assert_eq!(
+            xterm.matches(field).count(),
+            1,
+            "`{field}` must be set in one place, the one pinned above"
+        );
+    }
+    // After `open`, which builds the viewport, and before the next addon.
+    let terminal = include_str!("../../assets/ui/wb-console-terminal.ts");
+    let after_open = terminal
+        .split_once("term.open(body);")
+        .expect("the console terminal must call `open`")
+        .1;
+    let call = after_open.find("showScrollbarWhileNeeded(term);");
+    let next_addon = after_open.find("term.loadAddon(");
+    assert!(
+        matches!((call, next_addon), (Some(c), Some(a)) if c < a),
+        "the scrollbar setting must run after `open` and before the next addon"
+    );
+}
+
 /// The recipe is read with `include_str!` from OUTSIDE `assets/ui/`: it must
 /// not be embedded (`include_dir!` would serve `node_modules/` to the
 /// browser), and this is also the assertion that it exists.

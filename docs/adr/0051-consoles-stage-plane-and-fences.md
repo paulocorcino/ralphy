@@ -117,7 +117,12 @@ stage, over what the operator is looking at.)*
   reordered. At the cap the list still opens: no row can open a new column,
   but every row can swap. A swap of the leftmost column moves the desk's
   maximize to the console that comes in, as a restore of the leftmost does. A
-  lone maximized console can swap too.*
+  lone maximized console can swap too.* *Amended 2026-10-24: a click on the
+  row swaps, and the small control opens; see the last amendment.*
+- ***The list names every console.*** *(Amended 2026-10-24.) The console
+  that opened the list is a row too, which cannot be opened or swapped and
+  says "This console". A list without it made the maximized console look
+  gone.*
 - ***The operator decides how many columns, not the app.*** *(Amended
   2026-09-28; this replaces the 80-cell cap below.) Wider than a phone, the
   number of columns has no limit. How narrow a column gets is the operator's
@@ -173,7 +178,8 @@ second row.)*
   directly below the caller, in the caller's column. The swap control is not affected by the choice. The last
   direction used is kept per client, with the column list (§8). With nothing
   stored it is Right, so an operator who never picks Down sees the same list as
-  before.*
+  before.* *Amended 2026-10-24: the choice now decides what the small control
+  beside a row does, and a click on the row swaps; see the last amendment.*
 - ***Equal sizes, two levels.*** *Columns have equal widths, as before. The rows
   of one column have equal heights, and each column divides its own height. A
   row never holds columns: the shape is a list of columns, each a list of rows,
@@ -886,3 +892,22 @@ one the whole screen without first restoring it.
 So a column hides lock, close and the handles, and keeps the title, restart,
 the worktree picker and full screen. In full screen a column keeps only the
 exit and restart, the same as any other console. The rest of §5 is unchanged.
+
+## Amendment (2026-10-24): a click on a row swaps (§5)
+
+§5 gives each row of the column list two actions. A click on the row opened
+a new column or row, and a small control beside it swapped the console in.
+On a phone the row already swapped, and the small control was hidden.
+
+The operator swaps far more often than they open. The small control is easy
+to miss, and a miss lands on the row: it opened a column nobody wanted. A
+swap that misses changes nothing that a second swap cannot undo.
+
+So the two actions change places, on every width. A click on a row swaps
+that console into the row that opened the list, with the rules of §5 for a
+swap. The small control beside it opens a new column or row, in the direction
+that "Right" and "Down" choose, and it shows the same icon as the title bar
+control that opens the list. Enter in the filter does what a click on a row
+does: it swaps the first console that can come in. A row is disabled only
+when its console cannot be swapped. The small control is hidden when its
+console cannot open, as the swap control was. On a phone nothing changes.

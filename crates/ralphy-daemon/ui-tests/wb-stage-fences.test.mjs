@@ -24,13 +24,26 @@ function fakeElement() {
       add: (c) => classes.add(c),
       remove: (c) => classes.delete(c),
     },
+    listeners: {},
     setAttribute() {},
     append(...kids) {
       this.children.push(...kids);
     },
-    addEventListener() {},
+    addEventListener(type, fn) {
+      this.listeners[type] = fn;
+    },
     querySelector: () => null,
   };
+}
+
+// The element of `root`'s tree with the class name `name`.
+function findByClass(root, name) {
+  if (root.className === name) return root;
+  for (const kid of root.children) {
+    const hit = findByClass(kid, name);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // The page's document: elements, and listeners a test fires by type.
@@ -38,6 +51,7 @@ function fakeDocument() {
   const listeners = {};
   return {
     events: [],
+    details: [],
     createElement: () => fakeElement(),
     addEventListener(type, fn) {
       (listeners[type] ||= []).push(fn);
@@ -47,6 +61,7 @@ function fakeDocument() {
     },
     dispatchEvent(ev) {
       this.events.push(ev.type);
+      this.details.push(ev.detail);
     },
     fire(type, ev = {}) {
       for (const fn of [...(listeners[type] || [])]) fn(ev);
@@ -81,6 +96,7 @@ function fakeDeps(more = {}, floor = {}) {
       fenceNotice: record("fenceNotice"),
       showDetachGlyph() {},
       readFenceRects: () => [{ id: "f", name: "A", rect: RECT }],
+      fenceWindows: () => [],
       readWindowRects: () => [],
       refreshFenceChrome() {},
       removeFence: record("removeFence"),
@@ -139,6 +155,47 @@ test("a fence drag begins a gesture through the owner at the press and ends it a
   assert.equal(deps.document.listening("pointermove"), 0);
   // A press with no movement is a click: it writes nothing.
   assert.deepEqual(calls, []);
+});
+
+// The console sits in the pane of the tabs, not on the stage: the fence still
+// holds it by its desk rect, carries it and writes its new rect.
+test("a fence drag carries a console that is in its own tab", () => {
+  const win = fakeElement();
+  win._deskId = "w1";
+  win.classList.add("in-tab");
+  win._tabShadow = { style: {} };
+  const { deps, calls } = fakeDeps({}, { fenceWindows: () => [win] });
+  const { startFenceMove } = createFences(deps);
+  startFenceMove(fakeElement(), { id: "f" })({
+    button: 0,
+    isPrimary: true,
+    pointerId: 1,
+    pointerType: "mouse",
+    clientX: 150,
+    clientY: 110,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+  deps.document.fire("pointermove", { pointerId: 1, buttons: 1, clientX: 250, clientY: 110 });
+  deps.document.fire("pointerup", { pointerId: 1 });
+  const wrote = calls.filter((c) => c[0] === "setWin");
+  assert.equal(wrote.length, 1);
+  assert.equal(wrote[0][1], win);
+  assert.equal(wrote[0][2].rect.left, RECT.left + 100);
+  assert.equal(win._tabShadow.style.left, `${RECT.left + 100}px`, "its shadow goes with it");
+});
+
+test("a fence opens as columns without the console that is in its own tab", () => {
+  const windows = [
+    { id: "w1", rect: RECT, inTab: true },
+    { id: "w2", rect: RECT },
+  ];
+  const { deps } = fakeDeps({}, { readWindowRects: () => windows });
+  const { buildFence } = createFences(deps);
+  const fence = buildFence({ id: "f", name: "A", rect: RECT });
+  findByClass(fence, "fence-columns").listeners.click();
+  const at = deps.document.events.indexOf("workbench:fence-columns");
+  assert.deepEqual(deps.document.details[at].items.map((w) => w.id), ["w2"]);
 });
 
 test("a fence resize begins and ends a gesture through the owner", () => {

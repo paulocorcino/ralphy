@@ -113,6 +113,7 @@ export function createFences(deps: FenceDeps) {
     fenceNotice,
     showDetachGlyph,
     readFenceRects,
+    fenceWindows,
     readWindowRects,
     refreshFenceChrome,
     removeFence,
@@ -135,6 +136,7 @@ export function createFences(deps: FenceDeps) {
     clearFenceFlash,
     renderFences,
     stage,
+    fenceWindows,
     applyExtent,
     autoPan,
     saveFences,
@@ -298,7 +300,8 @@ export function createFences(deps: FenceDeps) {
       if (!st || popups.isDetached(f.id)) return;
       const all = readWindowRects(st);
       const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] || []);
-      const items = all.filter((w) => ids.has(w.id)).map((w) => ({ id: w.id, rect: w.rect }));
+      // A console in its own tab stays there: it is in one place at a time.
+      const items = all.filter((w) => ids.has(w.id) && !w.inTab).map((w) => ({ id: w.id, rect: w.rect }));
       if (!items.length) return;
       sendDocument(document, "workbench:fence-columns", { items });
     });
