@@ -36,8 +36,9 @@ type DeskVerdict<S, R> =
   | { record: R; session: null; action: "placeholder"; id?: undefined }
   | { record: null; session: S; action: "adopt"; id: string | null };
 
-// A window of the desk as a fence readout reads it.
-type WindowRect = { id: string; repo?: string; rect: Rect };
+// A window of the desk as a fence readout reads it. `inTab`: the window is in
+// its own tab, and the stage shows its shadow (ADR-0037 §3d).
+type WindowRect = { id: string; repo?: string; rect: Rect; inTab?: boolean };
 
 // One event of the detach registry, and one effect it asks for.
 type DetachEvent = { type: "detach" | "reattach" | "focus"; fenceId: string };
@@ -217,6 +218,7 @@ export function fenceSummaries(fences: readonly DeskFence[], windows: readonly W
       id: f.id,
       name: f.name || "",
       count: members.length,
+      onStage: members.filter((m) => !m?.inTab).length,
       repos: fenceRepos(members),
       locked: !!f.locked,
     };

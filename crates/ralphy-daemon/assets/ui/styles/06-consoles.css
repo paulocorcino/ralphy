@@ -142,6 +142,32 @@
 .session-window.in-tab .session-titlebar {
   cursor: default;
 }
+/* The place on the stage of a console in its own tab: the look of a card's
+   shadow (13-notes.css `.note-shadow`), with the tab's icon. The same z
+   (`Z_BASE`, 60): under every window, over the fences' floor. */
+.console-shadow {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 60;
+}
+.console-shadow:hover {
+  border-color: var(--border-focus);
+}
+.console-shadow-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Two columns touch, so the focused one needs a mark that a shared edge does
    not hide. */
 .session-window.column.focused,

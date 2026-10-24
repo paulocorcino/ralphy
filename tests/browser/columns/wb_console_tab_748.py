@@ -38,6 +38,15 @@ T16 Swap puts w-l in w-f's box and w-f back on the stage; Restore takes w-a
     back to the stage at its rect
 T17 the × returns every window of the grid to the stage; the desk keeps its
     rects and its maximize
+T18 the shadow (2026-10-24): w-f in its tab leaves a shadow on the stage at
+    its rect, with its name; fence "one" still counts it, and its columns
+    button is off
+T19 a drag of fence "one" moves the shadow and writes w-f's new desk rect
+T20 a click on the shadow shows w-f's tab
+T21 the column list of the maximized w-a shows w-a as "This console", and
+    w-f under fence "one" as in its own tab
+T22 the × puts w-f on the stage at its new rect, inside its fence, and the
+    shadow goes
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -62,7 +71,8 @@ SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-pane
 SHOT_GRID = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-grid-2026-10-20.png")
 WIDE = {"width": 2400, "height": 1000}
 PHONE = {"width": 400, "height": 800}
-FLOOR = 62  # every check above the floor check; pinned after the first green run
+FLOOR = 73  # every check above the floor check; pinned after the first green run
+SHOT_SHADOW = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-shadow-2026-10-24.png")
 
 results = []
 
@@ -151,6 +161,79 @@ def desk_state():
     return {k: (v.get("rect"), bool(v.get("max"))) for k, v in T.desk_windows().items()}
 
 
+SHADOW = """(id) => { const w = __P(id), s = w?._tabShadow;
+  return !s || !s.isConnected ? null : { where: s.closest('#stage') ? 'stage' : 'other',
+    rect: [s.style.left, s.style.top, s.style.width, s.style.height].join(' '), text: s.textContent.trim() }; }"""
+SHADOWS = "() => document.querySelectorAll('#stage .console-shadow').length"
+FENCE = """(id) => { const f = [...document.querySelectorAll('.fence')].find((x) => x.dataset.fenceId === id);
+  return { count: f.querySelector('.fence-count').textContent, columnsOff: f.querySelector('.fence-columns').disabled }; }"""
+GROUP_OF = """(id) => { const b = document.querySelector(`.column-menu .column-item[data-id='${id}']`);
+  return b ? { group: b.closest('.column-group')?.querySelector('.column-group-name')?.textContent ?? null,
+    off: b.disabled, tip: b.title } : null; }"""
+
+
+def shadow_checks(page):
+    """T18-T22: the shadow of a console in its own tab (ADR-0037 §3d, 2026-10-24)."""
+    activate(page, "consoles")
+    page.evaluate("() => document.getElementById('workspace').scrollTo(0, 0)")
+    f_rect = page.evaluate("() => __inline('w-f')")
+    # T18 -----------------------------------------------------------
+    pick(page, "w-f")
+    activate(page, "consoles")
+    sh = page.evaluate(SHADOW, "w-f")
+    check("T18 w-f in its tab leaves a shadow on the stage at its rect",
+          sh is not None and sh["where"] == "stage" and sh["rect"] == f_rect, f"{sh} want {f_rect}")
+    check("T18 ...one shadow, with the console name", page.evaluate(SHADOWS) == 1 and sh and "(claude)" in sh["text"],
+          str(sh))
+    fence = page.evaluate(FENCE, "f-one")
+    check("T18 fence one still counts w-f, and its columns button is off",
+          fence == {"count": "(1 console)", "columnsOff": True}, str(fence))
+    page.screenshot(path=SHOT_SHADOW)
+    # T19 -----------------------------------------------------------
+    grab = page.evaluate(
+        "() => { const f = [...document.querySelectorAll('.fence')].find((x) => x.dataset.fenceId === 'f-one');"
+        " const r = f.querySelector('.fence-grab').getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }"
+    )
+    page.mouse.move(grab["x"], grab["y"])
+    page.mouse.down()
+    page.mouse.move(grab["x"] + 60, grab["y"] + 40, steps=10)
+    page.mouse.up()
+    page.wait_for_timeout(600)
+    want = {"left": 80 + 60, "top": 100 + 40, "width": 400, "height": 300}
+    moved = page.evaluate(SHADOW, "w-f")
+    check("T19 the fence drag moves the shadow", moved and moved["rect"].startswith("140px 140px"), str(moved))
+    got = T.poll_desk(lambda d: d.get("w-f", {}).get("rect") == want)
+    check("T19 ...and writes w-f's new desk rect", bool(got) and got["w-f"]["rect"] == want,
+          str(T.desk_windows().get("w-f", {}).get("rect")))
+    # T20 -----------------------------------------------------------
+    page.evaluate("() => __P('w-f')._tabShadow.click()")
+    page.wait_for_timeout(400)
+    check("T20 a click on the shadow shows w-f's tab", page.evaluate(ACTIVE) == "console:w-f", page.evaluate(ACTIVE))
+    # T21 -----------------------------------------------------------
+    activate(page, "consoles")
+    T.press_max(page, "w-a")
+    T.open_menu(page, "w-a")
+    me = page.evaluate(GROUP_OF, "w-a")
+    check("T21 the column list shows w-a as This console", me and me["off"] and me["tip"] == "This console", str(me))
+    f = page.evaluate(GROUP_OF, "w-f")
+    check("T21 ...and w-f under fence one, as in its own tab",
+          f == {"group": "one", "off": True, "tip": "In its own tab"}, str(f))
+    page.evaluate(f"() => {{ {T.COLS}.columnMenu = false; }}")
+    T.press_max(page, "w-a")
+    # T22 -----------------------------------------------------------
+    activate(page, "console:w-f")
+    page.locator(".tab.active .tab-close").click()
+    page.wait_for_timeout(600)
+    check("T22 the x puts w-f on the stage at its new rect",
+          page.evaluate("() => __where('w-f')") == "stage"
+          and page.evaluate("() => __inline('w-f')") == "140px 140px 400px 300px",
+          page.evaluate("() => __inline('w-f')"))
+    check("T22 ...inside its fence, and the shadow is gone",
+          page.evaluate(FENCE, "f-one")["count"] == "(1 console)" and page.evaluate(SHADOWS) == 0,
+          f"{page.evaluate(FENCE, 'f-one')} {page.evaluate(SHADOWS)}")
+
+
 def main():
     T.build()
     daemon_dir = tempfile.mkdtemp(prefix="wbtab_daemon_")
@@ -181,8 +264,8 @@ def main():
             page.evaluate(f"() => {{ {T.COLS}.columnMenu = false; }}")
             open_plus(page)
             plus_rows = page.evaluate(PLUS_ROWS)
-            check("T1 the + lists the column list's rows and w-a",
-                  plus_rows == sorted(column_rows + ["w-a"]), f"plus={plus_rows} column={column_rows}")
+            check("T1 the + lists the column list's rows, w-a included",
+                  plus_rows == column_rows and "w-a" in plus_rows, f"plus={plus_rows} column={column_rows}")
             page.keyboard.press("Escape")
             page.mouse.click(5, 500)
             page.wait_for_timeout(200)
@@ -421,6 +504,8 @@ def main():
                 "() => ['w-b','w-l'].every((id) => !__P(id).style.getPropertyValue('--tab-col-count'))"))
             page.wait_for_timeout(1500)
             check("T17 the desk keeps its rects and its maximize", desk_state() == desk_t12, str(desk_state()))
+
+            shadow_checks(page)
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()

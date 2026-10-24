@@ -64,6 +64,11 @@ export function tabsStore(deps: TabsStoreDeps) {
       document.addEventListener("workbench:consoles-changed", () => {
         if (this._stageRestored) this.syncConsoleTabs();
       });
+      // The shadow of a console in its own tab shows that tab.
+      document.addEventListener("workbench:console-tab-show", (e) => {
+        const tab = this.tabOf(e.detail.id);
+        if (tab) this.activate(tab.id);
+      });
       // A narrower or wider window changes how many consoles a tab paints
       // (one at a phone width). One placement per frame.
       let frame = 0;

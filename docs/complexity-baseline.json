@@ -604,11 +604,6 @@
         17
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-fence-gestures.ts": {
-      "(anonymous)": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-stage-fence-list.ts": {
       "createFence": [
         17

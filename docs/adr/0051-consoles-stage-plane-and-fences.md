@@ -119,6 +119,10 @@ stage, over what the operator is looking at.)*
   maximize to the console that comes in, as a restore of the leftmost does. A
   lone maximized console can swap too.* *Amended 2026-10-24: a click on the
   row swaps, and the small control opens; see the last amendment.*
+- ***The list names every console.*** *(Amended 2026-10-24.) The console
+  that opened the list is a row too, which cannot be opened or swapped and
+  says "This console". A list without it made the maximized console look
+  gone.*
 - ***The operator decides how many columns, not the app.*** *(Amended
   2026-09-28; this replaces the 80-cell cap below.) Wider than a phone, the
   number of columns has no limit. How narrow a column gets is the operator's

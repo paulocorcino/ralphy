@@ -22,6 +22,7 @@ import * as WBConsoleSession from "./wb-console-session.ts";
 import { createDeskRestore } from "./wb-desk-restore.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
+import { paintTabShadow } from "./wb-console-place.ts";
 import { apiFetch } from "./wb-api.ts";
 import type { ApiRefusal } from "./wb-api.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
@@ -312,7 +313,10 @@ export function createDesk(deps: DeskDeps) {
       // Another page wrote this adopted console's record: it is recorded now,
       // and takes the place written there.
       w._deskUnrecorded = false;
-      if (r.rect && !inGesture(w)) placeWindow(w, r.rect);
+      if (r.rect && !inGesture(w)) {
+        placeWindow(w, r.rect);
+        paintTabShadow(w);
+      }
       if (!!r.locked !== !!w._deskLocked) applyLock(w, !!r.locked);
       if (r.consoleName && r.consoleName !== w._deskConsoleName && !w.querySelector(".session-name-input")) {
         w._deskConsoleName = r.consoleName;

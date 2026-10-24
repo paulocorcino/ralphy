@@ -589,6 +589,8 @@ interface DocumentEventMap {
   "workbench:fence-columns": CustomEvent<{ items: { id: string; rect: import("./wb-types.d.ts").Rect }[] }>;
   /** These consoles leave the columns. */
   "workbench:columns-leave": CustomEvent<{ ids: string[] }>;
+  /** The shadow of a console in its own tab asks for that tab. */
+  "workbench:console-tab-show": CustomEvent<{ id: string }>;
   "workbench:desk-restored": CustomEvent<null>;
   /** A card chose the file name of a never-saved note, before its first write. */
   "workbench:note-claimed": CustomEvent<{ id: string; claim: string }>;
