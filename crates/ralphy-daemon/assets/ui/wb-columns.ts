@@ -87,6 +87,7 @@ export const WBColumns = (function () {
   const REASON_DETACHED = "In a detached fence";
   const REASON_FULL = "No room for another console";
   const REASON_TAB = "In its own tab";
+  const REASON_SELF = "This console";
   // From this many rows, the list opens with a filter box.
   const FILTER_MIN = 8;
   // Where "Slice" puts the console it opens (ADR-0051 §5, rows).
@@ -368,6 +369,12 @@ export const WBColumns = (function () {
     };
   }
 
+  // The row of the console that opened the list (ADR-0051 Â§5): named, never
+  // opened or swapped.
+  function selfRow(r: RosterRow): ColumnRow {
+    return { ...liveRow(r, false, false, false), enabled: false, reason: REASON_SELF, swappable: false };
+  }
+
   // The row of a console in a detached fence: named, never opened or swapped.
   function detachedRow(m: DetachedMember): ColumnRow {
     return {
@@ -392,9 +399,9 @@ export const WBColumns = (function () {
     const fenceOfWin = fenceOfWindow(membership);
     const loose: ColumnRow[] = [];
     for (const r of rows || []) {
-      if (r.id === from) continue;
       const into = byFence.get(fenceOfWin.get(r.id));
-      (into || loose).push(liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id)));
+      const row = r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
+      (into || loose).push(row);
     }
     for (const [fenceId, members] of Object.entries(detached || {})) {
       const into = byFence.get(fenceId);
@@ -439,6 +446,7 @@ export const WBColumns = (function () {
     REASON_DETACHED,
     REASON_FULL,
     REASON_TAB,
+    REASON_SELF,
     FILTER_MIN,
     cap,
     open,
