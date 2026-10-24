@@ -541,25 +541,27 @@ export function wbColumns() {
     columnRowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },
-    // A row's click. On a phone the list is always full, so the row itself
-    // swaps: the icon beside it is hidden there.
+    // A row's click swaps, on every width: the operator swaps far more often
+    // than they open. The icon beside the row opens (ADR-0051 §5, 2026-10-24).
     pickColumn(id: string) {
-      if (this.columnSwitch) this.swapColumn(id);
-      else this.openColumn(id);
+      this.swapColumn(id);
     },
     columnRowOff(r: ColumnRow) {
-      return this.columnSwitch ? !r.swappable : !r.enabled;
+      return !r.swappable;
     },
     columnRowTip(r: ColumnRow) {
-      return this.columnSwitch && r.swappable ? "" : r.reason || "";
+      return r.swappable ? "" : r.reason || "";
     },
-    // Enter in the filter opens the first row that can be opened; at the cap,
-    // it swaps in the first row that can be swapped.
-    openFirstColumn() {
-      const rows = this.columnView().flatMap((g) => g.rows);
-      const open = rows.find((r) => r.enabled);
-      if (open) return this.openColumn(open.id);
-      const swap = rows.find((r) => r.swappable);
+    columnOpenTip(r: ColumnRow) {
+      if (!r.enabled) return r.reason || "";
+      return this.columnDir === "down" ? "Open in a new row" : "Open in a new column";
+    },
+    // Enter in the filter does what a click on a row does: it swaps in the
+    // first row that can be swapped.
+    swapFirstColumn() {
+      const swap = this.columnView()
+        .flatMap((g) => g.rows)
+        .find((r) => r.swappable);
       if (swap) this.swapColumn(swap.id);
     },
     openColumn(id: string) {

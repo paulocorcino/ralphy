@@ -312,10 +312,10 @@ test("every shell path that paints the columns asks to write the maximize", () =
   }
 });
 
-// A phone paints one console (cap 1), so the list there is always full: a
-// row swaps its console into the maximize, and a console in a detached fence
-// cannot come in (#599). Wider, a row opens a column.
-test("on a phone a row of the list switches the maximized console; wider it opens a column", () => {
+// A row swaps its console in on every width, and a console in a detached
+// fence cannot come in (#599). Wider than a phone, the icon beside the row
+// opens a column; Enter in the filter swaps, as a row does.
+test("a row of the list swaps on every width; the icon opens a column", () => {
   const { scope: state, window } = loadComponent("wbColumns", { magics: { $nextTick: () => {} } });
   const paints = [];
   const realConsole = globalThis.WBConsole;
@@ -350,9 +350,23 @@ test("on a phone a row of the list switches the maximized console; wider it open
     state.columnCap = () => 3;
     state.toggleColumnMenu("a", { bottom: 0, right: 300 });
     assert.equal(state.columnSwitch, false);
-    assert.equal(state.columnRowOff(rows().b), false);
+    assert.deepEqual([state.columnRowOff(rows().b), state.columnRowOff(rows().d)], [false, true]);
     state.pickColumn("b");
-    assert.deepEqual(state.columns, [["a"], ["b"]], "wider, b opens a column beside a");
+    assert.deepEqual(paints, [[["b"], "a"]], "wider, a row still swaps b in");
+    assert.deepEqual([state.columns, state.columnMenu], [[], false], "no column opens");
+
+    state.toggleColumnMenu("b", { bottom: 0, right: 300 });
+    assert.equal(state.columnOpenTip(rows().a), "Open in a new column");
+    state.openColumn("a");
+    assert.deepEqual(state.columns, [["b"], ["a"]], "the icon opens a beside b");
+
+    // Enter swaps the first row that can come in.
+    paints.length = 0;
+    state.columns = [];
+    state.toggleColumnMenu("b", { bottom: 0, right: 300 });
+    state.columnFilter = "";
+    state.swapFirstColumn();
+    assert.deepEqual([paints.at(-1)?.[1], state.columnMenu], ["b", false], "Enter swaps, it does not open");
   } finally {
     globalThis.WBConsole = realConsole;
   }

@@ -564,7 +564,7 @@
   min-width: 0;
 }
 /* Quiet until the row is under the pointer, so the list still reads as a list. */
-.column-swap {
+.column-open {
   all: unset;
   flex: none;
   padding: 0.3rem 0.45rem;
@@ -574,15 +574,15 @@
   cursor: pointer;
   opacity: 0.45;
 }
-.column-row:hover .column-swap:not(:disabled),
-.column-swap:focus-visible {
+.column-row:hover .column-open:not(:disabled),
+.column-open:focus-visible {
   opacity: 1;
 }
-.column-swap:not(:disabled):hover {
+.column-open:not(:disabled):hover {
   color: var(--text);
   background: var(--surface-hi);
 }
-.column-swap:disabled {
+.column-open:disabled {
   visibility: hidden;
 }
 .column-empty {
