@@ -163,6 +163,7 @@ test("a fence drag carries a console that is in its own tab", () => {
   const win = fakeElement();
   win._deskId = "w1";
   win.classList.add("in-tab");
+  win._tabShadow = { style: {} };
   const { deps, calls } = fakeDeps({}, { fenceWindows: () => [win] });
   const { startFenceMove } = createFences(deps);
   startFenceMove(fakeElement(), { id: "f" })({
@@ -181,6 +182,7 @@ test("a fence drag carries a console that is in its own tab", () => {
   assert.equal(wrote.length, 1);
   assert.equal(wrote[0][1], win);
   assert.equal(wrote[0][2].rect.left, RECT.left + 100);
+  assert.equal(win._tabShadow.style.left, `${RECT.left + 100}px`, "its shadow goes with it");
 });
 
 test("a fence opens as columns without the console that is in its own tab", () => {

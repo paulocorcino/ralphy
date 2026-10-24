@@ -185,9 +185,35 @@ function parent(name) {
       el.children.push(child);
       child.parentElement = el;
     },
+    querySelectorAll: (sel) => el.children.filter((c) => "." + c.className === sel),
   };
   return el;
 }
+
+// An element `document.createElement` makes: the shadow and its parts.
+function node() {
+  const el = parent("node");
+  const appendOne = el.append;
+  Object.assign(el, {
+    append: (...kids) => kids.forEach((k) => appendOne(k)),
+    className: "",
+    title: "",
+    textContent: "",
+    style: {},
+    parentElement: null,
+    listeners: {},
+    addEventListener: (type, fn) => (el.listeners[type] = fn),
+    querySelector: (sel) => el.children.find((c) => "." + c.className === sel) || null,
+    remove() {
+      const from = el.parentElement;
+      if (from) from.children.splice(from.children.indexOf(el), 1);
+      el.parentElement = null;
+    },
+  });
+  return el;
+}
+
+const shadowsOf = (stage) => stage.children.filter((c) => c.className === "console-shadow");
 
 function consoleWin(id, classes = []) {
   const set = new Set(classes);
@@ -225,10 +251,10 @@ function placePage(ids, paneWidth = 1280) {
   const focused = [];
   const moved = [];
   const place = createPlace({
-    document: { dispatchEvent: (e) => sent.push([e.type, e.detail]) },
+    document: { dispatchEvent: (e) => sent.push([e.type, e.detail]), createElement: () => node() },
     stage: () => stage,
     tabsPane: () => pane,
-    pageWindows: () => [...stage.children, ...pane.children],
+    pageWindows: () => [...stage.children, ...pane.children].filter((w) => w._deskId),
     focusWin: (w) => focused.push(w._deskId),
     moved: (w) => moved.push(w._deskId),
   });
@@ -258,6 +284,58 @@ test("a console's window moves into the tab's pane and back, with its rect and i
   assert.deepEqual(w1.vars, {}, "no box of the tab is left on the stage");
   assert.deepEqual(p.moved, ["w1"]);
   assert.equal(p.sent.length, 1, "going back to the stage sends nothing");
+});
+
+test("a console in its own tab leaves its shadow on the stage, at its rect and with its name", () => {
+  const p = placePage(["w1", "w2"]);
+  const w1 = p.byId.w1;
+  w1._deskConsoleName = "api";
+  w1._deskAgent = null;
+  p.place.placeTabs(["w1"], [["w1"]]);
+  p.place.placeTabs(["w1"], [["w1"]]);
+  const [sh, ...more] = shadowsOf(p.stage);
+  assert.equal(more.length, 0, "one shadow for one console");
+  assert.equal(sh, w1._tabShadow);
+  assert.deepEqual(rectOf(sh), rectOf(w1));
+  assert.equal(sh.querySelector(".console-shadow-name").textContent, "api (console)");
+  sh.listeners.click();
+  assert.deepEqual(p.sent.at(-1), ["workbench:console-tab-show", { id: "w1" }]);
+
+  p.place.placeTabs([], null);
+  assert.deepEqual(shadowsOf(p.stage), [], "back on the stage, the console is its own place");
+  assert.equal(w1._tabShadow, null);
+
+  // A console that leaves the page while it is in a tab takes its shadow along.
+  p.place.placeTabs(["w1"], [["w1"]]);
+  p.pane.children.splice(p.pane.children.indexOf(w1), 1);
+  p.place.placeTabs([], null);
+  assert.deepEqual(shadowsOf(p.stage), []);
+});
+
+test("a click on a console's shadow shows that console's tab", () => {
+  const listeners = {};
+  const { state, window } = loadShell({
+    document: { addEventListener: (type, fn) => (listeners[type] ||= []).push(fn) },
+  });
+  window.WBView = { patch() {}, read: () => null };
+  window.Alpine.nextTick = (fn) => fn();
+  globalThis.WBViewer = { setActive() {}, width: () => 1280, close() {} };
+  window.WBConsole = {
+    placeTabs() {},
+    list: () => [{ id: "w1", name: "", agent: "codex" }],
+    isRelaunching: () => false,
+    refitAll() {},
+  };
+  const tabs = state.$store.tabs;
+  tabs.init();
+  tabs.openConsoleTab("w1", "codex");
+  tabs.activate("consoles");
+  const show = (id) => (listeners["workbench:console-tab-show"] || []).forEach((fn) => fn({ detail: { id } }));
+  show("w1");
+  assert.equal(tabs.active, "console:w1");
+  tabs.activate("consoles");
+  show("w9");
+  assert.equal(tabs.active, "consoles", "a console with no tab changes nothing");
 });
 
 test("only the active tab's window is shown, and a second call moves nothing", () => {

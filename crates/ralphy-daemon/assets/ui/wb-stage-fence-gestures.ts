@@ -16,9 +16,10 @@ const { dragThreshold, dragBegins } = WBConsoleInput;
 const { FENCE_MIN, fenceMembership, fenceFits, fenceMoveDelta, resizeRect } = WBGeometry;
 
 // A surface a fence carries: a console window or a note card. A card on top
-// floats elsewhere, and its place is the `_noteShadow`.
+// floats elsewhere, and its place is the `_noteShadow`; a console in its own
+// tab is in the pane of the tabs, and its place is the `_tabShadow`.
 type Carried = {
-  el: HTMLElement & { _noteShadow?: HTMLElement | null };
+  el: HTMLElement & { _noteShadow?: HTMLElement | null; _tabShadow?: HTMLElement | null };
   id: string;
   rect: Rect;
 } & ({ kind: "window"; el: ConsoleWin } | { kind: "note"; el: NoteCard });
@@ -59,6 +60,15 @@ export type FenceGestureDeps = {
   // Writes a window's fields to the desk.
   setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
 };
+
+// A surface shown elsewhere keeps its place as a shadow, which goes where the
+// surface's desk rect goes.
+function moveShadow(m: Carried) {
+  const sh = m.el._noteShadow || m.el._tabShadow;
+  if (!sh) return;
+  sh.style.left = m.el.style.left;
+  sh.style.top = m.el.style.top;
+}
 
 export function createFenceGestures(deps: FenceGestureDeps) {
   const {
@@ -160,11 +170,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           for (const m of carried) {
             m.el.style.left = m.rect.left + d.dx + "px";
             m.el.style.top = m.rect.top + d.dy + "px";
-            // A card on top floats elsewhere; its place is the shadow.
-            if (m.el._noteShadow) {
-              m.el._noteShadow.style.left = m.el.style.left;
-              m.el._noteShadow.style.top = m.el.style.top;
-            }
+            moveShadow(m);
           }
         }
         applyExtent({ grow: true });
@@ -206,10 +212,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           for (const m of carried) {
             m.el.style.left = m.rect.left + "px";
             m.el.style.top = m.rect.top + "px";
-            if (m.el._noteShadow) {
-              m.el._noteShadow.style.left = m.el.style.left;
-              m.el._noteShadow.style.top = m.el.style.top;
-            }
+            moveShadow(m);
           }
           applyExtent();
           return;

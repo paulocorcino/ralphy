@@ -198,6 +198,8 @@ export type ConsoleWinFields = {
   _deskLocked: boolean;
   /** The console name: a label, not an identity. */
   _deskConsoleName: string | null;
+  /** The console's place on the stage while it is in its own tab. */
+  _tabShadow?: HTMLElement | null;
   /** Adopted from a session with no record: the first act creates it. */
   _deskUnrecorded: boolean;
   /** The worktree the daemon announced on `session-open`. */

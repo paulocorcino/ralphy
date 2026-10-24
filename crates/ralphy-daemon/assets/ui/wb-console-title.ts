@@ -13,6 +13,7 @@
 import { WBConsoleName } from "./wb-console-name.ts";
 import { createCheckoutSwitcher } from "./wb-console-checkout.ts";
 import { agentStateTitle } from "./wb-console-session.ts";
+import { paintTabShadow } from "./wb-console-place.ts";
 import type { ConsoleWin, DeskRecord, DeskWindowFields, Presentation } from "./wb-types.d.ts";
 
 // What the console's confirmation dialog takes.
@@ -144,6 +145,7 @@ export function createTitle(deps: TitleDeps) {
     win._presentation = presentation;
     // A rename in progress keeps its input; `endEdit` draws with the latest.
     if (title.querySelector(".session-name-input")) return;
+    paintTabShadow(win);
     const switchable =
       win._deskKind !== "console" &&
       typeof win._relaunchIn === "function" &&
