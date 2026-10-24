@@ -282,8 +282,9 @@ _Avoid_: wake (reserved for a sleeping **peer**), resume (see **Resume**),
 restore (the desk history), thaw.
 
 **Always on**:
-A per-console setting that keeps a console from ever becoming **Suspended** or
-**Hibernated**. (ADR-0083)
+A per-console setting that says the console must always run: it is never
+**Suspended** or **Hibernated**, and the daemon starts it by itself when the
+daemon starts. (ADR-0083)
 _Avoid_: pinned (the stage's origin is what is pinned), keep alive, locked
 (see **Locked**).
 

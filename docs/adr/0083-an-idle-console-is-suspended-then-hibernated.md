@@ -4,9 +4,10 @@ Status: proposed
 Kind: structural
 Protects: responsiveness, recoverability; constraints portability, security
 
-Amends ADR-0051 (a **workbench session** has a state besides live and gone;
-the daemon, not the page, relaunches a **Hibernated** console) and ADR-0072
-D13 (undocumented OS calls).
+Amends ADR-0051 (a **workbench session** has a state besides live and gone),
+ADR-0050 (the page no longer relaunches a free console when it loads; the
+daemon starts consoles, through a queue) and ADR-0072 D13 (undocumented OS
+calls).
 
 ## Context
 
@@ -119,13 +120,16 @@ then a rename), on events that already happen: spawn, change of state, end.
 For each console it holds every process of the tree as PID, creation time and
 executable; the state; the suspend means; and, when known, the agent session
 id with the repo, the checkout and the agent. A Hibernated console's screen is
-a file of its own beside it. The daemon has no database for this. On start,
-the daemon reads the record: an entry whose process is gone is dropped; a
+a file of its own beside it. The daemon has no database for this. When the
+daemon ends normally (a restart, an update, a shutdown of the machine), it
+first saves every console's screen and marks every console of an agent with
+a chosen session id as Hibernated; then it ends the trees. On start, the
+daemon reads the record: an entry whose process is gone is dropped; a
 process that is alive and matches all three values has its tree ended,
-because an orphan has no terminal left to attach; then a console with an
-agent session id comes back Hibernated, and one without comes back as a
-**placeholder**, as today. A recovery is always an end and a resume. It also
-applies to a console that was active when the daemon ended.
+because an orphan has no terminal left to attach. Then every console comes
+back as D13 says. A recovery is always an end and a resume. After a crash,
+no screen was saved for a console that was not already Hibernated, so it
+comes back as a **placeholder**.
 
 **D7. Only an agent whose session id Ralphy chooses at launch can be
 Hibernated.** Whether an agent accepts a chosen id and resumes it is a
@@ -158,12 +162,14 @@ gets two answers.
 **D10. The operator opts out per console, and the whole feature is opt-in.**
 Each console has a small gear in its title bar that opens a menu: the home of
 per-console settings. It holds **Always on** and the Restart action, which
-leaves the title bar. Always on is stored on the desk record, like `locked`,
-and travels to a peer with the launch and with each change. A free console is
-out by default and can be opted in. The daemon settings section "Consoles"
-holds: suspend idle consoles (off by default), suspend after (2 hours),
-hibernate after (24 hours), include free consoles (off). These settings are
-per daemon.
+leaves the title bar. Always on means "this console must always run": it is
+never suspended nor hibernated, and the daemon starts it by itself when the
+daemon starts (D13). It is off by default for every console. It is stored on
+the desk record, like `locked`, and travels to a peer with the launch and
+with each change. The daemon settings section "Consoles" holds: suspend idle
+consoles (off by default), suspend after (2 hours), hibernate after (24
+hours), include free consoles (off: free consoles are not suspended unless
+this is on). These settings are per daemon.
 
 **D11. A WSL free console is never suspended or hibernated.** It is a
 `wsl.exe` process on the Windows host, and stopping it does not stop the
@@ -172,6 +178,25 @@ hint. A peer with no swap says that suspending saves little memory there, and
 the Windows daemon says so when `.wslconfig` has no `autoMemoryReclaim`.
 Ralphy never changes the WSL configuration.
 
+**D12. Every console start goes through one queue in the daemon.** A
+relaunch, the reactivation of a Hibernated console, a click on a
+placeholder, and an Always on console at daemon start all wait in one
+queue. At most two consoles start at the same time; the number is an
+internal value, tuned by measurement. The console the operator clicked goes
+first, then the consoles shown on a screen, then the rest. A console that
+waits shows its screen, or its placeholder, under the veil with a short
+"Starting…" hint.
+
+**D13. After the daemon starts, nothing starts without a click, except an
+Always on console.** Every console comes back as its last saved screen under
+the veil (a placeholder when no screen was saved). The hint says what a click
+does. For an agent that resumes (D7), it continues the conversation the
+screen shows. For any other console, it starts a new session, so the veil is
+stronger and the hint says the session ended. The daemon starts each Always
+on console by itself, through the queue, with no page open. The page no
+longer starts a console when it loads, and the per-browser setting "Relaunch
+agent consoles on load" is removed.
+
 ## Consequences
 
 - A session gains a state beside live and gone. The pump's exit poll,
@@ -179,8 +204,19 @@ Ralphy never changes the WSL configuration.
   must all know it. New fields in the peer session list are `serde(default)`;
   the peer messages for a click and for Always on raise
   `PEER_PROTOCOL_VERSION`.
-- The daemon, not the page, relaunches a Hibernated console. The page still
-  relaunches every other console as today.
+- The daemon, not the page, starts consoles after a daemon start. Today the
+  page relaunches every free console when it loads, all at the same time,
+  and every agent console too when "Relaunch agent consoles on load" is on
+  (`wb-desk-folds.ts` `reconcileDesk`, `wb-desk-restore.ts`); each open
+  browser does it on its own. On 2026-10-03 two pages that loaded 4 seconds
+  apart started 8 shells for 4 records (ADR-0050, amendment of 2026-10-04).
+  D12 and D13 end both: one owner, one queue, and a click for each console
+  that is not Always on.
+- A free console no longer comes back running by itself. An operator who
+  wants a shell or a server back at once marks it Always on.
+- The first click on a console after a daemon start takes a few seconds:
+  the agent starts and loads its conversation. That is the price of not
+  starting ten agents at once.
 - D6 gives something beyond memory: after a crash, an update or a reboot, a
   console of an agent with a chosen session id comes back with its
   conversation.
@@ -205,6 +241,14 @@ Ralphy never changes the WSL configuration.
   own (`rusqlite` only reads the agents' databases), the record is tens of
   entries, and a database is a new kind of store. Reopen only if history and
   queries become a goal.
+- **Keep "Relaunch agent consoles on load".** It is per browser, it turns
+  every agent console on or off at once, and every open browser acts on it
+  by itself. Always on is per console, kept by the daemon, and acted on
+  once (D13).
+- **A placeholder, not the old screen, for a console that cannot resume.**
+  The screen shows where the operator was, which a placeholder does not. The
+  stronger veil and the hint keep it from promising a conversation that is
+  gone (D13).
 - **Adopt the orphans after a daemon restart.** Their terminal ended with the
   daemon; there is nothing to attach to (D6).
 
@@ -224,6 +268,10 @@ Ralphy never changes the WSL configuration.
 - D9: not checked by code: manual, reviewed in the PR.
 - D10: not checked by code: manual, reviewed in the PR.
 - D11: not checked by code: manual, reviewed in the PR.
+- D12: not checked by code: behavior, pinned by a test of the queue limit;
+  every spawn site going through the queue is reviewed in the PR.
+- D13: not checked by code: behavior, pinned by the tests of the page's
+  restore fold (no start on load) and of the daemon start-up pass.
 
 Open before the build: the minimum handle right for the Windows state-change
 object; whether Gemini resumes a session by the id it was given; whether a launch gate per repo and agent
