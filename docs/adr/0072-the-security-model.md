@@ -8,6 +8,8 @@ Amended 2026-10-14: D12, the install scripts (ADR-0056 §12).
 
 Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a console token given to the agent by design as an exception to D7).
 
+Amended by ADR-0083 (proposed: D13, an undocumented OS call to suspend a console's processes, and the daemon acts only on processes in its custody record).
+
 ## Context
 
 Ralphy runs AI agents with shell access on the operator's machine, serves a
@@ -416,4 +418,22 @@ surface.
   `allow` whose `reason` names the FFI, and each `unsafe` block a
   `// SAFETY:` comment. A new `unsafe` is also flagged by
   `xtask capabilities`.
+- D13, amendment of 2026-10-24: not checked by code: the custody check is
+  pinned by a test of the suspend entry point; the FFI module is reviewed
+  in the PR.
 - D14: not checked by code: manual, reviewed in the PR.
+
+## Amendment 2026-10-24 — D13: an undocumented OS call, and processes in custody
+
+Changes D13, by ADR-0083 (proposed). D13 stays: `unsafe` is for FFI only. It
+gains two rules for the code that suspends an idle console.
+
+- An undocumented operating system call (the Windows process state-change
+  object in `ntdll`) is allowed only when no documented call does the job,
+  only behind one named FFI module, and only with a fallback that turns the
+  feature off. If the call is missing or fails, the console is not suspended;
+  the code never falls back to a means that can leave a process stopped for
+  good.
+- The daemon suspends, resumes or ends only a process that is in its custody
+  record and that matches its PID, creation time and executable. A PID alone
+  is never enough, because the system can give it to another process.
