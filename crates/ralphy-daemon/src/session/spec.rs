@@ -189,37 +189,7 @@ pub fn spec_with_status(
         Some(over) => over,
         None => agent.resolve_program(),
     };
-    let mut name = None;
-    let mut status_used = None;
     let (args, env) = match agent {
-        Agent::Claude => {
-            let mut args = Vec::new();
-            let mut env = Vec::new();
-            if claude_console_named(root) {
-                let chosen = claude_session_name(repo_slug, console);
-                args.push(OsString::from("--name"));
-                args.push(OsString::from(&chosen));
-                name = Some(chosen);
-            }
-            if let Some(files) = status {
-                let exe = PathBuf::from(crate::dispatch::ralphy_exe());
-                match files.write(&exe) {
-                    Ok(()) => {
-                        args.push(OsString::from("--settings"));
-                        args.push(files.settings.clone().into_os_string());
-                        env.push((
-                            OsString::from(crate::agent_state::STATUS_ENV),
-                            files.status.clone().into_os_string(),
-                        ));
-                        status_used = Some(files);
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "could not write the console's agent-state hooks; launching without them");
-                    }
-                }
-            }
-            (args, env)
-        }
         Agent::Gemini => (
             vec![
                 OsString::from("--policy"),
@@ -232,15 +202,53 @@ pub fn spec_with_status(
         ),
         _ => (Vec::new(), Vec::new()),
     };
-    SessionSpec {
+    let mut spec = SessionSpec {
         program,
         args,
         cwd,
         rows,
         cols,
         env,
-        name,
-        status: status_used,
+        name: None,
+        status: None,
+    };
+    if agent == Agent::Claude {
+        add_claude_launch(&mut spec, root, repo_slug, console, status);
+    }
+    spec
+}
+
+/// The Claude part of [`spec_with_status`]: the opt-in name and the
+/// agent-state hooks.
+fn add_claude_launch(
+    spec: &mut SessionSpec,
+    root: &Path,
+    repo_slug: &str,
+    console: Option<&str>,
+    status: Option<crate::agent_state::StatusFiles>,
+) {
+    if claude_console_named(root) {
+        let chosen = claude_session_name(repo_slug, console);
+        spec.args.push(OsString::from("--name"));
+        spec.args.push(OsString::from(&chosen));
+        spec.name = Some(chosen);
+    }
+    if let Some(files) = status {
+        let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+        match files.write(&exe) {
+            Ok(()) => {
+                spec.args.push(OsString::from("--settings"));
+                spec.args.push(files.settings.clone().into_os_string());
+                spec.env.push((
+                    OsString::from(crate::agent_state::STATUS_ENV),
+                    files.status.clone().into_os_string(),
+                ));
+                spec.status = Some(files);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "could not write the console's agent-state hooks; launching without them");
+            }
+        }
     }
 }
 
