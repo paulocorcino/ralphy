@@ -508,7 +508,7 @@ def main():
             check("10 the filter matches the repo", "w-1" in filtered("owner/fincal") and "w-2" not in filtered("owner/fincal"))
             check("10 the filter matches the fence name", filtered("away") == ["w-7"], str(filtered("away")))
             page.evaluate(f"() => {{ {COLS}.columnFilter = ''; }}")
-            page.locator(".column-menu .column-item[data-id='w-2']").click()
+            page.locator(".column-menu .column-open[data-id='w-2']").click()
             page.wait_for_timeout(600)
             col = page.evaluate("() => __W('w-2').classList.contains('column')")
             check("10 w-2 opens as a column", col)

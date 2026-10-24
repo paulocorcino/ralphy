@@ -102,7 +102,7 @@ def near(a, b):
 
 
 def tab_slice(page, from_id, id, swap=False):
-    """The Slice list of a console in a tab, then a click on a row or its swap icon."""
+    """The Slice list of a console in a tab, then a click on its open icon or on a row (a swap)."""
     page.evaluate("(id) => __P(id).querySelector('.session-column').click()", from_id)
     page.wait_for_function(
         "() => { const m = document.querySelector('.column-menu');"
@@ -110,7 +110,7 @@ def tab_slice(page, from_id, id, swap=False):
         timeout=5000,
     )
     page.wait_for_timeout(150)
-    sel = ".column-swap" if swap else ".column-item"
+    sel = ".column-item" if swap else ".column-open"
     page.locator(f".column-menu {sel}[data-id='{id}']").click()
     page.wait_for_timeout(600)
 

@@ -261,7 +261,7 @@ def menu_state(page):
         "  repo: __visible(g.querySelector('.column-group-repo')) ? g.querySelector('.column-group-repo').textContent.trim() : '',"
         "  rows: [...g.querySelectorAll('.column-item')].map((b) => ({"
         "    id: b.dataset.id, text: b.querySelector('.row-name').textContent,"
-        "    disabled: b.disabled, title: b.title,"
+        "    disabled: b.nextElementSibling.disabled, title: b.nextElementSibling.title,"
         "    off: __visible(b.querySelector('.row-off')),"
         "    hasState: !!b.querySelector('.session-state') })) }))"
     )
@@ -269,13 +269,13 @@ def menu_state(page):
 
 def open_column(page, from_id, id):
     open_menu(page, from_id)
-    page.locator(f".column-menu .column-item[data-id='{id}']").click()
+    page.locator(f".column-menu .column-open[data-id='{id}']").click()
     page.wait_for_timeout(500)
 
 
 def swap_in(page, from_id, id):
     open_menu(page, from_id)
-    page.locator(f".column-menu .column-swap[data-id='{id}']").click()
+    page.locator(f".column-menu .column-item[data-id='{id}']").click()
     page.wait_for_timeout(500)
 
 
@@ -480,7 +480,7 @@ def main():
             b = rows.get("w-b", {})
             check("4 a console already in a column is disabled with a reason",
                   b.get("disabled") is True and b.get("title") == "Already in a column", str(b))
-            page.locator(".column-menu .column-item[data-id='w-l']").click()
+            page.locator(".column-menu .column-open[data-id='w-l']").click()
             page.wait_for_timeout(500)
             cols = page.evaluate("() => __columns()")
             check("4 opens right of the caller; the others keep order",

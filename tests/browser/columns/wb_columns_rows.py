@@ -18,7 +18,7 @@ D2  Down opens w-b below w-a: one column, two rows of equal height that fill
 D3  Right from the lower row opens w-c as a new column of one row
 D4  Alt+Shift+↓ walks the rows and wraps; Alt+Shift+→ from a lower row lands
     on the last row of a shorter column; Alt+Shift+← goes back to the same row
-D5  the swap icon moves a console between rows of two columns
+D5  a click on a row moves a console between rows of two columns
 D6  restore of a lower row lets the row above fill the column
 D7  restore of the first console moves the desk's maximize to the next console
     in reading order
@@ -99,13 +99,13 @@ def pick_dir(page, d):
 def add(page, from_id, d, id):
     T.open_menu(page, from_id)
     pick_dir(page, d)
-    page.locator(f".column-menu .column-item[data-id='{id}']").click()
+    page.locator(f".column-menu .column-open[data-id='{id}']").click()
     page.wait_for_timeout(500)
 
 
 def swap(page, from_id, id):
     T.open_menu(page, from_id)
-    page.locator(f".column-menu .column-swap[data-id='{id}']").click()
+    page.locator(f".column-menu .column-item[data-id='{id}']").click()
     page.wait_for_timeout(500)
 
 

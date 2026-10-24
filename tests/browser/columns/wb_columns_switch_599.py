@@ -3,7 +3,8 @@ acceptance.
 
 A phone paints one console, so the title bar's list button is "Switch" there:
 a row of the list puts its console in the maximize in place of the current
-one. Wider, the same button is "Slice" and a row opens a column.
+one. Wider, the same button is "Slice", a row still swaps, and the icon
+beside a row opens a column.
 
 One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR`, so the
 operator's own desk and login policy are untouched. PORT 7599. The fixture and
@@ -15,13 +16,13 @@ the daemon helpers are `wb_columns_473.py`'s:
   w-l  placeholder inside fence f-lock
 
 P1  phone width: the maximized w-a shows the button as "Switch"
-P2  the list hides Right | Down and the swap icons; a loose row is enabled
+P2  the list hides Right | Down and the open icons; a loose row is enabled
 P3  a tap on w-b: w-b is maximized, w-a is not, no column opens, the list
     closes, and the desk records the new maximize
 P4  after f-one is detached, its w-f is in the list but disabled; the popup
     shows no list button
-W1  wide: the button is "Slice", the list shows Right | Down and the swap
-    icons, and a row opens a column
+W1  wide: the button is "Slice", the list shows Right | Down and the open
+    icons, and an open icon opens a column
 
 The list is closed through its component: Escape closes it only while the
 focus is in its filter, and the list button toggles an open list closed.
@@ -66,7 +67,7 @@ LIST = """() => { const m = document.querySelector('.column-menu');
   const shown = (el) => !!el && el.getClientRects().length > 0;
   return {
     dir: shown(m.querySelector('.column-dir')),
-    swaps: [...m.querySelectorAll('.column-swap')].filter(shown).length,
+    opens: [...m.querySelectorAll('.column-open')].filter(shown).length,
     rows: Object.fromEntries([...m.querySelectorAll('.column-item')].map((b) => [b.dataset.id, !b.disabled])),
   }; }"""
 
@@ -111,7 +112,7 @@ def main():
             T.open_menu(page, "w-a")
             lst = page.evaluate(LIST)
             check("P2 Right | Down is hidden", not lst["dir"], str(lst))
-            check("P2 the swap icons are hidden", lst["swaps"] == 0, str(lst))
+            check("P2 the open icons are hidden", lst["opens"] == 0, str(lst))
             check("P2 a loose console's row is enabled", lst["rows"].get("w-b") is True, str(lst))
             os.makedirs(os.path.dirname(SHOT), exist_ok=True)
             page.screenshot(path=SHOT)
@@ -160,10 +161,10 @@ def main():
                   btn and not btn["hidden"] and btn["title"] == "Slice" and not btn["swapIcon"], str(btn))
             T.open_menu(page, "w-b")
             lst = page.evaluate(LIST)
-            check("W1 Right | Down and the swap icons show", lst["dir"] and lst["swaps"] > 0, str(lst))
-            page.locator(".column-menu .column-item[data-id='w-c']").click()
+            check("W1 Right | Down and the open icons show", lst["dir"] and lst["opens"] > 0, str(lst))
+            page.locator(".column-menu .column-open[data-id='w-c']").click()
             page.wait_for_timeout(500)
-            check("W1 a row opens a column", T.shell_cols(page) == ["w-b", "w-c"], str(T.shell_cols(page)))
+            check("W1 the open icon opens a column", T.shell_cols(page) == ["w-b", "w-c"], str(T.shell_cols(page)))
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()
