@@ -220,6 +220,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     notes: () => currentNotes(),
     stage,
     workspace,
+    tabsPane,
     restoreRect,
     applyExtent,
     columnMeasure,

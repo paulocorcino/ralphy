@@ -43,6 +43,8 @@ export type FenceGestureDeps = {
   renderFences: () => void;
   // The plane; null before the page has it.
   stage: () => HTMLElement | null;
+  // The console windows a fence may hold: the stage's and the console tabs'.
+  fenceWindows: (st: HTMLElement) => ConsoleWin[];
   // Grows or fits the stage to the windows on it.
   applyExtent: (opts?: ExtentOpts) => void;
   // The auto-pan loop of a drag at a viewport edge.
@@ -68,6 +70,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
     clearFenceFlash,
     renderFences,
     stage,
+    fenceWindows,
     applyExtent,
     autoPan,
     saveFences,
@@ -99,7 +102,8 @@ export function createFenceGestures(deps: FenceGestureDeps) {
       // Windows AND cards: a fence carries every surface whose centre it holds
       // (ADR-0064 §8). The ids are NAMESPACED because the two collections are
       // keyed independently and `fenceMembership` sees one flat list.
-      const all = [...st.querySelectorAll<ConsoleWin>(".session-window")]
+      // A console in its own tab is carried too: its shadow is its place.
+      const all = fenceWindows(st)
         .map((w): Carried => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
         .concat(
           [...st.querySelectorAll<NoteCard>(".note-card")].map((el): Carried => ({

@@ -405,6 +405,8 @@ export function createDetach(deps: DetachDeps) {
   function fenceSnapshot(id: string): PopupMember[] {
     const st = stage();
     if (!st) return [];
+    // The stage's windows only: a member in its own tab stays in the tab, and
+    // its shadow stays in the fence (ADR-0037 §3d).
     const all = [...st.querySelectorAll<ConsoleWin>(".session-window")];
     const byId = new Map(all.map((w): [string, ConsoleWin] => [w._deskId, w]));
     const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];

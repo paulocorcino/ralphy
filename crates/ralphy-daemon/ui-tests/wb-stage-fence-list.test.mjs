@@ -58,6 +58,7 @@ function harness() {
     notes: () => [],
     stage: () => st,
     workspace: () => null,
+    tabsPane: () => null,
     restoreRect: (el) => el.rect,
     applyExtent: record("applyExtent"),
     columnMeasure: () => ({ viewport: 1600 }),
@@ -188,7 +189,8 @@ function chromeFence(id, rect) {
 
 // Fence `a` is locked and holds one console and one card, `b` holds two
 // consoles, and `c` went to a popup with three.
-function chromeHarness({ autoBoot, measured = true, ownLocks = false } = {}) {
+// `tabbed`: the console of `a` is in its own tab, in the pane of the tabs.
+function chromeHarness({ autoBoot, measured = true, ownLocks = false, tabbed = false } = {}) {
   const rect = (left, top) => ({ left, top, width: 400, height: 400 });
   const at = (left, top) => ({ left, top, width: 100, height: 100 });
   const fences = [
@@ -201,11 +203,15 @@ function chromeHarness({ autoBoot, measured = true, ownLocks = false } = {}) {
   wins.forEach((w, i) => (w._deskId = `w${i}`));
   wins[0]._deskLocked = ownLocks;
   const card = fakeEl(at(150, 150), {}, { noteId: "n1" });
+  if (tabbed) wins[0].classes.add("in-tab");
+  const onStage = tabbed ? wins.slice(1) : wins;
+  const inPane = tabbed ? [wins[0]] : [];
   const st = {
     offsetWidth: measured ? 1200 : 0,
     offsetHeight: measured ? 900 : 0,
-    querySelectorAll: (sel) => ({ ".fence": fenceEls, ".session-window": wins, ".note-card": [card] })[sel] || [],
+    querySelectorAll: (sel) => ({ ".fence": fenceEls, ".session-window": onStage, ".note-card": [card] })[sel] || [],
   };
+  const pane = { querySelectorAll: (sel) => (sel === ".session-window" ? inPane : []) };
   const locks = [];
   const popups = createPopupRegistry({ link: { writeRegistry() {} }, startBeat() {}, stopBeat() {} });
   popups.put("c", popups.newPopupEntry(["x", "y", "z"]));
@@ -219,6 +225,7 @@ function chromeHarness({ autoBoot, measured = true, ownLocks = false } = {}) {
     notes: () => [{ id: "n1", locked: ownLocks }],
     stage: () => st,
     workspace: () => null,
+    tabsPane: () => pane,
     restoreRect: (el) => el.rect,
     applyExtent() {},
     columnMeasure: () => ({ viewport: 1600 }),
@@ -239,6 +246,14 @@ test("the fence chrome counts each fence's consoles, and a detached fence's from
   list.refreshFenceChrome();
   assert.deepEqual([count(0), count(1), count(2)], ["(1 console)", "(2 consoles)", "(3 consoles)"]);
   assert.deepEqual([columns(0), columns(1), columns(2)], [false, false, true], "a fence with no console on the stage has no columns");
+});
+
+test("a console in its own tab still counts for its fence, which then has no columns", () => {
+  const { list, count, columns } = chromeHarness({ tabbed: true });
+  list.refreshFenceChrome();
+  assert.equal(count(0), "(1 console)", "the console in the pane of the tabs is a member");
+  assert.equal(columns(0), true, "a console in its own tab does not open as a column");
+  assert.deepEqual([count(1), columns(1)], ["(2 consoles)", false]);
 });
 
 test("the fence chrome writes nothing while the stage cannot measure", () => {
