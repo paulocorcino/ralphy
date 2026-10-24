@@ -74,10 +74,10 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   A `ui-tests` job runs `node --test crates/ralphy-daemon/ui-tests` and oxlint
   once on Linux. A `test` matrix builds and runs the suite (via `cargo nextest
   run`, plus a `cargo test --doc` step for the doctests nextest skips) with the
-  `ci` profile on **`windows-latest`, `ubuntu-latest` and `macos-latest`**,
-  with `--no-fail-fast`. On Windows the tests run through
-  `.github/scripts/nextest-windows.ps1`, which bounds the run at 14 minutes
-  and kills what a hung test left alive (#441). On macOS the job also
+  `ci` profile on **`ubuntu-latest` and `macos-latest`**, with
+  `--no-fail-fast`. Windows is not tested on a pull request: its tests run
+  in `release.yml` (below), because on a pull request they took 15 minutes
+  and hang at times (#441), and the local gate runs on Windows. On macOS the job also
   registers, probes and removes the launchd autostart agent: the one place
   `launchctl` runs for real. A separate job, `changelog`, runs **on pull
   requests only**: it fails when the diff touches the shipped surface
@@ -111,6 +111,14 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   Each contains the binary (`ralphy.exe` / `ralphy`) plus `README.md`, `LICENSE`,
   and this `BUILDING.md`. Because the prompts and skills are embedded in the binary
   on every platform, those archives are everything a user needs.
+
+  Before any package is built, two Windows jobs must pass. `windows-test`
+  builds and runs the suite with the `ci` profile, through
+  `.github/scripts/nextest-windows.ps1`, which bounds the run at 14 minutes
+  and kills what a hung test left alive (#441), and runs the doctests.
+  `windows-install` checks `install.ps1` against a fake release served on
+  loopback, as `ci.yml` does for `install.sh`. A Windows failure stops the
+  release; fix it on `main` and tag again.
 
   A tag with a hyphen (`v0.1.0-rc.20`) is published as a GitHub pre-release.
   The release builds without a cargo cache, so a cache written by another run

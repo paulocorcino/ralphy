@@ -98,25 +98,20 @@ jobs:
   test:
     name: build · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # `issues: write` lets the Windows hang sampler post to #441. A pull
-    # request from a fork or from Dependabot gets a read-only token anyway,
-    # and the sampler then posts nothing.
-    permissions:
-      contents: read
-      issues: write
     # A wedged test used to consume the whole job budget until the hosted
     # runner died ("lost communication"), which uploads no log at all. The
     # Test steps carry their own, shorter bound (#441): a job cancelled by
-    # this one keeps no log either (`BlobNotFound`). A healthy Windows job
-    # took 23 min on 2026-09-25 (build ~10, tests ~10).
+    # this one keeps no log either (`BlobNotFound`).
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
         # macOS joined on 2026-09-16 with the launchd autostart arm (ADR-0032
         # amendment 2026-09-15); its smoke step below is the one place
-        # `launchctl` runs for real.
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # `launchctl` runs for real. Windows is tested in release.yml, before
+        # the packages are built: on a pull request it took 15 min and its
+        # tests hang at times (#441), and the gate runs locally on Windows.
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -166,19 +161,6 @@ jobs:
           trap 'kill "$sampler" 2>/dev/null' EXIT
           cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
-      # The Windows tests sometimes hang, and then nothing on the runner ends
-      # the step: not nextest's kill, not the script's timer, not
-      # `timeout-minutes` (#441). The script bounds the run, names and kills
-      # what a test left alive, and starts a sampler that posts the state of a
-      # slow run to #441 while it runs, because the job's log is lost.
-      - name: Test
-        if: runner.os == 'Windows'
-        timeout-minutes: 18
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        # PTY tests drive cmd.exe on Windows (portable-pty).
-        run: ./.github/scripts/nextest-windows.ps1 -TimeoutMinutes 14; exit $LASTEXITCODE
-
       - name: Test
         if: runner.os == 'macOS'
         timeout-minutes: 18
@@ -219,12 +201,13 @@ jobs:
     # The one-line install (ADR-0056 §12) runs against a fake release packed
     # from this commit's binary and served on loopback, so no real release is
     # read. The scripts themselves are what `main` serves to users.
+    # install.ps1 is checked in release.yml, with the Windows tests.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -249,7 +232,6 @@ jobs:
       # does not reliably outlive its step. Each refusal is checked by its
       # message, so an unrelated failure does not pass for it.
       - name: install.sh
-        if: runner.os != 'Windows'
         env:
           RALPHY_RELEASES_URL: http://127.0.0.1:8765/releases
           RALPHY_DOWNLOAD_URL: http://127.0.0.1:8765/download
@@ -302,51 +284,6 @@ jobs:
           fi
           grep -q "SHA-256 of" "$RUNNER_TEMP/sum.err"
           test ! -e "$RUNNER_TEMP/badbin/ralphy"
-
-      # A hosted Windows runner is elevated, so this is the administrator path:
-      # it stops with no terminal, and with RALPHY_ALLOW_ROOT it registers the
-      # daemon without starting it.
-      - name: install.ps1
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          RALPHY_RELEASES_URL: http://127.0.0.1:8765/releases
-          RALPHY_DOWNLOAD_URL: http://127.0.0.1:8765/download
-          RALPHY_INSTALL_DIR: ${{ runner.temp }}\bin
-        run: |
-          $release = Join-Path $env:RUNNER_TEMP 'release'
-          python .github/scripts/install-fixture.py target/debug/ralphy.exe windows-x64 $release
-          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $release -PassThru
-          foreach ($i in 1..50) {
-            try { Invoke-WebRequest -UseBasicParsing $env:RALPHY_RELEASES_URL | Out-Null; break } catch { Start-Sleep -Milliseconds 200 }
-          }
-          $refused = '' | pwsh -NoProfile -File assets/install/install.ps1 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0) { throw 'install.ps1 ran elevated with no terminal and no RALPHY_ALLOW_ROOT' }
-          if ($refused -notmatch 'no terminal to ask in') { throw "refused for another reason: $refused" }
-          $env:RALPHY_ALLOW_ROOT = '1'
-          $installed = pwsh -NoProfile -File assets/install/install.ps1 -Daemon 2>&1 | Out-String
-          if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed ($LASTEXITCODE): $installed" }
-          & "$env:RALPHY_INSTALL_DIR\ralphy.exe" --version
-          reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v ralphy-daemon
-          if ($LASTEXITCODE -ne 0) { throw 'the daemon autostart is not registered' }
-          if ($installed -notmatch 'not started from this administrator window') { throw "no refusal line: $installed" }
-          $running = Get-CimInstance Win32_Process -Filter "Name = 'ralphy.exe'" |
-            Where-Object { $_.CommandLine -match ' daemon' }
-          if ($running) { throw 'an elevated install started the daemon' }
-          # The same script through Invoke-Expression, as the README runs it.
-          Get-Content -Raw assets/install/install.ps1 | Invoke-Expression
-          # A wrong checksum installs nothing.
-          $sum = Join-Path $release 'download\v0.0.0-fixture\ralphy-v0.0.0-fixture-windows-x64.zip.sha256'
-          Set-Content $sum '0000  x'
-          $env:RALPHY_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'badbin'
-          $bad = pwsh -NoProfile -File assets/install/install.ps1 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0) { throw 'install.ps1 accepted a wrong checksum' }
-          if ($bad -notmatch 'SHA-256 of') { throw "refused for another reason: $bad" }
-          if (Test-Path (Join-Path $env:RALPHY_INSTALL_DIR 'ralphy.exe')) { throw 'a binary was installed' }
-          Stop-Process -Id $server.Id
-          # The runner ends the step with the last native exit code, which is the
-          # refused install above.
-          exit 0
 
   changelog:
     name: changelog fragment
