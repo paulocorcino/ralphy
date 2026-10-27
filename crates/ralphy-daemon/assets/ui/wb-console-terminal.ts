@@ -182,8 +182,9 @@ export function createTerminal(deps: TerminalDeps) {
     term.loadAddon(fitAddon);
     term.open(body);
     showScrollbarWhileNeeded(term);
-    // The GPU addon: `terminalGpu`, wb-console-gpu.ts.
-    const { useGpu, dropGpu } = terminalGpu(term);
+    // The GPU addon: `terminalGpu`, wb-console-gpu.ts. A change of renderer
+    // refits; the page changes it only after this function returns.
+    const { useGpu, dropGpu } = terminalGpu(term, () => sizing.fit.fit());
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
     // The touch gesture and the line selection: wb-console-touch.ts.

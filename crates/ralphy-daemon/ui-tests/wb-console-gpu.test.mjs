@@ -10,6 +10,7 @@ import {
   createGpuBudget,
   dormantAfterMs,
   gpuHolders,
+  terminalGpu,
 } from "../assets/ui/wb-console-gpu.ts";
 
 // --- gpuHolders: which windows hold one of the page's WebGL contexts ---------
@@ -222,4 +223,34 @@ test("dormantAfterMs is 15 s on every link", () => {
     assert.equal(dormantAfterMs(handshakeMs), 15000, `handshake ${handshakeMs} ms`);
   }
   assert.equal(DORMANT_AFTER_MS, 15000);
+});
+
+// --- terminalGpu: one terminal's WebGL addon -----------------------------------
+// The two renderers measure a different cell, so a grid fitted under one
+// overflows the body under the other: each change of renderer asks for a refit.
+
+test("terminalGpu asks for a refit when the renderer changes, and only then", () => {
+  const saved = { WebglAddon: globalThis.WebglAddon, navigator: Object.getOwnPropertyDescriptor(globalThis, "navigator") };
+  globalThis.WebglAddon = {
+    WebglAddon: class {
+      onContextLoss() {}
+      dispose() {}
+    },
+  };
+  Object.defineProperty(globalThis, "navigator", { value: { vendor: "Google Inc." }, configurable: true });
+  try {
+    const term = { element: { querySelectorAll: () => [] }, loadAddon() {} };
+    let refits = 0;
+    const { useGpu, dropGpu } = terminalGpu(term, () => (refits += 1));
+    useGpu();
+    useGpu();
+    assert.equal(refits, 1, "to WebGL once; a second useGpu changes nothing");
+    dropGpu();
+    dropGpu();
+    assert.equal(refits, 2, "back to DOM once; a second dropGpu changes nothing");
+  } finally {
+    globalThis.WebglAddon = saved.WebglAddon;
+    if (saved.navigator) Object.defineProperty(globalThis, "navigator", saved.navigator);
+    else delete globalThis.navigator;
+  }
 });

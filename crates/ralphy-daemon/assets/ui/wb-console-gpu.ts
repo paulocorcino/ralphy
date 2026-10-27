@@ -173,7 +173,11 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
 // hold a context (`rebalanceGpu`, wb-console-gpu.ts) and calls `useGpu`/`dropGpu`.
 // `terminalGpu(term)` holds the addon of one terminal; `wb-console-terminal.ts`
 // calls it once per terminal (#621).
-export function terminalGpu(term: XtermTerminal) {
+// The two renderers measure a different cell (Chromium at 1600 px: 8 px with
+// WebGL, 8.24 px with DOM), so the grid fitted under one renderer overflows the
+// body under the other. `switched` runs after each change of renderer, for a
+// refit: a change with no resize of the body is reported by nothing else.
+export function terminalGpu(term: XtermTerminal, switched: () => void) {
   let webgl: XtermWebglAddon | null = null;
   // The canvases the addon added, so `dropGpu` asks only them for a context:
   // `getContext` on a canvas that has none would create one.
@@ -195,7 +199,9 @@ export function terminalGpu(term: XtermTerminal) {
       gpuCanvases = [...term.element.querySelectorAll("canvas")].filter((c) => !before.has(c));
     } catch {
       gpuBroken = true;
+      return;
     }
+    switched();
   }
   // MEASURED: disposing the addon does not free the browser's slot until the
   // context is collected; an explicit `loseContext` does (14 contexts, 8
@@ -209,6 +215,7 @@ export function terminalGpu(term: XtermTerminal) {
     gpuCanvases = [];
     addon.dispose();
     for (const c of canvases) c.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+    switched();
   }
   return { useGpu, dropGpu };
 }
