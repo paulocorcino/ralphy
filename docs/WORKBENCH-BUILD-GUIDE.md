@@ -171,9 +171,12 @@ checks it.
 ### xterm (`@xterm/xterm` 6.0.0)
 
 `vendor/xterm.js` and `xterm.css` are `@xterm/xterm` 6.0.0. The addons are
-`@xterm/addon-fit` 0.11.0, `@xterm/addon-web-links` 0.12.0 and
-`@xterm/addon-webgl` 0.19.0, copied from the `lib/` directory of each tarball
-under the old `xterm-addon-*.js` names. OSC 52 is written by hand in
+`@xterm/addon-fit` 0.11.0, `@xterm/addon-unicode11` 0.9.0,
+`@xterm/addon-web-links` 0.12.0 and `@xterm/addon-webgl` 0.19.0, copied from
+the `lib/` directory of each tarball under the old `xterm-addon-*.js` names.
+The console turns on the Unicode 11 width table. xterm's default table
+(Unicode 6) gives an emoji such as U+2705 one column, but an agent counts two,
+so each later write on that line lands one column off. OSC 52 is written by hand in
 `wb-console-paste.ts` (`term.parser.registerOscHandler(52, …)`) instead
 of with `@xterm/addon-clipboard`.
 

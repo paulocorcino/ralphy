@@ -171,12 +171,20 @@ export function createTerminal(deps: TerminalDeps) {
     // Option+drag selects on macOS while a TUI owns the mouse; Shift+drag is
     // xterm's default elsewhere (`shouldForceSelection`).
     term.options.macOptionClickForcesSelection = true;
+    // The width table of Unicode 11, as the agents and the daemon's screen
+    // count it: with xterm's default table (Unicode 6) an emoji such as U+2705
+    // takes one column instead of two, and every later write on its line lands
+    // one column off. The `unicode` API is proposed in @xterm/xterm 6.0.0.
+    term.options.allowProposedApi = true;
+    term.loadAddon(new Unicode11Addon.Unicode11Addon());
+    term.unicode.activeVersion = "11";
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
     term.open(body);
     showScrollbarWhileNeeded(term);
-    // The GPU addon: `terminalGpu`, wb-console-gpu.ts.
-    const { useGpu, dropGpu } = terminalGpu(term);
+    // The GPU addon: `terminalGpu`, wb-console-gpu.ts. A change of renderer
+    // refits; the page changes it only after this function returns.
+    const { useGpu, dropGpu } = terminalGpu(term, () => sizing.fit.fit());
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
     // The touch gesture and the line selection: wb-console-touch.ts.
