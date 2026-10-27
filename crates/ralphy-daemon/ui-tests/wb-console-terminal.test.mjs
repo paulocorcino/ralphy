@@ -32,9 +32,25 @@ function fakePage() {
       this.written = [];
       this.resets = 0;
       this.parser = { registerOscHandler: (code, handler) => this.osc.set(code, handler) };
+      // xterm's width tables: only "6" is built in, an addon registers more,
+      // and choosing one that is not registered throws, as xterm does.
+      const versions = new Set(["6"]);
+      let active = "6";
+      this.unicode = {
+        register: (version) => versions.add(version),
+        get activeVersion() {
+          return active;
+        },
+        set activeVersion(version) {
+          if (!versions.has(version)) throw new Error(`unknown Unicode version "${version}"`);
+          active = version;
+        },
+      };
       terminals.push(this);
     }
-    loadAddon() {}
+    loadAddon(addon) {
+      addon.activate?.(this);
+    }
     open(body) {
       this.element = body;
     }
@@ -70,6 +86,13 @@ function fakePage() {
     Terminal: FakeTerminal,
     FitAddon: { FitAddon: class { fit() {} } },
     WebLinksAddon: { WebLinksAddon: class {} },
+    Unicode11Addon: {
+      Unicode11Addon: class {
+        activate(term) {
+          term.unicode.register("11");
+        }
+      },
+    },
     ResizeObserver: class {
       observe() {}
       disconnect() {}
@@ -114,6 +137,17 @@ test("a terminal takes its font size from deps, and its socket dials the deps or
       page.sockets[0].url.startsWith("wss://example.test/ws/session?"),
       page.sockets[0].url,
     );
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+test("a terminal counts character widths by Unicode 11, so an emoji takes two columns", () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { console: true });
+    assert.equal(page.terminals[0].unicode.activeVersion, "11");
     handle.dispose();
   } finally {
     page.restore();

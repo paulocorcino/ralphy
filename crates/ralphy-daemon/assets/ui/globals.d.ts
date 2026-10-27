@@ -150,7 +150,8 @@ interface XtermTerminal {
   textarea: HTMLTextAreaElement;
   rows: number;
   cols: number;
-  options: { fontSize: number; macOptionClickForcesSelection: boolean };
+  options: { fontSize: number; macOptionClickForcesSelection: boolean; allowProposedApi: boolean };
+  unicode: { activeVersion: string };
   modes: { mouseTrackingMode: string; applicationCursorKeysMode: boolean };
   buffer: { active: { type: string; viewportY: number } };
   parser: { registerOscHandler(ident: number, handler: (data: string) => boolean): XtermDisposable };
@@ -614,6 +615,7 @@ declare var Terminal: new (options: { convertEol: boolean; theme: { [color: stri
 declare var FitAddon: { FitAddon: new () => XtermFitAddon };
 declare var WebglAddon: { WebglAddon: new () => XtermWebglAddon };
 declare var WebLinksAddon: { WebLinksAddon: new () => XtermAddon };
+declare var Unicode11Addon: { Unicode11Addon: new () => XtermAddon };
 /** The vendored Wunderbaum (`vendor/wunderbaum`). */
 declare var mar10: {
   Wunderbaum: {
