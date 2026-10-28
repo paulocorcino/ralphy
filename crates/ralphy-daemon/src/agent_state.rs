@@ -15,9 +15,10 @@
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
-use ralphy_proc_util::hook_form::HookCommand;
+use ralphy_proc_util::hook_form::{HookCheck, HookCommand};
 use serde_json::Value;
 
 use crate::session::Agent;
@@ -289,10 +290,82 @@ pub fn console_settings_json(hook: &HookCommand) -> String {
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
+/// The result of the hook check this daemon ran at start.
+static START_CHECK: OnceLock<HookCheck> = OnceLock::new();
+
+/// Run the Claude console hook command, in the form a console would get,
+/// once with a test event, and keep the result. Blocking: the daemon runs it
+/// on a background thread at start.
+pub fn run_start_check() {
+    let claude = Agent::Claude
+        .locate_program()
+        .unwrap_or_else(|| PathBuf::from("claude"));
+    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+    let hook = ralphy_proc_util::hook_form::claude_hook(&claude, &exe, &["hook", "status"]);
+    let home = ralphy_proc_util::home_dir();
+    let result = start_check(&hook, home.as_deref());
+    // A second call keeps the first result: the check runs once per daemon.
+    let _first = START_CHECK.set(result);
+}
+
+/// Run the check and log one line when it fails.
+fn start_check(hook: &HookCommand, home: Option<&Path>) -> HookCheck {
+    let result =
+        ralphy_proc_util::hook_form::check(hook, ralphy_proc_util::hook_form::CHECK_LIMIT, home);
+    if let HookCheck::Failed { cause } = &result {
+        tracing::warn!("the Claude console hook command failed its check: {cause}");
+    }
+    result
+}
+
+/// The cause of a failed start check, or `None` when it passed, was not
+/// run, or has not finished.
+pub fn start_check_failure() -> Option<String> {
+    match START_CHECK.get()? {
+        HookCheck::Failed { cause } => Some(cause.clone()),
+        HookCheck::Ok | HookCheck::NotChecked { .. } => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ralphy_proc_util::hook_form::hook_for_version;
+
+    #[test]
+    fn the_start_check_runs_in_the_background_and_logs_one_line() {
+        let serve: String = include_str!("serve.rs")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .replace(",)", ")");
+        let call = "spawn_blocking(crate::agent_state::run_start_check)";
+        let start = serve
+            .find(call)
+            .expect("serve starts the check with spawn_blocking");
+        let statement = serve[start..].split(';').next().unwrap_or("");
+        assert!(
+            !statement.contains(".await"),
+            "the check is not awaited: {statement}"
+        );
+
+        let home = tempfile::tempdir().expect("temp dir");
+        let missing = home.path().join("no-such-ralphy");
+        let hook = hook_for_version(Some("2.1.139 (Claude Code)"), &missing, &["hook", "status"]);
+        let log_path = home.path().join("daemon.log");
+        let log_file = std::fs::File::create(&log_path).expect("create the log");
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || log_file.try_clone().expect("a second log handle"))
+            .with_ansi(false)
+            .finish();
+        let got =
+            tracing::subscriber::with_default(subscriber, || start_check(&hook, Some(home.path())));
+        assert!(matches!(got, HookCheck::Failed { .. }), "{got:?}");
+        let log = std::fs::read_to_string(&log_path).expect("read the log");
+        let warnings = log.lines().filter(|l| l.contains("WARN")).count();
+        assert_eq!(warnings, 1, "{log}");
+        assert!(log.contains("no-such-ralphy"), "{log}");
+    }
 
     /// The adapter's fixture, by path: the ONE file both folds are pinned by
     /// (ADR-0059 §5). Moving or editing it reds both crates.

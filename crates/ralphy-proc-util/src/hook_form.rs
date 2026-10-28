@@ -200,6 +200,106 @@ fn spawn_version(bin: &Path, limit: Duration) -> Option<String> {
     (succeeded && !line.is_empty()).then(|| line.to_string())
 }
 
+/// How long the start check lets the hook program run.
+pub const CHECK_LIMIT: Duration = Duration::from_secs(10);
+
+/// The test event the start check sends on the hook's stdin.
+const CHECK_EVENT: &str =
+    r#"{"hook_event_name":"SessionStart","session_id":"ralphy-start-check","source":"startup"}"#;
+
+/// What one run of a hook command with a test event showed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HookCheck {
+    /// The program exited 0 and wrote a status line.
+    Ok,
+    /// The program did not run, failed, or wrote no line.
+    Failed { cause: String },
+    /// The command was not run.
+    NotChecked { reason: String },
+}
+
+/// Run `cmd` once with a test `SessionStart` event and a temporary status
+/// file. It passes only on exit 0 AND a written line. A shell form is not
+/// run. A failure names a `disableAllHooks` file under `home` first.
+pub fn check(cmd: &HookCommand, limit: Duration, home: Option<&Path>) -> HookCheck {
+    if cmd.form == HookForm::Shell {
+        return HookCheck::NotChecked {
+            reason: cmd.reason.clone(),
+        };
+    }
+    match run_check(cmd, limit) {
+        Ok(()) => HookCheck::Ok,
+        Err(cause) => HookCheck::Failed {
+            cause: match disable_all_hooks(home, None) {
+                Some(file) => format!(
+                    "{} sets disableAllHooks, so Claude Code runs no hook; {cause}",
+                    file.display()
+                ),
+                None => cause,
+            },
+        },
+    }
+}
+
+fn run_check(cmd: &HookCommand, limit: Duration) -> Result<(), String> {
+    let program = cmd.program.display();
+    let dir = tempfile::tempdir().map_err(|e| format!("could not make a temporary folder: {e}"))?;
+    let status_file = dir.path().join("status.jsonl");
+    let mut command = Command::new(&cmd.program);
+    command
+        .args(&cmd.args)
+        .env("RALPHY_STATUS_FILE", &status_file)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    crate::no_window(&mut command);
+    crate::own_process_group(&mut command);
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("{program} did not start: {e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // A hook that exits before it reads its stdin closes the pipe; the
+        // exit code and the status file still decide the check.
+        let _write = std::io::Write::write_all(&mut stdin, CHECK_EVENT.as_bytes());
+    }
+    let status = wait_until(&mut child, limit)
+        .ok_or_else(|| format!("{program} ran longer than {} s", limit.as_secs()))?;
+    if !status.success() {
+        return Err(match status.code() {
+            Some(code) => format!("{program} exited with code {code}"),
+            None => format!("{program} was stopped by a signal"),
+        });
+    }
+    let written = std::fs::read_to_string(&status_file)
+        .is_ok_and(|text| text.lines().any(|l| !l.trim().is_empty()));
+    if written {
+        Ok(())
+    } else {
+        Err(format!("{program} wrote no status line"))
+    }
+}
+
+/// The exit status of `child`, or `None` after `limit` (its tree is then
+/// killed).
+fn wait_until(
+    child: &mut std::process::Child,
+    limit: Duration,
+) -> Option<std::process::ExitStatus> {
+    let started = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) if started.elapsed() < limit => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            _ => {
+                crate::kill_tree(child);
+                return None;
+            }
+        }
+    }
+}
+
 /// The first of the user, project and local project settings files that sets
 /// `disableAllHooks` to `true`. Claude Code then runs no hook, so no proof
 /// can arrive.

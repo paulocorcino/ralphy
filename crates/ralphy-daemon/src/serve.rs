@@ -62,6 +62,11 @@ pub(crate) async fn serve(
     // Resolve the own binary now, while it is still the file this daemon
     // runs: a later first read can name a file replaced since.
     crate::dispatch::ralphy_exe();
+    // The hook check runs the hook program and may take seconds, so it is
+    // not awaited: the listener starts without it.
+    drop(tokio::task::spawn_blocking(
+        crate::agent_state::run_start_check,
+    ));
     if let Some(dir) = store.as_deref() {
         write_pidfile(dir);
     }
