@@ -59,6 +59,9 @@ pub(crate) async fn serve(
         );
     }
 
+    // Resolve the own binary now, while it is still the file this daemon
+    // runs: a later first read can name a file replaced since.
+    crate::dispatch::ralphy_exe();
     if let Some(dir) = store.as_deref() {
         write_pidfile(dir);
     }
