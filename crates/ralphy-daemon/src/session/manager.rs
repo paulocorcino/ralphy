@@ -92,9 +92,11 @@ impl ManagedSession {
 
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
     /// the single writer and a concurrent `close` do not race; the lock is held
-    /// only to queue the bytes, never for the PTY write itself.
+    /// only to queue the bytes, never for the PTY write itself. The first
+    /// write that is the operator's input starts the silence clock; a reply
+    /// the terminal sent by itself does not.
     fn write(&self, bytes: &[u8]) -> Result<()> {
-        if !bytes.is_empty() {
+        if !bytes.is_empty() && !crate::agent_state::is_terminal_report(bytes) {
             self.first_input
                 .lock()
                 .expect("first_input mutex")

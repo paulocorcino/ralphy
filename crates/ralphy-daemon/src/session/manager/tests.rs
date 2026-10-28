@@ -340,7 +340,8 @@ async fn a_console_that_becomes_silent_logs_one_line() {
     manager.close(id);
 }
 
-/// The silence clock starts at the first write that carries bytes.
+/// The silence clock starts at the first write that carries the operator's
+/// input, not at a reply the terminal sent by itself.
 #[tokio::test]
 async fn the_silence_clock_starts_at_the_first_input() {
     let manager = Arc::new(SessionManager::new());
@@ -349,6 +350,8 @@ async fn the_silence_clock_starts_at_the_first_input() {
     let first_input = || *sess.first_input.lock().expect("first_input mutex");
     att.write(b"").expect("an empty write");
     assert_eq!(first_input(), None, "an empty write is no input");
+    att.write(b"\x1b[12;40R").expect("a cursor report");
+    assert_eq!(first_input(), None, "a terminal reply is no input");
     let before = SystemTime::now();
     att.write(b"x").expect("a write");
     let after = SystemTime::now();

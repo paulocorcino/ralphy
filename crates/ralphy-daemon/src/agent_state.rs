@@ -109,6 +109,35 @@ pub fn silence(
     (waited > SILENT_AFTER).then(|| CLOCK_REASON.to_string())
 }
 
+/// The final bytes a terminal reply ends with: the cursor position (`R`),
+/// the device attributes (`c`), a status report (`n`), a mode report (`y`)
+/// and a focus change (`I`, `O`). A key such as an arrow ends with another
+/// byte.
+const REPLY_FINALS: &[u8] = b"RcnyIO";
+
+/// Whether `bytes` holds only terminal replies: the answers the browser
+/// terminal sends by itself to a query of the child, such as the cursor
+/// position `ESC[12;40R` or the device attributes `ESC[?1;2c`. Such a write
+/// is not the operator's input, so it does not start the silence clock.
+pub fn is_terminal_report(bytes: &[u8]) -> bool {
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let Some(len) = reply_len(rest) else {
+            return false;
+        };
+        rest = &rest[len..];
+    }
+    !bytes.is_empty()
+}
+
+/// The length of the terminal reply at the start of `bytes`: `ESC [`, the
+/// parameter and intermediate bytes, and a final byte of [`REPLY_FINALS`].
+fn reply_len(bytes: &[u8]) -> Option<usize> {
+    let body = bytes.strip_prefix(b"\x1b[")?;
+    let end = body.iter().position(|b| !(0x20..=0x3f).contains(b))?;
+    REPLY_FINALS.contains(&body[end]).then_some(end + 3)
+}
+
 // The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
 // copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
 // test below holds the two folds equal.
@@ -507,6 +536,24 @@ mod tests {
             None,
             "no hooks, no silence"
         );
+    }
+
+    /// A write the terminal sends by itself is not input; a key is.
+    #[test]
+    fn terminal_reports_are_told_from_keys() {
+        for (bytes, report) in [
+            (&b"\x1b[12;40R"[..], true),
+            (b"\x1b[?1;2c", true),
+            (b"\x1b[?1;2c\x1b[12;40R", true),
+            (b"\x1b[I", true),
+            (b"hello", false),
+            (b"\x1b[B\r", false),
+            (b"\x1b[B", false),
+            (b"\x1b[12;40", false),
+            (b"", false),
+        ] {
+            assert_eq!(is_terminal_report(bytes), report, "{bytes:?}");
+        }
     }
 
     /// Transitions only — but every folded line is ACTIVITY (§6's clock), and
