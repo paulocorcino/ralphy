@@ -277,3 +277,39 @@ pub(crate) fn session_routes(s: &RouterShared) -> Router {
             }),
         )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A relaying daemon parses a peer's row and sends it on: the silent
+    /// block keeps its source and reason, and gains no state.
+    #[test]
+    fn a_silent_agent_block_survives_the_relay() {
+        let row = HostedSessionInfo {
+            id: 3,
+            repo: "owner/r".to_string(),
+            agent: "claude".to_string(),
+            kind: "agent".to_string(),
+            started_at: 1,
+            daemon_id: "d".to_string(),
+            environment: "wsl".to_string(),
+            name: None,
+            checkout: None,
+            record: None,
+            agent_state: Some(agent_state::AgentState::silent(
+                "the hook did not start".to_string(),
+                std::time::SystemTime::UNIX_EPOCH,
+            )),
+        };
+        let wire = serde_json::to_string(&row).expect("serialize");
+        let back: HostedSessionInfo = serde_json::from_str(&wire).expect("parse");
+        let again: serde_json::Value =
+            serde_json::to_value(&back).expect("serialize the parsed row");
+        let block = &again["agent_state"];
+        assert_eq!(block["source"], "silent", "{again}");
+        assert_eq!(block["reason"], "the hook did not start", "{again}");
+        assert_eq!(block["since"], "1970-01-01T00:00:00Z", "{again}");
+        assert!(block.get("state").is_none(), "{again}");
+    }
+}

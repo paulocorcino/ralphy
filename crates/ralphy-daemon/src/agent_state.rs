@@ -47,13 +47,66 @@ pub struct Observed {
 
 /// The wire shape on `/api/sessions` and the fleet: `state` is one of
 /// `working`, `waiting`, `done`, `blocked`, `unknown`; `since` the hook's
-/// timestamp; `detail` what a `waiting` agent asks.
+/// timestamp; `detail` what a `waiting` agent asks. A silent console
+/// (docs/adr/0059 A2) has no `state`: `source` is `silent`, `reason` says
+/// why, and `since` is when the silence began.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentState {
-    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
     pub since: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl AgentState {
+    /// The block of a silent console: no state, the reason, and when the
+    /// silence began (RFC 3339, UTC).
+    pub fn silent(reason: String, since: SystemTime) -> Self {
+        AgentState {
+            state: None,
+            since: chrono::DateTime::<chrono::Utc>::from(since)
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            detail: None,
+            source: Some("silent".to_string()),
+            reason: Some(reason),
+        }
+    }
+}
+
+/// How long a console with hooks may go without a hook line after the
+/// operator's first input before it is silent (docs/adr/0059 A2).
+pub const SILENT_AFTER: Duration = Duration::from_secs(30);
+
+/// The reason of a console silent by the clock.
+const CLOCK_REASON: &str = "No hook event reached Ralphy in the 30 seconds after your first input, so Ralphy cannot see what this agent is doing.";
+
+/// The silence rule (docs/adr/0059 A2): the reason a console is silent, or
+/// `None` when it is not. Only a console whose state comes from hooks can be
+/// silent, and the first hook line ends the silence for good. A failed start
+/// check makes it silent at once; otherwise it is silent once more than
+/// [`SILENT_AFTER`] passed since the first input with no line.
+pub fn silence(
+    source: StateSource,
+    first_input: Option<SystemTime>,
+    first_line: Option<SystemTime>,
+    start_failure: Option<&str>,
+    now: SystemTime,
+) -> Option<String> {
+    if source != StateSource::Hooks || first_line.is_some() {
+        return None;
+    }
+    if let Some(cause) = start_failure {
+        return Some(format!(
+            "The hook command failed when the daemon started: {cause}"
+        ));
+    }
+    let waited = now.duration_since(first_input?).ok()?;
+    (waited > SILENT_AFTER).then(|| CLOCK_REASON.to_string())
 }
 
 // The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
@@ -127,9 +180,11 @@ pub fn render(obs: &Observed, now: SystemTime) -> AgentState {
             .duration_since(obs.seen)
             .is_ok_and(|age| age > STALE_AFTER);
     AgentState {
-        state: if stale { "unknown" } else { obs.state }.to_string(),
+        state: Some(if stale { "unknown" } else { obs.state }.to_string()),
         since: obs.since.clone(),
         detail: obs.detail.clone(),
+        source: None,
+        reason: None,
     }
 }
 
@@ -405,14 +460,52 @@ mod tests {
         };
         let fresh = t0 + STALE_AFTER - Duration::from_secs(1);
         let old = t0 + STALE_AFTER + Duration::from_secs(1);
-        assert_eq!(render(&obs("working"), fresh).state, "working");
-        assert_eq!(render(&obs("working"), old).state, "unknown");
-        assert_eq!(render(&obs("waiting"), old).state, "waiting");
-        assert_eq!(render(&obs("done"), old).state, "done");
+        assert_eq!(
+            render(&obs("working"), fresh).state.as_deref(),
+            Some("working")
+        );
+        assert_eq!(
+            render(&obs("working"), old).state.as_deref(),
+            Some("unknown")
+        );
+        assert_eq!(
+            render(&obs("waiting"), old).state.as_deref(),
+            Some("waiting")
+        );
+        assert_eq!(render(&obs("done"), old).state.as_deref(), Some("done"));
         // A clock that went backwards is not an age.
         assert_eq!(
-            render(&obs("working"), t0 - Duration::from_secs(5)).state,
-            "working"
+            render(&obs("working"), t0 - Duration::from_secs(5))
+                .state
+                .as_deref(),
+            Some("working")
+        );
+    }
+
+    /// The silence rule, one row per case.
+    #[test]
+    fn the_silence_rule_decides_each_case() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let ago = |s: u64| Some(now - Duration::from_secs(s));
+        let hooks = StateSource::Hooks;
+        assert_eq!(silence(hooks, None, None, None, now), None, "no input");
+        assert_eq!(silence(hooks, ago(29), None, None, now), None, "29 s");
+        assert_eq!(
+            silence(hooks, ago(31), None, None, now).as_deref(),
+            Some(CLOCK_REASON),
+            "31 s"
+        );
+        assert_eq!(silence(hooks, ago(31), ago(1), None, now), None, "a line");
+        let start = silence(hooks, None, None, Some("boom: not found"), now)
+            .expect("a failed start check is silent at once");
+        assert_eq!(
+            start,
+            "The hook command failed when the daemon started: boom: not found"
+        );
+        assert_eq!(
+            silence(StateSource::None, ago(31), None, None, now),
+            None,
+            "no hooks, no silence"
         );
     }
 

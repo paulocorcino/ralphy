@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +14,7 @@ use tokio::sync::{broadcast, watch};
 use super::screen;
 use super::{EndReason, EvictToken, Session, SessionId, SessionInfo, SessionSpec};
 
+mod agent_status;
 mod kept;
 mod pump;
 mod record;
@@ -49,7 +51,18 @@ struct ManagedSession {
     /// `working` that ages into `unknown` changes what is shown with no new
     /// observation, so the change is measured against this, not against the
     /// observation.
-    shown: Mutex<Option<(String, Option<String>)>>,
+    shown: Mutex<Option<crate::agent_state::AgentState>>,
+    /// The time of the operator's first input with at least one byte: the
+    /// start of the silence clock (docs/adr/0059 A2). Later writes do not
+    /// move it.
+    first_input: Mutex<Option<SystemTime>>,
+    /// When the tick first read a hook line; once set, the console is never
+    /// silent again.
+    first_line: Mutex<Option<SystemTime>>,
+    /// The silence reason and when the silence began, while it lasts.
+    silent: Mutex<Option<(String, SystemTime)>>,
+    /// Whether this console already logged that it became silent.
+    logged_silent: AtomicBool,
 }
 
 /// Who holds the writer slot: the bridge's eviction token, and the holder the
@@ -73,52 +86,20 @@ impl ManagedSession {
     /// through [`SessionManager::list_at`] without waiting 45 minutes.
     fn info_at(&self, now: SystemTime) -> SessionInfo {
         let mut info = self.info.clone();
-        info.agent_state = self
-            .agent_state
-            .lock()
-            .expect("agent_state mutex")
-            .as_ref()
-            .map(|o| crate::agent_state::render(o, now));
+        info.agent_state = self.shown_at(now);
         info
-    }
-
-    /// Read what the hooks appended since the last tick: keep the newest
-    /// transition, and on ANY folded line refresh the observation's `seen` —
-    /// a `working` that keeps producing `PreToolUse` lines is alive, and the
-    /// staleness clock must not age it into `unknown` (§6). Cheap when
-    /// nothing changed (an open, a seek, an empty read).
-    ///
-    /// Returns whether the state the list shows changed since the last tick:
-    /// its word or its detail, including a `working` that ages into `unknown`
-    /// (§6) with no new line. A refreshed `seen` alone does not count.
-    fn poll_status(&self, now: SystemTime) -> bool {
-        let Some(status) = &self.status else {
-            return false;
-        };
-        let polled = status.tail.lock().expect("tail mutex").poll();
-        let mut slot = self.agent_state.lock().expect("agent_state mutex");
-        if let Some(last) = polled.transitions.into_iter().last() {
-            *slot = Some(last);
-        } else if polled.activity {
-            if let Some(obs) = slot.as_mut() {
-                obs.seen = now;
-            }
-        }
-        let shown_now = slot
-            .as_ref()
-            .map(|o| crate::agent_state::render(o, now))
-            .map(|r| (r.state, r.detail));
-        drop(slot);
-        let mut shown = self.shown.lock().expect("shown mutex");
-        let changed = *shown != shown_now;
-        *shown = shown_now;
-        changed
     }
 
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
     /// the single writer and a concurrent `close` do not race; the lock is held
     /// only to queue the bytes, never for the PTY write itself.
     fn write(&self, bytes: &[u8]) -> Result<()> {
+        if !bytes.is_empty() {
+            self.first_input
+                .lock()
+                .expect("first_input mutex")
+                .get_or_insert_with(SystemTime::now);
+        }
         self.session.lock().expect("session mutex").write(bytes)
     }
 
@@ -341,6 +322,10 @@ impl SessionManager {
             status,
             agent_state: Mutex::new(None),
             shown: Mutex::new(None),
+            first_input: Mutex::new(None),
+            first_line: Mutex::new(None),
+            silent: Mutex::new(None),
+            logged_silent: AtomicBool::new(false),
         });
         self.sessions
             .lock()
