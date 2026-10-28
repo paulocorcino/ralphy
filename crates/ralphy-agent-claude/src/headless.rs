@@ -17,45 +17,48 @@ use crate::auth::{
     is_claude_auth_error, is_limit_text, parse_reset_hhmm, transcript_limit, CLAUDE_AUTH_ERROR_MSG,
 };
 use crate::plan::materialize_plugin;
+use crate::settings::SettingsFile;
+use crate::stream::{stream_text, user_message};
 use crate::ClaudeAgent;
 
-fn headless_args(
+pub(crate) fn headless_args(
     settings: &Path,
     plugin_dir: &Path,
     model: &str,
     effort: Option<&str>,
 ) -> Vec<String> {
-    let mut args = vec![
-        "-p".into(),
-        "--dangerously-skip-permissions".into(),
+    let mut args = vec!["-p".into(), "--dangerously-skip-permissions".into()];
+    args.extend(crate::STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
+    args.extend([
         "--settings".into(),
         settings.to_string_lossy().into_owned(),
         "--plugin-dir".into(),
         plugin_dir.to_string_lossy().into_owned(),
         "--model".into(),
         model.into(),
-    ];
+    ]);
     args.extend(crate::effort_args(effort));
     args
 }
 
 impl ClaudeAgent {
-    /// Spawn a single `claude -p` call for headless execution, piping
-    /// `PROMPT_EXECUTE` on stdin and draining stdout/stderr via reader threads
+    /// Spawn a single `claude -p` call for headless execution, writing
+    /// `PROMPT_EXECUTE` as one stream-json user message on stdin once the
+    /// session's `SessionStart` line proves its hooks run, and and draining stdout/stderr via reader threads
     /// to avoid pipe-buffer deadlock. Polls `try_wait` until `timeout` fires;
     /// kills the child on expiry and returns `exited = false`.
     #[allow(clippy::too_many_arguments)]
     fn run_headless_call(
         &self,
         cmd_dir: &Path,
-        settings: &Path,
+        settings: &SettingsFile,
         plugin_dir: &Path,
         model: &str,
         effort: Option<&str>,
         timeout: Duration,
         call_index: u32,
     ) -> Result<(bool, String)> {
-        let args = headless_args(settings, plugin_dir, model, effort);
+        let args = headless_args(&settings.path, plugin_dir, model, effort);
 
         let mut cmd = Command::new(crate::interactive::resolve_claude_binary());
         cmd.args(&args)
@@ -67,6 +70,8 @@ impl ClaudeAgent {
         // watcher folds and emits until the call returns.
         let status = crate::status::Watcher::start(&self.run_dir);
         cmd.env(crate::status::STATUS_ENV, status.path());
+        // A shell form is refused here, before the spawn (ADR-0072 D6).
+        let gate = crate::status::proof_gate(settings, status.path().to_path_buf(), cmd_dir)?;
 
         // Delegate the OS-level spawn/drain/poll/kill/collect and log-persist
         // plumbing to the shared runner. Claude's `exited` ("the child exited
@@ -74,18 +79,23 @@ impl ClaudeAgent {
         // runner's `exited_cleanly` (a *successful* exit); the D10 auth bail stays
         // inline here.
         let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
-        let r = HeadlessCall::new(cmd, PROMPT_EXECUTE, timeout, &log_path)
+        let prompt = user_message(PROMPT_EXECUTE);
+        let r = HeadlessCall::new(cmd, &prompt, timeout, &log_path)
+            .hold_prompt(gate)
             .idle_minutes(self.exec.idle_minutes_for(false))
             .degraded_line(is_headless_api_degraded)
             .run()
             .context("failed to spawn the `claude` CLI for headless exec")?;
         status.stop();
 
-        if is_claude_auth_error(&r.log) {
+        // The detectors read the text of the stream; the raw log stays on
+        // disk as it came.
+        let text = stream_text(&r.log);
+        if is_claude_auth_error(&text) {
             bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
         }
 
-        Ok((!r.timed_out, r.log))
+        Ok((!r.timed_out, text))
     }
 
     /// Drive the issue with a `claude -p` loop (headless mode). Mirrors the
@@ -99,7 +109,7 @@ impl ClaudeAgent {
         std::fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
             .context("writing .ralphy/exec.md")?;
 
-        let settings_path = self.write_exec_settings()?.path;
+        let settings = self.write_exec_settings()?;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
         // Effort follows the model's precedence: operator flag wins, else the
@@ -134,7 +144,7 @@ impl ClaudeAgent {
             let before_sha = git::head_sha(ws.repo_root()).unwrap_or_default();
             let (exited, out) = self.run_headless_call(
                 ws.repo_root(),
-                &settings_path,
+                &settings,
                 &plugin_dir,
                 &exec_model,
                 exec_effort.as_deref(),
@@ -233,7 +243,11 @@ pub(crate) enum HeadlessReason {
 /// Extracts the done sentinel, blocked sentinel, and limit text into
 /// [`CompletionSignals`] and delegates the precedence ordering to the shared
 /// [`classify`] ladder (ADR-0023 D1/D2).
-fn classify_exec_call(out: &str, exited: bool, open_steps: usize) -> Option<HeadlessReason> {
+pub(crate) fn classify_exec_call(
+    out: &str,
+    exited: bool,
+    open_steps: usize,
+) -> Option<HeadlessReason> {
     let signals = CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(out) || open_steps == 0,
         blocked: ralphy_adapter_support::blocked_reason(out),

@@ -10,7 +10,9 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ralphy_adapter_support::{run_json_session, run_text_session, JsonSession, TextSession};
+use ralphy_adapter_support::{
+    run_json_session_held, run_text_session_held, JsonSession, PromptGate, TextSession,
+};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace,
@@ -21,7 +23,8 @@ use ralphy_core::PROMPT_CONSOLIDATE;
 
 use crate::auth::{is_claude_auth_error, CLAUDE_AUTH_ERROR_MSG};
 use crate::interactive::resolve_claude_binary;
-use crate::settings::write_task_settings;
+use crate::settings::{write_task_settings, SettingsFile};
+use crate::stream::{stream_text, user_message};
 use crate::usage::parse_plan_usage;
 
 /// Run a one-shot headless `claude -p` knowledge-consolidation session in
@@ -41,35 +44,32 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
-    let settings_path = write_task_settings(run_dir)?.path;
+    let settings = write_task_settings(run_dir)?;
 
     info!(?model, ?effort, "consolidating knowledge with claude -p");
     // Mirror the plan pass so the stdout stream carries the `result` event
     // `parse_plan_usage` reads; `stream-json` requires `--verbose`. `KNOWLEDGE.md`
     // is still written by the session, so the stdout format is free to change.
-    let args = task_args(
-        model,
-        effort,
-        &settings_path,
-        &["--output-format", "stream-json", "--verbose"],
-    );
-    let cmd = task_command(&args, ws.repo_root());
+    let args = task_args(model, effort, &settings.path);
+    let mut cmd = task_command(&args, ws.repo_root());
+    let gate = task_proof(&mut cmd, &settings, ws.repo_root())?;
 
     // Spawn, persist the log, bail on auth then timeout — the shared
     // `run_text_session` owns that exact tail (same messages, same order) and
     // returns the stdout stream `parse_plan_usage` reads. `KNOWLEDGE.md` is the
     // deliverable; the caller verifies it separately.
-    let log = run_text_session(
+    let log = run_text_session_held(
         TextSession {
             cmd,
-            prompt: PROMPT_CONSOLIDATE,
+            prompt: &user_message(PROMPT_CONSOLIDATE),
             timeout,
             log_path: &run_dir.join("consolidate.log"),
             spawn_err: "failed to spawn the `claude` CLI (is it installed and on PATH?)",
             auth_msg: CLAUDE_AUTH_ERROR_MSG,
             timeout_msg: "consolidation session hit the wall timeout",
         },
-        is_claude_auth_error,
+        gate,
+        task_auth_error,
     )?;
     Ok(parse_plan_usage(&log))
 }
@@ -88,20 +88,21 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    let settings_path = write_task_settings(neutral_cwd)?.path;
+    let settings = write_task_settings(neutral_cwd)?;
 
     let out_path = neutral_cwd.join("diagnosis.json");
     clear_stale_output(&out_path)?;
 
     info!(?model, ?effort, "diagnosing repo with claude -p");
-    let args = task_args(model, effort, &settings_path, &[]);
-    let cmd = task_command(&args, neutral_cwd);
+    let args = task_args(model, effort, &settings.path);
+    let mut cmd = task_command(&args, neutral_cwd);
+    let gate = task_proof(&mut cmd, &settings, neutral_cwd)?;
 
     let log_path = neutral_cwd.join("diagnose.log");
-    run_json_session(
+    run_json_session_held(
         JsonSession {
             cmd,
-            prompt: &build_diagnose_prompt(repo, &out_path),
+            prompt: &user_message(&build_diagnose_prompt(repo, &out_path)),
             timeout,
             log_path: &log_path,
             out_path: &out_path,
@@ -110,7 +111,8 @@ pub fn diagnose_repo(
             timeout_msg: "diagnosis session hit the wall timeout",
             missing_msg: "diagnosis session left no report",
         },
-        is_claude_auth_error,
+        gate,
+        task_auth_error,
         |raw| {
             serde_json::from_str(raw).with_context(|| {
                 format!(
@@ -139,7 +141,7 @@ pub fn draft_issues(
 ) -> Result<IssuesDraft> {
     let mode = req.mode;
     clear_stale_output(out_path)?;
-    let settings_path = write_task_settings(&repo.join(".ralphy"))?.path;
+    let settings = write_task_settings(&repo.join(".ralphy"))?;
 
     info!(
         ?model,
@@ -147,15 +149,16 @@ pub fn draft_issues(
         mode = mode.as_str(),
         "drafting issues with claude -p"
     );
-    let args = task_args(model, effort, &settings_path, &[]);
-    let cmd = task_command(&args, repo);
+    let args = task_args(model, effort, &settings.path);
+    let mut cmd = task_command(&args, repo);
+    let gate = task_proof(&mut cmd, &settings, repo)?;
 
     let prompt = build_init_issues_prompt(repo, mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
-    run_json_session(
+    run_json_session_held(
         JsonSession {
             cmd,
-            prompt: &prompt,
+            prompt: &user_message(&prompt),
             timeout,
             log_path: &log_path,
             out_path,
@@ -164,7 +167,8 @@ pub fn draft_issues(
             timeout_msg: "backlog → issues session hit the wall timeout",
             missing_msg: "issues session left no draft",
         },
-        is_claude_auth_error,
+        gate,
+        task_auth_error,
         |raw| {
             serde_json::from_str(raw).with_context(|| {
                 format!(
@@ -192,11 +196,12 @@ pub fn triage_issues(
     timeout: Duration,
 ) -> Result<TriageDraft> {
     clear_stale_output(out_path)?;
-    let settings_path = write_task_settings(&repo.join(".ralphy"))?.path;
+    let settings = write_task_settings(&repo.join(".ralphy"))?;
 
     info!(?model, ?effort, "triaging issues with claude -p");
-    let args = task_args(model, effort, &settings_path, &[]);
-    let cmd = task_command(&args, repo);
+    let args = task_args(model, effort, &settings.path);
+    let mut cmd = task_command(&args, repo);
+    let gate = task_proof(&mut cmd, &settings, repo)?;
 
     let prompt = format!(
         "{}{}{}",
@@ -205,10 +210,10 @@ pub fn triage_issues(
         req.attachments_manifest
     );
     let log_path = repo.join(".ralphy").join("triage.log");
-    run_json_session(
+    run_json_session_held(
         JsonSession {
             cmd,
-            prompt: &prompt,
+            prompt: &user_message(&prompt),
             timeout,
             log_path: &log_path,
             out_path,
@@ -217,7 +222,8 @@ pub fn triage_issues(
             timeout_msg: "triage session hit the wall timeout",
             missing_msg: "triage session left no draft",
         },
-        is_claude_auth_error,
+        gate,
+        task_auth_error,
         |raw| {
             serde_json::from_str(raw).with_context(|| {
                 format!(
@@ -229,13 +235,12 @@ pub fn triage_issues(
     )
 }
 
-/// The argv of a one-shot `claude -p` task. `extra` goes between the skip flag
-/// and `--settings`, the place the plan pass puts its output flags.
-fn task_args(
+/// The argv of a one-shot `claude -p` task. The prompt goes in as one
+/// stream-json user message, which needs the stream-json output too.
+pub(crate) fn task_args(
     model: Option<&str>,
     effort: Option<&str>,
     settings_path: &Path,
-    extra: &[&str],
 ) -> Vec<String> {
     let mut args: Vec<String> = Vec::new();
     if let Some(m) = model {
@@ -244,7 +249,7 @@ fn task_args(
     }
     args.push("-p".into());
     args.push("--dangerously-skip-permissions".into());
-    args.extend(extra.iter().map(|flag| flag.to_string()));
+    args.extend(crate::STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
     args.push("--settings".into());
     args.push(settings_path.to_string_lossy().into_owned());
     if let Some(e) = effort {
@@ -252,6 +257,27 @@ fn task_args(
         args.push(e.into());
     }
     args
+}
+
+/// Hand the task's child a fresh status file beside its settings file, and
+/// return the gate that holds the prompt until the file holds the session's
+/// `SessionStart` line. A shell form is refused here, before the spawn.
+fn task_proof<'a>(
+    cmd: &mut Command,
+    settings: &'a SettingsFile,
+    project: &'a Path,
+) -> Result<PromptGate<'a>> {
+    let status_file = settings.path.with_file_name(crate::status::STATUS_FILE);
+    std::fs::write(&status_file, b"")
+        .with_context(|| format!("resetting {}", status_file.display()))?;
+    cmd.env(crate::status::STATUS_ENV, &status_file);
+    crate::status::proof_gate(settings, status_file, project)
+}
+
+/// The auth check of a task: over the text of the stream and the stderr
+/// lines, never the raw event lines.
+fn task_auth_error(log: &str) -> bool {
+    is_claude_auth_error(&stream_text(log))
 }
 
 /// The `claude` command for a task: `args`, run in `cwd`, all three streams
@@ -288,29 +314,21 @@ mod tests {
     #[test]
     fn the_task_argv_keeps_its_flag_order() {
         let settings = Path::new("s.json");
-        assert_eq!(
-            task_args(None, None, settings, &[]),
-            [
-                "-p",
-                "--dangerously-skip-permissions",
-                "--settings",
-                "s.json"
-            ]
-        );
-        assert_eq!(
-            task_args(Some("opus"), Some("high"), settings, &["--verbose"]),
-            [
-                "--model",
-                "opus",
-                "-p",
-                "--dangerously-skip-permissions",
-                "--verbose",
-                "--settings",
-                "s.json",
-                "--effort",
-                "high"
-            ]
-        );
+        let stream = [
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+        ];
+        let mut bare = vec!["-p", "--dangerously-skip-permissions"];
+        bare.extend(stream);
+        bare.extend(["--settings", "s.json"]);
+        assert_eq!(task_args(None, None, settings), bare);
+        let mut full = vec!["--model", "opus", "-p", "--dangerously-skip-permissions"];
+        full.extend(stream);
+        full.extend(["--settings", "s.json", "--effort", "high"]);
+        assert_eq!(task_args(Some("opus"), Some("high"), settings), full);
     }
 
     #[test]

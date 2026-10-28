@@ -31,6 +31,7 @@ mod interactive;
 mod plan;
 mod settings;
 mod status;
+mod stream;
 mod tasks;
 mod usage;
 
@@ -54,6 +55,18 @@ pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issue
 /// agent at the embedded charter and the plan, and names the exit sentinel.
 pub(crate) const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.";
 
+/// The flags of a headless session whose prompt goes in as one stream-json
+/// user message: `--input-format stream-json` needs the stream-json output,
+/// and that output needs `--verbose` (M5 and M7 of
+/// `docs/research/claude-hook-probes-2026-10-28.md`).
+pub(crate) const STREAM_JSON_ARGS: [&str; 5] = [
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+];
+
 fn effort_args(effort: Option<&str>) -> Vec<String> {
     effort
         .map(|value| vec!["--effort".into(), value.into()])
@@ -70,12 +83,9 @@ fn planning_args(
     if let Some(model) = model {
         args.extend(["--model".into(), model.into()]);
     }
+    args.extend(["-p".into(), "--dangerously-skip-permissions".into()]);
+    args.extend(STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
     args.extend([
-        "-p".into(),
-        "--dangerously-skip-permissions".into(),
-        "--output-format".into(),
-        "stream-json".into(),
-        "--verbose".into(),
         "--settings".into(),
         settings_path.to_string_lossy().into_owned(),
         "--plugin-dir".into(),
@@ -192,8 +202,12 @@ impl Agent for ClaudeAgent {
 
         // The plan session gets the agent-state hooks and no guard (ADR-0059
         // §4): a planner stuck at a question was invisible until the watchdog.
-        let settings_path = self.write_plan_settings()?.path;
+        let settings = self.write_plan_settings()?;
+        let settings_path = &settings.path;
         let status = status::Watcher::start(&self.run_dir);
+        // The prompt waits for the session's `SessionStart` line; a shell
+        // form is refused here, before the spawn (ADR-0072 D6).
+        let gate = status::proof_gate(&settings, status.path().to_path_buf(), ws.repo_root())?;
 
         // Provision the reviewer/staged-plan skills the prompt depends on, scoped
         // to this run via --plugin-dir (no reliance on globally-installed skills).
@@ -209,7 +223,7 @@ impl Agent for ClaudeAgent {
         let args = planning_args(
             self.plan_model.as_deref(),
             self.plan_effort.as_deref(),
-            &settings_path,
+            settings_path,
             &plugin_dir,
         );
 
@@ -238,12 +252,14 @@ impl Agent for ClaudeAgent {
         // child on the operator's stop (docs/adr/0054); the plan has no wall clock
         // of its own, so the horizon keeps it unbounded as before.
         let log_path = self.run_dir.join("plan.log");
+        let prompt = stream::user_message(ralphy_adapter_support::PLAN_CHARTER);
         let run = HeadlessCall::new(
             cmd,
-            ralphy_adapter_support::PLAN_CHARTER,
+            &prompt,
             ralphy_core::UNBOUNDED_ISSUE_HORIZON,
             &log_path,
         )
+        .hold_prompt(gate)
         .run()
         .context("running the `claude` CLI to plan (is it installed and on PATH?)")?;
         status.stop();
@@ -356,6 +372,62 @@ mod tests {
     fn charter_and_prompt_name_the_done_sentinel() {
         assert!(EXEC_CHARTER.contains(ralphy_adapter_support::DONE_SENTINEL));
         assert!(PROMPT_EXECUTE.contains(ralphy_adapter_support::DONE_SENTINEL));
+    }
+
+    #[test]
+    fn every_headless_argv_holds_its_prompt() {
+        let (settings, plugin) = (Path::new("s.json"), Path::new("plugin"));
+        let task = tasks::task_args(None, None, settings);
+        // Consolidate, diagnose, draft and triage build one argv.
+        let argvs = [
+            ("plan", planning_args(None, None, settings, plugin)),
+            (
+                "execute -p",
+                headless::headless_args(settings, plugin, "sonnet", None),
+            ),
+            ("consolidate", task.clone()),
+            ("diagnose", task.clone()),
+            ("draft", task.clone()),
+            ("triage", task),
+        ];
+        for (name, argv) in argvs {
+            for flags in [
+                ["--input-format", "stream-json"],
+                ["--output-format", "stream-json"],
+            ] {
+                assert!(argv.windows(2).any(|w| w == flags), "{name}: {argv:?}");
+            }
+        }
+    }
+
+    /// Every headless spawn holds its prompt behind the proof gate. A source
+    /// pin over the production text, because the spawns need a vendor binary.
+    #[test]
+    fn every_headless_spawn_holds_its_prompt() {
+        for (name, src) in [
+            ("lib.rs", include_str!("lib.rs")),
+            ("headless.rs", include_str!("headless.rs")),
+            ("tasks.rs", include_str!("tasks.rs")),
+        ] {
+            let code: String = src.split_whitespace().collect();
+            let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+            for open in ["run_text_session(", "run_json_session(", "run_headless("] {
+                assert!(!code.contains(open), "{name} calls {open} with no gate");
+            }
+            for call in code.split("HeadlessCall::new(").skip(1) {
+                let builder = call.split(".run()").next().unwrap_or_default();
+                assert!(
+                    builder.contains(".hold_prompt("),
+                    "{name}: a HeadlessCall with no gate"
+                );
+            }
+        }
+        let tasks: String = include_str!("tasks.rs").split_whitespace().collect();
+        assert_eq!(
+            tasks.matches("_session_held(").count(),
+            4,
+            "the four tasks hold their prompt"
+        );
     }
 
     /// The per-issue minutes reach the exec config, and the run deadline clamps them.

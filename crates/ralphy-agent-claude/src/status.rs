@@ -208,6 +208,98 @@ impl Drop for Watcher {
     }
 }
 
+/// How long a session has to write its `SessionStart` line before the
+/// prompt is refused (ADR-0072 D6, amendment of 2026-10-28). M5 and M6 of
+/// `docs/research/claude-hook-probes-2026-10-28.md` measured 0.8 s to 3.2 s.
+pub(crate) const PROOF_WINDOW: Duration = Duration::from_secs(30);
+
+/// How often [`await_session_start`] reads the status file.
+const PROOF_POLL: Duration = Duration::from_millis(200);
+
+/// Wait until the status file at `path` holds a `SessionStart` line: the
+/// proof that the hooks of `settings` run in this session. `project` is the
+/// session's working folder, read for a `disableAllHooks` setting when the
+/// line does not come. After `window` with no line, the error is
+/// [`ralphy_core::HooksUnproven`] with the cause and the way out.
+pub(crate) fn await_session_start(
+    path: &Path,
+    settings: &Path,
+    project: &Path,
+    window: Duration,
+) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + window;
+    loop {
+        if holds_session_start(path) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(unproven(no_proof_cause(settings, project, window)));
+        }
+        std::thread::sleep(PROOF_POLL);
+    }
+}
+
+fn holds_session_start(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    text.lines().any(|line| {
+        serde_json::from_str::<Value>(line.trim())
+            .is_ok_and(|v| v.get("event").and_then(Value::as_str) == Some("SessionStart"))
+    })
+}
+
+/// The cause of a missing proof. A `disableAllHooks` file is named first: it
+/// alone explains the silence.
+fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
+    let home = ralphy_proc_util::home_dir();
+    let mut cause = String::new();
+    if let Some(file) =
+        ralphy_proc_util::hook_form::disable_all_hooks(home.as_deref(), Some(project))
+    {
+        cause.push_str(&format!(
+            "{} sets disableAllHooks to true, so Claude Code runs no hook; ",
+            file.display()
+        ));
+    }
+    let program = ralphy_proc_util::exe::running_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|e| format!("the ralphy program (not found: {e:#})"));
+    cause.push_str(&format!(
+        "no SessionStart hook event came in {} s; the hooks in {} run {}. Fix the cause and start again",
+        window.as_secs(),
+        settings.display(),
+        program
+    ));
+    cause
+}
+
+/// The refusal of a session whose hooks would run through a shell: such a
+/// hook cannot prove the program it runs. `reason` is the hook form module's.
+pub(crate) fn refuse_shell_form(reason: &str) -> anyhow::Error {
+    unproven(format!("{reason}; update Claude Code to 2.1.139 or later"))
+}
+
+fn unproven(cause: String) -> anyhow::Error {
+    anyhow::Error::new(ralphy_core::HooksUnproven { cause })
+}
+
+/// The gate of a headless session: refuse a shell form now, before the
+/// spawn, else hold the prompt until the session's `SessionStart` line lands
+/// in `status_file`.
+pub(crate) fn proof_gate<'a>(
+    settings: &'a crate::settings::SettingsFile,
+    status_file: PathBuf,
+    project: &'a Path,
+) -> anyhow::Result<ralphy_adapter_support::PromptGate<'a>> {
+    if let Some(reason) = &settings.unproven {
+        return Err(refuse_shell_form(reason));
+    }
+    Ok(Box::new(move || {
+        await_session_start(&status_file, &settings.path, project, PROOF_WINDOW)
+    }))
+}
+
 fn emit(obs: &Observed) {
     ralphy_core::emit::agent_state(obs.state, &obs.ts, obs.detail.as_deref());
 }
@@ -329,6 +421,13 @@ mod tests {
                 "{name} must hand the child RALPHY_STATUS_FILE from that Watcher"
             );
         }
+        // The tasks run no Watcher: each hands its child a status file of its own.
+        let tasks: String = include_str!("tasks.rs").split_whitespace().collect();
+        let tasks = tasks.split("#[cfg(test)]mod").next().unwrap_or_default();
+        assert!(
+            tasks.contains("cmd.env(crate::status::STATUS_ENV,&status_file)"),
+            "tasks.rs must hand the child RALPHY_STATUS_FILE"
+        );
     }
 
     // ---- the Watcher, end to end through `tracing` (ADR-0059 §3) --------
@@ -498,6 +597,94 @@ mod tests {
                 ("done", "t5", ""),
             ],
             "transitions only, in order, with the line's own ts; the stale line never folded: {got:?}"
+        );
+    }
+
+    #[test]
+    fn the_proof_passes_on_the_session_start_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STATUS_FILE);
+        std::fs::write(&path, b"").unwrap();
+        let writer = {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(1));
+                std::fs::write(
+                    &path,
+                    "{\"event\":\"SessionStart\",\"ts\":\"t\"}
+",
+                )
+                .unwrap();
+            })
+        };
+        let got = await_session_start(
+            &path,
+            Path::new("s.json"),
+            dir.path(),
+            Duration::from_secs(5),
+        );
+        writer.join().unwrap();
+        assert!(got.is_ok(), "{got:?}");
+    }
+
+    #[test]
+    fn no_session_start_line_is_refused_with_the_cause() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let disabling = project.join(".claude").join("settings.json");
+        std::fs::write(&disabling, r#"{"disableAllHooks": true}"#).unwrap();
+        let path = dir.path().join(STATUS_FILE);
+        std::fs::write(
+            &path,
+            "{\"event\":\"Stop\",\"ts\":\"t\"}
+",
+        )
+        .unwrap();
+        let settings = dir.path().join("ralphy.settings.json");
+
+        let started = std::time::Instant::now();
+        let err = await_session_start(&path, &settings, &project, Duration::from_secs(1))
+            .expect_err("no SessionStart line in the window");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let refusal = err
+            .downcast_ref::<ralphy_core::HooksUnproven>()
+            .expect("the refusal type");
+        let cause = &refusal.cause;
+        let program = ralphy_proc_util::exe::running_exe().unwrap();
+        let at = |needle: &Path| {
+            cause
+                .find(&needle.display().to_string())
+                .unwrap_or_else(|| panic!("{cause} names {}", needle.display()))
+        };
+        let (disabled_at, settings_at, program_at) = (at(&disabling), at(&settings), at(&program));
+        assert!(
+            disabled_at < settings_at && disabled_at < program_at,
+            "{cause}"
+        );
+    }
+
+    #[test]
+    fn a_shell_form_session_is_refused_with_the_update_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = crate::settings::SettingsFile {
+            path: dir.path().join("ralphy.settings.json"),
+            unproven: Some("Claude Code 2.1.138 runs a hook through a shell".into()),
+        };
+        let Err(err) = proof_gate(&settings, dir.path().join(STATUS_FILE), dir.path()) else {
+            panic!("a shell form gets no gate");
+        };
+        // The runner reads the type through the context the session adds.
+        let err = err.context("the prompt was held and not sent");
+        let refusal = err
+            .downcast_ref::<ralphy_core::HooksUnproven>()
+            .expect("the refusal type");
+        assert!(
+            refusal
+                .cause
+                .contains("update Claude Code to 2.1.139 or later"),
+            "{}",
+            refusal.cause
         );
     }
 
