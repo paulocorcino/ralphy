@@ -409,16 +409,17 @@ checks on its own OS: the Windows daemon, each WSL or macOS peer. The check
 runs in the background and does not delay the start. For each agent whose
 source is `hooks`:
 
-1. It runs the hook command exactly as it writes it into a settings file
-   (ADR-0040 Amendment 4), with a test event on stdin and
-   `RALPHY_STATUS_FILE` pointing at a temporary file. It passes only when
-   the exit is 0 **and** the line is in the file: `hook status` exits 0 even
-   when it cannot write (§3), so the exit code alone proves nothing. A shell
-   form is run through the shell the vendor uses; when the check cannot find
-   that shell, the result is "not checked", never a pass.
-2. It reads the vendor's own switch that turns off all hooks. For Claude
-   Code this is `disableAllHooks`: with it set, no hook starts, the ones
-   Ralphy passes by `--settings` included (M4).
+1. It runs the hook command in the form it writes into a settings file
+   (ADR-0040 C12), with a test event on stdin and `RALPHY_STATUS_FILE`
+   pointing at a temporary file. It passes only when the exit is 0 **and**
+   the line is in the file: `hook status` exits 0 even when it cannot write
+   (§3), so the exit code alone proves nothing. A shell form is not run:
+   its result is "not checked", never a pass, because a check in another
+   shell than the vendor's proves nothing (ADR-0040 C12, item 4).
+2. It reads the vendor's own switch that turns off all hooks, to name a
+   likely cause early. For Claude Code this is `disableAllHooks`: with it
+   set, no hook starts, the ones Ralphy passes by `--settings` included
+   (M4). The switch does not decide: A2 does.
 
 A failure writes one log line, and every new console of that agent starts
 silent with the failure as its reason, without waiting for A2's clock. The
@@ -427,6 +428,6 @@ line per agent: its state source and the result.
 
 **A4. What this does not do.** No check opens a real session of the vendor:
 that costs quota, and A2 observes the real session for free. A run is not
-covered here: an unattended session checks its hooks before it starts, and
-refuses to start when the guard cannot run (ADR-0072, amendment of
+covered here: an unattended session waits for its first hook event before
+it sends the prompt, and is refused without it (ADR-0072, amendment of
 2026-10-28).

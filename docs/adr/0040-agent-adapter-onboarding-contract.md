@@ -481,22 +481,36 @@ apply to a run's settings file and to a console's.
    under a running process. The path has no `\\?\` prefix
    (`ralphy_proc_util::exe::running_exe`).
 2. **No shell when the vendor allows it.** When the vendor accepts a
-   program and an argument list (Claude Code's exec form: `command` and
-   `args`), Ralphy uses it, and no shell reads the path. A vendor that
-   accepts it only from some version on gets it only from that version on,
-   measured, not read in a changelog: Claude Code from 2.1.139 (M2). Below
-   that version, or when the version cannot be read, Ralphy writes the shell
-   form.
+   program and an argument list, Ralphy uses it, and no shell reads the
+   path: Claude Code's exec form (`command` and `args`), and the
+   `exec`/`args` form a vendor such as the Copilot CLI documents. A vendor
+   that accepts it only from some version on gets it only from that version
+   on, measured, not read in a changelog: Claude Code from 2.1.139 (M2).
+   The version is read by the process that writes the settings file (the
+   daemon for a console, the run for its sessions), with a 5 second limit,
+   and kept per resolved path and modification time of the vendor binary.
+   Below the version, or when the version cannot be read, Ralphy writes the
+   shell form and logs why.
 3. **A shell form quotes the path for the shell that runs it.** The shell
    is the vendor's (Claude Code: Git Bash on Windows). The path is quoted so
-   that a space, `$`, a backtick or a quote in it stays literal.
-4. **Each hook is checked where it matters.** The daemon checks a console's
-   hooks when it starts (ADR-0059 A3). An unattended session checks its
-   guard and its Stop hook before it starts, and does not start without them
-   (ADR-0072 D6, amendment of 2026-10-28).
-5. **The vendor's switch that turns off all hooks is read**, because with
-   it set no check of the command can pass for the vendor (Claude Code:
-   `disableAllHooks`, M4).
+   that a space, `$`, a backtick or a quote in it stays literal. A vendor
+   with a field per OS (Codex `commandWindows`; Copilot `bash` and
+   `powershell`) gets each field quoted for the shell of that OS.
+4. **A shell form is not proven, so an unattended session refuses it.**
+   Ralphy cannot be sure it runs the shell form in the same shell as the
+   vendor, and a check that passes in another shell proves nothing. A check
+   of a shell form reports "not checked"; a console is only warned, and an
+   unattended session is refused unless the operator set the setting that
+   allows it (ADR-0072 D6, amendment of 2026-10-28).
+5. **The proof is the first hook event, not the vendor's settings.** An
+   unattended session waits for its first hook event (Claude Code:
+   `SessionStart`) before it sends the prompt, and a console is silent when
+   no event arrives (ADR-0059 A2). Ralphy reads the vendor's switches that
+   turn off all hooks (Claude Code: `disableAllHooks`, M4; the Copilot CLI
+   documents the same key) only to name the cause, because the vendor
+   resolves its settings in more places than Ralphy can follow.
+6. **The daemon checks a console's hooks when it starts** (ADR-0059 A3),
+   so the operator sees a failure before opening a console.
 
 ### C3 — sharpened: seen firing, from the file as Ralphy writes it, on each OS
 

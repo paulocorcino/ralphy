@@ -6,7 +6,7 @@ Protects: security, integrity of change
 
 Amended 2026-10-14: D12, the install scripts (ADR-0056 §12).
 
-Amended 2026-10-28: D6, a guard that cannot start fails open; a session checks its guard before it starts.
+Amended 2026-10-28: D6, a guard that cannot start fails open; an unattended session waits for its first hook event before its work.
 
 Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a console token given to the agent by design as an exception to D7).
 
@@ -339,7 +339,7 @@ surface.
   trusts the payload's `cwd`; both come from the operator zone.
   Gap (amendment of 2026-10-28): a guard hook that cannot start fails open
   (M1 in `docs/research/claude-hook-probes-2026-10-28.md`); no session
-  checks its guard before it starts yet.
+  waits for its first hook event before its work yet.
 - D7: checked. A new read of a secret-named environment variable is
   flagged by `xtask capabilities`. The run captures the events and Telegram
   tokens, then removes both from its environment before it spawns a child
@@ -461,21 +461,49 @@ very probably ran with no guard and no warning. The path is fixed by commit
 Claude Code older than 2.1.139 given the exec form (M2), or
 `disableAllHooks` (M4).
 
-**D6, added: a session with a guard hook checks it before it starts, and
-does not start without it.** Before an unattended session starts (plan,
-execute, triage, diagnose, draft, consolidate), the adapter:
+**D6, added: an unattended session does not begin its work until its hooks
+prove they run.** This holds for every unattended session whose guard is a
+hook: for Claude, plan, execute, triage, diagnose, draft and consolidate.
 
-1. runs the guard command and, on execute, the Stop command, exactly as the
-   settings file names them, with a test payload on stdin. The guard must
-   answer the test payload with an allow; the Stop command must exit 0;
-2. checks that the hook form fits the vendor CLI's version (for Claude
-   Code, the exec form only from 2.1.139, ADR-0040 Amendment 4);
-3. reads the vendor's switch that turns off all hooks (`disableAllHooks`).
+1. **The form fits the version.** The adapter reads the vendor CLI's
+   version and writes the hook form that version runs (ADR-0040 C12). For
+   Claude Code, the exec form from 2.1.139 on (M2). When the version is
+   older, or cannot be read, the shell form is written, and the session is
+   refused: Ralphy cannot prove that a shell form runs in the vendor's own
+   shell (ADR-0040 C12, item 4).
+2. **The first hook event arrives before the prompt.** The guard and the
+   state hook are in the same settings file and run the same program in the
+   same form. So the session's `SessionStart` line in its status file proves
+   that the file was loaded, that hooks are on, and that the program runs,
+   whatever the cause would have been: a bad path, a removed binary, a form
+   the CLI does not run, `disableAllHooks`, or a switch Ralphy does not know.
+   The adapter waits up to 30 seconds for that line before it sends the
+   prompt. Without it, the adapter ends the session.
 
-When any of the three fails, the session does not start, and the error
-names the cause. A console is not refused, because an operator is watching
-it: a console's failed check makes it silent (ADR-0059, amendment of
+A refused session is a fatal error of the run, not an outcome of the issue:
+the run stops, the repository is restored, and the issue is left as it was,
+because the fault is in the machine, not in the issue. The error names the
+cause and the way out. Ralphy reads the known switches (`disableAllHooks` in
+the user and project settings) only to name the cause; it never decides from
+them, because the vendor resolves its settings in more places than Ralphy
+can follow.
+
+**Why before the work, and never in the middle of it.** A hook that blocks
+every tool call in an open session leaves the operator with no way out but
+editing the hooks by hand. So a hook that cannot run is refused before the
+session does anything, and never turns into a block of each tool call. A
+console is not refused at all, because an operator is watching it: a
+console whose hooks do not run is silent (ADR-0059, amendment of
 2026-10-28), and the operator sees the warning.
+
+**The operator can still run without the proof (D1).** A setting with a
+long, literal name (for example `claude.run_without_guard_proof`; the issue
+fixes the name) lets the session go on when the proof fails. It removes the
+refusal only: Ralphy still writes the guard and the state hooks, and they
+protect the session if they run. Each session that goes on without the proof
+writes a warning, with the cause, to the run's log and to the run's events.
+The setting is local-only: the workbench shows it read-only, and only
+`ralphy config set` changes it.
 
 **D14.** The fix in `d66214e2` closed a path to an unguarded run, so its
 changelog fragment is `kind: security`.
