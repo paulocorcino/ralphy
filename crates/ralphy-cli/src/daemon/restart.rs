@@ -284,8 +284,7 @@ fn parse_main_pid(text: &str) -> Option<u32> {
 }
 
 fn current_exe() -> Result<PathBuf> {
-    let exe = std::env::current_exe().context("resolving this executable")?;
-    Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    ralphy_proc_util::exe::running_exe()
 }
 
 /// A path an operator can read: Windows canonicalization returns the

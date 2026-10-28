@@ -423,8 +423,7 @@ fn launch_agent_path() -> Result<PathBuf> {
 /// autostart resolves `ralphy` regardless of the scheduler's stripped PATH.
 /// Mirrors `schedule.rs::current_exe`.
 fn current_exe() -> Result<PathBuf> {
-    let exe = std::env::current_exe().context("locating the running ralphy binary")?;
-    Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    ralphy_proc_util::exe::running_exe()
 }
 
 /// Which PowerShell to register on Windows: `pwsh` when some `PATH` entry holds

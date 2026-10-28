@@ -146,8 +146,7 @@ fn start(_store: &std::path::Path) -> Result<()> {
 /// outside the caller's job object, so it outlives an ssh session.
 #[cfg(windows)]
 fn start(store: &std::path::Path) -> Result<()> {
-    let exe = std::env::current_exe().context("resolving this executable")?;
-    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let exe = ralphy_proc_util::exe::running_exe()?;
     super::restart::spawn_detached(&exe, &["daemon".to_string()], store)?;
     Ok(())
 }
