@@ -374,6 +374,15 @@ pub fn console_settings_json(hook: &HookCommand) -> String {
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
+/// The hook command of a Claude console that runs `claude`: this ralphy
+/// program with `hook status`, in the form the version of `claude` runs. The
+/// console launch, the start check and `ralphy doctor` all use it, so the
+/// check answers for the command a console gets.
+pub fn console_hook(claude: &Path) -> HookCommand {
+    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+    ralphy_proc_util::hook_form::claude_hook(claude, &exe, &["hook", "status"])
+}
+
 /// The result of the hook check this daemon ran at start.
 static START_CHECK: OnceLock<HookCheck> = OnceLock::new();
 
@@ -384,8 +393,7 @@ pub fn run_start_check() {
     let claude = Agent::Claude
         .locate_program()
         .unwrap_or_else(|| PathBuf::from("claude"));
-    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
-    let hook = ralphy_proc_util::hook_form::claude_hook(&claude, &exe, &["hook", "status"]);
+    let hook = console_hook(&claude);
     let home = ralphy_proc_util::home_dir();
     let result = start_check(&hook, home.as_deref());
     // A second call keeps the first result: the check runs once per daemon.

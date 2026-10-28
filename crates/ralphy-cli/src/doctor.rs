@@ -337,12 +337,11 @@ pub(crate) fn probe() -> MachineFacts {
 }
 
 /// Run the hook command of `agent` as a console of the daemon would get it:
-/// the same program and arguments as `agent_state::run_start_check`, so the two
-/// answer for the same command. `None` when the agent is not installed.
+/// the same command as `agent_state::run_start_check`, so the two answer for
+/// the same command. `None` when the agent is not installed.
 fn hook_probe(agent: Agent) -> Option<(Agent, HookCheck)> {
     let cli = agent_program(&agent)?;
-    let exe = ralphy_daemon::dispatch::ralphy_exe();
-    let hook = hook_form::claude_hook(&cli, Path::new(&exe), &["hook", "status"]);
+    let hook = ralphy_daemon::agent_state::console_hook(&cli);
     let home = ralphy_proc_util::home_dir();
     Some((
         agent,
