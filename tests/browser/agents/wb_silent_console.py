@@ -14,7 +14,7 @@ Scenario 3  the console title bar shows `session-state silent` with the reason
             in its tooltip
 Scenario 4  the project row shows `dot silent`, its tooltip has the reason
 Scenario 5  the Go-to list row shows the dot and the reason
-Scenario 6  the picker of the tab menu shows the dot
+Scenario 6  the picker of the tab menu shows the dot and the reason
 Scenario 7  a screenshot; no page errors
 
 Boots a Localhost daemon on 7461 over a SCRATCH `RALPHY_DAEMON_DIR`. The
@@ -127,8 +127,10 @@ def main():
             page.wait_for_selector(".console-tab-menu .console-tab-item", state="visible", timeout=5000)
             picker = page.evaluate(PICKER_ROW)
             check(
-                "the picker row shows the silent dot",
-                len(picker) == 1 and picker[0]["cls"] == "session-state silent" and "not reported" in picker[0]["title"],
+                "the picker row shows the silent dot with the reason",
+                len(picker) == 1
+                and picker[0]["cls"] == "session-state silent"
+                and picker[0]["title"] == f"Agent state not reported: {reason}",
                 f"got={picker!r}",
             )
             page.screenshot(path=os.path.join(shot_dir, SHOT))

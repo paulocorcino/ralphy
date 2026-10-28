@@ -31,6 +31,7 @@ export type ListedWindow = {
   kind: string;
   running: boolean;
   state: string | null;
+  detail: string | undefined;
 };
 
 // What the column paint reads from the console, and nothing else.

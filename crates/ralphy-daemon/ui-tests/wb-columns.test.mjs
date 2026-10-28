@@ -146,7 +146,7 @@ function roster() {
       row("F1a"),
       row("L2", { running: false, name: "backend" }),
       row("F2a", { state: "working" }),
-      row("W", { state: "working", name: "W name" }),
+      row("W", { state: "working", name: "W name", detail: "No hook event came" }),
     ],
     // f2 is listed FIRST, though f1 comes first in `membership`.
     fences: [
@@ -207,6 +207,9 @@ test("listFold: rows carry agent, repo, state and the reason they are disabled",
   assert.equal(d1.agent, "codex");
   assert.equal(d1.name, "home #1", "a detached row carries its console name");
   assert.equal(rows.get("W").name, "W name", "a loose row carries its console name");
+  assert.equal(rows.get("W").detail, "No hook event came", "a row carries the detail of its dot");
+  assert.equal(f1a.detail, null);
+  assert.equal(d1.detail, null);
 });
 
 test("listFold: a detached fence the fence list does not name adds no group", () => {

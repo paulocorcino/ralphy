@@ -780,7 +780,7 @@
                             :data-id="r.id" @click="pick(r)">
                       <i class="bi bi-terminal"></i>
                       <span class="row-name" x-text="rowLabel(r)"></span>
-                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state, r.detail)"></span>
                       <span class="row-off" x-show="!r.running">not running</span>
                     </button>
                   </template>
@@ -1059,7 +1059,7 @@
                               :data-id="r.id" @click="pickColumn(r.id)">
                         <i class="bi bi-terminal"></i>
                         <span class="row-name" x-text="columnRowLabel(r)"></span>
-                        <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                        <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state, r.detail)"></span>
                         <span class="row-off" x-show="!r.running">not running</span>
                       </button>
                       <button class="column-open" :disabled="!r.enabled" :data-id="r.id" x-show="!columnSwitch"
