@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime};
 
-use ralphy_proc_util::hook_form::{claude_hook, hook_for_version, read_version, HookForm};
+use ralphy_proc_util::hook_form::{
+    check, claude_hook, hook_for_version, read_version, HookCheck, HookForm,
+};
 
 const CHILD: &str = env!("CARGO_BIN_EXE_version_test_child");
 
@@ -104,4 +106,69 @@ fn the_version_is_read_once_per_binary_change() {
         Some("2.1.139 (Claude Code)")
     );
     assert_eq!(lines(), 2, "a changed binary is read again");
+}
+
+const EXEC_VERSION: Option<&str> = Some("2.1.139 (Claude Code)");
+
+fn cause(got: HookCheck) -> String {
+    match got {
+        HookCheck::Failed { cause } => cause,
+        other => panic!("expected a failed check, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_missing_hook_program_fails_the_check() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let missing = root.path().join("no-such-ralphy");
+    let hook = hook_for_version(EXEC_VERSION, &missing, &["hook", "status"]);
+    let got = cause(check(&hook, Duration::from_secs(5), Some(root.path())));
+    assert!(got.contains(&*missing.to_string_lossy()), "{got}");
+}
+
+#[test]
+fn a_hook_that_writes_no_line_fails_the_check() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let child = copy_child(root.path(), &["exit0"]);
+    let hook = hook_for_version(EXEC_VERSION, &child, &[]);
+    let got = cause(check(&hook, Duration::from_secs(10), Some(root.path())));
+    assert!(got.contains("wrote no status line"), "{got}");
+}
+
+#[test]
+fn a_shell_form_is_not_checked() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let child = copy_child(root.path(), &["exit0"]);
+    let hook = hook_for_version(Some("2.1.100 (Claude Code)"), &child, &[]);
+    let got = check(&hook, Duration::from_secs(10), Some(root.path()));
+    assert!(matches!(got, HookCheck::NotChecked { .. }), "{got:?}");
+}
+
+#[test]
+fn a_failed_check_names_disable_all_hooks() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let dir = root.path().join(".claude");
+    std::fs::create_dir_all(&dir).expect("create dir");
+    let file = dir.join("settings.json");
+    std::fs::write(&file, r#"{"disableAllHooks": true}"#).expect("write file");
+    let child = copy_child(root.path(), &["exit0"]);
+    let hook = hook_for_version(EXEC_VERSION, &child, &[]);
+    let got = cause(check(&hook, Duration::from_secs(10), Some(root.path())));
+    assert!(got.starts_with(&*file.to_string_lossy()), "{got}");
+    assert!(got.contains("wrote no status line"), "{got}");
+}
+
+#[test]
+fn a_hung_hook_fails_the_check_in_time() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let child = copy_child(root.path(), &["hang"]);
+    let hook = hook_for_version(EXEC_VERSION, &child, &[]);
+    let started = Instant::now();
+    let got = check(&hook, Duration::from_secs(1), Some(root.path()));
+    assert!(matches!(got, HookCheck::Failed { .. }), "{got:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "{:?}",
+        started.elapsed()
+    );
 }

@@ -9,6 +9,7 @@ description = "Leaf crate for Ralphy process/path resolution: PATH/PATHEXT progr
 [dependencies]
 anyhow.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 tracing.workspace = true
 
 # Liveness probe for `pid::pid_is_alive`: one syscall per platform, so two tiny
@@ -24,9 +25,6 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
 ] }
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

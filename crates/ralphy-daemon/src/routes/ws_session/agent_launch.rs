@@ -138,11 +138,11 @@ impl Upgrade {
             );
         }
         let id = self.sessions.reserve_id();
-        let status = match agent {
-            session::Agent::Claude => auth::store_dir()
+        let status = match agent_state::state_source(agent) {
+            agent_state::StateSource::Hooks => auth::store_dir()
                 .ok()
                 .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
-            _ => None,
+            agent_state::StateSource::Stream | agent_state::StateSource::None => None,
         };
         // The fallback `--name` is built from the project NAME: a remoteless repo's
         // slug is a `path-<hash>` key, and the operator reads this name.

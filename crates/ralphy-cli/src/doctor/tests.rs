@@ -1,4 +1,5 @@
 use super::*;
+use ralphy_proc_util::hook_form::HookCheck;
 
 fn all_found() -> MachineFacts {
     MachineFacts {
@@ -8,6 +9,7 @@ fn all_found() -> MachineFacts {
         python: Some("Python 3.12.4".to_string()),
         agents: vec![(Agent::Claude, "2.1.0 (Claude Code)".to_string())],
         linger: None,
+        hooks: vec![(Agent::Claude, HookCheck::Ok)],
     }
 }
 
@@ -25,7 +27,7 @@ fn each_tool_found_shows_its_version_and_nothing_is_missing() {
     let report = evaluate(&all_found(), false);
     assert_eq!(report.missing_required(), 0);
     let names: Vec<&str> = report.tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["git", "gh", "python", "claude"]);
+    assert_eq!(names, ["git", "gh", "python", "claude", "claude hooks"]);
     assert_eq!(
         line(&report, "git").version.as_deref(),
         Some("git version 2.47.1")
@@ -149,8 +151,98 @@ fn the_json_shape_is_pinned() {
             "fix": null,
         })
     );
+    assert_eq!(
+        json["tools"][4],
+        serde_json::json!({
+            "tool": "hooks",
+            "name": "claude hooks",
+            "ok": true,
+            "required": false,
+            "version": null,
+            "text": "the hook command ran and wrote a status line",
+            "fix": null,
+        })
+    );
     let back: DoctorReport = serde_json::from_value(json).expect("reading it back");
     assert_eq!(back, report);
+}
+
+fn two_agents(hooks: Vec<(Agent, HookCheck)>) -> MachineFacts {
+    MachineFacts {
+        agents: vec![
+            (Agent::Claude, "2.1.0 (Claude Code)".to_string()),
+            (Agent::Codex, "codex-cli 0.9".to_string()),
+        ],
+        hooks,
+        ..all_found()
+    }
+}
+
+#[test]
+fn each_agent_has_a_hook_line() {
+    let report = evaluate(&two_agents(vec![(Agent::Claude, HookCheck::Ok)]), false);
+    let json = serde_json::to_value(&report).expect("serializing");
+    let hooks: Vec<&serde_json::Value> = json["tools"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter(|t| t["tool"] == "hooks")
+        .collect();
+    let names: Vec<&str> = hooks.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["claude hooks", "codex hooks"]);
+    assert!(hooks.iter().all(|t| t["required"] == false), "{hooks:?}");
+
+    let none = evaluate(
+        &MachineFacts {
+            agents: vec![],
+            hooks: vec![],
+            ..all_found()
+        },
+        false,
+    );
+    assert!(
+        !none.tools.iter().any(|t| t.tool == Tool::Hooks),
+        "no agent, no hook line"
+    );
+}
+
+#[test]
+fn a_hook_line_warns_and_never_fails() {
+    let rows = [
+        (HookCheck::Ok, "[ok  ] claude hooks: the hook command ran"),
+        (
+            HookCheck::Failed {
+                cause: "ralphy.exe did not start".to_string(),
+            },
+            "[warn] claude hooks: ralphy.exe did not start",
+        ),
+        (
+            HookCheck::NotChecked {
+                reason: "Claude Code 2.1.100 runs a hook through a shell".to_string(),
+            },
+            "[warn] claude hooks: not checked: Claude Code 2.1.100 runs a hook through a shell",
+        ),
+    ];
+    for (check, want) in rows {
+        let report = evaluate(&two_agents(vec![(Agent::Claude, check)]), false);
+        assert_eq!(report.missing_required(), 0, "{want}");
+        let mut out = Vec::new();
+        print_report(&report, &mut out).expect("printing");
+        let out = String::from_utf8(out).expect("utf-8");
+        assert!(
+            out.contains(want),
+            "{want}
+{out}"
+        );
+        assert!(
+            out.contains("[ok  ] codex hooks: no state source"),
+            "an agent with no state source is ok: {out}"
+        );
+        assert!(out.contains("result: every required tool is here"), "{out}");
+    }
+    // A hook result that never came (the probe found no program) is not ok.
+    let report = evaluate(&two_agents(vec![]), false);
+    assert!(!line(&report, "claude hooks").ok);
 }
 
 #[test]
