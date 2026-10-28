@@ -70,3 +70,38 @@ async fn an_unknown_verb_is_answered_with_one_error_reply() {
         Answer::Stream(verb) => panic!("streamed {verb:?}"),
     }
 }
+
+// ADR-0084 D2: the scroll probe is not a registry verb, so a build without
+// the feature answers it as any name it does not know.
+#[cfg(not(feature = "scroll-probe"))]
+#[tokio::test]
+async fn a_build_without_the_probe_answers_unknown_verb() {
+    let dir = tempfile::tempdir().expect("a temp dir is writable");
+    let mut cmd = command("probe.scroll");
+    cmd.payload = serde_json::json!({ "records": [] });
+    match answer_one(&ctx(dir.path()), &cmd, &nobody()).await {
+        Answer::Reply(reply) => assert_eq!(
+            reply,
+            serde_json::json!({ "status": "error", "message": "unknown verb" })
+        ),
+        Answer::Stream(verb) => panic!("streamed {verb:?}"),
+    }
+}
+
+// ADR-0084 D1: a release, a release candidate and CI never build the probe.
+#[test]
+fn no_workflow_turns_on_the_scroll_probe() {
+    let workflows = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows");
+    let mut read = 0;
+    for entry in std::fs::read_dir(&workflows).expect("the workflows folder reads") {
+        let path = entry.expect("a workflow entry").path();
+        let text = std::fs::read_to_string(&path).expect("a workflow reads");
+        assert!(
+            !text.contains("scroll-probe"),
+            "{} names the scroll probe",
+            path.display()
+        );
+        read += 1;
+    }
+    assert!(read > 0, "no workflow was read");
+}

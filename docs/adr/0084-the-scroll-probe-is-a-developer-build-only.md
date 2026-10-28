@@ -1,6 +1,6 @@
 # The scroll probe exists only in a developer build
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: responsiveness; constraint security
 
@@ -47,10 +47,10 @@ or a wheel on a console, and it ends when the console has not moved for
 300 ms, after any glide. The record has only numbers and closed values:
 how the scroll was made (touch, glide, wheel), its length in ms, the
 number of frames, the frames over 25 ms, the median, p95 and longest
-frame, the time of our touch code, the time of the terminal's writes and
-the bytes it wrote, the renderer (WebGL or DOM), the rows and columns, the
-lines of history, where the console was (stage, maximized, column, tab, full
-screen) and the device pixel ratio. The page sends the records of a scroll
+frame, the time of our scroll steps, the bytes of output the terminal
+wrote and the slow frames that had output in them, the renderer (WebGL or
+DOM), the rows and columns, the lines of history, where the console was
+(stage, maximized, column, tab, full screen) and the device pixel ratio. The page sends the records of a scroll
 after it ends, never during it, and at most 20 records in one command.
 
 **D5. The daemon writes one JSON line per record to
@@ -87,12 +87,13 @@ with `--features scroll-probe`.
 ## Compliance
 
 - D1: checked by `no_workflow_turns_on_the_scroll_probe`
-  (`crates/ralphy-daemon/src/probe.rs`).
+  (`crates/ralphy-daemon/src/routes/ws_command/tests.rs`).
 - D2: checked by `a_build_without_the_probe_answers_unknown_verb`
   (`crates/ralphy-daemon/src/routes/ws_command/tests.rs`).
 - D3: not checked by code: the page side is reviewed in the PR.
 - D4: checked by `a_record_out_of_shape_is_refused`
-  (`crates/ralphy-daemon/src/probe.rs`).
+  (`crates/ralphy-daemon/src/probe.rs`); this test runs only with
+  `--features scroll-probe`.
 - D5: not checked by code: the size limit and the permissions are reviewed in
   the PR.
 - D6: not checked by code: reviewed in the PR.

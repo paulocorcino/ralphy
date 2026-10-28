@@ -47,6 +47,12 @@ pub(crate) enum Answer {
 /// Answer `cmd` with its one reply, or say that its verb streams. Every
 /// known verb is recorded once, here. A Spawn verb is never run here.
 pub(crate) async fn answer_one(ctx: &CommandCtx, cmd: &Command, who: &SocketAudit) -> Answer {
+    // Not a registry verb, and only in a developer build (ADR-0084 D2).
+    #[cfg(feature = "scroll-probe")]
+    if cmd.verb == crate::probe::VERB {
+        let dir = store_dir(&ctx.peers_dir);
+        return Answer::Reply(crate::probe::reply(cmd.payload.clone(), who.device, dir).await);
+    }
     let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
         return Answer::Reply(serde_json::json!({ "status": "error", "message": "unknown verb" }));
     };
