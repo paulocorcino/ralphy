@@ -269,6 +269,11 @@ pub(crate) fn render_line(
             Style::new().yellow(),
             format!("no progress for {idle_minutes} min — child reaped"),
         ),
+        RunEvent::HooksUnprovenAllowed { cause } => (
+            pick("⚠️", "[hooks]", opts.emoji),
+            Style::new().yellow(),
+            format!("hooks not proven — going on without the proof: {cause}"),
+        ),
         // The agent asking for the operator is scroll-worthy (ADR-0059 §2: a
         // `waiting` is a push); `working`/`done` are live-region only.
         RunEvent::AgentState { state, detail, .. } if state == "waiting" => (

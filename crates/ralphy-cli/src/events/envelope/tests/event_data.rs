@@ -419,3 +419,19 @@ fn run_started_maps_cli_params_without_subject() {
         ])
     );
 }
+
+#[test]
+fn hooks_unproven_allowed_maps_to_its_cloudevent() {
+    let v = map(
+        RunEvent::HooksUnprovenAllowed {
+            cause: "no SessionStart hook event came in 30 s".into(),
+        },
+        &RunState::new("t", 1),
+    );
+    assert_eq!(v["type"], "dev.ralphy.run.hooks_unproven_allowed");
+    assert!(v.get("subject").is_none(), "a run-level event: {v}");
+    assert_eq!(
+        v["data"]["cause"],
+        "no SessionStart hook event came in 30 s"
+    );
+}

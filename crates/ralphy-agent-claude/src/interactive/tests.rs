@@ -462,3 +462,32 @@ fn an_unproven_interactive_session_types_nothing() {
     assert!(err.downcast_ref::<ralphy_core::HooksUnproven>().is_some());
     assert!(typed.is_empty(), "typed {} bytes", typed.len());
 }
+
+#[test]
+fn the_waiver_types_the_charter_of_an_unproven_interactive_session() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let status = dir.path().join("agent-status.jsonl");
+    std::fs::write(&status, "{\"event\":\"PreToolUse\"}\n").expect("status file");
+    let mut proof = ProofWait::new(
+        status,
+        0,
+        dir.path().join("settings.json"),
+        dir.path().to_path_buf(),
+        Duration::from_millis(200),
+    );
+    proof.waiver = true;
+    let mut typed: Vec<u8> = Vec::new();
+    let give_up = Instant::now() + Duration::from_secs(10);
+    while typed.is_empty() {
+        let mut keys = |bytes: &[u8]| -> Result<()> {
+            typed.extend_from_slice(bytes);
+            Ok(())
+        };
+        proof
+            .advance(Instant::now(), &mut keys)
+            .expect("the waiver lets the session go on");
+        assert!(Instant::now() < give_up, "the charter was never typed");
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(typed, charter_keys().text);
+}

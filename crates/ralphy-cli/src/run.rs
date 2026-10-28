@@ -409,6 +409,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             args.no_remote_control,
             settings.remote_control,
         ),
+        run_without_guard_proof: claude_settings.run_without_guard_proof_i_understand_the_risk,
     };
     let resolved_copilot = wiring::resolve_copilot(
         args.plan_model.clone(),

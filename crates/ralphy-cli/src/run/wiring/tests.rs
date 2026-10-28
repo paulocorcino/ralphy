@@ -336,6 +336,7 @@ fn build_agent_builds_every_agent_the_cli_accepts() {
         default_exec_model: String::new(),
         max_minutes_per_issue: 30,
         remote_control: false,
+        run_without_guard_proof: false,
     };
     for agent in CliAgent::value_variants() {
         let name = agent.cli_name();

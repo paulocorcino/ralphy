@@ -71,7 +71,12 @@ impl ClaudeAgent {
         let status = crate::status::Watcher::start(&self.run_dir);
         cmd.env(crate::status::STATUS_ENV, status.path());
         // A shell form is refused here, before the spawn (ADR-0072 D6).
-        let gate = crate::status::proof_gate(settings, status.path().to_path_buf(), cmd_dir)?;
+        let gate = crate::status::proof_gate(
+            settings,
+            status.path().to_path_buf(),
+            cmd_dir,
+            self.exec.run_without_guard_proof,
+        )?;
 
         // Delegate the OS-level spawn/drain/poll/kill/collect and log-persist
         // plumbing to the shared runner. Claude's `exited` ("the child exited

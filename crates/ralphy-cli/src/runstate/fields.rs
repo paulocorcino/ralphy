@@ -111,6 +111,8 @@ pub struct EventFields {
     pub assignee_filter: Option<String>,
     /// The operator-facing sentence on a `run skipped` event (#222).
     pub reason: Option<String>,
+    /// The refusal a session escaped on a `hooks not proven` event.
+    pub cause: Option<String>,
     /// The human-readable queue scope phrase on a `queue built` event (#222).
     /// LOG-ONLY: folded into the console edge notice, never mapped to the wire.
     pub scope: Option<String>,
@@ -166,6 +168,7 @@ impl Default for EventFields {
             plan_md: None,
             assignee_filter: None,
             reason: None,
+            cause: None,
             scope: None,
         }
     }
@@ -234,6 +237,7 @@ impl Visit for EventFields {
             // The run-border fields (#222): the deferral sentence and the LOG-ONLY
             // queue scope phrase; an empty emission maps to `None`.
             "reason" => self.reason = clean_opt(value),
+            "cause" => self.cause = clean_opt(value),
             "scope" => self.scope = clean_opt(value),
             // The agent-state trio (ADR-0059); an empty `detail` is absent.
             "state" => self.state = Some(value.to_string()),
@@ -288,6 +292,7 @@ impl Visit for EventFields {
             "assignee_filter" => self.assignee_filter = clean_opt(&rendered),
             // The `%`-formatted (Display) run-border fields (#222) arrive here.
             "reason" => self.reason = clean_opt(&rendered),
+            "cause" => self.cause = clean_opt(&rendered),
             "scope" => self.scope = clean_opt(&rendered),
             _ => {}
         }

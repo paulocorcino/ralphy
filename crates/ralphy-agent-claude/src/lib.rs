@@ -138,7 +138,17 @@ impl ClaudeAgent {
             max_exec_calls,
             run_deadline: None,
             idle_minutes: None,
+            run_without_guard_proof: false,
         };
+        self
+    }
+
+    /// Let a session whose hooks did not prove they run go on with a warning
+    /// (`claude.run_without_guard_proof_i_understand_the_risk`). Call after
+    /// [`with_exec_config`](Self::with_exec_config), which resets the whole
+    /// exec block.
+    pub fn with_guard_proof_waiver(mut self, waiver: bool) -> Self {
+        self.exec.run_without_guard_proof = waiver;
         self
     }
 
@@ -207,7 +217,12 @@ impl Agent for ClaudeAgent {
         let status = status::Watcher::start(&self.run_dir);
         // The prompt waits for the session's `SessionStart` line; a shell
         // form is refused here, before the spawn (ADR-0072 D6).
-        let gate = status::proof_gate(&settings, status.path().to_path_buf(), ws.repo_root())?;
+        let gate = status::proof_gate(
+            &settings,
+            status.path().to_path_buf(),
+            ws.repo_root(),
+            self.exec.run_without_guard_proof,
+        )?;
 
         // Provision the reviewer/staged-plan skills the prompt depends on, scoped
         // to this run via --plugin-dir (no reliance on globally-installed skills).

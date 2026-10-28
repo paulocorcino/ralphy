@@ -59,6 +59,10 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         "claude.console_classic_screen = {}",
         claude.console_classic_screen
     );
+    println!(
+        "claude.run_without_guard_proof_i_understand_the_risk = {}",
+        claude.run_without_guard_proof_i_understand_the_risk
+    );
     print_str("copilot.plan_model", copilot.plan_model);
     print_str("copilot.exec_model", copilot.exec_model);
     print_str("copilot.plan_effort", copilot.plan_effort);
@@ -127,6 +131,8 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
         "claude.console_name": claude.console_name,
         "claude.console_classic_screen": claude.console_classic_screen,
+        "claude.run_without_guard_proof_i_understand_the_risk":
+            claude.run_without_guard_proof_i_understand_the_risk,
         "copilot.plan_model": copilot.plan_model,
         "copilot.exec_model": copilot.exec_model,
         "copilot.plan_effort": copilot.plan_effort,

@@ -43,6 +43,7 @@ pub fn consolidate_knowledge(
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
+    run_without_guard_proof: bool,
 ) -> Result<Usage> {
     let settings = write_task_settings(run_dir)?;
 
@@ -52,7 +53,7 @@ pub fn consolidate_knowledge(
     // is still written by the session, so the stdout format is free to change.
     let args = task_args(model, effort, &settings.path);
     let mut cmd = task_command(&args, ws.repo_root());
-    let gate = task_proof(&mut cmd, &settings, ws.repo_root())?;
+    let gate = task_proof(&mut cmd, &settings, ws.repo_root(), run_without_guard_proof)?;
 
     // Spawn, persist the log, bail on auth then timeout — the shared
     // `run_text_session` owns that exact tail (same messages, same order) and
@@ -87,6 +88,7 @@ pub fn diagnose_repo(
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
+    run_without_guard_proof: bool,
 ) -> Result<DiagnosisReport> {
     let settings = write_task_settings(neutral_cwd)?;
 
@@ -96,7 +98,7 @@ pub fn diagnose_repo(
     info!(?model, ?effort, "diagnosing repo with claude -p");
     let args = task_args(model, effort, &settings.path);
     let mut cmd = task_command(&args, neutral_cwd);
-    let gate = task_proof(&mut cmd, &settings, neutral_cwd)?;
+    let gate = task_proof(&mut cmd, &settings, neutral_cwd, run_without_guard_proof)?;
 
     let log_path = neutral_cwd.join("diagnose.log");
     run_json_session_held(
@@ -138,6 +140,7 @@ pub fn draft_issues(
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
+    run_without_guard_proof: bool,
 ) -> Result<IssuesDraft> {
     let mode = req.mode;
     clear_stale_output(out_path)?;
@@ -151,7 +154,7 @@ pub fn draft_issues(
     );
     let args = task_args(model, effort, &settings.path);
     let mut cmd = task_command(&args, repo);
-    let gate = task_proof(&mut cmd, &settings, repo)?;
+    let gate = task_proof(&mut cmd, &settings, repo, run_without_guard_proof)?;
 
     let prompt = build_init_issues_prompt(repo, mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
@@ -194,6 +197,7 @@ pub fn triage_issues(
     model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
+    run_without_guard_proof: bool,
 ) -> Result<TriageDraft> {
     clear_stale_output(out_path)?;
     let settings = write_task_settings(&repo.join(".ralphy"))?;
@@ -201,7 +205,7 @@ pub fn triage_issues(
     info!(?model, ?effort, "triaging issues with claude -p");
     let args = task_args(model, effort, &settings.path);
     let mut cmd = task_command(&args, repo);
-    let gate = task_proof(&mut cmd, &settings, repo)?;
+    let gate = task_proof(&mut cmd, &settings, repo, run_without_guard_proof)?;
 
     let prompt = format!(
         "{}{}{}",
@@ -266,12 +270,13 @@ fn task_proof<'a>(
     cmd: &mut Command,
     settings: &'a SettingsFile,
     project: &'a Path,
+    run_without_guard_proof: bool,
 ) -> Result<PromptGate<'a>> {
     let status_file = settings.path.with_file_name(crate::status::STATUS_FILE);
     std::fs::write(&status_file, b"")
         .with_context(|| format!("resetting {}", status_file.display()))?;
     cmd.env(crate::status::STATUS_ENV, &status_file);
-    crate::status::proof_gate(settings, status_file, project)
+    crate::status::proof_gate(settings, status_file, project, run_without_guard_proof)
 }
 
 /// The auth check of a task: over the text of the stream and the stderr

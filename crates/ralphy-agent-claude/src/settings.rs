@@ -89,6 +89,13 @@ pub struct ClaudeSettings {
     /// pins the key against this schema.
     #[serde(default, skip_serializing_if = "is_false")]
     pub console_classic_screen: bool,
+    /// Local-only opt-in: a session whose hooks did not prove they run goes
+    /// on instead of being refused, with one warning event per session. It
+    /// removes only the refusal: every hook is still written. Set only with
+    /// `ralphy config set` on this machine; the daemon refuses to set it.
+    // ADR-0072 D6: the escape of the hook proof.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub run_without_guard_proof_i_understand_the_risk: bool,
 }
 
 /// `skip_serializing_if` for a `false` flag: an un-opted repo writes no key, so
@@ -157,6 +164,9 @@ pub(crate) struct ExecConfig {
     /// [`ExecConfig::idle_minutes_for`]), but an operator who names a number
     /// means it for whichever path runs.
     pub(crate) idle_minutes: Option<u64>,
+    /// `claude.run_without_guard_proof_i_understand_the_risk`: an unproven
+    /// session goes on with a warning instead of being refused.
+    pub(crate) run_without_guard_proof: bool,
 }
 
 impl ExecConfig {
@@ -187,6 +197,7 @@ impl Default for ExecConfig {
             max_exec_calls: 6,
             run_deadline: None,
             idle_minutes: None,
+            run_without_guard_proof: false,
         }
     }
 }
@@ -705,6 +716,34 @@ mod tests {
             "a task session writes its own settings file"
         );
         assert_eq!(tasks.matches("write_task_settings(").count(), 4);
+    }
+
+    /// The waiver removes only the refusal: with it on, the exec, plan and
+    /// task files still carry the guard and the status hooks.
+    #[test]
+    fn the_waiver_keeps_every_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("run")).unwrap();
+        let agent =
+            ClaudeAgent::new(None, None, dir.path().join("run")).with_guard_proof_waiver(true);
+        assert!(agent.exec.run_without_guard_proof);
+        let exec = agent.write_exec_settings().unwrap().path;
+        let exec = (guard_command_of(&exec), read_settings(&exec));
+        let plan = agent.write_plan_settings().unwrap().path;
+        let plan = (guard_command_of(&plan), read_settings(&plan));
+        let task = write_task_settings(&dir.path().join("task").join(".ralphy"))
+            .unwrap()
+            .path;
+        let task = (guard_command_of(&task), read_settings(&task));
+        for (name, (guard, doc)) in [("exec", exec), ("plan", plan), ("task", task)] {
+            assert!(guard.is_some(), "{name}: no guard hook");
+            let status = doc["hooks"]["SessionStart"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{name}: SessionStart"))
+                .iter()
+                .any(|e| hook_text(&e["hooks"][0]).ends_with("hook status"));
+            assert!(status, "{name}: no status hook");
+        }
     }
 
     fn expected_entry(args: &[&str]) -> serde_json::Value {

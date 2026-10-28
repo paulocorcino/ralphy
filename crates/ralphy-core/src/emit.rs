@@ -232,6 +232,17 @@ pub fn api_recovered() {
     info!("{}", API_RECOVERED_MSG);
 }
 
+/// See [`hooks_unproven_allowed`].
+pub const HOOKS_UNPROVEN_ALLOWED_MSG: &str =
+    "hooks not proven — the session goes on without the proof";
+
+/// A session's hooks did not prove they run, and the local-only waiver let the
+/// session go on (ADR-0072 D6). `cause` is the refusal the session escaped.
+/// One per session.
+pub fn hooks_unproven_allowed(cause: &str) {
+    info!(cause = %cause, "{}", HOOKS_UNPROVEN_ALLOWED_MSG);
+}
+
 /// See [`agent_state`].
 pub const AGENT_STATE_MSG: &str = "agent state";
 

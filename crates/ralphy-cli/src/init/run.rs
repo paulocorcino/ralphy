@@ -44,9 +44,14 @@ fn diagnose_with_agent(
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
     match agent {
-        Agent::Claude => {
-            ralphy_agent_claude::diagnose_repo(repo, neutral_cwd, model, effort, timeout)
-        }
+        Agent::Claude => ralphy_agent_claude::diagnose_repo(
+            repo,
+            neutral_cwd,
+            model,
+            effort,
+            timeout,
+            crate::config::claude_guard_proof_waiver(repo),
+        ),
 
         Agent::Codex => {
             ralphy_agent_codex::diagnose_repo(repo, neutral_cwd, model, effort, timeout)

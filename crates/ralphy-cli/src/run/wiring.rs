@@ -30,6 +30,10 @@ pub(crate) struct ResolvedClaude {
     pub(crate) default_exec_model: String,
     pub(crate) max_minutes_per_issue: u64,
     pub(crate) remote_control: bool,
+    /// `claude.run_without_guard_proof_i_understand_the_risk`, persisted-only:
+    /// a per-run flag would make a session without the hook proof a
+    /// one-keystroke decision.
+    pub(crate) run_without_guard_proof: bool,
 }
 
 /// Vendor-neutral effort resolved independently for planning and execution.
@@ -245,7 +249,8 @@ pub(crate) fn build_agent(
                         args.max_exec_calls,
                     )
                     .with_run_deadline(run_deadline)
-                    .with_idle_minutes(idle_minutes),
+                    .with_idle_minutes(idle_minutes)
+                    .with_guard_proof_waiver(claude.run_without_guard_proof),
             )
         }
         CliAgent::Codex => {

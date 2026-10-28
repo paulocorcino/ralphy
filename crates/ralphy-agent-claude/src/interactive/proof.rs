@@ -5,6 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use anyhow::{Context, Result};
+
 use crate::EXEC_CHARTER;
 
 /// The keys that submit the charter in the TUI: the text in one write, a
@@ -78,6 +80,12 @@ impl ProofGate {
             GateState::Waiting => GateAction::Wait,
         }
     }
+
+    /// The waiver let a refused session go on: the charter is typed now and
+    /// the gate asks for nothing more.
+    pub(super) fn go_on(&mut self) {
+        self.state = GateState::Typed;
+    }
 }
 
 /// The proof wait of one child: its gate, the status file it reads from
@@ -90,6 +98,9 @@ pub(super) struct ProofWait {
     pub(super) project: PathBuf,
     pub(super) window: Duration,
     pub(super) submit_at: Option<Instant>,
+    /// `claude.run_without_guard_proof_i_understand_the_risk`: at the end of
+    /// the window with no event, type the charter instead of refusing.
+    pub(super) waiver: bool,
 }
 
 impl ProofWait {
@@ -108,7 +119,38 @@ impl ProofWait {
             project,
             window,
             submit_at: None,
+            waiver: false,
         }
+    }
+
+    /// Type the charter once the child's first hook event is in the status
+    /// file, the submit key on a later turn; when the window ends with no
+    /// event, refuse the session, or type the charter with the waiver.
+    pub(super) fn advance(
+        &mut self,
+        now: Instant,
+        keys: &mut dyn FnMut(&[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let charter = charter_keys();
+        if self.submit_at.is_some_and(|at| now >= at) {
+            self.submit_at = None;
+            keys(charter.submit).context("typing the charter's submit key")?;
+        }
+        let seen =
+            self.gate.waiting() && crate::status::session_started(&self.status_file, self.from);
+        match self.gate.poll(seen, now) {
+            GateAction::Wait => return Ok(()),
+            GateAction::Type => {}
+            GateAction::Refuse => {
+                let cause =
+                    crate::status::no_session_start(&self.settings, &self.project, self.window);
+                crate::status::refuse_or_go_on(cause, self.waiver)?;
+                self.gate.go_on();
+            }
+        }
+        keys(charter.text).context("typing the charter")?;
+        self.submit_at = Some(now + charter.pause);
+        Ok(())
     }
 }
 

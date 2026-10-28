@@ -24,9 +24,12 @@ use crate::usage::{dirs_home, latest_transcript_text, latest_transcript_text_sin
 use crate::ClaudeAgent;
 
 mod proof;
-use proof::{charter_keys, status_len, GateAction, ProofWait};
+use proof::{status_len, ProofWait};
 #[cfg(test)]
-use {crate::EXEC_CHARTER, proof::ProofGate};
+use {
+    crate::EXEC_CHARTER,
+    proof::{charter_keys, GateAction, ProofGate},
+};
 
 fn interactive_args(
     settings_path: &Path,
@@ -109,7 +112,12 @@ impl ClaudeAgent {
 
         let settings = self.write_exec_settings()?;
         if let Some(reason) = &settings.unproven {
-            return Err(crate::status::refuse_shell_form(reason));
+            // With the waiver the charter is typed at once: a shell form
+            // writes no line worth a wait.
+            crate::status::refuse_or_go_on(
+                crate::status::shell_form(reason),
+                self.exec.run_without_guard_proof,
+            )?;
         }
         let settings_path = settings.path;
         let plugin_dir = materialize_plugin(ws)?;
@@ -180,13 +188,14 @@ impl ClaudeAgent {
         let outcome = loop {
             let _ = std::fs::remove_file(&flag_file);
             // One gate per child: it reads only the lines written after its spawn.
-            let proof = ProofWait::new(
+            let mut proof = ProofWait::new(
                 status.path().to_path_buf(),
                 status_len(status.path()),
                 settings_path.clone(),
                 ws.repo_root().to_path_buf(),
                 crate::status::PROOF_WINDOW,
             );
+            proof.waiver = self.exec.run_without_guard_proof;
             let mut session =
                 PtySession::spawn(build_cmd()).context("spawning the claude execution session")?;
             let end = self.drive_session(
@@ -341,34 +350,13 @@ impl<'a> SessionPump<'a> {
         Ok(None)
     }
 
-    /// Type the charter once the child's first hook event is in the status
-    /// file, the submit key on a later turn; refuse the session when the
-    /// window ends with no event.
+    /// One turn of the proof wait: [`ProofWait::advance`].
     fn advance_proof(
         &mut self,
         now: Instant,
         keys: &mut dyn FnMut(&[u8]) -> Result<()>,
     ) -> Result<()> {
-        let charter = charter_keys();
-        if self.proof.submit_at.is_some_and(|at| now >= at) {
-            self.proof.submit_at = None;
-            keys(charter.submit).context("typing the charter's submit key")?;
-        }
-        let p = &mut self.proof;
-        let seen = p.gate.waiting() && crate::status::session_started(&p.status_file, p.from);
-        match p.gate.poll(seen, now) {
-            GateAction::Wait => Ok(()),
-            GateAction::Type => {
-                keys(charter.text).context("typing the charter")?;
-                p.submit_at = Some(now + charter.pause);
-                Ok(())
-            }
-            GateAction::Refuse => Err(crate::status::no_session_start(
-                &p.settings,
-                &p.project,
-                p.window,
-            )),
-        }
+        self.proof.advance(now, keys)
     }
 
     /// Act as the terminal: tee output and answer cursor-position queries.
