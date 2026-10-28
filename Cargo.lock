@@ -2338,6 +2338,7 @@ version = "0.1.0-rc.41"
 dependencies = [
  "anyhow",
  "libc",
+ "serde_json",
  "tempfile",
  "tracing",
  "windows-sys 0.61.2",
