@@ -45,7 +45,8 @@ pub use forge_deny::DENIED_FORGE_WRITES;
 
 mod json_session;
 pub use json_session::{
-    run_init_session, run_json_session, run_text_session, strip_bom, JsonSession, TextSession,
+    run_init_session, run_json_session, run_json_session_held, run_text_session,
+    run_text_session_held, strip_bom, JsonSession, TextSession,
 };
 
 mod resume;
@@ -75,7 +76,7 @@ pub use ralphy_proc_util::{
 mod headless;
 pub use headless::{
     run_headless, run_headless_logged, run_headless_logged_watched, HeadlessCall, HeadlessOutput,
-    HeadlessRun,
+    HeadlessRun, PromptGate,
 };
 
 mod idle;
