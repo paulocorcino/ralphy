@@ -35,6 +35,34 @@ test("the getters return the last value fed, read after the factory was built", 
   assert.deepEqual(f.lastSessions(), []);
 });
 
+// One console window with a dot, reading session 7 of the local repo.
+function dotWindow() {
+  return { _stateDot: { className: "", title: "", hidden: true }, _wantsSession: 7, _deskRepo: "~" };
+}
+
+test("ingestSessions shows a warning dot for a silent console", () => {
+  const win = dotWindow();
+  const f = createFeeds({ OPTS: {}, wins: new Set([win]), pageWindows: () => [], renderTitle() {} });
+  f.ingestSessions([{ id: 7, agent_state: { source: "silent", reason: "no hook line", since: "t" } }]);
+  assert.equal(win._stateDot.className, "session-state silent");
+  assert.equal(win._stateDot.hidden, false);
+  assert.equal(win._stateDot.title, "Agent state not reported: no hook line");
+  assert.equal(win._agentState, "silent");
+});
+
+test("ingestSessions keeps the dot of a row without a source", () => {
+  const win = dotWindow();
+  const f = createFeeds({ OPTS: {}, wins: new Set([win]), pageWindows: () => [], renderTitle() {} });
+  f.ingestSessions([{ id: 7, agent_state: { state: "waiting", since: "t", detail: "Run it?" } }]);
+  assert.equal(win._stateDot.className, "session-state waiting");
+  assert.equal(win._stateDot.hidden, false);
+  assert.equal(win._stateDot.title, "Agent is waiting: Run it?");
+  f.ingestSessions([{ id: 7 }]);
+  assert.equal(win._stateDot.className, "session-state");
+  assert.equal(win._stateDot.hidden, true);
+  assert.equal(win._stateDot.title, "");
+});
+
 test("ingestFleet keeps only peer groups", () => {
   const f = feeds();
   const peer = { daemon: "d2", local: false };

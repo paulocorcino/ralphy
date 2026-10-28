@@ -220,6 +220,8 @@ export type ConsoleWinFields = {
   _term: ConsoleTerm | null;
   /** The agent state its session last reported. */
   _agentState: string | null;
+  /** The question of a waiting agent, or the reason of a silent one. */
+  _agentDetail: string | undefined;
   /** The session id this window was spawned to attach to. */
   _wantsSession: number | null;
   /** Whether the window is in the viewport. */

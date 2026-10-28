@@ -376,6 +376,12 @@
 .dot.waiting {
   background: var(--console-text);
 }
+/* the hooks of a console there sent nothing: a diamond, not only a color */
+.dot.silent {
+  background: var(--danger);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
 
 /* the file tree — a Wunderbaum instance mounts into .wb-host when the project
    opens. It fills the remaining column height and scrolls internally. */

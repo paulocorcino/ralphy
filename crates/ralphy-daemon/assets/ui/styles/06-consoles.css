@@ -318,6 +318,13 @@
 .session-state.done {
   background: var(--border-focus);
 }
+/* The hooks of this console sent nothing: a diamond, so the warning does not
+   rest on color alone. */
+.session-state.silent {
+  background: var(--danger);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
 .session-state.unknown {
   background: transparent;
   border: 1px solid var(--text-muted);
@@ -405,6 +412,11 @@
 .session-checkout-state.waiting {
   background: var(--console-text);
   box-shadow: 0 0 0 2px rgba(232, 217, 168, 0.25);
+}
+.session-checkout-state.silent {
+  background: var(--danger);
+  border-radius: 1px;
+  transform: rotate(45deg);
 }
 .session-checkout-state.unknown {
   background: transparent;

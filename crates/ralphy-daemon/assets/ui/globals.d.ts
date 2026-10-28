@@ -121,8 +121,14 @@ type HostedSession = {
   /** The desk record the session serves. */
   record?: string;
   /** The agent's own state, from its hooks. */
-  agent_state?: { state: string; since: string; detail?: string };
+  agent_state?: AgentStateBlock;
 };
+
+/**
+ * The agent's block on a session row. A console whose hooks sent nothing has
+ * `source: "silent"`, a `reason`, and no `state`.
+ */
+type AgentStateBlock = { state?: string; source?: "silent"; reason?: string; since: string; detail?: string };
 
 /** The reply to `verb`. */
 type ReplyOf<V extends string> = V extends keyof DaemonReplies ? DaemonReplies[V] : DaemonReply;

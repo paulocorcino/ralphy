@@ -516,12 +516,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
           const mine = sessions.filter((s) =>
             WBSessionRoute.matchesRepo(s, this.repoRef(p)),
           );
-          // A `waiting` agent outranks `live` on the dot (ADR-0059).
-          p.state = !mine.length
-            ? "idle"
-            : WBProject.agentStateOf(mine) === "waiting"
-              ? "waiting"
-              : "live";
+          const dot = WBProject.projectDotOf(mine);
+          p.state = dot.state;
+          p.dotDetail = dot.detail;
         }
       } catch {
         if (seq === this._liveSeq) this.sessionsFailed("the daemon did not answer");

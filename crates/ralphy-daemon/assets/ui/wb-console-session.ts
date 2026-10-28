@@ -374,9 +374,11 @@ export function sessionRowFor(win: ConsoleWin, sessions: readonly HostedSession[
 
 // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher
 // and the title bar all say it the same way. `waiting` carries the question
-// as its detail; `unknown` is a stale observation (agent_state.rs).
+// as its detail; `unknown` is a stale observation (agent_state.rs); `silent`
+// carries the reason the daemon gave.
 export function agentStateTitle(state: string | null | undefined, detail?: string) {
   if (!state) return "";
   if (state === "unknown") return "Agent state unknown";
+  if (state === "silent") return detail ? `Agent state not reported: ${detail}` : "Agent state not reported";
   return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
 }

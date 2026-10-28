@@ -11,12 +11,14 @@
 import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { apiFetch } from "./wb-api.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { ConsoleOpts, ConsoleWin, Presentation } from "./wb-types.d.ts";
 
 const { sessionRowFor, agentStateTitle } = WBConsoleSession;
+const { agentDotOf } = WBProject;
 
 // What the feeds read from the console, and nothing else.
 export type FeedsDeps = {
@@ -132,6 +134,7 @@ export function createFeeds(deps: FeedsDeps) {
       kind: w._deskKind,
       running: !w.classList.contains("placeholder"),
       state: w._agentState ?? null,
+      detail: w._agentDetail,
     }));
   }
 
@@ -144,10 +147,11 @@ export function createFeeds(deps: FeedsDeps) {
       const dot = win._stateDot;
       if (!dot) continue;
       const row = sessionRowFor(win, sessions);
-      const state = row?.agent_state?.state ?? null;
+      const { state, detail } = agentDotOf(row?.agent_state);
       win._agentState = state;
+      win._agentDetail = detail;
       dot.className = "session-state" + (state ? ` ${state}` : "");
-      dot.title = agentStateTitle(state, row?.agent_state?.detail);
+      dot.title = agentStateTitle(state, detail);
       dot.hidden = !state;
     }
   }
