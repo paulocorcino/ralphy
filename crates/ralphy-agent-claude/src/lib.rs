@@ -214,7 +214,7 @@ impl Agent for ClaudeAgent {
         // §4): a planner stuck at a question was invisible until the watchdog.
         let settings = self.write_plan_settings()?;
         let settings_path = &settings.path;
-        let status = status::Watcher::start(&self.run_dir);
+        let status = status::Watcher::start(&self.run_dir)?;
         // The prompt waits for the session's `SessionStart` line; a shell
         // form is refused here, before the spawn (ADR-0072 D6).
         let gate = status::proof_gate(
