@@ -155,6 +155,27 @@ impl std::fmt::Display for PlanLimit {
 
 impl std::error::Error for PlanLimit {}
 
+/// An agent refused to start a session because its hooks did not prove they
+/// run. This is a fault of the machine, not of the issue: the runner ends the
+/// run with this error, restores the repository, and leaves the issue's labels
+/// and comments as they were (ADR-0072 D6, amendment of 2026-10-28).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HooksUnproven {
+    pub cause: String,
+}
+
+impl std::fmt::Display for HooksUnproven {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the agent's hooks did not prove they run: {}",
+            self.cause
+        )
+    }
+}
+
+impl std::error::Error for HooksUnproven {}
+
 /// The repository a run operates on, in place. Owns the paths under the
 /// gitignored `.ralphy/` scratch dir that planner and executor read and write.
 #[derive(Debug, Clone)]

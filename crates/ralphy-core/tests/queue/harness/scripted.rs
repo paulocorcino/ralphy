@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 
 use ralphy_core::{
-    Agent, Execution, Issue, IssueTracker, Outcome, Plan, PlanLimit, RunClock, Usage, Verdict,
-    WaitOutcome, Workspace,
+    Agent, Execution, HooksUnproven, Issue, IssueTracker, Outcome, Plan, PlanLimit, RunClock,
+    Usage, Verdict, WaitOutcome, Workspace,
 };
 
 use super::repo::git;
@@ -14,6 +14,12 @@ use super::repo::git;
 /// queue drains, `plan()` succeeds normally.
 pub(crate) enum PlanScript {
     Limit(Option<String>),
+}
+
+/// Where a scripted agent refuses with `HooksUnproven`.
+pub(crate) enum Refusal {
+    Plan(String),
+    Execute(String),
 }
 
 /// Plans a feasible step for every issue and returns a scripted sequence of
@@ -63,6 +69,8 @@ pub(crate) struct ScriptedAgent {
     /// When true, `plan` hands back a plan whose steps are all checked and
     /// reports zero open steps, as a resumed plan from a finished run does.
     pub(crate) already_executed: bool,
+    /// A scripted `HooksUnproven` from `plan` or `execute`.
+    pub(crate) refusal: Option<Refusal>,
 }
 
 impl ScriptedAgent {
@@ -89,6 +97,7 @@ impl ScriptedAgent {
             fix_protocol: false,
             exec_usages: RefCell::new(VecDeque::new()),
             already_executed: false,
+            refusal: None,
         }
     }
 
@@ -151,6 +160,12 @@ impl ScriptedAgent {
         self
     }
 
+    /// Script a refusal: `plan` or `execute` fails with `HooksUnproven`.
+    pub(crate) fn refusing(mut self, refusal: Refusal) -> Self {
+        self.refusal = Some(refusal);
+        self
+    }
+
     /// Script the `Usage` (including `model`) each `execute` call hands back,
     /// one per call in order.
     pub(crate) fn with_exec_usages(self, usages: Vec<Usage>) -> Self {
@@ -166,6 +181,12 @@ impl Agent for ScriptedAgent {
 
     fn plan(&self, issue: &Issue, ws: &Workspace) -> anyhow::Result<Plan> {
         *self.plan_attempts.borrow_mut() += 1;
+        if let Some(Refusal::Plan(cause)) = &self.refusal {
+            return Err(HooksUnproven {
+                cause: cause.clone(),
+            }
+            .into());
+        }
         // A scripted limit fails this plan call before any artifact is written,
         // mirroring a usage limit hit mid-planning.
         if let Some(PlanScript::Limit(reset)) = self.plan_scripts.borrow_mut().pop_front() {
@@ -226,6 +247,12 @@ impl Agent for ScriptedAgent {
     }
 
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Execution> {
+        if let Some(Refusal::Execute(cause)) = &self.refusal {
+            return Err(HooksUnproven {
+                cause: cause.clone(),
+            }
+            .into());
+        }
         // The most recently planned issue is the one being executed.
         let number = *self.planned.borrow().last().unwrap();
         // A well-behaved executor's reaction to the ADR-0015 bounce brief:

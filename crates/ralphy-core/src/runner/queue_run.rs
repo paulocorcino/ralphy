@@ -263,7 +263,15 @@ impl QueueRun<'_> {
                 exec_usage: Usage::default(),
             }
         } else {
-            execute_phase(&self.cx, issue, plan, &mut self.ledger)?
+            match execute_phase(&self.cx, issue, plan, &mut self.ledger) {
+                Ok(exec) => exec,
+                // A refused session is a fault of the machine: restore the repo
+                // and end the run. Other execute errors keep their path.
+                Err(e) if e.downcast_ref::<crate::HooksUnproven>().is_some() => {
+                    return Err(self.fail(e));
+                }
+                Err(e) => return Err(e.into()),
+            }
         };
         match exec {
             ExecPhase::Done { exec_usage } => Ok(exec_usage),
