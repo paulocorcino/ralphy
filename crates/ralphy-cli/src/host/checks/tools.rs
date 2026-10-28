@@ -80,7 +80,37 @@ fn doctor_checks(report: &DoctorReport, os: HostOs) -> Vec<HostCheck> {
         }
     }
     out.push(agent_check(report));
+    out.extend(hooks_check(report));
     out
+}
+
+/// One check for the hook lines of the host, shown only when the host's
+/// Ralphy reports them: an older one does not, and nothing is shown then.
+/// A hook that does not run is a warning, as it is in `doctor`.
+fn hooks_check(report: &DoctorReport) -> Option<HostCheck> {
+    let lines: Vec<&ToolLine> = report
+        .tools
+        .iter()
+        .filter(|l| l.tool == Tool::Hooks)
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    let text = lines
+        .iter()
+        .map(|l| format!("{}: {}", l.name, l.text))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let status = if lines.iter().all(|l| l.ok) {
+        CheckStatus::Pass
+    } else {
+        CheckStatus::Warn
+    };
+    Some(HostCheck {
+        id: CheckId::Hooks,
+        status,
+        text,
+    })
 }
 
 /// A missing tool's fix as the host offers it. Git keeps the host's own

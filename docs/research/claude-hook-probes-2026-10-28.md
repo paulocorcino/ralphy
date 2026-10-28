@@ -235,3 +235,30 @@ Seen in these runs, not changed:
 
 All files, settings and temp folders the runs made were removed. No branch,
 label or comment was left on FinCal.
+
+## Live results — doctor (#768)
+
+Measured 2026-10-28 on branch `feat/770-hook-proof` (on top of commit
+`af134a8b`, with the Stage 12 changes not yet committed), debug build.
+Windows 11 (Git Bash) and WSL2 Ubuntu (`CARGO_TARGET_DIR=~/ralphy-linux-target`).
+Claude Code is 2.1.312. The hook program of the check is the binary that runs
+the check, or the file `RALPHY_EXE_OVERRIDE` names; the missing-program cases
+set that variable to a path that does not exist. A running binary cannot be
+deleted on Windows, and the check runs in the first second of `doctor`, so a
+renamed copy was not used here.
+
+| Case | OS | Setup | What happened |
+|---|---|---|---|
+| D1 `doctor` | Windows | none | `[ok  ] claude hooks: the hook command ran and wrote a status line`, then six `[ok  ]` lines `<agent> hooks: no state source` (codex, kimi, opencode, copilot, cursor, gemini) |
+| D1 `doctor --json` | Windows | none | seven `"tool":"hooks"` lines, all `required: false`; the claude one has `ok: true` |
+| D1 `doctor` | WSL | none | the same claude line, `ok` |
+| D1 `doctor --json` | WSL | none | the claude line has `ok: true`, `required: false` |
+| D2 program missing | Windows | `RALPHY_EXE_OVERRIDE=C:\no\such\ralphy.exe` | `[warn] claude hooks: C:\no\such\ralphy.exe did not start: … (os error 3)`; the line has `ok: false`, `required: false` |
+| D2 program missing | WSL | `RALPHY_EXE_OVERRIDE=/tmp/no/such/ralphy` | `[warn] claude hooks: /tmp/no/such/ralphy did not start: No such file or directory (os error 2)` |
+| D3 daemon start | Windows | a copy of the binary in a temp folder, `RALPHY_DAEMON_DIR=<tmp>`, `daemon --port 7461`, stopped by its own PID; `RALPHY_EXE_OVERRIDE` as in D2 | exactly one start-check line in the log, 12 s after start: `WARN ralphy_daemon::agent_state: the Claude console hook command failed its check: C:\no\such\ralphy.exe did not start: …` |
+| D3 daemon start | Windows | the same, with no override | no start-check line (a check that passes logs nothing) |
+
+The `doctor` exit code is 1 on this machine only because `gh` is signed out;
+a failed hook line adds nothing to the missing count. `~/.ralphy/daemon.pid`
+had the same hash before and after D3. The scratch folder and the daemon
+process were removed.

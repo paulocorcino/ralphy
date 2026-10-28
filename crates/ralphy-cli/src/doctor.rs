@@ -13,6 +13,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Args;
 use ralphy_adapter_support::{find_program, locate_program, run_headless};
+use ralphy_daemon::agent_state::{state_source, StateSource};
+use ralphy_proc_util::hook_form::{self, HookCheck};
 use serde::{Deserialize, Serialize};
 
 use crate::init::Agent;
@@ -33,6 +35,8 @@ pub(crate) enum Tool {
     Python,
     Agent,
     Linger,
+    /// Whether the hooks of an agent that gives its state through hooks run.
+    Hooks,
 }
 
 /// One line of the result: one tool, what was found, and how to fix it.
@@ -74,6 +78,8 @@ pub(crate) struct MachineFacts {
     pub agents: Vec<(Agent, String)>,
     /// `None` off Linux; on Linux, `None` inside when it could not be read.
     pub linger: Option<Option<bool>>,
+    /// The hook check of each installed agent whose state comes from hooks.
+    pub hooks: Vec<(Agent, HookCheck)>,
 }
 
 /// The lingering line, shared with the host check so both say the same thing.
@@ -199,10 +205,52 @@ fn linger_line(linger: Option<bool>) -> ToolLine {
     }
 }
 
+/// The state source of an agent, from the owner of that fact. The daemon names
+/// its agents by the same CLI name.
+fn source_of(agent: Agent) -> StateSource {
+    ralphy_daemon::session::Agent::from_query(agent.cli_name())
+        .map_or(StateSource::None, state_source)
+}
+
+/// One line for an installed agent: whether its state hooks run. A hook
+/// that fails is a warning, never a missing tool.
+fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
+    let (ok, text) = match source_of(agent) {
+        StateSource::Hooks => match facts.hooks.iter().find(|(a, _)| *a == agent) {
+            Some((_, HookCheck::Ok)) => (
+                true,
+                "the hook command ran and wrote a status line".to_string(),
+            ),
+            Some((_, HookCheck::Failed { cause })) => (false, cause.clone()),
+            Some((_, HookCheck::NotChecked { reason })) => {
+                (false, format!("not checked: {reason}"))
+            }
+            None => (false, "not checked: the check gave no result".to_string()),
+        },
+        StateSource::Stream => (true, "state comes from the output stream".to_string()),
+        StateSource::None => (true, "no state source".to_string()),
+    };
+    ToolLine {
+        tool: Tool::Hooks,
+        name: format!("{} hooks", agent.cli_name()),
+        ok,
+        required: false,
+        version: None,
+        text,
+        fix: None,
+    }
+}
+
 /// The result for `facts`, one line per tool, in a fixed order.
 pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     let mut tools = vec![git_line(facts, windows), gh_line(facts), python_line(facts)];
     tools.extend(agent_lines(facts));
+    tools.extend(
+        facts
+            .agents
+            .iter()
+            .map(|(agent, _)| hook_line(facts, *agent)),
+    );
     if let Some(linger) = facts.linger {
         tools.push(linger_line(linger));
     }
@@ -261,6 +309,11 @@ pub(crate) fn probe() -> MachineFacts {
             .iter()
             .map(|a| scope.spawn(move || agent_program(a).map(|p| (*a, version_of(&p)))))
             .collect();
+        let hooks: Vec<_> = Agent::ALL
+            .iter()
+            .filter(|a| source_of(**a) == StateSource::Hooks)
+            .map(|a| scope.spawn(move || hook_probe(*a)))
+            .collect();
         let linger = linger();
         // A probe thread only runs a program and reads its output; a panic in
         // one is a bug in that code, not a fact about the computer.
@@ -275,8 +328,26 @@ pub(crate) fn probe() -> MachineFacts {
                 .filter_map(|h| h.join().expect(join))
                 .collect(),
             linger,
+            hooks: hooks
+                .into_iter()
+                .filter_map(|h| h.join().expect(join))
+                .collect(),
         }
     })
+}
+
+/// Run the hook command of `agent` as a console of the daemon would get it:
+/// the same program and arguments as `agent_state::run_start_check`, so the two
+/// answer for the same command. `None` when the agent is not installed.
+fn hook_probe(agent: Agent) -> Option<(Agent, HookCheck)> {
+    let cli = agent_program(&agent)?;
+    let exe = ralphy_daemon::dispatch::ralphy_exe();
+    let hook = hook_form::claude_hook(&cli, Path::new(&exe), &["hook", "status"]);
+    let home = ralphy_proc_util::home_dir();
+    Some((
+        agent,
+        hook_form::check(&hook, hook_form::CHECK_LIMIT, home.as_deref()),
+    ))
 }
 
 fn on_path(name: &str) -> Option<PathBuf> {

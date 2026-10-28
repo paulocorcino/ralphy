@@ -111,3 +111,50 @@ fn doctor_is_asked_of_the_installed_ralphy_on_every_os() {
         assert!(command.contains(".ralphy"), "{os:?}: {command}");
     }
 }
+
+fn hooks_line(name: &str, ok: bool, text: &str) -> ToolLine {
+    ToolLine {
+        required: false,
+        text: text.to_string(),
+        ..line(Tool::Hooks, name, ok, None)
+    }
+}
+
+fn hooks_of(report: &DoctorReport) -> Option<HostCheck> {
+    let mut checks = probe_checks();
+    with_doctor(&mut checks, Some(report), HostOs::Linux);
+    checks.into_iter().find(|c| c.id == CheckId::Hooks)
+}
+
+#[test]
+fn a_remote_hook_line_is_shown() {
+    let mut ok = report(true);
+    ok.tools.push(hooks_line("claude hooks", true, "ran"));
+    let shown = hooks_of(&ok).expect("a hook check");
+    assert_eq!(shown.status, CheckStatus::Pass);
+    assert_eq!(shown.text, "claude hooks: ran");
+
+    let mut failed = report(true);
+    failed
+        .tools
+        .push(hooks_line("claude hooks", false, "ralphy did not start"));
+    let shown = hooks_of(&failed).expect("a hook check");
+    assert_eq!(shown.status, CheckStatus::Warn);
+    assert_eq!(shown.text, "claude hooks: ralphy did not start");
+    assert!(!shown.is_blocking());
+}
+
+#[test]
+fn an_older_doctor_without_hook_lines_still_parses() {
+    let json = serde_json::to_string(&report(true)).expect("json");
+    assert!(!json.contains("\"hooks\""), "{json}");
+    let parsed = parse_doctor(&out(0, &json, "")).expect("a report");
+    assert_eq!(parsed, report(true));
+    assert_eq!(hooks_of(&parsed), None);
+
+    let mut newer = report(true);
+    newer.tools.push(hooks_line("claude hooks", true, "ran"));
+    let json = serde_json::to_string(&newer).expect("json");
+    assert!(json.contains("\"tool\":\"hooks\""), "{json}");
+    assert_eq!(parse_doctor(&out(0, &json, "")), Some(newer));
+}

@@ -188,6 +188,7 @@ pub(crate) enum CheckId {
     Gh,
     Python,
     Agent,
+    Hooks,
 }
 
 impl CheckId {
@@ -206,6 +207,7 @@ impl CheckId {
             CheckId::Gh => "gh",
             CheckId::Python => "python",
             CheckId::Agent => "agent",
+            CheckId::Hooks => "hooks",
         }
     }
 
@@ -223,6 +225,7 @@ impl CheckId {
             CheckId::Gh => "GitHub CLI",
             CheckId::Python => "Python",
             CheckId::Agent => "Agent CLI",
+            CheckId::Hooks => "Agent hooks",
         }
     }
 }
