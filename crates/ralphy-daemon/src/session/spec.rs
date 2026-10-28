@@ -247,7 +247,14 @@ fn add_claude_launch(
     }
     if let Some(files) = status {
         let exe = PathBuf::from(crate::dispatch::ralphy_exe());
-        match files.write(&exe) {
+        // The version read names the program the console runs, so the entry
+        // has the form that Claude Code version runs.
+        let hook = ralphy_proc_util::hook_form::claude_hook(
+            Path::new(&spec.program),
+            &exe,
+            &["hook", "status"],
+        );
+        match files.write(&hook) {
             Ok(()) => {
                 spec.args.push(OsString::from("--settings"));
                 spec.args.push(files.settings.clone().into_os_string());

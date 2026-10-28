@@ -17,7 +17,10 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use ralphy_proc_util::hook_form::HookCommand;
 use serde_json::Value;
+
+use crate::session::Agent;
 
 /// The idle window a `working` may age past before it renders `unknown` —
 /// the interactive default `ralphy-core` reaps a wedged run at
@@ -196,6 +199,31 @@ impl Tail {
     // jscpd:ignore-end
 }
 
+/// Where a console's agent state comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StateSource {
+    /// The vendor's own hooks, written by the daemon into a settings file.
+    Hooks,
+    /// The vendor's output stream.
+    Stream,
+    /// The vendor gives no state.
+    None,
+}
+
+/// The state source of an agent. Exhaustive, so a new agent cannot be added
+/// without choosing one (docs/adr/0059 A1, docs/adr/0040 Tier 4).
+pub fn state_source(agent: Agent) -> StateSource {
+    match agent {
+        Agent::Claude => StateSource::Hooks,
+        Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Gemini
+        | Agent::Kimi
+        | Agent::OpenCode => StateSource::None,
+    }
+}
+
 /// The two files one console's hooks need, under `<store>/sessions/`: the
 /// settings file the vendor is launched with and the status file the hooks
 /// append to. Both are the session's and go with it.
@@ -213,15 +241,15 @@ impl StatusFiles {
         }
     }
 
-    /// Write the settings file (the §4 hook set, each `<exe> hook status`)
-    /// and an empty status file. The settings are the hooks and NOTHING
+    /// Write the settings file (the §4 hook set, each the `hook` entry) and an
+    /// empty status file. The settings are the hooks and NOTHING
     /// else: the vendor merges `--settings` over the operator's own file, so
     /// their permissions and hooks stay (ADR-0059 §5).
-    pub fn write(&self, exe: &Path) -> std::io::Result<()> {
+    pub fn write(&self, hook: &HookCommand) -> std::io::Result<()> {
         if let Some(dir) = self.settings.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&self.settings, console_settings_json(exe))?;
+        std::fs::write(&self.settings, console_settings_json(hook))?;
         std::fs::write(&self.status, b"")
     }
 
@@ -234,17 +262,17 @@ impl StatusFiles {
 }
 
 /// The console's settings document: the §4 hook set on every event, each
-/// running `"<exe>" hook status`. The same seven events the adapter registers
-/// (`SessionStart`, `UserPromptSubmit`, `PreToolUse *`, `PostToolUse *`,
-/// `PermissionRequest *`, `Stop`, `SubagentStop`), and none of the ones it
-/// rejected.
-pub fn console_settings_json(exe: &Path) -> String {
-    let exe = ralphy_proc_util::exe::plain_path(exe.to_path_buf());
-    let command = format!("\"{}\" hook status", exe.display());
+/// running `hook` (built by the caller from the Claude Code version, so the
+/// entry has the form that version runs). The same seven events the adapter
+/// registers (`SessionStart`, `UserPromptSubmit`, `PreToolUse *`,
+/// `PostToolUse *`, `PermissionRequest *`, `Stop`, `SubagentStop`), and none
+/// of the ones it rejected.
+pub fn console_settings_json(hook: &HookCommand) -> String {
+    let command = hook.entry();
     let entry = |matcher: &str| {
         serde_json::json!([{
             "matcher": matcher,
-            "hooks": [ { "type": "command", "command": command } ]
+            "hooks": [ command.clone() ]
         }])
     };
     let settings = serde_json::json!({
@@ -264,6 +292,7 @@ pub fn console_settings_json(exe: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ralphy_proc_util::hook_form::hook_for_version;
 
     /// The adapter's fixture, by path: the ONE file both folds are pinned by
     /// (ADR-0059 §5). Moving or editing it reds both crates.
@@ -373,12 +402,22 @@ mod tests {
         assert_eq!(details, vec!["permission: Bash", "permission: Edit"]);
     }
 
+    const EXE: &str = if cfg!(windows) {
+        r"C:\r\ralphy.exe"
+    } else {
+        "/r/ralphy"
+    };
+
+    fn hook_of(version: &str) -> HookCommand {
+        hook_for_version(Some(version), Path::new(EXE), &["hook", "status"])
+    }
+
     /// The console settings carry the seven events, `*` where the ADR says,
-    /// the exe quoted, and NOTHING but hooks — the operator's own settings
-    /// must keep their say.
+    /// and NOTHING but hooks: the operator's own settings must keep their say.
     #[test]
     fn console_settings_carry_the_hook_set_and_nothing_else() {
-        let json = console_settings_json(Path::new("C:\\r\\ralphy.exe"));
+        let hook = hook_of("2.1.139");
+        let json = console_settings_json(&hook);
         let v: Value = serde_json::from_str(&json).unwrap();
         let obj = v.as_object().unwrap();
         assert_eq!(obj.keys().collect::<Vec<_>>(), vec!["hooks"]);
@@ -400,23 +439,63 @@ mod tests {
         assert_eq!(hooks["PreToolUse"][0]["matcher"], "*");
         assert_eq!(hooks["PostToolUse"][0]["matcher"], "*");
         assert_eq!(hooks["PermissionRequest"][0]["matcher"], "*");
+        for event in events {
+            assert_eq!(hooks[event][0]["hooks"][0], hook.entry(), "{event}");
+        }
+    }
+
+    /// Below 2.1.139 the entry is one shell string; from it, the program and
+    /// its arguments apart.
+    #[test]
+    fn console_settings_use_the_form_of_the_claude_version() {
+        let old: Value = serde_json::from_str(&console_settings_json(&hook_of("2.1.138"))).unwrap();
+        let shell = old["hooks"]["Stop"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(shell.ends_with(" hook status"), "{shell}");
+        assert!(old["hooks"]["Stop"][0]["hooks"][0]["args"].is_null());
+
+        let new: Value = serde_json::from_str(&console_settings_json(&hook_of("2.1.139"))).unwrap();
         assert_eq!(
-            hooks["Stop"][0]["hooks"][0]["command"],
-            "\"C:\\r\\ralphy.exe\" hook status"
+            new["hooks"]["Stop"][0]["hooks"][0],
+            serde_json::json!({"type": "command", "command": EXE, "args": ["hook", "status"]})
         );
     }
 
-    /// A daemon started through a canonicalized path runs as `\\?\C:\…`;
+    /// A daemon started through a canonicalized path runs as `\\?\C:\...`;
     /// Git Bash, which runs the hooks, cannot run that form.
     #[cfg(windows)]
     #[test]
     fn console_hooks_name_the_binary_without_the_verbatim_prefix() {
-        let json = console_settings_json(Path::new("\\\\?\\C:\\r\\ralphy.exe"));
-        let doc: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let hook = hook_for_version(
+            Some("2.1.139"),
+            Path::new(r"\\?\C:\r\ralphy.exe"),
+            &["hook", "status"],
+        );
+        let doc: Value = serde_json::from_str(&console_settings_json(&hook)).unwrap();
         assert_eq!(
             doc["hooks"]["Stop"][0]["hooks"][0]["command"],
-            "\"C:\\r\\ralphy.exe\" hook status"
+            r"C:\r\ralphy.exe"
         );
+    }
+
+    /// Claude has hooks; no other agent gives a state. The match names every
+    /// variant, so a new agent has to choose.
+    #[test]
+    fn every_agent_has_a_state_source() {
+        for agent in Agent::ALL {
+            let want = if agent == Agent::Claude {
+                StateSource::Hooks
+            } else {
+                StateSource::None
+            };
+            assert_eq!(state_source(agent), want, "{agent:?}");
+        }
+        let src = include_str!("agent_state.rs");
+        let start = src.find("pub fn state_source(").unwrap();
+        let end = start + src[start..].find("\n}").unwrap();
+        let body = &src[start..end];
+        assert!(!body.contains("_ =>"), "the match must name every agent");
     }
 
     #[test]
@@ -425,7 +504,7 @@ mod tests {
         let files = StatusFiles::for_session(&dir.path().join("sessions"), 7);
         assert!(files.settings.ends_with("7.settings.json"));
         assert!(files.status.ends_with("7.agent-status.jsonl"));
-        files.write(Path::new("ralphy")).unwrap();
+        files.write(&hook_of("2.1.139")).unwrap();
         assert!(files.settings.is_file() && files.status.is_file());
         assert_eq!(std::fs::read(&files.status).unwrap(), b"");
         files.remove();

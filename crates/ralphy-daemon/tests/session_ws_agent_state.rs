@@ -182,10 +182,16 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
         "Stop",
         "SubagentStop",
     ] {
-        let cmd = doc["hooks"][event][0]["hooks"][0]["command"]
-            .as_str()
-            .unwrap_or_else(|| panic!("{event} registered"));
-        assert!(cmd.ends_with("hook status"), "{event}: {cmd}");
+        // The test child prints no Claude Code version, so the form is Shell;
+        // a real Claude Code 2.1.139 or later gets the exec form.
+        let entry = &doc["hooks"][event][0]["hooks"][0];
+        let runs_hook_status = match entry["args"].as_array() {
+            Some(args) => args == &[serde_json::json!("hook"), serde_json::json!("status")],
+            None => entry["command"]
+                .as_str()
+                .is_some_and(|c| c.ends_with("hook status")),
+        };
+        assert!(runs_hook_status, "{event}: {entry}");
     }
     assert!(
         status.is_file(),
