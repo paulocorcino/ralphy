@@ -5,7 +5,7 @@
 //! cannot be read, the entry is one shell string. Both the run settings and the
 //! daemon settings render through this module, so they never disagree.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -132,14 +132,26 @@ fn dotted((major, minor, patch): (u32, u32, u32)) -> String {
 }
 
 /// Read the version of `claude_bin` and decide the form. A shell form is
-/// logged with its reason.
+/// logged with its reason once per binary and reason: one settings file asks
+/// for several hooks, and each would log the same line.
 pub fn claude_hook(claude_bin: &Path, program: &Path, args: &[&str]) -> HookCommand {
     let version = read_version(claude_bin, VERSION_READ_LIMIT);
     let hook = hook_for_version(version.as_deref(), program, args);
-    if hook.form() == HookForm::Shell {
+    if hook.form() == HookForm::Shell && first_warning(claude_bin, hook.reason()) {
         tracing::warn!("{}", hook.reason());
     }
     hook
+}
+
+static WARNED: LazyLock<Mutex<HashSet<(PathBuf, String)>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// `true` the first time this process sees `reason` for `bin`.
+fn first_warning(bin: &Path, reason: &str) -> bool {
+    let bin = std::fs::canonicalize(bin).unwrap_or_else(|_| bin.to_path_buf());
+    // A poisoned set still holds valid entries: each insert is one call.
+    let mut warned = WARNED.lock().unwrap_or_else(|e| e.into_inner());
+    warned.insert((bin, reason.to_string()))
 }
 
 type CacheKey = (PathBuf, SystemTime);
@@ -434,6 +446,18 @@ mod tests {
                 assert!(!command.contains('\\'), "{command}");
             }
         }
+    }
+
+    #[test]
+    fn a_shell_form_reason_is_logged_once_per_binary() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bin = dir.path().join("claude");
+        let reason = hook(Some("2.1.138 (Claude Code)")).reason().to_string();
+        assert!(first_warning(&bin, &reason), "the first hook logs");
+        assert!(!first_warning(&bin, &reason), "the second hook does not");
+        let other = dir.path().join("other-claude");
+        assert!(first_warning(&other, &reason), "another binary logs");
+        assert!(first_warning(&bin, "another reason"), "another reason logs");
     }
 
     #[test]
