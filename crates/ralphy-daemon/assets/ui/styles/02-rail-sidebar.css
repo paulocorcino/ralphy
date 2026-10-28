@@ -25,8 +25,10 @@
 }
 /* `>` is load-bearing: the account menu hangs INSIDE the rail now, and an
    unscoped `.rail button` turned each of its items into a 32px icon box. These
-   rules describe the rail's OWN controls — its direct children — only. */
-.rail > button {
+   rules describe the rail's OWN controls — its direct children — only. The
+   attention button sits in a wrapper with its panel, and is one of them. */
+.rail > button,
+.rail-attention > button {
   all: unset;
   width: 32px;
   height: 32px;
@@ -36,17 +38,98 @@
   color: var(--text-muted);
   cursor: pointer;
 }
-.rail > button:hover {
+.rail > button:hover,
+.rail-attention > button:hover {
   background: var(--surface);
   color: var(--text);
 }
-.rail > button.active {
+.rail > button.active,
+.rail-attention > button.active {
   background: var(--surface);
   color: var(--console-text);
 }
-.rail > button [data-lucide] {
+.rail > button [data-lucide],
+.rail-attention > button [data-lucide] {
   width: 18px;
   height: 18px;
+}
+
+/* --- the attention list (wb-attention.ts) ---------------------------------- */
+.rail-attention > button {
+  position: relative;
+}
+/* The count of open requests, on the button's corner. Hidden at 0. */
+.attention-badge {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: #d29922;
+  color: var(--bg);
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+/* The panel opens to the SIDE, as the account menu does: the rail is 48px. */
+.rail .attention-panel {
+  top: 0;
+  left: calc(100% + 12px);
+  right: auto;
+  width: 300px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.attention-empty {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.attention-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+.attention-row:last-child {
+  border-bottom: none;
+}
+.attention-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.attention-vendor {
+  color: var(--text-muted);
+}
+.attention-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 600;
+}
+.attention-age,
+.attention-kind {
+  color: var(--text-muted);
+}
+.attention-detail {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.attention-go {
+  align-self: flex-start;
+  margin-top: 0.15rem;
 }
 
 /* --- sidebar (project accordion) ------------------------------------------ */

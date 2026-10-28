@@ -153,10 +153,11 @@ fn the_console_chrome_holds_its_three_rules() {
     let hear = r#"addEventListener("workbench:menus-close", "#;
     // Counted, not `contains`: the family also holds the two consoles
     // components, so a bare `contains` stays green when the shell's own send
-    // or hear is gone. Four is the shell's one, their two, and the + menu's.
+    // or hear is gone. Five is the shell's one, their two, the + menu's, and
+    // the attention panel's (wb-attention.ts).
     assert!(
-        app.matches(close).count() == 4
-            && app.matches(hear).count() == 4
+        app.matches(close).count() == 5
+            && app.matches(hear).count() == 5
             && app.contains("this.avatarMenu = false;"),
         "the shell must close the account menu on the one menus event, and send it"
     );

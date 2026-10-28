@@ -130,8 +130,8 @@ first line is the only proof (ADR-0059 amendment of 2026-10-28, A2).
 
 **D10. The daemon that hosts a source owns its attention requests.** Each
 daemon works out its own list from its consoles and from the run snapshots
-of its registered repos, read on a tick of a few seconds. The page joins the
-lists of the peers, as it joins `/api/sessions`. A run in a repo that no
+of its registered repos, read on a tick of a few seconds. The daemon the
+page talks to joins the lists of its peers, as it joins `/api/sessions`. A run in a repo that no
 daemon registers is not on any list; it still sends its own Telegram
 messages.
 

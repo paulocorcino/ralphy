@@ -545,6 +545,8 @@ interface WindowEventMap {
   "workbench:desk-reread": CustomEvent<null>;
   /** Read the release view again. */
   "workbench:release-reread": CustomEvent<null>;
+  /** Read the attention list again (wb-attention.ts). */
+  "workbench:attention-reread": CustomEvent<null>;
   /** Add a canvas tab once and bring it to the front. */
   "workbench:tab-open": CustomEvent<{ tab: import("./wb-shell-types.d.ts").CanvasTab }>;
   /** Open the Spend tab. */

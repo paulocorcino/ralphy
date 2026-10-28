@@ -17,8 +17,9 @@
      and its policy;
    - `workbench:log-off`: the operator logs off;
    - `workbench:repos-reread`, `workbench:sessions-reread`,
-     `workbench:desk-reread` and `workbench:release-reread`: a push, a
-     reopened socket or the tab coming back asks to read that fact again;
+     `workbench:desk-reread`, `workbench:release-reread` and
+     `workbench:attention-reread`: a push, a reopened socket or the tab
+     coming back asks to read that fact again;
    - `workbench:board-refresh`, `workbench:panels-reread` and
      `workbench:sockets-resume`.
    The Changes view (wb-changes-panel.ts) tells it which change sets are not
@@ -178,7 +179,10 @@ export function connectionStore(deps: ConnectionStoreDeps) {
         // A spawn and its first agent state arrive together: one read.
         clearTimeout(this._liveTimer);
         this._liveTimer = setTimeout(() => {
-          if (!this.tabHidden()) sendWindow(window, "workbench:sessions-reread");
+          if (this.tabHidden()) return;
+          sendWindow(window, "workbench:sessions-reread");
+          // The attention list follows the consoles' agent state.
+          sendWindow(window, "workbench:attention-reread");
         }, this.LIVE_SETTLE_MS);
       } else if (verb === "desk.dirty") {
         // This tab's own write: it already holds the result.
@@ -197,6 +201,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       if (!reopened || this.tabHidden()) return;
       sendWindow(window, "workbench:repos-reread", { git: true });
       sendWindow(window, "workbench:desk-reread");
+      sendWindow(window, "workbench:attention-reread");
       sendWindow(window, "workbench:board-refresh", { trigger: "reopen" });
       if (window.Alpine.store("projects").openSlug) window.Alpine.store("runs").hydrateRuns();
     },
@@ -293,6 +298,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:board-refresh", { trigger: "visible" });
       sendWindow(window, "workbench:repos-reread", { git: true });
       sendWindow(window, "workbench:desk-reread");
+      sendWindow(window, "workbench:attention-reread");
       // Not only with the Runs panel open: the runs lock the writes.
       window.Alpine.store("runs").hydrateRuns();
       this.rereadOpenPanels();

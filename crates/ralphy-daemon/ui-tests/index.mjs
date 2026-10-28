@@ -37,6 +37,7 @@ import "./wb-console-frames.test.mjs";
 import "./wb-console-input.test.mjs";
 import "./wb-console-keys.test.mjs";
 import "./wb-console-feeds.test.mjs";
+import "./wb-attention.test.mjs";
 import "./wb-console-dormancy.test.mjs";
 import "./wb-console-name.test.mjs";
 import "./wb-desk-popups.test.mjs";

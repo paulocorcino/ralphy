@@ -1,0 +1,14 @@
+{
+  "requests": [
+    {
+      "console": "1",
+      "detail": "permission: Bash",
+      "dismissable": false,
+      "id": "console:1",
+      "kind": "console-waiting",
+      "repo": "owner/attention",
+      "since": "2026-10-28T10:00:00-03:00",
+      "vendor": "claude"
+    }
+  ]
+}

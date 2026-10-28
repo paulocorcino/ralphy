@@ -144,6 +144,32 @@
           </button>
         </div>
       </div>
+      <!-- The attention list (wb-attention.ts): the requests that wait for the
+           operator, as the daemon computed them. The badge is the count, hidden
+           at 0; the same count is in the tab title. The panel opens to the SIDE,
+           as the account menu does. -->
+      <div class="menu-wrap rail-attention" x-data="wbAttention">
+        <button :class="{ active: open }" @click.stop="toggle()" title="Requests that wait for you">
+          <svg x-icon="'bell'"></svg>
+          <span class="attention-badge" x-show="count() > 0" x-text="count()" x-cloak></span>
+        </button>
+        <div class="dropdown attention-panel" x-show="open" @click.outside="close()" x-cloak>
+          <div class="dropdown-head">Requests that wait for you</div>
+          <p class="attention-empty" x-show="count() === 0">Nothing waits for you.</p>
+          <template x-for="r in requests" :key="r.id">
+            <div class="attention-row">
+              <div class="attention-line">
+                <span class="attention-vendor" x-text="r.vendor"></span>
+                <span class="attention-name" x-text="nameOf(r)"></span>
+                <span class="attention-age" x-text="ageOf(r)"></span>
+              </div>
+              <div class="attention-kind" x-text="kindOf(r)"></div>
+              <div class="attention-detail" x-show="r.detail" x-text="r.detail"></div>
+              <button class="btn attention-go" @click="goTo(r)">Go to the console</button>
+            </div>
+          </template>
+        </div>
+      </div>
       <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><svg x-icon="'folder-tree'"></svg></button>
       <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
            cross-repo aggregate this UI never computes (#317, PRD #314). The
