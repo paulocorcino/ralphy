@@ -3,11 +3,11 @@
 //! The daemon writes a per-session settings file registering the §4 hook set
 //! (each `<ralphy exe> hook status`), points the child at a per-session
 //! status file through `RALPHY_STATUS_FILE`, and tails that file from the
-//! session's own pump tick. The fold from hook line to state is the §1 table
-//! **duplicated** here — the daemon never imports the adapter (ADR-0032 §10)
-//! — and pinned against the adapter's fixture
-//! (`crates/ralphy-agent-claude/tests/fixtures/agent_state_mapping.json`) so
-//! the two cannot drift. Staleness (§6) is applied at READ time: a `working`
+//! session's own pump tick. The fold from hook line to state (ADR-0085 D7) is
+//! **duplicated** here, in [`fold`] and the Claude map — the daemon never
+//! imports an adapter (ADR-0032 §10) — and pinned against the adapter's
+//! fixture (`crates/ralphy-agent-claude/tests/fixtures/agent_state_mapping.json`)
+//! so the two cannot drift. Staleness (§6) is applied at READ time: a `working`
 //! older than the interactive idle window renders `unknown`; a `waiting`
 //! never goes stale; the state dies with the PTY and is never persisted.
 //!
@@ -22,6 +22,12 @@ use ralphy_proc_util::hook_form::{HookCheck, HookCommand};
 use serde_json::Value;
 
 use crate::session::Agent;
+
+pub mod fold;
+
+mod claude;
+
+use fold::{Fold, StatusLine};
 
 /// The idle window a `working` may age past before it renders `unknown` —
 /// the interactive default `ralphy-core` reaps a wedged run at
@@ -46,7 +52,7 @@ pub struct Observed {
 }
 
 /// The wire shape on `/api/sessions` and the fleet: `state` is one of
-/// `working`, `waiting`, `done`, `blocked`, `unknown`; `since` the hook's
+/// `working`, `waiting`, `done`, `unknown` (ADR-0085 D1); `since` the hook's
 /// timestamp; `detail` what a `waiting` agent asks. A silent console
 /// (docs/adr/0059 A2) has no `state`: `source` is `silent`, `reason` says
 /// why, and `since` is when the silence began.
@@ -138,67 +144,6 @@ fn reply_len(bytes: &[u8]) -> Option<usize> {
     REPLY_FINALS.contains(&body[end]).then_some(end + 3)
 }
 
-// The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
-// copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
-// test below holds the two folds equal.
-// jscpd:ignore-start
-/// The §1 table, one hook line in, one state out — or `None` for a line that
-/// changes no state. Byte-for-byte the adapter's fold; the fixture test is
-/// the proof.
-pub fn fold_line(line: &str) -> Option<Observed> {
-    let v: Value = serde_json::from_str(line).ok()?;
-    let event = v.get("event").and_then(Value::as_str).unwrap_or("");
-    let tool = v.get("tool_name").and_then(Value::as_str).unwrap_or("");
-    let since = v
-        .get("ts")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let (state, detail) = match event {
-        "SessionStart" => ("done", None),
-        "UserPromptSubmit" => ("working", None),
-        "PreToolUse" if tool == "AskUserQuestion" => {
-            ("waiting", Some(question_detail(v.get("tool_input"))))
-        }
-        "PreToolUse" => ("working", None),
-        // A tool that returned: the question was answered, the permission
-        // granted — `waiting` ends here, not at the next tool (2026-09-16).
-        "PostToolUse" => ("working", None),
-        "PermissionRequest" => (
-            "waiting",
-            Some(if tool.is_empty() {
-                "permission".to_string()
-            } else {
-                format!("permission: {tool}")
-            }),
-        ),
-        "Stop" => ("done", None),
-        _ => return None,
-    };
-    Some(Observed {
-        state,
-        detail,
-        since,
-        seen: SystemTime::now(),
-    })
-}
-
-fn question_detail(input: Option<&Value>) -> String {
-    let text = input
-        .and_then(|i| i.get("questions"))
-        .and_then(Value::as_array)
-        .and_then(|qs| qs.first())
-        .and_then(|q| q.get("question"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    match text {
-        Some(t) => format!("AskUserQuestion: {t}"),
-        None => "AskUserQuestion".to_string(),
-    }
-}
-// jscpd:ignore-end
-
 /// What a reader is told about an observation `now` (§6): `working` past
 /// [`STALE_AFTER`] is `unknown` — the hook that would have said otherwise
 /// never came, and a green dot on a wedged child is the lie this rule
@@ -234,7 +179,7 @@ pub struct Tail {
     path: PathBuf,
     offset: u64,
     carry: Vec<u8>,
-    last: Option<(&'static str, Option<String>)>,
+    fold: Fold,
 }
 
 impl Tail {
@@ -243,43 +188,56 @@ impl Tail {
             path,
             offset: 0,
             carry: Vec::new(),
-            last: None,
+            fold: Fold::new(),
         }
     }
 
-    // The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
-    // copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
-    // test below holds the two folds equal.
-    // jscpd:ignore-start
     pub fn poll(&mut self) -> Polled {
         let mut out = Polled::default();
+        for text in self.read_lines() {
+            let Some(line) = StatusLine::parse(text.trim()) else {
+                continue;
+            };
+            // Any line the map reads is proof of life, a subagent's too.
+            out.activity |= claude::claude_signal(&line).is_some();
+            if let Some(folded) = self.fold.apply(&line, claude::claude_signal) {
+                out.transitions.push(Observed {
+                    state: folded.state.as_str(),
+                    detail: folded.detail,
+                    since: folded.ts,
+                    seen: SystemTime::now(),
+                });
+            }
+        }
+        out
+    }
+
+    // The same read is in `ralphy-adapter-support/src/agent_state.rs`, and it stays two copies: the
+    // daemon imports no adapter crate (ADR-0059 §5).
+    // jscpd:ignore-start
+    /// The complete lines appended since the last read. A partial last line
+    /// waits for its newline.
+    fn read_lines(&mut self) -> Vec<String> {
+        let mut lines = Vec::new();
         let Ok(mut file) = std::fs::File::open(&self.path) else {
-            return out;
+            return lines;
         };
         if file.seek(SeekFrom::Start(self.offset)).is_err() {
-            return out;
+            return lines;
         }
         let mut buf = Vec::new();
         let Ok(n) = file.read_to_end(&mut buf) else {
-            return out;
+            return lines;
         };
         self.offset += n as u64;
         self.carry.extend_from_slice(&buf);
         while let Some(nl) = self.carry.iter().position(|b| *b == b'\n') {
             let line: Vec<u8> = self.carry.drain(..=nl).collect();
-            let Ok(text) = std::str::from_utf8(&line) else {
-                continue;
-            };
-            if let Some(obs) = fold_line(text.trim()) {
-                out.activity = true;
-                let key = (obs.state, obs.detail.clone());
-                if self.last.as_ref() != Some(&key) {
-                    self.last = Some(key);
-                    out.transitions.push(obs);
-                }
+            if let Ok(text) = String::from_utf8(line) {
+                lines.push(text);
             }
         }
-        out
+        lines
     }
     // jscpd:ignore-end
 }
@@ -289,8 +247,6 @@ impl Tail {
 pub enum StateSource {
     /// The vendor's own hooks, written by the daemon into a settings file.
     Hooks,
-    /// The vendor's output stream.
-    Stream,
     /// The vendor gives no state.
     None,
 }
@@ -346,31 +302,37 @@ impl StatusFiles {
     }
 }
 
-/// The console's settings document: the §4 hook set on every event, each
+/// The hook events of a Claude console and their matchers, the same list the
+/// adapter registers (ADR-0059 §4, ADR-0085 D7), and none of the ones it
+/// rejected. Pinned by the adapter's `tests/fixtures/hook_events.json`.
+const CONSOLE_HOOK_EVENTS: [(&str, &str); 9] = [
+    ("SessionStart", ""),
+    ("UserPromptSubmit", ""),
+    ("PreToolUse", "*"),
+    ("PostToolUse", "*"),
+    ("PermissionRequest", "*"),
+    ("Elicitation", "*"),
+    ("ElicitationResult", "*"),
+    ("Stop", ""),
+    ("SubagentStop", ""),
+];
+
+/// The console's settings document: the hook set on every event, each
 /// running `hook` (built by the caller from the Claude Code version, so the
-/// entry has the form that version runs). The same seven events the adapter
-/// registers (`SessionStart`, `UserPromptSubmit`, `PreToolUse *`,
-/// `PostToolUse *`, `PermissionRequest *`, `Stop`, `SubagentStop`), and none
-/// of the ones it rejected.
+/// entry has the form that version runs).
 pub fn console_settings_json(hook: &HookCommand) -> String {
     let command = hook.entry();
-    let entry = |matcher: &str| {
-        serde_json::json!([{
-            "matcher": matcher,
-            "hooks": [ command.clone() ]
-        }])
-    };
-    let settings = serde_json::json!({
-        "hooks": {
-            "SessionStart": entry(""),
-            "UserPromptSubmit": entry(""),
-            "PreToolUse": entry("*"),
-            "PostToolUse": entry("*"),
-            "PermissionRequest": entry("*"),
-            "Stop": entry(""),
-            "SubagentStop": entry(""),
-        }
-    });
+    let hooks: serde_json::Map<String, Value> = CONSOLE_HOOK_EVENTS
+        .iter()
+        .map(|(event, matcher)| {
+            let entry = serde_json::json!([{
+                "matcher": matcher,
+                "hooks": [ command.clone() ]
+            }]);
+            (event.to_string(), entry)
+        })
+        .collect();
+    let settings = serde_json::json!({ "hooks": hooks });
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
@@ -458,32 +420,6 @@ mod tests {
         assert_eq!(warnings, 1, "{log}");
         assert!(log.contains("no-such-ralphy"), "{log}");
     }
-
-    /// The adapter's fixture, by path: the ONE file both folds are pinned by
-    /// (ADR-0059 §5). Moving or editing it reds both crates.
-    const MAPPING: &str =
-        include_str!("../../ralphy-agent-claude/tests/fixtures/agent_state_mapping.json");
-
-    // The adapter has the same test against the same fixture (ADR-0059 §5).
-    // jscpd:ignore-start
-    #[test]
-    fn fold_line_matches_the_adapters_mapping_fixture() {
-        let rows: Vec<Value> = serde_json::from_str(MAPPING).unwrap();
-        assert!(rows.len() >= 8, "the fixture covers the whole table");
-        for row in rows {
-            let line = serde_json::to_string(&row["line"]).unwrap();
-            let got = fold_line(&line);
-            match row["state"].as_str() {
-                None => assert_eq!(got, None, "{line} must fold to nothing"),
-                Some(state) => {
-                    let got = got.unwrap_or_else(|| panic!("{line} must fold to {state}"));
-                    assert_eq!(got.state, state, "{line}");
-                    assert_eq!(got.detail.as_deref(), row["detail"].as_str(), "{line}");
-                }
-            }
-        }
-    }
-    // jscpd:ignore-end
 
     /// §6: only a `working` goes stale, and only past the window.
     #[test]
@@ -633,35 +569,46 @@ mod tests {
         hook_for_version(Some(version), Path::new(EXE), &["hook", "status"])
     }
 
-    /// The console settings carry the seven events, `*` where the ADR says,
-    /// and NOTHING but hooks: the operator's own settings must keep their say.
+    /// The console settings carry the adapter's shared event list, with its
+    /// matchers, and NOTHING but hooks: the operator's own settings must keep
+    /// their say.
     #[test]
-    fn console_settings_carry_the_hook_set_and_nothing_else() {
+    fn console_settings_match_the_shared_event_list() {
+        let shared: Vec<Value> = serde_json::from_str(include_str!(
+            "../../ralphy-agent-claude/tests/fixtures/hook_events.json"
+        ))
+        .unwrap();
+        let mut want: Vec<(String, String)> = shared
+            .iter()
+            .map(|e| {
+                (
+                    e["event"].as_str().unwrap().to_string(),
+                    e["matcher"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        want.sort();
         let hook = hook_of("2.1.139");
         let json = console_settings_json(&hook);
         let v: Value = serde_json::from_str(&json).unwrap();
         let obj = v.as_object().unwrap();
         assert_eq!(obj.keys().collect::<Vec<_>>(), vec!["hooks"]);
         let hooks = v["hooks"].as_object().unwrap();
-        let mut events: Vec<&String> = hooks.keys().collect();
-        events.sort();
-        assert_eq!(
-            events,
-            vec![
-                "PermissionRequest",
-                "PostToolUse",
-                "PreToolUse",
-                "SessionStart",
-                "Stop",
-                "SubagentStop",
-                "UserPromptSubmit"
-            ]
-        );
-        assert_eq!(hooks["PreToolUse"][0]["matcher"], "*");
-        assert_eq!(hooks["PostToolUse"][0]["matcher"], "*");
-        assert_eq!(hooks["PermissionRequest"][0]["matcher"], "*");
-        for event in events {
-            assert_eq!(hooks[event][0]["hooks"][0], hook.entry(), "{event}");
+        let mut got: Vec<(String, String)> = hooks
+            .iter()
+            .map(|(event, list)| {
+                assert_eq!(list.as_array().map(Vec::len), Some(1), "{event}");
+                assert_eq!(list[0]["hooks"][0], hook.entry(), "{event}");
+                (
+                    event.clone(),
+                    list[0]["matcher"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        got.sort();
+        assert_eq!(got, want);
+        for event in ["Elicitation", "ElicitationResult"] {
+            assert!(hooks.contains_key(event), "{event}");
         }
     }
 

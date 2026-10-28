@@ -242,7 +242,7 @@ function chipDirty(p: Project, checkout: string | null | undefined, listing: Lis
 // asking), `working` beats the rest, an `unknown` (a green that aged out)
 // beats `done`. `null` when no session says anything — a vendor without
 // hooks, a shell console, a peer on an older build.
-const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1, blocked: 4 };
+const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1 };
 function agentStateOf(sessions: HostedSession[] | null | undefined) {
   let best = null;
   for (const s of sessions || []) {

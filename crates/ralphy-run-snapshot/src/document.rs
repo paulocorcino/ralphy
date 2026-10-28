@@ -135,7 +135,7 @@ pub struct PhaseBlock {
     pub agent: Option<AgentBlock>,
 }
 
-/// `phase.agent`: `state` is one of `working`, `waiting`, `done`, `blocked`;
+/// `phase.agent`: `state` is one of `working`, `waiting`, `done`, `unknown`;
 /// `since` the hook event's RFC 3339 timestamp; `detail` what a `waiting`
 /// agent asks.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

@@ -227,7 +227,7 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
             .unwrap();
         writeln!(
             f,
-            r#"{{"event":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{{"questions":[{{"question":"which port?"}}]}},"interrupted":false,"ts":"2026-09-15T10:00:00-03:00"}}"#
+            r#"{{"event":"PreToolUse","tool_name":"AskUserQuestion","question":"which port?","ts":"2026-09-15T10:00:00-03:00"}}"#
         )
         .unwrap();
     }

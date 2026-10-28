@@ -6,14 +6,6 @@
         20
       ]
     },
-    "crates/ralphy-agent-claude/src/status.rs": {
-      "poll": [
-        11
-      ],
-      "start": [
-        12
-      ]
-    },
     "crates/ralphy-agent-claude/src/usage.rs": {
       "newest_jsonl_since": [
         20
@@ -643,11 +635,6 @@
     "crates/ralphy-daemon/assets/ui/wb-wire.ts": {
       "(anonymous)": [
         15,
-        11
-      ]
-    },
-    "crates/ralphy-daemon/src/agent_state.rs": {
-      "poll": [
         11
       ]
     },

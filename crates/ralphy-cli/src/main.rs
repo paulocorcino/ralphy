@@ -78,7 +78,7 @@ fn main() -> Result<()> {
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
         Command::Hook(HookCommand::Guard { cost_gate }) => guard::run_guard_hook(cost_gate),
         Command::Hook(HookCommand::Post) => hook::run_post_hook(),
-        Command::Hook(HookCommand::Status) => hook::run_status_hook(),
+        Command::Hook(HookCommand::Status { vendor }) => hook::run_status_hook(vendor),
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
         Command::Doctor(args) => doctor::run(&args),

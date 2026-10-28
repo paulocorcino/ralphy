@@ -115,8 +115,9 @@ pub struct QueueRef {
     pub title: String,
 }
 
-/// The agent's hook-reported state (ADR-0059 §1): `working`, `waiting`,
-/// `done` or `blocked`, with when it began and what a `waiting` agent asks.
+/// The agent's hook-reported state (ADR-0059 §1, ADR-0085 D1): `working`,
+/// `waiting`, `done` or `unknown`, with when it began and what a `waiting`
+/// agent asks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentState {
     pub state: String,

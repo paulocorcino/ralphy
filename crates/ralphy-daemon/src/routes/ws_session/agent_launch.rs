@@ -142,7 +142,7 @@ impl Upgrade {
             agent_state::StateSource::Hooks => auth::store_dir()
                 .ok()
                 .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
-            agent_state::StateSource::Stream | agent_state::StateSource::None => None,
+            agent_state::StateSource::None => None,
         };
         // The fallback `--name` is built from the project NAME: a remoteless repo's
         // slug is a `path-<hash>` key, and the operator reads this name.

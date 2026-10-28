@@ -144,8 +144,9 @@ pub enum RunEvent {
     /// A session's hooks did not prove they run, and the local-only waiver
     /// let it go on (ADR-0072 D6). `cause` is the refusal it escaped.
     HooksUnprovenAllowed { cause: String },
-    /// The agent's own state changed (ADR-0059): `working`, `waiting`, `done`
-    /// or `blocked`, as the vendor's hooks report it and the adapter folds it.
+    /// The agent's own state changed (ADR-0059, ADR-0085 D1): `working`,
+    /// `waiting`, `done` or `unknown`, as the vendor's hooks report it and the
+    /// adapter folds it.
     /// `since` is the hook event's timestamp; `detail` names what a `waiting`
     /// agent is asking. Orthogonal to the run phase — `phase.state` is
     /// untouched.

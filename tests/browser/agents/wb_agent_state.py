@@ -399,10 +399,10 @@ def status_file(daemon_dir, sid):
     return os.path.join(daemon_dir, "sessions", f"{sid}.agent-status.jsonl")
 
 
-def hook(daemon_dir, sid, event, tool=None, tool_input=None):
+def hook(daemon_dir, sid, event, tool=None, question=None):
     """Stand in for `ralphy hook status`: append one line."""
     line = json.dumps(
-        {"event": event, "tool_name": tool, "tool_input": tool_input, "interrupted": False, "ts": "2026-09-15T10:00:00-03:00"}
+        {"event": event, "tool_name": tool, "question": question, "ts": "2026-09-15T10:00:00-03:00"}
     )
     with open(status_file(daemon_dir, sid), "a", encoding="utf-8") as f:
         f.write(line + "\n")
@@ -464,7 +464,7 @@ def main():
             page.evaluate(f"() => {{ {MENUS}.windowMenu = false; }}")
 
             # --- scenario 4: waiting -----------------------------------------------
-            hook(daemon_dir, sid, "PreToolUse", "AskUserQuestion", {"questions": [{"question": "which port?"}]})
+            hook(daemon_dir, sid, "PreToolUse", "AskUserQuestion", "which port?")
             wait_console_dot(page, 0, "waiting")
             dot = page.evaluate(CONSOLE_DOT, 0)
             check("an AskUserQuestion line paints it waiting, with the question", dot["title"] == "Agent is waiting: AskUserQuestion: which port?", f"got={dot!r}")

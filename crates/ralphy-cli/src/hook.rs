@@ -22,6 +22,8 @@ use anyhow::Result;
 use regex::Regex;
 use serde_json::Value;
 
+use crate::cli::HookVendor;
+
 /// Captures the reason trailing a `RALPHY_BLOCKED_EXIT` sentinel. Compiled once.
 static BLOCKED_EXIT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"RALPHY_BLOCKED_EXIT\s*(.*)").expect("valid regex"));
@@ -162,18 +164,21 @@ pub fn run_post_hook() -> Result<()> {
 }
 
 /// Run the `hook status` subcommand (ADR-0059 §3): read the vendor's hook
-/// payload on stdin and append one JSON line
-/// `{ "event", "tool_name", "tool_input", "ts" }` to the file named by
-/// `$RALPHY_STATUS_FILE`, which the adapter (or the daemon) tails and folds
-/// into an agent state. Three things it must never do: block the agent,
-/// fail it, or say anything on stdout but `{}` — a permission hook with an
-/// empty stdout fails CLOSED in the vendor, so the `{}` is printed FIRST,
-/// before any read or write that could go wrong. A no-op when the variable
-/// is unset, like the Stop hook, so a settings file that leaks into a
-/// non-Ralphy session does nothing. A write error goes to stderr; the exit
+/// payload on stdin and append one status line (see [`status_line`]) to the
+/// file named by `$RALPHY_STATUS_FILE`, which the adapter (or the daemon)
+/// tails and folds into an agent state. Three things it must never do: block
+/// the agent, fail it, or print anything the vendor does not expect. Claude
+/// gets `{}` (ADR-0085 D6): a Claude permission hook with an empty stdout
+/// fails CLOSED, so the `{}` is printed FIRST, before any read or write that
+/// could go wrong. Every other vendor gets nothing. A no-op when the
+/// variable is unset, like the Stop hook, so a settings file that leaks into
+/// a non-Ralphy session does nothing. A write error goes to stderr; the exit
 /// is still 0.
-pub fn run_status_hook() -> Result<()> {
-    println!("{{}}");
+pub fn run_status_hook(vendor: HookVendor) -> Result<()> {
+    match vendor {
+        HookVendor::Claude => println!("{{}}"),
+        HookVendor::Codex | HookVendor::OpenCode => {}
+    }
     // Read stdin before every return: a vendor that writes the payload into a
     // hook that already exited gets a broken pipe.
     let mut payload = String::new();
@@ -184,47 +189,64 @@ pub fn run_status_hook() -> Result<()> {
     if path.is_empty() || read.is_err() {
         return Ok(());
     }
-    let line = status_line(&payload, &chrono::Local::now().to_rfc3339());
+    let line = status_line(vendor, &payload, &chrono::Local::now().to_rfc3339());
     if let Err(e) = append_line(Path::new(&path), &line) {
         eprintln!("ralphy hook status: could not append to {path}: {e:#}");
     }
     Ok(())
 }
 
-/// The one tool whose input the status line keeps: what it asks is the
-/// `waiting` detail (ADR-0059 §1).
-const ASKS_THE_OPERATOR: &str = "AskUserQuestion";
-
-/// The one line `hook status` appends, from the vendor's payload: the hook
-/// event name, the tool it concerns (when any), the tool's input ONLY when
-/// the fold reads it — an `AskUserQuestion`'s questions — and the wall
-/// clock. Any other tool's input (a `Write`'s whole file, a `Bash` command
-/// with a secret in it) is dropped here rather than landing on disk a second
-/// time for nothing to read. A payload that is not JSON still yields a line,
-/// with `event` empty, so a vendor change never silences the file — the fold
-/// treats it as noise.
-pub fn status_line(payload: &str, ts: &str) -> String {
+/// The one line `hook status` appends, from the vendor's payload (ADR-0085
+/// D8): the hook event name, the session and subagent ids, the tool and its
+/// use id (when any), the question text of the vendor's question tool, the
+/// notification type, and the wall clock. No tool input is kept: a `Write`'s
+/// whole file or a `Bash` command with a secret in it does not land on disk a
+/// second time for one string. A payload that is not JSON still yields a
+/// line, with `event` empty, so a vendor change never silences the file — the
+/// fold treats it as noise.
+pub fn status_line(vendor: HookVendor, payload: &str, ts: &str) -> String {
     let value: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
-    let event = value
-        .get("hook_event_name")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let tool_name = value.get("tool_name").and_then(Value::as_str);
-    let tool_input = match tool_name {
-        Some(ASKS_THE_OPERATOR) => value.get("tool_input").cloned().unwrap_or(Value::Null),
-        _ => Value::Null,
-    };
+    let text = |name: &str| value.get(name).and_then(Value::as_str);
     // Not carried: `stop_hook_active`. It means "already continuing because a
     // Stop hook said so" — our own sentinel sets it on every retried turn —
     // and never an interrupt; the vendor fires no Stop on an interrupt at all
     // (ADR-0059, amendment 2026-09-16).
     serde_json::json!({
-        "event": event,
-        "tool_name": tool_name,
-        "tool_input": tool_input,
+        "event": text("hook_event_name").unwrap_or(""),
+        "session_id": text("session_id"),
+        "agent_id": text("agent_id"),
+        "tool_name": text("tool_name"),
+        "tool_use_id": text("tool_use_id"),
+        "question": question(vendor, &value),
+        "notification_type": text("notification_type"),
         "ts": ts,
     })
     .to_string()
+}
+
+/// The question a payload asks the operator, where each vendor puts it: the
+/// first question of the vendor's question tool, or the message of a Claude
+/// MCP elicitation.
+fn question(vendor: HookVendor, value: &Value) -> Option<&str> {
+    let event = value.get("hook_event_name").and_then(Value::as_str);
+    let asks = match vendor {
+        HookVendor::Claude if event == Some("Elicitation") => {
+            return value.get("message").and_then(Value::as_str);
+        }
+        HookVendor::Claude => "AskUserQuestion",
+        HookVendor::Codex => "request_user_input",
+        HookVendor::OpenCode => "question",
+    };
+    if value.get("tool_name").and_then(Value::as_str) != Some(asks) {
+        return None;
+    }
+    value
+        .get("tool_input")?
+        .get("questions")?
+        .as_array()?
+        .first()?
+        .get("question")?
+        .as_str()
 }
 
 /// ONE `write_all` per line, newline included: Claude Code runs parallel tool
@@ -266,24 +288,29 @@ pub fn run_stop_hook() -> Result<()> {
 mod tests {
     use super::*;
 
-    /// ADR-0059 §3: the status line carries the event, the tool, its input
-    /// and the clock — and NOT `stop_hook_active`, which our own sentinel
-    /// raises on every retried turn; a non-JSON payload still yields a line
-    /// with an empty event.
+    /// ADR-0059 §3: the status line carries the event, the tool, the
+    /// question and the clock — and NOT `stop_hook_active`, which our own
+    /// sentinel raises on every retried turn; a non-JSON payload still yields
+    /// a line with an empty event.
     #[test]
-    fn status_line_carries_event_tool_input_and_ts() {
+    fn status_line_carries_the_event_the_question_and_ts() {
         let line = status_line(
+            HookVendor::Claude,
             r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"which port?"}]},"session_id":"s"}"#,
             "2026-09-15T10:00:00-03:00",
         );
         let v: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(v["event"], "PreToolUse");
         assert_eq!(v["tool_name"], "AskUserQuestion");
-        assert_eq!(v["tool_input"]["questions"][0]["question"], "which port?");
+        assert_eq!(v["question"], "which port?");
         assert_eq!(v["ts"], "2026-09-15T10:00:00-03:00");
         assert!(!line.contains('\n'), "one line, no newline inside");
 
-        let stop = status_line(r#"{"hook_event_name":"Stop","stop_hook_active":true}"#, "t");
+        let stop = status_line(
+            HookVendor::Claude,
+            r#"{"hook_event_name":"Stop","stop_hook_active":true}"#,
+            "t",
+        );
         let v: Value = serde_json::from_str(&stop).unwrap();
         assert_eq!(v["event"], "Stop");
         assert_eq!(v["tool_name"], Value::Null);
@@ -292,27 +319,84 @@ mod tests {
             "a sentinel-retried turn is not an interrupt: {v}"
         );
 
-        let junk: Value = serde_json::from_str(&status_line("not json", "t")).unwrap();
+        let junk: Value =
+            serde_json::from_str(&status_line(HookVendor::Claude, "not json", "t")).unwrap();
         assert_eq!(junk["event"], "");
     }
 
-    /// Only an `AskUserQuestion` keeps its `tool_input`: a `Bash` command or a
-    /// `Write`'s content is not written to the status file (review L3).
+    /// No tool input is written: a `Bash` command or a `Write`'s content does
+    /// not land in the status file (review L3).
     #[test]
     fn status_line_drops_the_input_of_every_other_tool() {
         let bash = status_line(
+            HookVendor::Claude,
             r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"curl -H 'Authorization: Bearer SECRET'"}}"#,
             "t",
         );
         assert!(!bash.contains("SECRET"), "{bash}");
         let v: Value = serde_json::from_str(&bash).unwrap();
         assert_eq!(v["tool_name"], "Bash");
-        assert_eq!(v["tool_input"], Value::Null);
+        assert!(v.get("tool_input").is_none(), "{bash}");
         let write = status_line(
+            HookVendor::Claude,
             r#"{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"content":"whole file"}}"#,
             "t",
         );
         assert!(!write.contains("whole file"), "{write}");
+    }
+
+    /// ADR-0085 D8: the line keeps the session, the subagent, the tool use,
+    /// the question of each vendor and the notification type, and drops the
+    /// tool input.
+    #[test]
+    fn status_line_keeps_the_d8_fields_and_drops_tool_input() {
+        let bash = status_line(
+            HookVendor::Codex,
+            r#"{"hook_event_name":"PermissionRequest","session_id":"s1","agent_id":"a1","tool_name":"Bash","tool_use_id":"u1","notification_type":"permission_prompt","tool_input":{"command":"rm -rf target"}}"#,
+            "t",
+        );
+        let v: Value = serde_json::from_str(&bash).unwrap();
+        assert_eq!(v["session_id"], "s1", "{bash}");
+        assert_eq!(v["agent_id"], "a1", "{bash}");
+        assert_eq!(v["tool_use_id"], "u1", "{bash}");
+        assert_eq!(v["notification_type"], "permission_prompt", "{bash}");
+        assert!(!bash.contains("rm -rf target"), "{bash}");
+        let mut keys: Vec<&String> = v.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "agent_id",
+                "event",
+                "notification_type",
+                "question",
+                "session_id",
+                "tool_name",
+                "tool_use_id",
+                "ts"
+            ]
+        );
+
+        let asks = |tool: &str| {
+            format!(
+                r#"{{"hook_event_name":"PreToolUse","tool_name":"{tool}","tool_input":{{"questions":[{{"question":"which color?"}}]}}}}"#
+            )
+        };
+        let elicitation =
+            r#"{"hook_event_name":"Elicitation","mcp_server_name":"git","message":"which color?"}"#;
+        for (vendor, payload) in [
+            (HookVendor::Claude, asks("AskUserQuestion")),
+            (HookVendor::Claude, elicitation.to_string()),
+            (HookVendor::Codex, asks("request_user_input")),
+            (HookVendor::OpenCode, asks("question")),
+        ] {
+            let v: Value = serde_json::from_str(&status_line(vendor, &payload, "t")).unwrap();
+            assert_eq!(v["question"], "which color?", "{vendor:?} {payload}");
+        }
+        // Another vendor's question tool is not this vendor's question.
+        let other = status_line(HookVendor::Claude, &asks("request_user_input"), "t");
+        let v: Value = serde_json::from_str(&other).unwrap();
+        assert_eq!(v["question"], Value::Null, "{other}");
     }
 
     /// The append is a real append: two lines, in order, newline-terminated.

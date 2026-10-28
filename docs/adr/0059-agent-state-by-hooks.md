@@ -49,7 +49,9 @@ and never published.
 
 ### 1. The vocabulary is four states, orthogonal to the run phase
 
-An agent is `working`, `waiting`, `done`, or `blocked`. It is a property of
+An agent is `working`, `waiting`, `done`, or `blocked` (`blocked` was removed
+by ADR-0085 D1: the vocabulary is now `working`, `waiting`, `done`,
+`unknown`). It is a property of
 the agent process, not of the run: a run in phase `executing` has an agent
 that is `working` or `waiting`; a run in `sleeping` has no agent at all.
 `phase.state` is untouched.
@@ -59,7 +61,7 @@ that is `working` or `waiting`; a run in `sleeping` has no agent at all.
 | `working` | the agent is in a turn: thinking, calling a tool | `UserPromptSubmit`, `PreToolUse` (any tool but `AskUserQuestion`), `PostToolUse` (any tool — amended 2026-09-16) |
 | `waiting` | the agent needs the operator: a permission prompt or a question | `PermissionRequest`; `PreToolUse` with `tool_name == "AskUserQuestion"` |
 | `done` | the turn ended; the agent is idle at its prompt | `Stop`, `SessionStart` |
-| `blocked` | the vendor reports it cannot continue without something external | reserved; no Claude hook produces it — vendors with a blocking notification map to it |
+| ~~`blocked`~~ | removed by ADR-0085 D1: a blocked issue is read from the run's outcome, not from the agent | none |
 
 `waiting` carries a `detail`: the tool name and, for a question, the
 question text (from the hook's `tool_input`), so the surface can show *what*

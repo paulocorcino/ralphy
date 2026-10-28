@@ -227,7 +227,6 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
             }
             None => (false, "not checked: the check gave no result".to_string()),
         },
-        StateSource::Stream => (true, "state comes from the output stream".to_string()),
         StateSource::None => (true, "no state source".to_string()),
     };
     ToolLine {

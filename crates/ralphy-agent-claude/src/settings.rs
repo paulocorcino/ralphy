@@ -330,24 +330,34 @@ pub(crate) fn write_task_settings(dir: &Path) -> Result<SettingsFile> {
     Ok(SettingsFile::new(path, [&guard, &status]))
 }
 
-/// The agent-state hook set (ADR-0059 §4 as amended 2026-09-16), as `hooks`
-/// entries keyed by event: `SessionStart`, `UserPromptSubmit`, `PreToolUse`
-/// and `PostToolUse` on every tool, `PermissionRequest` on every tool,
-/// `Stop`, `SubagentStop` — two spawns per tool call, one per prompt, one
-/// per turn end. `PostToolUse` is the one event that ENDS a `waiting`: the
-/// question answered, the permission granted. Deliberately absent:
-/// `Notification`, `PreCompact`, `PostToolUseFailure`, `SubagentStart` —
-/// each would add a spawn and no state.
+/// The agent-state hook events and their matchers (ADR-0059 §4 as amended
+/// 2026-09-16, and ADR-0085 D7): `SessionStart`, `UserPromptSubmit`,
+/// `PreToolUse` and `PostToolUse` on every tool, `PermissionRequest` on every
+/// tool, `Elicitation` and `ElicitationResult` on every MCP server, `Stop`,
+/// `SubagentStop` — two spawns per tool call, one per prompt, one per turn
+/// end. `PostToolUse` and `ElicitationResult` are the events that END a
+/// `waiting`. Deliberately absent: `Notification`, `PreCompact`,
+/// `PostToolUseFailure`, `SubagentStart` — each would add a spawn and no
+/// state. Pinned by `tests/fixtures/hook_events.json`, which the daemon's
+/// console settings are pinned by too.
+const STATUS_HOOK_EVENTS: [(&str, &str); 9] = [
+    ("SessionStart", ""),
+    ("UserPromptSubmit", ""),
+    ("PreToolUse", "*"),
+    ("PostToolUse", "*"),
+    ("PermissionRequest", "*"),
+    ("Elicitation", "*"),
+    ("ElicitationResult", "*"),
+    ("Stop", ""),
+    ("SubagentStop", ""),
+];
+
+/// The agent-state hook set as `hooks` entries keyed by event.
 fn status_hook_entries(status: &serde_json::Value) -> Vec<(&'static str, serde_json::Value)> {
-    vec![
-        ("SessionStart", matcher_entry("", status)),
-        ("UserPromptSubmit", matcher_entry("", status)),
-        ("PreToolUse", matcher_entry("*", status)),
-        ("PostToolUse", matcher_entry("*", status)),
-        ("PermissionRequest", matcher_entry("*", status)),
-        ("Stop", matcher_entry("", status)),
-        ("SubagentStop", matcher_entry("", status)),
-    ]
+    STATUS_HOOK_EVENTS
+        .iter()
+        .map(|(event, matcher)| (*event, matcher_entry(matcher, status)))
+        .collect()
 }
 
 /// Append the status entries to a `hooks` object, AFTER whatever an event
@@ -605,6 +615,35 @@ mod tests {
         assert_eq!(post.len(), 1);
         assert_eq!(post[0]["matcher"], "*");
         assert_eq!(post[0]["hooks"][0]["command"], status);
+    }
+
+    /// The status hook events and their matchers are the shared list the
+    /// daemon's console settings are pinned by too.
+    #[test]
+    fn the_status_hooks_match_the_shared_event_list() {
+        let shared: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/hook_events.json")).unwrap();
+        let shared: Vec<(String, String)> = shared
+            .iter()
+            .map(|e| {
+                (
+                    e["event"].as_str().unwrap().to_string(),
+                    e["matcher"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        let status = serde_json::json!({ "type": "command", "command": "ralphy hook status" });
+        let ours: Vec<(String, String)> = status_hook_entries(&status)
+            .into_iter()
+            .map(|(event, entry)| {
+                assert_eq!(entry["hooks"][0], status, "{event}");
+                (
+                    event.to_string(),
+                    entry["matcher"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(ours, shared);
     }
 
     /// ADR-0059 §4 as WRITTEN, not as built in memory: the files

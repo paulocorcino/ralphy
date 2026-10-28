@@ -31,6 +31,8 @@
 //! `Command` (binary, flags, env scrub) stays in each adapter, as does slicing the
 //! returned [`HeadlessOutput`] into the adapter's own local return shape.
 
+pub mod agent_state;
+
 mod budget;
 pub use budget::{issue_deadline, IssueBudget};
 
