@@ -247,6 +247,17 @@ pub(crate) fn run_headless_held(
 /// and is returned to the caller of the run.
 pub type PromptGate<'a> = Box<dyn FnOnce() -> Result<()> + 'a>;
 
+/// The context of a gate error. Its type lets a caller in this crate tell a
+/// refusal by the gate apart from a failure to spawn the child.
+#[derive(Debug)]
+pub(crate) struct PromptHeld;
+
+impl std::fmt::Display for PromptHeld {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the prompt was held and not sent")
+    }
+}
+
 /// The optional guards of one headless drive: the streamed log, the stderr
 /// early-kill, the idle watchdog, the degraded-line watch and the prompt gate.
 #[derive(Default)]
@@ -466,7 +477,7 @@ fn release_prompt(
         if let Err(e) = gate() {
             ralphy_proc_util::kill_tree(child);
             drop(stdin);
-            return Err(e.context("the prompt was held and not sent"));
+            return Err(e.context(PromptHeld));
         }
     }
     let stdin_result = stdin.write_all(prompt.as_bytes());

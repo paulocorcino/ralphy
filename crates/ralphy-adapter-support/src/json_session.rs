@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 
-use crate::headless::run_headless_held;
+use crate::headless::{run_headless_held, PromptHeld};
 use crate::{run_headless, PromptGate};
 
 /// The vendor-specific inputs to [`run_json_session`]: the built command, the
@@ -222,7 +222,7 @@ fn text_session(
         Some(gate) => run_headless_held(cmd, prompt, timeout, gate),
         None => run_headless(cmd, prompt, timeout),
     }
-    .with_context(|| spawn_err.to_string())?;
+    .map_err(|e| with_spawn_context(e, spawn_err))?;
     let mut log = r.stdout;
     log.push_str(&r.stderr);
     let _ = fs::write(log_path, &log);
@@ -234,6 +234,17 @@ fn text_session(
         bail!("{} (see {})", timeout_msg, log_path.display());
     }
     Ok(log)
+}
+
+/// Add `spawn_err` to `e`, unless the gate refused the prompt: the child
+/// started then, so a hint about installing it would send the user to the
+/// wrong place. The refusal names its own cause.
+fn with_spawn_context(e: anyhow::Error, spawn_err: &str) -> anyhow::Error {
+    if e.downcast_ref::<PromptHeld>().is_some() {
+        e
+    } else {
+        e.context(spawn_err.to_string())
+    }
 }
 
 #[cfg(test)]
