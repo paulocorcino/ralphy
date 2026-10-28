@@ -4,6 +4,8 @@ Status: proposed
 Kind: structural
 Protects: responsiveness, recoverability; constraints portability, security
 
+Amended by ADR-0085 (proposed: a `waiting` agent blocks hibernation, not suspension).
+
 Amends ADR-0051 (a **workbench session** has a state besides live and gone),
 ADR-0050 (the page no longer relaunches a free console when it loads; the
 daemon starts consoles, through a queue) and ADR-0072 D13 (undocumented OS

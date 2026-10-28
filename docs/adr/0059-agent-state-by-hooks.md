@@ -9,6 +9,8 @@ check at daemon start. Written after
 
 Extended by ADR-0076 (proposed: a second kind of state source, an event stream, and state for Codex and OpenCode consoles).
 
+Amended by ADR-0085 (proposed: `blocked` leaves the agent state, every state source is a file the vendor fills, and the fold gains rules for subagents, waits and interrupts).
+
 _Extends [ADR-0039](./0039-event-vocabulary-owned-by-core-emit.md) with one
 event, [ADR-0047](./0047-run-state-snapshot-channel.md) §5 with one additive
 field, and [ADR-0036](./0036-workbench-daemon-integration-protocol.md) §8 with

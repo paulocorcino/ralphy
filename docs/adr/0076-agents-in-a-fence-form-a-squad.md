@@ -6,6 +6,8 @@ Protects: integrity of change, consistency of the workbench, security
 
 Amended by ADR-0079 (proposed: the console output an agent reads comes from the daemon's screen of the session).
 
+Amended by ADR-0085 (proposed: D9 has one kind of state source, a file; the attention list of D13 is decided there, and a squad is one of its sources).
+
 ## Context
 
 An operator already builds teams of agents by hand. On the **stage**, the
