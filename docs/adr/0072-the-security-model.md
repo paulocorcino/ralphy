@@ -6,6 +6,8 @@ Protects: security, integrity of change
 
 Amended 2026-10-14: D12, the install scripts (ADR-0056 §12).
 
+Amended 2026-10-28: D6, a guard that cannot start fails open; a session checks its guard before it starts.
+
 Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a console token given to the agent by design as an exception to D7).
 
 Amended by ADR-0083 (proposed: D13, an undocumented OS call to suspend a console's processes, and the daemon acts only on processes in its custody record).
@@ -335,6 +337,9 @@ surface.
   wrapper (`bash -c`) gets past it: a layer, not proof. Accepted too: hook input is not authenticated (a
   process with `RALPHY_FLAG_FILE` set can write the stop flag) and the guard
   trusts the payload's `cwd`; both come from the operator zone.
+  Gap (amendment of 2026-10-28): a guard hook that cannot start fails open
+  (M1 in `docs/research/claude-hook-probes-2026-10-28.md`); no session
+  checks its guard before it starts yet.
 - D7: checked. A new read of a secret-named environment variable is
   flagged by `xtask capabilities`. The run captures the events and Telegram
   tokens, then removes both from its environment before it spawns a child
@@ -437,3 +442,40 @@ gains two rules for the code that suspends an idle console.
 - The daemon suspends, resumes or ends only a process that is in its custody
   record and that matches its PID, creation time and executable. A PID alone
   is never enough, because the system can give it to another process.
+
+## Amendment 2026-10-28 — D6: a guard that cannot start fails open
+
+Changes D6. Measured facts:
+[the hook probes of 2026-10-28](../research/claude-hook-probes-2026-10-28.md).
+
+**The gap.** D6 says the guard fails closed. That holds for input the guard
+cannot read. It does not hold for a guard that cannot start: Claude Code
+treats a hook that exits with a code other than 0 or 2 as a non-blocking
+error and runs the tool (M1). The guard cannot start when its command names
+a path the shell cannot run. That happened on Windows: `ralphy daemon
+install` registered the daemon with the `\\?\C:\…` form of its path, a run
+the daemon started inherited it, and Git Bash cannot run that form (exit
+127). So a run started from the workbench, on a machine set up that way,
+very probably ran with no guard and no warning. The path is fixed by commit
+`d66214e2`. The gap stays for any other cause: a binary that was removed, a
+Claude Code older than 2.1.139 given the exec form (M2), or
+`disableAllHooks` (M4).
+
+**D6, added: a session with a guard hook checks it before it starts, and
+does not start without it.** Before an unattended session starts (plan,
+execute, triage, diagnose, draft, consolidate), the adapter:
+
+1. runs the guard command and, on execute, the Stop command, exactly as the
+   settings file names them, with a test payload on stdin. The guard must
+   answer the test payload with an allow; the Stop command must exit 0;
+2. checks that the hook form fits the vendor CLI's version (for Claude
+   Code, the exec form only from 2.1.139, ADR-0040 Amendment 4);
+3. reads the vendor's switch that turns off all hooks (`disableAllHooks`).
+
+When any of the three fails, the session does not start, and the error
+names the cause. A console is not refused, because an operator is watching
+it: a console's failed check makes it silent (ADR-0059, amendment of
+2026-10-28), and the operator sees the warning.
+
+**D14.** The fix in `d66214e2` closed a path to an unguarded run, so its
+changelog fragment is `kind: security`.

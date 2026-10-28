@@ -74,6 +74,10 @@ _Avoid_: "checkout" for switching a branch (that is a **branch switch**).
 The unit that holds everything specific to one agent CLI vendor, behind the core's agent contract (ADR-0002).
 _Avoid_: driver, plugin, backend.
 
+**State source**:
+Where an agent's state (`working`, `waiting`, `done`) comes from: the vendor's hooks, its event stream, or none (ADR-0059). A console whose state source is not none and sends nothing is **silent**.
+_Avoid_: hook status (that is one command), state provider.
+
 **Phase roles (triager / planner / executor / reviewer)**:
 The closed set of jobs an **adapter** fills on one issue: the *triager* decides if the issue can enter the queue, the *planner* writes the plan, the *executor* carries out the plan and commits, and the *reviewer* checks the executor's change with a fresh context. The reviewer is not built yet (ADR-0077). One-shot tasks (diagnose, draft, consolidate) are not phase roles.
 _Avoid_: stage, role (overloaded with triage roles), agent type.

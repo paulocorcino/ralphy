@@ -28,6 +28,8 @@ Evidence in [the Gemini spike, §C](../research/gemini-cli-adapter-spike.md).
 **Amendment 3** (2026-10-01) lets the workbench console prepare an owned
 configuration root through a CLI subcommand, instead of refusing until a run has
 made one — see the end of this file.
+**Amendment 4** (2026-10-28) adds §C12, the rules for a hook command, sharpens
+C3, and adds the state source to Tier 4 — see the end of this file.
 
 ## How to use this ADR
 
@@ -459,3 +461,56 @@ has the daemon token removed.
 
 **Public API.** `ralphy-agent-gemini` gains one public function for the
 subcommand to call. This amendment is the decision that adds it.
+
+## Amendment 4 — 2026-10-28, a hook command that runs on every OS
+
+Source: [docs/research/claude-hook-probes-2026-10-28.md](../research/claude-hook-probes-2026-10-28.md).
+On Windows, every Claude hook Ralphy wrote failed for weeks in one setup,
+the guard included, and nothing reported it (ADR-0059 and ADR-0072,
+amendments of 2026-10-28). The cause was not the vendor: it was how Ralphy
+wrote the command.
+
+### C12 — How Ralphy writes a hook command
+
+Every hook command Ralphy writes, for any vendor, follows these rules. They
+apply to a run's settings file and to a console's.
+
+1. **The program is `ralphy` itself, resolved once.** The process resolves
+   its own binary when it starts, not when it writes a settings file: on
+   Linux, `current_exe()` names `… (deleted)` once the file is replaced
+   under a running process. The path has no `\\?\` prefix
+   (`ralphy_proc_util::exe::running_exe`).
+2. **No shell when the vendor allows it.** When the vendor accepts a
+   program and an argument list (Claude Code's exec form: `command` and
+   `args`), Ralphy uses it, and no shell reads the path. A vendor that
+   accepts it only from some version on gets it only from that version on,
+   measured, not read in a changelog: Claude Code from 2.1.139 (M2). Below
+   that version, or when the version cannot be read, Ralphy writes the shell
+   form.
+3. **A shell form quotes the path for the shell that runs it.** The shell
+   is the vendor's (Claude Code: Git Bash on Windows). The path is quoted so
+   that a space, `$`, a backtick or a quote in it stays literal.
+4. **Each hook is checked where it matters.** The daemon checks a console's
+   hooks when it starts (ADR-0059 A3). An unattended session checks its
+   guard and its Stop hook before it starts, and does not start without them
+   (ADR-0072 D6, amendment of 2026-10-28).
+5. **The vendor's switch that turns off all hooks is read**, because with
+   it set no check of the command can pass for the vendor (Claude Code:
+   `disableAllHooks`, M4).
+
+### C3 — sharpened: seen firing, from the file as Ralphy writes it, on each OS
+
+Amendment 1 asks that a hook be seen firing in the headless path. It must
+also be seen firing from the settings file **as Ralphy writes it**, on
+Windows and on Linux or macOS, because the shell between the vendor and the
+hook differs by OS. The finding records the vendor CLI's version and the
+date.
+
+### Wiring inventory — one more item
+
+Tier 4 gains the agent's **state source** (ADR-0059 A1): a `hooks`,
+`stream` or `none` arm in the daemon's match on `session::Agent`, and the
+same answer in the adapter. A new vendor starts as `none`. It moves to
+`hooks` or `stream` only with a finding in `docs/research/` that answers C3
+for it, and with its own mapping table from vendor events to states,
+pinned by a fixture the way ADR-0059 §5 pins Claude's.
