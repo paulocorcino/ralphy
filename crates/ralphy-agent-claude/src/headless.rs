@@ -99,7 +99,7 @@ impl ClaudeAgent {
         std::fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
             .context("writing .ralphy/exec.md")?;
 
-        let settings_path = self.write_exec_settings()?;
+        let settings_path = self.write_exec_settings()?.path;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
         // Effort follows the model's precedence: operator flag wins, else the

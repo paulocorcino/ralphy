@@ -101,7 +101,7 @@ impl ClaudeAgent {
         // theme/onboarding wizard) so the live session doesn't stall on a keypress.
         ensure_interactive_session_ready(ws.repo_root());
 
-        let settings_path = self.write_exec_settings()?;
+        let settings_path = self.write_exec_settings()?.path;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
         // Effort follows the same precedence as the model: operator flag wins,

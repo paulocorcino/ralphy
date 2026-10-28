@@ -192,7 +192,7 @@ impl Agent for ClaudeAgent {
 
         // The plan session gets the agent-state hooks and no guard (ADR-0059
         // §4): a planner stuck at a question was invisible until the watchdog.
-        let settings_path = self.write_plan_settings()?;
+        let settings_path = self.write_plan_settings()?.path;
         let status = status::Watcher::start(&self.run_dir);
 
         // Provision the reviewer/staged-plan skills the prompt depends on, scoped

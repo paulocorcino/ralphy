@@ -41,7 +41,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
-    let settings_path = write_task_settings(run_dir)?;
+    let settings_path = write_task_settings(run_dir)?.path;
 
     info!(?model, ?effort, "consolidating knowledge with claude -p");
     // Mirror the plan pass so the stdout stream carries the `result` event
@@ -88,7 +88,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    let settings_path = write_task_settings(neutral_cwd)?;
+    let settings_path = write_task_settings(neutral_cwd)?.path;
 
     let out_path = neutral_cwd.join("diagnosis.json");
     clear_stale_output(&out_path)?;
@@ -139,7 +139,7 @@ pub fn draft_issues(
 ) -> Result<IssuesDraft> {
     let mode = req.mode;
     clear_stale_output(out_path)?;
-    let settings_path = write_task_settings(&repo.join(".ralphy"))?;
+    let settings_path = write_task_settings(&repo.join(".ralphy"))?.path;
 
     info!(
         ?model,
@@ -192,7 +192,7 @@ pub fn triage_issues(
     timeout: Duration,
 ) -> Result<TriageDraft> {
     clear_stale_output(out_path)?;
-    let settings_path = write_task_settings(&repo.join(".ralphy"))?;
+    let settings_path = write_task_settings(&repo.join(".ralphy"))?.path;
 
     info!(?model, ?effort, "triaging issues with claude -p");
     let args = task_args(model, effort, &settings_path, &[]);
