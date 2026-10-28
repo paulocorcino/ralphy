@@ -2,7 +2,9 @@
 
 Status: **accepted** (2026-09-15) — implemented the same day; the as-built
 drifts are recorded in the amendment at the end, and the 2026-09-16
-amendment corrects §1 (no interrupt flag) and §4 (`PostToolUse` is in). Written after
+amendment corrects §1 (no interrupt flag) and §4 (`PostToolUse` is in). The
+2026-10-28 amendment adds the state source, the silent console and the hook
+check at daemon start. Written after
 [ADR-0058](./0058-checkout-per-run.md) and independent of it.
 
 Extended by ADR-0076 (proposed: a second kind of state source, an event stream, and state for Codex and OpenCode consoles).
@@ -366,3 +368,66 @@ loses the interrupt row; both folds are pinned by it as before.
   pinned in `tests/fleet_command/`. A live WSL peer adds nothing the pin
   does not say.
 
+
+## Amendment (2026-10-28): a silent state source is shown, and every hook command is checked
+
+**Before.** On Windows, `ralphy daemon install` registered the daemon with
+the path that `std::fs::canonicalize` returns, `\\?\C:\…`. The daemon wrote
+that path into every console's hook commands (§5). Claude Code runs a hook
+command through Git Bash on Windows, and Git Bash reads `"\\?\C:\…"` as
+`\?\C:\…`: every hook failed with "No such file or directory". The console
+worked, Claude Code printed a hook error, and no dot ever appeared, because
+§7 shows nothing when nothing arrives. Fixed in commits `d66214e2` (the
+plain path) and `fc0676c6` (the daemon resolves its own binary once, at
+start, so a binary replaced on Linux does not become `… (deleted)`).
+Measured facts: [the hook probes of 2026-10-28](../research/claude-hook-probes-2026-10-28.md).
+
+This amendment makes that failure visible, and checks the hooks before a
+console needs them.
+
+**A1. Every agent has a state source.** The state source of an agent is
+`hooks`, `stream` (ADR-0076 D9) or `none`. For a console, the daemon
+decides it with an exhaustive match on `session::Agent`, because the daemon
+does not import an adapter (ADR-0032 §10). For a run, the adapter decides
+its own. An agent whose source is `none` shows nothing, as §7 says; it is
+never silent.
+
+**A2. A source that sends nothing is silent, and the operator sees it.** A
+console whose source is not `none` is **silent** when no line has reached
+its status file 30 seconds after the first input the operator sent to it.
+The clock starts at the first input, not at the launch, so the folder trust
+question of a new folder does not count as silence. (Whether `SessionStart`
+fires before that question is answered is not measured: M3 in the probes.)
+The agent block on `/api/sessions` then carries `source: "silent"` and a
+`reason`, and no `state`: the state stays what the agent said, and the
+agent said nothing. The daemon writes one log line per silent console. The
+first line that reaches the file clears it. The workbench shows a warning
+dot whose tooltip names the reason.
+
+**A3. The daemon checks the hook commands when it starts.** Each daemon
+checks on its own OS: the Windows daemon, each WSL or macOS peer. The check
+runs in the background and does not delay the start. For each agent whose
+source is `hooks`:
+
+1. It runs the hook command in the form it writes into a settings file
+   (ADR-0040 C12), with a test event on stdin and `RALPHY_STATUS_FILE`
+   pointing at a temporary file. It passes only when the exit is 0 **and**
+   the line is in the file: `hook status` exits 0 even when it cannot write
+   (§3), so the exit code alone proves nothing. A shell form is not run:
+   its result is "not checked", never a pass, because a check in another
+   shell than the vendor's proves nothing (ADR-0040 C12, item 4).
+2. It reads the vendor's own switch that turns off all hooks, to name a
+   likely cause early. For Claude Code this is `disableAllHooks`: with it
+   set, no hook starts, the ones Ralphy passes by `--settings` included
+   (M4). The switch does not decide: A2 does.
+
+A failure writes one log line, and every new console of that agent starts
+silent with the failure as its reason, without waiting for A2's clock. The
+daemon starts either way. `ralphy doctor` runs the same check and prints one
+line per agent: its state source and the result.
+
+**A4. What this does not do.** No check opens a real session of the vendor:
+that costs quota, and A2 observes the real session for free. A run is not
+covered here: an unattended session waits for its first hook event before
+it sends the prompt, and is refused without it (ADR-0072, amendment of
+2026-10-28).
