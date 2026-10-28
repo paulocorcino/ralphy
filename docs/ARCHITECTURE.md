@@ -272,6 +272,7 @@ boundary.
 |---|---|---|---|
 | Network client → daemon | HTTP and WebSocket requests | The auth guard (`ralphy-daemon/src/routes/guard.rs`): Host and Origin, then the policy, then the session | ADR-0032 |
 | Workbench → audit log | **Device facts** the page reports about itself | A fixed shape with a size cap (`routes/api_audit.rs`); facts are recorded with source `client` and no access decision reads them | ADR-0074 |
+| Workbench → scroll probe file (developer build only) | **Scroll probe** records the page reports about its own scrolls | A fixed shape of numbers and closed values (`probe.rs`); served only in a build with the `scroll-probe` feature; no access decision reads a record | ADR-0084 |
 | Workbench → repo | Verbs from the browser | The verb registry and argv shape checks (`dispatch.rs`, `dispatch/argv.rs`); path confinement (`confine.rs`, `fswrite.rs`) | ADR-0036 |
 | Peer daemon → daemon | Verbs and sessions from a peer | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
 | Agent in a squad → daemon (planned) | Letters and squad tool calls over MCP | A console token per agent console, scoped to its fence, required on loopback too | ADR-0076 |

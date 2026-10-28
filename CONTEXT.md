@@ -158,6 +158,10 @@ _Avoid_: fingerprint, telemetry (Ralphy sends nothing out), user agent (one of t
 The daemon's record, one line per event, of each login, logout, **device facts** report, request and command that changed state, with the **device** that sent it (ADR-0074).
 _Avoid_: history (the **desk history** is a different thing), access log, event log.
 
+**Scroll probe**:
+A developer-only measure of how smooth each scroll of a console is: frame times and where the time went, one record per scroll in a file of the daemon. Only a build with the `scroll-probe` feature has it (ADR-0084).
+_Avoid_: telemetry (nothing leaves the machine), metrics, profiler.
+
 **Stall report**:
 What a page sends its daemon when a read, a replay decode or a console waited past its deadline. The daemon writes it as one line in `daemon.log`, not in the audit log.
 _Avoid_: crash report, telemetry (it goes only to the page's own daemon).
