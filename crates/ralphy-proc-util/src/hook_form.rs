@@ -314,17 +314,28 @@ fn wait_until(
 
 /// The first of the user, project and local project settings files that sets
 /// `disableAllHooks` to `true`. Claude Code then runs no hook, so no proof
-/// can arrive.
+/// can arrive. The path uses the separator of the platform only.
 pub fn disable_all_hooks(home: Option<&Path>, project: Option<&Path>) -> Option<PathBuf> {
+    let home = home.map(native);
+    let project = project.map(native);
     let candidates = [
         home.map(|h| h.join(".claude").join("settings.json")),
-        project.map(|p| p.join(".claude").join("settings.json")),
+        project
+            .as_ref()
+            .map(|p| p.join(".claude").join("settings.json")),
         project.map(|p| p.join(".claude").join("settings.local.json")),
     ];
     candidates
         .into_iter()
         .flatten()
         .find(|f| sets_disable_all_hooks(f))
+}
+
+/// `path` rebuilt one component at a time. On Windows, `git rev-parse
+/// --show-toplevel` gives a root with `/`, and a join adds `\`; the rebuilt
+/// path has `\` only.
+fn native(path: &Path) -> PathBuf {
+    path.components().collect()
 }
 
 fn sets_disable_all_hooks(file: &Path) -> bool {
@@ -483,5 +494,27 @@ mod tests {
         assert_eq!(found(), None, "bad json");
         write(project.path(), r#"{"disableAllHooks": true}"#);
         assert_eq!(found(), Some(proj));
+    }
+
+    #[test]
+    fn the_named_file_uses_one_kind_of_slash() {
+        let project = tempfile::tempdir().expect("temp dir");
+        let dir = project.path().join(".claude");
+        std::fs::create_dir_all(&dir).expect("create dir");
+        std::fs::write(
+            dir.join("settings.local.json"),
+            r#"{"disableAllHooks": true}"#,
+        )
+        .expect("write file");
+        // The root as `git rev-parse --show-toplevel` prints it on Windows.
+        let root = PathBuf::from(project.path().to_string_lossy().replace('\\', "/"));
+        let found = disable_all_hooks(None, Some(&root)).expect("the local file");
+        let text = found.display().to_string();
+        let other = if cfg!(windows) { '/' } else { '\\' };
+        assert!(!text.contains(other), "{text}");
+        assert!(text.ends_with(&format!(
+            ".claude{0}settings.local.json",
+            std::path::MAIN_SEPARATOR
+        )));
     }
 }
