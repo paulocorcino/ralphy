@@ -133,6 +133,10 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 
+[features]
+# The scroll probe (ADR-0084): a developer build only. No workflow turns it on.
+scroll-probe = []
+
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.
 tower = { version = "0.5", features = ["util"] }

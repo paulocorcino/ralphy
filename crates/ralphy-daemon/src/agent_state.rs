@@ -239,6 +239,7 @@ impl StatusFiles {
 /// `PermissionRequest *`, `Stop`, `SubagentStop`), and none of the ones it
 /// rejected.
 pub fn console_settings_json(exe: &Path) -> String {
+    let exe = ralphy_proc_util::exe::plain_path(exe.to_path_buf());
     let command = format!("\"{}\" hook status", exe.display());
     let entry = |matcher: &str| {
         serde_json::json!([{
@@ -401,6 +402,19 @@ mod tests {
         assert_eq!(hooks["PermissionRequest"][0]["matcher"], "*");
         assert_eq!(
             hooks["Stop"][0]["hooks"][0]["command"],
+            "\"C:\\r\\ralphy.exe\" hook status"
+        );
+    }
+
+    /// A daemon started through a canonicalized path runs as `\\?\C:\…`;
+    /// Git Bash, which runs the hooks, cannot run that form.
+    #[cfg(windows)]
+    #[test]
+    fn console_hooks_name_the_binary_without_the_verbatim_prefix() {
+        let json = console_settings_json(Path::new("\\\\?\\C:\\r\\ralphy.exe"));
+        let doc: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            doc["hooks"]["Stop"][0]["hooks"][0]["command"],
             "\"C:\\r\\ralphy.exe\" hook status"
         );
     }

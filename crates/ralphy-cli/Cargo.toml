@@ -67,6 +67,10 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[features]
+# The daemon's scroll probe (ADR-0084): `scripts/update-ralphy.ps1 -ScrollProbe`.
+scroll-probe = ["ralphy-daemon/scroll-probe"]
+
 [dev-dependencies]
 tempfile.workspace = true
 

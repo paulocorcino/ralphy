@@ -121,8 +121,7 @@ fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Insta
     let _ = std::fs::remove_dir_all(&staging);
     let staged = apply::unpack(&bytes, &archive.name, &staging)?;
 
-    let dest = std::env::current_exe().context("resolving this executable")?;
-    let dest = std::fs::canonicalize(&dest).unwrap_or(dest);
+    let dest = ralphy_proc_util::exe::running_exe()?;
     // The same primitive `ralphy install` places through, so both replace a
     // running image the same way.
     let parked = crate::install::replace_binary(&dest, &staged)?;

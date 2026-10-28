@@ -121,8 +121,7 @@ fn workspace(repo: &Path) -> Result<Workspace> {
 /// timer resolves `ralphy` regardless of the scheduler's stripped PATH (the
 /// `docs/scheduling.md` minimal-PATH trap). Mirrors `install.rs`.
 fn current_exe() -> Result<PathBuf> {
-    let exe = std::env::current_exe().context("locating the running ralphy binary")?;
-    Ok(std::fs::canonicalize(&exe).unwrap_or(exe))
+    ralphy_proc_util::exe::running_exe()
 }
 
 fn describe(s: Schedule) -> String {

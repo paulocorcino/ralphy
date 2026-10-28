@@ -224,8 +224,17 @@ scripts/update-ralphy.ps1              # Windows, then the WSL peer
 scripts/update-ralphy.ps1 -SkipWsl     # Windows only
 scripts/update-ralphy.ps1 -Status      # the end of the last update's log
 scripts/update-ralphy.ps1 -Rollback    # the binaries of the update before
+scripts/update-ralphy.ps1 -ScrollProbe # with the scroll probe (Windows build)
 Get-Help scripts/update-ralphy.ps1 -Full
 ```
+
+`-ScrollProbe` builds the Windows daemon with the Cargo feature
+`scroll-probe`: the page then records each console scroll to
+`~/.ralphy/probe/scroll.jsonl`. No workflow turns this feature on, so a
+release never has it
+([ADR-0084](./adr/0084-the-scroll-probe-is-a-developer-build-only.md)). Its
+tests run only with `cargo nextest run -p ralphy-daemon --features
+scroll-probe`.
 
 How it runs:
 

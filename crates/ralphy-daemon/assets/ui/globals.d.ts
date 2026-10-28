@@ -153,7 +153,7 @@ interface XtermTerminal {
   options: { fontSize: number; macOptionClickForcesSelection: boolean; allowProposedApi: boolean };
   unicode: { activeVersion: string };
   modes: { mouseTrackingMode: string; applicationCursorKeysMode: boolean };
-  buffer: { active: { type: string; viewportY: number } };
+  buffer: { active: { type: string; viewportY: number; baseY: number } };
   parser: { registerOscHandler(ident: number, handler: (data: string) => boolean): XtermDisposable };
   /** xterm's private core: only the scrollbar's visibility is read through it
    *  (`showScrollbarWhileNeeded`, wb-console-terminal.ts). */

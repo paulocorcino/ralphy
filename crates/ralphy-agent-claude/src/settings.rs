@@ -223,8 +223,7 @@ impl ClaudeAgent {
     /// Write `ralphy.settings.json` with the skip flags and a Stop hook that
     /// invokes *this* binary's `hook stop`. Returns the settings path.
     pub(crate) fn write_exec_settings(&self) -> Result<PathBuf> {
-        let exe =
-            std::env::current_exe().context("locating the ralphy binary for the Stop hook")?;
+        let exe = hook_exe().context("locating the ralphy binary for the Stop hook")?;
         let json = exec_settings_json(
             &stop_hook_command(&exe),
             &guard_hook_command(&exe, true),
@@ -240,13 +239,18 @@ impl ClaudeAgent {
     /// guard without the cost gate, and the agent-state hooks — no Stop
     /// sentinel hook (ADR-0059 §4).
     pub(crate) fn write_plan_settings(&self) -> Result<PathBuf> {
-        let exe = std::env::current_exe()
-            .context("locating the ralphy binary for the agent-state hook")?;
+        let exe = hook_exe().context("locating the ralphy binary for the agent-state hook")?;
         let json = plan_settings_json(&guard_hook_command(&exe, false), &status_hook_command(&exe));
         let path = self.run_dir.join("ralphy.settings.json");
         std::fs::write(&path, json).context("writing plan settings")?;
         Ok(path)
     }
+}
+
+/// This binary, as the hook commands name it: Claude Code runs a hook through
+/// Git Bash on Windows, which cannot run the `\\?\` form.
+fn hook_exe() -> std::io::Result<PathBuf> {
+    std::env::current_exe().map(ralphy_proc_util::exe::plain_path)
 }
 
 /// Quote the Stop-hook command line for the platform: `"<exe>" hook stop`.
@@ -271,7 +275,7 @@ fn task_settings_json(guard_command: &str) -> String {
 /// Write a task session's `ralphy.settings.json` into `dir` (created when
 /// missing). Returns the settings path.
 pub(crate) fn write_task_settings(dir: &Path) -> Result<PathBuf> {
-    let exe = std::env::current_exe().context("locating the ralphy binary for the guard hook")?;
+    let exe = hook_exe().context("locating the ralphy binary for the guard hook")?;
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let path = dir.join("ralphy.settings.json");
     std::fs::write(&path, task_settings_json(&guard_hook_command(&exe, false)))

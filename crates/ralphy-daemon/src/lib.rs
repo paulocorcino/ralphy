@@ -36,6 +36,8 @@ pub mod owner_only;
 pub mod password;
 pub mod peer;
 pub mod pidfile;
+#[cfg(feature = "scroll-probe")]
+mod probe;
 pub mod protocol;
 pub mod registry;
 mod rekey;

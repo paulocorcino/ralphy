@@ -46,6 +46,7 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-client-view.ts";
 import { createMessages } from "./wb-messages.ts";
 import { buildConsoleApi } from "./wb-console-api.ts";
+import { createScrollProbe } from "./wb-console-probe.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleOpts, ConsoleWin, DeskChange, DeskFence } from "./wb-types.d.ts";
@@ -321,6 +322,13 @@ export function createConsole(window: Window, document: Document, location: Pick
   const { fontSize, writeClipboard, readClipboard, applyKeyBar, buildKeyBar } = keys;
 
   // ---- the terminal: `wb-console-terminal.ts` ----------------------------------
+  // The scroll probe asks the daemon on the first terminal; a release answers
+  // that it has none (ADR-0084 D3).
+  const scrollProbe = createScrollProbe({
+    send: (records) => window.WBDaemon.observe("probe.scroll", { records }),
+    now: () => performance.now(),
+    requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+  });
   const { attachTerminal } = createTerminal({
     window,
     WS_ORIGIN,
@@ -330,6 +338,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     cancelSlide,
     writeClipboard,
     readClipboard,
+    scrollProbe,
   });
 
   // ---- the window chrome: `wb-stage-chrome.ts` ---------------------------------

@@ -40,6 +40,10 @@
   ralphy-daemon is active and runs a cargo build (.../release/ralphy).
 .PARAMETER SkipWsl
   Update only Windows.
+.PARAMETER ScrollProbe
+  Build the Windows daemon with the scroll probe: the workbench then records
+  how smooth each console scroll is, in probe/scroll.jsonl of the store. A
+  release never has it. The WSL peer is built without it.
 .PARAMETER Yes
   Do not ask before the restart closes the open consoles. Needed when nobody
   can answer (an agent, a pipe).
@@ -57,6 +61,8 @@
 .EXAMPLE
   scripts/update-ralphy.ps1 -SkipWsl -Yes -Delay 0
 .EXAMPLE
+  scripts/update-ralphy.ps1 -ScrollProbe
+.EXAMPLE
   scripts/update-ralphy.ps1 -Rollback
 #>
 #Requires -Version 7.2
@@ -65,6 +71,7 @@ param(
     [string]$Repo = (Split-Path $PSScriptRoot -Parent),
     [string]$Distro = '',
     [switch]$SkipWsl,
+    [switch]$ScrollProbe,
     [switch]$Yes,
     [ValidateRange(0, 60)][int]$Delay = 5,
     [switch]$Rollback,
@@ -295,6 +302,7 @@ if (-not $Worker) {
     Write-Host "Installed: $installed  ($(Get-Version $installed))"
     Write-Host "Daemon:    port $daemonPort, pid $($pidInfo.Pid)"
     $wsl = (-not $SkipWsl) -and (Test-WslPeer $storeDir)
+    if ($ScrollProbe) { Write-Host 'Probe:     the Windows daemon is built with the scroll probe' -ForegroundColor Yellow }
     Write-Host "WSL peer:  $(if ($wsl) { "$WslName, updated after Windows" } elseif ($SkipWsl) { 'skipped (-SkipWsl)' } else { 'not found, skipped' })"
 
     # The restart ends every console of the daemon and the agents inside.
@@ -364,6 +372,7 @@ if (-not $Worker) {
         '-Port', $daemonPort, '-TargetDir', "`"$target`"", '-Delay', $Delay)
     if ($Distro) { $argv += @('-Distro', $Distro) }
     if (-not $wsl) { $argv += '-SkipWsl' }
+    if ($ScrollProbe) { $argv += '-ScrollProbe' }
     if ($Rollback) { $argv += '-Rollback' }
     $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
     $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
@@ -571,8 +580,10 @@ try {
     [UpdateRalphyWatchdog]::Arm($BuildTimeoutMinutes, $Log, $lock)
     Write-Phase "1/4 build Windows ($Repo)"
     $mark = Get-LogLineCount
-    $code = Invoke-Logged 'cargo build --release --locked -p ralphy-cli --bin ralphy' {
-        & cargo build --release --locked -p ralphy-cli --bin ralphy --manifest-path (Join-Path $Repo 'Cargo.toml')
+    # The scroll probe is a Cargo feature that no release turns on (ADR-0084).
+    $features = if ($ScrollProbe) { @('--features', 'scroll-probe') } else { @() }
+    $code = Invoke-Logged ("cargo build --release --locked -p ralphy-cli --bin ralphy $($features -join ' ')".Trim()) {
+        & cargo build --release --locked -p ralphy-cli --bin ralphy @features --manifest-path (Join-Path $Repo 'Cargo.toml')
     }
     if ($code -ne 0) {
         [UpdateRalphyWatchdog]::Disarm()

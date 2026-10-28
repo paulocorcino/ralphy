@@ -9,6 +9,7 @@
 --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { ScrollWatch } from "./wb-console-probe.ts";
 
 const { touchScrollLines, touchScrollTarget, touchGesture, touchCentroid, flingStep, selectionRow, FLING_MIN } =
   WBConsoleInput;
@@ -26,10 +27,12 @@ export type TouchDeps = {
   cancelSlide: () => void;
   // The terminal's opts: `onSelecting` arms or disarms the key bar's button.
   opts: Pick<TerminalOpts, "onSelecting">;
+  // The scroll probe's hooks, in a developer build only (wb-console-probe.ts).
+  probe?: Pick<ScrollWatch, "moved" | "step">;
 };
 
 export function wireTouch(deps: TouchDeps) {
-  const { term, body, stage, workspace, cancelSlide, opts } = deps;
+  const { term, body, stage, workspace, cancelSlide, opts, probe } = deps;
 
   // The touch gesture this terminal owns (`touchScrollLines`). Single finger
   // only; the stylesheet's `touch-action: none` already told the browser the
@@ -99,9 +102,17 @@ export function wireTouch(deps: TouchDeps) {
     if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
     else term.scrollLines(whole);
   };
+  // One scroll step, timed for the scroll probe when there is one.
+  const timedFlush = (input: "touch" | "glide") => {
+    if (!probe) return flushScroll();
+    const started = performance.now();
+    flushScroll();
+    probe.moved(input);
+    probe.step(performance.now() - started);
+  };
   const scrollByPixels = (dy: number) => {
     touchAccum += touchScrollLines(dy, cellHeight());
-    if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
+    if (!scrollRaf) scrollRaf = requestAnimationFrame(() => timedFlush("touch"));
   };
   const stopScroll = () => {
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
@@ -237,7 +248,7 @@ export function wireTouch(deps: TouchDeps) {
       // Already inside a frame: flush HERE, not through `scrollByPixels`.
       touchAccum += touchScrollLines(step.dy, cellHeight());
       stopScroll();
-      flushScroll();
+      timedFlush("glide");
       fling = v ? requestAnimationFrame(glide) : 0;
       // The glide has stopped: correct a dropped partial paint once.
       if (!fling) refreshScreen();

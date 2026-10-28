@@ -20,6 +20,8 @@ import { wirePaste } from "./wb-console-paste.ts";
 import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
 import { frameQueue } from "./wb-console-frames.ts";
+import { placeOf } from "./wb-console-probe.ts";
+import type { ScrollProbe } from "./wb-console-probe.ts";
 import { terminalGpu } from "./wb-console-gpu.ts";
 import { reportStall } from "./wb-stall.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
@@ -94,6 +96,8 @@ export type TerminalDeps = {
   // The system clipboard. They are made in `wb-console-keys.ts`: the key bar uses them too.
   writeClipboard: (text: string, term: XtermTerminal) => void;
   readClipboard: () => Promise<ClipboardRead>;
+  // The page's scroll probe; absent where the page has none (ADR-0084).
+  scrollProbe?: ScrollProbe;
 };
 
 // What a clipboard read gives: an image, or else text (`clipboardContent`).
@@ -188,7 +192,11 @@ export function createTerminal(deps: TerminalDeps) {
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
     // The touch gesture and the line selection: wb-console-touch.ts.
-    const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts });
+    const probe = deps.scrollProbe?.watch(term, () => placeOf(body));
+    // A wheel the page made for a touch (`wheelToApp`) is not trusted. In the
+    // capture phase: xterm stops the wheel events it takes.
+    if (probe) body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), { passive: true, capture: true });
+    const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts, probe });
     const { setSelecting, stopFling, stopScroll } = touch;
     fitAddon.fit();
 
@@ -425,6 +433,7 @@ export function createTerminal(deps: TerminalDeps) {
             else if (shown != null) shown += event.bytes.length;
             // The callback tells the OSC 52 handler the replay is behind us.
             writingOutput = true;
+            probe?.wrote(event.bytes.length);
             try {
               term.write(
                 event.bytes,

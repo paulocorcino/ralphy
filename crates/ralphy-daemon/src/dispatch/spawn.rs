@@ -4,7 +4,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -192,17 +192,27 @@ pub fn dispatch(
     spawner.spawn(program, argv, cwd, daemon_id)
 }
 
+/// The daemon's own binary, resolved once, when the daemon starts. On Linux
+/// `current_exe()` reads `/proc/self/exe`, which names `… (deleted)` after the
+/// file is replaced under a running daemon: a later read names a file that is
+/// gone, and every child spawned and hook written with it fails.
+static OWN_EXE: OnceLock<OsString> = OnceLock::new();
+
 /// Test seam pointing the dispatcher at a stand-in exe: `RALPHY_EXE_OVERRIDE`
 /// when set (an integration test's `command_test_child`), else the daemon's own
-/// `current_exe` — which IS `ralphy` in production. Mirrors `session`'s
+/// binary — which IS `ralphy` in production. Mirrors `session`'s
 /// `RALPHY_DAEMON_AGENT_OVERRIDE`.
 pub fn ralphy_exe() -> OsString {
     if let Some(over) = std::env::var_os("RALPHY_EXE_OVERRIDE") {
         return over;
     }
-    std::env::current_exe()
-        .map(Into::into)
-        .unwrap_or_else(|_| OsString::from("ralphy"))
+    OWN_EXE
+        .get_or_init(|| {
+            ralphy_proc_util::exe::running_exe()
+                .map(Into::into)
+                .unwrap_or_else(|_| OsString::from("ralphy"))
+        })
+        .clone()
 }
 
 /// The production spawner: a real detached OS process with null stdio.
