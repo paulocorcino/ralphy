@@ -423,6 +423,15 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "idle_minutes": idle_minutes }),
         )),
+        // The waiver let an unproven session go on (ADR-0072 D6): the cause
+        // is the refusal the session escaped.
+        RunEvent::HooksUnprovenAllowed { cause } => Some(envelope(
+            "dev.ralphy.run.hooks_unproven_allowed",
+            None,
+            ctx,
+            state,
+            json!({ "cause": cause }),
+        )),
         // The agent's own state (ADR-0059 §2): on the active issue's subject.
         RunEvent::AgentState {
             state: agent_state,

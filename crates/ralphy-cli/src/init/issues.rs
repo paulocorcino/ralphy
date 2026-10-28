@@ -236,9 +236,15 @@ pub(crate) fn draft_with_agent(
     timeout: Duration,
 ) -> Result<IssuesDraft> {
     match agent {
-        Agent::Claude => {
-            ralphy_agent_claude::draft_issues(repo, out_path, req, model, effort, timeout)
-        }
+        Agent::Claude => ralphy_agent_claude::draft_issues(
+            repo,
+            out_path,
+            req,
+            model,
+            effort,
+            timeout,
+            crate::config::claude_guard_proof_waiver(repo),
+        ),
 
         Agent::Codex => {
             ralphy_agent_codex::draft_issues(repo, out_path, req, model, effort, timeout)

@@ -127,6 +127,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.max_minutes_per_issue",
     "claude.console_name",
     "claude.console_classic_screen",
+    "claude.run_without_guard_proof_i_understand_the_risk",
     "copilot.plan_model",
     "copilot.exec_model",
     "copilot.plan_effort",
@@ -170,7 +171,7 @@ console name as the session name, such as wb-fincal-1. Other Claude sessions \
 use that name to send it messages. When off, Claude picks the name. \
 claude.console_classic_screen=true starts a Claude console in the workbench in \
 Claude's classic view, so the conversation stays in the console's text, with a \
-scrollbar. When off, Claude follows its own settings. \
+scrollbar. When off, Claude follows its own settings. claude.run_without_guard_proof_i_understand_the_risk=true lets a Claude session go on when Ralphy cannot prove that its hooks run, so the guard may not run. Each such session writes a warning to the run. Only `ralphy config set` on this machine can turn it on. \
 gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
 without them, Gemini makes one extra, billed call per turn to choose a model.)";
 
@@ -189,6 +190,21 @@ fn require_known_key(key: &str) -> Result<()> {
         Ok(())
     } else {
         bail!("unknown config key '{key}'; {}", supported_keys_help())
+    }
+}
+
+/// The persisted `claude.run_without_guard_proof_i_understand_the_risk` of
+/// the repo at `repo`, for the one-shot Claude sessions. A file or section
+/// that does not parse warns and reads as `false`, like a run does.
+pub(crate) fn claude_guard_proof_waiver(repo: &std::path::Path) -> bool {
+    let parsed = Settings::load(&Workspace::new(repo))
+        .and_then(|s| s.agent_settings::<ClaudeSettings>(ClaudeSettings::SECTION));
+    match parsed {
+        Ok(c) => c.run_without_guard_proof_i_understand_the_risk,
+        Err(e) => {
+            tracing::warn!(error = %e, "unreadable claude settings — the hook proof stays on");
+            false
+        }
     }
 }
 
@@ -355,6 +371,14 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
                 .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_claude(s, |c| c.console_classic_screen = b)?
         }
+        // The escape of the hook proof (ADR-0072 D6): local-only, the daemon
+        // refuses to set it.
+        "claude.run_without_guard_proof_i_understand_the_risk" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_claude(s, |c| c.run_without_guard_proof_i_understand_the_risk = b)?
+        }
         "copilot.plan_model" => with_copilot(s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(s, |c| c.exec_model = Some(value.to_owned()))?,
         "copilot.plan_effort" | "copilot.exec_effort" => set_copilot_effort(s, key, value)?,
@@ -477,6 +501,9 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.console_classic_screen" => {
             with_claude(&mut s, |c| c.console_classic_screen = false)?
         }
+        "claude.run_without_guard_proof_i_understand_the_risk" => with_claude(&mut s, |c| {
+            c.run_without_guard_proof_i_understand_the_risk = false
+        })?,
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,

@@ -133,9 +133,15 @@ fn triage_with_agent(
     timeout: Duration,
 ) -> Result<TriageDraft> {
     match agent {
-        Agent::Claude => {
-            ralphy_agent_claude::triage_issues(repo, out_path, req, model, effort, timeout)
-        }
+        Agent::Claude => ralphy_agent_claude::triage_issues(
+            repo,
+            out_path,
+            req,
+            model,
+            effort,
+            timeout,
+            crate::config::claude_guard_proof_waiver(repo),
+        ),
         Agent::Codex => {
             ralphy_agent_codex::triage_issues(repo, out_path, req, model, effort, timeout)
         }

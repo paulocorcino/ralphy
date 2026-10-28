@@ -519,6 +519,7 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             | "copilot.exec_effort" => "high",
             "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => "true",
             "cursor.allow_codebase_indexing_i_understand_the_risk" => "true",
+            "claude.run_without_guard_proof_i_understand_the_risk" => "true",
             // Validated against the vendor's id set, so `x` is refused.
             "gemini.plan_model" | "gemini.exec_model" => "gemini-3.5-flash",
             _ => "x",

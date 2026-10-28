@@ -17,7 +17,8 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 
-use crate::run_headless;
+use crate::headless::run_headless_held;
+use crate::{run_headless, PromptGate};
 
 /// The vendor-specific inputs to [`run_json_session`]: the built command, the
 /// prompt, paths, and the exact error wording. The `(see <log>)` suffix is
@@ -81,6 +82,27 @@ pub fn run_json_session<T>(
     auth_error: impl Fn(&str) -> bool,
     validate: impl Fn(&str) -> Result<T>,
 ) -> Result<T> {
+    json_session(session, None, auth_error, validate)
+}
+
+/// [`run_json_session`] with the prompt held behind `gate`: the child is spawned,
+/// and the prompt is written only after the gate returns `Ok`. A gate error kills
+/// the child, sends no prompt, and is returned in the error chain.
+pub fn run_json_session_held<T>(
+    session: JsonSession<'_>,
+    gate: PromptGate<'_>,
+    auth_error: impl Fn(&str) -> bool,
+    validate: impl Fn(&str) -> Result<T>,
+) -> Result<T> {
+    json_session(session, Some(gate), auth_error, validate)
+}
+
+fn json_session<T>(
+    session: JsonSession<'_>,
+    gate: Option<PromptGate<'_>>,
+    auth_error: impl Fn(&str) -> bool,
+    validate: impl Fn(&str) -> Result<T>,
+) -> Result<T> {
     let JsonSession {
         cmd,
         prompt,
@@ -96,7 +118,7 @@ pub fn run_json_session<T>(
     // Reuse the text session's spawn→persist→auth-bail→timeout-bail body; the JSON
     // session's deliverable is the artifact at `out_path`, so the returned log is
     // intentionally dropped here.
-    run_text_session(
+    text_session(
         TextSession {
             cmd,
             prompt,
@@ -106,6 +128,7 @@ pub fn run_json_session<T>(
             auth_msg,
             timeout_msg,
         },
+        gate,
         auth_error,
     )?;
 
@@ -166,6 +189,25 @@ pub fn run_text_session(
     session: TextSession<'_>,
     auth_error: impl Fn(&str) -> bool,
 ) -> Result<String> {
+    text_session(session, None, auth_error)
+}
+
+/// [`run_text_session`] with the prompt held behind `gate`: the child is spawned,
+/// and the prompt is written only after the gate returns `Ok`. A gate error kills
+/// the child, sends no prompt, and is returned in the error chain.
+pub fn run_text_session_held(
+    session: TextSession<'_>,
+    gate: PromptGate<'_>,
+    auth_error: impl Fn(&str) -> bool,
+) -> Result<String> {
+    text_session(session, Some(gate), auth_error)
+}
+
+fn text_session(
+    session: TextSession<'_>,
+    gate: Option<PromptGate<'_>>,
+    auth_error: impl Fn(&str) -> bool,
+) -> Result<String> {
     let TextSession {
         cmd,
         prompt,
@@ -176,7 +218,11 @@ pub fn run_text_session(
         timeout_msg,
     } = session;
 
-    let r = run_headless(cmd, prompt, timeout).with_context(|| spawn_err.to_string())?;
+    let r = match gate {
+        Some(gate) => run_headless_held(cmd, prompt, timeout, gate),
+        None => run_headless(cmd, prompt, timeout),
+    }
+    .with_context(|| spawn_err.to_string())?;
     let mut log = r.stdout;
     log.push_str(&r.stderr);
     let _ = fs::write(log_path, &log);

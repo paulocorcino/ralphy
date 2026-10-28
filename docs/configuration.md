@@ -95,6 +95,7 @@ box, leaving the hardcoded run default in place.
 | `claude.default_exec_model` | `--default-exec-model` | `sonnet` \| `opus` | `sonnet` | Execution model used **only when the plan emits no `## Execution model` judgment** (complexity routing). An explicit `--exec-model` or the plan's own judgment overrides it. |
 | `claude.exec_effort` | `--exec-effort` | `low` \| `medium` \| `high` \| … | `medium` | Reasoning effort while executing. |
 | `claude.max_minutes_per_issue` | `--max-minutes-per-issue` | non-negative integer | `60` (finite backstop) | Per-issue wall-clock cap in minutes. **`0` disables the cap** — the issue is then bounded only by `--deadline-hours`. |
+| `claude.run_without_guard_proof_i_understand_the_risk` | none | `true`, `false` | `false` | **Danger.** A Claude session must prove that its hooks run before it gets the prompt; without the proof it is refused. `true` lets such a session go on, with every hook still written, and each such session writes a `hooks_unproven_allowed` warning to the run. Local only: `ralphy config set` on this machine; the daemon refuses to set it. |
 
 ```powershell
 ralphy config set claude.default_exec_model opus

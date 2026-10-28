@@ -78,6 +78,7 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
         RunEvent::SleepStarted { .. } => "roundtrip_usage_limit_waiting",
         RunEvent::SleepEnded => "roundtrip_reset_reached",
         RunEvent::IdleReaped { .. } => "roundtrip_idle_reaped",
+        RunEvent::HooksUnprovenAllowed { .. } => "roundtrip_hooks_unproven_allowed",
         RunEvent::AgentState { .. } => "roundtrip_agent_state",
         RunEvent::ApiDegraded => "roundtrip_api_degraded",
         RunEvent::ApiRecovered => "roundtrip_api_recovered",

@@ -150,9 +150,14 @@ fn consolidate_with_agent(
     timeout: std::time::Duration,
 ) -> Result<Usage> {
     match agent {
-        CliAgent::Claude => {
-            ralphy_agent_claude::consolidate_knowledge(ws, run_dir, model, effort, timeout)
-        }
+        CliAgent::Claude => ralphy_agent_claude::consolidate_knowledge(
+            ws,
+            run_dir,
+            model,
+            effort,
+            timeout,
+            config::claude_guard_proof_waiver(ws.repo_root()),
+        ),
         CliAgent::Codex => {
             ralphy_agent_codex::consolidate_knowledge(ws, run_dir, model, effort, timeout)
         }

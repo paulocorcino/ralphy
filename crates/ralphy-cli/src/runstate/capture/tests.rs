@@ -232,6 +232,7 @@ const EMIT_OWNED_MESSAGES: &[&str] = &[
     "planning",                    // adapters — roundtrip_planning
     "executing",                   // adapters — roundtrip_executing
     "agent state",                 // adapters — roundtrip_agent_state (ADR-0059)
+    "hooks not proven — the session goes on without the proof", // adapters — roundtrip_hooks_unproven_allowed
 ];
 
 /// How many messages `event_to_runevent`'s `match` consumes, read off the
@@ -253,7 +254,7 @@ fn decoder_arm_messages(src: &str) -> usize {
 }
 
 /// Every message pinned across both crates: the 3 shared adapter constants
-/// and the 25 `ralphy_core::emit`-owned messages — 28 in all. No
+/// and the 26 `ralphy_core::emit`-owned messages — 29 in all. No
 /// source-fragment pins remain: every message now has a real emit helper, so
 /// `super::super::roundtrip` proves the encoding by execution.
 ///

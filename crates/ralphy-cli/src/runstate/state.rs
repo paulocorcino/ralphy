@@ -401,6 +401,8 @@ impl RunState {
             // The raw plan snapshots carry no per-issue status change (the sink
             // resets its plan-step poll snapshot on `PlanWritten`, not these).
             RunEvent::PlanOpened { .. } | RunEvent::PlanClosed { .. } => {}
+            // A warning line, not a state: the session goes on as before.
+            RunEvent::HooksUnprovenAllowed { .. } => {}
         }
     }
 

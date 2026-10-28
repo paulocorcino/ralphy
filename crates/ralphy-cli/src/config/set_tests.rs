@@ -84,3 +84,46 @@ fn set_writes_the_classic_screen_opt_in_as_a_bool() {
         serde_json::json!(false)
     );
 }
+
+const WAIVER: &str = "claude.run_without_guard_proof_i_understand_the_risk";
+
+/// The raw `claude` section of `.ralphy/settings.json`.
+fn claude_section(ws: &Workspace) -> serde_json::Value {
+    let raw = std::fs::read_to_string(ws.settings_path()).expect("settings.json");
+    let v: serde_json::Value = serde_json::from_str(&raw).expect("settings.json is JSON");
+    v["claude"].clone()
+}
+
+/// The hook proof waiver is a plain `true` under `claude` in the file, the
+/// JSON view shows it, and `unset` removes the key from the file.
+#[test]
+fn set_writes_the_guard_proof_waiver_as_a_bool() {
+    let (ws, _dir) = workspace();
+    set(&ws, WAIVER, "true").unwrap();
+    assert_eq!(
+        claude_section(&ws)["run_without_guard_proof_i_understand_the_risk"],
+        serde_json::json!(true)
+    );
+    assert_eq!(config_json(&ws).unwrap()[WAIVER], serde_json::json!(true));
+
+    unset(&ws, WAIVER).unwrap();
+    let claude = claude_section(&ws);
+    assert!(
+        claude
+            .get("run_without_guard_proof_i_understand_the_risk")
+            .is_none(),
+        "unset removes the key: {claude}"
+    );
+    assert_eq!(config_json(&ws).unwrap()[WAIVER], serde_json::json!(false));
+}
+
+/// The waiver takes only `true` or `false`.
+#[test]
+fn set_refuses_a_guard_proof_waiver_that_is_not_a_bool() {
+    let (ws, _dir) = workspace();
+    let err = set(&ws, WAIVER, "maybe").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!("{WAIVER} must be 'true' or 'false', got 'maybe'")
+    );
+}

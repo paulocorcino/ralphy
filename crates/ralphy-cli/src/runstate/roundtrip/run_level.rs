@@ -80,6 +80,15 @@ fn roundtrip_agent_state() {
 }
 
 #[test]
+fn roundtrip_hooks_unproven_allowed() {
+    let ev = one(|| ralphy_core::emit::hooks_unproven_allowed("x"));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::HooksUnprovenAllowed { cause: "x".into() })
+    );
+}
+
+#[test]
 fn roundtrip_api_degraded() {
     let ev = one(ralphy_core::emit::api_degraded);
     assert_eq!(decode(&ev), Some(RunEvent::ApiDegraded));

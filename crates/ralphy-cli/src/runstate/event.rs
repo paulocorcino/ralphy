@@ -141,6 +141,9 @@ pub enum RunEvent {
     /// sees one event either way. Distinguishes "died of silence" from the wall
     /// clock, which is otherwise invisible: both surface as `Timeout`.
     IdleReaped { idle_minutes: u64 },
+    /// A session's hooks did not prove they run, and the local-only waiver
+    /// let it go on (ADR-0072 D6). `cause` is the refusal it escaped.
+    HooksUnprovenAllowed { cause: String },
     /// The agent's own state changed (ADR-0059): `working`, `waiting`, `done`
     /// or `blocked`, as the vendor's hooks report it and the adapter folds it.
     /// `since` is the hook event's timestamp; `detail` names what a `waiting`
@@ -342,6 +345,9 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // two emitters cannot drift apart into two different operator experiences.
         ralphy_core::emit::IDLE_REAPED_MSG => Some(RunEvent::IdleReaped {
             idle_minutes: fields.idle_minutes.unwrap_or(0),
+        }),
+        ralphy_core::emit::HOOKS_UNPROVEN_ALLOWED_MSG => Some(RunEvent::HooksUnprovenAllowed {
+            cause: fields.cause.clone().unwrap_or_default(),
         }),
         // The agent's own state (ADR-0059 §2): one event, four words, emitted
         // by the adapter on a change only.

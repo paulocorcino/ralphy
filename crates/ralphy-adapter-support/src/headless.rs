@@ -5,7 +5,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Command, ExitStatus};
+use std::process::{Child, ChildStdin, Command, ExitStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -224,7 +224,38 @@ fn spawn_reader<R: Read + Send + 'static>(
 /// reported. Output is then collected with a 5s grace so a child that flushed late
 /// is still captured complete.
 pub fn run_headless(cmd: Command, prompt: &str, timeout: Duration) -> Result<HeadlessOutput> {
-    drive_headless(cmd, prompt, timeout, None, None, IdleWatch::default(), None)
+    drive_headless(cmd, prompt, timeout, Guards::default())
+}
+
+/// [`run_headless`] with the prompt held behind `gate`; the shared spawn of the
+/// held one-shot sessions (`json_session`).
+pub(crate) fn run_headless_held(
+    cmd: Command,
+    prompt: &str,
+    timeout: Duration,
+    gate: PromptGate<'_>,
+) -> Result<HeadlessOutput> {
+    let guards = Guards {
+        gate: Some(gate),
+        ..Guards::default()
+    };
+    drive_headless(cmd, prompt, timeout, guards)
+}
+
+/// A check that runs after the child is spawned and before its prompt is
+/// written. `Ok` releases the prompt. `Err` kills the child, sends no prompt,
+/// and is returned to the caller of the run.
+pub type PromptGate<'a> = Box<dyn FnOnce() -> Result<()> + 'a>;
+
+/// The optional guards of one headless drive: the streamed log, the stderr
+/// early-kill, the idle watchdog, the degraded-line watch and the prompt gate.
+#[derive(Default)]
+struct Guards<'a> {
+    log: Option<Arc<Mutex<fs::File>>>,
+    switch: Option<Arc<KillSwitch>>,
+    idle: IdleWatch,
+    degraded: Option<Arc<DegradedSwitch>>,
+    gate: Option<PromptGate<'a>>,
 }
 
 /// The shared spawn/drain/poll/kill/collect core behind [`run_headless`] and the
@@ -235,11 +266,15 @@ fn drive_headless(
     mut cmd: Command,
     prompt: &str,
     timeout: Duration,
-    log: Option<Arc<Mutex<fs::File>>>,
-    switch: Option<Arc<KillSwitch>>,
-    idle: IdleWatch,
-    degraded: Option<Arc<DegradedSwitch>>,
+    guards: Guards<'_>,
 ) -> Result<HeadlessOutput> {
+    let Guards {
+        log,
+        switch,
+        idle,
+        degraded,
+        gate,
+    } = guards;
     // On Unix, run the child in its own process group so a timeout can signal the
     // whole tree, not just the direct child. An agent CLI that spawned helpers
     // would otherwise leave a grandchild holding the stdout pipe open, blocking the
@@ -265,7 +300,7 @@ fn drive_headless(
     // larger than the pipe buffer (~64KB) can't deadlock against a child that
     // starts emitting output before it finishes draining stdin. A misconfigured
     // `Command` (no piped stdio) degrades to a run error, not a panic.
-    let mut stdin = child
+    let stdin = child
         .stdin
         .take()
         .context("headless child stdin was not piped")?;
@@ -309,13 +344,13 @@ fn drive_headless(
         true,
     );
 
-    // A broken pipe here means the child exited before draining stdin — its own
-    // signal, not a fatal error. Warn and fall through to the poll loop, which
-    // reaps the child, rather than `?`-returning with the child still unreaped.
-    let stdin_result = stdin.write_all(prompt.as_bytes());
-    drop(stdin); // close stdin so the child sees EOF
-    if let Err(e) = stdin_result {
-        tracing::warn!(error = %e, "writing the prompt to the headless child failed (it likely exited early)");
+    if let Err(e) = release_prompt(gate, stdin, prompt, &mut child) {
+        // The kill came first, so the readers reach EOF; collect them so no
+        // thread outlives the call.
+        let collect = Duration::from_secs(5);
+        recv_and_join(&rx_out, out_handle, collect, "stdout");
+        recv_and_join(&rx_err, err_handle, collect, "stderr");
+        return Err(e);
     }
 
     let deadline = Instant::now() + timeout;
@@ -414,6 +449,34 @@ fn drive_headless(
     })
 }
 
+/// Run the gate, then write the prompt and close stdin. A gate error kills the
+/// process tree BEFORE stdin drops: a child that sees EOF on an empty stdin
+/// could otherwise act on it before the kill lands. No prompt is sent then.
+///
+/// A broken pipe on the write means the child exited before draining stdin: its
+/// own signal, not a fatal error. It is logged, and the poll loop reaps the
+/// child.
+fn release_prompt(
+    gate: Option<PromptGate<'_>>,
+    mut stdin: ChildStdin,
+    prompt: &str,
+    child: &mut Child,
+) -> Result<()> {
+    if let Some(gate) = gate {
+        if let Err(e) = gate() {
+            ralphy_proc_util::kill_tree(child);
+            drop(stdin);
+            return Err(e.context("the prompt was held and not sent"));
+        }
+    }
+    let stdin_result = stdin.write_all(prompt.as_bytes());
+    drop(stdin); // close stdin so the child sees EOF
+    if let Err(e) = stdin_result {
+        tracing::warn!(error = %e, "writing the prompt to the headless child failed (it likely exited early)");
+    }
+    Ok(())
+}
+
 /// The post-processed result of [`run_headless_logged`]: the raw stdout kept
 /// apart (OpenCode parses its JSON event stream from stdout alone), the combined
 /// `log` exactly as persisted, and the two recovered flags every headless adapter
@@ -462,6 +525,7 @@ pub struct HeadlessCall<'a> {
     kill_on_stderr_line: Option<LinePredicate>,
     idle: IdleWatch,
     degraded_line: Option<LinePredicate>,
+    gate: Option<PromptGate<'a>>,
 }
 
 impl<'a> HeadlessCall<'a> {
@@ -475,7 +539,17 @@ impl<'a> HeadlessCall<'a> {
             kill_on_stderr_line: None,
             idle: IdleWatch::default(),
             degraded_line: None,
+            gate: None,
         }
+    }
+
+    /// Hold the prompt behind `gate`: the child is spawned and its output is
+    /// read, but the prompt is written only after the gate returns `Ok`. On
+    /// `Err` the child is killed, no prompt is sent, and [`run`](Self::run)
+    /// returns that error.
+    pub fn hold_prompt(mut self, gate: PromptGate<'a>) -> Self {
+        self.gate = Some(gate);
+        self
     }
 
     /// Reap the child as soon as a **stderr** line matches — the child's own
@@ -515,15 +589,7 @@ impl<'a> HeadlessCall<'a> {
 
     /// Drive the call to completion, timeout, early-kill or idle-kill.
     pub fn run(self) -> Result<HeadlessRun> {
-        run_headless_logged_impl(
-            self.cmd,
-            self.prompt,
-            self.timeout,
-            self.log_path,
-            self.kill_on_stderr_line,
-            self.idle,
-            self.degraded_line,
-        )
+        run_headless_logged_impl(self)
     }
 }
 
@@ -564,15 +630,17 @@ pub fn run_headless_logged_watched(
         .run()
 }
 
-fn run_headless_logged_impl(
-    cmd: Command,
-    prompt: &str,
-    timeout: Duration,
-    log_path: &Path,
-    kill_on_stderr_line: Option<LinePredicate>,
-    idle: IdleWatch,
-    degraded_line: Option<LinePredicate>,
-) -> Result<HeadlessRun> {
+fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
+    let HeadlessCall {
+        cmd,
+        prompt,
+        timeout,
+        log_path,
+        kill_on_stderr_line,
+        idle,
+        degraded_line,
+        gate,
+    } = call;
     // Open the log up front so both streams can be teed to it as they arrive: the
     // run stays observable live and the partial output survives a crash of THIS
     // process, instead of the old capture-everything-in-RAM-then-write-once. A failed
@@ -595,7 +663,14 @@ fn run_headless_logged_impl(
         })
     });
 
-    let r = drive_headless(cmd, prompt, timeout, sink, switch, idle, degraded)?;
+    let guards = Guards {
+        log: sink,
+        switch,
+        idle,
+        degraded,
+        gate,
+    };
+    let r = drive_headless(cmd, prompt, timeout, guards)?;
     let stdout = r.stdout;
     let mut log = stdout.clone();
     log.push_str(&r.stderr);

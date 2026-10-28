@@ -202,6 +202,12 @@
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
+      "file": "wb-settings.ts",
+      "text": "Let a Claude session start even when its hooks cannot be checked. The guard may then not run. Each such session writes a warning to the run. Read-only here. Change it in a terminal: ralphy config set claude.run_without_guard_proof_i_understand_the_risk true",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
+    },
+    {
       "file": "wb-runs.ts",
       "text": "planning #{run.active}",
       "rule": "casing:first",

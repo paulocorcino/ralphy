@@ -377,6 +377,17 @@ export const WB_SETTINGS: Section[] = [
         default: false,
         help: "Start Claude in its classic view. The conversation stays in the console's text, with a scrollbar. When off, Claude follows its own settings; its full-screen view scrolls by itself and shows no scrollbar. Applies to consoles opened after the change.",
       },
+      {
+        key: "claude.run_without_guard_proof_i_understand_the_risk",
+        label: "Run without the hook check",
+        type: "toggle",
+        default: false,
+        // Shown, never edited here: on, a session goes on when its guard may
+        // not run, so the daemon denies the key at the remote boundary
+        // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
+        readonly: true,
+        help: "Let a Claude session start even when its hooks cannot be checked. The guard may then not run. Each such session writes a warning to the run. Read-only here. Change it in a terminal: ralphy config set claude.run_without_guard_proof_i_understand_the_risk true",
+      },
     ],
   },
   {

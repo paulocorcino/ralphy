@@ -48,6 +48,13 @@
 //!   mirroring the depth of the Node process tree the vendor CLIs run under
 //!   (ADR-0043 D18) — and every level writes, so a teardown that orphaned an
 //!   INTERMEDIATE node is caught too, not only one that orphaned the leaf.
+//! - `record-stdin <out>` — read ALL of stdin, write it to the file `<out>`, then
+//!   exit 0. The file exists only once stdin reached EOF, so a test can tell
+//!   whether, and when, the prompt was sent.
+//! - `session-start-then-record <out>` — after [`SESSION_START_DELAY`], append a
+//!   `SessionStart` line to the file named by `RALPHY_STATUS_FILE`, then behave
+//!   as `record-stdin`. The shape of a Claude session that fires its first hook
+//!   event on its own, before it has read a prompt.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
@@ -74,6 +81,36 @@ pub const DEGRADED_MARKER: &str = "Waiting for API response";
 /// The stdout line the `exit-leaking-grandchild` child writes before leaking its
 /// orphan — capturing it proves the reader reached EOF past the leaked pipe.
 pub const LEAK_MARKER: &str = "output-before-the-leak";
+
+/// How long `session-start-then-record` waits before it writes its `SessionStart` line.
+pub const SESSION_START_DELAY: Duration = Duration::from_millis(500);
+
+/// Read stdin to EOF and write what came to the file named by the second argument.
+fn record_stdin() {
+    let path = std::env::args().nth(2).unwrap_or_default();
+    let mut buf = String::new();
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+    if let Err(e) = std::fs::write(&path, buf) {
+        eprintln!("failed to record stdin to {path}: {e}");
+        std::process::exit(3);
+    }
+}
+
+/// Append the `SessionStart` hook line to `$RALPHY_STATUS_FILE`.
+fn announce_session_start() {
+    let path = std::env::var("RALPHY_STATUS_FILE").unwrap_or_default();
+    let line = "{\"event\":\"SessionStart\",\"ts\":\"t\"}
+";
+    let written = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| f.write_all(line.as_bytes()));
+    if let Err(e) = written {
+        eprintln!("failed to write the SessionStart line to {path}: {e}");
+        std::process::exit(3);
+    }
+}
 
 /// Append `<label> tick\n` to the heartbeat file every [`CHATTY_TICK`] for ~60s.
 ///
@@ -187,6 +224,12 @@ fn main() {
             let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
             let _ = std::io::stdout().write_all(buf.as_bytes());
             let _ = std::io::stdout().flush();
+        }
+        "record-stdin" => record_stdin(),
+        "session-start-then-record" => {
+            std::thread::sleep(SESSION_START_DELAY);
+            announce_session_start();
+            record_stdin();
         }
         "large" => {
             // A repeating byte pattern, written in one shot, so the test can assert

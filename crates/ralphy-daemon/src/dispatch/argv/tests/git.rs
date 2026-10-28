@@ -281,13 +281,15 @@ fn config_argv_refuses_local_only_keys() {
     // refuses the KEY itself — remotely, only: `verify.command` becomes argv[0]
     // of the verify gate's child, the two hatches re-arm what an ADR closed,
     // `events.token` is the sink's bearer (audit F12),
-    // `queue.trust_all_comments` lets a stranger's comment reach the prompt.
+    // `queue.trust_all_comments` lets a stranger's comment reach the prompt,
+    // the guard proof waiver lets a session run with no proof of the guard.
     for key in [
         "verify.command",
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
         "cursor.allow_codebase_indexing_i_understand_the_risk",
         "events.token",
         "queue.trust_all_comments",
+        "claude.run_without_guard_proof_i_understand_the_risk",
     ] {
         assert_eq!(
             config_argv(

@@ -3,9 +3,11 @@
 //! guard/post hook wiring, and the plan's `## Execution model` judgment parser.
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use ralphy_core::Plan;
+use ralphy_proc_util::hook_form::{claude_hook, HookCommand, HookForm};
 
 use crate::ClaudeAgent;
 
@@ -13,7 +15,7 @@ use crate::ClaudeAgent;
 /// from hanging on a prompt, and the guard's `PreToolUse` hook. Every session
 /// Ralphy starts carries the guard (ADR-0072 D6); the phase builders add their
 /// own hooks on top.
-fn base_settings(guard_command: &str) -> serde_json::Value {
+fn base_settings(guard: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "skipDangerousModePermissionPrompt": true,
         "skipAutoPermissionPrompt": true,
@@ -22,7 +24,7 @@ fn base_settings(guard_command: &str) -> serde_json::Value {
             "PreToolUse": [
                 {
                     "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
-                    "hooks": [ { "type": "command", "command": guard_command } ]
+                    "hooks": [ guard ]
                 }
             ]
         }
@@ -87,6 +89,13 @@ pub struct ClaudeSettings {
     /// pins the key against this schema.
     #[serde(default, skip_serializing_if = "is_false")]
     pub console_classic_screen: bool,
+    /// Local-only opt-in: a session whose hooks did not prove they run goes
+    /// on instead of being refused, with one warning event per session. It
+    /// removes only the refusal: every hook is still written. Set only with
+    /// `ralphy config set` on this machine; the daemon refuses to set it.
+    // ADR-0072 D6: the escape of the hook proof.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub run_without_guard_proof_i_understand_the_risk: bool,
 }
 
 /// `skip_serializing_if` for a `false` flag: an un-opted repo writes no key, so
@@ -155,6 +164,9 @@ pub(crate) struct ExecConfig {
     /// [`ExecConfig::idle_minutes_for`]), but an operator who names a number
     /// means it for whichever path runs.
     pub(crate) idle_minutes: Option<u64>,
+    /// `claude.run_without_guard_proof_i_understand_the_risk`: an unproven
+    /// session goes on with a warning instead of being refused.
+    pub(crate) run_without_guard_proof: bool,
 }
 
 impl ExecConfig {
@@ -185,6 +197,7 @@ impl Default for ExecConfig {
             max_exec_calls: 6,
             run_deadline: None,
             idle_minutes: None,
+            run_without_guard_proof: false,
         }
     }
 }
@@ -221,76 +234,100 @@ impl ClaudeAgent {
     }
 
     /// Write `ralphy.settings.json` with the skip flags and a Stop hook that
-    /// invokes *this* binary's `hook stop`. Returns the settings path.
-    pub(crate) fn write_exec_settings(&self) -> Result<PathBuf> {
+    /// invokes *this* binary's `hook stop`.
+    pub(crate) fn write_exec_settings(&self) -> Result<SettingsFile> {
         let exe = hook_exe().context("locating the ralphy binary for the Stop hook")?;
+        let stop = hook_command(exe, &["hook", "stop"]);
+        let guard = hook_command(exe, &["hook", "guard", "--cost-gate"]);
+        let post = hook_command(exe, &["hook", "post"]);
+        let status = hook_command(exe, &["hook", "status"]);
         let json = exec_settings_json(
-            &stop_hook_command(&exe),
-            &guard_hook_command(&exe, true),
-            &post_hook_command(&exe),
-            &status_hook_command(&exe),
+            &stop.entry(),
+            &guard.entry(),
+            &post.entry(),
+            &status.entry(),
         );
         let path = self.run_dir.join("ralphy.settings.json");
         std::fs::write(&path, json).context("writing exec settings")?;
-        Ok(path)
+        Ok(SettingsFile::new(path, [&stop, &guard, &post, &status]))
     }
 
     /// Write the plan phase's `ralphy.settings.json`: the skip flags, the
     /// guard without the cost gate, and the agent-state hooks — no Stop
     /// sentinel hook (ADR-0059 §4).
-    pub(crate) fn write_plan_settings(&self) -> Result<PathBuf> {
+    pub(crate) fn write_plan_settings(&self) -> Result<SettingsFile> {
         let exe = hook_exe().context("locating the ralphy binary for the agent-state hook")?;
-        let json = plan_settings_json(&guard_hook_command(&exe, false), &status_hook_command(&exe));
+        let guard = hook_command(exe, &["hook", "guard"]);
+        let status = hook_command(exe, &["hook", "status"]);
+        let json = plan_settings_json(&guard.entry(), &status.entry());
         let path = self.run_dir.join("ralphy.settings.json");
         std::fs::write(&path, json).context("writing plan settings")?;
-        Ok(path)
+        Ok(SettingsFile::new(path, [&guard, &status]))
     }
 }
 
-/// This binary, as the hook commands name it: Claude Code runs a hook through
-/// Git Bash on Windows, which cannot run the `\\?\` form.
-fn hook_exe() -> std::io::Result<PathBuf> {
-    std::env::current_exe().map(ralphy_proc_util::exe::plain_path)
+/// A settings file the adapter wrote. `unproven` is the reason a hook of the
+/// file runs through a shell, so that the form cannot be trusted; `None` when
+/// every hook uses the exec form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SettingsFile {
+    pub path: PathBuf,
+    pub unproven: Option<String>,
 }
 
-/// Quote the Stop-hook command line for the platform: `"<exe>" hook stop`.
-fn stop_hook_command(exe: &Path) -> String {
-    format!("\"{}\" hook stop", exe.display())
+impl SettingsFile {
+    fn new<'a>(path: PathBuf, hooks: impl IntoIterator<Item = &'a HookCommand>) -> Self {
+        let unproven = hooks
+            .into_iter()
+            .find(|h| h.form() == HookForm::Shell)
+            .map(|h| h.reason().to_string());
+        Self { path, unproven }
+    }
 }
 
-/// Quote the guard-hook command line for the platform: `"<exe>" hook guard`,
-/// with `--cost-gate` for an execute session — the gate reads the run's
-/// `plan.md`, which only execute owns (ADR-0072 D6).
-fn guard_hook_command(exe: &Path, cost_gate: bool) -> String {
-    let flag = if cost_gate { " --cost-gate" } else { "" };
-    format!("\"{}\" hook guard{flag}", exe.display())
+/// This binary, as the hook commands name it, resolved once per process:
+/// Claude Code runs a hook through Git Bash on Windows, which cannot run the
+/// `\\?\` form.
+fn hook_exe() -> Result<&'static Path> {
+    static EXE: OnceLock<PathBuf> = OnceLock::new();
+    if let Some(exe) = EXE.get() {
+        return Ok(exe);
+    }
+    let exe = ralphy_proc_util::exe::running_exe()?;
+    Ok(EXE.get_or_init(|| exe))
+}
+
+/// One hook of `ralphy`, in the form the installed `claude` runs.
+fn hook_command(exe: &Path, args: &[&str]) -> HookCommand {
+    let claude = crate::interactive::resolve_claude_binary();
+    claude_hook(Path::new(&claude), exe, args)
+}
+
+/// A `hooks` array item for `matcher` that runs `hook`.
+fn matcher_entry(matcher: &str, hook: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({ "matcher": matcher, "hooks": [ hook ] })
 }
 
 /// The settings of a one-shot task session (consolidate, diagnose, draft,
-/// triage): the skip flags and the guard.
-fn task_settings_json(guard_command: &str) -> String {
-    serde_json::to_string_pretty(&base_settings(guard_command)).expect("settings serialize")
+/// triage): the skip flags, the guard, and one status hook on `SessionStart`
+/// so the session proves its hooks run.
+fn task_settings_json(guard: &serde_json::Value, status: &serde_json::Value) -> String {
+    let mut settings = base_settings(guard);
+    settings["hooks"]["SessionStart"] = serde_json::json!([matcher_entry("", status)]);
+    serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
 /// Write a task session's `ralphy.settings.json` into `dir` (created when
-/// missing). Returns the settings path.
-pub(crate) fn write_task_settings(dir: &Path) -> Result<PathBuf> {
+/// missing).
+pub(crate) fn write_task_settings(dir: &Path) -> Result<SettingsFile> {
     let exe = hook_exe().context("locating the ralphy binary for the guard hook")?;
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let guard = hook_command(exe, &["hook", "guard"]);
+    let status = hook_command(exe, &["hook", "status"]);
     let path = dir.join("ralphy.settings.json");
-    std::fs::write(&path, task_settings_json(&guard_hook_command(&exe, false)))
+    std::fs::write(&path, task_settings_json(&guard.entry(), &status.entry()))
         .context("writing claude settings")?;
-    Ok(path)
-}
-
-/// Quote the post-hook command line for the platform: `"<exe>" hook post`.
-fn post_hook_command(exe: &Path) -> String {
-    format!("\"{}\" hook post", exe.display())
-}
-
-/// Quote the agent-state hook command line: `"<exe>" hook status`.
-fn status_hook_command(exe: &Path) -> String {
-    format!("\"{}\" hook status", exe.display())
+    Ok(SettingsFile::new(path, [&guard, &status]))
 }
 
 /// The agent-state hook set (ADR-0059 §4 as amended 2026-09-16), as `hooks`
@@ -301,21 +338,15 @@ fn status_hook_command(exe: &Path) -> String {
 /// question answered, the permission granted. Deliberately absent:
 /// `Notification`, `PreCompact`, `PostToolUseFailure`, `SubagentStart` —
 /// each would add a spawn and no state.
-fn status_hook_entries(status_command: &str) -> Vec<(&'static str, serde_json::Value)> {
-    let entry = |matcher: &str| {
-        serde_json::json!({
-            "matcher": matcher,
-            "hooks": [ { "type": "command", "command": status_command } ]
-        })
-    };
+fn status_hook_entries(status: &serde_json::Value) -> Vec<(&'static str, serde_json::Value)> {
     vec![
-        ("SessionStart", entry("")),
-        ("UserPromptSubmit", entry("")),
-        ("PreToolUse", entry("*")),
-        ("PostToolUse", entry("*")),
-        ("PermissionRequest", entry("*")),
-        ("Stop", entry("")),
-        ("SubagentStop", entry("")),
+        ("SessionStart", matcher_entry("", status)),
+        ("UserPromptSubmit", matcher_entry("", status)),
+        ("PreToolUse", matcher_entry("*", status)),
+        ("PostToolUse", matcher_entry("*", status)),
+        ("PermissionRequest", matcher_entry("*", status)),
+        ("Stop", matcher_entry("", status)),
+        ("SubagentStop", matcher_entry("", status)),
     ]
 }
 
@@ -323,8 +354,11 @@ fn status_hook_entries(status_command: &str) -> Vec<(&'static str, serde_json::V
 /// already holds: the guard's narrow `PreToolUse` and the sentinel `Stop`
 /// keep their first slot and their own command; the two are independent
 /// hooks on the same event.
-fn with_status_hooks(hooks: &mut serde_json::Map<String, serde_json::Value>, status_command: &str) {
-    for (event, entry) in status_hook_entries(status_command) {
+fn with_status_hooks(
+    hooks: &mut serde_json::Map<String, serde_json::Value>,
+    status: &serde_json::Value,
+) {
+    for (event, entry) in status_hook_entries(status) {
         let list = hooks
             .entry(event)
             .or_insert_with(|| serde_json::Value::Array(Vec::new()));
@@ -336,40 +370,30 @@ fn with_status_hooks(hooks: &mut serde_json::Map<String, serde_json::Value>, sta
 
 /// The plan phase's settings: the skip flags, the guard, and the agent-state
 /// hooks.
-fn plan_settings_json(guard_command: &str, status_command: &str) -> String {
-    let mut settings = base_settings(guard_command);
+fn plan_settings_json(guard: &serde_json::Value, status: &serde_json::Value) -> String {
+    let mut settings = base_settings(guard);
     if let Some(hooks) = settings["hooks"].as_object_mut() {
-        with_status_hooks(hooks, status_command);
+        with_status_hooks(hooks, status);
     }
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
 /// Build the execution settings JSON: the headless skip flags, a `Stop` hook
-/// running `stop_command`, a `PreToolUse` guard running `guard_command`, and a
-/// `PostToolUse` Bash timer running `post_command` (the other half of the
-/// verification-cost gate: the guard stamps a verify command's start, this hook
-/// records its measured duration).
+/// running `stop`, a `PreToolUse` guard running `guard`, and a `PostToolUse`
+/// Bash timer running `post` (the other half of the verification-cost gate:
+/// the guard stamps a verify command's start, this hook records its measured
+/// duration).
 fn exec_settings_json(
-    stop_command: &str,
-    guard_command: &str,
-    post_command: &str,
-    status_command: &str,
+    stop: &serde_json::Value,
+    guard: &serde_json::Value,
+    post: &serde_json::Value,
+    status: &serde_json::Value,
 ) -> String {
-    let mut settings = base_settings(guard_command);
-    settings["hooks"]["Stop"] = serde_json::json!([
-        {
-            "matcher": "",
-            "hooks": [ { "type": "command", "command": stop_command } ]
-        }
-    ]);
-    settings["hooks"]["PostToolUse"] = serde_json::json!([
-        {
-            "matcher": "Bash",
-            "hooks": [ { "type": "command", "command": post_command } ]
-        }
-    ]);
+    let mut settings = base_settings(guard);
+    settings["hooks"]["Stop"] = serde_json::json!([matcher_entry("", stop)]);
+    settings["hooks"]["PostToolUse"] = serde_json::json!([matcher_entry("Bash", post)]);
     if let Some(hooks) = settings["hooks"].as_object_mut() {
-        with_status_hooks(hooks, status_command);
+        with_status_hooks(hooks, status);
     }
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
@@ -494,16 +518,20 @@ mod tests {
     /// the ADR rejected are registered on neither.
     #[test]
     fn status_hooks_ride_both_phases_after_the_guard_and_the_sentinel() {
+        let shell = |c: &str| serde_json::json!({ "type": "command", "command": c });
         let status = "\"ralphy.exe\" hook status";
         let exec: serde_json::Value = serde_json::from_str(&exec_settings_json(
-            "\"ralphy.exe\" hook stop",
-            "\"ralphy.exe\" hook guard --cost-gate",
-            "\"ralphy.exe\" hook post",
-            status,
+            &shell("\"ralphy.exe\" hook stop"),
+            &shell("\"ralphy.exe\" hook guard --cost-gate"),
+            &shell("\"ralphy.exe\" hook post"),
+            &shell(status),
         ))
         .unwrap();
-        let plan: serde_json::Value =
-            serde_json::from_str(&plan_settings_json("\"ralphy.exe\" hook guard", status)).unwrap();
+        let plan: serde_json::Value = serde_json::from_str(&plan_settings_json(
+            &shell("\"ralphy.exe\" hook guard"),
+            &shell(status),
+        ))
+        .unwrap();
         for (doc, name) in [(&exec, "exec"), (&plan, "plan")] {
             let hooks = &doc["hooks"];
             for event in [
@@ -590,13 +618,13 @@ mod tests {
         let agent = ClaudeAgent::new(None, None, dir.path().to_path_buf());
         // Both writers land on the SAME path (the run's one settings file), so
         // each is written and read back in turn.
-        type Writer = fn(&ClaudeAgent) -> Result<PathBuf>;
+        type Writer = fn(&ClaudeAgent) -> Result<SettingsFile>;
         let writers: [(&str, Writer, bool); 2] = [
             ("exec", |a| a.write_exec_settings(), true),
             ("plan", |a| a.write_plan_settings(), false),
         ];
         for (name, write, sentinel_wanted) in writers {
-            let path = write(&agent).unwrap();
+            let path = write(&agent).unwrap().path;
             assert_eq!(path, dir.path().join("ralphy.settings.json"), "{name}");
             let doc: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -617,7 +645,7 @@ mod tests {
                     .unwrap_or_else(|| panic!("{name}: {event}"));
                 let status = list
                     .iter()
-                    .filter_map(|e| e["hooks"][0]["command"].as_str())
+                    .map(|e| hook_text(&e["hooks"][0]))
                     .filter(|c| c.ends_with("hook status"))
                     .count();
                 assert_eq!(status, 1, "{name}: one status hook on {event}");
@@ -626,29 +654,36 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .filter_map(|e| e["hooks"][0]["command"].as_str())
+                .map(|e| hook_text(&e["hooks"][0]))
                 .any(|c| c.ends_with("hook stop"));
             assert_eq!(sentinel, sentinel_wanted, "{name}: sentinel presence");
-            // The command quotes THIS binary's path.
-            let cmd = hooks["SessionStart"][0]["hooks"][0]["command"]
-                .as_str()
-                .unwrap();
-            assert!(
-                cmd.starts_with('"') && cmd.contains("\" hook status"),
-                "{name}: {cmd}"
-            );
+            // The command names THIS binary.
+            let cmd = hook_text(&hooks["SessionStart"][0]["hooks"][0]);
+            let exe = hook_exe().unwrap().to_string_lossy().into_owned();
+            assert!(cmd.contains(&exe), "{name}: {cmd}");
         }
     }
+    /// What a hook entry runs, whatever its form: `command`, then `args`
+    /// joined by spaces.
+    fn hook_text(hook: &serde_json::Value) -> String {
+        let mut parts = vec![hook["command"].as_str().unwrap_or_default().to_string()];
+        if let Some(args) = hook["args"].as_array() {
+            parts.extend(args.iter().filter_map(|a| a.as_str().map(str::to_string)));
+        }
+        parts.join(" ")
+    }
+
+    fn read_settings(path: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
     /// The guard command of a written settings file, if it carries one.
     fn guard_command_of(path: &Path) -> Option<String> {
-        let doc: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        doc["hooks"]["PreToolUse"]
+        read_settings(path)["hooks"]["PreToolUse"]
             .as_array()?
             .iter()
-            .filter_map(|e| e["hooks"][0]["command"].as_str())
+            .map(|e| hook_text(&e["hooks"][0]))
             .find(|c| c.contains("hook guard"))
-            .map(str::to_string)
     }
 
     /// Every settings file the Claude adapter writes carries the guard, and
@@ -659,11 +694,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let agent = ClaudeAgent::new(None, None, dir.path().join("run"));
         std::fs::create_dir_all(dir.path().join("run")).unwrap();
-        let exec = agent.write_exec_settings().unwrap();
+        let exec = agent.write_exec_settings().unwrap().path;
         let exec_guard = guard_command_of(&exec);
-        let plan = agent.write_plan_settings().unwrap();
+        let plan = agent.write_plan_settings().unwrap().path;
         let plan_guard = guard_command_of(&plan);
-        let task = write_task_settings(&dir.path().join("task").join(".ralphy")).unwrap();
+        let task = write_task_settings(&dir.path().join("task").join(".ralphy"))
+            .unwrap()
+            .path;
         let task_guard = guard_command_of(&task);
         for (name, got, want) in [
             ("exec", exec_guard, "hook guard --cost-gate"),
@@ -679,5 +716,112 @@ mod tests {
             "a task session writes its own settings file"
         );
         assert_eq!(tasks.matches("write_task_settings(").count(), 4);
+    }
+
+    /// The waiver removes only the refusal: with it on, the exec, plan and
+    /// task files still carry the guard and the status hooks.
+    #[test]
+    fn the_waiver_keeps_every_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("run")).unwrap();
+        let agent =
+            ClaudeAgent::new(None, None, dir.path().join("run")).with_guard_proof_waiver(true);
+        assert!(agent.exec.run_without_guard_proof);
+        let exec = agent.write_exec_settings().unwrap().path;
+        let exec = (guard_command_of(&exec), read_settings(&exec));
+        let plan = agent.write_plan_settings().unwrap().path;
+        let plan = (guard_command_of(&plan), read_settings(&plan));
+        let task = write_task_settings(&dir.path().join("task").join(".ralphy"))
+            .unwrap()
+            .path;
+        let task = (guard_command_of(&task), read_settings(&task));
+        for (name, (guard, doc)) in [("exec", exec), ("plan", plan), ("task", task)] {
+            assert!(guard.is_some(), "{name}: no guard hook");
+            let status = doc["hooks"]["SessionStart"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{name}: SessionStart"))
+                .iter()
+                .any(|e| hook_text(&e["hooks"][0]).ends_with("hook status"));
+            assert!(status, "{name}: no status hook");
+        }
+    }
+
+    fn expected_entry(args: &[&str]) -> serde_json::Value {
+        hook_command(hook_exe().unwrap(), args).entry()
+    }
+
+    /// Each hook in a built file is exactly the entry the module chose.
+    #[test]
+    fn the_settings_carry_the_entry_the_module_chose() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = ClaudeAgent::new(None, None, dir.path().to_path_buf());
+        let status = expected_entry(&["hook", "status"]);
+        let exec = read_settings(&agent.write_exec_settings().unwrap().path);
+        let want = [
+            ("Stop", 0, expected_entry(&["hook", "stop"])),
+            ("Stop", 1, status.clone()),
+            (
+                "PreToolUse",
+                0,
+                expected_entry(&["hook", "guard", "--cost-gate"]),
+            ),
+            ("PreToolUse", 1, status.clone()),
+            ("PostToolUse", 0, expected_entry(&["hook", "post"])),
+            ("PostToolUse", 1, status.clone()),
+            ("SessionStart", 0, status.clone()),
+        ];
+        for (event, slot, entry) in want {
+            assert_eq!(
+                exec["hooks"][event][slot]["hooks"][0], entry,
+                "{event} {slot}"
+            );
+        }
+        let plan = read_settings(&agent.write_plan_settings().unwrap().path);
+        assert_eq!(
+            plan["hooks"]["PreToolUse"][0]["hooks"][0],
+            expected_entry(&["hook", "guard"])
+        );
+        assert_eq!(plan["hooks"]["Stop"][0]["hooks"][0], status);
+        let form = hook_command(hook_exe().unwrap(), &["hook", "status"]).form();
+        let entry = &status;
+        match form {
+            HookForm::Exec => {
+                let args = entry["args"].as_array().unwrap();
+                assert_eq!(&args[args.len() - 2..], ["hook", "status"]);
+            }
+            HookForm::Shell => assert!(entry["command"].as_str().unwrap().contains("hook")),
+        }
+    }
+
+    /// A task session proves its hooks on `SessionStart`: exactly one status
+    /// hook there, besides the guard.
+    #[test]
+    fn the_task_settings_carry_the_session_start_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = write_task_settings(dir.path()).unwrap();
+        let doc = read_settings(&file.path);
+        let start = doc["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(start.len(), 1);
+        assert_eq!(start[0]["matcher"], "");
+        assert!(hook_text(&start[0]["hooks"][0]).ends_with("hook status"));
+        let hooks = doc["hooks"].as_object().unwrap();
+        assert_eq!(hooks.len(), 2, "only PreToolUse and SessionStart");
+        assert_eq!(hooks["PreToolUse"].as_array().unwrap().len(), 1);
+    }
+
+    /// `unproven` carries the module's reason for a shell form, and is `None`
+    /// for the exec form.
+    #[test]
+    fn a_shell_form_settings_file_says_it_is_unproven() {
+        let exe = Path::new("ralphy");
+        let shell = ralphy_proc_util::hook_form::hook_for_version(Some("2.1.138"), exe, &["hook"]);
+        let exec = ralphy_proc_util::hook_form::hook_for_version(Some("2.1.139"), exe, &["hook"]);
+        assert_eq!(shell.form(), HookForm::Shell);
+        assert_eq!(exec.form(), HookForm::Exec);
+        let path = PathBuf::from("x.json");
+        let mixed = SettingsFile::new(path.clone(), [&exec, &shell]);
+        assert_eq!(mixed.unproven.as_deref(), Some(shell.reason()));
+        let proven = SettingsFile::new(path, [&exec, &exec]);
+        assert_eq!(proven.unproven, None);
     }
 }

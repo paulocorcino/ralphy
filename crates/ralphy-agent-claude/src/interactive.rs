@@ -21,7 +21,15 @@ use crate::auth::{is_claude_auth_error, transcript_limit, CLAUDE_AUTH_ERROR_MSG}
 use crate::headless::classify_outcome;
 use crate::plan::materialize_plugin;
 use crate::usage::{dirs_home, latest_transcript_text, latest_transcript_text_since};
-use crate::{ClaudeAgent, EXEC_CHARTER};
+use crate::ClaudeAgent;
+
+mod proof;
+use proof::{status_len, ProofWait};
+#[cfg(test)]
+use {
+    crate::EXEC_CHARTER,
+    proof::{charter_keys, GateAction, ProofGate},
+};
 
 fn interactive_args(
     settings_path: &Path,
@@ -44,7 +52,8 @@ fn interactive_args(
     if remote_control {
         args.extend(["--remote-control".into(), rc_name.into()]);
     }
-    args.push(EXEC_CHARTER.into());
+    // No positional prompt: the pump types the charter once the session's
+    // SessionStart hook has written its line (ADR-0072 D6).
     args
 }
 
@@ -101,7 +110,16 @@ impl ClaudeAgent {
         // theme/onboarding wizard) so the live session doesn't stall on a keypress.
         ensure_interactive_session_ready(ws.repo_root());
 
-        let settings_path = self.write_exec_settings()?;
+        let settings = self.write_exec_settings()?;
+        if let Some(reason) = &settings.unproven {
+            // With the waiver the charter is typed at once: a shell form
+            // writes no line worth a wait.
+            crate::status::refuse_or_go_on(
+                crate::status::shell_form(reason),
+                self.exec.run_without_guard_proof,
+            )?;
+        }
+        let settings_path = settings.path;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
         // Effort follows the same precedence as the model: operator flag wins,
@@ -123,7 +141,7 @@ impl ClaudeAgent {
             .unwrap_or_else(|| "ralphy".into());
 
         // Build the claude argv: settings, skip-permissions, model, effort,
-        // optional remote-control, then the charter as the positional prompt.
+        // optional remote-control; the pump types the charter later.
         // A closure so the respawn loop can rebuild an IDENTICAL command (the
         // second child resumes from the on-disk `plan.md`, untouched between
         // spawns — see `prompt.execute.md` resume instruction).
@@ -169,6 +187,15 @@ impl ClaudeAgent {
         let mut respawned = false;
         let outcome = loop {
             let _ = std::fs::remove_file(&flag_file);
+            // One gate per child: it reads only the lines written after its spawn.
+            let mut proof = ProofWait::new(
+                status.path().to_path_buf(),
+                status_len(status.path()),
+                settings_path.clone(),
+                ws.repo_root().to_path_buf(),
+                crate::status::PROOF_WINDOW,
+            );
+            proof.waiver = self.exec.run_without_guard_proof;
             let mut session =
                 PtySession::spawn(build_cmd()).context("spawning the claude execution session")?;
             let end = self.drive_session(
@@ -176,6 +203,7 @@ impl ClaudeAgent {
                 &flag_file,
                 transcript_dir.as_deref(),
                 transcript_since,
+                proof,
             );
             // Reclaim: kill the tree and drop the session (closes the ConPTY).
             // Unconditional so the child never outlives us on error paths.
@@ -200,9 +228,11 @@ impl ClaudeAgent {
         flag_file: &Path,
         transcript_dir: Option<&Path>,
         transcript_since: SystemTime,
+        proof: ProofWait,
     ) -> Result<DriveEnd> {
         let rx = session.output_channel()?;
-        let mut pump = SessionPump::new(self, rx, flag_file, transcript_dir, transcript_since);
+        let mut pump =
+            SessionPump::new(self, rx, flag_file, transcript_dir, transcript_since, proof);
         let exit = loop {
             if let Some(exit) = pump.step(session)? {
                 break exit;
@@ -257,6 +287,7 @@ struct SessionPump<'a> {
     // Last observed transcript length; a growth between polls is the
     // "activity resumed" signal that clears a degraded state.
     last_len: usize,
+    proof: ProofWait,
 }
 
 impl<'a> SessionPump<'a> {
@@ -266,6 +297,7 @@ impl<'a> SessionPump<'a> {
         flag_file: &'a Path,
         transcript_dir: Option<&'a Path>,
         transcript_since: SystemTime,
+        proof: ProofWait,
     ) -> Self {
         Self {
             rx,
@@ -281,12 +313,14 @@ impl<'a> SessionPump<'a> {
             idle_watch: IdleWatch::from_minutes(agent.exec.idle_minutes_for(true)),
             idle_beat: ProgressBeat::new(Instant::now()),
             last_len: 0,
+            proof,
         }
     }
 
     /// One turn of the loop: `Some` when the session is over.
     fn step(&mut self, session: &mut PtySession) -> Result<Option<SessionExit>> {
         self.drain(session);
+        self.advance_proof(Instant::now(), &mut |bytes| session.write_all(bytes))?;
 
         if self.flag_file.exists() {
             return Ok(Some(SessionExit::Flag));
@@ -314,6 +348,15 @@ impl<'a> SessionPump<'a> {
             return Ok(Some(SessionExit::TimedOut));
         }
         Ok(None)
+    }
+
+    /// One turn of the proof wait: [`ProofWait::advance`].
+    fn advance_proof(
+        &mut self,
+        now: Instant,
+        keys: &mut dyn FnMut(&[u8]) -> Result<()>,
+    ) -> Result<()> {
+        self.proof.advance(now, keys)
     }
 
     /// Act as the terminal: tee output and answer cursor-position queries.

@@ -208,6 +208,141 @@ impl Drop for Watcher {
     }
 }
 
+/// How long a session has to write its `SessionStart` line before the
+/// prompt is refused (ADR-0072 D6, amendment of 2026-10-28). M5 and M6 of
+/// `docs/research/claude-hook-probes-2026-10-28.md` measured 0.8 s to 3.2 s.
+pub(crate) const PROOF_WINDOW: Duration = Duration::from_secs(30);
+
+/// How often [`await_session_start`] reads the status file.
+const PROOF_POLL: Duration = Duration::from_millis(200);
+
+/// Wait until the status file at `path` holds a `SessionStart` line: the
+/// proof that the hooks of `settings` run in this session. `project` is the
+/// session's working folder, read for a `disableAllHooks` setting when the
+/// line does not come. After `window` with no line, the error is the
+/// [`ralphy_core::HooksUnproven`] cause, for [`refuse_or_go_on`].
+pub(crate) fn await_session_start(
+    path: &Path,
+    settings: &Path,
+    project: &Path,
+    window: Duration,
+) -> Result<(), ralphy_core::HooksUnproven> {
+    let deadline = std::time::Instant::now() + window;
+    loop {
+        if session_started(path, 0) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(no_session_start(settings, project, window));
+        }
+        std::thread::sleep(PROOF_POLL);
+    }
+}
+
+/// Whether the status file at `path` holds a `SessionStart` line after its
+/// first `from` bytes. A respawned child shares the file with the first one,
+/// so it passes the length the file had before its spawn. Never blocks.
+pub(crate) fn session_started(path: &Path, from: u64) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
+    let start = usize::try_from(from).map_or(bytes.len(), |f| f.min(bytes.len()));
+    String::from_utf8_lossy(&bytes[start..])
+        .lines()
+        .any(|line| {
+            serde_json::from_str::<Value>(line.trim())
+                .is_ok_and(|v| v.get("event").and_then(Value::as_str) == Some("SessionStart"))
+        })
+}
+
+/// The cause of a session that wrote no `SessionStart` line in `window`.
+pub(crate) fn no_session_start(
+    settings: &Path,
+    project: &Path,
+    window: Duration,
+) -> ralphy_core::HooksUnproven {
+    ralphy_core::HooksUnproven {
+        cause: no_proof_cause(settings, project, window),
+    }
+}
+
+/// The cause of a missing proof. A `disableAllHooks` file is named first: it
+/// alone explains the silence.
+fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
+    let home = ralphy_proc_util::home_dir();
+    let mut cause = String::new();
+    if let Some(file) =
+        ralphy_proc_util::hook_form::disable_all_hooks(home.as_deref(), Some(project))
+    {
+        cause.push_str(&format!(
+            "{} sets disableAllHooks to true, so Claude Code runs no hook; ",
+            file.display()
+        ));
+    }
+    let program = ralphy_proc_util::exe::running_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|e| format!("the ralphy program (not found: {e:#})"));
+    cause.push_str(&format!(
+        "no SessionStart hook event came in {} s; the hooks in {} run {}. Fix the cause and start again",
+        window.as_secs(),
+        settings.display(),
+        program
+    ));
+    cause
+}
+
+/// The cause of a session whose hooks would run through a shell: such a
+/// hook cannot prove the program it runs. `reason` is the hook form module's.
+pub(crate) fn shell_form(reason: &str) -> ralphy_core::HooksUnproven {
+    ralphy_core::HooksUnproven {
+        cause: format!("{reason}; update Claude Code to 2.1.139 or later"),
+    }
+}
+
+/// The settings key that lets an unproven session go on.
+pub(crate) const WAIVER_KEY: &str = "claude.run_without_guard_proof_i_understand_the_risk";
+
+/// Every unproven session ends here. With the waiver (a local-only setting,
+/// ADR-0072 D6) the session goes on and one warning event carries the
+/// cause; without it, the refusal names the cause and the way out.
+pub(crate) fn refuse_or_go_on(
+    cause: ralphy_core::HooksUnproven,
+    waiver: bool,
+) -> anyhow::Result<()> {
+    if waiver {
+        ralphy_core::emit::hooks_unproven_allowed(&cause.cause);
+        return Ok(());
+    }
+    Err(anyhow::Error::new(ralphy_core::HooksUnproven {
+        cause: format!(
+            "{}. To run without the proof on this machine, run `ralphy config set {WAIVER_KEY} true`",
+            cause.cause
+        ),
+    }))
+}
+
+/// The gate of a headless session: refuse a shell form now, before the
+/// spawn, else hold the prompt until the session's `SessionStart` line lands
+/// in `status_file`. With the waiver, a shell form sends the prompt at once
+/// and a missing line sends it after the window.
+pub(crate) fn proof_gate<'a>(
+    settings: &'a crate::settings::SettingsFile,
+    status_file: PathBuf,
+    project: &'a Path,
+    waiver: bool,
+) -> anyhow::Result<ralphy_adapter_support::PromptGate<'a>> {
+    if let Some(reason) = &settings.unproven {
+        refuse_or_go_on(shell_form(reason), waiver)?;
+        return Ok(Box::new(|| Ok(())));
+    }
+    Ok(Box::new(move || {
+        match await_session_start(&status_file, &settings.path, project, PROOF_WINDOW) {
+            Ok(()) => Ok(()),
+            Err(cause) => refuse_or_go_on(cause, waiver),
+        }
+    }))
+}
+
 fn emit(obs: &Observed) {
     ralphy_core::emit::agent_state(obs.state, &obs.ts, obs.detail.as_deref());
 }
@@ -329,6 +464,13 @@ mod tests {
                 "{name} must hand the child RALPHY_STATUS_FILE from that Watcher"
             );
         }
+        // The tasks run no Watcher: each hands its child a status file of its own.
+        let tasks: String = include_str!("tasks.rs").split_whitespace().collect();
+        let tasks = tasks.split("#[cfg(test)]mod").next().unwrap_or_default();
+        assert!(
+            tasks.contains("cmd.env(crate::status::STATUS_ENV,&status_file)"),
+            "tasks.rs must hand the child RALPHY_STATUS_FILE"
+        );
     }
 
     // ---- the Watcher, end to end through `tracing` (ADR-0059 §3) --------
@@ -499,6 +641,166 @@ mod tests {
             ],
             "transitions only, in order, with the line's own ts; the stale line never folded: {got:?}"
         );
+    }
+
+    #[test]
+    fn the_proof_passes_on_the_session_start_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(STATUS_FILE);
+        std::fs::write(&path, b"").unwrap();
+        let writer = {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(1));
+                std::fs::write(
+                    &path,
+                    "{\"event\":\"SessionStart\",\"ts\":\"t\"}
+",
+                )
+                .unwrap();
+            })
+        };
+        let got = await_session_start(
+            &path,
+            Path::new("s.json"),
+            dir.path(),
+            Duration::from_secs(5),
+        );
+        writer.join().unwrap();
+        assert!(got.is_ok(), "{got:?}");
+    }
+
+    #[test]
+    fn no_session_start_line_is_refused_with_the_cause() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let disabling = project.join(".claude").join("settings.json");
+        std::fs::write(&disabling, r#"{"disableAllHooks": true}"#).unwrap();
+        let path = dir.path().join(STATUS_FILE);
+        std::fs::write(
+            &path,
+            "{\"event\":\"Stop\",\"ts\":\"t\"}
+",
+        )
+        .unwrap();
+        let settings = dir.path().join("ralphy.settings.json");
+
+        let started = std::time::Instant::now();
+        let err = await_session_start(&path, &settings, &project, Duration::from_secs(1))
+            .expect_err("no SessionStart line in the window");
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let cause = &err.cause;
+        let program = ralphy_proc_util::exe::running_exe().unwrap();
+        let at = |needle: &Path| {
+            cause
+                .find(&needle.display().to_string())
+                .unwrap_or_else(|| panic!("{cause} names {}", needle.display()))
+        };
+        let (disabled_at, settings_at, program_at) = (at(&disabling), at(&settings), at(&program));
+        assert!(
+            disabled_at < settings_at && disabled_at < program_at,
+            "{cause}"
+        );
+    }
+
+    #[test]
+    fn a_shell_form_session_is_refused_with_the_update_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = crate::settings::SettingsFile {
+            path: dir.path().join("ralphy.settings.json"),
+            unproven: Some("Claude Code 2.1.138 runs a hook through a shell".into()),
+        };
+        let Err(err) = proof_gate(&settings, dir.path().join(STATUS_FILE), dir.path(), false)
+        else {
+            panic!("a shell form gets no gate");
+        };
+        // The runner reads the type through the context the session adds.
+        let err = err.context("the prompt was held and not sent");
+        let refusal = err
+            .downcast_ref::<ralphy_core::HooksUnproven>()
+            .expect("the refusal type");
+        assert!(
+            refusal
+                .cause
+                .contains("update Claude Code to 2.1.139 or later"),
+            "{}",
+            refusal.cause
+        );
+    }
+
+    /// The `cause` of each `hooks not proven` event emitted on this thread
+    /// while `f` runs.
+    fn waiver_events(f: impl FnOnce()) -> Vec<String> {
+        struct Causes(Arc<Mutex<Vec<String>>>);
+        impl<S: tracing::Subscriber> Layer<S> for Causes {
+            fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+                #[derive(Default)]
+                struct F {
+                    message: String,
+                    cause: String,
+                }
+                impl tracing::field::Visit for F {
+                    fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
+                        match f.name() {
+                            "message" => self.message = format!("{v:?}"),
+                            "cause" => self.cause = format!("{v:?}"),
+                            _ => {}
+                        }
+                    }
+                }
+                let mut fields = F::default();
+                event.record(&mut fields);
+                if fields.message == ralphy_core::emit::HOOKS_UNPROVEN_ALLOWED_MSG {
+                    self.0.lock().expect("causes").push(fields.cause);
+                }
+            }
+        }
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::registry().with(Causes(seen.clone()));
+        tracing::subscriber::with_default(subscriber, f);
+        let got = seen.lock().expect("causes").clone();
+        got
+    }
+
+    fn a_cause() -> ralphy_core::HooksUnproven {
+        ralphy_core::HooksUnproven {
+            cause: "no SessionStart hook event came in 30 s".into(),
+        }
+    }
+
+    #[test]
+    fn the_waiver_lets_an_unproven_session_go_on_with_one_warning() {
+        let mut got = None;
+        let causes = waiver_events(|| got = Some(refuse_or_go_on(a_cause(), true)));
+        let got = got.expect("ran");
+        assert!(got.is_ok(), "{got:?}");
+        assert_eq!(causes, vec!["no SessionStart hook event came in 30 s"]);
+    }
+
+    #[test]
+    fn without_the_waiver_the_refusal_names_the_way_out() {
+        let mut got = None;
+        let causes = waiver_events(|| got = Some(refuse_or_go_on(a_cause(), false)));
+        let err = got.expect("ran").expect_err("refused");
+        let refusal = err
+            .downcast_ref::<ralphy_core::HooksUnproven>()
+            .expect("the refusal type");
+        assert!(
+            refusal
+                .cause
+                .starts_with("no SessionStart hook event came in 30 s"),
+            "{}",
+            refusal.cause
+        );
+        assert!(
+            refusal
+                .cause
+                .contains("claude.run_without_guard_proof_i_understand_the_risk"),
+            "{}",
+            refusal.cause
+        );
+        assert!(causes.is_empty(), "a refusal emits no warning: {causes:?}");
     }
 
     /// A `PostToolUse` after a `waiting` is the operator having answered:
