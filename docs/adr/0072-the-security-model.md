@@ -343,7 +343,8 @@ surface.
   holds its prompt until its first hook event (`SessionStart`) comes in,
   and refuses to start when none comes in 30 s, when `disableAllHooks` is
   set, or when Claude Code is older than 2.1.139. A console of the
-  workbench is not covered by this check (#769). The refusal stops the run and leaves the issue untouched. A
+  workbench is not refused by this check. Since #769 it shows a warning dot
+  (the silent agent block) when its hooks do not report. The refusal stops the run and leaves the issue untouched. A
   local-only setting (`claude.run_without_guard_proof_i_understand_the_risk`)
   lets the session go on with a warning event. Live runs on Windows and WSL
   are in the same record, `## Live results — runs (#767)`.

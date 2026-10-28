@@ -81,6 +81,7 @@ export const WBWindowState = (function () {
     // asleep — every read of it must tolerate that.
     _term: null,
     _agentState: null,
+    _agentDetail: undefined,
 
     // INTENT: the id this window was spawned to attach to, known before any
     // terminal reports one. Without it `reach` misses its own window.

@@ -68,7 +68,7 @@ impl ClaudeAgent {
             .stderr(Stdio::piped());
         // The agent-state tail (ADR-0059 §3), per call: the hooks append, the
         // watcher folds and emits until the call returns.
-        let status = crate::status::Watcher::start(&self.run_dir);
+        let status = crate::status::Watcher::start(&self.run_dir)?;
         cmd.env(crate::status::STATUS_ENV, status.path());
         // A shell form is refused here, before the spawn (ADR-0072 D6).
         let gate = crate::status::proof_gate(

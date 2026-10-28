@@ -301,6 +301,14 @@ test("agentStateOf ranks waiting over working over unknown over done", () => {
   assert.equal(wb.agentStateOf([s("bogus")]), null, "an unknown word is no state");
 });
 
+test("agentStateOf ranks a silent console first", () => {
+  const silent = { agent_state: { source: "silent", reason: "r", since: "t" } };
+  const waiting = { agent_state: { state: "waiting", since: "t" } };
+  assert.equal(wb.agentStateOf([waiting, silent]), "silent");
+  assert.equal(wb.agentStateOf([silent]), "silent");
+  assert.deepEqual(wb.worktreeStates([{ name: "primary", primary: true }], [waiting, silent]), { primary: "silent" });
+});
+
 // The dot per worktree row: sessions join rows on `checkout` (`primary` is
 // the sessions with none); a row with no session has no entry.
 test("worktreeStates joins the repo's sessions to its rows by checkout", () => {

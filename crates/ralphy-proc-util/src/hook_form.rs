@@ -5,7 +5,7 @@
 //! cannot be read, the entry is one shell string. Both the run settings and the
 //! daemon settings render through this module, so they never disagree.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -132,14 +132,26 @@ fn dotted((major, minor, patch): (u32, u32, u32)) -> String {
 }
 
 /// Read the version of `claude_bin` and decide the form. A shell form is
-/// logged with its reason.
+/// logged with its reason once per binary and reason: one settings file asks
+/// for several hooks, and each would log the same line.
 pub fn claude_hook(claude_bin: &Path, program: &Path, args: &[&str]) -> HookCommand {
     let version = read_version(claude_bin, VERSION_READ_LIMIT);
     let hook = hook_for_version(version.as_deref(), program, args);
-    if hook.form() == HookForm::Shell {
+    if hook.form() == HookForm::Shell && first_warning(claude_bin, hook.reason()) {
         tracing::warn!("{}", hook.reason());
     }
     hook
+}
+
+static WARNED: LazyLock<Mutex<HashSet<(PathBuf, String)>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// `true` the first time this process sees `reason` for `bin`.
+fn first_warning(bin: &Path, reason: &str) -> bool {
+    let bin = std::fs::canonicalize(bin).unwrap_or_else(|_| bin.to_path_buf());
+    // A poisoned set still holds valid entries: each insert is one call.
+    let mut warned = WARNED.lock().unwrap_or_else(|e| e.into_inner());
+    warned.insert((bin, reason.to_string()))
 }
 
 type CacheKey = (PathBuf, SystemTime);
@@ -302,17 +314,28 @@ fn wait_until(
 
 /// The first of the user, project and local project settings files that sets
 /// `disableAllHooks` to `true`. Claude Code then runs no hook, so no proof
-/// can arrive.
+/// can arrive. The path uses the separator of the platform only.
 pub fn disable_all_hooks(home: Option<&Path>, project: Option<&Path>) -> Option<PathBuf> {
+    let home = home.map(native);
+    let project = project.map(native);
     let candidates = [
         home.map(|h| h.join(".claude").join("settings.json")),
-        project.map(|p| p.join(".claude").join("settings.json")),
+        project
+            .as_ref()
+            .map(|p| p.join(".claude").join("settings.json")),
         project.map(|p| p.join(".claude").join("settings.local.json")),
     ];
     candidates
         .into_iter()
         .flatten()
         .find(|f| sets_disable_all_hooks(f))
+}
+
+/// `path` rebuilt one component at a time. On Windows, `git rev-parse
+/// --show-toplevel` gives a root with `/`, and a join adds `\`; the rebuilt
+/// path has `\` only.
+fn native(path: &Path) -> PathBuf {
+    path.components().collect()
 }
 
 fn sets_disable_all_hooks(file: &Path) -> bool {
@@ -437,6 +460,18 @@ mod tests {
     }
 
     #[test]
+    fn a_shell_form_reason_is_logged_once_per_binary() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bin = dir.path().join("claude");
+        let reason = hook(Some("2.1.138 (Claude Code)")).reason().to_string();
+        assert!(first_warning(&bin, &reason), "the first hook logs");
+        assert!(!first_warning(&bin, &reason), "the second hook does not");
+        let other = dir.path().join("other-claude");
+        assert!(first_warning(&other, &reason), "another binary logs");
+        assert!(first_warning(&bin, "another reason"), "another reason logs");
+    }
+
+    #[test]
     fn disable_all_hooks_names_the_file_that_sets_it() {
         let home = tempfile::tempdir().expect("temp dir");
         let project = tempfile::tempdir().expect("temp dir");
@@ -459,5 +494,27 @@ mod tests {
         assert_eq!(found(), None, "bad json");
         write(project.path(), r#"{"disableAllHooks": true}"#);
         assert_eq!(found(), Some(proj));
+    }
+
+    #[test]
+    fn the_named_file_uses_one_kind_of_slash() {
+        let project = tempfile::tempdir().expect("temp dir");
+        let dir = project.path().join(".claude");
+        std::fs::create_dir_all(&dir).expect("create dir");
+        std::fs::write(
+            dir.join("settings.local.json"),
+            r#"{"disableAllHooks": true}"#,
+        )
+        .expect("write file");
+        // The root as `git rev-parse --show-toplevel` prints it on Windows.
+        let root = PathBuf::from(project.path().to_string_lossy().replace('\\', "/"));
+        let found = disable_all_hooks(None, Some(&root)).expect("the local file");
+        let text = found.display().to_string();
+        let other = if cfg!(windows) { '/' } else { '\\' };
+        assert!(!text.contains(other), "{text}");
+        assert!(text.ends_with(&format!(
+            ".claude{0}settings.local.json",
+            std::path::MAIN_SEPARATOR
+        )));
     }
 }

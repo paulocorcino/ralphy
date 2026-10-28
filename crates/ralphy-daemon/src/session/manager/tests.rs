@@ -129,7 +129,7 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
         manager.list_at(now)[0]
             .agent_state
             .as_ref()
-            .map(|a| a.state.as_str()),
+            .and_then(|a| a.state.as_deref()),
         Some("working")
     );
     observe(
@@ -140,11 +140,14 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
         manager.list_at(now)[0]
             .agent_state
             .as_ref()
-            .map(|a| a.state.as_str()),
+            .and_then(|a| a.state.as_deref()),
         Some("unknown")
     );
     assert_eq!(
-        manager.get(id).and_then(|i| i.agent_state).map(|a| a.state),
+        manager
+            .get(id)
+            .and_then(|i| i.agent_state)
+            .and_then(|a| a.state),
         Some("unknown".to_string()),
         "`get` renders too"
     );
@@ -156,7 +159,7 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
         manager.list_at(now)[0]
             .agent_state
             .as_ref()
-            .map(|a| a.state.as_str()),
+            .and_then(|a| a.state.as_deref()),
         Some("waiting"),
         "a question never goes stale"
     );
@@ -280,4 +283,86 @@ async fn a_working_state_that_ages_out_counts_as_a_change() {
     assert!(!sess.poll_status(later), "unknown again is not");
     manager.close(id);
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A console with hooks, spawned on the platform shell, and its session.
+fn hooked_console(
+    manager: &Arc<SessionManager>,
+    dir: &std::path::Path,
+) -> (SessionId, Attachment, Arc<ManagedSession>) {
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(crate::agent_state::StatusFiles::for_session(dir, 1));
+    let (id, att) = manager
+        .spawn_attached(
+            "owner/r".to_string(),
+            "claude".to_string(),
+            "agent".to_string(),
+            None,
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    (id, att, sess)
+}
+
+/// A console that becomes silent says so in the log once, not at every tick.
+#[tokio::test]
+async fn a_console_that_becomes_silent_logs_one_line() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (id, _att, sess) = hooked_console(&manager, dir.path());
+    let now = SystemTime::now();
+    *sess.first_input.lock().expect("first_input mutex") =
+        Some(now - crate::agent_state::SILENT_AFTER - std::time::Duration::from_secs(1));
+
+    let log_path = dir.path().join("daemon.log");
+    let log_file = std::fs::File::create(&log_path).expect("create the log");
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || log_file.try_clone().expect("a second log handle"))
+        .with_ansi(false)
+        .finish();
+    let changes: Vec<bool> = tracing::subscriber::with_default(subscriber, || {
+        (0..4u64)
+            .map(|i| sess.poll_status_with(now + std::time::Duration::from_secs(i), None))
+            .collect()
+    });
+    assert_eq!(changes, vec![true, false, false, false]);
+    let state = manager.list_at(now)[0]
+        .agent_state
+        .clone()
+        .expect("a block");
+    assert_eq!(state.source.as_deref(), Some("silent"));
+    let log = std::fs::read_to_string(&log_path).expect("read the log");
+    let warnings = log.lines().filter(|l| l.contains("WARN")).count();
+    assert_eq!(warnings, 1, "{log}");
+    manager.close(id);
+}
+
+/// The silence clock starts at the first write that carries the operator's
+/// input, not at a reply the terminal sent by itself.
+#[tokio::test]
+async fn the_silence_clock_starts_at_the_first_input() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (id, att, sess) = hooked_console(&manager, dir.path());
+    let first_input = || *sess.first_input.lock().expect("first_input mutex");
+    att.write(b"").expect("an empty write");
+    assert_eq!(first_input(), None, "an empty write is no input");
+    att.write(b"\x1b[12;40R").expect("a cursor report");
+    assert_eq!(first_input(), None, "a terminal reply is no input");
+    let before = SystemTime::now();
+    att.write(b"x").expect("a write");
+    let after = SystemTime::now();
+    let first = first_input().expect("the first write with bytes sets it");
+    assert!(before <= first && first <= after, "{first:?}");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    att.write(b"y").expect("a second write");
+    assert_eq!(
+        first_input(),
+        Some(first),
+        "a second write does not move it"
+    );
+    manager.close(id);
 }

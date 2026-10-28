@@ -262,3 +262,41 @@ The `doctor` exit code is 1 on this machine only because `gh` is signed out;
 a failed hook line adds nothing to the missing count. `~/.ralphy/daemon.pid`
 had the same hash before and after D3. The scratch folder and the daemon
 process were removed.
+
+## Live results — consoles (#769)
+
+Measured 2026-10-28 on branch `feat/770-hook-proof` (commit `a8ee9421`),
+debug build, Claude Code 2.1.312 on both sides. Each OS ran a scratch daemon
+from a copy of the binary in a temp folder (`RALPHY_DAEMON_DIR=<tmp>`,
+`daemon --port 7461`, no agent override, so the real `claude` ran), stopped
+by its own PID. Windows used `C:\Dev\FinCal`, a folder Claude Code already
+trusts. WSL used a fresh clone of FinCal under `/tmp`, marked trusted in
+`~/.claude.json` for the check (the entry was removed after). A headless
+Chromium on Windows opened `http://127.0.0.1:7461` (Windows) or
+`http://localhost:7461` (WSL, forwarded by WSL2), opened a Claude console
+and typed `hello` and Enter. For the second row the copy of the binary was
+then renamed (Windows) or deleted (WSL), and a second Claude console was
+opened and typed into the same way.
+
+| Case | OS | Dot | `agent_state` on `/api/sessions` | Time from the typed input |
+|---|---|---|---|---|
+| working | Windows | `session-state done`, tooltip `Agent is done` | `{"state":"done","since":…}` | not silent |
+| hook program renamed | Windows | `session-state silent`, tooltip `Agent state not reported: No hook event reached Ralphy in the 30 seconds after your first input, …` | `{"source":"silent","reason":…,"since":…}`, no `state` | silent 18.3 s after `hello` |
+| working | WSL | `session-state done`, tooltip `Agent is done` | `{"state":"done","since":…}` | not silent |
+| hook program deleted | WSL | `session-state silent`, the same tooltip | `{"source":"silent","reason":…,"since":…}`, no `state` | silent 10.5 s after `hello` |
+
+In both broken consoles Claude Code answered the prompt and showed
+`Stop hook error: … ENOENT: no such file or directory` (`uv_spawn` on
+Windows, `posix_spawn` on WSL). The daemon log had one line per silent
+console: `WARN … agent_status: a console became silent: …`.
+
+Seen in these runs, not changed: the console went silent less than 30 s
+after the typed `hello`, because the 30 s clock starts at the first write to
+the console, and the terminal's automatic replies (cursor position, device
+attributes) are written about 12 s earlier, at launch. So a Claude console
+whose hooks never run goes silent about 30 s after launch, with no typed
+input.
+
+No process, folder, setting or branch was left: the daemons, the temp
+folders, the WSL clone, its `~/.claude.json` entry and its
+`~/.claude/projects` folder were removed, and `C:\Dev\FinCal` was clean.

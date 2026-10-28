@@ -35,6 +35,8 @@ export type ColumnRow = {
   repo: string | null;
   kind: string | null;
   state: string | null;
+  /** What the agent-state dot says beside its state, such as why a console is silent. */
+  detail: string | null;
   running: boolean;
   enabled: boolean;
   reason: string | null;
@@ -51,7 +53,7 @@ export type ColumnGroup = { fence: ColumnFence | null; rows: ColumnRow[] };
 export type DetachedMember = { id: string; agent: string | null; name?: string | null; repo?: string | null; kind: string | null };
 
 /** A console the list is folded from: a window on this stage. */
-type RosterRow = DetachedMember & { state?: string | null; running?: boolean };
+type RosterRow = DetachedMember & { state?: string | null; detail?: string | null; running?: boolean };
 
 /** The input of `listFold`. */
 type ListFoldInput = {
@@ -362,6 +364,7 @@ export const WBColumns = (function () {
       repo: r.repo ?? null,
       kind: r.kind,
       state: r.state ?? null,
+      detail: r.detail ?? null,
       running: r.running !== false,
       enabled: !reason,
       reason,
@@ -384,6 +387,7 @@ export const WBColumns = (function () {
       repo: m.repo ?? null,
       kind: m.kind,
       state: null,
+      detail: null,
       running: true,
       enabled: false,
       reason: REASON_DETACHED,

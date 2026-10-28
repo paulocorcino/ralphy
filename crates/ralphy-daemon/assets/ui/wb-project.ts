@@ -34,8 +34,10 @@ export type Project = {
   /** `null` when the daemon has no answer. */
   head?: { kind: string; name?: string; sha?: string } | null;
   dirty: boolean;
-  /** `idle`, `live`, `waiting` or `offline`. */
+  /** `idle`, `live`, `waiting`, `silent` or `offline`. */
   state: string;
+  /** The reason of a `silent` dot. */
+  dotDetail?: string;
   env: string;
   os?: string;
   daemonName: string;
@@ -235,19 +237,45 @@ function chipDirty(p: Project, checkout: string | null | undefined, listing: Lis
 //
 // The daemon renders each live session's `agent_state` (staleness already
 // applied); the workbench folds many sessions into one word. Precedence is
-// what the operator should look at first: a `waiting` agent beats
-// everything (it is asking), `working` beats the rest, an `unknown` (a
-// green that aged out) beats `done`. `null` when no session says anything —
-// a vendor without hooks, a shell console, a peer on an older build.
-const STATE_RANK: Record<string, number> = { waiting: 4, working: 3, unknown: 2, done: 1, blocked: 4 };
+// what the operator should look at first: a `silent` console beats
+// everything (its state cannot be trusted), a `waiting` agent is next (it is
+// asking), `working` beats the rest, an `unknown` (a green that aged out)
+// beats `done`. `null` when no session says anything — a vendor without
+// hooks, a shell console, a peer on an older build.
+const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1, blocked: 4 };
 function agentStateOf(sessions: HostedSession[] | null | undefined) {
   let best = null;
   for (const s of sessions || []) {
-    const state = s && s.agent_state && s.agent_state.state;
+    const state = agentDotOf(s?.agent_state).state;
     if (!state || !(state in STATE_RANK)) continue;
     if (!best || STATE_RANK[state] > STATE_RANK[best]) best = state;
   }
   return best;
+}
+
+// The dot of one `agent_state` block: a silent console is the word `silent`
+// with its reason as the detail, so every place that draws a dot reads the
+// block one way. A row with no block, or no state, has no dot.
+function agentDotOf(block: AgentStateBlock | null | undefined): { state: string | null; detail?: string } {
+  if (!block) return { state: null };
+  if (block.source === "silent") return { state: "silent", detail: block.reason };
+  return { state: block.state ?? null, detail: block.detail };
+}
+
+// The reason of the first silent console, for the tooltip of a dot that shows
+// `silent`.
+function silentReasonOf(sessions: HostedSession[] | null | undefined) {
+  const silent = (sessions || []).find((s) => agentDotOf(s?.agent_state).state === "silent");
+  return silent?.agent_state?.reason;
+}
+
+// The project's dot from its own sessions: a silent console, then a `waiting`
+// agent, outrank `live` (ADR-0059); no session is `idle`.
+function projectDotOf(mine: HostedSession[]): { state: string; detail?: string } {
+  const seen = agentStateOf(mine);
+  if (!mine.length) return { state: "idle" };
+  if (seen === "silent") return { state: seen, detail: silentReasonOf(mine) };
+  return { state: seen === "waiting" ? seen : "live" };
 }
 
 // The dot per worktree row: the sessions living in that checkout (`primary`
@@ -291,7 +319,10 @@ export const WBProject = {
   projectTitle,
   rowTitle,
   headLabel,
+  agentDotOf,
   agentStateOf,
+  silentReasonOf,
+  projectDotOf,
   worktreeStates,
   canSwitchBranch,
   branchChipTitle,

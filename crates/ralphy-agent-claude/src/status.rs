@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use serde_json::Value;
 
 /// The file name under the run dir, beside `status.flag`.
@@ -147,7 +148,9 @@ impl Tail {
 /// Tails the status file from a thread for as long as a child runs and emits
 /// each transition. `start` truncates the file (a previous issue's lines are
 /// not this child's) and returns the path to hand the child as
-/// `RALPHY_STATUS_FILE`; `stop` takes the last look and joins.
+/// `RALPHY_STATUS_FILE`; `stop` takes the last look and joins. A file that
+/// cannot be truncated fails `start`: an old `SessionStart` line in it would
+/// prove a session whose hooks never ran.
 pub(crate) struct Watcher {
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
@@ -155,13 +158,9 @@ pub(crate) struct Watcher {
 }
 
 impl Watcher {
-    pub(crate) fn start(run_dir: &Path) -> Self {
+    pub(crate) fn start(run_dir: &Path) -> anyhow::Result<Self> {
         let path = run_dir.join(STATUS_FILE);
-        // Truncate, never fail: a status file that cannot be reset is a
-        // status that may be stale, not a run that may not start.
-        if let Err(e) = std::fs::write(&path, b"") {
-            tracing::warn!(error = %e, path = %path.display(), "could not reset the agent-status file");
-        }
+        std::fs::write(&path, b"").with_context(|| format!("resetting {}", path.display()))?;
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();
         let mut tail = Tail::new(path.clone());
@@ -179,11 +178,11 @@ impl Watcher {
             }
             std::thread::sleep(Duration::from_millis(500));
         });
-        Watcher {
+        Ok(Watcher {
             stop,
             handle: Some(handle),
             path,
-        }
+        })
     }
 
     pub(crate) fn path(&self) -> &Path {
@@ -341,6 +340,18 @@ pub(crate) fn proof_gate<'a>(
             Err(cause) => refuse_or_go_on(cause, waiver),
         }
     }))
+}
+
+/// Add `ctx` to a spawn error `e`, unless `e` is a refusal for hooks that
+/// did not prove they run. The spawn context of the plan asks whether the
+/// program is installed and on PATH, and that is the wrong place to look
+/// for a refusal; the refusal names its own cause.
+pub(crate) fn spawn_context(e: anyhow::Error, ctx: &'static str) -> anyhow::Error {
+    if e.downcast_ref::<ralphy_core::HooksUnproven>().is_some() {
+        e
+    } else {
+        e.context(ctx)
+    }
 }
 
 fn emit(obs: &Observed) {
@@ -574,7 +585,7 @@ mod tests {
         )
         .unwrap();
 
-        let watcher = Watcher::start(dir.path());
+        let watcher = Watcher::start(dir.path()).unwrap();
         assert_eq!(watcher.path(), path, "the path handed to the child");
         assert_eq!(std::fs::read(&path).unwrap(), b"", "start truncates");
 
@@ -641,6 +652,16 @@ mod tests {
             ],
             "transitions only, in order, with the line's own ts; the stale line never folded: {got:?}"
         );
+    }
+
+    /// A status file that cannot be reset may hold an old `SessionStart`
+    /// line, which would prove a session whose hooks never ran.
+    #[test]
+    fn a_status_file_that_cannot_be_reset_fails_the_start() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(STATUS_FILE)).unwrap();
+        let err = Watcher::start(dir.path()).err().expect("start refuses");
+        assert!(format!("{err:#}").contains(STATUS_FILE), "{err:#}");
     }
 
     #[test]
@@ -727,6 +748,19 @@ mod tests {
             "{}",
             refusal.cause
         );
+    }
+
+    #[test]
+    fn a_refusal_gets_no_spawn_context() {
+        let held = |e: anyhow::Error| e.context("the prompt was held and not sent");
+        let ctx = "running the CLI (is it installed and on PATH?)";
+        let refused = spawn_context(held(anyhow::Error::new(a_cause())), ctx);
+        assert!(!format!("{refused:#}").contains("on PATH"), "{refused:#}");
+        assert!(refused
+            .downcast_ref::<ralphy_core::HooksUnproven>()
+            .is_some());
+        let failed = spawn_context(anyhow::anyhow!("not found"), ctx);
+        assert!(format!("{failed:#}").starts_with(ctx), "{failed:#}");
     }
 
     /// The `cause` of each `hooks not proven` event emitted on this thread

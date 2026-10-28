@@ -16,6 +16,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { sendWindow } from "./wb-events.ts";
 import { phoneLayout } from "./wb-viewport.ts";
+import { agentStateTitle } from "./wb-console-session.ts";
 import type { Group, Project, ShellLate } from "./wb-shell-types.d.ts";
 
 // The `this` of `shell()`'s members: its own members, the Alpine magics, and
@@ -202,7 +203,8 @@ export function shell() {
     // path), waiting → yellow (an agent is asking for you, ADR-0059).
     // Orthogonal to `remote`.
     // The project dot's tooltip, in words; the class keeps the state code.
-    dotTitle(state: string) {
+    dotTitle(state: string, detail?: string) {
+      if (state === "silent") return agentStateTitle(state, detail);
       return (
         ({
           live: "A console is open",
@@ -212,13 +214,7 @@ export function shell() {
       );
     },
     dotClass(state: string) {
-      return state === "live"
-        ? "live"
-        : state === "waiting"
-          ? "waiting"
-          : state === "offline"
-            ? "offline"
-            : "";
+      return ["live", "waiting", "silent", "offline"].includes(state) ? state : "";
     },
     peerStateWord(state: string | null | undefined) {
       return WBFleet.stateWord(state);

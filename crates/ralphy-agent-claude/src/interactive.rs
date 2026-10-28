@@ -130,7 +130,7 @@ impl ClaudeAgent {
         let _ = std::fs::remove_file(&flag_file);
         // The agent-state tail (ADR-0059 §3): the hooks append, the watcher
         // thread folds and emits transitions for as long as the child runs.
-        let status = crate::status::Watcher::start(&self.run_dir);
+        let status = crate::status::Watcher::start(&self.run_dir)?;
 
         // The Stop hook writes the flag; it learns the path from this env var,
         // inherited by claude through the PTY child.

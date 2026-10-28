@@ -297,7 +297,7 @@
                    (unreachable path). Orthogonal to the provenance icon beside
                    it (GitHub vs local-only). A local-only repo can be live; a
                    GitHub repo can be offline. -->
-              <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state)"></span>
+              <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state, p.dotDetail)"></span>
               <!-- provenance: a GitHub-backed repo vs one that lives only on
                    this disk. Orthogonal to the daemon-reachability dot above. -->
               <i
@@ -780,7 +780,7 @@
                             :data-id="r.id" @click="pick(r)">
                       <i class="bi bi-terminal"></i>
                       <span class="row-name" x-text="rowLabel(r)"></span>
-                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state, r.detail)"></span>
                       <span class="row-off" x-show="!r.running">not running</span>
                     </button>
                   </template>
@@ -879,7 +879,7 @@
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
                   <span x-text="window.WBConsoleName.consoleLabel(w.name || '', w.agent)" :title="w.tooltip"></span>
-                  <span class="session-state" :class="w.state" x-show="w.state" :title="window.WBConsole?.agentStateTitle(w.state)"></span>
+                  <span class="session-state" :class="w.state" x-show="w.state" :title="window.WBConsole?.agentStateTitle(w.state, w.detail)"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
               </template>
@@ -1059,7 +1059,7 @@
                               :data-id="r.id" @click="pickColumn(r.id)">
                         <i class="bi bi-terminal"></i>
                         <span class="row-name" x-text="columnRowLabel(r)"></span>
-                        <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                        <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state, r.detail)"></span>
                         <span class="row-off" x-show="!r.running">not running</span>
                       </button>
                       <button class="column-open" :disabled="!r.enabled" :data-id="r.id" x-show="!columnSwitch"

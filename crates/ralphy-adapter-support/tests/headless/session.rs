@@ -279,3 +279,45 @@ fn a_held_session_returns_the_gate_error() {
         "not a missing artifact: {chain}"
     );
 }
+
+#[test]
+fn a_refused_prompt_gets_no_spawn_context() {
+    const SPAWN_ERR: &str = "failed to spawn the test child (is it on PATH?)";
+    let session = |cmd: std::process::Command, log: &Path| -> anyhow::Result<String> {
+        run_text_session_held(
+            TextSession {
+                cmd,
+                prompt: HELD_PROMPT,
+                timeout: Duration::from_secs(30),
+                log_path: log,
+                spawn_err: SPAWN_ERR,
+                auth_msg: "AUTH FAILED",
+                timeout_msg: "TIMED OUT",
+            },
+            Box::new(|| anyhow::bail!("gate said no")),
+            |_log| false,
+        )
+    };
+
+    let log = temp_log("held-refused-log");
+    let err = session(child_cmd("sleep"), &log).expect_err("the gate refuses");
+    let chain = format!("{err:#}");
+    assert!(
+        chain.contains("gate said no"),
+        "the gate's message: {chain}"
+    );
+    assert!(!chain.contains(SPAWN_ERR), "the child started: {chain}");
+
+    // A child that never starts still gets the spawn context.
+    let mut missing = std::process::Command::new("ralphy-no-such-program-for-this-test");
+    missing
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let err = session(missing, &log).expect_err("the program does not exist");
+    assert!(
+        format!("{err:#}").starts_with(SPAWN_ERR),
+        "a spawn failure: {err:#}"
+    );
+    let _ = std::fs::remove_file(&log);
+}

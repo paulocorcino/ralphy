@@ -427,6 +427,14 @@ test("agentStateTitle words an agent state, its question, and a stale observatio
   assert.equal(agentStateTitle("waiting", "Run the tests?"), "Agent is waiting: Run the tests?");
 });
 
+test("agentStateTitle words a silent console with its reason", () => {
+  const reason = "no hook line came 30 seconds after the first input";
+  const title = agentStateTitle("silent", reason);
+  assert.ok(title.includes(reason), title);
+  assert.ok(!title.includes("ADR"), title);
+  assert.equal(agentStateTitle("silent"), "Agent state not reported");
+});
+
 // While a file tab covers the Consoles tab, nobody sees any console: each one
 // with a session sleeps, even maximized, fullscreen or focused. A console that
 // has nothing to reattach to still holds.

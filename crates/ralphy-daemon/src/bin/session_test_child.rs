@@ -23,6 +23,7 @@
 //!   redrawing the last three after every twenty with a cursor-up (a TUI redraw
 //!   that is right at one width only) and ends with `FLOOD-DONE <bytes>`; any
 //!   other line echoes as `GOT:<line>`.
+//! - `--version` prints `2.1.312 (Claude Code)` and exits, as Claude Code does.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
 use std::io::{Read, Write};
@@ -41,6 +42,12 @@ pub const SIZE_MARKER: &str = "SIZE";
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();
+    // Answered like Claude Code, so a daemon that reads the version of the
+    // program a console runs picks the exec hook form.
+    if mode == "--version" {
+        println!("2.1.312 (Claude Code)");
+        return;
+    }
     if mode == "sleep" {
         std::thread::sleep(Duration::from_secs(60));
         return;
