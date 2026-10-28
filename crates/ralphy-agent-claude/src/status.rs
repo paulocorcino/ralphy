@@ -229,24 +229,35 @@ pub(crate) fn await_session_start(
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + window;
     loop {
-        if holds_session_start(path) {
+        if session_started(path, 0) {
             return Ok(());
         }
         if std::time::Instant::now() >= deadline {
-            return Err(unproven(no_proof_cause(settings, project, window)));
+            return Err(no_session_start(settings, project, window));
         }
         std::thread::sleep(PROOF_POLL);
     }
 }
 
-fn holds_session_start(path: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else {
+/// Whether the status file at `path` holds a `SessionStart` line after its
+/// first `from` bytes. A respawned child shares the file with the first one,
+/// so it passes the length the file had before its spawn. Never blocks.
+pub(crate) fn session_started(path: &Path, from: u64) -> bool {
+    let Ok(bytes) = std::fs::read(path) else {
         return false;
     };
-    text.lines().any(|line| {
-        serde_json::from_str::<Value>(line.trim())
-            .is_ok_and(|v| v.get("event").and_then(Value::as_str) == Some("SessionStart"))
-    })
+    let start = usize::try_from(from).map_or(bytes.len(), |f| f.min(bytes.len()));
+    String::from_utf8_lossy(&bytes[start..])
+        .lines()
+        .any(|line| {
+            serde_json::from_str::<Value>(line.trim())
+                .is_ok_and(|v| v.get("event").and_then(Value::as_str) == Some("SessionStart"))
+        })
+}
+
+/// The refusal of a session that wrote no `SessionStart` line in `window`.
+pub(crate) fn no_session_start(settings: &Path, project: &Path, window: Duration) -> anyhow::Error {
+    unproven(no_proof_cause(settings, project, window))
 }
 
 /// The cause of a missing proof. A `disableAllHooks` file is named first: it
