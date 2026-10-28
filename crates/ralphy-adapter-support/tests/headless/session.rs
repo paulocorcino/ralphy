@@ -302,7 +302,10 @@ fn a_refused_prompt_gets_no_spawn_context() {
     let log = temp_log("held-refused-log");
     let err = session(child_cmd("sleep"), &log).expect_err("the gate refuses");
     let chain = format!("{err:#}");
-    assert!(chain.contains("gate said no"), "the gate's message: {chain}");
+    assert!(
+        chain.contains("gate said no"),
+        "the gate's message: {chain}"
+    );
     assert!(!chain.contains(SPAWN_ERR), "the child started: {chain}");
 
     // A child that never starts still gets the spawn context.
