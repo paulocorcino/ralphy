@@ -276,7 +276,12 @@ impl Agent for ClaudeAgent {
         )
         .hold_prompt(gate)
         .run()
-        .context("running the `claude` CLI to plan (is it installed and on PATH?)")?;
+        .map_err(|e| {
+            status::spawn_context(
+                e,
+                "running the `claude` CLI to plan (is it installed and on PATH?)",
+            )
+        })?;
         status.stop();
         // A reaped planner's log is cut mid-stream, so no verdict read from it is
         // true — and every stream-json log carries a `rate_limit_event`, which

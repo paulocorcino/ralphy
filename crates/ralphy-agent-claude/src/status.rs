@@ -342,6 +342,18 @@ pub(crate) fn proof_gate<'a>(
     }))
 }
 
+/// Add `ctx` to a spawn error `e`, unless `e` is a refusal for hooks that
+/// did not prove they run. The spawn context of the plan asks whether the
+/// program is installed and on PATH, and that is the wrong place to look
+/// for a refusal; the refusal names its own cause.
+pub(crate) fn spawn_context(e: anyhow::Error, ctx: &'static str) -> anyhow::Error {
+    if e.downcast_ref::<ralphy_core::HooksUnproven>().is_some() {
+        e
+    } else {
+        e.context(ctx)
+    }
+}
+
 fn emit(obs: &Observed) {
     ralphy_core::emit::agent_state(obs.state, &obs.ts, obs.detail.as_deref());
 }
@@ -736,6 +748,19 @@ mod tests {
             "{}",
             refusal.cause
         );
+    }
+
+    #[test]
+    fn a_refusal_gets_no_spawn_context() {
+        let held = |e: anyhow::Error| e.context("the prompt was held and not sent");
+        let ctx = "running the CLI (is it installed and on PATH?)";
+        let refused = spawn_context(held(anyhow::Error::new(a_cause())), ctx);
+        assert!(!format!("{refused:#}").contains("on PATH"), "{refused:#}");
+        assert!(refused
+            .downcast_ref::<ralphy_core::HooksUnproven>()
+            .is_some());
+        let failed = spawn_context(anyhow::anyhow!("not found"), ctx);
+        assert!(format!("{failed:#}").starts_with(ctx), "{failed:#}");
     }
 
     /// The `cause` of each `hooks not proven` event emitted on this thread
