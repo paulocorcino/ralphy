@@ -61,8 +61,9 @@ daemon beyond your own computer or run Ralphy on a public repository.
   only when you run `ralphy sync push`.
 - Every Claude Code session that Ralphy starts carries a guard that blocks
   pushes, writes to pull requests, merges, destructive git commands, and
-  writes to secret files. If the guard itself cannot start, Claude Code runs
-  the command anyway, and Ralphy does not check this before a session yet.
+  writes to secret files. Before a run's Claude session gets its task,
+  Ralphy checks that its hooks, the guard included, run; when they do not,
+  the session does not start.
   Every Codex, OpenCode and GitHub Copilot session
   that Ralphy starts blocks pushes and writes to pull requests through the
   vendor's own deny rules. Other

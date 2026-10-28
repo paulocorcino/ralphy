@@ -195,3 +195,43 @@ stderr was empty in all three cases, so there is no `.stderr.txt`.
 - With `--include-hook-events`, `claude -p` reports each hook as a
   `hook_started` and a `hook_response` line with `exit_code`, `outcome`,
   `stdout` and `stderr`. That is enough for a probe to see why a hook failed.
+
+## Live results — runs (#767)
+
+Measured 2026-10-28 on branch `feat/770-hook-proof` (commit `a09eed35`),
+debug build. Windows 11: `C:\Dev\FinCal`, Git Bash. WSL2 Ubuntu: a fresh
+clone of FinCal in the home folder (the Windows checkout shows every file
+changed from WSL, and a run refuses a dirty tree), deleted after. Each case
+ran `ralphy run --dry-run --only-issue 111 --plan-model haiku --verbose
+--no-telegram`, with `.ralphy/plan.md` removed first, because a plan left
+by an earlier run is reused and no session starts. A dry run starts only the
+plan session (`claude -p`), so these rows cover the headless path. Claude
+Code is 2.1.312 except in L4.
+
+| Case | OS | Setup | Claude Code | What happened | Error text (start) |
+|---|---|---|---|---|---|
+| L1 normal | Windows | none | 2.1.312 | exit 0; plan written; `agent-status.jsonl` starts with `SessionStart`, then `UserPromptSubmit`; branch returned | none |
+| L1 normal | WSL | none | 2.1.312 | exit 0; plan written; `SessionStart` before `UserPromptSubmit`; branch returned | none |
+| L2 `disableAllHooks` | Windows | `{"disableAllHooks": true}` in `.claude/settings.local.json` | 2.1.312 | exit 1 after 30 s, prompt not sent; issue unchanged; back on `capstone/opencode-273`; run branch removed | `the agent's hooks did not prove they run: C:/Dev/FinCal\.claude\settings.local.json sets disableAllHooks to true, so Claude Code runs no hook; no SessionStart hook event came in 30 s; …` |
+| L2 `disableAllHooks` | WSL | the same file | 2.1.312 | exit 1 after 30 s, prompt not sent; back on `master` | `… /home/corcino/fincal-l767/.claude/settings.local.json sets disableAllHooks to true, so Claude Code runs no hook; …` |
+| L3 hook program gone | Windows | run from a copy in a temp dir, the copy renamed 4 s after start | 2.1.312 | exit 1 after 30 s, prompt not sent; back on the branch | `the agent's hooks did not prove they run: no SessionStart hook event came in 30 s; the hooks in …\ralphy.settings.json run C:\Users\PICHAU\AppData\Local\Temp\tmp.s0Me0jRnA6\ralphy.exe. …` |
+| L3 hook program gone | WSL | run from a copy in a temp dir, the copy deleted 4 s after start | 2.1.312 | exit 1 after 30 s, prompt not sent; back on `master` | `… run /tmp/tmp.TfCyHFn123/ralphy (deleted). Fix the cause and start again. …` |
+| L4 old CLI | Windows | `npm install --prefix <tmp> @anthropic-ai/claude-code@2.1.138`, `<tmp>/node_modules/.bin` first on `PATH`, `DISABLE_AUTOUPDATER=1` | 2.1.138 | exit 1 before the spawn; no session | `the agent's hooks did not prove they run: Claude Code 2.1.138 is older than 2.1.139, the first version that runs a hook without a shell; update Claude Code to 2.1.139 or later. …` |
+| L4 old CLI | WSL | `npm pack @anthropic-ai/claude-code-linux-x64@2.1.138` (WSL has no Linux `node`, so `npm install` gave only the Windows binary), its `claude` first on `PATH`, `DISABLE_AUTOUPDATER=1` | 2.1.138 | exit 1 before the spawn; no session | the same text as on Windows |
+| L5 waiver | Windows | L2's file, and `ralphy config set claude.run_without_guard_proof_i_understand_the_risk true` | 2.1.312 | exit 0; one `hooks not proven — the session goes on without the proof` line with the L2 cause; plan written | none |
+| L5 waiver | WSL | the same | 2.1.312 | exit 0; one `hooks not proven` line; plan written | none |
+
+Every refusal ends with: `To run without the proof on this machine, run
+\`ralphy config set claude.run_without_guard_proof_i_understand_the_risk true\``.
+
+Seen in these runs, not changed:
+
+- In L2 and L3 the error chain starts with `running the \`claude\` CLI to plan
+  (is it installed and on PATH?)`, a context line that does not fit a
+  refusal.
+- In L4 the warning `Claude Code 2.1.138 is older than 2.1.139…` is logged
+  twice before the error.
+- On Windows the `settings.local.json` path mixes `/` and `\`.
+
+All files, settings and temp folders the runs made were removed. No branch,
+label or comment was left on FinCal.

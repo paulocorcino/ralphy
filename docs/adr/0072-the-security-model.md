@@ -337,9 +337,16 @@ surface.
   wrapper (`bash -c`) gets past it: a layer, not proof. Accepted too: hook input is not authenticated (a
   process with `RALPHY_FLAG_FILE` set can write the stop flag) and the guard
   trusts the payload's `cwd`; both come from the operator zone.
-  Gap (amendment of 2026-10-28): a guard hook that cannot start fails open
-  (M1 in `docs/research/claude-hook-probes-2026-10-28.md`); no session
-  waits for its first hook event before its work yet.
+  A guard hook that cannot start fails open in Claude Code (M1 in
+  `docs/research/claude-hook-probes-2026-10-28.md`). Closed by #767: every
+  Claude session of a run, and of `triage`, `init` and `consolidate`,
+  holds its prompt until its first hook event (`SessionStart`) comes in,
+  and refuses to start when none comes in 30 s, when `disableAllHooks` is
+  set, or when Claude Code is older than 2.1.139. A console of the
+  workbench is not covered by this check (#769). The refusal stops the run and leaves the issue untouched. A
+  local-only setting (`claude.run_without_guard_proof_i_understand_the_risk`)
+  lets the session go on with a warning event. Live runs on Windows and WSL
+  are in the same record, `## Live results — runs (#767)`.
 - D7: checked. A new read of a secret-named environment variable is
   flagged by `xtask capabilities`. The run captures the events and Telegram
   tokens, then removes both from its environment before it spawns a child
