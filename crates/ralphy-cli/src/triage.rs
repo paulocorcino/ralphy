@@ -330,7 +330,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     crate::daemon::register_repo(&repo);
 
     let ws = Workspace::new(&repo);
-    std::fs::create_dir_all(ws.ralphy_dir()).ok();
+    std::fs::create_dir_all(ws.ralphy_dir()).context("creating .ralphy dir")?;
     let lock_path = ws.run_lock_path();
     if !pass_presence_gate(&lock_path, args.if_idle) {
         return Ok(());
