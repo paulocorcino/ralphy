@@ -382,11 +382,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-monaco.ts": {
-      "disableLanguageServices": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-notes-editor.ts": {
       "(anonymous)": [
         11
