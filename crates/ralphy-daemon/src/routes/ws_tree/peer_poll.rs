@@ -295,20 +295,12 @@ pub(crate) fn spawn_peer_tree_poller(
             let Some(answer) = poll_until_set_moves(&peer, &slug, &sub, &set).await else {
                 tracing::debug!(repo = %repo_ref, sub = %sub, "peer tree poll restarted: the watch set moved");
                 failures = 0;
-                tokio::time::sleep(next_poll_delay(PollCycle::Restarted)).await;
+                pause(PollCycle::Restarted).await;
                 continue;
             };
             let PollReply { cycle, dirty } = read_poll_reply(answer, &repo_ref, failures);
-            failures = match cycle {
-                PollCycle::Failed | PollCycle::Unreadable => failures.saturating_add(1),
-                _ => 0,
-            };
-            if !send_nudges(&nudge_tx, &repo_ref, dirty) {
-                return;
-            }
-            // The browser re-reads each nudged dir, and that read is idempotent,
-            // so a dir the peer also named in this answer costs one extra read.
-            if catch_up.after(cycle) && !send_nudges(&nudge_tx, &repo_ref, set.snapshot()) {
+            failures = next_failures(failures, cycle);
+            if !deliver(&nudge_tx, &repo_ref, dirty, cycle, &mut catch_up, &set) {
                 return;
             }
             tracing::debug!(
@@ -318,12 +310,44 @@ pub(crate) fn spawn_peer_tree_poller(
                 took_ms = started.elapsed().as_millis() as u64,
                 "peer tree poll cycle"
             );
-            let delay = next_poll_delay(cycle);
-            if !delay.is_zero() {
-                tokio::time::sleep(delay).await;
-            }
+            pause(cycle).await;
         }
     })
+}
+
+/// The failure streak after a cycle: one longer after a failed or unreadable
+/// poll, back to zero after any other.
+fn next_failures(failures: u32, cycle: PollCycle) -> u32 {
+    match cycle {
+        PollCycle::Failed | PollCycle::Unreadable => failures.saturating_add(1),
+        _ => 0,
+    }
+}
+
+/// Hand the dirs of one answer to the browser connection, then the whole watch
+/// set when a catch-up is owed. False once that connection is gone.
+fn deliver(
+    nudge_tx: &tokio::sync::mpsc::UnboundedSender<(String, String)>,
+    repo_ref: &str,
+    dirty: Vec<String>,
+    cycle: PollCycle,
+    catch_up: &mut CatchUp,
+    set: &PeerWatchSet,
+) -> bool {
+    if !send_nudges(nudge_tx, repo_ref, dirty) {
+        return false;
+    }
+    // The browser re-reads each nudged dir, and that read is idempotent,
+    // so a dir the peer also named in this answer costs one extra read.
+    !catch_up.after(cycle) || send_nudges(nudge_tx, repo_ref, set.snapshot())
+}
+
+/// Wait out the pause that follows `cycle`.
+async fn pause(cycle: PollCycle) {
+    let delay = next_poll_delay(cycle);
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
 }
 
 pub(crate) fn close_peer_tree_poller(poller: PeerTreePoller) {
@@ -379,6 +403,13 @@ mod tests {
         let error = read_poll_reply(Err(anyhow::anyhow!("refused")), "repo", 3);
         assert_eq!(error.cycle, PollCycle::Failed);
         assert!(error.dirty.is_empty());
+    }
+
+    #[test]
+    fn the_failure_streak_grows_on_a_failure_and_ends_on_an_answer() {
+        assert_eq!(next_failures(3, PollCycle::Failed), 4);
+        assert_eq!(next_failures(u32::MAX, PollCycle::Unreadable), u32::MAX);
+        assert_eq!(next_failures(5, PollCycle::Quiet), 0);
     }
 
     #[test]

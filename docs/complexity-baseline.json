@@ -643,11 +643,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/routes/ws_tree/peer_poll.rs": {
-      "spawn_peer_tree_poller": [
-        18
-      ]
-    },
     "crates/ralphy-daemon/src/serve.rs": {
       "serve": [
         18
