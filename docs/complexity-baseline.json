@@ -811,11 +811,6 @@
         15
       ]
     },
-    "crates/xtask/src/ui_copy/check.rs": {
-      "row_violations": [
-        18
-      ]
-    },
     "crates/xtask/src/ui_copy/html.rs": {
       "scan": [
         17
