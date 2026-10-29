@@ -451,11 +451,10 @@
     },
     "crates/ralphy-daemon/assets/ui/wb-projects-store.ts": {
       "(anonymous)": [
-        18,
         11
       ],
       "loadFleet": [
-        18
+        11
       ],
       "wakePeer": [
         11
