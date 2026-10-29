@@ -371,4 +371,56 @@ mod tests {
         assert_eq!(records[0].project.as_deref(), Some("o/repo"));
         assert_eq!(records[0].actor_email.as_deref(), Some("t@example.com"));
     }
+
+    #[test]
+    fn opencode_db_without_a_session_table_still_yields_the_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("opencode.db");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
+            [],
+        )
+        .unwrap();
+        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":7,"output":3}}"#;
+        conn.execute(
+            "INSERT INTO message (id, session_id, data) VALUES ('m0', 'ses_1', ?1)",
+            [data],
+        )
+        .unwrap();
+        drop(conn);
+
+        let records = scan(&path, &[], None);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].session_id, "ses_1");
+        assert_eq!(records[0].project, None);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 7);
+    }
+
+    #[test]
+    fn opencode_rows_of_one_session_and_model_sum_and_span_their_times() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Written out of time order, so the span is not the first or last row.
+        let mid = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":1,"cache":{"read":2,"write":3}},"time":{"created":1782500000000}}"#;
+        let late = r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":4,"cache":{"read":5,"write":6}},"time":{"created":1783000000000}}"#;
+        let early = r#"{"role":"assistant","modelID":"m","tokens":{"input":30,"output":9,"cache":{"read":7,"write":8}},"time":{"created":1782000000000}}"#;
+        let db = seed_db(
+            tmp.path(),
+            &[("ses_1", mid), ("ses_1", late), ("ses_1", early)],
+            &[],
+        );
+
+        let records = scan(&db, &[], None);
+
+        assert_eq!(records.len(), 1);
+        let r = &records[0];
+        let t = r.tokens.as_ref().unwrap();
+        assert_eq!(
+            (t.input, t.output, t.cache_read, t.cache_creation),
+            (60, 14, 14, 17)
+        );
+        assert_eq!(r.first_ts, ms_to_rfc3339(Some(1782000000000)));
+        assert_eq!(r.last_ts, ms_to_rfc3339(Some(1783000000000)));
+    }
 }

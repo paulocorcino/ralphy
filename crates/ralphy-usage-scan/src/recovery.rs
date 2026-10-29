@@ -250,6 +250,27 @@ mod tests {
     }
 
     #[test]
+    fn a_codex_candidate_may_name_the_session_meta_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let stores = RecoveryStores {
+            codex_dir: temp.path().join("codex"),
+            ..RecoveryStores::default()
+        };
+        write(
+            &stores.codex_dir.join("sessions/rollout-codex.jsonl"),
+            concat!(
+                "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-meta\",\"cwd\":\"C:\\\\repo\"}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:01Z\",\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"output_tokens\":2}}}}\n",
+            ),
+        );
+
+        let results = resolve_models(&[RecoveryCandidate::new("codex", "codex-meta")], &stores);
+
+        assert_eq!(results[0].model.as_deref(), Some("gpt-5-codex"));
+    }
+
+    #[test]
     fn existing_vendor_readers_resolve_fixture_candidates() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
