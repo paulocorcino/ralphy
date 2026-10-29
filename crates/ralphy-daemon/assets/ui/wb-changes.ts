@@ -153,20 +153,8 @@ function diffTarget(entry: ChangeEntry, project: string, checkout: string | null
 // something it does not track. `now` is injected so the staleness label is
 // testable; it defaults to the wall clock.
 function foldSync(reply: ReplyOf<"sync.status"> | null | undefined, now?: number) {
-  const unknown = {
-    state: "unknown",
-    branch: "",
-    upstream: "",
-    ahead: 0,
-    behind: 0,
-    lastFetch: null,
-    counts: "",
-    note: "Sync status unknown",
-    fetched: "",
-  };
-  if (!reply || reply.status !== "ok") return unknown;
-  const body = reply.sync && reply.sync.sync;
-  if (!body || !body.head || typeof body.head.kind !== "string") return unknown;
+  const body = syncBody(reply);
+  if (!body) return unknownSync();
 
   const lastFetch = body.last_fetch || null;
   const base = {
@@ -187,6 +175,40 @@ function foldSync(reply: ReplyOf<"sync.status"> | null | undefined, now?: number
   if (!t || typeof t !== "object") {
     return { ...base, state: "no-upstream", branch, note: "No upstream" };
   }
+  return trackingSync(base, branch, t);
+}
+
+// The model of a sync read that could not be folded. A fresh object each
+// call: a caller may write to it.
+function unknownSync() {
+  return {
+    state: "unknown",
+    branch: "",
+    upstream: "",
+    ahead: 0,
+    behind: 0,
+    lastFetch: null,
+    counts: "",
+    note: "Sync status unknown",
+    fetched: "",
+  };
+}
+
+// The `sync` of an ok reply, or null when it is absent or has no HEAD kind.
+function syncBody(reply: ReplyOf<"sync.status"> | null | undefined) {
+  if (!reply || reply.status !== "ok") return null;
+  const body = reply.sync && reply.sync.sync;
+  if (!body || !body.head || typeof body.head.kind !== "string") return null;
+  return { ...body, head: body.head };
+}
+
+// The model of a branch that tracks an upstream. A count that is not a number
+// reads as 0.
+function trackingSync(
+  base: Omit<ReturnType<typeof unknownSync>, "state" | "lastFetch"> & { lastFetch: string | null },
+  branch: string,
+  t: NonNullable<SyncBody["tracking"]>,
+) {
   const ahead = Number(t.ahead) || 0;
   const behind = Number(t.behind) || 0;
   return {

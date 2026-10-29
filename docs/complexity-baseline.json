@@ -203,11 +203,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-changes.ts": {
-      "foldSync": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-checkouts-store.ts": {
       "ensureWorktreeListing": [
         14
