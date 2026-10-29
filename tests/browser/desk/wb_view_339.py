@@ -704,13 +704,14 @@ def main():
                 # after this check was written; `wb-client-view.ts read()` normalises
                 # every field it knows, so `patch` writes them all back. `command`
                 # — the free console's stored startup command — was DROPPED from
-                # the record (wb-client-view.ts ~40-43).
+                # the record (wb-client-view.ts ~40-43). `consoleTabs` and
+                # `notify` (the browser notification switch) are view fields too.
                 "…whose shape carries only the view: v, off, tabs, active, relaunch,"
-                " keys, font, split, columns, columnDir",
+                " keys, font, split, columns, columnDir, consoleTabs, notify",
                 set(stored.keys())
                 <= {
                     "v", "off", "tabs", "active", "relaunch", "keys", "font", "split",
-                    "columns", "columnDir",
+                    "columns", "columnDir", "consoleTabs", "notify",
                 },
                 f"got={sorted(stored.keys())}",
             )

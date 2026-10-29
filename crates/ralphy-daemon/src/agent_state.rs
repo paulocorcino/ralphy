@@ -3,11 +3,14 @@
 //! The daemon writes a per-session settings file registering the §4 hook set
 //! (each `<ralphy exe> hook status`), points the child at a per-session
 //! status file through `RALPHY_STATUS_FILE`, and tails that file from the
-//! session's own pump tick. The fold from hook line to state is the §1 table
-//! **duplicated** here — the daemon never imports the adapter (ADR-0032 §10)
-//! — and pinned against the adapter's fixture
-//! (`crates/ralphy-agent-claude/tests/fixtures/agent_state_mapping.json`) so
-//! the two cannot drift. Staleness (§6) is applied at READ time: a `working`
+//! session's own pump tick. A Codex console takes its hooks inline, as `-c`
+//! arguments, and gets no settings file. An OpenCode console gets a state
+//! plugin file instead, named in `OPENCODE_CONFIG_CONTENT`, which appends to
+//! the same kind of status file (ADR-0085 D2). The fold from hook line to state
+//! (ADR-0085 D7) is **duplicated** here, in [`fold`] and the vendor maps —
+//! the daemon never imports an adapter (ADR-0032 §10) — and pinned against
+//! each adapter's fixture (`tests/fixtures/agent_state_mapping.json`) so the
+//! two cannot drift. Staleness (§6) is applied at READ time: a `working`
 //! older than the interactive idle window renders `unknown`; a `waiting`
 //! never goes stale; the state dies with the PTY and is never persisted.
 //!
@@ -22,6 +25,14 @@ use ralphy_proc_util::hook_form::{HookCheck, HookCommand};
 use serde_json::Value;
 
 use crate::session::Agent;
+
+pub mod fold;
+
+mod claude;
+mod codex;
+pub(crate) mod opencode;
+
+use fold::{Fold, MapFn, StatusLine};
 
 /// The idle window a `working` may age past before it renders `unknown` —
 /// the interactive default `ralphy-core` reaps a wedged run at
@@ -43,13 +54,15 @@ pub struct Observed {
     /// When THIS daemon read the line — the staleness clock, independent of
     /// the hook's string timestamp.
     pub seen: SystemTime,
+    /// Why a `done` is `done`; `None` on any other state.
+    pub cause: Option<fold::Cause>,
 }
 
 /// The wire shape on `/api/sessions` and the fleet: `state` is one of
-/// `working`, `waiting`, `done`, `blocked`, `unknown`; `since` the hook's
-/// timestamp; `detail` what a `waiting` agent asks. A silent console
-/// (docs/adr/0059 A2) has no `state`: `source` is `silent`, `reason` says
-/// why, and `since` is when the silence began.
+/// `working`, `waiting`, `done`, `unknown` (ADR-0085 D1); `since` the hook's
+/// timestamp; `detail` what a `waiting` agent asks. A console whose state
+/// is not reported has no `state`: `source` says why ([`Unreported`]),
+/// `reason` says it in words, and `since` is when it began.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -58,21 +71,40 @@ pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
+    pub source: Option<Unreported>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// Why a console's agent state is not reported. Matched exhaustively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Unreported {
+    /// The console has a state source and it sent nothing (docs/adr/0059
+    /// A2): the console is **silent**, an attention request.
+    #[serde(rename = "silent")]
+    Silent,
+    /// The launch gave the console no state source on purpose. It is not
+    /// an attention request: it would stay open for the console's whole life.
+    #[serde(rename = "none")]
+    NoSource,
 }
 
 impl AgentState {
     /// The block of a silent console: no state, the reason, and when the
     /// silence began (RFC 3339, UTC).
     pub fn silent(reason: String, since: SystemTime) -> Self {
+        Self::unreported(Unreported::Silent, reason, since)
+    }
+
+    /// The block of a console whose state is not reported, for `why`: no
+    /// state, the reason, and when it began (RFC 3339, UTC).
+    pub fn unreported(why: Unreported, reason: String, since: SystemTime) -> Self {
         AgentState {
             state: None,
             since: chrono::DateTime::<chrono::Utc>::from(since)
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             detail: None,
-            source: Some("silent".to_string()),
+            source: Some(why),
             reason: Some(reason),
         }
     }
@@ -84,6 +116,12 @@ pub const SILENT_AFTER: Duration = Duration::from_secs(30);
 
 /// The reason of a console silent by the clock.
 const CLOCK_REASON: &str = "No hook event reached Ralphy in the 30 seconds after your first input, so Ralphy cannot see what this agent is doing.";
+
+/// The reason of a Codex console in a project with Codex hooks of its own:
+/// it is launched without the status hooks (ADR-0085 amendment of
+/// 2026-10-29).
+pub const CODEX_OWN_HOOKS_REASON: &str =
+    "This project has its own Codex hooks, so Ralphy does not show the agent state here.";
 
 /// The silence rule (docs/adr/0059 A2): the reason a console is silent, or
 /// `None` when it is not. Only a console whose state comes from hooks can be
@@ -138,67 +176,6 @@ fn reply_len(bytes: &[u8]) -> Option<usize> {
     REPLY_FINALS.contains(&body[end]).then_some(end + 3)
 }
 
-// The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
-// copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
-// test below holds the two folds equal.
-// jscpd:ignore-start
-/// The §1 table, one hook line in, one state out — or `None` for a line that
-/// changes no state. Byte-for-byte the adapter's fold; the fixture test is
-/// the proof.
-pub fn fold_line(line: &str) -> Option<Observed> {
-    let v: Value = serde_json::from_str(line).ok()?;
-    let event = v.get("event").and_then(Value::as_str).unwrap_or("");
-    let tool = v.get("tool_name").and_then(Value::as_str).unwrap_or("");
-    let since = v
-        .get("ts")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let (state, detail) = match event {
-        "SessionStart" => ("done", None),
-        "UserPromptSubmit" => ("working", None),
-        "PreToolUse" if tool == "AskUserQuestion" => {
-            ("waiting", Some(question_detail(v.get("tool_input"))))
-        }
-        "PreToolUse" => ("working", None),
-        // A tool that returned: the question was answered, the permission
-        // granted — `waiting` ends here, not at the next tool (2026-09-16).
-        "PostToolUse" => ("working", None),
-        "PermissionRequest" => (
-            "waiting",
-            Some(if tool.is_empty() {
-                "permission".to_string()
-            } else {
-                format!("permission: {tool}")
-            }),
-        ),
-        "Stop" => ("done", None),
-        _ => return None,
-    };
-    Some(Observed {
-        state,
-        detail,
-        since,
-        seen: SystemTime::now(),
-    })
-}
-
-fn question_detail(input: Option<&Value>) -> String {
-    let text = input
-        .and_then(|i| i.get("questions"))
-        .and_then(Value::as_array)
-        .and_then(|qs| qs.first())
-        .and_then(|q| q.get("question"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    match text {
-        Some(t) => format!("AskUserQuestion: {t}"),
-        None => "AskUserQuestion".to_string(),
-    }
-}
-// jscpd:ignore-end
-
 /// What a reader is told about an observation `now` (§6): `working` past
 /// [`STALE_AFTER`] is `unknown` — the hook that would have said otherwise
 /// never came, and a green dot on a wedged child is the lie this rule
@@ -234,52 +211,89 @@ pub struct Tail {
     path: PathBuf,
     offset: u64,
     carry: Vec<u8>,
-    last: Option<(&'static str, Option<String>)>,
+    fold: Fold,
+    vendor: HookVendor,
 }
 
 impl Tail {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf, vendor: HookVendor) -> Self {
         Tail {
             path,
             offset: 0,
             carry: Vec::new(),
-            last: None,
+            fold: Fold::new(),
+            vendor,
         }
     }
 
-    // The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
-    // copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
-    // test below holds the two folds equal.
-    // jscpd:ignore-start
+    /// The operator wrote to the console (ADR-0085 D7.5). For a vendor that
+    /// sends no event when the operator grants a permission, an open
+    /// permission `waiting` ends here; the result is the new state, else
+    /// `None`.
+    pub fn operator_input(&mut self) -> Option<Observed> {
+        if self.vendor.sends_a_grant() {
+            return None;
+        }
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let folded = self.fold.operator_input(ts)?;
+        Some(Observed {
+            state: folded.state.as_str(),
+            detail: folded.detail,
+            since: folded.ts,
+            seen: SystemTime::now(),
+            cause: folded.cause,
+        })
+    }
+
     pub fn poll(&mut self) -> Polled {
         let mut out = Polled::default();
+        for text in self.read_lines() {
+            let Some(line) = StatusLine::parse(text.trim()) else {
+                continue;
+            };
+            let map = self.vendor.map();
+            // Any line the map reads is proof of life, a subagent's too, and
+            // so is a plugin's first line.
+            out.activity |= map(&line).is_some() || self.vendor.is_first_line(&line);
+            if let Some(folded) = self.fold.apply(&line, map) {
+                out.transitions.push(Observed {
+                    state: folded.state.as_str(),
+                    detail: folded.detail,
+                    since: folded.ts,
+                    seen: SystemTime::now(),
+                    cause: folded.cause,
+                });
+            }
+        }
+        out
+    }
+
+    // The same read is in `ralphy-adapter-support/src/agent_state.rs`, and it stays two copies: the
+    // daemon imports no adapter crate (ADR-0059 §5).
+    // jscpd:ignore-start
+    /// The complete lines appended since the last read. A partial last line
+    /// waits for its newline.
+    fn read_lines(&mut self) -> Vec<String> {
+        let mut lines = Vec::new();
         let Ok(mut file) = std::fs::File::open(&self.path) else {
-            return out;
+            return lines;
         };
         if file.seek(SeekFrom::Start(self.offset)).is_err() {
-            return out;
+            return lines;
         }
         let mut buf = Vec::new();
         let Ok(n) = file.read_to_end(&mut buf) else {
-            return out;
+            return lines;
         };
         self.offset += n as u64;
         self.carry.extend_from_slice(&buf);
         while let Some(nl) = self.carry.iter().position(|b| *b == b'\n') {
             let line: Vec<u8> = self.carry.drain(..=nl).collect();
-            let Ok(text) = std::str::from_utf8(&line) else {
-                continue;
-            };
-            if let Some(obs) = fold_line(text.trim()) {
-                out.activity = true;
-                let key = (obs.state, obs.detail.clone());
-                if self.last.as_ref() != Some(&key) {
-                    self.last = Some(key);
-                    out.transitions.push(obs);
-                }
+            if let Ok(text) = String::from_utf8(line) {
+                lines.push(text);
             }
         }
-        out
+        lines
     }
     // jscpd:ignore-end
 }
@@ -289,8 +303,6 @@ impl Tail {
 pub enum StateSource {
     /// The vendor's own hooks, written by the daemon into a settings file.
     Hooks,
-    /// The vendor's output stream.
-    Stream,
     /// The vendor gives no state.
     None,
 }
@@ -299,30 +311,114 @@ pub enum StateSource {
 /// without choosing one (docs/adr/0059 A1, docs/adr/0040 Tier 4).
 pub fn state_source(agent: Agent) -> StateSource {
     match agent {
-        Agent::Claude => StateSource::Hooks,
-        Agent::Codex
-        | Agent::Copilot
-        | Agent::Cursor
-        | Agent::Gemini
-        | Agent::Kimi
-        | Agent::OpenCode => StateSource::None,
+        Agent::Claude | Agent::Codex | Agent::OpenCode => StateSource::Hooks,
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => StateSource::None,
     }
 }
 
-/// The two files one console's hooks need, under `<store>/sessions/`: the
-/// settings file the vendor is launched with and the status file the hooks
-/// append to. Both are the session's and go with it.
+/// A vendor whose hooks fill a console's status file, and how its lines fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookVendor {
+    Claude,
+    Codex,
+    /// OpenCode, whose state plugin writes the lines (ADR-0085 D2).
+    OpenCode,
+}
+
+impl HookVendor {
+    /// The vendor of `agent`, when its state comes from hooks.
+    pub fn of(agent: Agent) -> Option<HookVendor> {
+        match agent {
+            Agent::Claude => Some(HookVendor::Claude),
+            Agent::Codex => Some(HookVendor::Codex),
+            Agent::OpenCode => Some(HookVendor::OpenCode),
+            Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => None,
+        }
+    }
+
+    fn map(self) -> MapFn {
+        match self {
+            HookVendor::Claude => claude::claude_signal,
+            HookVendor::Codex => codex::launched,
+            HookVendor::OpenCode => opencode::opencode_signal,
+        }
+    }
+
+    /// Whether `line` is the first line a vendor's plugin writes when it
+    /// loads: it changes no state, but it proves that the source runs
+    /// (ADR-0085 D9).
+    fn is_first_line(self, line: &StatusLine) -> bool {
+        match self {
+            HookVendor::OpenCode => line.event == opencode::PLUGIN_LOADED,
+            HookVendor::Claude | HookVendor::Codex => false,
+        }
+    }
+
+    /// Whether the vendor's hook runs the ralphy program (`ralphy hook
+    /// status`), so that the daemon's start check of that program speaks for
+    /// it. OpenCode's plugin runs in OpenCode and never starts it.
+    pub(crate) fn runs_the_ralphy_program(self) -> bool {
+        match self {
+            HookVendor::Claude | HookVendor::Codex => true,
+            HookVendor::OpenCode => false,
+        }
+    }
+
+    /// Whether the vendor sends an event when the operator grants a
+    /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
+    /// runs, OpenCode sends `permission.replied`; Codex sends nothing until
+    /// the tool ends.
+    fn sends_a_grant(self) -> bool {
+        match self {
+            HookVendor::Claude | HookVendor::OpenCode => true,
+            HookVendor::Codex => false,
+        }
+    }
+}
+
+/// The files one console's hooks need, under `<store>/sessions/`: the
+/// settings file a Claude console is launched with, and the status file the
+/// hooks append to. A Codex console takes its hooks as arguments, so it has
+/// no settings file. An OpenCode console has the state plugin file instead.
+/// The files are the session's and go with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusFiles {
-    pub settings: PathBuf,
+    pub vendor: HookVendor,
+    pub settings: Option<PathBuf>,
     pub status: PathBuf,
+    /// The state plugin an OpenCode console loads.
+    pub plugin: Option<PathBuf>,
 }
 
 impl StatusFiles {
+    /// The files of a Claude console.
     pub fn for_session(sessions_dir: &Path, id: u64) -> Self {
         StatusFiles {
-            settings: sessions_dir.join(format!("{id}.settings.json")),
+            vendor: HookVendor::Claude,
+            settings: Some(sessions_dir.join(format!("{id}.settings.json"))),
             status: sessions_dir.join(format!("{id}.agent-status.jsonl")),
+            plugin: None,
+        }
+    }
+
+    /// The files of a console of `agent`, or `None` when its state does not
+    /// come from hooks.
+    pub fn for_agent(agent: Agent, sessions_dir: &Path, id: u64) -> Option<Self> {
+        let claude = StatusFiles::for_session(sessions_dir, id);
+        match HookVendor::of(agent)? {
+            HookVendor::Claude => Some(claude),
+            HookVendor::Codex => Some(StatusFiles {
+                vendor: HookVendor::Codex,
+                settings: None,
+                status: claude.status,
+                plugin: None,
+            }),
+            HookVendor::OpenCode => Some(StatusFiles {
+                vendor: HookVendor::OpenCode,
+                settings: None,
+                status: claude.status,
+                plugin: Some(sessions_dir.join(format!("{id}.state-plugin.js"))),
+            }),
         }
     }
 
@@ -331,46 +427,87 @@ impl StatusFiles {
     /// else: the vendor merges `--settings` over the operator's own file, so
     /// their permissions and hooks stay (ADR-0059 §5).
     pub fn write(&self, hook: &HookCommand) -> std::io::Result<()> {
-        if let Some(dir) = self.settings.parent() {
+        self.create_status()?;
+        match &self.settings {
+            Some(settings) => std::fs::write(settings, console_settings_json(hook)),
+            None => Ok(()),
+        }
+    }
+
+    /// Write the empty status file, and the folder it is in, and the state
+    /// plugin when the console has one.
+    pub fn create_status(&self) -> std::io::Result<()> {
+        if let Some(dir) = self.status.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&self.settings, console_settings_json(hook))?;
-        std::fs::write(&self.status, b"")
+        std::fs::write(&self.status, b"")?;
+        match &self.plugin {
+            Some(plugin) => std::fs::write(plugin, opencode::STATE_PLUGIN),
+            None => Ok(()),
+        }
     }
 
     pub fn remove(&self) {
         // Best effort, and quiet: a session that ended has nothing to report
         // about a file the daemon itself created.
-        let _settings = std::fs::remove_file(&self.settings);
+        if let Some(settings) = &self.settings {
+            let _settings = std::fs::remove_file(settings);
+        }
+        if let Some(plugin) = &self.plugin {
+            let _plugin = std::fs::remove_file(plugin);
+        }
         let _status = std::fs::remove_file(&self.status);
     }
 }
 
-/// The console's settings document: the §4 hook set on every event, each
+/// The arguments that give a Codex console its status hooks (ADR-0085 D2):
+/// each hook runs this ralphy program with `hook status codex`.
+pub fn codex_console_hook_args() -> Vec<String> {
+    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+    ralphy_proc_util::hook_form::codex_hook_args(
+        &exe,
+        &ralphy_proc_util::hook_form::CODEX_STATUS_EVENTS,
+    )
+}
+
+/// The command that checks the hook of a Codex console: the program and the
+/// arguments its hooks run. `ralphy doctor` runs it.
+pub fn codex_check_hook() -> HookCommand {
+    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+    ralphy_proc_util::hook_form::codex_check_hook(&exe)
+}
+
+/// The hook events of a Claude console and their matchers, the same list the
+/// adapter registers (ADR-0059 §4, ADR-0085 D7), and none of the ones it
+/// rejected. Pinned by the adapter's `tests/fixtures/hook_events.json`.
+const CONSOLE_HOOK_EVENTS: [(&str, &str); 9] = [
+    ("SessionStart", ""),
+    ("UserPromptSubmit", ""),
+    ("PreToolUse", "*"),
+    ("PostToolUse", "*"),
+    ("PermissionRequest", "*"),
+    ("Elicitation", "*"),
+    ("ElicitationResult", "*"),
+    ("Stop", ""),
+    ("SubagentStop", ""),
+];
+
+/// The console's settings document: the hook set on every event, each
 /// running `hook` (built by the caller from the Claude Code version, so the
-/// entry has the form that version runs). The same seven events the adapter
-/// registers (`SessionStart`, `UserPromptSubmit`, `PreToolUse *`,
-/// `PostToolUse *`, `PermissionRequest *`, `Stop`, `SubagentStop`), and none
-/// of the ones it rejected.
+/// entry has the form that version runs).
 pub fn console_settings_json(hook: &HookCommand) -> String {
     let command = hook.entry();
-    let entry = |matcher: &str| {
-        serde_json::json!([{
-            "matcher": matcher,
-            "hooks": [ command.clone() ]
-        }])
-    };
-    let settings = serde_json::json!({
-        "hooks": {
-            "SessionStart": entry(""),
-            "UserPromptSubmit": entry(""),
-            "PreToolUse": entry("*"),
-            "PostToolUse": entry("*"),
-            "PermissionRequest": entry("*"),
-            "Stop": entry(""),
-            "SubagentStop": entry(""),
-        }
-    });
+    let hooks: serde_json::Map<String, Value> = CONSOLE_HOOK_EVENTS
+        .iter()
+        .map(|(event, matcher)| {
+            let entry = serde_json::json!([{
+                "matcher": matcher,
+                "hooks": [ command.clone() ]
+            }]);
+            (event.to_string(), entry)
+        })
+        .collect();
+    let settings = serde_json::json!({ "hooks": hooks });
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
@@ -459,32 +596,6 @@ mod tests {
         assert!(log.contains("no-such-ralphy"), "{log}");
     }
 
-    /// The adapter's fixture, by path: the ONE file both folds are pinned by
-    /// (ADR-0059 §5). Moving or editing it reds both crates.
-    const MAPPING: &str =
-        include_str!("../../ralphy-agent-claude/tests/fixtures/agent_state_mapping.json");
-
-    // The adapter has the same test against the same fixture (ADR-0059 §5).
-    // jscpd:ignore-start
-    #[test]
-    fn fold_line_matches_the_adapters_mapping_fixture() {
-        let rows: Vec<Value> = serde_json::from_str(MAPPING).unwrap();
-        assert!(rows.len() >= 8, "the fixture covers the whole table");
-        for row in rows {
-            let line = serde_json::to_string(&row["line"]).unwrap();
-            let got = fold_line(&line);
-            match row["state"].as_str() {
-                None => assert_eq!(got, None, "{line} must fold to nothing"),
-                Some(state) => {
-                    let got = got.unwrap_or_else(|| panic!("{line} must fold to {state}"));
-                    assert_eq!(got.state, state, "{line}");
-                    assert_eq!(got.detail.as_deref(), row["detail"].as_str(), "{line}");
-                }
-            }
-        }
-    }
-    // jscpd:ignore-end
-
     /// §6: only a `working` goes stale, and only past the window.
     #[test]
     fn render_ages_working_into_unknown_and_nothing_else() {
@@ -494,6 +605,7 @@ mod tests {
             detail: None,
             since: "t".into(),
             seen: t0,
+            cause: None,
         };
         let fresh = t0 + STALE_AFTER - Duration::from_secs(1);
         let old = t0 + STALE_AFTER + Duration::from_secs(1);
@@ -572,7 +684,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         let mut f = std::fs::File::create(&path).unwrap();
-        let mut tail = Tail::new(path.clone());
+        let mut tail = Tail::new(path.clone(), HookVendor::Claude);
         let line = |event: &str| {
             format!(r#"{{"event":"{event}","tool_name":"Bash","tool_input":null,"ts":"t"}}"#)
         };
@@ -633,35 +745,46 @@ mod tests {
         hook_for_version(Some(version), Path::new(EXE), &["hook", "status"])
     }
 
-    /// The console settings carry the seven events, `*` where the ADR says,
-    /// and NOTHING but hooks: the operator's own settings must keep their say.
+    /// The console settings carry the adapter's shared event list, with its
+    /// matchers, and NOTHING but hooks: the operator's own settings must keep
+    /// their say.
     #[test]
-    fn console_settings_carry_the_hook_set_and_nothing_else() {
+    fn console_settings_match_the_shared_event_list() {
+        let shared: Vec<Value> = serde_json::from_str(include_str!(
+            "../../ralphy-agent-claude/tests/fixtures/hook_events.json"
+        ))
+        .unwrap();
+        let mut want: Vec<(String, String)> = shared
+            .iter()
+            .map(|e| {
+                (
+                    e["event"].as_str().unwrap().to_string(),
+                    e["matcher"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        want.sort();
         let hook = hook_of("2.1.139");
         let json = console_settings_json(&hook);
         let v: Value = serde_json::from_str(&json).unwrap();
         let obj = v.as_object().unwrap();
         assert_eq!(obj.keys().collect::<Vec<_>>(), vec!["hooks"]);
         let hooks = v["hooks"].as_object().unwrap();
-        let mut events: Vec<&String> = hooks.keys().collect();
-        events.sort();
-        assert_eq!(
-            events,
-            vec![
-                "PermissionRequest",
-                "PostToolUse",
-                "PreToolUse",
-                "SessionStart",
-                "Stop",
-                "SubagentStop",
-                "UserPromptSubmit"
-            ]
-        );
-        assert_eq!(hooks["PreToolUse"][0]["matcher"], "*");
-        assert_eq!(hooks["PostToolUse"][0]["matcher"], "*");
-        assert_eq!(hooks["PermissionRequest"][0]["matcher"], "*");
-        for event in events {
-            assert_eq!(hooks[event][0]["hooks"][0], hook.entry(), "{event}");
+        let mut got: Vec<(String, String)> = hooks
+            .iter()
+            .map(|(event, list)| {
+                assert_eq!(list.as_array().map(Vec::len), Some(1), "{event}");
+                assert_eq!(list[0]["hooks"][0], hook.entry(), "{event}");
+                (
+                    event.clone(),
+                    list[0]["matcher"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        got.sort();
+        assert_eq!(got, want);
+        for event in ["Elicitation", "ElicitationResult"] {
+            assert!(hooks.contains_key(event), "{event}");
         }
     }
 
@@ -700,17 +823,23 @@ mod tests {
         );
     }
 
-    /// Claude has hooks; no other agent gives a state. The match names every
-    /// variant, so a new agent has to choose.
+    /// Claude and Codex have hooks, OpenCode has its state plugin; no other
+    /// agent gives a state. The match names every variant, so a new agent
+    /// has to choose.
     #[test]
     fn every_agent_has_a_state_source() {
         for agent in Agent::ALL {
-            let want = if agent == Agent::Claude {
+            let want = if matches!(agent, Agent::Claude | Agent::Codex | Agent::OpenCode) {
                 StateSource::Hooks
             } else {
                 StateSource::None
             };
             assert_eq!(state_source(agent), want, "{agent:?}");
+            assert_eq!(
+                HookVendor::of(agent).is_some(),
+                want == StateSource::Hooks,
+                "{agent:?}: a source of hooks has a vendor map"
+            );
         }
         let src = include_str!("agent_state.rs");
         let start = src.find("pub fn state_source(").unwrap();
@@ -723,12 +852,71 @@ mod tests {
     fn status_files_are_written_under_the_sessions_dir_and_removed_together() {
         let dir = tempfile::tempdir().unwrap();
         let files = StatusFiles::for_session(&dir.path().join("sessions"), 7);
-        assert!(files.settings.ends_with("7.settings.json"));
+        let settings = files.settings.clone().expect("a Claude settings file");
+        assert!(settings.ends_with("7.settings.json"));
         assert!(files.status.ends_with("7.agent-status.jsonl"));
         files.write(&hook_of("2.1.139")).unwrap();
-        assert!(files.settings.is_file() && files.status.is_file());
+        assert!(settings.is_file() && files.status.is_file());
         assert_eq!(std::fs::read(&files.status).unwrap(), b"");
         files.remove();
-        assert!(!files.settings.exists() && !files.status.exists());
+        assert!(!settings.exists() && !files.status.exists());
+        // A Codex console has its status file only.
+        let codex = StatusFiles::for_agent(Agent::Codex, &dir.path().join("sessions"), 8)
+            .expect("Codex has hooks");
+        assert_eq!(codex.settings, None);
+        codex.create_status().unwrap();
+        assert!(codex.status.ends_with("8.agent-status.jsonl") && codex.status.is_file());
+        codex.remove();
+        assert!(!codex.status.exists());
+        // An OpenCode console has its status file and its state plugin.
+        let opencode = StatusFiles::for_agent(Agent::OpenCode, &dir.path().join("sessions"), 9)
+            .expect("OpenCode has a plugin");
+        assert_eq!(opencode.settings, None);
+        let plugin = opencode.plugin.clone().expect("a plugin file");
+        assert!(plugin.ends_with("9.state-plugin.js"), "{plugin:?}");
+        opencode.create_status().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&plugin).unwrap(),
+            opencode::STATE_PLUGIN
+        );
+        assert!(opencode.status.is_file());
+        opencode.remove();
+        assert!(!plugin.exists() && !opencode.status.exists());
+    }
+
+    /// An OpenCode console whose plugin wrote no line in the 31 s after the
+    /// operator's first input is silent; the plugin's first line alone,
+    /// which changes no state, is enough to show that it runs (ADR-0085 D9).
+    #[test]
+    fn an_opencode_console_with_no_line_is_silent() {
+        use std::io::Write;
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let first_input = Some(now - Duration::from_secs(31));
+        let source = state_source(Agent::OpenCode);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        std::fs::write(&path, b"").unwrap();
+        let mut tail = Tail::new(path.clone(), HookVendor::OpenCode);
+        let first_line = tail.poll().activity.then_some(now);
+        assert_eq!(
+            silence(source, first_input, first_line, None, now).as_deref(),
+            Some(CLOCK_REASON),
+            "no line at all"
+        );
+
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(f, r#"{{"event":"plugin.loaded","ts":"t0"}}"#).unwrap();
+        f.flush().unwrap();
+        let polled = tail.poll();
+        assert!(polled.transitions.is_empty(), "{polled:?}");
+        let first_line = polled.activity.then_some(now);
+        assert_eq!(
+            silence(source, first_input, first_line, None, now),
+            None,
+            "the plugin's first line"
+        );
     }
 }

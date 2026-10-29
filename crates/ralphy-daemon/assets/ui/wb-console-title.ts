@@ -166,7 +166,7 @@ export function createTitle(deps: TitleDeps) {
     labelSpan.textContent = parts.tag;
     title.append(nameSpan, " ", labelSpan);
     wireRename(win, nameSpan);
-    if (switchable) appendCheckout(win, title, presentation);
+    if (switchable) appendSwitches(win, title, presentation);
     // The project name closes the title and is the first text cut; a console
     // with no repo has none, its default name already says `home`.
     const repo = win._deskRepo && win._deskRepo !== "~" ? projectNameOf(win._deskRepo) : "";
@@ -177,6 +177,52 @@ export function createTitle(deps: TitleDeps) {
       repoSpan.textContent = `· ${repo}`;
       title.append(" ", repoSpan);
     }
+  }
+
+  // The buttons an agent console keeps in its title: the checkout segment,
+  // then the done mark's bell.
+  function appendSwitches(win: ConsoleWin, title: HTMLElement, presentation: Presentation) {
+    appendCheckout(win, title, presentation);
+    appendDoneMark(win, title);
+  }
+
+  // Whether the desk says this console has "Tell me when it is done" on. The
+  // daemon clears it when the request opens, so it is read at each use.
+  function doneMarkOn(win: ConsoleWin) {
+    return !!desk().find((r) => r.id === win._deskId)?.doneMark;
+  }
+
+  // "Tell me when it is done" (docs/adr/0085 D11): a bell that asks for one
+  // request at the next turn this console finishes. A click writes the mark
+  // to the desk; the daemon clears it when the request opens. The bell is
+  // drawn from the desk again when the pointer comes to it, so a mark the
+  // daemon cleared is not shown as on.
+  function appendDoneMark(win: ConsoleWin, title: HTMLElement) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "session-checkout session-done-mark";
+    const icon = document.createElement("i");
+    const paint = () => {
+      const on = doneMarkOn(win);
+      icon.className = on ? "bi bi-bell-fill" : "bi bi-bell";
+      btn.setAttribute("aria-pressed", String(on));
+      btn.title = on
+        ? "Tell me when it is done: on. Click to turn it off."
+        : "Tell me when it is done";
+    };
+    paint();
+    btn.append(icon);
+    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    btn.addEventListener("pointerenter", paint);
+    btn.addEventListener("focus", paint);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setWin(win, { doneMark: !doneMarkOn(win) });
+      paint();
+    });
+    // No text node before the bell: it has no text, so a space would leave
+    // two spaces in the title's text (`wt-a  · repo`). The gap is CSS.
+    title.append(btn);
   }
 
   // The checkout segment of the title: ` · <checkout> ▾`.

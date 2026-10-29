@@ -10,7 +10,7 @@ use tokio::sync::broadcast;
 
 use super::RouterShared;
 use crate::protocol::{Command, Frame, Presence};
-use crate::{identity, protocol};
+use crate::{identity, presence_board, protocol};
 
 /// A change to a shown fact the daemon owns, relayed on every open `/ws` as a
 /// `<fact>.dirty` command with id 0 (ADR-0070 D2 event 1). `/ws` carries them
@@ -26,6 +26,8 @@ pub(crate) enum Push {
     /// The peer store changed on disk (`ralphy host …` writes it from
     /// another process).
     Peers,
+    /// The attention list changed (`attention::tick`).
+    Attention,
 }
 
 impl Push {
@@ -34,20 +36,26 @@ impl Push {
             Push::Desk { .. } => "desk.dirty",
             Push::Repos => "repos.dirty",
             Push::Peers => "peers.dirty",
+            Push::Attention => "attention.dirty",
         }
     }
 
     fn payload(&self) -> serde_json::Value {
         match self {
             Push::Desk { tab } => serde_json::json!({ "tab": tab }),
-            Push::Repos | Push::Peers => serde_json::json!({}),
+            Push::Repos | Push::Peers | Push::Attention => serde_json::json!({}),
         }
     }
 
     /// Every push once: what a receiver that lagged sends, because a read
     /// again is harmless and a lost push is not.
-    fn all() -> [Push; 3] {
-        [Push::Desk { tab: None }, Push::Repos, Push::Peers]
+    fn all() -> [Push; 4] {
+        [
+            Push::Desk { tab: None },
+            Push::Repos,
+            Push::Peers,
+            Push::Attention,
+        ]
     }
 }
 
@@ -181,14 +189,20 @@ pub(crate) fn build_presence(identity: Option<&identity::Identity>, uptime: Dura
 /// Between heartbeats it relays `sessions.dirty` from `sessions` and every
 /// [`Push`] from `pushes`. A receiver that lagged sends every verb once; a
 /// closed one turns its arm off, so the loop never spins on it.
+///
+/// The page sends `presence.report` on the same socket (docs/adr/0085 D14):
+/// each one goes on `board`, under this socket's entry, which goes when the
+/// loop ends. A frame that is not a report is ignored, and the socket stays
+/// open.
 pub(crate) async fn ws_presence_loop(
     mut socket: WebSocket,
     identity: Option<identity::Identity>,
     start: Instant,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
-    mut sessions: broadcast::Receiver<()>,
-    mut pushes: broadcast::Receiver<Push>,
+    (mut sessions, mut pushes): (broadcast::Receiver<()>, broadcast::Receiver<Push>),
+    board: presence_board::Shared,
 ) {
+    let page = PageEntry::open(board);
     let mut tick = tokio::time::interval(Duration::from_secs(2));
     let mut sessions_open = true;
     let mut pushes_open = true;
@@ -204,10 +218,63 @@ pub(crate) async fn ws_presence_loop(
             // (its runtime is going away). Either way, stop serving this socket.
             _ = shutdown.changed() => true,
             _ = tick.tick() => !send_presence(&mut socket, identity.as_ref(), start).await,
-            incoming = socket.recv() => ends_the_loop(&incoming),
+            incoming = socket.recv() => {
+                page.take(&incoming);
+                ends_the_loop(&incoming)
+            }
         };
         if stop {
             break;
+        }
+    }
+}
+
+/// The entry of one `/ws` socket on the presence board, removed when the
+/// socket's loop ends, on every path.
+struct PageEntry {
+    board: presence_board::Shared,
+    conn: Option<u64>,
+}
+
+impl PageEntry {
+    /// A poisoned board is logged, and this socket's reports are not kept.
+    fn open(board: presence_board::Shared) -> Self {
+        let conn = match board.lock() {
+            Ok(mut b) => Some(b.open()),
+            Err(e) => {
+                tracing::warn!(error = %e, "the presence board is poisoned");
+                None
+            }
+        };
+        PageEntry { board, conn }
+    }
+
+    /// Put a `presence.report` from the page on the board. Anything else
+    /// the page sends is ignored.
+    fn take(&self, incoming: &Option<Result<Message, axum::Error>>) {
+        let (Some(conn), Some(Ok(Message::Binary(bytes)))) = (self.conn, incoming) else {
+            return;
+        };
+        let Ok(Frame::Command(command)) = protocol::decode(bytes) else {
+            return;
+        };
+        if command.verb != "presence.report" {
+            return;
+        }
+        if let Ok(mut board) = self.board.lock() {
+            board.report(conn, &command.payload, std::time::SystemTime::now());
+        }
+    }
+}
+
+impl Drop for PageEntry {
+    fn drop(&mut self) {
+        let Some(conn) = self.conn else {
+            return;
+        };
+        match self.board.lock() {
+            Ok(mut board) => board.close(conn),
+            Err(e) => tracing::warn!(error = %e, "the presence board is poisoned"),
         }
     }
 }
@@ -311,17 +378,21 @@ pub(crate) fn presence_routes(s: &RouterShared) -> Router {
     let shutdown = s.shutdown.clone();
     let sessions = s.sessions.clone();
     let pushes = s.pushes.clone();
+    let board = s.presence.clone();
     Router::new().route(
         "/ws",
         get(move |ws: WebSocketUpgrade| {
             let id = identity.clone();
             let shutdown = shutdown.clone();
-            let sessions_rx = sessions.subscribe_changes();
-            let pushes_rx = pushes.subscribe();
+            let receivers = (sessions.subscribe_changes(), pushes.subscribe());
+            let board = board.clone();
             async move {
-                ws.on_upgrade(move |socket| {
-                    ws_presence_loop(socket, id, start, shutdown, sessions_rx, pushes_rx)
-                })
+                // The page sends only its presence reports here.
+                ws.max_message_size(presence_board::MAX_REPORT_BYTES)
+                    .max_frame_size(presence_board::MAX_REPORT_BYTES)
+                    .on_upgrade(move |socket| {
+                        ws_presence_loop(socket, id, start, shutdown, receivers, board)
+                    })
             }
         }),
     )
@@ -364,6 +435,15 @@ mod tests {
         sessions: broadcast::Receiver<()>,
         pushes: broadcast::Receiver<Push>,
     ) -> (Ws, tokio::sync::watch::Sender<bool>) {
+        connect_on(sessions, pushes, presence_board::Shared::default()).await
+    }
+
+    /// [`connect`], with the presence board `board`.
+    async fn connect_on(
+        sessions: broadcast::Receiver<()>,
+        pushes: broadcast::Receiver<Push>,
+        board: presence_board::Shared,
+    ) -> (Ws, tokio::sync::watch::Sender<bool>) {
         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
         let receivers = std::sync::Arc::new(std::sync::Mutex::new(Some((sessions, pushes))));
         let app = Router::new().route(
@@ -371,10 +451,11 @@ mod tests {
             get(move |ws: WebSocketUpgrade| {
                 let taken = receivers.lock().unwrap().take();
                 let stop_rx = stop_rx.clone();
+                let board = board.clone();
                 async move {
-                    let (sessions, pushes) = taken.expect("the test connects once");
+                    let pair = taken.expect("the test connects once");
                     ws.on_upgrade(move |socket| {
-                        ws_presence_loop(socket, None, Instant::now(), stop_rx, sessions, pushes)
+                        ws_presence_loop(socket, None, Instant::now(), stop_rx, pair, board)
                     })
                 }
             }),
@@ -439,6 +520,7 @@ mod tests {
         assert_eq!(count(&commands, "sessions.dirty"), 1, "got: {verbs:?}");
         assert_eq!(count(&commands, "repos.dirty"), 1, "got: {verbs:?}");
         assert_eq!(count(&commands, "peers.dirty"), 1, "got: {verbs:?}");
+        assert_eq!(count(&commands, "attention.dirty"), 1, "got: {verbs:?}");
         let desk_tabs: Vec<&serde_json::Value> = commands
             .iter()
             .filter(|c| c.verb == "desk.dirty")
@@ -482,5 +564,68 @@ mod tests {
     #[tokio::test]
     async fn a_closed_pushes_channel_keeps_the_heartbeat() {
         a_closed_channel_keeps_the_heartbeat(false).await;
+    }
+
+    /// The board's answer within `within`: whether the operator is present.
+    async fn present_within(board: &presence_board::Shared, want: bool, within: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            let now = std::time::SystemTime::now();
+            if board.lock().unwrap().present(now) == want {
+                return true;
+            }
+            if tokio::time::Instant::now() > deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_page_report_on_the_presence_socket_sets_presence() {
+        use futures_util::SinkExt;
+        use tokio_tungstenite::tungstenite::Message as Wire;
+        let (_sessions_tx, sessions) = broadcast::channel(4);
+        let (_pushes_tx, pushes) = broadcast::channel(4);
+        let board = presence_board::Shared::default();
+        let (mut ws, _stop) = connect_on(sessions, pushes, board.clone()).await;
+        let frame = |payload: serde_json::Value| {
+            Wire::Binary(
+                protocol::encode(&Frame::Command(Command {
+                    id: 0,
+                    verb: "presence.report".to_string(),
+                    payload,
+                }))
+                .into(),
+            )
+        };
+        // A frame that is no report is ignored, and the socket stays open.
+        ws.send(Wire::Binary(vec![0x02, b'{'].into()))
+            .await
+            .unwrap();
+        ws.send(frame(serde_json::json!({ "visible": true })))
+            .await
+            .unwrap();
+        let now = 1_000_000.0;
+        ws.send(frame(serde_json::json!({
+            "visible": true, "lastInput": now, "now": now, "origin": "http://127.0.0.1:8765"
+        })))
+        .await
+        .unwrap();
+        assert!(
+            present_within(&board, true, Duration::from_secs(5)).await,
+            "the report makes the operator present"
+        );
+        assert_eq!(
+            board.lock().unwrap().last_origin().as_deref(),
+            Some("http://127.0.0.1:8765")
+        );
+
+        ws.close(None).await.unwrap();
+        drop(ws);
+        assert!(
+            present_within(&board, false, Duration::from_secs(5)).await,
+            "closing the socket ends the presence"
+        );
     }
 }

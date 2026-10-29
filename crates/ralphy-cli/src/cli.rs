@@ -212,9 +212,26 @@ pub(crate) enum HookCommand {
     /// Record how long each check command took.
     Post,
     /// Record what the agent is doing in `$RALPHY_STATUS_FILE`, so the workbench
-    /// can show it. Always prints `{}` and exits 0.
-    // ADR-0059.
-    Status,
+    /// can show it. Prints `{}` for Claude and nothing for the other agents,
+    /// and always exits 0.
+    // ADR-0059, ADR-0085 D6.
+    Status {
+        /// The agent whose hook runs this. Without it, `claude`, so a settings
+        /// file written by an older version keeps working.
+        #[arg(value_enum, default_value_t = HookVendor::Claude)]
+        vendor: HookVendor,
+    },
+}
+
+/// The agent a `hook status` call comes from: it decides what the hook
+/// prints and where the question text is in the payload.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum HookVendor {
+    Claude,
+    Codex,
+    // One word, like `--agent opencode`; clap would derive `open-code`.
+    #[value(name = "opencode")]
+    OpenCode,
 }
 
 #[derive(Args)]

@@ -29,6 +29,11 @@ pub struct SessionSpec {
     /// status file and removes both with the session. `None` for every other
     /// child.
     pub status: Option<crate::agent_state::StatusFiles>,
+    /// Why the console's agent state is not reported, when the launch gives
+    /// it no state source on purpose: the console shows this reason from its
+    /// start, and it is not an attention request. `None` for every other
+    /// child.
+    pub unreported_reason: Option<String>,
 }
 
 /// The agents the launcher can start. Maps to a concrete program via
@@ -217,11 +222,73 @@ pub fn spec_with_status(
         env,
         name: None,
         status: None,
+        unreported_reason: None,
     };
-    if agent == Agent::Claude {
-        add_claude_launch(&mut spec, root, repo_slug, console, status);
+    match agent {
+        Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
+        Agent::Codex => add_codex_launch(&mut spec, status),
+        Agent::OpenCode => add_opencode_launch(&mut spec, status),
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => {}
     }
     spec
+}
+
+/// The Codex part of [`spec_with_status`]: the status hooks as `-c`
+/// arguments, and `RALPHY_STATUS_FILE`. Codex takes the hooks inline, so no
+/// settings file is written (ADR-0085 D3). The TUI has no subcommand, so the
+/// `-c` arguments are all on one side of it. A failed write launches the
+/// console without the hooks, as for Claude.
+fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+    let Some(files) = status else {
+        return;
+    };
+    // The trust flag would also run the project's own hooks with no trust
+    // prompt (ADR-0085 amendment of 2026-10-29).
+    if ralphy_proc_util::hook_form::codex_project_has_hooks(&spec.cwd) {
+        spec.unreported_reason = Some(crate::agent_state::CODEX_OWN_HOOKS_REASON.to_string());
+        return;
+    }
+    if let Err(e) = files.create_status() {
+        tracing::warn!(error = %e, "could not write the console's agent-state file; launching without the hooks");
+        return;
+    }
+    spec.args.extend(
+        crate::agent_state::codex_console_hook_args()
+            .into_iter()
+            .map(OsString::from),
+    );
+    spec.env.push((
+        OsString::from(crate::agent_state::STATUS_ENV),
+        files.status.clone().into_os_string(),
+    ));
+    spec.status = Some(files);
+}
+
+/// The OpenCode part of [`spec_with_status`]: the state plugin file, named
+/// in `OPENCODE_CONFIG_CONTENT`, and `RALPHY_STATUS_FILE` (ADR-0085 D2). The
+/// config holds the plugin only: OpenCode merges it with the operator's own
+/// config, so their settings and plugins still load. A failed write launches
+/// the console without the plugin, as for Claude.
+fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+    let Some(files) = status else {
+        return;
+    };
+    let Some(plugin) = files.plugin.clone() else {
+        return;
+    };
+    if let Err(e) = files.create_status() {
+        tracing::warn!(error = %e, "could not write the console's agent-state plugin; launching without it");
+        return;
+    }
+    spec.env.push((
+        OsString::from("OPENCODE_CONFIG_CONTENT"),
+        OsString::from(crate::agent_state::opencode::console_config(&plugin)),
+    ));
+    spec.env.push((
+        OsString::from(crate::agent_state::STATUS_ENV),
+        files.status.clone().into_os_string(),
+    ));
+    spec.status = Some(files);
 }
 
 /// The Claude part of [`spec_with_status`]: the opt-in name, the opt-in
@@ -251,8 +318,10 @@ fn add_claude_launch(
         let hook = crate::agent_state::console_hook(Path::new(&spec.program));
         match files.write(&hook) {
             Ok(()) => {
-                spec.args.push(OsString::from("--settings"));
-                spec.args.push(files.settings.clone().into_os_string());
+                if let Some(settings) = &files.settings {
+                    spec.args.push(OsString::from("--settings"));
+                    spec.args.push(settings.clone().into_os_string());
+                }
                 spec.env.push((
                     OsString::from(crate::agent_state::STATUS_ENV),
                     files.status.clone().into_os_string(),
@@ -482,6 +551,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16, command: Option<&str>) -
         env: Vec::new(),
         name: None,
         status: None,
+        unreported_reason: None,
     }
 }
 
@@ -517,6 +587,7 @@ pub fn peer_console_spec(
         env: Vec::new(),
         name: None,
         status: None,
+        unreported_reason: None,
     }
 }
 

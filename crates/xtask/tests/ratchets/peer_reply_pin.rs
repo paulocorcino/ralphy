@@ -64,8 +64,10 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// The new verbs `file.stat` and `tree.size` keep version 4 (ADR-0052): every
 /// field of their replies is optional in the page type, and an older peer
 /// answers them `unknown verb`, which the Properties dialog shows as a refusal
-/// that names the older daemon.
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xe6fc_9371_d11c_bb24);
+/// that names the older daemon. The optional `phase.agent` of a run snapshot
+/// keeps version 4: a run of an older peer sends none, and the run card then
+/// draws no agent dot, as for a vendor with no hooks.
+const PEER_REPLY_PIN: (u32, u64) = (4, 0xb1aa_c57d_f0dc_6880);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

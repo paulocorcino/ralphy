@@ -10,6 +10,7 @@ fn all_found() -> MachineFacts {
         agents: vec![(Agent::Claude, "2.1.0 (Claude Code)".to_string())],
         linger: None,
         hooks: vec![(Agent::Claude, HookCheck::Ok)],
+        telegram: None,
     }
 }
 
@@ -224,7 +225,11 @@ fn a_hook_line_warns_and_never_fails() {
         ),
     ];
     for (check, want) in rows {
-        let report = evaluate(&two_agents(vec![(Agent::Claude, check)]), false);
+        let mut facts = two_agents(vec![(Agent::Claude, check)]);
+        facts
+            .agents
+            .push((Agent::Copilot, "GitHub Copilot CLI 1.0".to_string()));
+        let report = evaluate(&facts, false);
         assert_eq!(report.missing_required(), 0, "{want}");
         let mut out = Vec::new();
         print_report(&report, &mut out).expect("printing");
@@ -235,7 +240,7 @@ fn a_hook_line_warns_and_never_fails() {
 {out}"
         );
         assert!(
-            out.contains("[ok  ] codex hooks: no state source"),
+            out.contains("[ok  ] copilot hooks: no state source"),
             "an agent with no state source is ok: {out}"
         );
         assert!(out.contains("result: every required tool is here"), "{out}");
@@ -273,4 +278,87 @@ fn a_missing_git_on_windows_says_how_to_install_it() {
         Some("winget install --id Git.Git -e")
     );
     assert_eq!(line(&evaluate(&facts, false), "git").fix, None);
+}
+
+/// Codex gives its state through hooks: its doctor line is a hooks line
+/// with the result of its own check, and the check runs the program and the
+/// arguments a Codex console's hooks run.
+#[test]
+fn doctor_names_the_codex_state_source() {
+    let rows = [
+        (
+            HookCheck::Ok,
+            "[ok  ] codex hooks: the hook command ran and wrote a status line",
+        ),
+        (
+            HookCheck::Failed {
+                cause: "ralphy.exe exited with code 1".to_string(),
+            },
+            "[warn] codex hooks: ralphy.exe exited with code 1",
+        ),
+    ];
+    for (check, want) in rows {
+        let report = evaluate(&two_agents(vec![(Agent::Codex, check)]), false);
+        let codex = line(&report, "codex hooks");
+        assert_eq!(codex.tool, Tool::Hooks);
+        let mut out = Vec::new();
+        print_report(&report, &mut out).expect("printing");
+        let out = String::from_utf8(out).expect("utf-8");
+        assert!(out.contains(want), "{want}\n{out}");
+    }
+    let hook = hook_command(Agent::Codex, Path::new("codex")).expect("Codex has hooks");
+    let entry = hook.entry();
+    assert_eq!(
+        entry["args"],
+        serde_json::json!(["hook", "status", "codex"])
+    );
+    assert!(hook_command(Agent::Copilot, Path::new("copilot")).is_none());
+}
+
+/// OpenCode's state comes from a plugin: there is no command to run, so the
+/// doctor names the source and says how it is checked, as an `ok` line.
+#[test]
+fn doctor_names_the_opencode_state_source() {
+    let facts = MachineFacts {
+        agents: vec![(Agent::Opencode, "1.19.0".to_string())],
+        hooks: Vec::new(),
+        ..all_found()
+    };
+    let report = evaluate(&facts, false);
+    let opencode = line(&report, "opencode hooks");
+    assert_eq!(opencode.tool, Tool::Hooks);
+    assert!(opencode.ok, "{opencode:?}");
+    let mut out = Vec::new();
+    print_report(&report, &mut out).expect("printing");
+    let out = String::from_utf8(out).expect("utf-8");
+    let want = "[ok  ] opencode hooks: a plugin; checked by its first line in each console";
+    assert!(out.contains(want), "{want}\n{out}");
+    assert!(hook_command(Agent::Opencode, Path::new("opencode")).is_none());
+}
+
+#[test]
+fn the_telegram_line_says_whether_this_machine_sends() {
+    let rows = [
+        (TelegramState::Off, "off"),
+        (TelegramState::Sends, "sends from this machine"),
+        (
+            TelegramState::ThroughMain {
+                main: "m".to_string(),
+            },
+            "sends through the main daemon m",
+        ),
+    ];
+    for (state, text) in rows {
+        let report = evaluate(
+            &MachineFacts {
+                telegram: Some(state),
+                ..all_found()
+            },
+            false,
+        );
+        let line = line(&report, "telegram");
+        assert_eq!(line.text, text);
+        assert!(line.ok && !line.required, "a fact, never a failure");
+        assert_eq!(report.missing_required(), 0);
+    }
 }

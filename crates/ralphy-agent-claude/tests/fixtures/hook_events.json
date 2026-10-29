@@ -1,0 +1,38 @@
+[
+  {
+    "event": "SessionStart",
+    "matcher": ""
+  },
+  {
+    "event": "UserPromptSubmit",
+    "matcher": ""
+  },
+  {
+    "event": "PreToolUse",
+    "matcher": "*"
+  },
+  {
+    "event": "PostToolUse",
+    "matcher": "*"
+  },
+  {
+    "event": "PermissionRequest",
+    "matcher": "*"
+  },
+  {
+    "event": "Elicitation",
+    "matcher": "*"
+  },
+  {
+    "event": "ElicitationResult",
+    "matcher": "*"
+  },
+  {
+    "event": "Stop",
+    "matcher": ""
+  },
+  {
+    "event": "SubagentStop",
+    "matcher": ""
+  }
+]

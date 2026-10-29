@@ -120,6 +120,7 @@ fn spawn_detached(argv: &[String]) -> Result<Child> {
         .stderr(Stdio::piped());
     ralphy_proc_util::no_window(&mut cmd);
     ralphy_proc_util::own_process_group(&mut cmd);
+    crate::child_env::remove_secrets(&mut cmd);
     cmd.spawn()
         .with_context(|| format!("starting the tunnel `{}`", argv.join(" ")))
 }

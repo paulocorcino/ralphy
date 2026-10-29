@@ -1,0 +1,183 @@
+[
+  {
+    "why": "one simple turn: the plugin's first line changes nothing, the new lead session is idle, busy works, the lead's idle is a turn end",
+    "lines": [
+      {"event": "plugin.loaded", "ts": "t0"},
+      {"event": "session.created", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t2"},
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t3"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t4"}
+    ],
+    "states": [
+      null,
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"},
+      null,
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a permission granted once: the request is a wait, busy behind it changes nothing, the reply for the same request gives back the working",
+    "rule": "D7.2",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "permission.asked", "session_id": "ses_lead", "tool_name": "bash", "tool_use_id": "per_1", "ts": "t2"},
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t3"},
+      {"event": "permission.replied", "session_id": "ses_lead", "tool_use_id": "per_1", "ts": "t4"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t5"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: bash"},
+      null,
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a permission rejected: the reply ends the wait, and the idle that follows is a turn end",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "permission.asked", "session_id": "ses_lead", "tool_name": "bash", "tool_use_id": "per_2", "ts": "t2"},
+      {"event": "permission.replied", "session_id": "ses_lead", "tool_use_id": "per_2", "ts": "t3"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: bash"},
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a question answered: the question tool is a wait with the question text, and the answer gives back the working",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "question.asked", "session_id": "ses_lead", "tool_name": "question", "tool_use_id": "que_1", "question": "Which color, red or blue?", "ts": "t2"},
+      {"event": "question.replied", "session_id": "ses_lead", "tool_use_id": "que_1", "ts": "t3"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "question: Which color, red or blue?"},
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a question dismissed with Esc: the rejection ends the wait, and the idle that follows is a turn end",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "question.asked", "session_id": "ses_lead", "tool_name": "question", "tool_use_id": "que_2", "ts": "t2"},
+      {"event": "question.rejected", "session_id": "ses_lead", "tool_use_id": "que_2", "ts": "t3"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "question"},
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a subagent: its busy and its idle are not the lead's, but its permission is the lead's wait",
+    "rule": "D7.1",
+    "lines": [
+      {"event": "session.created", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t2"},
+      {"event": "session.status", "session_id": "ses_sub", "agent_id": "ses_sub", "ts": "t3"},
+      {"event": "permission.asked", "session_id": "ses_sub", "agent_id": "ses_sub", "tool_name": "bash", "tool_use_id": "per_3", "ts": "t4"},
+      {"event": "permission.replied", "session_id": "ses_sub", "agent_id": "ses_sub", "tool_use_id": "per_3", "ts": "t5"},
+      {"event": "session.idle", "session_id": "ses_sub", "agent_id": "ses_sub", "ts": "t6"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t7"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"},
+      null,
+      {"state": "waiting", "detail": "permission: bash"},
+      {"state": "working"},
+      null,
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a second lead session (the TUI's /new): it is the lead from its first line, so its busy works and its idle is a turn end",
+    "rule": "D7.1",
+    "lines": [
+      {"event": "session.created", "session_id": "ses_one", "ts": "t1"},
+      {"event": "session.status", "session_id": "ses_one", "ts": "t2"},
+      {"event": "session.idle", "session_id": "ses_one", "ts": "t3"},
+      {"event": "session.created", "session_id": "ses_two", "ts": "t4"},
+      {"event": "session.status", "session_id": "ses_two", "ts": "t5"},
+      {"event": "session.idle", "session_id": "ses_two", "ts": "t6"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"},
+      null,
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "the reply to another request does not end the wait; the reply to its own request does",
+    "rule": "D7.3",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "permission.asked", "session_id": "ses_lead", "tool_name": "bash", "tool_use_id": "per_4", "ts": "t2"},
+      {"event": "permission.replied", "session_id": "ses_lead", "tool_use_id": "per_9", "ts": "t3"},
+      {"event": "permission.replied", "session_id": "ses_lead", "tool_use_id": "per_4", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: bash"},
+      null,
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a second request while the first waits is news, and its reply alone gives back the working the first one replaced",
+    "rule": "D7.2",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "permission.asked", "session_id": "ses_lead", "tool_name": "bash", "tool_use_id": "per_5", "ts": "t2"},
+      {"event": "permission.asked", "session_id": "ses_lead", "tool_name": "edit", "tool_use_id": "per_6", "ts": "t3"},
+      {"event": "permission.replied", "session_id": "ses_lead", "tool_use_id": "per_6", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: bash"},
+      {"state": "waiting", "detail": "permission: edit"},
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "an interrupt (Esc twice): OpenCode ends the turn with the lead's idle, which is a turn end",
+    "rule": "D7.4",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t2"},
+      {"event": "session.idle", "session_id": "ses_lead", "ts": "t3"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"},
+      null
+    ]
+  },
+  {
+    "why": "a line the map does not know changes nothing",
+    "lines": [
+      {"event": "session.status", "session_id": "ses_lead", "ts": "t1"},
+      {"event": "session.error", "session_id": "ses_lead", "ts": "t2"},
+      {"event": "plugin.loaded", "ts": "t3"}
+    ],
+    "states": [
+      {"state": "working"},
+      null,
+      null
+    ]
+  }
+]

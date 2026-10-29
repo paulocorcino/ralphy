@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 use ralphy_adapter_support::{find_program, locate_program, run_headless};
 use ralphy_daemon::agent_state::{state_source, StateSource};
+use ralphy_daemon::telegram_state::{self, TelegramState};
 use ralphy_proc_util::hook_form::{self, HookCheck};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,9 @@ pub(crate) enum Tool {
     Linger,
     /// Whether the hooks of an agent that gives its state through hooks run.
     Hooks,
+    /// Whether this machine's daemon sends the Telegram message of a console
+    /// that waits.
+    Telegram,
 }
 
 /// One line of the result: one tool, what was found, and how to fix it.
@@ -80,6 +84,9 @@ pub(crate) struct MachineFacts {
     pub linger: Option<Option<bool>>,
     /// The hook check of each installed agent whose state comes from hooks.
     pub hooks: Vec<(Agent, HookCheck)>,
+    /// The Telegram state of the daemon on this machine; `None` when its
+    /// config path could not be found.
+    pub telegram: Option<TelegramState>,
 }
 
 /// The lingering line, shared with the host check so both say the same thing.
@@ -212,10 +219,29 @@ fn source_of(agent: Agent) -> StateSource {
         .map_or(StateSource::None, state_source)
 }
 
+/// Whether the state source of `agent` is a plugin the vendor loads, with no
+/// command the doctor can run: its first line in each console shows that it
+/// runs (ADR-0085 D9).
+fn checked_by_first_line(agent: Agent) -> bool {
+    match agent {
+        Agent::Opencode => true,
+        Agent::Claude
+        | Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Gemini
+        | Agent::Kimi => false,
+    }
+}
+
 /// One line for an installed agent: whether its state hooks run. A hook
 /// that fails is a warning, never a missing tool.
 fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
     let (ok, text) = match source_of(agent) {
+        StateSource::Hooks if checked_by_first_line(agent) => (
+            true,
+            "a plugin; checked by its first line in each console".to_string(),
+        ),
         StateSource::Hooks => match facts.hooks.iter().find(|(a, _)| *a == agent) {
             Some((_, HookCheck::Ok)) => (
                 true,
@@ -227,7 +253,6 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
             }
             None => (false, "not checked: the check gave no result".to_string()),
         },
-        StateSource::Stream => (true, "state comes from the output stream".to_string()),
         StateSource::None => (true, "no state source".to_string()),
     };
     ToolLine {
@@ -237,6 +262,19 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
         required: false,
         version: None,
         text,
+        fix: None,
+    }
+}
+
+/// The Telegram state is a fact, never a failure: off is a choice.
+fn telegram_line(state: &TelegramState) -> ToolLine {
+    ToolLine {
+        tool: Tool::Telegram,
+        name: "telegram".to_string(),
+        ok: true,
+        required: false,
+        version: None,
+        text: state.text(),
         fix: None,
     }
 }
@@ -254,6 +292,7 @@ pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     if let Some(linger) = facts.linger {
         tools.push(linger_line(linger));
     }
+    tools.extend(facts.telegram.as_ref().map(telegram_line));
     DoctorReport { tools }
 }
 
@@ -314,10 +353,18 @@ pub(crate) fn probe() -> MachineFacts {
             .filter(|a| source_of(**a) == StateSource::Hooks)
             .map(|a| scope.spawn(move || hook_probe(*a)))
             .collect();
+        let running = scope.spawn(daemon_telegram);
         let linger = linger();
         // A probe thread only runs a program and reads its output; a panic in
         // one is a bug in that code, not a fact about the computer.
         let join = "a doctor probe does not panic";
+        // The running daemon knows whether a main daemon sends for it; with
+        // no daemon, the config it would read says it all.
+        let telegram = running.join().expect(join).or_else(|| {
+            telegram_state::config_path()
+                .ok()
+                .map(|path| telegram_state::state_at(&path))
+        });
         MachineFacts {
             git: git.join().expect(join),
             gh: gh.join().expect(join),
@@ -332,21 +379,81 @@ pub(crate) fn probe() -> MachineFacts {
                 .into_iter()
                 .filter_map(|h| h.join().expect(join))
                 .collect(),
+            telegram,
         }
     })
 }
 
-/// Run the hook command of `agent` as a console of the daemon would get it:
-/// the same command as `agent_state::run_start_check`, so the two answer for
-/// the same command. `None` when the agent is not installed.
+/// How long `doctor` waits for the daemon of this machine.
+const DAEMON_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The Telegram state of the daemon that runs on this machine, from the
+/// daemon (`GET /api/telegram?local=1`); `None` when no daemon answers.
+fn daemon_telegram() -> Option<TelegramState> {
+    let store = ralphy_daemon::auth::store_dir().ok()?;
+    let args = ralphy_daemon::pidfile::read_args_in(&store);
+    let port = crate::daemon::describe::port_from_args(&args);
+    if !crate::daemon::describe::answers(&store, port) {
+        return None;
+    }
+    match read_daemon_telegram(port) {
+        Ok(state) => Some(state),
+        Err(e) => {
+            tracing::debug!(error = %format!("{e:#}"), "could not read the daemon's Telegram state");
+            None
+        }
+    }
+}
+
+fn read_daemon_telegram(port: u16) -> Result<TelegramState> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(DAEMON_TIMEOUT))
+        .proxy(None)
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut req = agent.get(&format!("http://127.0.0.1:{port}/api/telegram?local=1"));
+    if let Some(token) = ralphy_daemon::auth::effective_token()?.filter(|t| !t.is_empty()) {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    let mut resp = req
+        .call()
+        .context("asking the daemon for its Telegram state")?;
+    let status = resp.status().as_u16();
+    if status != 200 {
+        anyhow::bail!("the daemon answered {status}");
+    }
+    resp.body_mut()
+        .read_json()
+        .context("reading the Telegram state")
+}
+
+/// Run the hook command of `agent` as a console of the daemon would get it,
+/// so the check answers for the command a console gets. `None` when the
+/// agent is not installed or gives no state through hooks.
 fn hook_probe(agent: Agent) -> Option<(Agent, HookCheck)> {
     let cli = agent_program(&agent)?;
-    let hook = ralphy_daemon::agent_state::console_hook(&cli);
-    let home = ralphy_proc_util::home_dir();
+    let hook = hook_command(agent, &cli)?;
+    // A `disableAllHooks` file of Claude Code says nothing about Codex.
+    let home = (agent == Agent::Claude)
+        .then(ralphy_proc_util::home_dir)
+        .flatten();
     Some((
         agent,
         hook_form::check(&hook, hook_form::CHECK_LIMIT, home.as_deref()),
     ))
+}
+
+/// The hook command a console of `agent` gets, whose program is `cli`: for
+/// Claude the same command as `agent_state::run_start_check`; for Codex the
+/// program and the arguments its inline hooks run. `None` for an agent that
+/// gives no state through hooks, or whose source is a plugin with no command.
+fn hook_command(agent: Agent, cli: &Path) -> Option<hook_form::HookCommand> {
+    match agent {
+        Agent::Claude => Some(ralphy_daemon::agent_state::console_hook(cli)),
+        Agent::Codex => Some(ralphy_daemon::agent_state::codex_check_hook()),
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::Opencode => None,
+    }
 }
 
 fn on_path(name: &str) -> Option<PathBuf> {

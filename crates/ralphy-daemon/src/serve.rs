@@ -113,6 +113,10 @@ pub(crate) async fn serve(
     // ADR-0019). The auth state already holds the effective token as its
     // signing-key fallback.
     auth::strip_token_from_env();
+    // The Telegram token of the environment is read once, here. The Telegram
+    // and events tokens stay in the daemon's own environment: each spawn
+    // removes them from its child (`child_env`).
+    crate::telegram_state::capture_env_token();
 
     // Resolve the registry path once and hand it to the router. `/api/repos`
     // reads it FRESH from disk on each request, so the resident daemon sees
@@ -282,6 +286,12 @@ fn usage_stores() -> Result<StorePaths> {
         copilot_db: usage::copilot_db_path()?,
         cursor_dir: usage::cursor_dir_path()?,
         gemini_dir: usage::gemini_dir_path()?,
+        // A machine with no config directory sends no Telegram message; the
+        // daemon still starts.
+        telegram_config: crate::telegram_state::config_path().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "no Telegram config path; no Telegram message is sent");
+            PathBuf::new()
+        }),
     })
 }
 

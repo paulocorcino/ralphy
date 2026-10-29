@@ -172,6 +172,14 @@ mod tests {
         assert!(ralphy_daemon::owner_only::is_owner_only(&path).unwrap());
         assert!(std::fs::read_to_string(&path).unwrap().contains("secret"));
     }
+
+    /// The daemon removes this variable from each child by its own copy of
+    /// the name, so the two names must agree.
+    #[test]
+    fn the_daemon_removes_the_events_token_by_this_name() {
+        assert_eq!(ralphy_daemon::child_env::EVENTS_TOKEN_ENV, TOKEN_ENV);
+        assert!(ralphy_daemon::child_env::SECRET_ENV.contains(&TOKEN_ENV));
+    }
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static N: AtomicU32 = AtomicU32::new(0);

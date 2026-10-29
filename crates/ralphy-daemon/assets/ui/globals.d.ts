@@ -126,9 +126,10 @@ type HostedSession = {
 
 /**
  * The agent's block on a session row. A console whose hooks sent nothing has
- * `source: "silent"`, a `reason`, and no `state`.
+ * `source: "silent"`, a `reason`, and no `state`. A console launched with no
+ * state source on purpose has `source: "none"` and a `reason`.
  */
-type AgentStateBlock = { state?: string; source?: "silent"; reason?: string; since: string; detail?: string };
+type AgentStateBlock = { state?: string; source?: "silent" | "none"; reason?: string; since: string; detail?: string };
 
 /** The reply to `verb`. */
 type ReplyOf<V extends string> = V extends keyof DaemonReplies ? DaemonReplies[V] : DaemonReply;
@@ -504,6 +505,8 @@ interface WindowEventMap {
   "workbench:runs-closed": CustomEvent<null>;
   /** Open the Runs panel on the run that works on this issue. */
   "workbench:run-open": CustomEvent<{ issue: number }>;
+  /** Show a run in the Runs panel (wb-runs-panel.ts). */
+  "workbench:run-select": CustomEvent<{ repo: string; runid: string }>;
   /** A chunk of the raw output of a run the daemon started. */
   "workbench:run-output": CustomEvent<{ text: string }>;
   /** A verb the daemon ran failed or ended; `message` says how. */

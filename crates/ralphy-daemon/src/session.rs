@@ -24,7 +24,7 @@ mod manager;
 mod screen;
 mod spec;
 
-pub use manager::{AttachError, Attachment, RecordClaim, SessionManager};
+pub use manager::{AttachError, Attachment, RecordClaim, SessionManager, TurnEnd};
 pub use spec::{
     claude_console_named, console_cwd, console_name, console_spec, cursor_indexing_allowed,
     gemini_home, gemini_policy_path, peer_console_launcher, peer_console_spec, spec_for,
@@ -130,10 +130,12 @@ impl Session {
         // The terminal the daemon gives the child is described by the daemon,
         // never inherited from the shell that started it: drop the suppressors
         // first, then declare. Both come BEFORE `spec.env`, so a vendor's own
-        // containment still has the last word on any key it names.
+        // containment still has the last word on any key it names. The
+        // daemon's secrets leave with the suppressors: no console gets them.
         for key in COLOUR_SUPPRESSORS
             .into_iter()
             .chain(INHERITED_SESSION_MARKERS)
+            .chain(crate::child_env::SECRET_ENV)
         {
             cmd = cmd.env_remove(key);
         }

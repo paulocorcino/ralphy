@@ -309,6 +309,11 @@ test("agentStateOf ranks a silent console first", () => {
   assert.deepEqual(wb.worktreeStates([{ name: "primary", primary: true }], [waiting, silent]), { primary: "silent" });
 });
 
+test("agentDotOf shows the reason of a console with no state source", () => {
+  const block = { source: "none", reason: "This project has its own Codex hooks.", since: "t" };
+  assert.deepEqual(wb.agentDotOf(block), { state: "silent", detail: "This project has its own Codex hooks." });
+});
+
 // The dot per worktree row: sessions join rows on `checkout` (`primary` is
 // the sessions with none); a row with no session has no entry.
 test("worktreeStates joins the repo's sessions to its rows by checkout", () => {

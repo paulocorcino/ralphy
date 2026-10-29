@@ -9,6 +9,7 @@ description = "Leaf crate for Ralphy's run-state snapshot channel: the versioned
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

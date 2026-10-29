@@ -4,11 +4,16 @@
 //! no-op with `RALPHY_STATUS_FILE` unset.
 
 use std::io::{BufRead, Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 fn run(env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_ralphy"));
-    cmd.args(["hook", "status"])
+    run_as(&["hook", "status", "claude"], env, payload)
+}
+
+/// `ralphy <args>` with `payload` on stdin: the exit code and the stdout.
+fn run_as(args: &[&str], env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
+    let mut cmd = crate::support::ralphy_command();
+    cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -82,10 +87,8 @@ fn hook_status_appends_one_line_per_call_and_always_answers_empty_json() {
     assert_eq!(lines.len(), 2, "{text}");
     assert_eq!(lines[0]["event"], "PreToolUse");
     assert_eq!(lines[0]["tool_name"], "AskUserQuestion");
-    assert_eq!(
-        lines[0]["tool_input"]["questions"][0]["question"],
-        "which port?"
-    );
+    assert_eq!(lines[0]["question"], "which port?");
+    assert!(lines[0].get("tool_input").is_none(), "{text}");
     assert!(lines[0]["ts"].as_str().is_some_and(|t| !t.is_empty()));
     assert_eq!(lines[1]["event"], "Stop");
     assert!(lines[1].get("interrupted").is_none(), "{text}");
@@ -102,4 +105,49 @@ fn hook_status_appends_one_line_per_call_and_always_answers_empty_json() {
         r#"{"hook_event_name":"Stop"}"#,
     );
     assert_eq!((code, stdout.as_str()), (0, "{}"));
+}
+
+/// The lines of the status file at `path`.
+fn lines_of(path: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+/// ADR-0085 D6: Claude gets `{}`, every other vendor nothing; each call
+/// appends one line.
+#[test]
+fn hook_status_prints_by_vendor() {
+    let dir = tempfile::tempdir().unwrap();
+    for (vendor, want) in [("claude", "{}"), ("codex", ""), ("opencode", "")] {
+        let file = dir.path().join(format!("{vendor}.jsonl"));
+        let (code, stdout) = run_as(
+            &["hook", "status", vendor],
+            Some(&file),
+            r#"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"Bash","tool_use_id":"u1"}"#,
+        );
+        assert_eq!((code, stdout.as_str()), (0, want), "{vendor}");
+        let lines = lines_of(&file);
+        assert_eq!(lines.len(), 1, "{vendor}: {lines:?}");
+        let line: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(line["event"], "PreToolUse", "{vendor}");
+        assert_eq!(line["tool_use_id"], "u1", "{vendor}");
+    }
+}
+
+/// A settings file written before the vendor argument runs `hook status`
+/// alone: that is Claude, and it still gets `{}`.
+#[test]
+fn hook_status_without_a_vendor_is_claude() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("agent-status.jsonl");
+    let (code, stdout) = run_as(
+        &["hook", "status"],
+        Some(&file),
+        r#"{"hook_event_name":"Stop","session_id":"s1"}"#,
+    );
+    assert_eq!((code, stdout.as_str()), (0, "{}"));
+    assert_eq!(lines_of(&file).len(), 1);
 }

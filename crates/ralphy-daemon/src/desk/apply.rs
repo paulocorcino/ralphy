@@ -108,6 +108,8 @@ pub struct WindowFields {
     pub locked: Option<bool>,
     #[serde(default)]
     pub console_name: Option<String>,
+    #[serde(default)]
+    pub done_mark: Option<bool>,
     #[serde(default, deserialize_with = "present")]
     pub checkout: Option<Option<String>>,
     #[serde(default)]

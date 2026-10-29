@@ -1,0 +1,26 @@
+{
+  "requests": [
+    {
+      "detail": "blocked",
+      "dismissable": true,
+      "id": "issue:20261028-100000:71",
+      "issue": "71",
+      "kind": "run-finished",
+      "repo": "owner/attention",
+      "run": "01RUNFINISHED",
+      "since": "<since>",
+      "vendor": "codex"
+    },
+    {
+      "detail": "blocked",
+      "dismissable": true,
+      "id": "issue:20261028-100000:72",
+      "issue": "72",
+      "kind": "run-finished",
+      "repo": "owner/attention",
+      "run": "01RUNFINISHED",
+      "since": "<since>",
+      "vendor": "codex"
+    }
+  ]
+}

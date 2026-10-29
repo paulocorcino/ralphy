@@ -353,6 +353,9 @@
   font-size: 0.65rem;
   color: var(--text-muted);
 }
+.session-done-mark {
+  margin-left: 0.25rem;
+}
 .session-checkout-menu {
   position: absolute;
   z-index: 5;

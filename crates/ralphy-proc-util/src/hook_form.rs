@@ -373,6 +373,120 @@ fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 
+// --- Codex ------------------------------------------------------------------
+
+/// The Codex hook events a status hook is registered on (ADR-0085 D4, D5,
+/// D9). Codex fails open on every one of them when the hook exits 1 or does
+/// not start; only exit 2 blocks, and `ralphy hook status` never exits 2.
+/// Measured with codex-cli 0.160.0 (Windows) and 0.162.1 (WSL), 2026-10-28;
+/// the facts the Codex code below names are from the same probes.
+pub const CODEX_STATUS_EVENTS: [&str; 7] = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "Stop",
+    "Interrupt",
+];
+
+/// The flag without which Codex runs no hook at all, and says nothing about
+/// it.
+pub const CODEX_HOOK_TRUST_FLAG: &str = "--dangerously-bypass-hook-trust";
+
+/// The arguments that give Codex the status hooks at launch: the trust flag,
+/// then one `-c hooks.<Event>=[...]` per event of `status_events`, each
+/// running `<exe> hook status codex`. The caller puts them on the same side
+/// of `exec` as its other `-c`: Codex drops a `-c` list given before `exec`
+/// when another one follows it.
+pub fn codex_hook_args(exe: &Path, status_events: &[&str]) -> Vec<String> {
+    let command = toml_basic_string(&codex_hook_command(exe));
+    let mut args = vec![CODEX_HOOK_TRUST_FLAG.to_string()];
+    for event in status_events {
+        args.push("-c".to_string());
+        args.push(format!(
+            "hooks.{event}=[{{hooks=[{{type=\"command\",command={command}}}]}}]"
+        ));
+    }
+    args
+}
+
+/// Whether the project at `dir` has Codex hooks of its own: a
+/// `.codex/hooks.json`, or a `.codex/config.toml` with a root `hooks` key,
+/// in `dir` or in a folder above it up to the one with `.git`. A file that
+/// cannot be read or parsed counts as hooks. [`CODEX_HOOK_TRUST_FLAG`] would
+/// run those hooks with no trust prompt (spike M1 of 2026-10-28), so a
+/// caller gives neither the flag nor the status hooks when this holds
+/// (ADR-0085 amendment of 2026-10-29).
+pub fn codex_project_has_hooks(dir: &Path) -> bool {
+    let mut layers = Vec::new();
+    for layer in dir.ancestors() {
+        layers.push(layer);
+        if layer.join(".git").exists() {
+            return layers.into_iter().any(codex_layer_has_hooks);
+        }
+    }
+    codex_layer_has_hooks(dir)
+}
+
+/// [`codex_project_has_hooks`] for one folder.
+fn codex_layer_has_hooks(dir: &Path) -> bool {
+    let codex = dir.join(".codex");
+    if !matches!(codex.join("hooks.json").try_exists(), Ok(false)) {
+        return true;
+    }
+    match std::fs::read_to_string(codex.join("config.toml")) {
+        Ok(text) => text
+            .parse::<toml::Table>()
+            .map_or(true, |table| table.contains_key("hooks")),
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
+/// The hook command line Codex runs on this platform.
+pub fn codex_hook_command(exe: &Path) -> String {
+    codex_hook_command_for(exe, cfg!(windows))
+}
+
+/// The hook command line for a Windows or a Unix Codex. On Windows Codex runs
+/// a hook through `pwsh -NoProfile -Command`, where a quoted path is a string
+/// and not a call, so the command starts with the call operator `&`; the
+/// path has `/`. On Unix it is a shell command line.
+pub fn codex_hook_command_for(exe: &Path, windows: bool) -> String {
+    let exe = crate::exe::plain_path(exe.to_path_buf());
+    let text = exe.to_string_lossy();
+    if windows {
+        let path = text
+            .replace('\\', "/")
+            .replace('`', "``")
+            .replace('$', "`$")
+            .replace('"', "`\"");
+        format!("& \"{path}\" hook status codex")
+    } else {
+        format!("{} hook status codex", shell_quote(&text))
+    }
+}
+
+/// The command `ralphy doctor` runs to check the Codex hook: the program and
+/// its arguments, run without a shell, the same program and arguments a
+/// Codex hook runs.
+pub fn codex_check_hook(exe: &Path) -> HookCommand {
+    HookCommand {
+        program: crate::exe::plain_path(exe.to_path_buf()),
+        args: ["hook", "status", "codex"].map(String::from).to_vec(),
+        form: HookForm::Exec,
+        reason: "the check runs the program and the arguments of the Codex hook without a shell"
+            .to_string(),
+    }
+}
+
+/// `text` as a TOML basic string: in quotes, with `\` and `"` escaped. A
+/// `\` left bare in a Windows path is an invalid TOML escape, and Codex then
+/// rejects the whole `-c`.
+fn toml_basic_string(text: &str) -> String {
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +630,70 @@ mod tests {
             ".claude{0}settings.local.json",
             std::path::MAIN_SEPARATOR
         )));
+    }
+
+    /// Codex on Windows runs a hook through PowerShell, where a quoted path
+    /// is a string and not a call: the command starts with the call operator.
+    #[test]
+    fn codex_hook_uses_the_call_operator_on_windows() {
+        let exe = Path::new(r"C:\Users\a b\ralphy.exe");
+        let windows = codex_hook_command_for(exe, true);
+        assert_eq!(windows, r#"& "C:/Users/a b/ralphy.exe" hook status codex"#);
+        assert!(windows.starts_with("& \"") && windows.ends_with("hook status codex"));
+        let unix = codex_hook_command_for(Path::new("/a b/ralphy"), false);
+        assert_eq!(unix, "'/a b/ralphy' hook status codex");
+        // Each `-c` value is TOML: the quotes of the command are escaped.
+        let args = codex_hook_args(exe, &["Stop"]);
+        let want = if cfg!(windows) {
+            r#"hooks.Stop=[{hooks=[{type="command",command="& \"C:/Users/a b/ralphy.exe\" hook status codex"}]}]"#
+        } else {
+            r#"hooks.Stop=[{hooks=[{type="command",command="'C:\\Users\\a b\\ralphy.exe' hook status codex"}]}]"#
+        };
+        assert_eq!(args, [CODEX_HOOK_TRUST_FLAG, "-c", want]);
+    }
+
+    /// A project's own Codex hooks are a `hooks.json` or a `config.toml`
+    /// with a root `hooks` key; a config that does not parse counts as
+    /// hooks, and so does one in the repo root above the folder.
+    #[test]
+    fn a_project_with_its_own_codex_hooks_is_seen() {
+        // (why, the file under `.codex` and its text, has hooks); `None` is
+        // an empty `.codex`, and an empty name is no `.codex` at all.
+        type Row<'a> = (&'a str, Option<(&'a str, &'a str)>, bool);
+        let rows: [Row; 6] = [
+            ("hooks.json", Some(("hooks.json", "{}")), true),
+            (
+                "config with hooks",
+                Some(("config.toml", "[[hooks.Stop]]\nhooks = []\n")),
+                true,
+            ),
+            (
+                "config without hooks",
+                Some(("config.toml", "model = \"m\"\n[tui]\nhooks = 1\n")),
+                false,
+            ),
+            ("broken config", Some(("config.toml", "hooks = = [")), true),
+            ("an empty .codex", None, false),
+            ("no .codex", Some(("", "")), false),
+        ];
+        for (why, file, want) in rows {
+            let dir = tempfile::tempdir().expect("a temp dir");
+            match file {
+                Some(("", _)) => {}
+                Some((name, text)) => {
+                    std::fs::create_dir_all(dir.path().join(".codex")).expect("the .codex dir");
+                    std::fs::write(dir.path().join(".codex").join(name), text).expect("the file");
+                }
+                None => std::fs::create_dir_all(dir.path().join(".codex")).expect("the .codex dir"),
+            }
+            assert_eq!(codex_project_has_hooks(dir.path()), want, "{why}");
+        }
+        let repo = tempfile::tempdir().expect("a temp dir");
+        std::fs::create_dir_all(repo.path().join(".git")).expect("the .git dir");
+        std::fs::create_dir_all(repo.path().join(".codex")).expect("the .codex dir");
+        std::fs::write(repo.path().join(".codex/hooks.json"), "{}").expect("the file");
+        let sub = repo.path().join("crates").join("a");
+        std::fs::create_dir_all(&sub).expect("the sub dir");
+        assert!(codex_project_has_hooks(&sub), "the repo root's hooks");
     }
 }

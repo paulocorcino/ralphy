@@ -3,7 +3,7 @@
 //! and transport spine; the run-time notifier Layer (D1/D6) lands in a later
 //! slice.
 
-pub mod client;
+pub use ralphy_telegram::client;
 pub mod config;
 pub mod notifier;
 
@@ -87,11 +87,10 @@ fn setup(token_arg: Option<String>) -> Result<()> {
     let chat_id = chat_id.context(
         "no /start received in time — re-run `telegram setup` and send /start to the bot",
     )?;
-    TelegramConfig {
+    config::save(&TelegramConfig {
         token,
         chat_id: Some(chat_id),
-    }
-    .save()?;
+    })?;
     println!("Captured chat {chat_id}. Telegram notifications are configured.");
     Ok(())
 }
@@ -135,7 +134,7 @@ fn disable() -> Result<()> {
         println!("Telegram was not configured; nothing to remove.");
         return Ok(());
     }
-    TelegramConfig::delete()?;
+    config::delete()?;
     println!("Telegram config removed.");
     Ok(())
 }

@@ -18,6 +18,7 @@ mod agent_status;
 mod kept;
 mod pump;
 mod record;
+pub use agent_status::TurnEnd;
 #[cfg(test)]
 use kept::publish;
 use kept::{replay_and_subscribe, KeptOutput, Subscribed};
@@ -59,10 +60,13 @@ struct ManagedSession {
     /// When the tick first read a hook line; once set, the console is never
     /// silent again.
     first_line: Mutex<Option<SystemTime>>,
-    /// The silence reason and when the silence began, while it lasts.
-    silent: Mutex<Option<(String, SystemTime)>>,
+    /// Why the state is not reported, the reason in words, and when it
+    /// began, while it lasts.
+    silent: Mutex<Option<(crate::agent_state::Unreported, String, SystemTime)>>,
     /// Whether this console already logged that it became silent.
     logged_silent: AtomicBool,
+    /// The turns this console finished (docs/adr/0085 D11).
+    turn_ends: Mutex<agent_status::TurnEnds>,
 }
 
 /// Who holds the writer slot: the bridge's eviction token, and the holder the
@@ -94,15 +98,40 @@ impl ManagedSession {
     /// the single writer and a concurrent `close` do not race; the lock is held
     /// only to queue the bytes, never for the PTY write itself. The first
     /// write that is the operator's input starts the silence clock; a reply
-    /// the terminal sent by itself does not.
+    /// the terminal sent by itself does not. The operator's input also ends
+    /// the permission `waiting` of a vendor that sends no grant event
+    /// (ADR-0085 D7.5); the next tick reports the change.
     fn write(&self, bytes: &[u8]) -> Result<()> {
         if !bytes.is_empty() && !crate::agent_state::is_terminal_report(bytes) {
             self.first_input
                 .lock()
                 .expect("first_input mutex")
                 .get_or_insert_with(SystemTime::now);
+            self.operator_input();
         }
         self.session.lock().expect("session mutex").write(bytes)
+    }
+
+    /// Fold the operator's input into the agent state (ADR-0085 D7.5).
+    fn operator_input(&self) {
+        self.operator_input_between(|| {});
+    }
+
+    /// [`operator_input`](Self::operator_input), with `between` run after
+    /// the input is folded and before the state is stored, so a test can run
+    /// a tick there. The tail stays locked until the state is stored, as in
+    /// `poll_status_between`: a tick between the fold and the store would
+    /// else store a newer state that this older one then overwrites.
+    fn operator_input_between(&self, between: impl FnOnce()) {
+        let Some(status) = &self.status else {
+            return;
+        };
+        let mut tail = status.tail.lock().expect("tail mutex");
+        let folded = tail.operator_input();
+        between();
+        if let Some(obs) = folded {
+            *self.agent_state.lock().expect("agent_state mutex") = Some(obs);
+        }
     }
 
     /// Resize the PTY window and the screen to the same clamped size
@@ -281,8 +310,18 @@ impl SessionManager {
         let kept = KeptOutput::new(id, spec.rows, spec.cols);
         // Lifted before the spec is consumed by the spawn.
         let name = spec.name.clone();
+        let silent = spec.unreported_reason.take().map(|r| {
+            (
+                crate::agent_state::Unreported::NoSource,
+                r,
+                SystemTime::now(),
+            )
+        });
         let status = spec.status.clone().map(|files| StatusTail {
-            tail: Mutex::new(crate::agent_state::Tail::new(files.status.clone())),
+            tail: Mutex::new(crate::agent_state::Tail::new(
+                files.status.clone(),
+                files.vendor,
+            )),
             files,
         });
         // The hook files were written before the spawn (the child reads them
@@ -326,8 +365,9 @@ impl SessionManager {
             shown: Mutex::new(None),
             first_input: Mutex::new(None),
             first_line: Mutex::new(None),
-            silent: Mutex::new(None),
+            silent: Mutex::new(silent),
             logged_silent: AtomicBool::new(false),
+            turn_ends: Mutex::default(),
         });
         self.sessions
             .lock()

@@ -194,6 +194,19 @@ fn detach_warn() {
     warn!(target: "ralphy_cli::run::snapshot", "snapshot worker did not finish in time — detaching");
 }
 
+/// The run's removal guard (ADR-0047 §8), which also keeps the last document
+/// in the run folder as its final snapshot (docs/adr/0085 D11). A failure to
+/// keep it is logged and never fails the run.
+pub(super) fn snapshot_guard(
+    repo_root: &std::path::Path,
+    runid: &str,
+    run_dir: &std::path::Path,
+) -> ralphy_run_snapshot::SnapshotGuard {
+    ralphy_run_snapshot::SnapshotGuard::new(repo_root, runid).keep_final_in(run_dir, |e| {
+        warn!(error = %e, "could not keep the final run snapshot in the run folder");
+    })
+}
+
 /// Spawn the `"ralphy-snapshot"` worker draining `queue` through a
 /// [`SnapshotEngine`]. A spawn failure leaves the installed Layer inert (the ring
 /// just fills and drops) rather than aborting the run.
@@ -347,6 +360,70 @@ mod tests {
 
         drop(SnapshotGuard::new(dir.path(), runid));
         assert!(!path.exists(), "the guard removes the document at exit");
+    }
+
+    /// The end of a run: the real worker writes its last document, and the
+    /// run's guard moves it into the run folder, so the folder keeps each
+    /// issue's terminal status and the live document is gone.
+    #[test]
+    fn a_finished_run_leaves_its_final_snapshot_in_its_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let runid = "01FINALSNAPSHOT";
+        let run_dir = dir
+            .path()
+            .join(".ralphy")
+            .join("runs")
+            .join("20261028-100000");
+        std::fs::create_dir_all(&run_dir).unwrap();
+        let queue = Arc::new(EventQueue::new());
+        queue.push(RunEvent::QueueBuilt {
+            count: 2,
+            order: vec![71, 72],
+            stop_before: None,
+            issues: serde_json::json!([{"number": 71, "title": "a"}, {"number": 72, "title": "b"}]),
+            assignee_filter: None,
+            scope: None,
+        });
+        for number in [71, 72] {
+            queue.push(RunEvent::IssueStarted {
+                number,
+                title: "t".into(),
+            });
+        }
+        queue.push(RunEvent::IssueClosed {
+            number: 71,
+            tokens: 0,
+            invocations: 1,
+            usage: UsageLite::default(),
+        });
+        queue.push(RunEvent::NonGreen {
+            number: 72,
+            outcome: "Stuck".into(),
+        });
+        let guard = snapshot_guard(dir.path(), runid, &run_dir);
+        try_start_snapshot(
+            test_ctx(runid),
+            RunState::new("final", 2),
+            dir.path().to_path_buf(),
+            queue,
+            dir.path().join(".ralphy").join("plan.md"),
+        )
+        .expect("the snapshot worker spawns")
+        .shutdown();
+        drop(guard);
+
+        assert!(
+            !snapshot_path(dir.path(), runid).exists(),
+            "the live document is gone"
+        );
+        let kept = ralphy_run_snapshot::read_final(&run_dir).expect("the run folder keeps it");
+        assert_eq!(kept.runid, runid);
+        let statuses: Vec<(u64, &str)> = kept
+            .issues
+            .iter()
+            .map(|i| (i.number, i.status.as_str()))
+            .collect();
+        assert_eq!(statuses, [(71, "done"), (72, "non_green")]);
     }
 
     /// An engine over a tempdir repo whose `.ralphy/plan.md` holds `md`.

@@ -32,8 +32,23 @@ pub(crate) fn commit(root: &Path, file: &str, body: &str, msg: &str) {
     run_git(root, &["commit", "--quiet", "-m", msg]);
 }
 
+/// The secrets of the developer's own setup that no `ralphy` a test starts
+/// may read: so a test never reaches the Telegram API or an event sink with a
+/// real token.
+const SECRET_ENV: [&str; 2] = ["RALPHY_TELEGRAM_TOKEN", "RALPHY_EVENTS_TOKEN"];
+
+/// The `ralphy` binary under test, as every verb module starts it: without
+/// the Telegram and events tokens of the test's own environment.
+pub(crate) fn ralphy_command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_ralphy"));
+    for key in SECRET_ENV {
+        cmd.env_remove(key);
+    }
+    cmd
+}
+
 pub(crate) fn ralphy(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    ralphy_command()
         .args(args)
         .output()
         .expect("spawning ralphy")

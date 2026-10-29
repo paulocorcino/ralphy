@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::process::Command;
 
 fn jsonl_snapshot(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     std::fs::read_dir(dir)
@@ -18,7 +17,7 @@ fn jsonl_snapshot(dir: &Path) -> BTreeMap<String, Vec<u8>> {
 
 fn run_recovery(usage: &Path, stores: &Path) -> std::process::Output {
     let missing = |name: &str| stores.join(name);
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    crate::support::ralphy_command()
         .args(["usage", "--recover-models"])
         .env("RALPHY_USAGE_DIR", usage)
         .env("RALPHY_CLAUDE_PROJECTS_DIR", stores.join("claude"))

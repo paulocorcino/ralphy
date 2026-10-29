@@ -188,9 +188,17 @@ export function connectionStore(deps: ConnectionStoreDeps) {
         // This tab's own write: it already holds the result.
         if (payload?.tab && payload.tab === WBDeskSink?.tabId?.()) return;
         sendWindow(window, "workbench:desk-reread");
-      } else if (verb === "repos.dirty" || verb === "peers.dirty") {
+      } else {
+        this.onFactPush(verb);
+      }
+    },
+    // A push that asks to read one fact again, with nothing to settle.
+    onFactPush(verb: string) {
+      if (verb === "repos.dirty" || verb === "peers.dirty") {
         // The change set and the branch have their own pushes.
         sendWindow(window, "workbench:repos-reread", { git: false });
+      } else if (verb === "attention.dirty") {
+        sendWindow(window, "workbench:attention-reread");
       }
     },
 

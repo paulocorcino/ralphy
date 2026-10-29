@@ -1,6 +1,6 @@
 # The daemon keeps one attention list, and every agent state comes from one kind of state source
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: observability and cost, consistency of the workbench; constraint security
 
@@ -146,6 +146,10 @@ messages.
 | An agent the idle watchdog reaped | the same as the line above |
 | A console whose "tell me when it is done" mark is on, at its next `working → done` from `Stop` | the operator opens the console, or dismisses it |
 
+A finished run's requests come from `<run folder>/snapshot.json`, its last
+snapshot, which the run writes when it ends, before it removes the live one
+(amendment, Paulo, 2026-10-28).
+
 A usage-limit wait, a plain `done`, a `done` at a session boundary (resume,
 clear, compact) and a turn the operator interrupted open nothing. A stalled
 squad and an `ask_human` (ADR-0076) are sources when they are built.
@@ -173,11 +177,32 @@ nothing. The message links to the console.
 
 The operator is **present** when a page has its tab visible and the
 operator's last key, click or touch in it is less than five minutes old.
-Each page reports both facts to the daemon it is connected to, and that
-daemon passes "present" to its peers on the link it already holds. With no
+Each page reports both facts to the daemon it is connected to. With no
 signal (no page, a peer without the link, a report older than the window)
 the operator is not present: one message too many costs less than an agent
-that waits all night. The bot client and its config move from `ralphy-cli` to a crate
+that waits all night.
+
+A WSL or SSH peer that is integrated with a main daemon sends no Telegram
+message itself (amendment, Paulo, 2026-10-28). A main daemon that has its
+own bot claims each peer in its peers folder every minute
+(`POST /api/telegram/main {"daemon_id"}`); the claim holds three minutes.
+A claim comes only on the machine path, with the daemon's bearer, as one
+daemon calls another: a request that carries only a page's session cookie,
+or no bearer at all under the localhost policy, is refused (403), so a page
+cannot silence a daemon's messages.
+While it holds, the peer sends nothing, even with a bot of its own, and the
+main sends the peer's console requests under the same rules, with a link to
+`?console=<peer daemon_id>/<session id>` on the main's last page. The main
+reads them, and the peer's presence (`"present"`), from the peer's
+`?local=1` attention list on each tick, so the operator at a page of the
+peer is present for the main too. Each daemon has one Telegram state:
+`off` (no bot), `sends` (it sends), or `through-main` (a main sends for it);
+the attention panel shows it per daemon, and `ralphy doctor` prints it. Two
+daemons that are each other's peers, both with a bot, do not claim each
+other: the one whose daemon id sorts first is the main. An older peer has
+no claim route and keeps sending by itself if it has a bot; until both run
+the new version the operator may get one message from each. The peer
+protocol version does not change. The bot client and its config move from `ralphy-cli` to a crate
 that both the CLI and the daemon use (`ralphy-telegram`); it depends on no
 other Ralphy crate.
 
@@ -245,7 +270,37 @@ hibernated one loses it. `unknown` and `none` keep the ADR-0083 rules.
   the fold of the adapter and of the daemon.
 - D5, D6: not checked by code: needs a live vendor CLI.
 - D10: not checked by code: manual.
-- D14: not checked by code: the crate graph is reviewed in the PR
-  (ARCHITECTURE.md §5).
+- D14: checked by `crates/xtask/tests/crate_dependencies.rs`: `ralphy-telegram`
+  has no `ralphy-*` dependency (ARCHITECTURE.md §5). The integrated peer is
+  checked by the tests of `telegram_state.rs`, `routes/api_telegram` and
+  `attention/telegram/peer_tests.rs`: a claim makes the peer `through-main`
+  for three minutes, and the main sends the peer's console request once.
 - D16: not checked by code: manual; no inbound Telegram call exists outside
   `ralphy telegram setup`.
+
+## Amendment 2026-10-29 — D2, D3: no hook trust for a project with its own Codex hooks
+
+Decided by the parent agent of the review fixes, on Paulo's request.
+
+Codex runs no hook without `--dangerously-bypass-hook-trust`, so Ralphy
+passes it with the status hooks. The flag also runs the project's own hooks,
+`<repo>/.codex/hooks.json` and the `hooks` of `<repo>/.codex/config.toml`,
+with no trust prompt, even in a project Codex has not trusted (the Codex
+spike of 2026-10-28, M1). So Ralphy gives neither the flag nor the status
+hooks to a console or a run whose folder, or a folder above it up to the
+one with `.git`, has such a file at launch. Only a `hooks` key at the top
+level of `config.toml` counts. A `config.toml` that cannot be read or
+parsed counts as one. The check does not see a Codex plugin's hooks, a
+`hooks` key inside a nested table (a profile), hooks added after the
+launch, or folders above the one with `.git` that a user's
+`project_root_markers` makes Codex read. These cases are not measured, and
+are accepted for now (ADR-0072, amendment of 2026-10-29). The rule is one function,
+`hook_form::codex_project_has_hooks` in `ralphy-proc-util`, used by the
+daemon and the Codex adapter. Such a console has no state source from its
+start: its agent block on `/api/sessions` has `source: "none"` and a reason
+that says why, and the console shows the reason where a silent console
+shows its own. It is not an attention request (D11), because it would stay
+open for the console's whole life and keep the count at the top of the page
+above zero. Such a run has no agent state, and its log says why. The user's own
+hooks in `~/.codex` still run under the flag: they are the operator's own
+choice (ADR-0072, amendment of 2026-10-29).

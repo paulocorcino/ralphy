@@ -48,6 +48,9 @@ ralphy-release.workspace = true
 # The run-snapshot channel's shared document + reader (ADR-0047 §10): the leaf
 # crate the CLI writes and the daemon lists `runs.list` from; serde only.
 ralphy-run-snapshot.workspace = true
+# The Telegram bot (ADR-0085 D14): the leaf crate with the blocking client and
+# the reading of the config, which the daemon sends the console messages with.
+ralphy-telegram.workspace = true
 # `terminal_size()` lets the session_test_child observe PTY resizes; a normal dep
 # (not dev) because src/bin/ targets don't see [dev-dependencies].
 terminal_size = "0.4"

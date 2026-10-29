@@ -69,81 +69,104 @@ pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_string();
-        let raw = match std::fs::read_to_string(&path) {
-            Ok(raw) => raw,
-            Err(_) => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "unreadable"));
-                continue;
-            }
-        };
-        // `v` is read before the struct so a document a newer ralphy retyped is
-        // refused as such rather than misreported as malformed.
-        let value: serde_json::Value = match serde_json::from_str(&raw) {
-            Ok(value) => value,
-            Err(_) => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "malformed"));
-                continue;
-            }
-        };
-        match value.get("v").and_then(|v| v.as_u64()) {
-            Some(v) if v > SNAPSHOT_VERSION as u64 => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "unsupported version"));
-                continue;
-            }
-            Some(_) => {}
-            None => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "malformed"));
-                continue;
-            }
-        }
-        let snap: RunSnapshot = match serde_json::from_value(value) {
-            Ok(snap) => snap,
-            Err(_) => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "malformed"));
-                continue;
-            }
-        };
-        // `pid` is `#[serde(default)]`, so a document that omits it parses as 0
-        // — and 0 is not a process: on Unix `kill(0, 0)` targets the CALLER's
-        // process group and would classify it alive forever, so the orphan sweep
-        // could never reclaim it. Refuse it before the predicate ever sees it.
-        if snap.pid == 0 {
-            listing
-                .unreadable
-                .push(UnreadableRun::new(&name, "malformed"));
-            continue;
-        }
-        if is_alive(snap.pid) {
-            listing.live.push(snap);
-        } else {
-            // Orphan sweep: a hard crash must not accumulate documents.
-            let _ = std::fs::remove_file(&path);
-            // …nor sentinels. A stop written for a run that died before noticing
-            // it would otherwise sit here forever. It is already inert (the next
-            // run has a different runid), so this is hygiene, not correctness —
-            // but the directory is the operator's, and it should stay readable.
-            let _ = std::fs::remove_file(crate::stop_path(repo_root, &snap.runid));
-        }
+        visit(repo_root, &path, &is_alive, &mut listing);
     }
     listing
         .live
         .sort_by(|a, b| (&a.started_at, &a.runid).cmp(&(&b.started_at, &b.runid)));
     listing
+}
+
+/// Classify one `.json` document of the snapshot directory into `listing`.
+fn visit(repo_root: &Path, path: &Path, is_alive: &impl Fn(u32) -> bool, listing: &mut RunListing) {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        // Listed, then gone: another reader's orphan sweep (the attention
+        // tick runs this function too) or the run's own exit removed it.
+        // A run that is gone is not an unreadable run. On Windows a file in
+        // the middle of its deletion fails the read with `PermissionDenied`,
+        // not `NotFound`, so the test is whether the file still exists.
+        Err(_) if !path.exists() => return,
+        Err(_) => {
+            listing
+                .unreadable
+                .push(UnreadableRun::new(&name, "unreadable"));
+            return;
+        }
+    };
+    let snap = match parse(&raw) {
+        Ok(snap) => snap,
+        Err(reason) => {
+            listing.unreadable.push(UnreadableRun::new(&name, reason));
+            return;
+        }
+    };
+    // `pid` is `#[serde(default)]`, so a document that omits it parses as 0
+    // — and 0 is not a process: on Unix `kill(0, 0)` targets the CALLER's
+    // process group and would classify it alive forever, so the orphan sweep
+    // could never reclaim it. Refuse it before the predicate ever sees it.
+    if snap.pid == 0 {
+        listing
+            .unreadable
+            .push(UnreadableRun::new(&name, "malformed"));
+        return;
+    }
+    if is_alive(snap.pid) {
+        listing.live.push(snap);
+    } else {
+        // Orphan sweep: a hard crash must not accumulate documents.
+        remove_swept(path);
+        // …nor sentinels. A stop written for a run that died before noticing
+        // it would otherwise sit here forever. It is already inert (the next
+        // run has a different runid), so this is hygiene, not correctness —
+        // but the directory is the operator's, and it should stay readable.
+        remove_swept(&crate::stop_path(repo_root, &snap.runid));
+    }
+}
+
+/// Remove `path`, a file of a run that is gone. A file that is already gone
+/// is no error: another reader's sweep removed it first, or no stop was
+/// written. Any other failure is logged at debug, since the next pass tries
+/// again and a warning there would repeat on each tick of the daemon.
+fn remove_swept(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => tracing::debug!(
+            path = %path.display(),
+            error = %e,
+            "could not remove a file of a run that is gone"
+        ),
+    }
+}
+
+/// One document from its text, or why it is not one: `malformed`, or
+/// `unsupported version` when a newer ralphy wrote it (ADR-0047 §6).
+fn parse(raw: &str) -> Result<RunSnapshot, &'static str> {
+    // `v` is read before the struct so a document a newer ralphy retyped is
+    // refused as such rather than misreported as malformed.
+    let value: serde_json::Value = serde_json::from_str(raw).map_err(|_| "malformed")?;
+    match value.get("v").and_then(|v| v.as_u64()) {
+        Some(v) if v > SNAPSHOT_VERSION as u64 => return Err("unsupported version"),
+        Some(_) => {}
+        None => return Err("malformed"),
+    }
+    serde_json::from_value(value).map_err(|_| "malformed")
+}
+
+/// The final snapshot a finished run left in `run_dir`
+/// ([`crate::final_snapshot_path`]). `None` when there is none, when it cannot
+/// be read, or when it is not a document this build reads — the same rule
+/// [`list_runs`] applies to a live document. Its `pid` is the finished run's
+/// and says nothing about liveness.
+pub fn read_final(run_dir: &Path) -> Option<RunSnapshot> {
+    let raw = std::fs::read_to_string(crate::final_snapshot_path(run_dir)).ok()?;
+    parse(&raw).ok()
 }
 
 #[cfg(test)]
@@ -290,6 +313,36 @@ mod tests {
         );
     }
 
+    /// A document listed and then removed before the read (the orphan sweep of
+    /// another reader, or the run's own exit) is a run that is gone: not live,
+    /// and not "unreadable".
+    #[test]
+    fn a_document_removed_after_the_listing_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        seed(dir.path(), "01GONE", 111, "2026-07-24T10:00:00-03:00");
+        let path = snapshot_path(dir.path(), "01GONE");
+        std::fs::remove_file(&path).unwrap();
+        let mut listing = RunListing::default();
+        visit(dir.path(), &path, &|_| true, &mut listing);
+        assert_eq!(listing, RunListing::default());
+    }
+
+    /// A document that is there but cannot be read is reported, not skipped
+    /// as a run that is gone.
+    #[test]
+    fn a_document_that_exists_but_cannot_be_read_is_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        // A folder named like a document: it is listed, and reading it fails.
+        std::fs::create_dir_all(snapshot_path(dir.path(), "01DIR")).unwrap();
+        let listing = list_runs(dir.path(), |_| true);
+        assert!(listing.live.is_empty(), "{listing:?}");
+        assert_eq!(
+            listing.unreadable,
+            [UnreadableRun::new("01DIR", "unreadable")],
+            "{listing:?}"
+        );
+    }
+
     #[test]
     fn list_runs_on_missing_dir_is_empty() {
         let dir = tempfile::tempdir().unwrap();
@@ -339,5 +392,31 @@ mod tests {
         assert!(listing.live.is_empty());
         assert!(!snapshot_path(dir.path(), "01DEAD").exists());
         assert!(!sentinel.exists(), "the sentinel outlived its run");
+    }
+
+    /// A finished run's final snapshot is read by the rule of a live one: a
+    /// document from a newer ralphy is not read, and nor is a missing one.
+    #[test]
+    fn read_final_reads_only_a_document_this_build_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = crate::final_snapshot_path(dir.path());
+        // (case, body, the runid read)
+        let rows: [(&str, Option<&str>, Option<&str>); 4] = [
+            ("no file", None, None),
+            (
+                "this version",
+                Some(r#"{"v":1,"runid":"01DONE"}"#),
+                Some("01DONE"),
+            ),
+            ("a newer version", Some(r#"{"v":2,"runid":"01NEW"}"#), None),
+            ("not a document", Some("{"), None),
+        ];
+        for (case, body, runid) in rows {
+            if let Some(body) = body {
+                std::fs::write(&path, body).unwrap();
+            }
+            let got = read_final(dir.path());
+            assert_eq!(got.map(|s| s.runid).as_deref(), runid, "{case}");
+        }
     }
 }

@@ -1,0 +1,18 @@
+[package]
+name = "ralphy-telegram"
+version = "0.1.0-rc.41"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Leaf crate for the Telegram bot: the blocking Bot API client and the reading of the global Telegram config, shared by the CLI and the daemon."
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+ureq.workspace = true
+directories.workspace = true
+
+[lints]
+workspace = true

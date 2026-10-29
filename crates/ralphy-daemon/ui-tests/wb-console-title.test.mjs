@@ -168,3 +168,31 @@ test("the checkout button opens a menu with the worktrees of the console's repo"
   assert.equal(rows[1].className, "session-checkout-item current");
   assert.equal(rows[3].className, "session-checkout-item create");
 });
+
+test("tell me when it is done sets the mark", () => {
+  // The desk says what is on: the daemon clears the mark when it fires.
+  let desk = [{ id: "w1" }];
+  const { deps, writes } = fakeDeps({ desk: () => desk });
+  const title = createTitle(deps);
+  const win = fakeWindow();
+  const bar = fakeElement("span");
+  title.renderTitle(win, bar, { checkout: "primary" });
+  const bell = bar.children.find((k) => k.className?.includes("session-done-mark"));
+  assert.ok(bell, "an agent console has the item");
+  bell.fire("click");
+  assert.deepEqual(writes.at(-1), { win, fields: { doneMark: true } });
+  // With the mark on, the same click turns it off.
+  desk = [{ id: "w1", doneMark: true }];
+  bell.fire("click");
+  assert.deepEqual(writes.at(-1).fields, { doneMark: false });
+  // A plain shell has no hooks to tell it, and the popup writes nothing.
+  for (const [what, deps2] of [
+    ["a shell", fakeWindow({ _deskKind: "console" })],
+    ["the popup", fakeWindow()],
+  ]) {
+    const { deps: d } = fakeDeps({ OPTS: what === "the popup" ? { canLaunch: false } : {} });
+    const strip = fakeElement("span");
+    createTitle(d).renderTitle(deps2, strip, { checkout: "primary" });
+    assert.ok(!strip.children.some((k) => k.className?.includes("session-done-mark")), what);
+  }
+});

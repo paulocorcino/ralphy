@@ -7,6 +7,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use ralphy_proc_util::hook_form;
+
 // The Codex model family, positioned by weight (ADR-0004, Amendment 2026-07-10).
 // This table is the SINGLE place the pinned `gpt-5.6-*` generation lives: when
 // the vendor ships the next family, the migration is these constants plus a new
@@ -111,14 +113,23 @@ pub(crate) fn tier_to_model_effort(tier: Option<&str>) -> (&'static str, &'stati
 /// (the trailing `-`); the agent's final message is captured to `out_path` for the
 /// sentinel read.
 ///
+/// The child also gets the status hooks (ADR-0085 D2): each runs
+/// `<hook_exe> hook status codex` and appends to `status_file`, which reaches
+/// the hook as `RALPHY_STATUS_FILE`. The hook `-c` values follow
+/// `model_reasoning_effort` after `exec`: Codex drops a `-c` list given before
+/// `exec` when another one follows it.
+///
 /// GUARD ASYMMETRY: `danger-full-access` runs with no equivalent of the Claude
-/// adapter's PreToolUse guard hook (codex-cli has no such hook point) — safety
-/// here rests on the isolated run branch and the prompt's hard rules.
+/// adapter's PreToolUse guard hook — Ralphy gives Codex the status hooks only
+/// — so safety here rests on the isolated run branch and the prompt's hard
+/// rules.
 pub(crate) fn build_codex_command(
     model: &str,
     effort: &str,
     root: &Path,
     out_path: &Path,
+    hook_exe: &Path,
+    status_file: &Path,
 ) -> Command {
     let mut cmd = Command::new("codex");
     cmd.arg("exec")
@@ -131,6 +142,8 @@ pub(crate) fn build_codex_command(
             "model_reasoning_effort=\"{}\"",
             codex_reasoning_effort(effort)
         ))
+        .args(status_hook_args(root, hook_exe))
+        .env(crate::status::STATUS_ENV, status_file)
         .arg("-s")
         .arg("danger-full-access")
         .arg("-o")
@@ -141,6 +154,20 @@ pub(crate) fn build_codex_command(
         .stderr(Stdio::piped())
         .env_remove("OPENAI_API_KEY");
     cmd
+}
+
+/// The status hook arguments of a run in `root`, or none when the project
+/// has Codex hooks of its own: the trust flag would run them with no trust
+/// prompt, so the run goes without an agent state (ADR-0085 amendment of
+/// 2026-10-29).
+fn status_hook_args(root: &Path, hook_exe: &Path) -> Vec<String> {
+    if hook_form::codex_project_has_hooks(root) {
+        tracing::warn!(
+            "this project has its own Codex hooks, so Ralphy does not turn on hook trust for it; the run has no agent state"
+        );
+        return Vec::new();
+    }
+    hook_form::codex_hook_args(hook_exe, &hook_form::CODEX_STATUS_EVENTS)
 }
 
 // ── init one-shot sessions (ADR-0012 stages 2 & 8) ──────────────────────────
@@ -208,7 +235,90 @@ pub(crate) fn build_codex_init_command(
 mod tests {
     use super::*;
 
+    const HOOK_EXE: &str = "/bin/ralphy";
+    const STATUS: &str = "/run/agent-status.jsonl";
+
     // ── build_codex_command ─────────────────────────────────────────────────
+
+    /// Every hook `-c` sits after `exec`, with `model_reasoning_effort`:
+    /// Codex drops a `-c` list given before `exec` when another follows it,
+    /// and without the trust flag it runs no hook at all.
+    #[test]
+    fn codex_command_gives_the_status_hooks_on_one_side_of_exec() {
+        let cmd = build_codex_command(
+            CODEX_MODEL_SOL,
+            "high",
+            Path::new("/repo"),
+            Path::new("/repo/out.txt"),
+            Path::new(HOOK_EXE),
+            Path::new(STATUS),
+        );
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let exec = args.iter().position(|a| a == "exec").expect("exec");
+        assert_eq!(exec, 0, "exec comes first: {args:?}");
+        assert!(
+            args.iter().any(|a| a == "--dangerously-bypass-hook-trust"),
+            "{args:?}"
+        );
+        let values: Vec<&String> = args
+            .windows(2)
+            .filter(|w| w[0] == "-c")
+            .map(|w| &w[1])
+            .collect();
+        for event in hook_form::CODEX_STATUS_EVENTS {
+            let given = values
+                .iter()
+                .filter(|v| v.starts_with(&format!("hooks.{event}=")))
+                .count();
+            assert_eq!(given, 1, "{event}: {values:?}");
+        }
+        assert!(
+            values
+                .iter()
+                .filter(|v| v.starts_with("hooks."))
+                .all(|v| v.contains("hook status codex")),
+            "{values:?}"
+        );
+        assert!(
+            values
+                .iter()
+                .any(|v| v.starts_with("model_reasoning_effort=")),
+            "{values:?}"
+        );
+        let status = cmd
+            .get_envs()
+            .find(|(k, _)| *k == "RALPHY_STATUS_FILE")
+            .and_then(|(_, v)| v);
+        assert_eq!(status, Some(std::ffi::OsStr::new(STATUS)));
+    }
+
+    /// A run in a project with Codex hooks of its own gets neither the trust
+    /// flag nor the status hooks: the flag would run the project's hooks.
+    #[test]
+    fn a_run_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
+        let repo = tempfile::tempdir().expect("a temp dir");
+        std::fs::create_dir_all(repo.path().join(".codex")).expect("the .codex dir");
+        std::fs::write(repo.path().join(".codex").join("hooks.json"), "{}").expect("hooks.json");
+        let args: Vec<String> = build_codex_command(
+            CODEX_MODEL_SOL,
+            "high",
+            repo.path(),
+            &repo.path().join("out.txt"),
+            Path::new(HOOK_EXE),
+            Path::new(STATUS),
+        )
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+        assert!(
+            !args.iter().any(|a| a == hook_form::CODEX_HOOK_TRUST_FLAG),
+            "{args:?}"
+        );
+        assert!(!args.iter().any(|a| a.starts_with("hooks.")), "{args:?}");
+    }
 
     #[test]
     fn build_command_argv_and_env() {
@@ -217,6 +327,8 @@ mod tests {
             "high",
             Path::new("/repo"),
             Path::new("/repo/.ralphy/codex-last.txt"),
+            Path::new(HOOK_EXE),
+            Path::new(STATUS),
         );
         assert_eq!(cmd.get_program().to_string_lossy(), "codex");
 
@@ -235,6 +347,8 @@ mod tests {
                 effort,
                 Path::new("/repo"),
                 Path::new("/repo/out.txt"),
+                Path::new(HOOK_EXE),
+                Path::new(STATUS),
             )
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -276,6 +390,8 @@ mod tests {
                 word,
                 Path::new("/repo"),
                 Path::new("/repo/out.txt"),
+                Path::new(HOOK_EXE),
+                Path::new(STATUS),
             );
             let args: Vec<String> = cmd
                 .get_args()

@@ -134,3 +134,11 @@ test("a console tab is read with its grid, and one stored before the grid is a g
   assert.deepEqual(tabs([{ id: "x", deskId: "a", title: "t", grid: [[]] }]), []);
   assert.deepEqual(tabs([{ id: "x", deskId: "a", title: "t", grid: [["a", 3]] }]), []);
 });
+
+// "Notify me in this browser" is on only when the record holds a stored `true`.
+test("the notification switch is read strictly: only a stored true is on", () => {
+  const notify = (fields) => load(JSON.stringify({ v: 1, ...fields })).read().notify;
+  assert.equal(notify({ notify: true }), true);
+  for (const value of [false, "true", 1, null, {}]) assert.equal(notify({ notify: value }), false, String(value));
+  assert.equal(notify({}), false, "absent is off");
+});

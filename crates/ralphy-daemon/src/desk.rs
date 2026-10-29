@@ -74,6 +74,13 @@ pub struct DeskRecord {
     /// exact shape. The store cuts it to [`CONSOLE_NAME_MAX`] characters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_name: Option<String>,
+    /// The operator asked to be told when this console finishes its next
+    /// turn (docs/adr/0085 D11). The daemon clears it when the request
+    /// opens. It lives on the record, not in daemon memory, so a second
+    /// device shows the same mark. `false` is not serialised, so an older
+    /// desk and an older shell keep their exact shape.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub done_mark: bool,
     #[serde(default)]
     pub ts: i64,
 }

@@ -103,13 +103,21 @@ export const WBDeskSync = (function () {
     return true;
   }
 
-  function setWindowFields(rec: LooseRecord, fields: LooseFields) {
+  // The name and the done mark of a window.
+  function setLabels(rec: LooseRecord, fields: LooseFields) {
     let did = false;
-    if (typeof fields.max === "boolean") did = setMaxFlag(rec, fields.max);
     // A blank name is no name: the stored one stays.
     if (typeof fields.consoleName === "string" && fields.consoleName.trim()) {
       did = put(rec, "consoleName", fields.consoleName) || did;
     }
+    if (typeof fields.doneMark === "boolean") did = put(rec, "doneMark", fields.doneMark) || did;
+    return did;
+  }
+
+  function setWindowFields(rec: LooseRecord, fields: LooseFields) {
+    let did = false;
+    if (typeof fields.max === "boolean") did = setMaxFlag(rec, fields.max);
+    did = setLabels(rec, fields) || did;
     if ("checkout" in fields) did = put(rec, "checkout", fields.checkout ?? null) || did;
     if (fields.session) did = setSession(rec, fields.session) || did;
     return did;

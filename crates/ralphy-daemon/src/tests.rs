@@ -375,6 +375,7 @@ mod stage_detach;
 mod stage_fence_list;
 mod stage_fences;
 mod stage_plane;
+mod telegram_claim_auth;
 mod template_sinks;
 mod usage_records;
 mod usage_spend;

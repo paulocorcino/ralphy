@@ -246,7 +246,7 @@ pub fn hooks_unproven_allowed(cause: &str) {
 /// See [`agent_state`].
 pub const AGENT_STATE_MSG: &str = "agent state";
 
-/// The agent's own state — `working`, `waiting`, `done`, `blocked` — as the
+/// The agent's own state — `working`, `waiting`, `done`, `unknown` — as the
 /// vendor's hooks report it (docs/adr/0059 §1–§2). Emitted by the ADAPTER on a
 /// CHANGE only (the hook process has no subscriber); `since` is the hook
 /// event's own timestamp, `detail` names what a `waiting` agent is asking

@@ -109,6 +109,7 @@ fn spawn_detached_child(argv: &[String]) -> Result<Child> {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     ralphy_proc_util::no_window(&mut cmd);
+    crate::child_env::remove_secrets(&mut cmd);
     cmd.spawn()
         .with_context(|| format!("spawning the nudge `{}`", argv.join(" ")))
 }
@@ -256,13 +257,15 @@ pub fn is_distro_running(distro: &str) -> Result<bool> {
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let out = Command::new("wsl.exe")
-        .args(["--list", "--running", "--quiet"])
+    let mut cmd = Command::new("wsl.exe");
+    cmd.args(["--list", "--running", "--quiet"])
         // Honoured since WSL 0.64: emit UTF-8 rather than UTF-16LE. Older builds
         // ignore it, which `decode_wsl_output` is there to survive.
         .env("WSL_UTF8", "1")
         .stdin(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW)
+        .creation_flags(CREATE_NO_WINDOW);
+    crate::child_env::remove_secrets(&mut cmd);
+    let out = cmd
         .output()
         .context("asking wsl.exe which distros are running")?;
     // The exit status is deliberately NOT checked: `--list --running` exits

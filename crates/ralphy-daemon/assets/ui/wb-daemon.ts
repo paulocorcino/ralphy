@@ -17,6 +17,7 @@ import { WBRun } from "./wb-runs.ts";
 import { sendWindow } from "./wb-events.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { Messages } from "./wb-messages.ts";
+import type { PresenceReport } from "./wb-presence.ts";
 
 /** What a persistent socket's owner hears: each open, and each frame. */
 type SocketHandlers = {
@@ -412,12 +413,28 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // carries IS the shell's staleness signal, so a resume here is what re-arms
   // the probe every other resume depends on.
   // The same socket carries the daemon's pushes for the shown facts it owns
-  // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`; ADR-0070
-  // D2): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
+  // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`,
+  // `attention.dirty`; ADR-0070 D2, ADR-0085 D10): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
   // `onOpen(reopened)`, so a reopen reads again what a lost push would have said.
+  // The page's presence reports (wb-presence.ts) ride the same socket:
+  // `reportPresence` sends one when it is open, and each open runs the
+  // `onPresenceOpen` hooks, so a new socket hears the page at once.
+  let presenceSocket: { sendIfOpen: (frame: Uint8Array) => boolean } | null = null;
+  const presenceOpens: (() => void)[] = [];
+  function reportPresence(report: PresenceReport) {
+    if (!presenceSocket) return false;
+    return presenceSocket.sendIfOpen(encodeCommand({ id: 0, verb: "presence.report", payload: report }));
+  }
+  function onPresenceOpen(fn: () => void) {
+    presenceOpens.push(fn);
+  }
+
   function subscribePresence(onPresence: (presence: Presence) => void, { onPush, onOpen }: PresenceHandlers = {}) {
     const sub = persistentSocket("/ws", {
-      onOpen: (_ws: WebSocket, reopened: boolean) => onOpen?.(reopened),
+      onOpen: (_ws: WebSocket, reopened: boolean) => {
+        onOpen?.(reopened);
+        for (const fn of presenceOpens) fn();
+      },
       onMessage: (ev: MessageEvent) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_COMMAND) {
@@ -431,6 +448,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         } catch {}
       },
     });
+    presenceSocket = sub;
     return { resume: sub.resume, close: sub.close };
   }
 
@@ -503,6 +521,8 @@ export function createDaemon(window: Window, document: Document, location: Locat
     subscribeRuns,
     subscribeChanges,
     subscribePresence,
+    reportPresence,
+    onPresenceOpen,
     resumeDecision,
     detachSocket,
     RESUME_DEBOUNCE_MS,

@@ -5,7 +5,7 @@
 //! the daemon validates the path by shape, this process stands in the repo.
 
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 
 use super::support::run_git;
 
@@ -22,7 +22,7 @@ fn init_repo() -> tempfile::TempDir {
 }
 
 fn blob_read(repo: &Path, path: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    crate::support::ralphy_command()
         .args([
             "blob",
             "read",
@@ -133,7 +133,7 @@ fn without_format_the_raw_bytes_go_to_stdout() {
     run_git(repo.path(), &["commit", "--quiet", "-m", "add logo"]);
 
     let plain = |path: &str| {
-        Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        crate::support::ralphy_command()
             .args([
                 "blob",
                 "read",

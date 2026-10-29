@@ -1,5 +1,7 @@
-//! Dialling a peer (docs/adr/0052 §2): the daemon's first — and only — HTTP
-//! client, confined to this one seam.
+//! Dialling a peer (docs/adr/0052 §2): the daemon's HTTP client for its
+//! peers, confined to this one seam. The daemon's calls outside the machine
+//! go through their own crates: the release watch through `ralphy-release`,
+//! the console messages through `ralphy-telegram` (docs/adr/0085 D14).
 //!
 //! Loopback only, always. A descriptor advertising a routable address is refused
 //! before a socket is opened: the whole transport rests on WSL2's

@@ -20,8 +20,8 @@
 // are per-client for the same reason: window ids only, and never a rect or a
 // field of the desk.
 //
-// Three writers share the key (the console's offset, the shell's tabs, the
-// settings toggle), which is why `patch` is read-modify-write: any one of them
+// Four writers share the key (the console's offset, the shell's tabs, the
+// settings toggle, the attention list's notification switch), which is why `patch` is read-modify-write: any one of them
 // writing the whole record would clobber the others'.
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 
@@ -128,6 +128,9 @@ export const WBView = (function () {
               return Array.isArray(c) ? [c.filter((s): s is string => typeof s === "string")] : [];
             })
           : null,
+        // "Notify me in this browser" (the attention list): a stored `true`
+        // only, so a corrupt record never turns notifications on.
+        notify: parsed.notify === true,
         // Where "Slice" opens, as last picked in this browser.
         columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
       };

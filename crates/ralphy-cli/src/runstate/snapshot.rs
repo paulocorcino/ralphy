@@ -142,6 +142,7 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
             model: e.model.clone(),
             effort: e.effort.clone(),
             budget_min: e.budget_min,
+            idle_reaped: e.idle_reaped,
         },
         None => IssueBlock {
             number,
@@ -429,6 +430,21 @@ mod tests {
                 "wb-runs.ts TERMINAL disagrees with IssueStatus::is_terminal on `{wire}`"
             );
         }
+    }
+
+    /// An idle reap is kept on the issue that was active, and only on it.
+    #[test]
+    fn an_idle_reap_projects_on_the_active_issue() {
+        let mut state = two_of_three();
+        state.apply(RunEvent::IdleReaped { idle_minutes: 20 });
+        let snap = project(&ctx(), &state, &PlanProgress::default());
+        assert_eq!(
+            snap.issues
+                .iter()
+                .map(|i| (i.number, i.idle_reaped))
+                .collect::<Vec<_>>(),
+            [(1, false), (2, true), (3, false)]
+        );
     }
 
     /// ADR-0059 §2: `phase.agent` mirrors the fold's agent state, is absent

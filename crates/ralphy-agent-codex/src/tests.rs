@@ -188,6 +188,8 @@ fn exec_effort_override_wins_over_the_tier_default() {
         agent.resolved_exec_effort("medium"),
         std::path::Path::new("/repo"),
         std::path::Path::new("/repo/out.txt"),
+        std::path::Path::new("/bin/ralphy"),
+        std::path::Path::new("/run/agent-status.jsonl"),
     );
     let args: Vec<String> = cmd
         .get_args()
@@ -212,6 +214,8 @@ fn unset_exec_effort_falls_back_to_the_tier_default() {
         agent.resolved_exec_effort(tier_effort),
         std::path::Path::new("/repo"),
         std::path::Path::new("/repo/out.txt"),
+        std::path::Path::new("/bin/ralphy"),
+        std::path::Path::new("/run/agent-status.jsonl"),
     );
     let args: Vec<String> = cmd
         .get_args()

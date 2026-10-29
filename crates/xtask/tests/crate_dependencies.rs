@@ -1,7 +1,7 @@
 //! The crate graph keeps the edges that the architecture decides: core names
 //! no vendor crate (ADR-0002), no adapter depends on another adapter, and
 //! `ralphy-pricing` and `ralphy-release` are leaf crates (ADR-0056 §4), and so
-//! is `ralphy-git-read` (ADR-0069 D1). The
+//! is `ralphy-git-read` (ADR-0069 D1) and `ralphy-telegram` (ADR-0085 D14). The
 //! graph comes from `cargo metadata`, so every dependency kind counts: a
 //! dev-dependency on an adapter breaks the rule in core's tests too.
 
@@ -24,6 +24,10 @@ fn core_and_adapters_keep_their_dependency_edges() {
             .iter()
             .any(|(name, deps)| name == "ralphy-cli" && deps.iter().any(|d| d == "ralphy-core")),
         "the graph lost the known edge ralphy-cli -> ralphy-core: {graph:?}"
+    );
+    assert!(
+        graph.iter().any(|(name, _)| name == "ralphy-telegram"),
+        "the graph lost ralphy-telegram, so its leaf rule checks nothing: {graph:?}"
     );
     let edges = forbidden_edges(&graph);
     assert!(
@@ -48,6 +52,7 @@ fn each_forbidden_edge_is_reported() {
         node("ralphy-pricing", &["ralphy-core"]),
         node("ralphy-cli", &["ralphy-agent-claude", "ralphy-core"]),
         node("ralphy-git-read", &["ralphy-proc-util"]),
+        node("ralphy-telegram", &["ralphy-core"]),
     ];
     let core = "ralphy-core depends on no adapter and not on ralphy-adapter-support";
     let leaf = "ralphy-pricing and ralphy-release are leaf crates";
@@ -61,6 +66,7 @@ fn each_forbidden_edge_is_reported() {
             format!("ralphy-release -> ralphy-proc-util: {leaf}"),
             format!("ralphy-pricing -> ralphy-core: {leaf}"),
             "ralphy-git-read -> ralphy-proc-util: ralphy-git-read is a leaf crate".to_string(),
+            "ralphy-telegram -> ralphy-core: ralphy-telegram is a leaf crate".to_string(),
         ]
     );
 }
@@ -88,6 +94,8 @@ fn forbidden_edges(graph: &[(String, Vec<String>)]) -> Vec<String> {
                     Some("ralphy-pricing and ralphy-release are leaf crates")
                 } else if from == "ralphy-git-read" {
                     Some("ralphy-git-read is a leaf crate")
+                } else if from == "ralphy-telegram" {
+                    Some("ralphy-telegram is a leaf crate")
                 } else {
                     None
                 };

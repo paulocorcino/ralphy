@@ -2107,11 +2107,13 @@ dependencies = [
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
+ "ralphy-proc-util",
  "regex",
  "saphyr-parser",
  "serde_json",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2189,7 +2191,9 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2220,6 +2224,7 @@ dependencies = [
  "ralphy-proc-util",
  "ralphy-release",
  "ralphy-run-snapshot",
+ "ralphy-telegram",
  "ralphy-usage-scan",
  "regex",
  "serde",
@@ -2286,6 +2291,7 @@ dependencies = [
  "ralphy-pty",
  "ralphy-release",
  "ralphy-run-snapshot",
+ "ralphy-telegram",
  "ralphy-usage-scan",
  "regex",
  "rusqlite",
@@ -2340,6 +2346,7 @@ dependencies = [
  "libc",
  "serde_json",
  "tempfile",
+ "toml",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -2371,6 +2378,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "ralphy-telegram"
+version = "0.1.0-rc.41"
+dependencies = [
+ "anyhow",
+ "directories",
+ "serde",
+ "serde_json",
+ "toml",
+ "ureq",
 ]
 
 [[package]]

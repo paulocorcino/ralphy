@@ -25,6 +25,7 @@ mod api_release;
 mod api_security;
 mod api_sessions;
 mod api_stall;
+mod api_telegram;
 mod api_update;
 mod api_usage;
 mod audit_layer;
@@ -47,6 +48,7 @@ pub(crate) use api_release::*;
 pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
 pub(crate) use api_stall::*;
+pub(crate) use api_telegram::*;
 pub(crate) use api_update::*;
 pub(crate) use api_usage::*;
 pub(crate) use audit_layer::*;
@@ -104,6 +106,13 @@ pub(crate) struct RouterShared {
     pub(crate) run_exits: tokio::sync::broadcast::Sender<String>,
     pub(crate) pushes: tokio::sync::broadcast::Sender<Push>,
     pub(crate) audit: Arc<audit::Audit>,
+    /// Whether the operator is at one of this daemon's pages: `/ws` writes
+    /// it, the attention tick reads it (ADR-0085 D14).
+    pub(crate) presence: crate::presence_board::Shared,
+    /// The claim of a main daemon on this one: `POST /api/telegram/main`
+    /// writes it, `GET /api/telegram` and the attention tick read it
+    /// (ADR-0085 D14).
+    pub(crate) telegram_claim: crate::telegram_state::SharedClaim,
 }
 
 pub(crate) fn router_with_roster(
@@ -234,6 +243,8 @@ pub(crate) fn router_with_roster(
         run_exits,
         pushes,
         audit: audit.clone(),
+        presence: Default::default(),
+        telegram_claim: Default::default(),
     };
     Router::new()
         .merge(read_routes(&shared))
@@ -251,6 +262,7 @@ pub(crate) fn router_with_roster(
         .merge(security_routes(&shared))
         .merge(audit_routes(&shared))
         .merge(stall_routes(&shared))
+        .merge(telegram_routes(&shared))
         .fallback(ui_asset)
         // Inside the guard: only requests the guard let through are recorded.
         .layer(axum::middleware::from_fn_with_state(audit, audit_layer))

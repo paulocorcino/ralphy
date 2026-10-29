@@ -138,7 +138,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // outlive the process. A worker DETACHED by the 5s shutdown bound
     // (`delivery.rs`) may still write after this drop; that leftover is exactly the
     // §8 orphan the reader's dead-pid sweep deletes.
-    let _snapshot_guard = ralphy_run_snapshot::SnapshotGuard::new(&repo_root, &runid);
+    let _snapshot_guard = snapshot_engine::snapshot_guard(&repo_root, &runid, &run_dir);
 
     // Load the persisted settings once here (ADR-0010) BEFORE the queue build so the
     // `queue.assignee` default is available to the label-queue path (and, further

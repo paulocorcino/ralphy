@@ -11,7 +11,6 @@
 //! `ralphy worktree add`, so the pointer file is production-shaped.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use tempfile::TempDir;
 
@@ -35,7 +34,7 @@ fn configure(root: &Path) {
 /// The daemon's spawn shape: the verb with `cwd` as `current_dir` and no
 /// `--repo` — the cwd alone says which tree.
 fn ralphy_in(cwd: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    crate::support::ralphy_command()
         .args(args)
         .current_dir(cwd)
         .output()

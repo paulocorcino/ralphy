@@ -2,8 +2,6 @@
 //! the way the daemon runs it before a Gemini console (ADR-0040 Amendment 3) —
 //! no arguments, with its working directory in the repo.
 
-use std::process::Command;
-
 use super::support::run_git;
 
 #[test]
@@ -16,7 +14,7 @@ fn prepare_root_writes_the_policy_at_the_repo_top_and_prints_nothing() {
     let sub = root.join("src");
     std::fs::create_dir(&sub).unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args(["gemini", "prepare-root"])
         .current_dir(&sub)
         .output()

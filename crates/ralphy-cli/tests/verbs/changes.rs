@@ -2,8 +2,6 @@
 //! `ralphy` binary against an isolated temp git repo. The JSON shape asserted
 //! here is the wire contract the daemon's `changes.list` verb consumes.
 
-use std::process::Command;
-
 use super::support::run_git;
 
 fn init_repo() -> tempfile::TempDir {
@@ -23,7 +21,7 @@ fn init_repo() -> tempfile::TempDir {
 fn changes_list_json_shape_is_the_wire_contract() {
     let repo = init_repo();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args([
             "changes",
             "list",
@@ -60,7 +58,7 @@ fn changes_list_json_carries_both_sides() {
     run_git(repo.path(), &["add", "added.txt"]);
     std::fs::write(repo.path().join("added.txt"), "new\nand edited\n").unwrap();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args([
             "changes",
             "list",
@@ -95,7 +93,7 @@ fn changes_list_json_carries_both_sides() {
 fn changes_list_without_format_prints_one_entry_per_line() {
     let repo = init_repo();
 
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args(["changes", "list", "--repo", &repo.path().to_string_lossy()])
         .output()
         .expect("spawning ralphy");
@@ -120,7 +118,7 @@ fn a_rename_prints_both_of_its_paths() {
     run_git(repo.path(), &["commit", "--quiet", "-m", "seed rename"]);
     run_git(repo.path(), &["mv", "old.txt", "new.txt"]);
 
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args(["changes", "list", "--repo", &repo.path().to_string_lossy()])
         .output()
         .expect("spawning ralphy");

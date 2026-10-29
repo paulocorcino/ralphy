@@ -20,6 +20,35 @@ pub(crate) fn build_opencode_command(
     root: &Path,
     skills_dir: Option<&Path>,
 ) -> Command {
+    command_with(model, variant, root, skills_dir, None)
+}
+
+/// The state plugin of a run (ADR-0085 D2): the plugin file OpenCode loads,
+/// and the status file the plugin appends to.
+pub(crate) struct StatePlugin<'a> {
+    pub(crate) plugin: &'a Path,
+    pub(crate) status: &'a Path,
+}
+
+/// [`build_opencode_command`] for a plan or an execute, which also loads the
+/// state plugin and points it at the status file.
+pub(crate) fn build_watched_opencode_command(
+    model: Option<&str>,
+    variant: Option<&str>,
+    root: &Path,
+    skills_dir: Option<&Path>,
+    state: &StatePlugin<'_>,
+) -> Command {
+    command_with(model, variant, root, skills_dir, Some(state))
+}
+
+fn command_with(
+    model: Option<&str>,
+    variant: Option<&str>,
+    root: &Path,
+    skills_dir: Option<&Path>,
+    state: Option<&StatePlugin<'_>>,
+) -> Command {
     // Resolve `opencode` to its real path: on Windows it ships as an npm `.cmd`
     // shim with no `.exe`, which a bare `Command::new("opencode")` cannot find.
     let mut cmd = Command::new(resolve_program("opencode"));
@@ -50,10 +79,28 @@ pub(crate) fn build_opencode_command(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("OPENCODE_CONFIG_CONTENT", opencode_config(skills_dir))
+        .env(
+            "OPENCODE_CONFIG_CONTENT",
+            opencode_config(skills_dir, state.map(|s| s.plugin)),
+        )
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("OPENAI_API_KEY");
+    if let Some(state) = state {
+        cmd.env(crate::status::STATUS_ENV, state.status);
+    }
     cmd
+}
+
+// The daemon names a console's plugin the same way, in
+// `ralphy-daemon/src/agent_state/opencode.rs`: it imports no adapter crate
+// (ADR-0059 §5).
+/// The `plugin` entry that names `path`: a `file:///` URL with forward
+/// slashes, the form OpenCode loaded on Windows and on Linux (measured with
+/// OpenCode 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
+pub(crate) fn plugin_entry(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let text = text.strip_prefix("//?/").unwrap_or(&text);
+    format!("file:///{}", text.trim_start_matches('/'))
 }
 
 /// The JSON injected as `OPENCODE_CONFIG_CONTENT`: `skills.paths` when the
@@ -63,7 +110,9 @@ pub(crate) fn build_opencode_command(
 /// even under `--dangerously-skip-permissions`, and the refused call reaches
 /// the model as a tool error; the run goes on (measured with opencode 1.18.32).
 /// The map has no `"*"` entry, so the operator's own bash rules still apply.
-fn opencode_config(skills_dir: Option<&Path>) -> String {
+/// A plan or an execute also names Ralphy's state plugin under `plugin`;
+/// OpenCode joins that list with the operator's own plugins.
+fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
     let mut bash = serde_json::Map::new();
     for words in DENIED_FORGE_WRITES {
         let command = words.join(" ");
@@ -75,6 +124,9 @@ fn opencode_config(skills_dir: Option<&Path>) -> String {
         // Canonicalized for robustness; on failure the path is used as-is.
         let abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
         config["skills"] = serde_json::json!({ "paths": [abs] });
+    }
+    if let Some(plugin) = plugin {
+        config["plugin"] = serde_json::json!([plugin_entry(plugin)]);
     }
     config.to_string()
 }
@@ -198,6 +250,56 @@ mod tests {
         ));
         assert!(cfg.get("skills").is_none(), "{cfg}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A plan or an execute names the state plugin in the run dir under
+    /// `plugin`, keeps the forge-write denies, and gives the plugin the
+    /// status file; a task call names no plugin.
+    #[test]
+    fn opencode_config_names_the_state_plugin() {
+        let run_dir = if cfg!(windows) {
+            PathBuf::from(r"C:\runs\r 1")
+        } else {
+            PathBuf::from("/runs/r 1")
+        };
+        let plugin = run_dir.join("ralphy-state-plugin.js");
+        let status = run_dir.join("agent-status.jsonl");
+        let state = StatePlugin {
+            plugin: &plugin,
+            status: &status,
+        };
+        let cmd = build_watched_opencode_command(None, None, Path::new("/repo"), None, &state);
+        let cfg = injected_config(&cmd);
+        let want = if cfg!(windows) {
+            "file:///C:/runs/r 1/ralphy-state-plugin.js"
+        } else {
+            "file:///runs/r 1/ralphy-state-plugin.js"
+        };
+        assert_eq!(cfg["plugin"], serde_json::json!([want]), "{cfg}");
+        let rules = cfg["permission"]["bash"].as_object().expect("the deny map");
+        assert_eq!(rules.get("git push"), Some(&"deny".into()), "{cfg}");
+        assert_eq!(rules.get("gh pr merge *"), Some(&"deny".into()), "{cfg}");
+        let env = cmd
+            .get_envs()
+            .find(|(k, _)| *k == "RALPHY_STATUS_FILE")
+            .and_then(|(_, v)| v)
+            .map(PathBuf::from);
+        assert_eq!(env, Some(status));
+
+        let task = build_opencode_command(None, None, Path::new("/repo"), None);
+        assert!(injected_config(&task).get("plugin").is_none());
+        assert!(!task.get_envs().any(|(k, _)| k == "RALPHY_STATUS_FILE"));
+    }
+
+    /// A daemon or a run started through a canonicalized path has the
+    /// verbatim form; the entry drops it.
+    #[cfg(windows)]
+    #[test]
+    fn the_plugin_entry_drops_the_verbatim_prefix() {
+        assert_eq!(
+            plugin_entry(Path::new(r"\\?\C:\r\p.js")),
+            "file:///C:/r/p.js"
+        );
     }
 
     /// opencode's documented wildcard rule: `*` is any run of characters and

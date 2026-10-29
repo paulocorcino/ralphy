@@ -242,7 +242,7 @@ function chipDirty(p: Project, checkout: string | null | undefined, listing: Lis
 // asking), `working` beats the rest, an `unknown` (a green that aged out)
 // beats `done`. `null` when no session says anything — a vendor without
 // hooks, a shell console, a peer on an older build.
-const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1, blocked: 4 };
+const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1 };
 function agentStateOf(sessions: HostedSession[] | null | undefined) {
   let best = null;
   for (const s of sessions || []) {
@@ -253,12 +253,13 @@ function agentStateOf(sessions: HostedSession[] | null | undefined) {
   return best;
 }
 
-// The dot of one `agent_state` block: a silent console is the word `silent`
-// with its reason as the detail, so every place that draws a dot reads the
-// block one way. A row with no block, or no state, has no dot.
+// The dot of one `agent_state` block: a silent console, and a console with
+// no state source on purpose, are the word `silent` with their reason as the
+// detail, so every place that draws a dot reads the block one way. A row
+// with no block, or no state, has no dot.
 function agentDotOf(block: AgentStateBlock | null | undefined): { state: string | null; detail?: string } {
   if (!block) return { state: null };
-  if (block.source === "silent") return { state: "silent", detail: block.reason };
+  if (block.source === "silent" || block.source === "none") return { state: "silent", detail: block.reason };
   return { state: block.state ?? null, detail: block.detail };
 }
 
