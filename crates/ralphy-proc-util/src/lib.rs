@@ -654,7 +654,7 @@ fn direct_runnable(direct: &Path, exts: &[String]) -> bool {
 /// The first `name` + extension file in `dir`, trying `exts` in order.
 fn with_pathext(dir: &Path, name: &str, exts: &[String]) -> Option<PathBuf> {
     exts.iter()
-        .map(|ext| dir.join(name).with_extension(ext.trim_start_matches('.')))
+        .map(|ext| dir.join(format!("{name}.{}", ext.trim_start_matches('.'))))
         .find(|cand| cand.is_file())
 }
 
