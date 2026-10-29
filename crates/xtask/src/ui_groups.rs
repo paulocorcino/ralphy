@@ -489,34 +489,45 @@ fn member_name(toks: &[Token], j: usize) -> Option<&str> {
 
 /// Is the access whose receiver is at `recv` and whose name is at `name` a write?
 fn writes(toks: &[Token], recv: usize, name: usize) -> bool {
-    let at = |i: usize, p: &str| toks.get(i).is_some_and(|t| t.is(p));
-    let counts = |i: usize| at(i, "++") || at(i, "--");
     let next = name + 1;
-    if assigns(toks, next) || counts(next) || (recv > 0 && counts(recv - 1)) {
+    if assigns(toks, next) || bumps(toks, next) || (recv > 0 && bumps(toks, recv - 1)) {
         return true;
     }
-    if at(next, ".")
-        && toks
-            .get(next + 1)
-            .and_then(Token::ident)
-            .is_some_and(|m| MUTATORS.contains(&m))
-        && at(next + 2, "(")
-    {
-        return true;
+    mutating_call(toks, next) || writes_inside(toks, recv, next)
+}
+
+/// Is there a `++` or `--` at `i`?
+fn bumps(toks: &[Token], i: usize) -> bool {
+    tok_is(toks, i, "++") || tok_is(toks, i, "--")
+}
+
+/// Is there a call of a [`MUTATORS`] method at `i`: `.push(`, `.set(`, …?
+fn mutating_call(toks: &[Token], i: usize) -> bool {
+    tok_is(toks, i, ".")
+        && ident_at(toks, i + 1).is_some_and(|m| MUTATORS.contains(&m))
+        && tok_is(toks, i + 2, "(")
+}
+
+/// The index after the `.name`, `?.name` or `[…]` step at `k`, if there is one.
+fn step_inside(toks: &[Token], k: usize) -> Option<usize> {
+    if (tok_is(toks, k, ".") || tok_is(toks, k, "?.")) && ident_at(toks, k + 1).is_some() {
+        Some(k + 2)
+    } else if tok_is(toks, k, "[") {
+        Some(close_of(toks, k) + 1)
+    } else {
+        None
     }
-    // A write inside the member: `this.x.y =`, `this.x[k] =`, `this.x.y++`.
+}
+
+/// A write inside the member whose steps start at `next`: `this.x.y =`,
+/// `this.x[k] =`, `this.x.y++`, `delete this.x[k]`.
+fn writes_inside(toks: &[Token], recv: usize, next: usize) -> bool {
     let mut k = next;
     let mut inside = false;
-    loop {
-        if (at(k, ".") || at(k, "?.")) && toks.get(k + 1).and_then(Token::ident).is_some() {
-            k += 2;
-        } else if at(k, "[") {
-            k = close_of(toks, k) + 1;
-        } else {
-            break;
-        }
+    while let Some(after) = step_inside(toks, k) {
+        k = after;
         inside = true;
-        if assigns(toks, k) || counts(k) {
+        if assigns(toks, k) || bumps(toks, k) {
             return true;
         }
     }
