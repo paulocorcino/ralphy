@@ -145,6 +145,22 @@ fn a_dom_property_is_a_sink_only_when_assigned() {
     );
 }
 
+/// A unary `+` has no operand on its left; the value after it is one hole.
+#[test]
+fn a_unary_plus_is_not_an_operand() {
+    let js = r#"
+      el.textContent = +n + " items";
+      el.textContent = a + +b + " items";
+"#;
+    assert_eq!(
+        seen(js),
+        vec![
+            row("js:text-content", "{n} items"),
+            row("js:text-content", "{a}{b} items"),
+        ]
+    );
+}
+
 /// Only three attributes carry copy, and only when named by one literal.
 #[test]
 fn set_attribute_reads_three_named_attributes() {

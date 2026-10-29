@@ -105,6 +105,9 @@ impl Scan<'_> {
     }
 
     fn source(&self, a: usize, b: usize) -> String {
+        if a >= b {
+            return String::new();
+        }
         let (Some(first), Some(last)) = (self.toks.get(a), self.toks.get(b.wrapping_sub(1))) else {
             return String::new();
         };
@@ -196,7 +199,11 @@ impl Scan<'_> {
 
     /// The pieces of the one operand in `start..k`: a string is one literal, a
     /// template is one literal or hole per piece, and anything else is one hole.
+    /// An empty operand is the left side of a unary `+`: it has no piece.
     fn operand_parts(&self, start: usize, k: usize) -> Vec<Part<'_>> {
+        if start >= k {
+            return Vec::new();
+        }
         if let Some([one]) = self.toks.get(start..k) {
             match &one.tok {
                 Tok::Str(s) => return vec![Part::Lit(s)],
