@@ -528,7 +528,16 @@ Codex runs no hook unless it is given `--dangerously-bypass-hook-trust`, and
 Ralphy passes that flag to Codex consoles and runs so that their status
 hooks run (ADR-0085). The flag turns off Codex's trust prompt for every hook
 that Codex loads. This is an accepted risk, and it is limited: the hooks in
-the user's own `~/.codex` run without a prompt, because the user wrote them;
-the hooks of a project never run through Ralphy, because Ralphy does not
-pass the flag in a project that has Codex hooks of its own (ADR-0085,
-amendment of 2026-10-29).
+the user's own `~/.codex` run without a prompt, because the user wrote them.
+Ralphy does not pass the flag when, at launch, the console's or the run's
+folder, or a folder above it up to the one with `.git`, has a
+`.codex/hooks.json` or a `.codex/config.toml` with a `hooks` key at its top
+level (ADR-0085, amendment of 2026-10-29). That is all the check covers.
+These cases are not measured, and are accepted for now:
+
+- hooks that a Codex plugin brings, which the flag also turns on;
+- a `hooks` key inside a nested table of `config.toml`, such as a profile;
+- hooks that are added to the project after the launch, for example by the
+  agent or by a `git pull`;
+- folders above the one with `.git`, which Codex also reads when the user
+  sets `project_root_markers` to a marker that is higher up.

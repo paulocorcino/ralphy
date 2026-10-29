@@ -288,8 +288,13 @@ passes it with the status hooks. The flag also runs the project's own hooks,
 with no trust prompt, even in a project Codex has not trusted (the Codex
 spike of 2026-10-28, M1). So Ralphy gives neither the flag nor the status
 hooks to a console or a run whose folder, or a folder above it up to the
-one with `.git`, has such a file. A `config.toml` that cannot be read or
-parsed counts as one. The rule is one function,
+one with `.git`, has such a file at launch. Only a `hooks` key at the top
+level of `config.toml` counts. A `config.toml` that cannot be read or
+parsed counts as one. The check does not see a Codex plugin's hooks, a
+`hooks` key inside a nested table (a profile), hooks added after the
+launch, or folders above the one with `.git` that a user's
+`project_root_markers` makes Codex read. These cases are not measured, and
+are accepted for now (ADR-0072, amendment of 2026-10-29). The rule is one function,
 `hook_form::codex_project_has_hooks` in `ralphy-proc-util`, used by the
 daemon and the Codex adapter. Such a console is silent from its start, with
 a reason that says why, so it is listed as a silent console (D11) until it
