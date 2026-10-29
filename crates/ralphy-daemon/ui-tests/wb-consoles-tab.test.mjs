@@ -8,12 +8,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { assembledPage, bindingNames, componentMarkup, loadComponent, loadShell, partMarkup, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, UI, withoutComments } from "./harness.mjs";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
-// The part that holds the markup of each component that lives in one.
-const PARTS = { wbConsoleMenus: "wb-consoles-tab-menus.part.html" };
+// The part that holds the markup of each component.
+const PARTS = { wbConsoleMenus: "wb-consoles-tab-menus.part.html", wbColumns: "wb-consoles-tab-columns.part.html" };
 
 // One page with both components and a window and a document that deliver the
 // events they are sent, as the browser does. `init()` adds the listeners, as
@@ -387,7 +387,7 @@ for (const name of ["wbConsoleMenus", "wbColumns"]) {
 
   test(`every name the markup of ${name} reads is its own or in its uses list`, () => {
     const { scope: state } = loadComponent(name);
-    const markup = PARTS[name] ? partMarkup(PARTS[name]) : componentMarkup(HTML, name);
+    const markup = partMarkup(PARTS[name]);
     const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
     // `x-data` names the component; `x-for` adds its loop variables.
     const loopVars = new Set();
@@ -415,9 +415,12 @@ for (const name of ["wbConsoleMenus", "wbColumns"]) {
 }
 
 test("nothing outside the two components names their state", () => {
-  let outside = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
-  const start = outside.indexOf('x-data="wbColumns"');
-  outside = withoutComments(outside.slice(0, start) + outside.slice(outside.indexOf("<!-- ===", start)));
+  // The page without the two parts: one is left out by the helper, the other
+  // is cut out of the text it put in.
+  const columns = readFileSync(join(UI, PARTS.wbColumns), "utf8");
+  const page = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
+  assert.ok(page.includes(columns), "the page holds the columns part");
+  const outside = withoutComments(page.replace(columns, ""));
   for (const name of ["agentMenu", "toggleAgentMenu", "consoleRunText", "fenceItems", "noteItems", "columnMenu", "columnView", "consoleCount", "stageW"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
