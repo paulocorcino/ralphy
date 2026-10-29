@@ -321,3 +321,28 @@ fn a_refused_prompt_gets_no_spawn_context() {
     );
     let _ = std::fs::remove_file(&log);
 }
+
+#[test]
+fn the_wall_deadline_is_read_before_the_idle_window_on_one_tick() {
+    let log = temp_log("wall-before-idle");
+    // The gate holds the prompt long enough that, on the first tick, both clocks
+    // have run out: the wall deadline (zero) and the 1 ms idle window.
+    let slow_gate: PromptGate<'_> = Box::new(|| {
+        std::thread::sleep(Duration::from_millis(30));
+        Ok(())
+    });
+
+    let run = HeadlessCall::new(child_cmd("sleep"), "ignored prompt", Duration::ZERO, &log)
+        .idle_window(Duration::from_millis(1))
+        .hold_prompt(slow_gate)
+        .run()
+        .expect("a reaped run returns its output");
+
+    assert!(run.timed_out, "the wall deadline reaped the child");
+    assert!(
+        !run.idle_killed,
+        "both clocks had expired, and the wall clock owns the tick"
+    );
+    assert!(run.exit_code.is_none(), "a killed child has no exit code");
+    let _ = std::fs::remove_file(&log);
+}
