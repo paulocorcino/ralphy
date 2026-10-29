@@ -291,7 +291,11 @@ fn release(repos: &mut BTreeMap<String, RepoWatcher>, repo: &str, rel: &str) {
         rw.watches.remove(rel);
         lock(&rw.watch_set).remove(rel);
         let target = rw.target(rel);
-        let _ = rw.debouncer.unwatch(&target);
+        // A dir deleted while watched has already lost its OS watch, so this
+        // failure is common and changes nothing: it is logged, not returned.
+        if let Err(e) = rw.debouncer.unwatch(&target) {
+            tracing::debug!(repo = %repo, dir = %rel, error = %e, "unwatch of a released dir failed");
+        }
     }
     if rw.watches.is_empty() {
         repos.remove(repo);
