@@ -444,11 +444,6 @@
         16
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-project.ts": {
-      "worktreeNameProblem": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-projects-store.ts": {
       "(anonymous)": [
         11

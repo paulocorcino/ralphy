@@ -180,19 +180,32 @@ function worktreeNameProblem(listing: Pick<Listing, "worktrees"> | null | undefi
   name = String(name || "").trim();
   if (!name) return "Enter a name.";
   if (name.startsWith("-")) return "The name cannot start with “-”.";
+  return charProblem(name) || shapeProblem(name) || takenProblem(listing, name);
+}
+
+// Which characters of `name` the daemon would refuse.
+function charProblem(name: string) {
   if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
   const bad = name.match(/[\u0000-\u001f\u007f/\\~^:?*[]/);
-  if (bad) {
-    return /[\u0000-\u001f\u007f]/.test(bad[0])
-      ? "The name cannot contain control characters."
-      : `The name cannot contain “${bad[0]}”.`;
-  }
+  if (!bad) return "";
+  return /[\u0000-\u001f\u007f]/.test(bad[0])
+    ? "The name cannot contain control characters."
+    : `The name cannot contain “${bad[0]}”.`;
+}
+
+// How `name` is put together: the sequences, the ends and the reserved names.
+function shapeProblem(name: string) {
   for (const seq of ["..", "@{"]) {
     if (name.includes(seq)) return `The name cannot contain “${seq}”.`;
   }
   if (name === "@") return "The name cannot be “@”.";
   if (name.startsWith(".") || name.endsWith(".")) return "The name cannot start or end with “.”.";
   if (name.endsWith(".lock")) return "The name cannot end with “.lock”.";
+  return "";
+}
+
+// Whether a worktree of the listing already has `name`.
+function takenProblem(listing: Pick<Listing, "worktrees"> | null | undefined, name: string) {
   if (listing && Array.isArray(listing.worktrees) && listing.worktrees.some((w) => w && w.name === name)) {
     return `A worktree named “${name}” already exists.`;
   }
