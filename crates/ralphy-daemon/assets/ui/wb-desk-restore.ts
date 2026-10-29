@@ -286,31 +286,42 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     fence: { rect?: Partial<Rect> | null } | null | undefined,
     members: PopupMember[] | null | undefined,
   ) {
-    const originLeft = fence?.rect?.left || 0;
-    const originTop = fence?.rect?.top || 0;
-    for (const m of members || []) {
-      const record = {
-        ...m,
-        rect: {
-          ...m.rect,
-          left: (m.rect?.left || 0) - originLeft + 12,
-          top: (m.rect?.top || 0) - originTop + 12,
-        },
-      };
-      if (m.kind === "note") {
-        window.WBNotes?.mountDetached(record as NoteSource);
-      } else if (m.session != null) {
-        spawnWindow(
-          { id: m.session, repo: m.repo },
-          m.agent || "console",
-          m.repo,
-          record,
-        );
-      } else {
-        spawnPlaceholder(record);
-      }
-    }
+    const origin = fenceOrigin(fence);
+    for (const m of members || []) mountMember(m, shiftedRecord(m, origin));
     applyExtent();
+  }
+
+  // The top-left corner of the fence in the opener's plane; no rect is 0, 0.
+  function fenceOrigin(fence: { rect?: Partial<Rect> | null } | null | undefined) {
+    return { left: fence?.rect?.left || 0, top: fence?.rect?.top || 0 };
+  }
+
+  // The member's record, moved to sit near this window's top-left.
+  function shiftedRecord(m: PopupMember, origin: { left: number; top: number }) {
+    return {
+      ...m,
+      rect: {
+        ...m.rect,
+        left: (m.rect?.left || 0) - origin.left + 12,
+        top: (m.rect?.top || 0) - origin.top + 12,
+      },
+    };
+  }
+
+  // A note, a console with a live session, or the placeholder of one without.
+  function mountMember(m: PopupMember, record: ReturnType<typeof shiftedRecord>) {
+    if (m.kind === "note") {
+      window.WBNotes?.mountDetached(record as NoteSource);
+    } else if (m.session != null) {
+      spawnWindow(
+        { id: m.session, repo: m.repo },
+        m.agent || "console",
+        m.repo,
+        record,
+      );
+    } else {
+      spawnPlaceholder(record);
+    }
   }
 
   // Whether the restore has reconciled the saved layout: a desk this page

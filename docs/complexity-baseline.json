@@ -302,9 +302,6 @@
     "crates/ralphy-daemon/assets/ui/wb-desk-restore.ts": {
       "(anonymous)": [
         11
-      ],
-      "mountDetached": [
-        17
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-desk-sync.ts": {
