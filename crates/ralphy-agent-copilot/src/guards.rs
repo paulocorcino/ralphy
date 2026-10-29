@@ -248,4 +248,26 @@ mod tests {
         );
         assert_eq!(builtin_mcp_violation(fixture, true), None);
     }
+
+    /// Only a BUILTIN server is the guard's business: a user's own MCP server may
+    /// be connected, and it is not what `--disable-builtin-mcps` turns off.
+    #[test]
+    fn a_connected_user_server_next_to_a_disabled_builtin_passes() {
+        let stream = concat!(
+            r#"{"type":"session.mcp_servers_loaded","data":{"servers":["#,
+            r#"{"name":"github-mcp-server","status":"disabled","source":"builtin"},"#,
+            r#"{"name":"my-docs","status":"connected","source":"user"}]}}"#,
+            "\n"
+        );
+        assert_eq!(builtin_mcp_violation(stream, true), None);
+    }
+
+    /// An unreadable receipt is skipped, not fatal: a later readable one still
+    /// settles the verdict.
+    #[test]
+    fn a_drifted_receipt_followed_by_a_valid_disabled_one_passes() {
+        let drifted = r#"{"type":"session.mcp_servers_loaded","data":{"mcpServers":[]}}"#;
+        let stream = format!("{drifted}\n{}\n", receipt("disabled"));
+        assert_eq!(builtin_mcp_violation(&stream, true), None);
+    }
 }
