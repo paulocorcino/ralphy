@@ -1,0 +1,33 @@
+    <div class="upload-dialog" x-data="wbUploadDialog" @workbench:upload-open.window="openUpload($event.detail)">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('upload.open', () => uploadCancel())">
+      <div class="modal upload-picker" role="dialog" aria-modal="true" aria-label="Upload files">
+        <div class="modal-head">
+          <i class="bi bi-cloud-upload"></i>
+          <span class="modal-title">Upload files</span>
+          <span class="modal-sub" x-text="upload.folder || $store.projects.projectLabel(upload.repo) + ' (project root)'"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="uploadCancel()" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="move-list">
+          <template x-for="r in upload.rows" :key="r.name">
+            <div class="upload-file" :class="{ refused: r.tooBig }">
+              <i class="bi bi-file-earmark"></i>
+              <span class="upload-name" x-text="r.name"></span>
+              <span class="upload-state" x-text="uploadRowText(r)"></span>
+            </div>
+          </template>
+        </div>
+        <fieldset class="upload-choice" x-show="uploadHasExisting()">
+          <legend>Some of these names exist in the folder</legend>
+          <label><input type="radio" value="keep_both" x-model="upload.choice"> Keep both</label>
+          <label><input type="radio" value="replace" x-model="upload.choice"> Replace</label>
+          <label><input type="radio" value="skip" x-model="upload.choice"> Skip</label>
+        </fieldset>
+        <p class="move-error" x-show="upload.error" x-text="upload.error"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="uploadCancel()">Cancel</button>
+          <button class="btn accent" @click="uploadConfirm()" :disabled="uploadBlocked()">Upload</button>
+        </div>
+      </div>
+    </div>
+    </div>
