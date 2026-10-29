@@ -774,7 +774,7 @@
     },
     "crates/ralphy-usage-scan/src/opencode.rs": {
       "read_opencode": [
-        18
+        12
       ]
     },
     "crates/ralphy-usage-scan/src/recovery.rs": {

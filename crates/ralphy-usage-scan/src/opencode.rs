@@ -37,6 +37,30 @@ struct ModelAgg {
     last_ms: Option<i64>,
 }
 
+impl ModelAgg {
+    fn add(&mut self, row: &AssistantRow) {
+        self.tokens.input += row.tokens.input;
+        self.tokens.output += row.tokens.output;
+        self.tokens.cache_read += row.tokens.cache_read;
+        self.tokens.cache_creation += row.tokens.cache_creation;
+        if let Some(ms) = row.ts_ms {
+            self.first_ms = Some(self.first_ms.map_or(ms, |cur| cur.min(ms)));
+            self.last_ms = Some(self.last_ms.map_or(ms, |cur| cur.max(ms)));
+        }
+    }
+}
+
+/// What one assistant `message` row says: its model, its tokens and when it
+/// was created (unix ms).
+struct AssistantRow {
+    model: String,
+    tokens: Tokens,
+    ts_ms: Option<i64>,
+}
+
+/// A session's `(project, actor_email)`.
+type Attribution = (Option<String>, Option<String>);
+
 /// The fallible core of [`scan_opencode`], separated so every `rusqlite` error
 /// funnels through one `unwrap_or_default`. Opens read-only, joins the
 /// `message` rows to their `session.directory`, and aggregates per session ×
@@ -54,15 +78,10 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
     let mut email_cache: HashMap<String, Option<String>> = HashMap::new();
     // (session_id, model) → aggregate.
     let mut groups: BTreeMap<(String, String), ModelAgg> = BTreeMap::new();
-    // session_id → its (project, actor_email) attribution, resolved once.
-    let mut attribution: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
+    // session_id → its attribution, resolved once.
+    let mut attribution: HashMap<String, Attribution> = HashMap::new();
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT m.session_id, m.data, NULLIF(s.directory,'') AS directory \
-             FROM message m LEFT JOIN session s ON s.id = m.session_id",
-        )
-        .or_else(|_| conn.prepare("SELECT session_id, data, NULL AS directory FROM message"))?;
+    let mut stmt = prepare_messages(&conn)?;
 
     let rows = stmt.query_map([], |row| {
         Ok((
@@ -77,59 +96,19 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
         if input.run_session_ids.contains(&session_id) {
             continue;
         }
-        let Ok(val) = serde_json::from_str::<serde_json::Value>(&data) else {
+        let Some(row) = assistant_row(&data) else {
             continue;
         };
-        if val.get("role").and_then(|v| v.as_str()) != Some("assistant") {
-            continue;
-        }
-        let Some(tokens) = val.get("tokens").filter(|t| t.is_object()) else {
-            continue;
-        };
-        let field =
-            |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let cache = tokens.get("cache");
-        // reasoning NOT added — `output` already includes it (module doc / ADR-0008 D5).
-        let row_tokens = Tokens {
-            input: field(tokens, "input"),
-            output: field(tokens, "output"),
-            cache_read: cache.map(|c| field(c, "read")).unwrap_or(0),
-            cache_creation: cache.map(|c| field(c, "write")).unwrap_or(0),
-        };
-        let model = val
-            .get("modelID")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let ts_ms = val
-            .get("time")
-            .and_then(|t| t.get("created"))
-            .and_then(|v| v.as_i64());
 
         // Resolve this session's project/actor once, keyed on session_id.
-        attribution.entry(session_id.clone()).or_insert_with(|| {
-            let matched = directory
-                .as_deref()
-                .and_then(|d| crate::attribution::find_repo(input.repos, d));
-            let project = matched.map(|r| r.slug.clone());
-            let actor_email = matched.and_then(|r| {
-                email_cache
-                    .entry(r.slug.clone())
-                    .or_insert_with(|| ralphy_git_read::user_email(std::path::Path::new(&r.path)))
-                    .clone()
-            });
-            (project, actor_email)
-        });
+        attribution
+            .entry(session_id.clone())
+            .or_insert_with(|| attribute(input, directory.as_deref(), &mut email_cache));
 
-        let agg = groups.entry((session_id.clone(), model)).or_default();
-        agg.tokens.input += row_tokens.input;
-        agg.tokens.output += row_tokens.output;
-        agg.tokens.cache_read += row_tokens.cache_read;
-        agg.tokens.cache_creation += row_tokens.cache_creation;
-        if let Some(ms) = ts_ms {
-            agg.first_ms = Some(agg.first_ms.map_or(ms, |cur| cur.min(ms)));
-            agg.last_ms = Some(agg.last_ms.map_or(ms, |cur| cur.max(ms)));
-        }
+        groups
+            .entry((session_id, row.model.clone()))
+            .or_default()
+            .add(&row);
     }
 
     let mut records: Vec<InteractiveRecord> = groups
@@ -162,6 +141,64 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
         }
     }
     Ok(records)
+}
+
+/// The `message` rows as `(session_id, data, directory)`, joined to
+/// `session.directory`; without that join when the table or column is absent.
+fn prepare_messages(conn: &rusqlite::Connection) -> rusqlite::Result<rusqlite::Statement<'_>> {
+    conn.prepare(
+        "SELECT m.session_id, m.data, NULLIF(s.directory,'') AS directory \
+         FROM message m LEFT JOIN session s ON s.id = m.session_id",
+    )
+    .or_else(|_| conn.prepare("SELECT session_id, data, NULL AS directory FROM message"))
+}
+
+/// The assistant row in a message's JSON `data`; `None` for any other role,
+/// for a row with no `tokens` object, and for text that is not JSON.
+fn assistant_row(data: &str) -> Option<AssistantRow> {
+    let val = serde_json::from_str::<serde_json::Value>(data).ok()?;
+    if val.get("role").and_then(|v| v.as_str()) != Some("assistant") {
+        return None;
+    }
+    let tokens = val.get("tokens").filter(|t| t.is_object())?;
+    let field = |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let cache = tokens.get("cache");
+    Some(AssistantRow {
+        model: val
+            .get("modelID")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        // reasoning NOT added — `output` already includes it (module doc / ADR-0008 D5).
+        tokens: Tokens {
+            input: field(tokens, "input"),
+            output: field(tokens, "output"),
+            cache_read: cache.map(|c| field(c, "read")).unwrap_or(0),
+            cache_creation: cache.map(|c| field(c, "write")).unwrap_or(0),
+        },
+        ts_ms: val
+            .get("time")
+            .and_then(|t| t.get("created"))
+            .and_then(|v| v.as_i64()),
+    })
+}
+
+/// The repo a session's directory sits in and that repo's git actor email,
+/// looked up once per slug through `email_cache`.
+fn attribute(
+    input: &OpenCodeScan,
+    directory: Option<&str>,
+    email_cache: &mut HashMap<String, Option<String>>,
+) -> Attribution {
+    let matched = directory.and_then(|d| crate::attribution::find_repo(input.repos, d));
+    let project = matched.map(|r| r.slug.clone());
+    let actor_email = matched.and_then(|r| {
+        email_cache
+            .entry(r.slug.clone())
+            .or_insert_with(|| ralphy_git_read::user_email(std::path::Path::new(&r.path)))
+            .clone()
+    });
+    (project, actor_email)
 }
 
 /// A unix-ms instant → RFC3339 UTC; empty string when absent or out of range.
