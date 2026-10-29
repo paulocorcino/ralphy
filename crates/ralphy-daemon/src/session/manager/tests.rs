@@ -449,3 +449,30 @@ async fn operator_input_does_not_end_a_claude_permission_wait() {
     );
     manager.close(id);
 }
+
+/// A console launched with a silence reason is silent with it from its
+/// start, with no hook line and no input.
+#[tokio::test]
+async fn a_console_launched_with_a_silence_reason_is_silent_at_once() {
+    let manager = Arc::new(SessionManager::new());
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.silent_reason = Some("no hooks here".to_string());
+    let (id, _att) = manager
+        .spawn_attached(
+            "owner/r".to_string(),
+            "codex".to_string(),
+            "agent".to_string(),
+            None,
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let block = manager.list_at(SystemTime::now())[0]
+        .agent_state
+        .clone()
+        .expect("a block");
+    assert_eq!(block.source.as_deref(), Some("silent"));
+    assert_eq!(block.reason.as_deref(), Some("no hooks here"));
+    manager.close(id);
+}

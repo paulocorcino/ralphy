@@ -142,10 +142,7 @@ pub(crate) fn build_codex_command(
             "model_reasoning_effort=\"{}\"",
             codex_reasoning_effort(effort)
         ))
-        .args(hook_form::codex_hook_args(
-            hook_exe,
-            &hook_form::CODEX_STATUS_EVENTS,
-        ))
+        .args(status_hook_args(root, hook_exe))
         .env(crate::status::STATUS_ENV, status_file)
         .arg("-s")
         .arg("danger-full-access")
@@ -157,6 +154,20 @@ pub(crate) fn build_codex_command(
         .stderr(Stdio::piped())
         .env_remove("OPENAI_API_KEY");
     cmd
+}
+
+/// The status hook arguments of a run in `root`, or none when the project
+/// has Codex hooks of its own: the trust flag would run them with no trust
+/// prompt, so the run goes without an agent state (ADR-0085 amendment of
+/// 2026-10-29).
+fn status_hook_args(root: &Path, hook_exe: &Path) -> Vec<String> {
+    if hook_form::codex_project_has_hooks(root) {
+        tracing::warn!(
+            "this project has its own Codex hooks, so Ralphy does not turn on hook trust for it; the run has no agent state"
+        );
+        return Vec::new();
+    }
+    hook_form::codex_hook_args(hook_exe, &hook_form::CODEX_STATUS_EVENTS)
 }
 
 // ── init one-shot sessions (ADR-0012 stages 2 & 8) ──────────────────────────
@@ -282,6 +293,31 @@ mod tests {
             .find(|(k, _)| *k == "RALPHY_STATUS_FILE")
             .and_then(|(_, v)| v);
         assert_eq!(status, Some(std::ffi::OsStr::new(STATUS)));
+    }
+
+    /// A run in a project with Codex hooks of its own gets neither the trust
+    /// flag nor the status hooks: the flag would run the project's hooks.
+    #[test]
+    fn a_run_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
+        let repo = tempfile::tempdir().expect("a temp dir");
+        std::fs::create_dir_all(repo.path().join(".codex")).expect("the .codex dir");
+        std::fs::write(repo.path().join(".codex").join("hooks.json"), "{}").expect("hooks.json");
+        let args: Vec<String> = build_codex_command(
+            CODEX_MODEL_SOL,
+            "high",
+            repo.path(),
+            &repo.path().join("out.txt"),
+            Path::new(HOOK_EXE),
+            Path::new(STATUS),
+        )
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+        assert!(
+            !args.iter().any(|a| a == hook_form::CODEX_HOOK_TRUST_FLAG),
+            "{args:?}"
+        );
+        assert!(!args.iter().any(|a| a.starts_with("hooks.")), "{args:?}");
     }
 
     #[test]

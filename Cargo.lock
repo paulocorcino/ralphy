@@ -2346,6 +2346,7 @@ dependencies = [
  "libc",
  "serde_json",
  "tempfile",
+ "toml",
  "tracing",
  "windows-sys 0.61.2",
 ]

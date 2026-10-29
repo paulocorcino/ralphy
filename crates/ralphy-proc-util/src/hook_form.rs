@@ -411,6 +411,38 @@ pub fn codex_hook_args(exe: &Path, status_events: &[&str]) -> Vec<String> {
     args
 }
 
+/// Whether the project at `dir` has Codex hooks of its own: a
+/// `.codex/hooks.json`, or a `.codex/config.toml` with a root `hooks` key,
+/// in `dir` or in a folder above it up to the one with `.git`. A file that
+/// cannot be read or parsed counts as hooks. [`CODEX_HOOK_TRUST_FLAG`] would
+/// run those hooks with no trust prompt (spike M1 of 2026-10-28), so a
+/// caller gives neither the flag nor the status hooks when this holds
+/// (ADR-0085 amendment of 2026-10-29).
+pub fn codex_project_has_hooks(dir: &Path) -> bool {
+    let mut layers = Vec::new();
+    for layer in dir.ancestors() {
+        layers.push(layer);
+        if layer.join(".git").exists() {
+            return layers.into_iter().any(codex_layer_has_hooks);
+        }
+    }
+    codex_layer_has_hooks(dir)
+}
+
+/// [`codex_project_has_hooks`] for one folder.
+fn codex_layer_has_hooks(dir: &Path) -> bool {
+    let codex = dir.join(".codex");
+    if !matches!(codex.join("hooks.json").try_exists(), Ok(false)) {
+        return true;
+    }
+    match std::fs::read_to_string(codex.join("config.toml")) {
+        Ok(text) => text
+            .parse::<toml::Table>()
+            .map_or(true, |table| table.contains_key("hooks")),
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
 /// The hook command line Codex runs on this platform.
 pub fn codex_hook_command(exe: &Path) -> String {
     codex_hook_command_for(exe, cfg!(windows))
@@ -618,5 +650,50 @@ mod tests {
             r#"hooks.Stop=[{hooks=[{type="command",command="'C:\\Users\\a b\\ralphy.exe' hook status codex"}]}]"#
         };
         assert_eq!(args, [CODEX_HOOK_TRUST_FLAG, "-c", want]);
+    }
+
+    /// A project's own Codex hooks are a `hooks.json` or a `config.toml`
+    /// with a root `hooks` key; a config that does not parse counts as
+    /// hooks, and so does one in the repo root above the folder.
+    #[test]
+    fn a_project_with_its_own_codex_hooks_is_seen() {
+        // (why, the file under `.codex` and its text, has hooks); `None` is
+        // an empty `.codex`, and an empty name is no `.codex` at all.
+        type Row<'a> = (&'a str, Option<(&'a str, &'a str)>, bool);
+        let rows: [Row; 6] = [
+            ("hooks.json", Some(("hooks.json", "{}")), true),
+            (
+                "config with hooks",
+                Some(("config.toml", "[[hooks.Stop]]\nhooks = []\n")),
+                true,
+            ),
+            (
+                "config without hooks",
+                Some(("config.toml", "model = \"m\"\n[tui]\nhooks = 1\n")),
+                false,
+            ),
+            ("broken config", Some(("config.toml", "hooks = = [")), true),
+            ("an empty .codex", None, false),
+            ("no .codex", Some(("", "")), false),
+        ];
+        for (why, file, want) in rows {
+            let dir = tempfile::tempdir().expect("a temp dir");
+            match file {
+                Some(("", _)) => {}
+                Some((name, text)) => {
+                    std::fs::create_dir_all(dir.path().join(".codex")).expect("the .codex dir");
+                    std::fs::write(dir.path().join(".codex").join(name), text).expect("the file");
+                }
+                None => std::fs::create_dir_all(dir.path().join(".codex")).expect("the .codex dir"),
+            }
+            assert_eq!(codex_project_has_hooks(dir.path()), want, "{why}");
+        }
+        let repo = tempfile::tempdir().expect("a temp dir");
+        std::fs::create_dir_all(repo.path().join(".git")).expect("the .git dir");
+        std::fs::create_dir_all(repo.path().join(".codex")).expect("the .codex dir");
+        std::fs::write(repo.path().join(".codex/hooks.json"), "{}").expect("the file");
+        let sub = repo.path().join("crates").join("a");
+        std::fs::create_dir_all(&sub).expect("the sub dir");
+        assert!(codex_project_has_hooks(&sub), "the repo root's hooks");
     }
 }

@@ -73,6 +73,7 @@ fn spec_at(cwd: PathBuf, env: Vec<(std::ffi::OsString, std::ffi::OsString)>) -> 
         env,
         name: None,
         status: None,
+        silent_reason: None,
     }
 }
 

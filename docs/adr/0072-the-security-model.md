@@ -515,3 +515,14 @@ The setting is local-only: the workbench shows it read-only, and only
 
 **D14.** The fix in `d66214e2` closed a path to an unguarded run, so its
 changelog fragment is `kind: security`.
+
+## Amendment 2026-10-29 — an accepted, limited risk: Codex hook trust
+
+Codex runs no hook unless it is given `--dangerously-bypass-hook-trust`, and
+Ralphy passes that flag to Codex consoles and runs so that their status
+hooks run (ADR-0085). The flag turns off Codex's trust prompt for every hook
+that Codex loads. This is an accepted risk, and it is limited: the hooks in
+the user's own `~/.codex` run without a prompt, because the user wrote them;
+the hooks of a project never run through Ralphy, because Ralphy does not
+pass the flag in a project that has Codex hooks of its own (ADR-0085,
+amendment of 2026-10-29).

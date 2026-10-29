@@ -298,6 +298,7 @@ impl SessionManager {
         let kept = KeptOutput::new(id, spec.rows, spec.cols);
         // Lifted before the spec is consumed by the spawn.
         let name = spec.name.clone();
+        let silent = spec.silent_reason.take().map(|r| (r, SystemTime::now()));
         let status = spec.status.clone().map(|files| StatusTail {
             tail: Mutex::new(crate::agent_state::Tail::new(
                 files.status.clone(),
@@ -346,7 +347,7 @@ impl SessionManager {
             shown: Mutex::new(None),
             first_input: Mutex::new(None),
             first_line: Mutex::new(None),
-            silent: Mutex::new(None),
+            silent: Mutex::new(silent),
             logged_silent: AtomicBool::new(false),
             turn_ends: Mutex::default(),
         });

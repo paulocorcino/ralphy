@@ -407,3 +407,40 @@ fn cursor_indexing_allowed_defaults_to_false() {
         );
     }
 }
+
+/// A Codex console in a project with Codex hooks of its own gets neither the
+/// trust flag nor the status hooks, and is silent with a reason from its
+/// start; in a project without them it gets both.
+#[test]
+fn a_codex_console_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
+    let flag = OsString::from(ralphy_proc_util::hook_form::CODEX_HOOK_TRUST_FLAG);
+    let store = tempfile::tempdir().unwrap();
+    let launch = |repo: &Path| {
+        let files = crate::agent_state::StatusFiles::for_agent(Agent::Codex, store.path(), 1);
+        spec_with_status(
+            Agent::Codex,
+            repo,
+            repo.to_path_buf(),
+            "owner/r",
+            None,
+            24,
+            80,
+            files,
+        )
+    };
+    let plain = tempfile::tempdir().unwrap();
+    let spec = launch(plain.path());
+    assert!(spec.args.contains(&flag), "{:?}", spec.args);
+    assert_eq!(spec.silent_reason, None);
+
+    let hooked = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(hooked.path().join(".codex")).unwrap();
+    std::fs::write(hooked.path().join(".codex").join("hooks.json"), "{}").unwrap();
+    let spec = launch(hooked.path());
+    assert!(!spec.args.contains(&flag), "{:?}", spec.args);
+    assert!(spec.status.is_none(), "no status file is tailed");
+    assert_eq!(
+        spec.silent_reason.as_deref(),
+        Some(crate::agent_state::CODEX_OWN_HOOKS_REASON)
+    );
+}

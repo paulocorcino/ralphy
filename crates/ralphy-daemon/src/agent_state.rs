@@ -98,6 +98,12 @@ pub const SILENT_AFTER: Duration = Duration::from_secs(30);
 /// The reason of a console silent by the clock.
 const CLOCK_REASON: &str = "No hook event reached Ralphy in the 30 seconds after your first input, so Ralphy cannot see what this agent is doing.";
 
+/// The reason of a Codex console in a project with Codex hooks of its own:
+/// it is launched without the status hooks (ADR-0085 amendment of
+/// 2026-10-29).
+pub const CODEX_OWN_HOOKS_REASON: &str =
+    "This project has its own Codex hooks, so Ralphy does not turn on hook trust for it and cannot see what this agent is doing.";
+
 /// The silence rule (docs/adr/0059 A2): the reason a console is silent, or
 /// `None` when it is not. Only a console whose state comes from hooks can be
 /// silent, and the first hook line ends the silence for good. A failed start

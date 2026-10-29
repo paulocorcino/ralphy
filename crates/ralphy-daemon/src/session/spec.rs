@@ -29,6 +29,10 @@ pub struct SessionSpec {
     /// status file and removes both with the session. `None` for every other
     /// child.
     pub status: Option<crate::agent_state::StatusFiles>,
+    /// Why the console's agent state is not reported, when the launch gives
+    /// it no state source on purpose: the console is silent with this reason
+    /// from its start. `None` for every other child.
+    pub silent_reason: Option<String>,
 }
 
 /// The agents the launcher can start. Maps to a concrete program via
@@ -217,6 +221,7 @@ pub fn spec_with_status(
         env,
         name: None,
         status: None,
+        silent_reason: None,
     };
     match agent {
         Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
@@ -236,6 +241,12 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
     let Some(files) = status else {
         return;
     };
+    // The trust flag would also run the project's own hooks with no trust
+    // prompt (ADR-0085 amendment of 2026-10-29).
+    if ralphy_proc_util::hook_form::codex_project_has_hooks(&spec.cwd) {
+        spec.silent_reason = Some(crate::agent_state::CODEX_OWN_HOOKS_REASON.to_string());
+        return;
+    }
     if let Err(e) = files.create_status() {
         tracing::warn!(error = %e, "could not write the console's agent-state file; launching without the hooks");
         return;
@@ -539,6 +550,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16, command: Option<&str>) -
         env: Vec::new(),
         name: None,
         status: None,
+        silent_reason: None,
     }
 }
 
@@ -574,6 +586,7 @@ pub fn peer_console_spec(
         env: Vec::new(),
         name: None,
         status: None,
+        silent_reason: None,
     }
 }
 

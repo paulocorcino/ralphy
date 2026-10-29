@@ -273,3 +273,22 @@ hibernated one loses it. `unknown` and `none` keep the ADR-0083 rules.
   for three minutes, and the main sends the peer's console request once.
 - D16: not checked by code: manual; no inbound Telegram call exists outside
   `ralphy telegram setup`.
+
+## Amendment 2026-10-29 — D2, D3: no hook trust for a project with its own Codex hooks
+
+Decided by the parent agent of the review fixes, on Paulo's request.
+
+Codex runs no hook without `--dangerously-bypass-hook-trust`, so Ralphy
+passes it with the status hooks. The flag also runs the project's own hooks,
+`<repo>/.codex/hooks.json` and the `hooks` of `<repo>/.codex/config.toml`,
+with no trust prompt, even in a project Codex has not trusted (the Codex
+spike of 2026-10-28, M1). So Ralphy gives neither the flag nor the status
+hooks to a console or a run whose folder, or a folder above it up to the
+one with `.git`, has such a file. A `config.toml` that cannot be read or
+parsed counts as one. The rule is one function,
+`hook_form::codex_project_has_hooks` in `ralphy-proc-util`, used by the
+daemon and the Codex adapter. Such a console is silent from its start, with
+a reason that says why, so it is listed as a silent console (D11) until it
+closes; such a run has no agent state, and its log says why. The user's own
+hooks in `~/.codex` still run under the flag: they are the operator's own
+choice (ADR-0072, amendment of 2026-10-29).

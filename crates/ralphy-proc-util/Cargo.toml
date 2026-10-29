@@ -10,6 +10,7 @@ description = "Leaf crate for Ralphy process/path resolution: PATH/PATHEXT progr
 anyhow.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+toml.workspace = true
 tracing.workspace = true
 
 # Liveness probe for `pid::pid_is_alive`: one syscall per platform, so two tiny
