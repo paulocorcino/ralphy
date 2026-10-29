@@ -793,11 +793,6 @@
         13
       ]
     },
-    "crates/xtask/src/capabilities/rules.rs": {
-      "line_findings": [
-        19
-      ]
-    },
     "crates/xtask/src/changelog.rs": {
       "render_notes": [
         18
