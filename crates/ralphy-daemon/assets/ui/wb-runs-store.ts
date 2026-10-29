@@ -28,6 +28,35 @@ export type RunsStoreDeps = {
   messages: Messages;
 };
 
+// Whether a newer hydration, or another open project, owns the state now.
+function superseded(store: { _runsSeq: number }, seq: number, slug: string) {
+  return seq !== store._runsSeq || window.Alpine.store("projects").openSlug !== slug;
+}
+
+// A run's id is a key, not a name: the line counts the runs instead.
+function unreadableText(bad: unknown[]) {
+  return bad.length
+    ? `Could not read ${bad.length} saved run${bad.length > 1 ? "s" : ""}. ` +
+        "The file is damaged or from another version of Ralphy."
+    : "";
+}
+
+// The selected run while it is still listed, else the first one.
+function keptRunId(listed: Run[], current: string | null) {
+  return listed.some((r) => r.runid === current) ? current : listed[0]?.runid || null;
+}
+
+// A push arrives on every snapshot write (~every few hundred ms);
+// re-fetching an unchanged plan would blank the viewer each time.
+function withKeptPlan(run: Run, prevRuns: Run[]) {
+  const prev = prevRuns.find((p) => p.runid === run.runid);
+  if (prev && prev.planPath === run.planPath) {
+    run.planMd = prev.planMd;
+    run.planReadFailed = prev.planReadFailed;
+  }
+  return run;
+}
+
 // `deps` is the shape every store takes; the runs tell the operator nothing
 // themselves yet (the panel words a failed read from `runsError`).
 export function runsStore(_deps: RunsStoreDeps) {
@@ -63,38 +92,20 @@ export function runsStore(_deps: RunsStoreDeps) {
       try {
         const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
         // Superseded while in flight: the newer hydration owns the state.
-        if (seq !== this._runsSeq || window.Alpine.store("projects").openSlug !== slug) return;
+        if (superseded(this, seq, slug)) return;
         if (reply?.status !== "ok") {
           this.runsFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
         this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
-        this.runsByProject[slug] = (reply.runs || []).map((d) => {
-          const run = WBRun.fromSnapshot(d);
-          // A push arrives on every snapshot write (~every few hundred ms);
-          // re-fetching an unchanged plan would blank the viewer each time.
-          const prev = prevRuns.find((p) => p.runid === run.runid);
-          if (prev && prev.planPath === run.planPath) {
-            run.planMd = prev.planMd;
-            run.planReadFailed = prev.planReadFailed;
-          }
-          return run;
-        });
-        // A run's id is a key, not a name: the line counts the runs instead.
-        const bad = reply.unreadable || [];
-        this.runsError = bad.length
-          ? `Could not read ${bad.length} saved run${bad.length > 1 ? "s" : ""}. ` +
-            "The file is damaged or from another version of Ralphy."
-          : "";
+        this.runsByProject[slug] = (reply.runs || []).map((d) => withKeptPlan(WBRun.fromSnapshot(d), prevRuns));
+        this.runsError = unreadableText(reply.unreadable || []);
         // Keep the selected run while it is still listed.
-        const listed = this.projectRuns();
-        this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
-          ? this.currentRunId
-          : listed[0]?.runid || null;
+        this.currentRunId = keptRunId(this.projectRuns(), this.currentRunId);
         // The panel reads the selected run's plan, if it shows (wb-runs-panel.ts).
         sendWindow(window, "workbench:runs-read");
       } catch (err) {
-        if (seq !== this._runsSeq || window.Alpine.store("projects").openSlug !== slug) return;
+        if (superseded(this, seq, slug)) return;
         // A transport failure is a read failure, not an idle project.
         this.runsFailed(slug, WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"));
       }
