@@ -70,9 +70,6 @@
       ]
     },
     "crates/ralphy-cli/src/host/pair.rs": {
-      "add": [
-        20
-      ],
       "remove": [
         11
       ]

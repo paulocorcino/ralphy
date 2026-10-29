@@ -160,42 +160,9 @@ pub(crate) fn add(
     };
     let (checks, ralphy, user, offer) = survey(&mut s, local, wanted_name)?;
     out.checks(dest, os, &checks, offer.as_ref())?;
-    if let RalphyOnHost::Described(d) = &ralphy {
-        if is_self(local, d.daemon_id.as_deref()) {
-            bail!("the host {dest} is this computer's own daemon");
-        }
-    }
-    if checks.iter().any(HostCheck::is_blocking) {
-        bail!("the host {dest} is not ready: do what the checks above say, then run this command again");
-    }
-    // A daemon that runs without a socket on a Unix host is an older daemon:
-    // the restart brings up the socket that the descriptor should name
-    // (ADR-0067 amendment M3).
-    let restart_needed =
-        |d: &DaemonDescription| !d.running || (s.os != HostOs::Windows && d.socket.is_none());
-    let mut restart = !matches!(&ralphy, RalphyOnHost::Described(d) if !restart_needed(d));
-    for check in &checks {
-        let CheckStatus::Fix(op) = &check.status else {
-            continue;
-        };
-        let answer = s.run(op, b"")?;
-        if !answer.ok() {
-            if *op == HostOp::EnableLinger {
-                out.linger_needs_sudo(user.as_deref().unwrap_or("<user>"))?;
-                continue;
-            }
-            bail!(
-                "`{}` failed on {dest}: {}",
-                render(Some(os), op)?,
-                answer.stderr.trim()
-            );
-        }
-        out.fixed(check, &render(Some(os), op)?)?;
-        if matches!(op, HostOp::RequireTokenOn | HostOp::SetName { .. }) {
-            restart = true;
-        }
-    }
-    if restart {
+    refuse_unpairable(local, dest, &ralphy, &checks)?;
+    let fix_needs_restart = apply_fixes(&mut s, &checks, user.as_deref(), out)?;
+    if needs_restart(&ralphy, os) || fix_needs_restart {
         s.run_ok(&HostOp::Restart, b"")?;
         out.note(&format!("Restarted the daemon on {dest}."))?;
     }
@@ -219,25 +186,100 @@ pub(crate) fn add(
         format!("no free local port between {FIRST_TUNNEL_PORT} and {LAST_TUNNEL_PORT}")
     })?;
     let identity_file = s.identity.as_ref().map(|p| p.display().to_string());
-    let descriptor = peer::paired_descriptor(&d, dest, port, identity_file.clone())?;
-    let descriptor = match reached_through_socket(&descriptor, &d, probe) {
-        Ok(()) => descriptor,
-        Err(why) => {
-            let by_port = DaemonDescription {
-                socket: None,
-                ..d.clone()
-            };
-            let descriptor = peer::paired_descriptor(&by_port, dest, port, identity_file)?;
-            port_fallback(&descriptor, &d, &why, probe)?;
-            out.note(&format!(
-                "The host does not forward a connection to the daemon's socket ({why}). This computer reaches the daemon through its port {}.",
-                d.port
-            ))?;
-            descriptor
-        }
-    };
+    let descriptor = tunnel_descriptor(&d, dest, port, identity_file, probe, out)?;
     peer::write_descriptor(local.store, &descriptor)?;
     out.added(&descriptor, dest, port)?;
+    Ok(descriptor)
+}
+
+/// The host cannot be paired: it is this computer's own daemon, or a check
+/// blocks.
+fn refuse_unpairable(
+    local: &Local<'_>,
+    dest: &str,
+    ralphy: &RalphyOnHost,
+    checks: &[HostCheck],
+) -> Result<()> {
+    if let RalphyOnHost::Described(d) = ralphy {
+        if is_self(local, d.daemon_id.as_deref()) {
+            bail!("the host {dest} is this computer's own daemon");
+        }
+    }
+    if checks.iter().any(HostCheck::is_blocking) {
+        bail!("the host {dest} is not ready: do what the checks above say, then run this command again");
+    }
+    Ok(())
+}
+
+/// Must the daemon restart whatever the fixes are? A daemon that is not
+/// running, or that runs without a socket on a Unix host, is an older daemon:
+/// the restart brings up the socket that the descriptor should name
+/// (ADR-0067 amendment M3).
+fn needs_restart(ralphy: &RalphyOnHost, os: HostOs) -> bool {
+    let restart_needed =
+        |d: &DaemonDescription| !d.running || (os != HostOs::Windows && d.socket.is_none());
+    !matches!(ralphy, RalphyOnHost::Described(d) if !restart_needed(d))
+}
+
+/// Run every fix of `checks`, in order. Returns whether a fix needs the
+/// daemon to restart. A linger fix that fails is not fatal: the report names
+/// the command to run with `sudo`.
+fn apply_fixes<S: HostShell>(
+    s: &mut Session<'_, S>,
+    checks: &[HostCheck],
+    user: Option<&str>,
+    out: &mut Report<impl Write>,
+) -> Result<bool> {
+    let mut restart = false;
+    for check in checks {
+        let CheckStatus::Fix(op) = &check.status else {
+            continue;
+        };
+        let answer = s.run(op, b"")?;
+        if !answer.ok() {
+            if *op == HostOp::EnableLinger {
+                out.linger_needs_sudo(user.unwrap_or("<user>"))?;
+                continue;
+            }
+            bail!(
+                "`{}` failed on {}: {}",
+                render(Some(s.os), op)?,
+                s.dest,
+                answer.stderr.trim()
+            );
+        }
+        out.fixed(check, &render(Some(s.os), op)?)?;
+        if matches!(op, HostOp::RequireTokenOn | HostOp::SetName { .. }) {
+            restart = true;
+        }
+    }
+    Ok(restart)
+}
+
+/// The descriptor of the host, naming the daemon's socket when it answers
+/// there and its port otherwise.
+fn tunnel_descriptor(
+    d: &DaemonDescription,
+    dest: &str,
+    port: u16,
+    identity_file: Option<String>,
+    probe: Probe<'_>,
+    out: &mut Report<impl Write>,
+) -> Result<PeerDescriptor> {
+    let descriptor = peer::paired_descriptor(d, dest, port, identity_file.clone())?;
+    let Err(why) = reached_through_socket(&descriptor, d, probe) else {
+        return Ok(descriptor);
+    };
+    let by_port = DaemonDescription {
+        socket: None,
+        ..d.clone()
+    };
+    let descriptor = peer::paired_descriptor(&by_port, dest, port, identity_file)?;
+    port_fallback(&descriptor, d, &why, probe)?;
+    out.note(&format!(
+        "The host does not forward a connection to the daemon's socket ({why}). This computer reaches the daemon through its port {}.",
+        d.port
+    ))?;
     Ok(descriptor)
 }
 
