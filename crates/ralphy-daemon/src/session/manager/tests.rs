@@ -529,3 +529,41 @@ async fn an_input_during_a_tick_is_not_overwritten_by_an_older_wait() {
     );
     manager.close(id);
 }
+
+/// The daemon's start check runs the ralphy program, so its failure makes a
+/// Claude or Codex console silent at once, and not an OpenCode console,
+/// whose plugin never runs that program.
+#[tokio::test]
+async fn a_failed_start_check_silences_only_a_vendor_that_runs_ralphy() {
+    use crate::session::Agent;
+    for (agent, silent) in [
+        (Agent::Claude, true),
+        (Agent::Codex, true),
+        (Agent::OpenCode, false),
+    ] {
+        let manager = Arc::new(SessionManager::new());
+        let dir = tempfile::tempdir().expect("temp dir");
+        let files =
+            crate::agent_state::StatusFiles::for_agent(agent, dir.path(), 1).expect("hooks");
+        files.create_status().expect("the status file");
+        let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+        spec.status = Some(files);
+        let (id, _att) = manager
+            .spawn_attached(
+                "owner/r".to_string(),
+                format!("{agent:?}").to_lowercase(),
+                "agent".to_string(),
+                None,
+                None,
+                None,
+                spec,
+            )
+            .expect("the platform shell must spawn");
+        let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+        sess.poll_status_with(SystemTime::now(), Some("exit 127"));
+        let shown = sess.shown_at(SystemTime::now());
+        let got = shown.is_some_and(|b| b.source.as_deref() == Some("silent"));
+        assert_eq!(got, silent, "{agent:?}");
+        manager.close(id);
+    }
+}

@@ -335,6 +335,16 @@ impl HookVendor {
         }
     }
 
+    /// Whether the vendor's hook runs the ralphy program (`ralphy hook
+    /// status`), so that the daemon's start check of that program speaks for
+    /// it. OpenCode's plugin runs in OpenCode and never starts it.
+    pub(crate) fn runs_the_ralphy_program(self) -> bool {
+        match self {
+            HookVendor::Claude | HookVendor::Codex => true,
+            HookVendor::OpenCode => false,
+        }
+    }
+
     /// Whether the vendor sends an event when the operator grants a
     /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
     /// runs, OpenCode sends `permission.replied`; Codex sends nothing until

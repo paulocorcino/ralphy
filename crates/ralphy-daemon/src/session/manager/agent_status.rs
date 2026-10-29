@@ -130,7 +130,8 @@ impl ManagedSession {
     }
 
     /// [`poll_status`](Self::poll_status) with the start check's failure
-    /// given, so a test does not depend on the daemon-wide check.
+    /// given, so a test does not depend on the daemon-wide check. The
+    /// failure counts only for a vendor whose hook runs the ralphy program.
     pub(super) fn poll_status_with(&self, now: SystemTime, start_failure: Option<&str>) -> bool {
         self.poll_status_between(now, start_failure, || {})
     }
@@ -152,6 +153,7 @@ impl ManagedSession {
         let Some(status) = &self.status else {
             return false;
         };
+        let start_failure = start_failure.filter(|_| status.files.vendor.runs_the_ralphy_program());
         let mut tail = status.tail.lock().expect("tail mutex");
         let polled = tail.poll();
         between();
