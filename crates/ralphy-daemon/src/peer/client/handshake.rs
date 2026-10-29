@@ -102,11 +102,15 @@ fn identity_verdict(
 
 /// Whether the peer speaks this daemon's protocol version.
 fn protocol_verdict(hello: Option<&serde_json::Value>) -> PeerStatus {
-    let theirs = hello.and_then(|v| v.get("protocol_version").and_then(|p| p.as_u64()));
+    // A value past u32::MAX is no protocol version at all, so it counts as absent.
+    let theirs = hello
+        .and_then(|v| v.get("protocol_version"))
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|v| u32::try_from(v).ok());
     match theirs {
-        Some(v) if v as u32 == PEER_PROTOCOL_VERSION => PeerStatus::Reachable,
+        Some(v) if v == PEER_PROTOCOL_VERSION => PeerStatus::Reachable,
         Some(v) => PeerStatus::VersionMismatch {
-            theirs: v as u32,
+            theirs: v,
             ours: PEER_PROTOCOL_VERSION,
         },
         None => PeerStatus::Unreachable {
