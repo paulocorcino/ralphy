@@ -215,3 +215,14 @@ fn host_argv_pins_every_limit() {
         "fingerprint",
     );
 }
+
+#[test]
+fn a_bad_identity_is_reported_before_a_bad_name() {
+    assert_eq!(
+        host_argv(
+            Verb::HostAdd,
+            &json!({"destination": "svrapp", "identity": "keys/id", "name": "-oX"})
+        ),
+        Err(ArgvError::BadParam("identity"))
+    );
+}

@@ -289,3 +289,88 @@ async fn api_session_reports_the_policy_and_whether_authed() {
         );
     }
 }
+
+/// Under a `Session` policy only a `GET` of the shell is served without a
+/// cookie; any other verb on the same path is refused.
+#[tokio::test]
+async fn a_post_to_the_shell_without_a_cookie_is_refused() {
+    let resp = session_router("tok")
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Each refusal of the guard has its own body, word for word.
+#[tokio::test]
+async fn each_refusal_of_the_guard_names_its_reason() {
+    let cross_site = get_local_with_origin("/api/identity", "https://evil.example").await;
+    assert_eq!(cross_site.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        body_string(cross_site).await,
+        "cross-origin request refused"
+    );
+
+    let login = session_router("tok")
+        .oneshot(
+            Request::builder()
+                .uri("/api/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(body_string(login).await, "login required");
+
+    let bearer = router(
+        None,
+        PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
+        StorePaths::default(),
+        Instant::now(),
+        idle_shutdown(),
+        auth::AuthState::fixed(
+            auth::AuthPolicy::Bearer("tok".into()),
+            epoch::SessionEpoch::in_memory_detached(),
+        ),
+    )
+    .oneshot(
+        Request::builder()
+            .uri("/api/identity")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(bearer.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(body_string(bearer).await, "missing or invalid bearer token");
+}
+
+/// A `GET` on a localhost router that a page of another site sent.
+async fn get_local_with_origin(path: &str, origin: &str) -> Response {
+    router(
+        None,
+        PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
+        StorePaths::default(),
+        Instant::now(),
+        idle_shutdown(),
+        auth::AuthState::localhost(),
+    )
+    .oneshot(
+        Request::builder()
+            .uri(path)
+            .header(header::ORIGIN, origin)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+}

@@ -241,7 +241,8 @@ fn civil_date(ts: Option<&str>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spend::fixtures::{table, OPUS};
+    use crate::spend::fixtures::{table, InteractiveRow, OPUS, PROJECT};
+    use crate::spend::Window;
 
     /// The shared verdict, arm by arm. The `None`-model pair is the one that
     /// MOVED when `classify`'s two matches collapsed into this function
@@ -311,5 +312,53 @@ mod tests {
             Some(OPUS)
         );
         assert_eq!(recover_interactive_model(Some(""), Some("s9"), &map), None);
+    }
+
+    fn classify_interactive(records: &[serde_json::Value]) -> Classified<'_> {
+        static PRICES: std::sync::OnceLock<PriceTable> = std::sync::OnceLock::new();
+        static RECOVERED: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        classify(&SpendInput {
+            records: &[],
+            interactive: records,
+            recovered: &RECOVERED,
+            prices: PRICES.get_or_init(table),
+            project: PROJECT,
+            window: Window::Week,
+            since: Some(SINCE),
+        })
+    }
+
+    const SINCE: &str = "2026-07-15T00:00:00+00:00";
+
+    /// A session record with no `last_ts` is placed by its `first_ts`.
+    #[test]
+    fn a_session_known_only_by_its_start_before_the_window_is_out() {
+        let mut record = InteractiveRow {
+            first_ts: "2026-07-01T00:00:00+00:00",
+            tokens: Some((1_000_000, 0)),
+            ..Default::default()
+        }
+        .json();
+        record
+            .as_object_mut()
+            .expect("a fixture row is an object")
+            .remove("last_ts");
+        let records = [record];
+        assert!(classify_interactive(&records).rows.is_empty());
+    }
+
+    /// A session that keeps no count is counted as unmetered only when it is
+    /// inside the window.
+    #[test]
+    fn an_unmetered_session_outside_the_window_is_not_counted() {
+        let records = [InteractiveRow {
+            first_ts: "2026-07-01T00:00:00+00:00",
+            last_ts: "2026-07-02T00:00:00+00:00",
+            tokens: None,
+            ..Default::default()
+        }
+        .json()];
+        assert_eq!(classify_interactive(&records).unmetered_sessions, 0);
     }
 }
