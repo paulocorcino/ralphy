@@ -249,13 +249,24 @@ export function nextFenceSlot(rects: readonly Rect[], offset: Offset, viewport: 
 // a row: side-by-side fences are never pixel-aligned on `top`.
 const FENCE_BAND = 120;
 
-function fenceOrder(fences: readonly { id: string; rect: Rect }[]) {
+type OrderedFence = { id: string; rect: Rect };
+
+// The band of a fence, from its top; a fence with no rect is at the origin.
+function fenceBand(f: OrderedFence | undefined) {
+  return Math.floor((f?.rect?.top || 0) / FENCE_BAND);
+}
+
+function fenceLeft(f: OrderedFence | undefined) {
+  return f?.rect?.left || 0;
+}
+
+function fenceOrder(fences: readonly OrderedFence[]) {
   return [...(fences || [])].sort((a, b) => {
-    const at = Math.floor((a?.rect?.top || 0) / FENCE_BAND);
-    const bt = Math.floor((b?.rect?.top || 0) / FENCE_BAND);
+    const at = fenceBand(a);
+    const bt = fenceBand(b);
     if (at !== bt) return at - bt;
-    const al = a?.rect?.left || 0;
-    const bl = b?.rect?.left || 0;
+    const al = fenceLeft(a);
+    const bl = fenceLeft(b);
     if (al !== bl) return al - bl;
     // Total order, so the walk is the same on every client: two fences at the
     // very same point would otherwise cycle in whatever order `sort` picked.
