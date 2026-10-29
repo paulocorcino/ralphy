@@ -186,6 +186,10 @@ A WSL or SSH peer that is integrated with a main daemon sends no Telegram
 message itself (amendment, Paulo, 2026-10-28). A main daemon that has its
 own bot claims each peer in its peers folder every minute
 (`POST /api/telegram/main {"daemon_id"}`); the claim holds three minutes.
+A claim comes only on the machine path, with the daemon's bearer, as one
+daemon calls another: a request that carries only a page's session cookie,
+or no bearer at all under the localhost policy, is refused (403), so a page
+cannot silence a daemon's messages.
 While it holds, the peer sends nothing, even with a bot of its own, and the
 main sends the peer's console requests under the same rules, with a link to
 `?console=<peer daemon_id>/<session id>` on the main's last page. The main

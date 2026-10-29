@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use axum::extract::{DefaultBodyLimit, Query};
-use axum::http::StatusCode;
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -215,6 +215,20 @@ pub(crate) async fn claim_route(t: TelegramShared, body: ClaimBody) -> Response 
     telegram_route(t, true).await
 }
 
+/// Whether `header` is the bearer of a machine that the policy accepts. A
+/// claim comes only on the machine path, as `peer::client` sends it: a page
+/// sends a session cookie and no bearer, so a page cannot claim a daemon.
+/// `Localhost` accepts every request, so there the header must at least be
+/// there (ADR-0085 D14).
+fn is_machine_bearer(policy: &crate::auth::AuthPolicy, header: Option<&str>) -> bool {
+    match policy {
+        crate::auth::AuthPolicy::Localhost => header.is_some_and(|h| h.starts_with("Bearer ")),
+        crate::auth::AuthPolicy::Bearer(_) | crate::auth::AuthPolicy::Session(_) => {
+            policy.authorizes(header)
+        }
+    }
+}
+
 /// `/api/telegram` and `/api/telegram/main`, behind the same guard as every
 /// route, and the claim a main daemon sends to its peers. The claim is
 /// started here, as the attention tick is started with its route: a router
@@ -244,7 +258,23 @@ pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
         let t = t.clone();
         move |Query(query): Query<TelegramQuery>| telegram_route(t.clone(), query.local == Some(1))
     };
-    let claim = move |Json(body): Json<ClaimBody>| claim_route(t.clone(), body);
+    let auth = s.auth.clone();
+    let claim = move |headers: HeaderMap, Json(body): Json<ClaimBody>| {
+        let t = t.clone();
+        let machine = is_machine_bearer(
+            &auth.policy(),
+            headers
+                .get(header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok()),
+        );
+        async move {
+            if !machine {
+                return (StatusCode::FORBIDDEN, "only a daemon can claim this daemon")
+                    .into_response();
+            }
+            claim_route(t, body).await
+        }
+    };
     Router::new().route("/api/telegram", get(read)).route(
         "/api/telegram/main",
         post(claim).layer(DefaultBodyLimit::max(CLAIM_MAX_BYTES)),

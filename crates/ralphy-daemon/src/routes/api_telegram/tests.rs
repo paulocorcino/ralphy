@@ -105,6 +105,7 @@ async fn a_claimed_peer_sends_through_its_main() {
         .method("POST")
         .uri("/api/telegram/main")
         .header("content-type", "application/json")
+        .header("authorization", "Bearer a-peer")
         .body(Body::from(r#"{"daemon_id":"m"}"#))
         .expect("a request");
     let (status, claimed) = reply_of(app.clone(), claim).await;
@@ -240,6 +241,7 @@ async fn a_claim_body_over_the_cap_is_refused() {
             .method("POST")
             .uri("/api/telegram/main")
             .header("content-type", "application/json")
+            .header("authorization", "Bearer a-peer")
             .body(Body::from(format!(r#"{{"daemon_id":"{id}"}}"#)))
             .expect("a request")
     };
