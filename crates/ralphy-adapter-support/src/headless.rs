@@ -335,8 +335,15 @@ fn drive_headless(
     // persistent degraded stretch into a matched pair of tracing events.
     let mut degraded_watch = degraded.as_ref().map(|_| DegradedWatch::new());
     let (exit, reap) = loop {
-        if let Some(s) = child.try_wait().context("polling the headless child")? {
-            break (Some(s), None);
+        match child.try_wait() {
+            Ok(Some(s)) => break (Some(s), None),
+            Ok(None) => {}
+            Err(e) => {
+                let e = anyhow::Error::new(e).context("polling the headless child");
+                return Err(teardown_after_error(
+                    &mut child, &rx_out, out_handle, &rx_err, err_handle, e,
+                ));
+            }
         }
         if let Some(reap) = reap_reason(switch.as_deref(), deadline, beat.as_deref(), &idle) {
             break (None, Some(reap));
@@ -364,6 +371,21 @@ fn drive_headless(
         stopped: matches!(reap, Some(Reap::Stopped)),
         exit,
     })
+}
+
+/// Kill the child tree and collect both readers, so an error that ends the drive
+/// early leaves no process and no thread behind. Returns `error` for the caller.
+fn teardown_after_error(
+    child: &mut Child,
+    rx_out: &mpsc::Receiver<Vec<u8>>,
+    out_handle: thread::JoinHandle<()>,
+    rx_err: &mpsc::Receiver<Vec<u8>>,
+    err_handle: thread::JoinHandle<()>,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    ralphy_proc_util::kill_tree(child);
+    collect_both(rx_out, out_handle, rx_err, err_handle);
+    error
 }
 
 /// Spawn `cmd` with its three pipes taken.
