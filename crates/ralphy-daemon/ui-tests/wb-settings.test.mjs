@@ -3,9 +3,7 @@
 // wb-settings-dialog.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { assembledPage, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 
 // A password field is kept out of the DOM while its modal is closed (the
@@ -50,7 +48,7 @@ test("the read-every-comment toggle is read-only and rendered disabled", () => {
   assert.equal(item.type, "toggle");
   assert.equal(item.readonly, true);
   assert.match(item.help, /ralphy config set queue\.trust_all_comments true/);
-  const html = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
+  const html = withoutComments(assembledPage("index.html"));
   const toggle = html.match(/<template x-if="it\.type === 'toggle'">\s*<input[^>]*>/);
   assert.ok(toggle, "the toggle template is gone");
   assert.match(toggle[0], /:disabled="it\.readonly === true"/);

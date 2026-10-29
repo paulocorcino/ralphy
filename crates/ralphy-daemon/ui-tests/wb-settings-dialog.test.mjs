@@ -5,13 +5,12 @@
 // is tested in wb-settings.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the dialog's markup, with the Devices section inside it.
+const PART = "wb-settings-dialog.part.html";
 
 // Evaluate a markup expression the way Alpine does: names resolve on the
 // scope. `with` needs sloppy mode, which `new Function` gives.
@@ -20,7 +19,7 @@ const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${
 
 // The element that holds the dialog's component, up to its `>`.
 const wrapperTag = () => {
-  const html = withoutComments(HTML);
+  const html = partMarkup(PART);
   const at = html.indexOf('x-data="wbSettingsDialog"');
   return html.slice(html.lastIndexOf("<div", at), html.indexOf(">", at) + 1);
 };
@@ -165,7 +164,7 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
   const { scope } = loadComponent("wbSettingsDialog");
   // The Devices section is its own component, nested one level deeper: it
   // reads its own names, not this dialog's.
-  const markup = componentMarkup(HTML, "wbSettingsDialog").replace(
+  const markup = partMarkup(PART).replace(
     /<template x-if="sec\.id === 'devices'[\s\S]*?<\/template>\s*<\/section>/,
     "</section>",
   );
@@ -189,7 +188,7 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
 });
 
 test("the rail button asks the dialog to open with workbench:settings-open, and shows the modal stack", () => {
-  const html = withoutComments(HTML);
+  const html = withoutComments(assembledPage("index.html"));
   const at = html.indexOf('title="Settings"');
   const button = html.slice(html.lastIndexOf("<button", at), at);
   const click = button.match(/@click="([^"]*)"/)[1];
@@ -219,8 +218,7 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
   assert.equal(valueIn(loaded.state, active).active, false);
 
   // Nothing outside the component names its state.
-  const start = HTML.indexOf('x-data="wbSettingsDialog"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["openSettings", "closeSettings", "settingsSection", "settingsError", "deskHistory", "saveSetting"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
@@ -262,7 +260,7 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
 // `app.ts` asks the modal stack with this path; it must be the path the dialog
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Settings dialog gives to scrim()", () => {
-  const markup = componentMarkup(HTML, "wbSettingsDialog");
+  const markup = partMarkup(PART);
   const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["settingsOpen"]);
   assert.equal(WBSettingsDialog.openFlag, paths[0]);
