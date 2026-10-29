@@ -82,6 +82,12 @@ not own:
 - **What the host has installed:** inject it, or make the test an `#[ignore]`
   probe.
 - **The browser and the network**, in a `node --test` test.
+- **The Telegram API:** a test never reaches it and never reads the real
+  token. It uses a fake transport (in `ralphy-daemon`, `NoApi` under
+  `cfg(test)`), a temporary config path (an empty store, or
+  `RALPHY_DAEMON_DIR` set to a temporary folder), and fake token values. A
+  `ralphy` that a CLI test starts comes from `support::ralphy_command`,
+  which removes `RALPHY_TELEGRAM_TOKEN` and `RALPHY_EVENTS_TOKEN`.
 
 ### Controls for negative assertions (item 3)
 

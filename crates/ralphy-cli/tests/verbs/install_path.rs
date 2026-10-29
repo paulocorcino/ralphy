@@ -1,13 +1,11 @@
 //! `ralphy install --print-path`: the install scripts ask the binary where it
 //! goes, so the default folder is decided in one place. It changes nothing.
 
-use std::process::Command;
-
 #[test]
 fn print_path_names_the_binary_and_writes_nothing() {
     let scratch = tempfile::tempdir().expect("scratch");
     let dir = scratch.path().join("bin");
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args(["install", "--print-path", "--dir"])
         .arg(&dir)
         .output()

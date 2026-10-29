@@ -3,10 +3,10 @@
 //! test points `RALPHY_DAEMON_DIR` at its own temp store on the CHILD only.
 
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 fn daemon(store: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    crate::support::ralphy_command()
         .arg("daemon")
         .args(args)
         .env("RALPHY_DAEMON_DIR", store)

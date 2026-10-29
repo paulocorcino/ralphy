@@ -7,8 +7,6 @@
 //! The held-lock refusals of `branch switch`, `config set` and `config unset`
 //! are rows of `lock_refusal.rs`; [`lock_rows`] builds them.
 
-use std::process::Command;
-
 use super::support::{git_output, ralphy, run_git, LockRow};
 
 /// `git init` a fresh temp repo with a born HEAD (an empty initial commit),
@@ -27,7 +25,7 @@ fn init_repo() -> tempfile::TempDir {
 fn branch_create_makes_branch_when_lock_free() {
     let repo = init_repo();
 
-    let status = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let status = crate::support::ralphy_command()
         .args([
             "branch",
             "create",
@@ -52,7 +50,7 @@ fn branch_list_reports_current_and_branches() {
     run_git(repo.path(), &["branch", "other"]);
     let current = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
 
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .args([
             "branch",
             "list",

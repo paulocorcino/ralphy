@@ -2,17 +2,19 @@
 //! binary prints its report, exits 1, and prints no second error line under
 //! it. The install scripts end on this report.
 
-use std::process::Command;
-
 fn doctor(args: &[&str]) -> (Option<i32>, String, String) {
     let empty = tempfile::tempdir().expect("an empty folder");
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+    let out = crate::support::ralphy_command()
         .arg("doctor")
         .args(args)
         // No tool on PATH, and a home with no `~/.local/bin` to fall back on.
         .env("PATH", empty.path())
         .env("HOME", empty.path())
         .env("USERPROFILE", empty.path())
+        // A scratch store: the Telegram config doctor reads is the empty
+        // store's, and no daemon of the developer answers. On Windows the
+        // default config folder does not follow `USERPROFILE`.
+        .env("RALPHY_DAEMON_DIR", empty.path())
         .output()
         .expect("running ralphy doctor");
     (

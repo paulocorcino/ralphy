@@ -4,7 +4,7 @@
 //! no-op with `RALPHY_STATUS_FILE` unset.
 
 use std::io::{BufRead, Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 fn run(env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
     run_as(&["hook", "status", "claude"], env, payload)
@@ -12,7 +12,7 @@ fn run(env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
 
 /// `ralphy <args>` with `payload` on stdin: the exit code and the stdout.
 fn run_as(args: &[&str], env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_ralphy"));
+    let mut cmd = crate::support::ralphy_command();
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
