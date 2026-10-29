@@ -11,11 +11,6 @@
         11
       ]
     },
-    "crates/ralphy-agent-copilot/src/guards.rs": {
-      "builtin_mcp_violation": [
-        17
-      ]
-    },
     "crates/ralphy-agent-copilot/src/outcome.rs": {
       "copilot_final_text": [
         13
