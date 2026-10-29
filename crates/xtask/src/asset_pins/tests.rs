@@ -248,6 +248,64 @@ fn an_unbalanced_block_yields_nothing_rather_than_everything() {
     assert_eq!(next, 1, "and must not swallow the lines it read");
 }
 
+/// `balanced` closes on the line where the delimiter opened on its first line
+/// closes, and reports the index one past it.
+#[test]
+fn a_block_closes_on_its_balancing_line() {
+    // (case, lines, expected block, expected next)
+    let rows: [(&str, &[&str], &str, usize); 4] = [
+        (
+            "an escaped quote does not end the string",
+            &[r#"let t = ["a\"]","#, r#""b"];"#],
+            r#"let t = ["a\"]", "b"]; "#,
+            2,
+        ),
+        (
+            "a delimiter inside a string is not counted",
+            &[r#"let t = ["]","#, r#""x"];"#],
+            r#"let t = ["]", "x"]; "#,
+            2,
+        ),
+        (
+            "a close before any open does not end the block",
+            &["foo)", "x = [1,", "2]"],
+            "foo) x = [1, 2] ",
+            3,
+        ),
+        (
+            "a block that closes on its own line",
+            &["x = [1, 2];", "later"],
+            "x = [1, 2]; ",
+            1,
+        ),
+    ];
+    for (case, lines, block, next) in rows {
+        assert_eq!(
+            balanced(lines, 0, '[', ']'),
+            (block.to_string(), next),
+            "{case}"
+        );
+    }
+}
+
+/// A block may close on its 202nd line; one that closes on its 203rd is lost.
+#[test]
+fn a_block_may_run_to_its_202nd_line() {
+    let closes_on = |n: usize| -> (String, usize) {
+        let lines: Vec<&str> = std::iter::once("for pin in [")
+            .chain(std::iter::repeat_n("    \"noise\",", n - 2))
+            .chain(std::iter::once("]"))
+            .collect();
+        balanced(&lines, 0, '[', ']')
+    };
+    let (block, next) = closes_on(202);
+    assert!(block.ends_with("] "), "a 202-line block is kept");
+    assert_eq!(next, 202);
+    let (block, next) = closes_on(203);
+    assert!(block.is_empty(), "a 203-line block is lost");
+    assert_eq!(next, 1);
+}
+
 /// `text` is squeezed to 96 chars and `keep` drops prose, so a long assert
 /// loses its needle there. `needles` keeps every literal whole, which is what
 /// `ui-copy` matches UI text against.

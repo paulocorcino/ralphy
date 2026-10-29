@@ -213,6 +213,33 @@ fn every_write_shape_is_a_write() {
     assert_eq!(shape("this.y = 1;"), None);
 }
 
+/// Every access of `x` that `scan_accesses` finds in `code`, as `(name, writes)`.
+fn accesses_of_x(code: &str) -> Vec<(String, bool)> {
+    let known: BTreeMap<&str, usize> = [("x", 0)].into_iter().collect();
+    let mut out = Vec::new();
+    scan_accesses(&lex(code, 1), &known, &mut out);
+    out
+}
+
+#[test]
+fn a_hole_inside_a_hole_is_one_read() {
+    assert_eq!(
+        accesses_of_x("show(`a ${ `b ${this.x}` }`);"),
+        [("x".to_string(), false)]
+    );
+}
+
+#[test]
+fn this_followed_by_a_bracket_is_no_access() {
+    assert!(accesses_of_x("this[x] = 1;").is_empty());
+}
+
+#[test]
+fn an_indexed_member_is_a_read_and_a_step_on_it_is_a_write() {
+    assert_eq!(accesses_of_x("this.x[k];"), [("x".to_string(), false)]);
+    assert_eq!(accesses_of_x("this.x[k]++;"), [("x".to_string(), true)]);
+}
+
 #[test]
 fn a_binding_names_only_free_members_of_shell_scope() {
     let known: BTreeSet<String> = ["openSlug", "tabs", "rowOpen", "branchOpen", "item", "label"]

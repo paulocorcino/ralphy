@@ -688,4 +688,22 @@ Prose.
             "{record}"
         );
     }
+
+    #[test]
+    fn features_with_no_topic_each_keep_their_own_line() {
+        let mut history = History::default();
+        fold(
+            &mut history,
+            "v1",
+            "2026-09-24",
+            vec![
+                parse_fragment("1", &fragment("feature", "Paste an image. It lands.")).unwrap(),
+                parse_fragment("2", &fragment("feature", "Rename a file. It moves.")).unwrap(),
+            ],
+        );
+        assert_eq!(
+            render_notes(&history.releases[0]),
+            "\n### ✨ New\n\n- Paste an image. (#1)\n- Rename a file. (#2)\n"
+        );
+    }
 }

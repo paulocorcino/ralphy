@@ -130,3 +130,23 @@ fn input_cut_short_gives_rows_and_never_panics() {
         assert_eq!(seen(&rows(file, js)), vec![], "{file}");
     }
 }
+
+#[test]
+fn a_void_element_names_no_area_for_the_text_after_it() {
+    let out = rows(
+        "index.html",
+        r#"<p><img class="hero-view" src="a.png"> Caption</p>"#,
+    );
+    assert_eq!(
+        out.iter()
+            .map(|r| (r.text.as_str(), r.area.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("Caption", "")]
+    );
+}
+
+#[test]
+fn text_with_no_tag_after_it_is_still_a_row() {
+    let out = rows("index.html", "<p>Tail");
+    assert_eq!(seen(&out), vec![("text", "Tail")]);
+}

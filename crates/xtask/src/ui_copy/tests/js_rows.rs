@@ -302,3 +302,59 @@ const icons = { toml: "bi bi-gear", note: "bi bi-sticky" };
         vec![("js:property", "no upstream")]
     );
 }
+
+#[test]
+fn a_ternary_in_parentheses_gives_both_branches_in_order() {
+    let js = r#"
+      save.textContent = (ok ? "Saved" : "Failed");
+"#;
+    assert_eq!(
+        seen(&rows("wb-console.js", js)),
+        vec![("js:text-content", "Saved"), ("js:text-content", "Failed")]
+    );
+}
+
+#[test]
+fn a_nested_ternary_gives_its_branches_in_source_order() {
+    let js = r#"
+      save.textContent = a ? b ? "One" : "Two" : "Three";
+      stop.textContent = a ? "Four" : b ? "Five" : "Six";
+"#;
+    assert_eq!(
+        seen(&rows("wb-console.js", js)),
+        vec![
+            ("js:text-content", "One"),
+            ("js:text-content", "Two"),
+            ("js:text-content", "Three"),
+            ("js:text-content", "Four"),
+            ("js:text-content", "Five"),
+            ("js:text-content", "Six"),
+        ]
+    );
+}
+
+#[test]
+fn an_and_gives_its_right_side_and_not_its_condition() {
+    let js = r#"
+      wait.textContent = busy && "Wait here";
+"#;
+    assert_eq!(
+        seen(&rows("wb-console.js", js)),
+        vec![("js:text-content", "Wait here")]
+    );
+}
+
+#[test]
+fn a_hole_over_several_lines_keeps_the_line_of_a_later_attribute() {
+    let js = r#"
+el.innerHTML = `<p>${a +
+  b}</p><button title="Later one">Go</button>`;
+"#;
+    let out = rows("wb-console.js", js);
+    assert_eq!(
+        out.iter()
+            .map(|r| (r.line, r.kind.label(), r.text.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(3, "title", "Later one"), (3, "js:text-content", "Go")]
+    );
+}
