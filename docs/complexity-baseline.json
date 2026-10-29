@@ -235,11 +235,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-console-frames.ts": {
-      "readSocketEvent": [
-        19
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-keys.ts": {
       "(anonymous)": [
         11
