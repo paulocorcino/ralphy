@@ -6,13 +6,12 @@
 // wb-release-store.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the dialogs' markup.
+const PART = "wb-release-dialogs.part.html";
 
 // `state` is the scope the dialogs' code sees; `shell` is the shell() object
 // around it, where a test sets the sessions and the fleet, and reads what a
@@ -29,7 +28,7 @@ const valueIn = (scope, expr) => new Function("scope", `with (scope) { return ${
 
 // The element that holds the dialogs' component, up to its `>`.
 const wrapperTag = () => {
-  const html = withoutComments(HTML);
+  const html = partMarkup(PART);
   const at = html.indexOf('x-data="wbReleaseDialogs"');
   return html.slice(html.lastIndexOf("<div", at), html.indexOf(">", at) + 1);
 };
@@ -37,7 +36,7 @@ const handlerOf = (event) => wrapperTag().match(new RegExp(`@${event}\\.window="
 
 // The account menu row whose text ends with `label`, up to its `>`.
 const menuRow = (label) => {
-  const html = withoutComments(HTML);
+  const html = withoutComments(assembledPage("index.html"));
   const at = html.indexOf(label);
   const start = html.lastIndexOf("<button", at);
   return html.slice(start, html.indexOf(">", start) + 1);
@@ -179,7 +178,7 @@ test("the dialogs list at most 12 shell() names, and shell() has each one", () =
 
 test("every name the dialogs' markup reads is their own or in their uses list", () => {
   const { state } = dialogs();
-  const markup = componentMarkup(HTML, "wbReleaseDialogs");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // `x-for="entry in …"` names the loop's own variable.
   const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));
@@ -226,8 +225,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
   }
 
   // Nothing outside the component names its state.
-  const start = HTML.indexOf('x-data="wbReleaseDialogs"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["whatsNewOpen", "aboutOpen", "relUpdate", "openWhatsNew", "openAbout", "about"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b(?!-)`), name);
   }
@@ -236,7 +234,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
 // `app.ts` asks the modal stack with this path; it must be the path the panel
 // gives to `scrim()`, or the shortcuts would never see the panel open.
 test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {
-  const markup = componentMarkup(HTML, "wbReleaseDialogs");
+  const markup = partMarkup(PART);
   const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["whatsNewOpen", "aboutOpen"]);
   assert.equal(WBReleaseDialogs.whatsNewFlag, paths[0]);
