@@ -9,10 +9,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
 
-// Comments dropped first: their prose quotes tags.
-const HTML = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
+// The whole page with its parts put in: the order of the scrims is document
+// order. Comments dropped first: their prose quotes tags.
+const HTML = withoutComments(assembledPage("index.html"));
 
 // The index of the `</div>` that closes the `<div` at `from`.
 const divEnd = (from) => {
@@ -251,4 +252,40 @@ test("every dialog in the document is marked modal", () => {
   for (const tag of dialogs) {
     assert.match(tag, /\baria-modal="true"/, tag.replace(/\s+/g, " "));
   }
+});
+
+// The page is built from parts, and each part goes back to the place its
+// marker holds: every component and every scrim is in the page, in the same
+// order as when the page was one file.
+test("a page put together from its parts", () => {
+  assert.deepEqual(
+    COMPONENTS.map((c) => c.name),
+    [
+      "wbAccount",
+      "wbAttention",
+      "wbFiles",
+      "wbChanges",
+      "wbConsoleTabMenu",
+      "wbConsoleMenus",
+      "wbColumns",
+      "wbBoard",
+      "wbRuns",
+      "wbSettingsDialog",
+      "wbDevices",
+      "wbSecurityDialog",
+      "wbReleaseDialogs",
+      "wbBranchDialog",
+      "wbMoveDialog",
+      "wbUploadDialog",
+      "wbPropertiesDialog",
+      "wbAddProjectDialog",
+      "wbHostsDialog",
+      "wbLogin",
+    ],
+  );
+  assert.equal(SCRIMS.length, 14);
+  assert.equal(SCRIMS.at(-1).path, "addHost.open");
+  assert.equal(SCRIMS.at(-1).component, "wbHostsDialog");
+  assert.equal((HTML.match(/\brole="(?:alert)?dialog"/g) || []).length, 14);
+  assert.doesNotMatch(assembledPage("index.html"), /<!-- part:/, "a marker is left in the page");
 });

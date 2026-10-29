@@ -13,6 +13,7 @@
 // — which is documentation the module's own test should carry — and rewriting
 // them to route through a shared stub factory would trade that for a shared
 // object nobody reads. See ADR-0022's "smallest change that fits the seam".
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { shell } from "../assets/ui/app.ts";
@@ -422,6 +423,35 @@ export function componentMarkup(html, alpineName) {
   if (start < 0) throw new Error(`index.html binds no x-data="${alpineName}"`);
   const end = html.indexOf("<!-- ===", start);
   return withoutComments(html.slice(start, end < 0 ? undefined : end));
+}
+
+// The text of the part `<part>` (a `*.part.html` file of assets/ui), with
+// comments cut out. A component that lives in a part is read here, not cut
+// out of a page.
+export function partMarkup(part) {
+  return withoutComments(readFileSync(join(UI, part), "utf8"));
+}
+
+// A line that holds only `<!-- part: <name>.part.html -->`.
+const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/;
+
+// The page `page` with each marker line replaced by the text of its part, and
+// the part named by `skip` left out. `build/ui.rs` is the only code that puts
+// together a page the daemon serves; this exists only so a test can read the
+// whole page, in document order, or the page outside one component.
+export function assembledPage(page, { skip } = {}) {
+  let text = "";
+  for (const line of readFileSync(join(UI, page), "utf8").split(/(?<=\n)/)) {
+    text += partLine(line, skip);
+  }
+  return text;
+}
+
+function partLine(line, skip) {
+  const marker = PART_MARKER.exec(line);
+  if (!marker) return line;
+  if (marker[1] === skip) return "";
+  return readFileSync(join(UI, marker[1]), "utf8");
 }
 
 // The names a markup binding reads from its scope: every identifier that is not
