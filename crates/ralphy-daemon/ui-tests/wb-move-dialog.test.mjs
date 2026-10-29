@@ -5,11 +5,10 @@
 // wb-modals.test.mjs.
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, partMarkup, withoutComments } from "./harness.mjs";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the move dialog's markup.
+const PART = "wb-move-dialog.part.html";
 
 // The component names `WBDaemon` bare, which Node resolves through
 // `globalThis`: the fake is set there, and taken down after this file.
@@ -49,7 +48,7 @@ test("wbMoveDialog lists only shell() names in uses, and its members left shell(
 
 test("every name the markup of wbMoveDialog reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbMoveDialog");
-  const markup = componentMarkup(HTML, "wbMoveDialog");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   let read = 0;
   for (const [, attr, value] of attrs) {
@@ -64,9 +63,8 @@ test("every name the markup of wbMoveDialog reads is its own or in its uses list
   }
   assert.ok(read > 10, `the markup was read: ${read} names`);
   // The files open it with this event; nothing outside names its state.
-  assert.match(HTML, /<div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open\.window="openMove\(\$event\.detail\.from\)">/);
-  const start = HTML.indexOf('x-data="wbMoveDialog"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  assert.match(partMarkup(PART), /<div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open\.window="openMove\(\$event\.detail\.from\)">/);
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   assert.doesNotMatch(outside, /\bmovePick/);
 });
 

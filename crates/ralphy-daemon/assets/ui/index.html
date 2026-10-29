@@ -635,43 +635,7 @@
          `workbench:move-confirmed`. The moved folder and its own subtree are
          absent from the rows by construction.
     ==================================================================== -->
-    <div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open.window="openMove($event.detail.from)">
-    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('movePick.open', () => movePickCancel())">
-      <div
-        class="modal move-picker"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Move to"
-      >
-        <div class="modal-head">
-          <i class="bi bi-arrow-right-square"></i>
-          <span class="modal-title">Move to…</span>
-          <span class="modal-sub" x-text="movePick.from"></span>
-          <span class="spacer"></span>
-          <button class="modal-x" @click="movePickCancel()" title="Close"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <p class="move-crumb" x-text="movePick.dir || $store.projects.projectLabel($store.projects.openSlug) + ' (project root)'"></p>
-        <div class="move-list">
-          <button class="move-row up" x-show="movePick.dir" @click="movePickUp()">
-            <i class="bi bi-arrow-90deg-up"></i><span>..</span>
-          </button>
-          <template x-for="e in movePick.entries" :key="e.name">
-            <button class="move-row" @click="movePickInto(e.name)">
-              <i class="bi bi-folder"></i><span x-text="e.name"></span>
-            </button>
-          </template>
-          <p class="move-empty" x-show="!movePick.busy && !movePick.error && movePick.entries.length === 0">
-            No folders here
-          </p>
-        </div>
-        <p class="move-error" x-show="movePick.error" x-text="movePick.error"></p>
-        <div class="modal-foot">
-          <button class="btn" @click="movePickCancel()">Cancel</button>
-          <button class="btn accent" @click="movePickConfirm()" :disabled="movePickBlocked()">Move here</button>
-        </div>
-      </div>
-    </div>
-    </div>
+    <!-- part: wb-move-dialog.part.html -->
 
     <!-- ===================================================================
          The upload dialog (wbUploadDialog, wb-files-upload.ts): the files
