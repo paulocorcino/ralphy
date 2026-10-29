@@ -455,24 +455,36 @@ fn is_function(toks: &[Token], i: usize) -> bool {
 fn scan_accesses(toks: &[Token], known: &BTreeMap<&str, usize>, out: &mut Vec<(String, bool)>) {
     for (j, t) in toks.iter().enumerate() {
         if let Tok::Tpl(pieces) = &t.tok {
-            for piece in pieces {
-                if let Piece::Expr(code) = piece {
-                    scan_accesses(&lex(code, t.line), known, out);
-                }
-            }
+            scan_holes(pieces, t.line, known, out);
             continue;
         }
-        if !matches!(t.ident(), Some("this" | "self"))
-            || !toks.get(j + 1).is_some_and(|d| d.is("."))
-        {
-            continue;
-        }
-        if let Some(name) = toks.get(j + 2).and_then(Token::ident) {
-            if known.contains_key(name) {
-                out.push((name.to_string(), writes(toks, j, j + 2)));
-            }
+        if let Some(name) = member_name(toks, j).filter(|n| known.contains_key(n)) {
+            out.push((name.to_string(), writes(toks, j, j + 2)));
         }
     }
+}
+
+/// The accesses in the `${…}` holes of a template literal that starts on `line`.
+fn scan_holes(
+    pieces: &[Piece],
+    line: usize,
+    known: &BTreeMap<&str, usize>,
+    out: &mut Vec<(String, bool)>,
+) {
+    for piece in pieces {
+        if let Piece::Expr(code) = piece {
+            scan_accesses(&lex(code, line), known, out);
+        }
+    }
+}
+
+/// The name in `this.<name>` or `self.<name>` when the receiver is at `j`.
+fn member_name(toks: &[Token], j: usize) -> Option<&str> {
+    let receiver = matches!(ident_at(toks, j), Some("this" | "self"));
+    if !receiver || !tok_is(toks, j + 1, ".") {
+        return None;
+    }
+    ident_at(toks, j + 2)
 }
 
 /// Is the access whose receiver is at `recv` and whose name is at `name` a write?

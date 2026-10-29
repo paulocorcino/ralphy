@@ -828,9 +828,6 @@
       ]
     },
     "crates/xtask/src/ui_groups.rs": {
-      "scan_accesses": [
-        18
-      ],
       "writes": [
         17
       ]
