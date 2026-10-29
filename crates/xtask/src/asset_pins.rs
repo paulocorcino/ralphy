@@ -226,24 +226,9 @@ fn balanced(lines: &[&str], start: usize, open: char, close: char) -> (String, u
     for (offset, line) in lines[start..].iter().enumerate() {
         buf.push_str(line);
         buf.push(' ');
-        let mut in_str = false;
-        let mut escaped = false;
-        for ch in line.chars() {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            match ch {
-                '\\' if in_str => escaped = true,
-                '"' => in_str = !in_str,
-                c if c == open && !in_str => {
-                    depth += 1;
-                    seen = true;
-                }
-                c if c == close && !in_str => depth -= 1,
-                _ => {}
-            }
-        }
+        let (change, opened) = line_depth(line, open, close);
+        depth += change;
+        seen |= opened;
         if seen && depth <= 0 {
             return (buf, start + offset + 1);
         }
@@ -258,6 +243,33 @@ fn balanced(lines: &[&str], start: usize, open: char, close: char) -> (String, u
         }
     }
     (buf, start + 1)
+}
+
+/// How much one line changes the depth of `open`/`close`, and whether it
+/// holds an `open`. A delimiter inside a string does not count; a quote
+/// escaped by `\` does not end the string. A string does not span lines.
+fn line_depth(line: &str, open: char, close: char) -> (i32, bool) {
+    let mut change = 0;
+    let mut opened = false;
+    let mut in_str = false;
+    let mut escaped = false;
+    for ch in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_str => escaped = true,
+            '"' => in_str = !in_str,
+            c if c == open && !in_str => {
+                change += 1;
+                opened = true;
+            }
+            c if c == close && !in_str => change -= 1,
+            _ => {}
+        }
+    }
+    (change, opened)
 }
 
 /// Every string literal in a fragment that `keep` accepts as a pin, in source

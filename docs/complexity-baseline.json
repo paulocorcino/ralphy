@@ -778,9 +778,6 @@
       ]
     },
     "crates/xtask/src/asset_pins.rs": {
-      "balanced": [
-        16
-      ],
       "classify": [
         15
       ],
