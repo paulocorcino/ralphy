@@ -348,7 +348,10 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         );
         assert_eq!(
             std::fs::read_to_string(&env_dump).unwrap(),
-            format!("RALPHY_DAEMON_TOKEN=ABSENT\nRALPHY_DAEMON_ID={B_ID}"),
+            format!(
+                "RALPHY_DAEMON_TOKEN=ABSENT\nRALPHY_DAEMON_ID={B_ID}\n\
+                 RALPHY_TELEGRAM_TOKEN=ABSENT\nRALPHY_EVENTS_TOKEN=ABSENT"
+            ),
             "{verb} must carry the owning daemon identity"
         );
     }
