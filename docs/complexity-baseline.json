@@ -777,11 +777,6 @@
         12
       ]
     },
-    "crates/ralphy-usage-scan/src/recovery.rs": {
-      "resolve_models": [
-        16
-      ]
-    },
     "crates/xtask/src/asset_pins.rs": {
       "balanced": [
         16

@@ -1,6 +1,6 @@
 //! Vendor-neutral model recovery over the existing usage-scan readers.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use crate::{
@@ -54,99 +54,94 @@ pub fn resolve_models(
     stores: &RecoveryStores,
 ) -> Vec<RecoveryResult> {
     let requested: HashSet<RecoveryCandidate> = candidates.iter().cloned().collect();
-    let no_runs = HashSet::new();
-    let no_repos = [];
+    let agents: BTreeSet<&str> = requested.iter().map(|c| c.agent.as_str()).collect();
     let mut matches: BTreeMap<RecoveryCandidate, Vec<InteractiveRecord>> = BTreeMap::new();
 
-    if requested.iter().any(|c| c.agent == "claude") {
-        collect_requested(
-            &requested,
-            &mut matches,
-            scan_claude(&ClaudeScan {
-                projects_dir: &stores.claude_projects_dir,
-                run_session_ids: &no_runs,
-                repos: &no_repos,
-                since: None,
-            }),
-        );
+    for agent in agents {
+        if agent == "codex" {
+            collect_codex(&requested, &mut matches, stores);
+        } else {
+            collect_requested(&requested, &mut matches, scan_agent(agent, stores));
+        }
     }
-    if requested.iter().any(|c| c.agent == "codex") {
-        for (stem, record) in scan_codex_with_stems(&CodexScan {
-            codex_dir: &stores.codex_dir,
+    results_for(candidates, &matches)
+}
+
+/// The records of the one reader that scans `agent`'s store; none for an
+/// agent with no reader.
+fn scan_agent(agent: &str, stores: &RecoveryStores) -> Vec<InteractiveRecord> {
+    let no_runs = HashSet::new();
+    match agent {
+        "claude" => scan_claude(&ClaudeScan {
+            projects_dir: &stores.claude_projects_dir,
             run_session_ids: &no_runs,
-            repos: &no_repos,
+            repos: &[],
             since: None,
-        }) {
-            for session_id in [&stem, &record.session_id] {
-                let candidate = RecoveryCandidate::new("codex", session_id);
-                if requested.contains(&candidate) {
-                    matches.entry(candidate).or_default().push(record.clone());
-                }
+        }),
+        "copilot" => scan_copilot(&CopilotScan {
+            db_path: &stores.copilot_db,
+            run_session_ids: &no_runs,
+            repos: &[],
+            since: None,
+        }),
+        "cursor" => scan_cursor(&CursorScan {
+            cursor_dir: &stores.cursor_dir,
+            run_session_ids: &no_runs,
+            repos: &[],
+            since: None,
+        }),
+        "gemini" => scan_gemini(&GeminiScan {
+            gemini_dir: &stores.gemini_dir,
+            run_session_ids: &no_runs,
+            repos: &[],
+            since: None,
+        }),
+        "kimi" => scan_kimi(&KimiScan {
+            kimi_dir: &stores.kimi_dir,
+            kimi_code_dir: &stores.kimi_code_dir,
+            run_session_ids: &no_runs,
+            repos: &[],
+            since: None,
+        }),
+        "opencode" => scan_opencode(&OpenCodeScan {
+            db_path: &stores.opencode_db,
+            run_session_ids: &no_runs,
+            repos: &[],
+            since: None,
+        }),
+        _ => Vec::new(),
+    }
+}
+
+/// A codex session is named by its rollout file stem or by the id in its
+/// session meta; either one matches a candidate.
+fn collect_codex(
+    requested: &HashSet<RecoveryCandidate>,
+    matches: &mut BTreeMap<RecoveryCandidate, Vec<InteractiveRecord>>,
+    stores: &RecoveryStores,
+) {
+    let no_runs = HashSet::new();
+    let scanned = scan_codex_with_stems(&CodexScan {
+        codex_dir: &stores.codex_dir,
+        run_session_ids: &no_runs,
+        repos: &[],
+        since: None,
+    });
+    for (stem, record) in scanned {
+        for session_id in [&stem, &record.session_id] {
+            let candidate = RecoveryCandidate::new("codex", session_id);
+            if requested.contains(&candidate) {
+                matches.entry(candidate).or_default().push(record.clone());
             }
         }
     }
-    if requested.iter().any(|c| c.agent == "copilot") {
-        collect_requested(
-            &requested,
-            &mut matches,
-            scan_copilot(&CopilotScan {
-                db_path: &stores.copilot_db,
-                run_session_ids: &no_runs,
-                repos: &no_repos,
-                since: None,
-            }),
-        );
-    }
-    if requested.iter().any(|c| c.agent == "cursor") {
-        collect_requested(
-            &requested,
-            &mut matches,
-            scan_cursor(&CursorScan {
-                cursor_dir: &stores.cursor_dir,
-                run_session_ids: &no_runs,
-                repos: &no_repos,
-                since: None,
-            }),
-        );
-    }
-    if requested.iter().any(|c| c.agent == "gemini") {
-        collect_requested(
-            &requested,
-            &mut matches,
-            scan_gemini(&GeminiScan {
-                gemini_dir: &stores.gemini_dir,
-                run_session_ids: &no_runs,
-                repos: &no_repos,
-                since: None,
-            }),
-        );
-    }
-    if requested.iter().any(|c| c.agent == "kimi") {
-        collect_requested(
-            &requested,
-            &mut matches,
-            scan_kimi(&KimiScan {
-                kimi_dir: &stores.kimi_dir,
-                kimi_code_dir: &stores.kimi_code_dir,
-                run_session_ids: &no_runs,
-                repos: &no_repos,
-                since: None,
-            }),
-        );
-    }
-    if requested.iter().any(|c| c.agent == "opencode") {
-        collect_requested(
-            &requested,
-            &mut matches,
-            scan_opencode(&OpenCodeScan {
-                db_path: &stores.opencode_db,
-                run_session_ids: &no_runs,
-                repos: &no_repos,
-                since: None,
-            }),
-        );
-    }
+}
 
+/// One result per candidate, in the order given.
+fn results_for(
+    candidates: &[RecoveryCandidate],
+    matches: &BTreeMap<RecoveryCandidate, Vec<InteractiveRecord>>,
+) -> Vec<RecoveryResult> {
     candidates
         .iter()
         .cloned()
