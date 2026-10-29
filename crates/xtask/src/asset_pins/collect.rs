@@ -15,6 +15,15 @@ const ASSET_MARKERS: [&str; 2] = ["include_str!(\"../", "get_local(\"/"];
 /// What follows the `../` steps of an embedded asset's path.
 const EMBEDDED_ASSET_DIR: &str = "assets/ui/";
 
+/// The constants through which a test reads a page that the build assembled,
+/// and the page each one holds. A claim made through one is a claim about that
+/// page, as if the test embedded its source file.
+const BUILT_PAGES: [(&str, &str); 3] = [
+    ("INDEX_HTML", "index.html"),
+    ("DETACHED_HTML", "detached.html"),
+    ("DETACHED_FENCE_HTML", "detached-fence.html"),
+];
+
 /// The name of the stylesheet, which is assembled from partials and so has no
 /// single path.
 const ASSEMBLED_CSS: &str = "styles/*.css";
@@ -102,6 +111,11 @@ impl Scan<'_> {
         for marker in ASSET_MARKERS {
             if let Some(named) = asset_after(line, marker) {
                 self.book_asset(trimmed, named);
+            }
+        }
+        if !trimmed.starts_with("pub(crate) const ") {
+            if let Some(page) = built_page_on(line) {
+                self.book_asset(trimmed, page.to_string());
             }
         }
     }
@@ -277,10 +291,30 @@ fn asset_after(line: &str, marker: &str) -> Option<String> {
     })
 }
 
+/// The page a line reads through one of the `BUILT_PAGES` constants, if any.
+fn built_page_on(line: &str) -> Option<&'static str> {
+    BUILT_PAGES.iter().find_map(|&(constant, page)| {
+        line.match_indices(constant)
+            .any(|(at, _)| {
+                let before = line[..at].chars().next_back();
+                let after = line[at + constant.len()..].chars().next();
+                let part_of_name = |c: char| c.is_alphanumeric() || c == '_';
+                !before.is_some_and(part_of_name) && !after.is_some_and(part_of_name)
+            })
+            .then_some(page)
+    })
+}
+
 /// A TUPLE loop variable — `for (doc, name) in [(shell, "index.html"), …]` —
 /// means the table pairs a value with a label, and the bare filenames in it
 /// are labels rather than pins. Counting them booked four filenames as claims
 /// about asset text.
 fn is_label_table(header: &str, block: &str) -> bool {
-    header.starts_with("for (") || block.contains("include_str!") || block.contains("served_css()")
+    header.starts_with("for (")
+        || block.contains("include_str!")
+        || block.contains("served_css()")
+        || built_page_on(block).is_some()
 }
+
+#[cfg(test)]
+mod tests;
