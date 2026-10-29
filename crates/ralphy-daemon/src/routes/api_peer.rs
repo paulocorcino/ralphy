@@ -156,12 +156,13 @@ pub(crate) async fn peer_tree_poll_route(
     subs.sweep(fleet::watchsub::IDLE_EXPIRY);
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
-        Err(_) => {
+        Err(e) => {
+            tracing::warn!(path = %registry_path.display(), error = %format!("{e:#}"), "could not read the repo registry for a peer tree poll");
             return Json(serde_json::json!({
                 "status": "error",
                 "message": "repo registry unreadable"
             }))
-            .into_response()
+            .into_response();
         }
     };
     let Some(entry) = store.entry_or_former(&poll.repo) else {
