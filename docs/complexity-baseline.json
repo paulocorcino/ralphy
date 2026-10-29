@@ -246,11 +246,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-console-press.ts": {
-      "(anonymous)": [
-        19
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-spawn.ts": {
       "recordBirth": [
         11

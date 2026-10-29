@@ -20,39 +20,34 @@ export type PressDeps = {
   writeClipboard: (text: string, term: XtermTerminal) => void;
 };
 
+// Alt+Shift with no Ctrl and no Meta.
+function altShiftOnly(e: KeyboardEvent) {
+  return e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey;
+}
+
+// Whether the page, not the child, takes this chord.
+function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["window"]) {
+  if (!altShiftOnly(e)) return false;
+  // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
+  // §5), and so in the grid of a console tab (ADR-0037 §3d): xterm must not
+  // send them to the child, and the document listener of the columns
+  // (wb-consoles-tab.ts) takes them.
+  if (/^Arrow(Left|Right|Up|Down)$/.test(e.code) && !!body.closest(".session-window.column, .session-window.tab-grid")) {
+    return true;
+  }
+  // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
+  // terminal too. Only where the console menus' document listener exists
+  // (wb-consoles-tab.ts, on the page with a shell): a
+  // detached popup has none, so its terminal keeps the key.
+  return /^(?:Digit\d|KeyR)$/.test(e.code) && typeof win.getShell === "function";
+}
+
 export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
   // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
   // is the DevTools accelerator and a page cannot take it back. Ctrl+C
   // belongs to the child.
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-    // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
-    // §5), and so in the grid of a console tab (ADR-0037 §3d): xterm must not
-    // send them to the child, and the document listener of the columns
-    // (wb-consoles-tab.ts) takes them.
-    if (
-      e.altKey &&
-      e.shiftKey &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
-      !!body.closest(".session-window.column, .session-window.tab-grid")
-    ) {
-      return false;
-    }
-    // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
-    // terminal too. Only where the console menus' document listener exists
-    // (wb-consoles-tab.ts, on the page with a shell): a
-    // detached popup has none, so its terminal keeps the key.
-    if (
-      e.altKey &&
-      e.shiftKey &&
-      !e.ctrlKey &&
-      !e.metaKey &&
-      /^(?:Digit\d|KeyR)$/.test(e.code) &&
-      typeof window.getShell === "function"
-    ) {
-      return false;
-    }
+    if (pageTakesChord(e, body, window)) return false;
     if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
     if (e.key !== "Insert" || !term.hasSelection()) return true;
     writeClipboard(term.getSelection(), term);
