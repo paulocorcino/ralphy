@@ -37,6 +37,7 @@ pub mod owner_only;
 pub mod password;
 pub mod peer;
 pub mod pidfile;
+mod presence_board;
 #[cfg(feature = "scroll-probe")]
 mod probe;
 pub mod protocol;
@@ -46,6 +47,7 @@ pub mod release;
 pub mod roster;
 pub mod session;
 pub mod spend;
+pub mod telegram_state;
 pub mod textcodec;
 pub mod totp;
 pub mod tree;
@@ -143,6 +145,10 @@ pub struct StorePaths {
     pub copilot_db: PathBuf,
     pub cursor_dir: PathBuf,
     pub gemini_dir: PathBuf,
+    /// The Telegram config the daemon sends its console messages with
+    /// (ADR-0085 D14). Empty: no config, and no message is sent, so a test's
+    /// daemon never reaches Telegram.
+    pub telegram_config: PathBuf,
 }
 
 /// The daemon's HTTP surface. Real routes sit *before* the embedded-UI

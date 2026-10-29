@@ -7,7 +7,7 @@
 //! without persisting it. This crate only reads the file; the CLI writes it
 //! owner-only.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
@@ -38,8 +38,14 @@ impl TelegramConfig {
 
     /// Load the config from disk, or `None` when no config file exists yet.
     pub fn load() -> Result<Option<TelegramConfig>> {
-        let path = Self::config_path()?;
-        match std::fs::read_to_string(&path) {
+        Self::load_from(&Self::config_path()?)
+    }
+
+    /// Load the config at `path`, or `None` when no file is there. The daemon
+    /// reads it through a path it was given, so a test's daemon reads a temp
+    /// file and never the operator's.
+    pub fn load_from(path: &Path) -> Result<Option<TelegramConfig>> {
+        match std::fs::read_to_string(path) {
             Ok(text) => {
                 let cfg =
                     toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;

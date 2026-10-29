@@ -20,10 +20,11 @@ use tokio::sync::broadcast;
 
 use super::dismissals::Dismissals;
 use super::done::{self, DeskFiles, Marks};
+use super::telegram::Notifier;
 use super::{list, AttentionRequest, FinishedRun, RunSource, RunsRead};
 use crate::registry;
 use crate::routes::{push, Push};
-use crate::session::SessionManager;
+use crate::session::{SessionInfo, SessionManager};
 
 /// How often the tick reads the runs.
 pub const EVERY: Duration = Duration::from_secs(3);
@@ -103,12 +104,20 @@ pub(crate) fn list_with(
     runs: &RunsRead,
     dismissed: &Dismissed,
 ) -> Vec<AttentionRequest> {
-    let consoles = sessions.list_at(SystemTime::now());
+    list_of(&sessions.list_at(SystemTime::now()), runs, dismissed)
+}
+
+/// [`list_with`], for the consoles `consoles` already read.
+fn list_of(
+    consoles: &[SessionInfo],
+    runs: &RunsRead,
+    dismissed: &Dismissed,
+) -> Vec<AttentionRequest> {
     match dismissed.lock() {
-        Ok(dismissed) => list(&consoles, runs, &|id| dismissed.contains(id)),
+        Ok(dismissed) => list(consoles, runs, &|id| dismissed.contains(id)),
         Err(e) => {
             tracing::warn!(error = %e, "the attention dismissals are poisoned");
-            list(&consoles, runs, &|_| false)
+            list(consoles, runs, &|_| false)
         }
     }
 }
@@ -136,13 +145,14 @@ impl Seen {
 }
 
 /// One tick: read the runs, open the requests of the finished turns the
-/// operator marked, keep both for the route, and push `attention.dirty` when
-/// the list changed.
+/// operator marked, keep both for the route, push `attention.dirty` when
+/// the list changed, and send the console requests that wait for an
+/// operator who is away ([`Notifier`]).
 pub(crate) async fn tick_once(
     files: &DeskFiles,
     sessions: &SessionManager,
     (runs, dismissed): (&Runs, &Dismissed),
-    seen: &mut Seen,
+    (seen, telegram): (&mut Seen, &mut Notifier),
     pushes: &broadcast::Sender<Push>,
 ) {
     let path = files.registry.clone();
@@ -158,7 +168,8 @@ pub(crate) async fn tick_once(
         done::fire(&mut seen.marks, &fresh, files, pushes).await;
     }
     read.done = seen.marks.open().to_vec();
-    let requests = list_with(sessions, &read, dismissed);
+    let consoles = sessions.list_at(SystemTime::now());
+    let requests = list_of(&consoles, &read, dismissed);
     match runs.lock() {
         Ok(mut kept) => *kept = read,
         Err(e) => tracing::warn!(error = %e, "the attention runs are poisoned"),
@@ -166,6 +177,7 @@ pub(crate) async fn tick_once(
     if seen.changed(&requests) {
         push(pushes, Push::Attention);
     }
+    telegram.tick(&requests, &consoles).await;
 }
 
 /// Tick every [`EVERY`] until the daemon stops.
@@ -173,7 +185,7 @@ pub(crate) async fn run(
     files: DeskFiles,
     sessions: Arc<SessionManager>,
     (runs, dismissed): (Runs, Dismissed),
-    pushes: broadcast::Sender<Push>,
+    (pushes, mut telegram): (broadcast::Sender<Push>, Notifier),
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let mut seen = Seen::default();
@@ -183,7 +195,7 @@ pub(crate) async fn run(
         tokio::select! {
             _ = shutdown.changed() => break,
             _ = every.tick() => {
-                tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &pushes).await;
+                tick_once(&files, &sessions, (&runs, &dismissed), (&mut seen, &mut telegram), &pushes).await;
             }
         }
     }
@@ -219,6 +231,11 @@ mod tests {
         }
     }
 
+    /// A sender with no config: it sends nothing.
+    fn no_telegram() -> Notifier {
+        Notifier::new(Default::default(), Default::default(), None)
+    }
+
     /// Whether the tick sent one push, and only one.
     fn pushed(rx: &mut broadcast::Receiver<Push>) -> bool {
         match rx.try_recv() {
@@ -245,10 +262,17 @@ mod tests {
         let runs = Runs::default();
         let dismissed = Dismissed::default();
         let mut seen = Seen::default();
+        let mut telegram = no_telegram();
         let (tx, mut rx) = broadcast::channel(8);
         macro_rules! tick {
             () => {
-                tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &tx)
+                tick_once(
+                    &files,
+                    &sessions,
+                    (&runs, &dismissed),
+                    (&mut seen, &mut telegram),
+                    &tx,
+                )
             };
         }
 
@@ -300,6 +324,7 @@ mod tests {
         let runs = Runs::default();
         let dismissed = Dismissed::default();
         let mut seen = Seen::default();
+        let mut telegram = no_telegram();
         let (tx, mut rx) = broadcast::channel(8);
         let ids = |runs: &Runs| -> Vec<String> {
             let read = runs.lock().expect("the runs lock").clone();
@@ -309,12 +334,26 @@ mod tests {
                 .collect()
         };
 
-        tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &tx).await;
+        tick_once(
+            &files,
+            &sessions,
+            (&runs, &dismissed),
+            (&mut seen, &mut telegram),
+            &tx,
+        )
+        .await;
         assert!(pushed(&mut rx), "a finished run's request is a change");
         assert_eq!(ids(&runs), ["issue:20261028-100000:71"]);
 
         std::fs::remove_dir_all(&run_dir).expect("remove the run folder");
-        tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &tx).await;
+        tick_once(
+            &files,
+            &sessions,
+            (&runs, &dismissed),
+            (&mut seen, &mut telegram),
+            &tx,
+        )
+        .await;
         assert!(pushed(&mut rx), "a request that ended is a change");
         assert!(ids(&runs).is_empty());
     }

@@ -10,6 +10,7 @@ fn all_found() -> MachineFacts {
         agents: vec![(Agent::Claude, "2.1.0 (Claude Code)".to_string())],
         linger: None,
         hooks: vec![(Agent::Claude, HookCheck::Ok)],
+        telegram: None,
     }
 }
 
@@ -333,4 +334,25 @@ fn doctor_names_the_opencode_state_source() {
     let want = "[ok  ] opencode hooks: a plugin; checked by its first line in each console";
     assert!(out.contains(want), "{want}\n{out}");
     assert!(hook_command(Agent::Opencode, Path::new("opencode")).is_none());
+}
+
+#[test]
+fn the_telegram_line_says_whether_this_machine_sends() {
+    let rows = [
+        (TelegramState::Off, "off"),
+        (TelegramState::Sends, "sends from this machine"),
+    ];
+    for (state, text) in rows {
+        let report = evaluate(
+            &MachineFacts {
+                telegram: Some(state),
+                ..all_found()
+            },
+            false,
+        );
+        let line = line(&report, "telegram");
+        assert_eq!(line.text, text);
+        assert!(line.ok && !line.required, "a fact, never a failure");
+        assert_eq!(report.missing_required(), 0);
+    }
 }

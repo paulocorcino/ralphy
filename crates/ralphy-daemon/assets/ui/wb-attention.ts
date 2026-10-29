@@ -30,6 +30,15 @@
    permission. With it on, a request id this page did not know before shows
    one browser notification while the tab is hidden.
 
+   The panel's last line is the Telegram state of this daemon (`GET
+   /api/telegram`): whether it tells the operator who is away from every
+   page about a console that waits.
+
+   A link in a Telegram message opens the page with
+   `?console=<daemon_id>/<session id>`: once the session list is read, that
+   console is shown as "Go to the console" shows it, and the parameter is
+   taken out of the URL.
+
    `main.ts` registers it as `wbAttention`.
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
@@ -64,6 +73,40 @@ export type AttentionRequest = {
 
 /** The reply of `GET /api/attention`. */
 export type AttentionReply = { requests: AttentionRequest[] };
+
+/** The reply of `GET /api/telegram` (`TelegramState` in `telegram_state.rs`). */
+export type TelegramReply = { state: "off" | "sends" | "through-main"; main?: string };
+
+/** The panel's line for the Telegram state of this daemon. */
+export function telegramText(reply: TelegramReply) {
+  switch (reply.state) {
+    case "off":
+      return "Telegram: off";
+    case "sends":
+      return "Telegram: sends from this machine";
+    case "through-main":
+      return "Telegram: sends through the main daemon";
+    default: {
+      const unknown: never = reply.state;
+      return unknown;
+    }
+  }
+}
+
+/** How many times, a quarter of a second apart, the page tries to show the
+ * console its URL names: the session list and the desk are read at load. */
+export const LINK_TRIES = 40;
+export const LINK_BEAT_MS = 250;
+
+/** The console a page URL names: `?console=<daemon_id>/<session id>`. */
+export function consoleLinkOf(search: string) {
+  const value = new URLSearchParams(search).get("console");
+  const cut = value ? value.lastIndexOf("/") : -1;
+  if (!value || cut <= 0) return null;
+  const session = Number(value.slice(cut + 1));
+  if (!Number.isInteger(session)) return null;
+  return { daemon: value.slice(0, cut), session };
+}
 
 /** The tab title with no request open (`<title>` in `index.html`). */
 export const PAGE_TITLE = "Ralphy";
@@ -173,10 +216,19 @@ export function wbAttention() {
     notifyOn: false,
     _known: null as Set<string> | null,
     _dismissing: new Set<string>(),
+    // The Telegram line of the panel; "" before the first read.
+    telegram: "",
+    // The console the page URL names, until it is shown.
+    _link: null as { daemon: string; session: number } | null,
+    _linkTimer: 0,
+    _linkTries: 0,
 
     init() {
       this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
       this.read();
+      this.readTelegram();
+      this._link = consoleLinkOf(window.location.search);
+      if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
       window.addEventListener("workbench:attention-reread", () => this.read());
       window.addEventListener("workbench:logged-in", () => this.read());
       window.addEventListener("workbench:menus-close", () => this.close());
@@ -204,6 +256,49 @@ export function wbAttention() {
         // A daemon that does not answer: the last list stays, and the next
         // push or reopened socket reads again.
       }
+    },
+
+    // A failed read keeps the last line.
+    async readTelegram() {
+      try {
+        const r = await apiFetch("GET /api/telegram");
+        if (r.ok) this.telegram = telegramText(await r.json());
+      } catch {
+        // A daemon that does not answer: the panel keeps the last line.
+      }
+    },
+
+    // Show the console the page URL named, once the session list is read
+    // and its window is on the desk, then take the parameter out of the URL.
+    // The page tries for [LINK_TRIES] beats; a console that is not in the
+    // list is not shown.
+    openLink() {
+      const link = this._link;
+      if (!link) return;
+      if (++this._linkTries > LINK_TRIES) return this.endLink();
+      if (!this.$store.projects.sessionsRead?.current) return;
+      const session = (this.$store.projects.liveSessions || []).find(
+        (s) => s.id === link.session && s.daemon_id === link.daemon,
+      );
+      if (!session?.record || this.showLinked(session.record)) this.endLink();
+    },
+    // Show the window of the desk record `id`: `false` while it is not on
+    // the desk yet.
+    showLinked(id: string) {
+      const tab = this.$store.tabs.tabOf(id);
+      if (tab) {
+        this.$store.tabs.activate(tab.id);
+        return true;
+      }
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
+      return Boolean(WBConsole.reveal(id));
+    },
+    endLink() {
+      this._link = null;
+      window.clearInterval(this._linkTimer);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("console");
+      window.history.replaceState(window.history.state, "", url.toString());
     },
 
     show(requests: AttentionRequest[]) {
@@ -250,6 +345,7 @@ export function wbAttention() {
       const was = this.open;
       sendWindow(window, "workbench:menus-close");
       this.open = !was;
+      if (this.open) this.readTelegram();
     },
     close() {
       this.open = false;
@@ -329,7 +425,11 @@ export function wbAttention() {
       this.open = false;
       if (request.kind === "console-done") this.finish(request);
       const id = sessionOf(request, this.$store.projects.liveSessions)?.record;
-      if (!id) return;
+      if (id) this.reveal(id);
+    },
+
+    // Show the console window of the desk record `id`.
+    reveal(id: string) {
       const tab = this.$store.tabs.tabOf(id);
       if (tab) {
         this.$store.tabs.activate(tab.id);

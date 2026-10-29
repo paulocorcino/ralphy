@@ -15,6 +15,7 @@ use crate::session::SessionInfo;
 
 pub(crate) mod dismissals;
 pub(crate) mod done;
+pub(crate) mod telegram;
 pub(crate) mod tick;
 
 /// The kind of a request. Matched exhaustively, so a new kind has to say

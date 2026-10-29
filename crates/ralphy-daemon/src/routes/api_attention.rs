@@ -19,6 +19,7 @@ use axum::{Json, Router};
 use super::{RouterShared, UNANSWERED_HEADER};
 use crate::attention::dismissals::Dismissals;
 use crate::attention::done::DeskFiles;
+use crate::attention::telegram::Notifier;
 use crate::attention::tick::{self, Dismissed, Runs};
 use crate::attention::{AttentionRequest, RunsRead};
 use crate::routes::read_peer_store;
@@ -242,11 +243,16 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
             registry: s.registry_path.clone(),
             peers: s.peer_repo_cache.clone(),
         };
+        let telegram = Notifier::new(
+            s.stores.telegram_config.clone(),
+            s.presence.clone(),
+            s.daemon_id.clone(),
+        );
         runtime.spawn(tick::run(
             files,
             sessions.clone(),
             (runs.clone(), dismissed.clone()),
-            s.pushes.clone(),
+            (s.pushes.clone(), telegram),
             s.shutdown.clone(),
         ));
     }

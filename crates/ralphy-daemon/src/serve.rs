@@ -282,6 +282,12 @@ fn usage_stores() -> Result<StorePaths> {
         copilot_db: usage::copilot_db_path()?,
         cursor_dir: usage::cursor_dir_path()?,
         gemini_dir: usage::gemini_dir_path()?,
+        // A machine with no config directory sends no Telegram message; the
+        // daemon still starts.
+        telegram_config: crate::telegram_state::config_path().unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "no Telegram config path; no Telegram message is sent");
+            PathBuf::new()
+        }),
     })
 }
 

@@ -31,6 +31,7 @@ import { wbAccount } from "./wb-account.ts";
 import { wbLogin } from "./wb-login.ts";
 import { wbAttention } from "./wb-attention.ts";
 import { createDaemon } from "./wb-daemon.ts";
+import { startPresence } from "./wb-presence.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-file-viewer.ts";
 import { wireDiagramZoom } from "./wb-zoom-overlay.ts";
@@ -68,6 +69,10 @@ window.WBConsole = createConsole(window, document, location, { messages, stack, 
 // `WBDaemon`, and the facts go out once per page load.
 window.WBDaemon = createDaemon(window, document, location, { messages });
 WBDevice.report(window);
+// The operator's presence rides the daemon's `/ws` socket, which the store
+// `connection` opens.
+const daemon = window.WBDaemon;
+startPresence(window, document, { send: daemon.reportPresence, onOpen: daemon.onPresenceOpen });
 // The file pane, before `wire`: `app.ts` reads `WBViewer`.
 window.WBViewer = createViewer(window, document, { messages });
 wireDiagramZoom(window, document);

@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 use ralphy_adapter_support::{find_program, locate_program, run_headless};
 use ralphy_daemon::agent_state::{state_source, StateSource};
+use ralphy_daemon::telegram_state::{self, TelegramState};
 use ralphy_proc_util::hook_form::{self, HookCheck};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,9 @@ pub(crate) enum Tool {
     Linger,
     /// Whether the hooks of an agent that gives its state through hooks run.
     Hooks,
+    /// Whether this machine's daemon sends the Telegram message of a console
+    /// that waits.
+    Telegram,
 }
 
 /// One line of the result: one tool, what was found, and how to fix it.
@@ -80,6 +84,9 @@ pub(crate) struct MachineFacts {
     pub linger: Option<Option<bool>>,
     /// The hook check of each installed agent whose state comes from hooks.
     pub hooks: Vec<(Agent, HookCheck)>,
+    /// The Telegram state of the daemon on this machine; `None` when its
+    /// config path could not be found.
+    pub telegram: Option<TelegramState>,
 }
 
 /// The lingering line, shared with the host check so both say the same thing.
@@ -259,6 +266,19 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
     }
 }
 
+/// The Telegram state is a fact, never a failure: off is a choice.
+fn telegram_line(state: &TelegramState) -> ToolLine {
+    ToolLine {
+        tool: Tool::Telegram,
+        name: "telegram".to_string(),
+        ok: true,
+        required: false,
+        version: None,
+        text: state.text(),
+        fix: None,
+    }
+}
+
 /// The result for `facts`, one line per tool, in a fixed order.
 pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     let mut tools = vec![git_line(facts, windows), gh_line(facts), python_line(facts)];
@@ -272,6 +292,7 @@ pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     if let Some(linger) = facts.linger {
         tools.push(linger_line(linger));
     }
+    tools.extend(facts.telegram.as_ref().map(telegram_line));
     DoctorReport { tools }
 }
 
@@ -333,6 +354,10 @@ pub(crate) fn probe() -> MachineFacts {
             .map(|a| scope.spawn(move || hook_probe(*a)))
             .collect();
         let linger = linger();
+        // The path the daemon of this machine reads, from the daemon itself.
+        let telegram = telegram_state::config_path()
+            .ok()
+            .map(|path| telegram_state::state_at(&path));
         // A probe thread only runs a program and reads its output; a panic in
         // one is a bug in that code, not a fact about the computer.
         let join = "a doctor probe does not panic";
@@ -350,6 +375,7 @@ pub(crate) fn probe() -> MachineFacts {
                 .into_iter()
                 .filter_map(|h| h.join().expect(join))
                 .collect(),
+            telegram,
         }
     })
 }

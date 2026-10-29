@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { bindingNames, UI, withoutComments } from "./harness.mjs";
-import { wbAttention } from "../assets/ui/wb-attention.ts";
+import { LINK_BEAT_MS, LINK_TRIES, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
@@ -45,7 +45,13 @@ function page(t, { replies = [], sessions = [], projects = [], tabOf = () => und
   });
   const reveals = [];
   const activated = [];
-  globalThis.window = { addEventListener() {}, dispatchEvent() {}, setInterval: () => 0 };
+  globalThis.window = {
+    addEventListener() {},
+    dispatchEvent() {},
+    setInterval: () => 0,
+    clearInterval() {},
+    location: { search: "", href: "http://127.0.0.1:7431/" },
+  };
   globalThis.document = { title: "Ralphy", hidden: false, addEventListener() {} };
   globalThis.WBConsole = { reveal: (id) => reveals.push(id) };
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => replies.shift() });
@@ -322,4 +328,60 @@ test("opening the console of a done request dismisses it", async (t) => {
   await new Promise((resolve) => setImmediate(resolve));
   const posts = sent.filter(([method]) => method === "POST");
   assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "done:1:1" })]]);
+});
+
+test("a console url focuses the console after load and leaves the url", async (t) => {
+  const session = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });
+  const { data, reveals, activated } = page(t, {
+    sessions: [session(7, "01OTHER", "w-other"), session(7, PEER, "w-linked")],
+  });
+  let beat = null;
+  const urls = [];
+  Object.assign(window, {
+    location: { search: `?console=${PEER}/7`, href: `http://127.0.0.1:7431/?console=${PEER}/7&x=1` },
+    history: { state: null, replaceState: (_state, _title, url) => urls.push(url) },
+    setInterval: (fn, ms) => {
+      if (ms === LINK_BEAT_MS) beat = fn;
+      return 1;
+    },
+  });
+  data.init();
+  assert.ok(beat, "a link starts the beat");
+  beat();
+  assert.deepEqual(reveals, [], "nothing before the session list is read");
+  data.$store.projects.sessionsRead = { current: true };
+  beat();
+  assert.deepEqual(reveals, ["w-linked"], "the console of that daemon and session");
+  assert.deepEqual(activated, ["consoles"]);
+  assert.deepEqual(urls, ["http://127.0.0.1:7431/?x=1"], "the parameter leaves the url");
+  beat();
+  assert.deepEqual(reveals, ["w-linked"], "once");
+});
+
+test("a console url names a console that is not there: the url is cleaned at the end", async (t) => {
+  const { data, reveals } = page(t);
+  let beat = null;
+  const urls = [];
+  Object.assign(window, {
+    location: { search: "?console=01GONE/9", href: "http://127.0.0.1:7431/?console=01GONE/9" },
+    history: { state: null, replaceState: (_state, _title, url) => urls.push(url) },
+    setInterval: (fn, ms) => {
+      if (ms === LINK_BEAT_MS) beat = fn;
+      return 1;
+    },
+  });
+  data.init();
+  for (let n = 0; n <= LINK_TRIES; n++) beat();
+  assert.deepEqual(reveals, []);
+  assert.deepEqual(urls, ["http://127.0.0.1:7431/"]);
+});
+
+test("the panel shows the Telegram state of this daemon", async (t) => {
+  const { data } = page(t, { replies: [fixture("api-telegram"), { state: "off" }] });
+  assert.equal(data.telegram, "", "nothing before the first read");
+  await data.readTelegram();
+  assert.equal(data.telegram, "Telegram: sends from this machine");
+  await data.readTelegram();
+  assert.equal(data.telegram, "Telegram: off");
+  assert.match(attentionElement(), /x-text="telegram"/);
 });
