@@ -4,24 +4,10 @@
 // in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
-
-// The menu's element, from its `<div` to the `</div>` that closes it, with
-// comments cut out. It sits inside the rail, so no banner comment ends it.
-function accountElement() {
-  const html = withoutComments(HTML);
-  const start = html.lastIndexOf("<div", html.indexOf('x-data="wbAccount"'));
-  let depth = 0;
-  for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) {
-    depth += m[0] === "</div>" ? -1 : 1;
-    if (depth === 0) return { html, start, end: start + m.index + m[0].length };
-  }
-  throw new Error("the account menu's element is not closed");
-}
+// The part that holds the account menu's markup.
+const PART = "wb-account.part.html";
 
 // One page with the shell and the menu, and a window that delivers the events
 // it is sent, as the browser does. `init()` adds the listeners, as Alpine does
@@ -56,8 +42,7 @@ test("wbAccount lists only shell() names in uses, and its members left shell()",
 
 test("every name the markup of wbAccount reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbAccount");
-  const { html, start, end } = accountElement();
-  const attrs = [...html.slice(start, end).matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...partMarkup(PART).matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   let read = 0;
   for (const [, attr, value] of attrs) {
     if (attr === "x-data") continue;
@@ -71,8 +56,7 @@ test("every name the markup of wbAccount reads is its own or in its uses list", 
 });
 
 test("nothing outside the account menu names its state", () => {
-  const { html, start, end } = accountElement();
-  const outside = html.slice(0, start) + html.slice(end);
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["avatarMenu", "toggleAvatarMenu", "closeAvatarMenu"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }

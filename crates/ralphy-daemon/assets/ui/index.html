@@ -83,56 +83,7 @@
            avatar (/api/identity); the menu carries the name, the live uptime and
            the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
            over the sidebar: a 48px column has no room to drop one downward. -->
-      <div class="menu-wrap rail-acct" x-data="wbAccount">
-        <button class="avatar-btn" :title="$store.connection.identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
-          <span class="avatar" x-text="$store.connection.identityMark()"></span>
-          <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo
-               roll-up, which is why it may sit on the rail where the Changes
-               count may not: nothing here claims an aggregate this UI does not
-               compute. Its loudness is the daemon's `severity`, never derived
-               here from version numbers. -->
-          <span class="rel-dot" :class="$store.release.release.severity" x-show="$store.release.releaseUnread" x-cloak></span>
-        </button>
-        <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
-          <!-- The daemon this browser is talking to, said by NAME: the mark on
-               the button is a picture, and a picture cannot answer "which
-               daemon is this" when the operator runs one per environment. -->
-          <div class="dropdown-head acct-head">
-            <span class="acct-mark" x-text="$store.connection.identityMark()"></span>
-            <span class="acct-who">
-              <span class="acct-name" x-text="$store.connection.identityName || 'Ralphy'"></span>
-              <span class="acct-role">Signed in · daemon</span>
-            </span>
-          </div>
-          <!-- Uptime, the daemon's live presence from the WS heartbeat. It reads
-               as a THIRD line of the identity head rather than a stat in a bar,
-               which is what it always was: how long THIS daemon has been up.
-               `stale` fires when the heartbeat is over 6s old. It is bound to
-               `presenceStale`, a flag a clock derives — the inline `Date.now()`
-               this replaces could never fire, because ticks stopping is exactly
-               what does not trigger a re-render (app.js). -->
-          <div class="acct-stats">
-            <span class="stat uptime" :class="{ stale: $store.connection.presenceStale }">
-              <svg x-icon="'circle-dot'"></svg> <span x-text="$store.connection.uptimeText || 'connecting…'"></span>
-            </span>
-          </div>
-          <!-- Above Security on purpose: when there is something new, it is the
-               reason the operator opened this menu. Absent entirely when there
-               is not, rather than greyed out. -->
-          <button class="dropdown-item rel-item" x-show="$store.release.releaseHasNews" x-cloak @click="avatarMenu = false; $dispatch('workbench:whats-new-open')">
-            <i class="bi bi-stars"></i><span x-text="$store.release.releaseSummary"></span>
-          </button>
-          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:security-open')">
-            <i class="bi bi-shield-lock"></i><span>Security settings</span>
-          </button>
-          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:about-open')">
-            <i class="bi bi-info-circle"></i><span>About</span>
-          </button>
-          <button class="dropdown-item" @click="$store.connection.logOff()">
-            <i class="bi bi-box-arrow-right"></i><span>Log out</span>
-          </button>
-        </div>
-      </div>
+      <!-- part: wb-account.part.html -->
       <!-- The attention list (wb-attention.ts): the requests that wait for the
            operator, as the daemon computed them. The badge is the count, hidden
            at 0; the same count is in the tab title. The panel opens to the SIDE,
