@@ -389,7 +389,19 @@ fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, Chil
         .spawn()
         .context("failed to spawn the headless child process")?;
     // A misconfigured `Command` (no piped stdio) degrades to a run error, not a
-    // panic.
+    // panic. The child is already running, so it is killed before the error returns.
+    match take_pipes(&mut child) {
+        Ok((stdin, stdout, stderr)) => Ok((child, stdin, stdout, stderr)),
+        Err(e) => {
+            ralphy_proc_util::kill_tree(&mut child);
+            Err(e)
+        }
+    }
+}
+
+/// The three pipes of a spawned child, or an error that names the first one that
+/// was not piped.
+fn take_pipes(child: &mut Child) -> Result<(ChildStdin, ChildStdout, ChildStderr)> {
     let stdin = child
         .stdin
         .take()
@@ -402,7 +414,7 @@ fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, Chil
         .stderr
         .take()
         .context("headless child stderr was not piped")?;
-    Ok((child, stdin, stdout, stderr))
+    Ok((stdin, stdout, stderr))
 }
 
 /// Why the poll loop reaped a live child.
