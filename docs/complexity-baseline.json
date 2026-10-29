@@ -587,11 +587,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/src/dispatch/host.rs": {
-      "host_argv": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/src/fleet/watchsub.rs": {
       "subscribe": [
         19
