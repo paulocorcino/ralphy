@@ -69,7 +69,6 @@ static JS_DYNAMIC: LazyLock<Regex> = LazyLock::new(|| {
 static URL_HOST: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)\b(?:https?|wss?)://([a-z0-9][a-z0-9.-]*\.[a-z]{2,})"));
 static BASE64_BLOB: LazyLock<Regex> = LazyLock::new(|| re(r"[A-Za-z0-9+/]{80,}={0,2}"));
-static HEX_BLOB: LazyLock<Regex> = LazyLock::new(|| re(r"\b[0-9a-fA-F]{100,}\b"));
 
 fn re(pattern: &str) -> Regex {
     Regex::new(pattern).expect("the rule patterns are constants and are covered by the tests")
@@ -193,7 +192,7 @@ fn content_findings(ext: &str, text: &str) -> Vec<Hit> {
     if let Some(m) = CREDENTIAL_PATH.find(text) {
         out.push((Capability::Credential, format!("names `{}`", m.as_str())));
     }
-    if BASE64_BLOB.is_match(text) || HEX_BLOB.is_match(text) {
+    if BASE64_BLOB.is_match(text) {
         out.push((Capability::Encoded, "a long encoded string".to_string()));
     }
     let chars = text.chars().count();

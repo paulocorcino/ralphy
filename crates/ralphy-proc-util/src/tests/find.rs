@@ -44,3 +44,25 @@ fn an_unset_pathext_still_finds_an_exe() {
         "{got:?}"
     );
 }
+
+/// A name that already holds a dot is not an extension: `python3.11` + `.EXE`.
+#[test]
+#[cfg(windows)]
+fn a_name_with_a_dot_keeps_it_when_the_extension_is_added() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("python3.11.EXE"), b"x").unwrap();
+
+    let got = find_program(
+        "python3.11",
+        Some(dir.path().as_os_str().to_owned()),
+        Some(".EXE".into()),
+    )
+    .expect("python3.11.EXE is found");
+
+    assert!(
+        got.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case("python3.11.EXE")),
+        "{got:?}"
+    );
+}

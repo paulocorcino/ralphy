@@ -18,6 +18,19 @@ function load() {
   return WBDevice;
 }
 
+// One macrotask. `report` awaits only promises that are already settled (the
+// stub window has no real I/O), so every send it started has run its course
+// when this resolves.
+function settle() {
+  return new Promise((r) => setImmediate(r));
+}
+
+// Waits for `cond`, bounded, so a broken `report` fails instead of hanging.
+async function until(cond, what) {
+  for (let i = 0; i < 1000 && !cond(); i++) await settle();
+  assert.ok(cond(), `timed out waiting for ${what}`);
+}
+
 test("collect: a window with no API reports null facts and never throws", async () => {
   const facts = await load().collect({});
   assert.equal(facts.ua, null);
@@ -61,49 +74,64 @@ test("report: a 401 before login waits for the login action, then sends once", a
     },
   };
   D.report(win);
-  await new Promise((r) => setTimeout(r, 20));
+  await until(() => bodies.length === 1, "the first send");
+  await settle();
   assert.equal(bodies.length, 1, "the load sends once");
   onAction({ detail: { action: "toast" } });
-  await new Promise((r) => setTimeout(r, 20));
+  await settle();
   assert.equal(bodies.length, 1, "another action sends nothing");
   onAction({ detail: { action: "login" } });
-  await new Promise((r) => setTimeout(r, 20));
-  assert.equal(bodies.length, 2, "the login sends again");
+  await until(() => bodies.length === 2, "the send after login");
   assert.match(bodies[0].holder, /^[A-Za-z0-9_-]{1,64}$/, "the facts name the tab's holder");
   assert.equal(bodies[1].holder, bodies[0].holder);
+  await settle();
   onAction({ detail: { action: "login" } });
-  await new Promise((r) => setTimeout(r, 20));
+  await settle();
   assert.equal(bodies.length, 2, "a sent report is not sent again");
 });
 
+// The retries wait on the window's own `setTimeout`, so the test holds each
+// one and runs it: no real time passes, and a retry that is not scheduled is
+// seen as an empty list.
 test("report: a 409 before the device cookie sends again later, a few times at most", async () => {
   const D = load();
   const statuses = [409, 409, 204];
   let sends = 0;
-  const win = {
+  const timers = [];
+  D.report({
     document: { addEventListener() {} },
-    setTimeout: (fn) => setTimeout(fn, 0),
+    setTimeout: (fn) => timers.push(fn),
     fetch: async () => {
       sends += 1;
       const status = statuses.shift();
       return { ok: status < 300, status };
     },
-  };
-  D.report(win);
-  await new Promise((r) => setTimeout(r, 50));
-  assert.equal(sends, 3, "two refusals, then the report");
+  });
+  for (let n = 1; n <= 2; n++) {
+    await until(() => timers.length === 1, `retry ${n}`);
+    timers.shift()();
+  }
+  await until(() => sends === 3, "the third send");
+  await settle();
+  assert.equal(timers.length, 0, "two refusals, then the report, and no more retries");
 
   let refused = 0;
+  const held = [];
   D.report({
     document: { addEventListener() {} },
-    setTimeout: (fn) => setTimeout(fn, 0),
+    setTimeout: (fn) => held.push(fn),
     fetch: async () => {
       refused += 1;
       return { ok: false, status: 409 };
     },
   });
-  await new Promise((r) => setTimeout(r, 100));
-  assert.equal(refused, 6, "the first send and five more, then it stops");
+  for (let n = 1; n <= 5; n++) {
+    await until(() => held.length === 1, `retry ${n}`);
+    held.shift()();
+  }
+  await until(() => refused === 6, "the sixth send");
+  await settle();
+  assert.equal(held.length, 0, "the first send and five more, then it stops");
 });
 
 // The body the daemon reads (`fixtures/api-device-facts--report.json`, a

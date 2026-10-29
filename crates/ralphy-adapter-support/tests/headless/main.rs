@@ -476,6 +476,48 @@ fn an_idle_kill_leaves_no_surviving_descendant() {
 }
 
 #[test]
+fn a_command_with_an_unpiped_stream_errors_and_leaves_no_child_running() {
+    // The caller builds the stdio. A missing pipe is a run error, and the child
+    // that was already spawned must not be left running.
+    type Unpipe = fn(&mut Command);
+    let cases: [(&str, Unpipe); 3] = [
+        ("stdin", |c| {
+            c.stdin(Stdio::inherit());
+        }),
+        ("stdout", |c| {
+            c.stdout(Stdio::inherit());
+        }),
+        ("stderr", |c| {
+            c.stderr(Stdio::inherit());
+        }),
+    ];
+    for (tag, unpipe) in cases {
+        let beat = temp_heartbeat(&format!("unpiped-{tag}"));
+        let _ = std::fs::remove_file(&beat);
+        let mut cmd = child_cmd("heartbeat");
+        cmd.arg(&beat);
+        unpipe(&mut cmd);
+
+        let err = run_headless(cmd, "ignored prompt", Duration::from_secs(30))
+            .expect_err("a command with an unpiped stream is a run error");
+        assert!(
+            format!("{err:#}").contains("was not piped"),
+            "the error names the missing pipe ({tag}) — got {err:#}"
+        );
+
+        std::thread::sleep(Duration::from_millis(500));
+        let len_after_error = std::fs::metadata(&beat).map(|m| m.len()).unwrap_or(0);
+        std::thread::sleep(Duration::from_millis(1000));
+        let len_later = std::fs::metadata(&beat).map(|m| m.len()).unwrap_or(0);
+        assert_eq!(
+            len_later, len_after_error,
+            "the child spawned for the {tag} case kept running after the error"
+        );
+        let _ = std::fs::remove_file(&beat);
+    }
+}
+
+#[test]
 fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
     // `0` is the operator's opt-out: the silent child now runs to the wall timeout
     // exactly as it did before the watchdog existed.

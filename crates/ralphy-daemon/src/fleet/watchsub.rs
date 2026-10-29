@@ -266,8 +266,9 @@ impl Drop for RxGuard<'_> {
             sub.last_poll = Instant::now();
             // A concurrent `subscribe` may have installed a fresh receiver while
             // this wait held the old one; that one is the live one, and ours is
-            // the stale duplicate.
-            if sub.rx.is_none() {
+            // the stale duplicate. A subscription emptied meanwhile holds no
+            // receiver (see `extend`).
+            if sub.rx.is_none() && !sub.paths.is_empty() {
                 sub.rx = Some(rx);
             }
         }
@@ -305,13 +306,17 @@ fn arm(
     }
 }
 
-/// Hold for an existing subscription the paths it does not hold yet. A
-/// subscription id names one repo for its whole life.
+/// Make an existing subscription hold `paths`, the whole set the caller
+/// watches: arm the paths it does not hold yet, and release the ones the caller
+/// no longer sends. A subscription id names one repo for its whole life.
 fn extend(sub: &mut Sub, repo: &str, root: &Path, paths: &BTreeSet<String>) -> Result<()> {
     if sub.repo != repo {
         bail!("subscription id already names another repo");
     }
     let added: Vec<String> = paths.difference(&sub.paths).cloned().collect();
+    let dropped: Vec<String> = sub.paths.difference(paths).cloned().collect();
+    // Armed before the release, so a repo watcher both sets use stays up and
+    // the receiver stays open.
     arm(
         &sub.watchers,
         repo,
@@ -320,6 +325,16 @@ fn extend(sub: &mut Sub, repo: &str, root: &Path, paths: &BTreeSet<String>) -> R
         &mut sub.paths,
         &mut sub.rx,
     );
+    for rel in &dropped {
+        sub.paths.remove(rel);
+        sub.watchers.unwatch(repo, rel);
+    }
+    // INVARIANT: a subscription with no path holds no receiver. Its repo
+    // watcher may be gone, and `arm` keeps any receiver it finds, so a closed
+    // one would end every later wait at once.
+    if sub.paths.is_empty() {
+        sub.rx = None;
+    }
     sub.last_poll = Instant::now();
     Ok(())
 }

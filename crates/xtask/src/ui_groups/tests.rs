@@ -192,6 +192,8 @@ fn every_write_shape_is_a_write() {
         "this.x++;",
         "--this.x;",
         "this.x.push(1);",
+        "this.x?.push(1);",
+        "this.x.y.push(1);",
         "this.x.y = 1;",
         "this.x[k] = 1;",
         "this.x?.y.z++;",

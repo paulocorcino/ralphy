@@ -146,6 +146,8 @@
             <p class="sec-note" style="margin:0.4rem 0 0" x-show="!$store.connection.security.totpEnrolled">
               Enroll two-factor above to enable this.
             </p>
+            <p class="sec-note" style="margin:0;color:var(--danger)" x-show="securityForm.requireLoginError"
+               x-text="securityForm.requireLoginError"></p>
           </section>
 
           <!-- Remote images -->

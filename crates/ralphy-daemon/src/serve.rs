@@ -56,9 +56,12 @@ pub(crate) async fn serve(
     drop(tokio::task::spawn_blocking(
         crate::agent_state::run_start_check,
     ));
-    if let Some(dir) = store.as_deref() {
+    // Held to the end of this function: every return, an error included,
+    // clears the pid file.
+    let _pidfile = store.as_deref().map(|dir| {
         write_pidfile(dir);
-    }
+        PidfileGuard(dir.to_path_buf())
+    });
 
     // The release watch (ADR-0056 §6). A daemon-lifetime concern, so it lives
     // here and not in `router`: a router is also built by tests, and this task
@@ -139,9 +142,6 @@ pub(crate) async fn serve(
         stop,
     )
     .await?;
-    if let Some(dir) = store.as_deref() {
-        pidfile::clear_own_in(dir, std::process::id());
-    }
     tracing::info!("daemon stopped");
     Ok(())
 }
@@ -246,6 +246,16 @@ fn write_pidfile(dir: &Path) {
             error = %e,
             "could not resolve this executable; not recording a pid a restart cannot verify"
         ),
+    }
+}
+
+/// Clears the pid file in its store when dropped, while the file still names
+/// this process. A removal that fails is logged by `pidfile::clear_in`.
+struct PidfileGuard(PathBuf);
+
+impl Drop for PidfileGuard {
+    fn drop(&mut self) {
+        pidfile::clear_own_in(&self.0, std::process::id());
     }
 }
 

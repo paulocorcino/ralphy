@@ -26,8 +26,7 @@ pub struct InitArgs {
     pub repo: PathBuf,
 
     /// The agent that studies the repo and writes the first issues. It must be
-    /// logged in. Default: the first logged-in agent found (claude, then codex,
-    /// then opencode).
+    /// logged in. Default: the first logged-in agent found.
     #[arg(long, value_enum)]
     pub agent: Option<Agent>,
 }

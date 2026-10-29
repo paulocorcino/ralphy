@@ -222,10 +222,11 @@ async fn a_cancelled_wait_hands_its_receiver_back() {
     assert!(!dirty.is_empty());
 }
 
-/// A second subscribe on the same id holds only the paths it adds; the ones
-/// it already holds keep their one watch.
+/// A second subscribe on the same id holds the set it sends: a path it adds
+/// gets one watch, a path it held keeps its one watch, and a path it no
+/// longer sends is released.
 #[tokio::test]
-async fn a_resubscribe_adds_only_new_paths_and_keeps_its_repo() {
+async fn a_resubscribe_holds_the_set_it_sends_and_keeps_its_repo() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("docs")).unwrap();
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
@@ -241,7 +242,73 @@ async fn a_resubscribe_adds_only_new_paths_and_keeps_its_repo() {
     .unwrap();
     assert_eq!(watchers.watch_refcount("owner/repo", ""), 1);
     assert_eq!(watchers.watch_refcount("owner/repo", "docs"), 1);
+    subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
+        .unwrap();
+    assert_eq!(watchers.watch_refcount("owner/repo", ""), 1);
+    assert_eq!(watchers.watch_refcount("owner/repo", "docs"), 0);
     assert!(subs
         .subscribe("s", "owner/other", dir.path(), &[String::new()])
         .is_err());
+}
+
+/// A subscription whose set went empty released its repo watcher, so the
+/// receiver it had is closed. A path added later must be heard through a new
+/// receiver, not answered `Closed` at once.
+#[tokio::test]
+async fn a_set_that_empties_and_grows_again_still_sees_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let subs = WatchSubs::new(watchers.clone());
+    subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
+        .unwrap();
+    subs.subscribe("s", "owner/repo", dir.path(), &[]).unwrap();
+    assert!(!watchers.repo_active("owner/repo"));
+
+    subs.subscribe("s", "owner/repo", dir.path(), &["docs".to_string()])
+        .unwrap();
+    std::fs::write(dir.path().join("docs/after.txt"), b"x").unwrap();
+    assert_eq!(
+        subs.wait("s", window()).await,
+        (
+            vec![("owner/repo".to_string(), "docs".to_string())],
+            WaitOutcome::Dirty
+        )
+    );
+}
+
+/// The same, with the set emptied while a wait holds the receiver: the
+/// closed receiver that wait hands back must not stay as the live one.
+#[tokio::test]
+async fn a_set_emptied_during_a_wait_still_sees_changes_after_it_grows() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let subs = WatchSubs::new(watchers.clone());
+    subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
+        .unwrap();
+
+    let empty_it = async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        subs.subscribe("s", "owner/repo", dir.path(), &[]).unwrap();
+    };
+    let held = tokio::time::timeout(
+        Duration::from_millis(200),
+        subs.wait("s", Duration::from_secs(30)),
+    );
+    // The wait ends `Closed` or is cancelled by the timeout; both hand the
+    // receiver back through the same guard.
+    let ((), _waited) = tokio::join!(empty_it, held);
+    assert!(!watchers.repo_active("owner/repo"));
+
+    subs.subscribe("s", "owner/repo", dir.path(), &["docs".to_string()])
+        .unwrap();
+    std::fs::write(dir.path().join("docs/after.txt"), b"x").unwrap();
+    assert_eq!(
+        subs.wait("s", window()).await,
+        (
+            vec![("owner/repo".to_string(), "docs".to_string())],
+            WaitOutcome::Dirty
+        )
+    );
 }

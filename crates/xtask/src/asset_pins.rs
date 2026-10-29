@@ -242,7 +242,7 @@ fn balanced(lines: &[&str], start: usize, open: char, close: char) -> (String, u
             return (String::new(), start + 1);
         }
     }
-    (buf, start + 1)
+    (String::new(), start + 1)
 }
 
 /// How much one line changes the depth of `open`/`close`, and whether it

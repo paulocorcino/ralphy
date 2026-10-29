@@ -29,7 +29,7 @@ pub struct TriageArgs {
     repo: std::path::PathBuf,
 
     /// The agent that sorts the issues. It must be logged in. Default: the
-    /// first logged-in agent found (claude, then codex, then opencode).
+    /// first logged-in agent, in the order `ralphy init` uses.
     #[arg(long, value_enum)]
     agent: Option<Agent>,
 
@@ -189,9 +189,10 @@ fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
                     .join(", ")
             }
         ),
-        None => logged_in.first().copied().context(
-            "no logged-in agent CLI found — log in to claude, codex, or opencode and retry",
-        ),
+        None => logged_in
+            .first()
+            .copied()
+            .context("no logged-in agent CLI found — log in to an agent CLI and retry"),
     }
 }
 
@@ -330,7 +331,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     crate::daemon::register_repo(&repo);
 
     let ws = Workspace::new(&repo);
-    std::fs::create_dir_all(ws.ralphy_dir()).ok();
+    std::fs::create_dir_all(ws.ralphy_dir()).context("creating .ralphy dir")?;
     let lock_path = ws.run_lock_path();
     if !pass_presence_gate(&lock_path, args.if_idle) {
         return Ok(());

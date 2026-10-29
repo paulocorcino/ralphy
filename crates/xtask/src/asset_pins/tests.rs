@@ -236,16 +236,21 @@ fn a_tuple_tables_filenames_are_labels_not_pins() {
     assert_eq!(texts, vec!["function foo("]);
 }
 
-/// The bail must LOSE a block it cannot parse, never hand on the 200 lines it
+/// The bail must LOSE a block it cannot parse, never hand on the lines it
 /// accumulated — that would count every literal in unrelated code as a claim.
+/// This holds at the line cap and at the end of the input.
 #[test]
 fn an_unbalanced_block_yields_nothing_rather_than_everything() {
-    let lines: Vec<&str> = std::iter::once("for pin in [")
+    let over_the_cap: Vec<&str> = std::iter::once("for pin in [")
         .chain(std::iter::repeat_n("    \"noise(\",", 260))
         .collect();
-    let (block, next) = balanced(&lines, 0, '[', ']');
-    assert!(block.is_empty(), "an unbalanced table must yield no text");
-    assert_eq!(next, 1, "and must not swallow the lines it read");
+    let rows: [(&str, &[&str]); 2] = [
+        ("over the line cap", &over_the_cap),
+        ("open at the end of the input", &["x = [", "\"a\","]),
+    ];
+    for (case, lines) in rows {
+        assert_eq!(balanced(lines, 0, '[', ']'), (String::new(), 1), "{case}");
+    }
 }
 
 /// `balanced` closes on the line where the delimiter opened on its first line

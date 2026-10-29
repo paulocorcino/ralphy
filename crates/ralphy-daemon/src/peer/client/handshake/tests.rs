@@ -24,6 +24,20 @@ fn a_status_that_is_not_200_or_a_refusal_is_unreachable() {
 }
 
 #[test]
+fn a_protocol_version_that_does_not_fit_in_u32_is_not_reachable() {
+    let ours = u64::from(PEER_PROTOCOL_VERSION);
+    let exact = serde_json::json!({"protocol_version": ours});
+    assert_eq!(protocol_verdict(Some(&exact)), PeerStatus::Reachable);
+    let wrapped = serde_json::json!({"protocol_version": (1u64 << 32) + ours});
+    assert_eq!(
+        protocol_verdict(Some(&wrapped)),
+        PeerStatus::Unreachable {
+            why: "the handshake answered without a protocol_version".to_string()
+        }
+    );
+}
+
+#[test]
 fn a_hello_without_a_protocol_version_is_not_reachable() {
     let hello = serde_json::json!({"daemon_id": "x"});
     assert_eq!(

@@ -335,8 +335,15 @@ fn drive_headless(
     // persistent degraded stretch into a matched pair of tracing events.
     let mut degraded_watch = degraded.as_ref().map(|_| DegradedWatch::new());
     let (exit, reap) = loop {
-        if let Some(s) = child.try_wait().context("polling the headless child")? {
-            break (Some(s), None);
+        match child.try_wait() {
+            Ok(Some(s)) => break (Some(s), None),
+            Ok(None) => {}
+            Err(e) => {
+                let e = anyhow::Error::new(e).context("polling the headless child");
+                return Err(teardown_after_error(
+                    &mut child, &rx_out, out_handle, &rx_err, err_handle, e,
+                ));
+            }
         }
         if let Some(reap) = reap_reason(switch.as_deref(), deadline, beat.as_deref(), &idle) {
             break (None, Some(reap));
@@ -366,6 +373,21 @@ fn drive_headless(
     })
 }
 
+/// Kill the child tree and collect both readers, so an error that ends the drive
+/// early leaves no process and no thread behind. Returns `error` for the caller.
+fn teardown_after_error(
+    child: &mut Child,
+    rx_out: &mpsc::Receiver<Vec<u8>>,
+    out_handle: thread::JoinHandle<()>,
+    rx_err: &mpsc::Receiver<Vec<u8>>,
+    err_handle: thread::JoinHandle<()>,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    ralphy_proc_util::kill_tree(child);
+    collect_both(rx_out, out_handle, rx_err, err_handle);
+    error
+}
+
 /// Spawn `cmd` with its three pipes taken.
 fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, ChildStderr)> {
     // On Unix, run the child in its own process group so a timeout can signal the
@@ -389,7 +411,19 @@ fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, Chil
         .spawn()
         .context("failed to spawn the headless child process")?;
     // A misconfigured `Command` (no piped stdio) degrades to a run error, not a
-    // panic.
+    // panic. The child is already running, so it is killed before the error returns.
+    match take_pipes(&mut child) {
+        Ok((stdin, stdout, stderr)) => Ok((child, stdin, stdout, stderr)),
+        Err(e) => {
+            ralphy_proc_util::kill_tree(&mut child);
+            Err(e)
+        }
+    }
+}
+
+/// The three pipes of a spawned child, or an error that names the first one that
+/// was not piped.
+fn take_pipes(child: &mut Child) -> Result<(ChildStdin, ChildStdout, ChildStderr)> {
     let stdin = child
         .stdin
         .take()
@@ -402,7 +436,7 @@ fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, Chil
         .stderr
         .take()
         .context("headless child stderr was not piped")?;
-    Ok((child, stdin, stdout, stderr))
+    Ok((stdin, stdout, stderr))
 }
 
 /// Why the poll loop reaped a live child.

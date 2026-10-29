@@ -80,8 +80,8 @@ pub(crate) fn execute_phase(
         // D8); the runner stays vendor-neutral and passes no fallback
         // (ADR-0002 — alias fallback lives in the adapter).
         exec_attempts.push(usage);
-        if session_id.is_some() {
-            exec_session_id = session_id;
+        if let Some(id) = session_id.filter(|id| !id.is_empty()) {
+            exec_session_id = Some(id);
         }
         let after_sha = cx.repo.head_sha().ok();
         no_commit_streak = advance_streak(no_commit_streak, &before_sha, &after_sha);

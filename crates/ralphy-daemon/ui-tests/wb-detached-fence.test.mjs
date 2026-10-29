@@ -78,8 +78,9 @@ test("the opener's answer mounts a fence only when it names one", () => {
 });
 
 // The window after the opener's answer, on a stubbed `BroadcastChannel`. `hear`
-// delivers a message of the channel; `closes` counts `window.close()`.
-function openedFence(t, { tab = "t1", pid = "p1" } = {}) {
+// delivers a message of the channel; `closes` counts `window.close()`. An
+// `early` message is delivered at once, when the channel's listener is set.
+function openedFence(t, { tab = "t1", pid = "p1", early = null } = {}) {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
   const saved = {};
   const set = (name, value) => {
@@ -87,7 +88,23 @@ function openedFence(t, { tab = "t1", pid = "p1" } = {}) {
     globalThis[name] = value;
   };
   const channels = [];
-  set("BroadcastChannel", class { constructor() { channels.push(this); } postMessage() {} close() {} });
+  set(
+    "BroadcastChannel",
+    class {
+      constructor() {
+        channels.push(this);
+      }
+      get onmessage() {
+        return this.listener;
+      }
+      set onmessage(fn) {
+        this.listener = fn;
+        if (early) fn({ data: early });
+      }
+      postMessage() {}
+      close() {}
+    },
+  );
   set("MutationObserver", class { observe() {} });
   set("WBConsole", { mountDetached() {}, peerFold: (peer) => ({ state: peer, effects: [] }), list: () => [] });
   t.after(() => {
@@ -141,5 +158,11 @@ test("an order with no pid is for this window, and origin-focus follows the same
   w.hear({ type: "origin-focus", tab: "t1", fenceId: "f1" });
   assert.equal(w.closes.focus, 1, "an opener that has not adopted this window yet");
   w.hear({ type: "origin-close", tab: "t1", fenceId: "f1" });
+  assert.equal(w.closes.count, 1);
+});
+
+// A channel may deliver a message while its listener is being set.
+test("an order delivered at once when the link opens is still obeyed", (t) => {
+  const w = openedFence(t, { early: { type: "origin-close", tab: "t1", fenceId: "f1", pid: "p1" } });
   assert.equal(w.closes.count, 1);
 });

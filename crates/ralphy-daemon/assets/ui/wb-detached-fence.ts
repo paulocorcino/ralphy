@@ -328,6 +328,17 @@ export function wireDetachedFence(window: Window, document: Document) {
     function forThisFence(m: DetachMessage) {
       return m.fenceId === fenceId && mine(m);
     }
+
+    // Declared before the listener below: a channel may deliver a message
+    // while the listener is set, and the listener reads both.
+    const timer = setInterval(() => {
+      say("popup-beat");
+      const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
+      peer = out.state;
+      if (out.effects.some((x) => x.type === "peer-lost")) silent();
+    }, LINK.HEARTBEAT_MS);
+    let leaving = false;
+
     LINK.onMessage((m) => {
       if (!m || typeof m.type !== "string") return;
       if (TAB == null || m.tab !== TAB) return;
@@ -352,17 +363,9 @@ export function wireDetachedFence(window: Window, document: Document) {
       }
     });
 
-    const timer = setInterval(() => {
-      say("popup-beat");
-      const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
-      peer = out.state;
-      if (out.effects.some((x) => x.type === "peer-lost")) silent();
-    }, LINK.HEARTBEAT_MS);
-
     // BOTH, deliberately: `beforeunload` is the one a `window.close()` from
     // script fires reliably, `pagehide` is the one a bfcache-eligible
     // navigation fires. The opener's fold makes the doubled signal a no-op.
-    let leaving = false;
     const gone = () => {
       leaving = true;
       say("popup-gone");

@@ -501,9 +501,9 @@ fn bumps(toks: &[Token], i: usize) -> bool {
     tok_is(toks, i, "++") || tok_is(toks, i, "--")
 }
 
-/// Is there a call of a [`MUTATORS`] method at `i`: `.push(`, `.set(`, …?
+/// Is there a call of a [`MUTATORS`] method at `i`: `.push(`, `?.set(`, …?
 fn mutating_call(toks: &[Token], i: usize) -> bool {
-    tok_is(toks, i, ".")
+    (tok_is(toks, i, ".") || tok_is(toks, i, "?."))
         && ident_at(toks, i + 1).is_some_and(|m| MUTATORS.contains(&m))
         && tok_is(toks, i + 2, "(")
 }
@@ -520,14 +520,14 @@ fn step_inside(toks: &[Token], k: usize) -> Option<usize> {
 }
 
 /// A write inside the member whose steps start at `next`: `this.x.y =`,
-/// `this.x[k] =`, `this.x.y++`, `delete this.x[k]`.
+/// `this.x[k] =`, `this.x.y++`, `this.x.y.push(…)`, `delete this.x[k]`.
 fn writes_inside(toks: &[Token], recv: usize, next: usize) -> bool {
     let mut k = next;
     let mut inside = false;
     while let Some(after) = step_inside(toks, k) {
         k = after;
         inside = true;
-        if assigns(toks, k) || bumps(toks, k) {
+        if assigns(toks, k) || bumps(toks, k) || mutating_call(toks, k) {
             return true;
         }
     }
