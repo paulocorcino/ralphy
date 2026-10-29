@@ -49,6 +49,9 @@ type NewNote = {
   offset?: Partial<Offset> | null;
 };
 
+/** The cards of the stage, by note id. */
+type CardNodes = Map<string, NoteCard>;
+
 /** What the entry module hands the cards. */
 export type NotesDeps = {
   /** The page's consoles, built before the cards; null where a test has none. */
@@ -735,18 +738,34 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     if (!st) return;
     const records = consoleHost?.notes?.() || [];
     const fences = consoleHost?.fenceRecords?.() || [];
-    const nodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId, el);
-    const seen = new Set();
+    const nodes = cardNodes(st);
+    const seen = new Set<string>();
     for (const record of records) {
-      if (isAway(record, fences)) continue;
-      // In a fragment, an unknown record is not this window's to show.
-      if (fragment && !nodes.has(record.id)) continue;
+      if (!showsHere(record, fences, nodes)) continue;
       seen.add(record.id);
       const el = nodes.get(record.id) || mountCard(record);
       el._noteListed = true;
       paint(el, record, fences);
     }
+    dropUnseen(nodes, seen);
+  }
+
+  // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
+  function cardNodes(st: HTMLElement): CardNodes {
+    const nodes: CardNodes = new Map();
+    for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId as string, el);
+    return nodes;
+  }
+
+  // Is this record's card this window's to show? Not when its fence is in a
+  // popup. In a fragment, an unknown record is not this window's either.
+  function showsHere(record: NoteSource, fences: DeskFence[], nodes: CardNodes) {
+    if (isAway(record, fences)) return false;
+    return !fragment || nodes.has(record.id);
+  }
+
+  // A card no record names any more leaves the stage.
+  function dropUnseen(nodes: CardNodes, seen: Set<string>) {
     for (const [id, el] of nodes) {
       if (!seen.has(id)) dropCard(id, el);
     }
