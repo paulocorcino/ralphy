@@ -653,11 +653,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/session/screen/snapshot.rs": {
-      "apply": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/src/spend.rs": {
       "annotate_unpriced": [
         12

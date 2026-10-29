@@ -333,46 +333,59 @@ impl Pen {
     fn apply(&mut self, cell: &Cell, out: &mut String) {
         let flags = cell.flags & ATTRIBUTES;
         let underline = cell.underline_color();
-        let same = self.set
-            && self.fg == Some(cell.fg)
-            && self.bg == Some(cell.bg)
-            && self.flags == flags
-            && self.underline == underline;
-        if !same {
-            out.push_str("\x1b[0");
-            for (flag, code) in SGR_FLAGS {
-                if flags.contains(flag) {
-                    out.push(';');
-                    out.push_str(code);
-                }
-            }
-            if cell.fg != Color::Named(NamedColor::Foreground) {
-                write_color(cell.fg, 30, out);
-            }
-            if cell.bg != Color::Named(NamedColor::Background) {
-                write_color(cell.bg, 40, out);
-            }
-            if let Some(color) = underline {
-                write_underline_color(color, out);
-            }
-            out.push('m');
+        if !self.same_as(cell, flags, underline) {
+            write_sgr(cell, flags, underline, out);
             self.fg = Some(cell.fg);
             self.bg = Some(cell.bg);
             self.flags = flags;
             self.underline = underline;
             self.set = true;
         }
-        let link = cell.hyperlink();
-        if link != self.link {
-            match &link {
-                Some(link) => {
-                    out.push_str(&format!("\x1b]8;id={};{}\x1b\\", link.id(), link.uri()))
-                }
-                None => out.push_str("\x1b]8;;\x1b\\"),
-            }
-            self.link = link;
+        self.apply_link(cell.hyperlink(), out);
+    }
+
+    /// Whether the attributes last written are the ones `cell` needs.
+    fn same_as(&self, cell: &Cell, flags: Flags, underline: Option<Color>) -> bool {
+        self.set
+            && self.fg == Some(cell.fg)
+            && self.bg == Some(cell.bg)
+            && self.flags == flags
+            && self.underline == underline
+    }
+
+    /// Opens `link`, or closes the one open, when it is not the link last
+    /// written.
+    fn apply_link(&mut self, link: Option<Hyperlink>, out: &mut String) {
+        if link == self.link {
+            return;
+        }
+        match &link {
+            Some(link) => out.push_str(&format!("\x1b]8;id={};{}\x1b\\", link.id(), link.uri())),
+            None => out.push_str("\x1b]8;;\x1b\\"),
+        }
+        self.link = link;
+    }
+}
+
+/// One SGR sequence that resets the attributes, then sets those of `cell`.
+fn write_sgr(cell: &Cell, flags: Flags, underline: Option<Color>, out: &mut String) {
+    out.push_str("\x1b[0");
+    for (flag, code) in SGR_FLAGS {
+        if flags.contains(flag) {
+            out.push(';');
+            out.push_str(code);
         }
     }
+    if cell.fg != Color::Named(NamedColor::Foreground) {
+        write_color(cell.fg, 30, out);
+    }
+    if cell.bg != Color::Named(NamedColor::Background) {
+        write_color(cell.bg, 40, out);
+    }
+    if let Some(color) = underline {
+        write_underline_color(color, out);
+    }
+    out.push('m');
 }
 
 /// A foreground (`base` 30) or background (`base` 40) color as SGR
