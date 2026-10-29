@@ -29,7 +29,7 @@ pub struct TriageArgs {
     repo: std::path::PathBuf,
 
     /// The agent that sorts the issues. It must be logged in. Default: the
-    /// first logged-in agent found (claude, then codex, then opencode).
+    /// first logged-in agent, in the order `ralphy init` uses.
     #[arg(long, value_enum)]
     agent: Option<Agent>,
 
@@ -189,9 +189,10 @@ fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
                     .join(", ")
             }
         ),
-        None => logged_in.first().copied().context(
-            "no logged-in agent CLI found — log in to claude, codex, or opencode and retry",
-        ),
+        None => logged_in
+            .first()
+            .copied()
+            .context("no logged-in agent CLI found — log in to an agent CLI and retry"),
     }
 }
 
