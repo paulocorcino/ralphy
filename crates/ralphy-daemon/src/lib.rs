@@ -16,6 +16,7 @@ use include_dir::{include_dir, Dir};
 
 pub mod agent_state;
 pub mod assets;
+mod attention;
 pub(crate) mod audit;
 pub mod auth;
 pub mod autostart;

@@ -14,6 +14,7 @@ use crate::protocol::{Command, Frame};
 use crate::StorePaths;
 use crate::{audit, auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
+mod api_attention;
 mod api_audit;
 mod api_command;
 mod api_desk;
@@ -35,6 +36,7 @@ mod ws_command;
 mod ws_session;
 mod ws_tree;
 
+pub(crate) use api_attention::*;
 pub(crate) use api_audit::*;
 pub(crate) use api_command::*;
 pub(crate) use api_desk::*;
@@ -241,6 +243,7 @@ pub(crate) fn router_with_roster(
         .merge(fleet_routes(&shared))
         .merge(presence_routes(&shared))
         .merge(session_routes(&shared))
+        .merge(attention_routes(&shared))
         .merge(desk_routes(&shared))
         .merge(command_routes(&shared))
         .merge(command_http_routes(&shared))

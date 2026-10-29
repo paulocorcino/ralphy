@@ -25,6 +25,7 @@ import type { MissingUsage, SpendDoc, SpendRecord } from "./wb-spend.ts";
 import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
+import type { AttentionReply } from "./wb-attention.ts";
 import { reportStall } from "./wb-stall.ts";
 
 /** What HEAD points at (`ralphy_git_read::Head`). */
@@ -97,6 +98,8 @@ interface ApiRoutes {
   /** A command with one reply: `200` with the reply, a refusal included. */
   "POST /api/command": { ok: DaemonReply };
   "GET /api/sessions": { ok: HostedSession[] };
+  /** The names of the peers that did not answer are in `x-ralphy-unanswered`. */
+  "GET /api/attention": { ok: AttentionReply };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
     ok: { daemon_id: string | null; records: SpendRecord[]; interactive: SpendRecord[]; missing: MissingUsage[] };

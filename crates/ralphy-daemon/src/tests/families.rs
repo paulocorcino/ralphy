@@ -245,6 +245,10 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-add-project-dialog.ts"),
     ),
     (
+        "wb-attention.ts",
+        include_str!("../../assets/ui/wb-attention.ts"),
+    ),
+    (
         "wb-board-store.ts",
         include_str!("../../assets/ui/wb-board-store.ts"),
     ),

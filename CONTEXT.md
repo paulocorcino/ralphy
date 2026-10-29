@@ -74,8 +74,12 @@ _Avoid_: "checkout" for switching a branch (that is a **branch switch**).
 The unit that holds everything specific to one agent CLI vendor, behind the core's agent contract (ADR-0002).
 _Avoid_: driver, plugin, backend.
 
+**Agent state**:
+What the agent process of a **run** or a console is doing now: `working`, `waiting` (it needs the operator), `done` (idle at its prompt), or `unknown`. It is apart from the run's phase (ADR-0059, ADR-0085).
+_Avoid_: status, activity, busy/idle.
+
 **State source**:
-Where an agent's state (`working`, `waiting`, `done`) comes from: the vendor's hooks, its event stream, or none (ADR-0059). A console whose state source is not none and sends nothing is **silent**.
+Where an agent's state comes from: a file the vendor fills through a hook or a plugin that Ralphy gives at launch, or none (ADR-0059, ADR-0085). A console whose state source is not none and sends nothing is **silent**.
 _Avoid_: hook status (that is one command), state provider.
 
 **Phase roles (triager / planner / executor / reviewer)**:
@@ -411,9 +415,11 @@ _Avoid_: daemon token (the access token of the whole daemon), session
 token, API key.
 
 **Attention request**:
-One thing a human must decide now, such as an agent waiting for an answer
-or a stuck squad. The daemon works out the list of attention requests from
-their sources; one ends when its source ends. Not built yet.
+One thing a human must decide now, such as an agent waiting for an answer,
+a **run** that ended blocked or was reaped, a **silent** console, or a stuck
+squad. The daemon works out the list of attention requests from
+their sources; one ends when its source ends, or, for a finished run, when
+the operator dismisses it. Not built yet. (ADR-0085)
 _Avoid_: alert, notification, inbox, task.
 
 **Operating mode (unattended / supervised)**:
