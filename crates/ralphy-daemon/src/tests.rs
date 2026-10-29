@@ -348,9 +348,13 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
 mod act_bar;
 mod agents_repos;
 mod asset_graph;
+// The marker rule of the build script, compiled here because cargo never runs
+// the unit tests of a build script.
 mod audit_routes;
 mod auth_cookie;
 mod auth_policy;
+#[path = "../build/parts.rs"]
+mod build_parts;
 mod changes_pins;
 mod console_clicks;
 mod console_frame;
