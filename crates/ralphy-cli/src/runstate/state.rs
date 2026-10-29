@@ -102,6 +102,8 @@ pub struct IssueEntry {
     /// Vendor spawns this issue paid for, from `issue closed`. `None` for a
     /// not-yet-closed or older entry.
     pub invocations: Option<u64>,
+    /// Whether the idle watchdog stopped this issue's agent (docs/adr/0038).
+    pub idle_reaped: bool,
 }
 
 /// A light `{number, title}` reference for the `run.started.queue` scope list and
@@ -250,8 +252,17 @@ impl RunState {
                 plan_usage: None,
                 exec_usage: None,
                 invocations: None,
+                idle_reaped: false,
             });
             self.issues.last_mut().expect("just pushed")
+        }
+    }
+
+    /// The idle watchdog stopped the agent of the active issue: the issue
+    /// keeps that fact, so a finished run still shows it (docs/adr/0085 D11).
+    fn mark_idle_reaped(&mut self) {
+        if let Some(n) = self.active {
+            self.entry_mut(n).idle_reaped = true;
         }
     }
 
@@ -360,6 +371,7 @@ impl RunState {
             RunEvent::IdleReaped { .. } => {
                 self.degraded = false;
                 self.agent = None;
+                self.mark_idle_reaped();
             }
             // The agent's own state, verbatim (ADR-0059): the adapter emits on
             // a change only, so a fold is a transition.

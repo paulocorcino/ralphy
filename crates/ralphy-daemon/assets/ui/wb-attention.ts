@@ -18,6 +18,10 @@
    `connection` also sends `workbench:attention-reread` on an
    `attention.dirty` push.
 
+   A request the daemon marks `dismissable` (an issue a finished run left for
+   the operator) has a "Dismiss" button instead: `POST /api/attention/dismiss`
+   hides it on every device, and the daemon of a peer's request stores it.
+
    `main.ts` registers it as `wbAttention`.
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
@@ -27,10 +31,11 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 
 /** The kind of a request (`attention::Kind`). */
-export type AttentionKind = "console-waiting" | "console-silent" | "run-waiting";
+export type AttentionKind = "console-waiting" | "console-silent" | "run-waiting" | "run-finished";
 
-/** What a row's one action opens. */
-export type AttentionAction = "console" | "run";
+/** What a row's one action opens: "none" for a finished run, which is no
+ * longer in the Runs panel. */
+export type AttentionAction = "console" | "run" | "none";
 
 /** A request of `GET /api/attention` (`AttentionRequest` in `attention.rs`).
  * A peer's request has `id`, `console` and `repo` prefixed `<daemon_id>/`. */
@@ -66,6 +71,8 @@ export function kindText(kind: AttentionKind) {
       return "Waits for you";
     case "console-silent":
       return "No state from this agent";
+    case "run-finished":
+      return "A run stopped on this issue";
     default: {
       const unknown: never = kind;
       return unknown;
@@ -81,6 +88,8 @@ export function actionOf(kind: AttentionKind): AttentionAction {
       return "console";
     case "run-waiting":
       return "run";
+    case "run-finished":
+      return "none";
     default: {
       const unknown: never = kind;
       return unknown;
@@ -180,6 +189,26 @@ export function wbAttention() {
     },
     actionOf(request: AttentionRequest) {
       return actionOf(request.kind);
+    },
+    // Whether the row has "Dismiss": the daemon says which requests may be
+    // hidden, and a live one may not.
+    canDismiss(request: AttentionRequest) {
+      return request.dismissable;
+    },
+
+    // Hide `request` on every device, then read the list again. A refusal
+    // keeps the row and says so.
+    async dismiss(request: AttentionRequest) {
+      try {
+        const r = await apiFetch("POST /api/attention/dismiss", {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: request.id }),
+        });
+        if (!r.ok) this.$store.modals.flash("Could not dismiss the request.");
+      } catch {
+        this.$store.modals.flash("Could not dismiss the request: the daemon did not answer.");
+      }
+      await this.read();
     },
 
     // Show the run of `request` in the Runs panel.

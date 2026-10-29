@@ -4,12 +4,16 @@
 //!
 //! A request shows only what is in the agent state: the vendor, the console,
 //! the kind, its age (`since`) and the one-line detail (D13). A run's request
-//! comes from its snapshot, which [`tick`] reads from each registered repo.
+//! comes from its snapshot, which [`tick`] reads from each registered repo; a
+//! finished run's requests come from the final snapshot in its run folder,
+//! and last until the operator dismisses them ([`dismissals`], D12), a newer
+//! run works the same issue, or the run folder is removed.
 
-use ralphy_run_snapshot::RunSnapshot;
+use ralphy_run_snapshot::{IssueBlock, RunSnapshot};
 
 use crate::session::SessionInfo;
 
+pub(crate) mod dismissals;
 pub(crate) mod tick;
 
 /// The kind of a request. Matched exhaustively, so a new kind has to say
@@ -23,6 +27,9 @@ pub enum Kind {
     ConsoleSilent,
     /// A run whose agent (`phase.agent` of its snapshot) is `waiting`.
     RunWaiting,
+    /// An issue a finished run ended `blocked`, `hitl` or `needs_split`, or
+    /// whose agent the idle watchdog stopped.
+    RunFinished,
 }
 
 impl Kind {
@@ -32,12 +39,14 @@ impl Kind {
     pub fn dismissable(self) -> bool {
         match self {
             Kind::ConsoleWaiting | Kind::ConsoleSilent | Kind::RunWaiting => false,
+            Kind::RunFinished => true,
         }
     }
 }
 
 /// One request on the wire of `GET /api/attention`. `id` is
-/// `console:<session id>` for a console and `run:<runid>` for a run; a peer's request reaches the page
+/// `console:<session id>` for a console, `run:<runid>` for a run and
+/// `issue:<run stamp>:<issue>` for a finished run's issue; a peer's request reaches the page
 /// with `id`, `console` and `repo` prefixed `<daemon_id>/`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AttentionRequest {
@@ -66,14 +75,44 @@ pub struct RunSource {
     pub snapshot: RunSnapshot,
 }
 
+/// The final snapshot of a finished run of one registered repo, and the name
+/// of its run folder.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinishedRun {
+    pub repo: String,
+    /// The run folder's name: `<repo>/.ralphy/runs/<stamp>/`.
+    pub stamp: String,
+    /// When the run ended (RFC 3339): when it wrote its final snapshot.
+    pub ended: String,
+    pub snapshot: RunSnapshot,
+}
+
+/// What the attention tick read of the runs of every registered repo.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RunsRead {
+    pub live: Vec<RunSource>,
+    pub finished: Vec<FinishedRun>,
+}
+
+/// The detail of a request for an issue whose agent the idle watchdog stopped.
+pub const IDLE_REAPED_DETAIL: &str = "the idle watchdog stopped the agent";
+
 /// The requests the consoles open, in the order of `sessions`, then the ones
-/// the runs open, in the order of `runs`. `sessions` is the list as
-/// `/api/sessions` shows it, already rendered at the time of the read.
-pub fn list(sessions: &[SessionInfo], runs: &[RunSource]) -> Vec<AttentionRequest> {
+/// the live runs open, then the ones the finished runs open, in the order of
+/// `runs`. `sessions` is the list as `/api/sessions` shows it, already
+/// rendered at the time of the read. A request whose id `is_dismissed` is
+/// not listed.
+pub fn list(
+    sessions: &[SessionInfo],
+    runs: &RunsRead,
+    is_dismissed: &dyn Fn(&str) -> bool,
+) -> Vec<AttentionRequest> {
     sessions
         .iter()
         .filter_map(console_request)
-        .chain(runs.iter().filter_map(run_request))
+        .chain(runs.live.iter().filter_map(run_request))
+        .chain(finished_requests(runs))
+        .filter(|request| !is_dismissed(&request.id))
         .collect()
 }
 
@@ -130,6 +169,63 @@ fn run_request(source: &RunSource) -> Option<AttentionRequest> {
     })
 }
 
+/// One request per issue of a finished run that needs the operator, unless a
+/// newer run works the same issue.
+fn finished_requests(runs: &RunsRead) -> impl Iterator<Item = AttentionRequest> + '_ {
+    runs.finished.iter().flat_map(move |run| {
+        run.snapshot
+            .issues
+            .iter()
+            .filter(move |issue| !worked_again(runs, run, issue.number))
+            .filter_map(move |issue| finished_request(run, issue))
+    })
+}
+
+/// What a finished issue asks of the operator, if anything: an idle reap
+/// first, else the status the run ended it with. `done`, `skipped`,
+/// `non_green` and the other statuses ask nothing.
+fn finished_detail(issue: &IssueBlock) -> Option<String> {
+    if issue.idle_reaped {
+        return Some(IDLE_REAPED_DETAIL.to_string());
+    }
+    matches!(issue.status.as_str(), "blocked" | "hitl" | "needs_split")
+        .then(|| issue.status.clone())
+}
+
+fn finished_request(run: &FinishedRun, issue: &IssueBlock) -> Option<AttentionRequest> {
+    let detail = finished_detail(issue)?;
+    let kind = Kind::RunFinished;
+    Some(AttentionRequest {
+        id: format!("issue:{}:{}", run.stamp, issue.number),
+        kind,
+        vendor: run.snapshot.exec_agent.clone(),
+        console: None,
+        repo: Some(run.repo.clone()),
+        run: Some(run.snapshot.runid.clone()),
+        issue: Some(issue.number.to_string()),
+        since: run.ended.clone(),
+        detail: Some(detail),
+        dismissable: kind.dismissable(),
+    })
+}
+
+/// Whether a run of the same repo that started after `run`, live or
+/// finished, has `number` in its issues. The order is the snapshots' own
+/// `started_at`; a run whose start cannot be read is never "after".
+fn worked_again(runs: &RunsRead, run: &FinishedRun, number: u64) -> bool {
+    let started = |snap: &RunSnapshot| chrono::DateTime::parse_from_rfc3339(&snap.started_at).ok();
+    let Some(this) = started(&run.snapshot) else {
+        return false;
+    };
+    let live = runs.live.iter().map(|r| (&r.repo, &r.snapshot));
+    let finished = runs.finished.iter().map(|f| (&f.repo, &f.snapshot));
+    live.chain(finished).any(|(repo, snap)| {
+        *repo == run.repo
+            && snap.issues.iter().any(|i| i.number == number)
+            && started(snap).is_some_and(|at| at > this)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,7 +256,8 @@ mod tests {
     fn a_waiting_console_is_one_request() {
         let got = list(
             &[console(7, Some("waiting"), Some("permission: Bash"))],
-            &[],
+            &RunsRead::default(),
+            &|_| false,
         );
         assert_eq!(got.len(), 1, "{got:?}");
         let request = &got[0];
@@ -180,7 +277,7 @@ mod tests {
             (Some("unknown"), "unknown"),
             (None, "no state"),
         ] {
-            let got = list(&[console(1, state, None)], &[]);
+            let got = list(&[console(1, state, None)], &RunsRead::default(), &|_| false);
             assert!(got.is_empty(), "{why}: {got:?}");
         }
     }
@@ -205,15 +302,23 @@ mod tests {
         }
     }
 
+    fn live(source: RunSource) -> RunsRead {
+        RunsRead {
+            live: vec![source],
+            finished: Vec::new(),
+        }
+    }
+
     #[test]
     fn a_waiting_run_is_one_request() {
         let got = list(
             &[],
-            &[run(
+            &live(run(
                 "01RUN",
                 "executing",
                 Some(("waiting", Some("permission: Bash"))),
-            )],
+            )),
+            &|_| false,
         );
         assert_eq!(got.len(), 1, "{got:?}");
         let request = &got[0];
@@ -232,11 +337,15 @@ mod tests {
         let wire = serde_json::to_value(request).expect("a request serializes");
         assert_eq!(wire["kind"], "run-waiting", "{wire}");
         // The planner runs the planning phase.
-        let planning = list(&[], &[run("01P", "planning", Some(("waiting", None)))]);
+        let planning = list(
+            &[],
+            &live(run("01P", "planning", Some(("waiting", None)))),
+            &|_| false,
+        );
         assert_eq!(planning[0].vendor, "claude", "{planning:?}");
         // A run whose agent does not wait, or has no agent state, opens none.
         for (agent, why) in [(Some(("working", None)), "working"), (None, "no state")] {
-            let got = list(&[], &[run("01Q", "executing", agent)]);
+            let got = list(&[], &live(run("01Q", "executing", agent)), &|_| false);
             assert!(got.is_empty(), "{why}: {got:?}");
         }
     }
@@ -249,7 +358,7 @@ mod tests {
             reason.to_string(),
             std::time::SystemTime::UNIX_EPOCH,
         ));
-        let got = list(&[info], &[]);
+        let got = list(&[info], &RunsRead::default(), &|_| false);
         assert_eq!(got.len(), 1, "{got:?}");
         let request = &got[0];
         assert_eq!(request.kind, Kind::ConsoleSilent);
@@ -260,5 +369,138 @@ mod tests {
         assert!(!request.dismissable);
         let wire = serde_json::to_value(request).expect("a request serializes");
         assert_eq!(wire["kind"], "console-silent", "{wire}");
+    }
+
+    /// A finished run of `repo` in the folder `stamp`, started at `started`,
+    /// whose issues are `(number, status)`.
+    fn finished(repo: &str, stamp: &str, started: &str, issues: &[(u64, &str)]) -> FinishedRun {
+        FinishedRun {
+            repo: repo.to_string(),
+            stamp: stamp.to_string(),
+            ended: "2026-10-28T12:00:00Z".to_string(),
+            snapshot: RunSnapshot {
+                runid: format!("01{stamp}"),
+                exec_agent: "codex".to_string(),
+                started_at: started.to_string(),
+                issues: issues
+                    .iter()
+                    .map(|&(number, status)| IssueBlock {
+                        number,
+                        status: status.to_string(),
+                        ..IssueBlock::default()
+                    })
+                    .collect(),
+                ..RunSnapshot::default()
+            },
+        }
+    }
+
+    fn finished_only(runs: Vec<FinishedRun>) -> RunsRead {
+        RunsRead {
+            live: Vec::new(),
+            finished: runs,
+        }
+    }
+
+    const STAMP: &str = "20261028-100000";
+    const STARTED: &str = "2026-10-28T10:00:00-03:00";
+
+    #[test]
+    fn finished_issue_statuses_open_requests_by_the_table() {
+        // (status as the snapshot writes it, requests it opens)
+        let rows: [(&str, usize); 6] = [
+            ("blocked", 1),
+            ("hitl", 1),
+            ("needs_split", 1),
+            ("done", 0),
+            ("skipped", 0),
+            ("non_green", 0),
+        ];
+        for (status, count) in rows {
+            let runs = finished_only(vec![finished("owner/r", STAMP, STARTED, &[(71, status)])]);
+            let got = list(&[], &runs, &|_| false);
+            assert_eq!(got.len(), count, "{status}: {got:?}");
+            let Some(request) = got.first() else { continue };
+            assert_eq!(request.kind, Kind::RunFinished, "{status}");
+            assert_eq!(request.id, format!("issue:{STAMP}:71"), "{status}");
+            assert_eq!(request.detail.as_deref(), Some(status), "{status}");
+            assert_eq!(request.issue.as_deref(), Some("71"), "{status}");
+            assert_eq!(
+                request.run.as_deref(),
+                Some("0120261028-100000"),
+                "{status}"
+            );
+            assert_eq!(request.repo.as_deref(), Some("owner/r"), "{status}");
+            assert_eq!(request.vendor, "codex", "{status}");
+            assert_eq!(request.since, "2026-10-28T12:00:00Z", "{status}");
+            assert!(request.dismissable, "{status}");
+            let wire = serde_json::to_value(request).expect("a request serializes");
+            assert_eq!(wire["kind"], "run-finished", "{wire}");
+        }
+    }
+
+    #[test]
+    fn an_idle_reaped_agent_is_one_request() {
+        let mut run = finished(
+            "owner/r",
+            STAMP,
+            STARTED,
+            &[(71, "non_green"), (72, "done")],
+        );
+        run.snapshot.issues[0].idle_reaped = true;
+        let got = list(&[], &finished_only(vec![run]), &|_| false);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].kind, Kind::RunFinished);
+        assert_eq!(got[0].id, format!("issue:{STAMP}:71"));
+        assert_eq!(got[0].detail.as_deref(), Some(IDLE_REAPED_DETAIL));
+        assert!(got[0].dismissable);
+    }
+
+    #[test]
+    fn a_new_run_of_the_same_issue_ends_the_request() {
+        let old = || finished("owner/r", STAMP, STARTED, &[(71, "blocked")]);
+        let later = "2026-10-28T11:00:00-03:00";
+        // A later finished run of the same issue in the same repo ends it.
+        let runs = finished_only(vec![
+            old(),
+            finished("owner/r", "20261028-110000", later, &[(71, "done")]),
+        ]);
+        assert!(list(&[], &runs, &|_| false).is_empty());
+        // So does a live run that works it.
+        let mut working = run("01LIVE", "executing", None);
+        working.snapshot.started_at = later.to_string();
+        working.snapshot.issues = vec![IssueBlock {
+            number: 71,
+            status: "executing".to_string(),
+            ..IssueBlock::default()
+        }];
+        let runs = RunsRead {
+            live: vec![working.clone()],
+            finished: vec![old()],
+        };
+        assert!(list(&[], &runs, &|_| false).is_empty());
+        // The same number in another repo does not.
+        working.repo = "owner/other".to_string();
+        let runs = RunsRead {
+            live: vec![working],
+            finished: vec![
+                old(),
+                finished("owner/other", "20261028-110000", later, &[(71, "done")]),
+            ],
+        };
+        let got = list(&[], &runs, &|_| false);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].id, format!("issue:{STAMP}:71"));
+        // An earlier run of the same issue does not end it either.
+        let runs = finished_only(vec![
+            old(),
+            finished(
+                "owner/r",
+                "20261028-090000",
+                "2026-10-28T09:00:00-03:00",
+                &[(71, "done")],
+            ),
+        ]);
+        assert_eq!(list(&[], &runs, &|_| false).len(), 1);
     }
 }

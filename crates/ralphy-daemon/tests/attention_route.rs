@@ -38,15 +38,19 @@ const TOKEN: &str = "peer-token";
 
 /// The status, the header block and the body of one request.
 async fn http_get(port: u16, path: &str) -> (u16, String, String) {
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    exchange(port, &request).await
+}
+
+/// The status, the header block and the body of the reply to `request`.
+async fn exchange(port: u16, request: &str) -> (u16, String, String) {
     let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .expect("connect to the daemon");
-    sock.write_all(
-        format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n")
-            .as_bytes(),
-    )
-    .await
-    .expect("send the request");
+    sock.write_all(request.as_bytes())
+        .await
+        .expect("send the request");
     let mut raw = String::new();
     sock.read_to_string(&mut raw).await.expect("read the reply");
     let status = raw
@@ -352,4 +356,200 @@ async fn a_run_snapshot_in_a_registered_repo_is_listed() {
     })
     .await;
     assert_eq!(reply["requests"], serde_json::json!([]), "{reply}");
+}
+
+/// The status and the body of `POST /api/attention/dismiss {"id"}`.
+async fn dismiss(port: u16, id: &str) -> (u16, String) {
+    let body = serde_json::json!({ "id": id }).to_string();
+    let request = format!(
+        "POST /api/attention/dismiss HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let (status, _, body) = exchange(port, &request).await;
+    (status, body)
+}
+
+const STAMP: &str = "20261028-100000";
+
+/// A finished run in the folder `STAMP` of the repo at `home`: its final
+/// snapshot, whose issues 71 and 72 ended `blocked`.
+fn finished_run(home: &Path) {
+    let run_dir = home.join(".ralphy").join("runs").join(STAMP);
+    std::fs::create_dir_all(&run_dir).expect("create the run folder");
+    let snapshot = ralphy_run_snapshot::RunSnapshot {
+        runid: "01RUNFINISHED".to_string(),
+        pid: 1,
+        exec_agent: "codex".to_string(),
+        started_at: "2026-10-28T10:00:00-03:00".to_string(),
+        issues: [71, 72]
+            .into_iter()
+            .map(|number| ralphy_run_snapshot::IssueBlock {
+                number,
+                status: "blocked".to_string(),
+                ..ralphy_run_snapshot::IssueBlock::default()
+            })
+            .collect(),
+        ..ralphy_run_snapshot::RunSnapshot::default()
+    };
+    std::fs::write(
+        ralphy_run_snapshot::final_snapshot_path(&run_dir),
+        serde_json::to_vec(&snapshot).expect("a snapshot serializes"),
+    )
+    .expect("write the final snapshot");
+}
+
+fn ids(requests: &serde_json::Value) -> Vec<String> {
+    requests
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|r| r["id"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn issue(n: u64) -> String {
+    format!("issue:{STAMP}:{n}")
+}
+
+#[tokio::test]
+async fn a_dismissal_survives_a_daemon_restart() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    prepare_environment(dir.path());
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).expect("create the repo dir");
+    finished_run(&home);
+    let port = serve(&home, None, AuthState::localhost()).await;
+    let (_, reply) = wait_for(port, "/api/attention", |r| ids(r) == [issue(71), issue(72)]).await;
+    // `since` is when the final snapshot was written.
+    golden::check(
+        "api-attention--finished",
+        reply,
+        &["/requests/0/since", "/requests/1/since"],
+    );
+
+    let (status, body) = dismiss(port, &issue(71)).await;
+    assert_eq!(status, 200, "{body}");
+    let reply: serde_json::Value = serde_json::from_str(&body).expect("a JSON reply");
+    golden::check("api-attention-dismiss", reply, &[]);
+    wait_for(port, "/api/attention", |r| ids(r) == [issue(72)]).await;
+
+    // A second daemon on the same store reads the dismissal back.
+    let again = serve(&home, None, AuthState::localhost()).await;
+    let (_, reply) = wait_for(again, "/api/attention", |r| !ids(r).is_empty()).await;
+    assert_eq!(ids(&reply["requests"]), [issue(72)], "{reply}");
+}
+
+#[tokio::test]
+async fn a_second_dismissal_is_a_no_op() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    prepare_environment(dir.path());
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).expect("create the repo dir");
+    finished_run(&home);
+    let port = serve(&home, None, AuthState::localhost()).await;
+    wait_for(port, "/api/attention", |r| ids(r).contains(&issue(71))).await;
+
+    for round in ["first", "second"] {
+        let (status, body) = dismiss(port, &issue(71)).await;
+        assert_eq!(status, 200, "{round}: {body}");
+    }
+    let file = std::fs::read_to_string(home.join("attention-dismissed.jsonl"))
+        .expect("the dismissals file");
+    assert_eq!(file.lines().count(), 1, "{file}");
+    let line: serde_json::Value =
+        serde_json::from_str(file.lines().next().unwrap_or_default()).expect("a JSON line");
+    assert_eq!(line["id"], issue(71), "{line}");
+    assert!(line["ts"].is_string(), "{line}");
+}
+
+#[tokio::test]
+async fn a_live_request_cannot_be_dismissed() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let store = prepare_environment(dir.path());
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).expect("create the repo dir");
+    let port = serve(&home, None, AuthState::localhost()).await;
+    let _console = claude_console(port, None).await;
+    let status_file = store.join("sessions").join("1.agent-status.jsonl");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !status_file.is_file() {
+        assert!(Instant::now() < deadline, "the console never started");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    append(&status_file, PERMISSION);
+    let mut snapshot = ralphy_run_snapshot::RunSnapshot {
+        runid: "01RUNWAITS".to_string(),
+        pid: std::process::id(),
+        exec_agent: "codex".to_string(),
+        ..ralphy_run_snapshot::RunSnapshot::default()
+    };
+    snapshot.phase.state = "executing".to_string();
+    snapshot.phase.agent = Some(ralphy_run_snapshot::AgentBlock {
+        state: "waiting".to_string(),
+        since: "2026-10-28T11:00:00-03:00".to_string(),
+        detail: None,
+    });
+    ralphy_run_snapshot::write_atomic(&home, &snapshot).expect("write the run snapshot");
+    let both = ["console:1".to_string(), "run:01RUNWAITS".to_string()];
+    wait_for(port, "/api/attention", |r| ids(r) == both).await;
+
+    for id in &both {
+        let (status, body) = dismiss(port, id).await;
+        assert_eq!(status, 409, "{id}: {body}");
+        assert_eq!(
+            body, "the request is still open and cannot be hidden",
+            "{id}"
+        );
+    }
+    let (status, body) = dismiss(port, &issue(99)).await;
+    assert_eq!(status, 404, "an unknown id: {body}");
+    let (_, reply) = wait_for(port, "/api/attention", |r| r.is_array()).await;
+    assert_eq!(ids(&reply["requests"]), both, "{reply}");
+    assert!(!home.join("attention-dismissed.jsonl").exists());
+}
+
+#[tokio::test]
+async fn a_peer_request_is_dismissed_on_its_peer() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    prepare_environment(dir.path());
+    let peer_home = dir.path().join("peer");
+    let local_home = dir.path().join("local");
+    std::fs::create_dir_all(&peer_home).expect("create the peer repo dir");
+    std::fs::create_dir_all(&local_home).expect("create the local repo dir");
+    finished_run(&peer_home);
+    let peer_port = serve(
+        &peer_home,
+        Some(identity(PEER_ID, "peer")),
+        AuthState::fixed(
+            AuthPolicy::Bearer(TOKEN.to_string()),
+            SessionEpoch::in_memory_detached(),
+        ),
+    )
+    .await;
+    peer::write_descriptor(&local_home, &descriptor(PEER_ID, peer_port))
+        .expect("announce the peer");
+    let local_port = serve(
+        &local_home,
+        Some(identity(LOCAL_ID, "local")),
+        AuthState::localhost(),
+    )
+    .await;
+    let on_peer = |n| format!("{PEER_ID}/{}", issue(n));
+    wait_for(local_port, "/api/attention", |r| {
+        ids(r) == [on_peer(71), on_peer(72)]
+    })
+    .await;
+
+    let (status, body) = dismiss(local_port, &on_peer(71)).await;
+    assert_eq!(status, 200, "{body}");
+    let file = std::fs::read_to_string(peer_home.join("attention-dismissed.jsonl"))
+        .expect("the peer stored the dismissal");
+    assert!(file.contains(&issue(71)), "{file}");
+    assert!(
+        !local_home.join("attention-dismissed.jsonl").exists(),
+        "the local daemon stores no dismissal of a peer's request"
+    );
+    wait_for(local_port, "/api/attention", |r| ids(r) == [on_peer(72)]).await;
 }

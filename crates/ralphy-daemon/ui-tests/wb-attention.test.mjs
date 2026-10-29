@@ -127,6 +127,38 @@ test("a run's row opens the run, and a console's row goes to the console", (t) =
   assert.match(markup, /x-show="actionOf\(r\) === 'run'" @click="openRun\(r\)">Open the run</);
 });
 
+test("only a finished run can be dismissed", async (t) => {
+  // The rows as the daemon sends them: a waiting console, a waiting run, a
+  // silent console, and the issues a finished run left.
+  const waiting = fixture("api-attention").requests[0];
+  const finished = fixture("api-attention--finished").requests;
+  const run = { ...waiting, id: "run:01R", kind: "run-waiting", console: undefined, run: "01R" };
+  const silent = { ...waiting, kind: "console-silent" };
+  const { data } = page(t, { replies: [{ requests: [] }] });
+  for (const row of [waiting, run, silent]) {
+    assert.equal(data.canDismiss(row), false, row.kind);
+  }
+  assert.equal(finished[0].kind, "run-finished");
+  assert.equal(data.canDismiss(finished[0]), true);
+  assert.equal(data.actionOf(finished[0]), "none", "a finished run is no longer in the Runs panel");
+  assert.equal(data.kindOf(finished[0]), "A run stopped on this issue");
+  const markup = attentionElement();
+  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)">Dismiss</);
+
+  // "Dismiss" posts the id, then reads the list again.
+  const sent = [];
+  const replies = { POST: fixture("api-attention-dismiss"), GET: { requests: [finished[1]] } };
+  globalThis.fetch = async (url, init) => {
+    sent.push([init.method, url, init.body]);
+    return { ok: true, status: 200, json: async () => replies[init.method] };
+  };
+  data.$store.modals = { flash: (m) => assert.fail(`flashed ${m}`) };
+  await data.dismiss(finished[0]);
+  assert.deepEqual(sent[0], ["POST", "/api/attention/dismiss", JSON.stringify({ id: finished[0].id })]);
+  assert.equal(sent[1][0], "GET");
+  assert.deepEqual(data.requests.map((r) => r.id), [finished[1].id]);
+});
+
 test("an attention.dirty push reads the list again", (t) => {
   page(t);
   const sent = [];

@@ -101,6 +101,10 @@ pub struct IssueBlock {
     pub effort: Option<String>,
     #[serde(default)]
     pub budget_min: Option<u64>,
+    /// Whether the idle watchdog stopped this issue's agent (docs/adr/0038).
+    /// Additive within `v: 1`: absent when false and in an older document.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub idle_reaped: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -263,6 +267,32 @@ mod tests {
             assert_eq!(snap.phase.state, state, "{case}: phase state");
             assert_eq!(snap.phase.since, None, "{case}: no anchor, no clock");
         }
+    }
+
+    /// An issue the idle watchdog reaped says so, and survives a write and a
+    /// read; an issue it did not reap writes no field at all.
+    #[test]
+    fn an_idle_reap_round_trips_on_its_issue() {
+        let snap = RunSnapshot {
+            issues: vec![
+                IssueBlock {
+                    number: 71,
+                    idle_reaped: true,
+                    ..IssueBlock::default()
+                },
+                IssueBlock {
+                    number: 72,
+                    ..IssueBlock::default()
+                },
+            ],
+            ..RunSnapshot::default()
+        };
+        let text = serde_json::to_string(&snap).unwrap();
+        let wire: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(wire["issues"][0]["idle_reaped"], true, "{wire}");
+        assert!(wire["issues"][1].get("idle_reaped").is_none(), "{wire}");
+        let back: RunSnapshot = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, snap);
     }
 
     #[test]

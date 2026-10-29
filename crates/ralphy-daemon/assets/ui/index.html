@@ -167,6 +167,7 @@
               <div class="attention-detail" x-show="r.detail" x-text="r.detail"></div>
               <button class="btn attention-go" x-show="actionOf(r) === 'console'" @click="goTo(r)">Go to the console</button>
               <button class="btn attention-go" x-show="actionOf(r) === 'run'" @click="openRun(r)">Open the run</button>
+              <button class="btn attention-dismiss" x-show="canDismiss(r)" @click="dismiss(r)">Dismiss</button>
             </div>
           </template>
         </div>

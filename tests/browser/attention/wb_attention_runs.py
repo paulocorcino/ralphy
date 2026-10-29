@@ -1,6 +1,8 @@
 """A run that waits, in a real browser: a run snapshot whose agent waits is
 one request of the attention list, "Open the run" shows that run in the Runs
-panel, and the run card shows the agent's state and what it asks.
+panel, and the run card shows the agent's state and what it asks. A finished
+run's issues are requests with "Dismiss", and a dismissed one stays hidden
+after a reload and on a second device.
 
 One Playwright pass over a REAL daemon. The script stands in for the run: it
 writes a hand-made snapshot to `<repo>/.ralphy/runstate/<runid>.json` with
@@ -13,7 +15,13 @@ Scenario 2  a snapshot whose `phase.agent` waits -> the badge says `1`, the
 Scenario 3  "Open the run" opens the run's project and the Runs panel; the run
             card shows the `waiting` dot and the detail; screenshot HERE
 Scenario 4  the snapshot is removed -> the badge is hidden
-Scenario 5  no page errors
+Scenario 5  a final snapshot in a run folder with issues `blocked` and `hitl`
+            -> two rows, each with "Dismiss" only
+Scenario 6  "Dismiss" on the `blocked` row -> after a reload one row is left
+            (`dismiss holds`)
+Scenario 7  a second browser context (the second device) sees the same one
+            row (`second device`)
+Scenario 8  no page errors
 
 Boots a Localhost daemon on 7472 over a SCRATCH `RALPHY_DAEMON_DIR`. The
 daemon is stopped by its own subprocess handle, NEVER by name. Built on the
@@ -112,6 +120,47 @@ def write_snapshot(repo):
     return path
 
 
+STAMP = "20261028-100000"
+
+
+def write_final(repo):
+    """The final snapshot a finished run left in its run folder: issue 71
+    ended `blocked`, issue 72 `hitl`."""
+    doc = {
+        "v": 1,
+        "runid": "01RUNFINISHEDAAAAAAAAAAAA",
+        "pid": 1,
+        "title": "attention run",
+        "repo": "owner/attention",
+        "branch": "afk/run-1",
+        "plan_agent": "claude",
+        "exec_agent": "claude",
+        "started_at": "2026-10-28T10:00:00-03:00",
+        "plan_path": "",
+        "queue": {"total": 2, "order": [71, 72], "stop_before": None},
+        "issues": [
+            {"number": 71, "title": "one", "status": "blocked"},
+            {"number": 72, "title": "two", "status": "hitl"},
+        ],
+        "phase": {"active": None, "state": "finished"},
+        "plan": {"issue": None, "steps": []},
+    }
+    path = os.path.join(repo, ".ralphy", "runs", STAMP, "snapshot.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f)
+
+
+def details(page):
+    return [r["detail"].strip() for r in page.evaluate(ROWS)]
+
+
+def open_panel(page):
+    if not page.evaluate(PANEL_OPEN):
+        page.locator(".rail-attention > button").click()
+    return wait_true(page, PANEL_OPEN, timeout=5000)
+
+
 def wait_true(page, js, timeout=15000):
     try:
         page.wait_for_function(js, timeout=timeout)
@@ -176,13 +225,47 @@ def main():
             ok = wait_true(page, f"() => ({BADGE})() === null")
             check("cleared", ok, f"badge={page.evaluate(BADGE)!r}")
 
-            # --- scenario 5 -----------------------------------------------------
+            # --- scenario 5: a finished run ------------------------------------
+            write_final(str(fixture))
+            ok = wait_true(page, f"() => ({BADGE})() === '2'")
+            open_panel(page)
+            rows = page.evaluate(ROWS)
+            ok = (
+                ok
+                and [r["detail"].strip() for r in rows] == ["blocked", "hitl"]
+                and all(r["buttons"] == ["Dismiss"] for r in rows)
+            )
+            check("finished rows", ok, f"got={rows!r}")
+
+            # --- scenario 6: dismiss, then reload -------------------------------
+            page.locator(".attention-panel .attention-row", has_text="blocked").locator(
+                ".attention-dismiss"
+            ).click()
+            wait_true(page, f"() => ({BADGE})() === '1'")
+            page.reload()
+            agents.wait_shell(page)
+            ok = wait_true(page, f"() => ({BADGE})() === '1'")
+            open_panel(page)
+            check("dismiss holds", ok and details(page) == ["hitl"], f"got={details(page)!r}")
+
+            # --- scenario 7: a second device -------------------------------------
+            other = browser.new_context(viewport={"width": 1440, "height": 900})
+            second = other.new_page()
+            second.on("pageerror", lambda e: thrown.append(str(e)))
+            second.goto(BASE)
+            agents.wait_shell(second)
+            ok = wait_true(second, f"() => ({BADGE})() === '1'")
+            open_panel(second)
+            check("second device", ok and details(second) == ["hitl"], f"got={details(second)!r}")
+            other.close()
+
+            # --- scenario 8 -----------------------------------------------------
             check("no page errors were thrown", not thrown, f"got={thrown}")
             browser.close()
     finally:
         agents.stop(proc)
 
-    check_floor = 8
+    check_floor = 11
     if len(results) != check_floor:
         print(f"FAIL the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

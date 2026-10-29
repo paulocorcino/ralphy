@@ -100,6 +100,8 @@ interface ApiRoutes {
   "GET /api/sessions": { ok: HostedSession[] };
   /** The names of the peers that did not answer are in `x-ralphy-unanswered`. */
   "GET /api/attention": { ok: AttentionReply };
+  /** `409` for a request that still waits, `404` for an unknown id. */
+  "POST /api/attention/dismiss": { ok: { dismissed: true } };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
     ok: { daemon_id: string | null; records: SpendRecord[]; interactive: SpendRecord[]; missing: MissingUsage[] };
