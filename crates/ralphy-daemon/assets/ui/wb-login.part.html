@@ -1,0 +1,50 @@
+    <div class="login-gate" x-data="wbLogin" x-show="!$store.connection.authed" x-cloak>
+      <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
+        <!-- The mark is `identityMark()`, the same accessor the rail puck, the
+             account menu and the About card use (#204) — the daemon wears ONE
+             face everywhere, and the login card is where telling two daemons
+             apart matters most. "daemon" is dropped: the word named the process,
+             not the thing being logged into. -->
+        <div class="login-brand"><span class="login-mark" x-text="$store.connection.identityMark()"></span> Ralphy</div>
+        <label class="login-label">
+          Authenticator code
+          <!-- One box per digit. `one-time-code` on the first box: tells the
+               browser this is an OTP, not a username, so it stops capturing the
+               TOTP code as a bogus saved username — and OTP autofill lands its
+               full 6 digits there, where otpInput() spreads them across boxes. -->
+          <div class="login-otp" @paste.prevent="otpPaste($event)">
+            <template x-for="i in 6" :key="i">
+              <input class="login-input login-otp-box" type="text" inputmode="numeric"
+                     pattern="[0-9]*" required :autofocus="i === 1"
+                     :name="i === 1 ? 'one-time-code' : null"
+                     :autocomplete="i === 1 ? 'one-time-code' : 'off'"
+                     :value="login.digits[i - 1]"
+                     @input="otpInput(i - 1, $event)"
+                     @keydown="otpKeydown(i - 1, $event)"
+                     @focus="$event.target.select()" />
+            </template>
+          </div>
+        </label>
+        <label class="login-label" x-show="$store.connection.security.passwordSet || login.passwordRequired">
+          Password
+          <!-- Inside an `x-if` so the field is REMOVED from the document the
+               moment the daemon accepts it, not merely hidden with the gate.
+               Measured 2026-09-22: a `type="password"` left in the DOM is
+               autofilled by the browser's password manager and then paired
+               with the next text field the operator types into — renaming a
+               note raised "save your password?" with the note's title offered
+               as the username. `autocomplete="off"` on that field does not
+               stop it; Chromium ignores the hint for save prompts. The only
+               thing that does is for there to be no password field. -->
+          <template x-if="!$store.connection.authed">
+            <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
+          </template>
+        </label>
+        <button class="login-btn" type="submit">Log in</button>
+        <label class="login-remember">
+          <input type="checkbox" x-model="login.remember" />
+          Keep me signed in
+        </label>
+        <div class="login-err" x-text="login.error"></div>
+      </form>
+    </div>

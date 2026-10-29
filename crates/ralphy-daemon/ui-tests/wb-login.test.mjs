@@ -4,11 +4,10 @@
 // `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the login gate's markup.
+const PART = "wb-login.part.html";
 
 // One page with the shell and the gate, and a window that delivers the events
 // it is sent, as the browser does. `init()` adds the listeners, as Alpine does
@@ -39,7 +38,7 @@ test("wbLogin lists only shell() names in uses, and its members left shell()", (
 
 test("every name the markup of wbLogin reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbLogin");
-  const markup = componentMarkup(HTML, "wbLogin");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variable of the digit boxes.
   const loopVars = new Set(["i"]);
@@ -60,8 +59,7 @@ test("nothing outside the login gate names its state", () => {
   // The gate is the last element of the page that binds state: what comes
   // before it is outside. Only the bindings are read; the page's text says
   // "login" in other places.
-  const start = HTML.indexOf('x-data="wbLogin"');
-  const outside = withoutComments(HTML.slice(0, start));
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   const read = new Set();
   for (const m of outside.matchAll(/\s(?:x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
     for (const n of bindingNames(m[1])) read.add(n);
