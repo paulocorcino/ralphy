@@ -5,12 +5,11 @@
 // security fact is the Alpine store `connection`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the dialog's markup.
+const PART = "wb-security-dialog.part.html";
 
 // `state` is the scope the dialog's code sees; `shell` is the shell() object
 // around it, whose `$store.connection` holds the security fact a test sets
@@ -47,7 +46,7 @@ const evalIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }
 
 // The element that holds the dialog's component, up to its `>`.
 const wrapperTag = () => {
-  const html = withoutComments(HTML);
+  const html = partMarkup(PART);
   const at = html.indexOf('x-data="wbSecurityDialog"');
   return html.slice(html.lastIndexOf("<div", at), html.indexOf(">", at) + 1);
 };
@@ -191,7 +190,7 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
-  const markup = componentMarkup(HTML, "wbSecurityDialog");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   let read = 0;
   for (const [attr, value] of attrs.map((m) => [m[1], m[2]])) {
@@ -206,7 +205,7 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
 });
 
 test("the account menu closes itself and asks the dialog to open with workbench:security-open", async () => {
-  const html = withoutComments(HTML);
+  const html = withoutComments(assembledPage("index.html"));
   const at = html.indexOf("Security settings</span>");
   const opener = html.slice(html.lastIndexOf("<button", at), html.indexOf(">", html.lastIndexOf("<button", at)) + 1);
   const click = opener.match(/@click="([^"]*)"/)[1];
@@ -232,8 +231,7 @@ test("the account menu closes itself and asks the dialog to open with workbench:
   assert.equal(state.securityOpen, true);
 
   // Nothing outside the component names its state.
-  const start = HTML.indexOf('x-data="wbSecurityDialog"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["securityOpen", "securityForm", "stepUp", "openSecurity", "closeSecurity"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
@@ -256,7 +254,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
 // `app.ts` asks the modal stack with this path; it must be the path the dialog
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Security dialog gives to scrim()", () => {
-  const markup = componentMarkup(HTML, "wbSecurityDialog");
+  const markup = partMarkup(PART);
   const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["securityOpen"]);
   assert.equal(WBSecurityDialog.openFlag, paths[0]);
