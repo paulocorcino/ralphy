@@ -415,16 +415,6 @@ function storeView(alpineName, stores) {
   return wrap(stores, "", 0);
 }
 
-// The text from the element that binds `x-data="<alpineName>"` to the close of
-// the document part that holds it, with comments cut out. Ends at the next
-// banner comment (`<!-- ===`), which in index.html starts each feature.
-export function componentMarkup(html, alpineName) {
-  const start = html.indexOf(`x-data="${alpineName}"`);
-  if (start < 0) throw new Error(`index.html binds no x-data="${alpineName}"`);
-  const end = html.indexOf("<!-- ===", start);
-  return withoutComments(html.slice(start, end < 0 ? undefined : end));
-}
-
 // The text of the part `<part>` (a `*.part.html` file of assets/ui), with
 // comments cut out. A component that lives in a part is read here, not cut
 // out of a page.
