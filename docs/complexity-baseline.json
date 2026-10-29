@@ -465,11 +465,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-runs.ts": {
-      "fromSnapshot": [
-        20
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-security-dialog.ts": {
       "toggleRequireLogin": [
         17
