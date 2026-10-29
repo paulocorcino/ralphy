@@ -1,6 +1,6 @@
-// The links inside a note card (ADR-0064 §12). `createNotes` builds the
-// installer with the card's names as typed deps; the text of the handler is
-// the one it had in `wb-notes.ts`.
+// The click rule of the links inside a note card (ADR-0064 §12). A link
+// follows the viewer's rule, and an external link opens only for a safe
+// scheme. `createNotes` builds the installer with the card's names as typed deps.
 import { isSafeScheme, popupLinkTarget } from "./wb-notes-folds.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { NoteCard, NoteSource } from "./wb-types.d.ts";
