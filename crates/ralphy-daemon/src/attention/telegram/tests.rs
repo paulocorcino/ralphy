@@ -26,6 +26,7 @@ fn request(kind: Kind, id: &str, since: SystemTime) -> AttentionRequest {
         kind,
         vendor: "claude".to_string(),
         console: console.then(|| "7".to_string()),
+        name: console.then(|| "fix login".to_string()),
         repo: Some("owner/app".to_string()),
         run: (!console).then(|| "01RUN".to_string()),
         issue: None,
@@ -211,7 +212,6 @@ fn the_message_links_to_the_console() {
     let ctx = Context {
         daemon_id: Some("01DAEMON".to_string()),
         origin: Some("https://ralphy.example".to_string()),
-        names: HashMap::from([("7".to_string(), "fix login".to_string())]),
     };
     let requests = [
         waiting(at(0)),

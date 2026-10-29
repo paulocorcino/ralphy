@@ -117,9 +117,7 @@ impl Main {
     /// One tick of the main with its own `requests`, and the end of the
     /// send it started.
     async fn tick(&mut self, requests: &[AttentionRequest]) {
-        self.notifier
-            .tick_at(requests, &[], SystemTime::now())
-            .await;
+        self.notifier.tick_at(requests, SystemTime::now()).await;
         if let Some(flight) = self.notifier.flight.take() {
             let delivery = flight.await.expect("the send ends");
             self.notifier.sender.finish(delivery);
@@ -135,6 +133,7 @@ fn waiting(open_secs: u64) -> AttentionRequest {
         kind: Kind::ConsoleWaiting,
         vendor: "claude".to_string(),
         console: Some("7".to_string()),
+        name: Some("fix login".to_string()),
         repo: Some("owner/app".to_string()),
         run: None,
         issue: None,
@@ -292,7 +291,11 @@ async fn the_main_sends_a_peer_console_request_once() {
         "{}",
         texts[0]
     );
-    assert!(texts[0].contains(" in owner/app "), "{}", texts[0]);
+    assert!(
+        texts[0].starts_with("Claude console \"fix login\" in owner/app "),
+        "the peer console's name: {}",
+        texts[0]
+    );
 }
 
 #[tokio::test]

@@ -14,7 +14,7 @@
 //! page of the daemon or of a peer is. A peer whose main daemon claimed it
 //! (`telegram_state::Claim`) sends nothing: its main sends for it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -23,7 +23,7 @@ use ralphy_telegram::client::{BotClient, Transport, UreqTransport};
 
 use super::{AttentionRequest, Kind};
 use crate::presence_board;
-use crate::session::{Agent, SessionInfo};
+use crate::session::Agent;
 use crate::telegram_state::{self, SharedClaim};
 
 /// How long a console request is open before it is sent.
@@ -37,23 +37,11 @@ pub(crate) struct Message {
 }
 
 /// What a message names besides the request: this daemon's id and the origin
-/// of the operator's last page (the link), and the consoles' names by session
-/// id.
+/// of the operator's last page (the link).
 #[derive(Debug, Default)]
 pub(crate) struct Context {
     pub(crate) daemon_id: Option<String>,
     pub(crate) origin: Option<String>,
-    pub(crate) names: HashMap<String, String>,
-}
-
-impl Context {
-    /// The names of `consoles`, by session id.
-    pub(crate) fn names_of(consoles: &[SessionInfo]) -> HashMap<String, String> {
-        consoles
-            .iter()
-            .filter_map(|info| Some((info.id.to_string(), info.name.clone()?)))
-            .collect()
-    }
 }
 
 /// What a console request of `kind` says it is, or `None` for a request that
@@ -86,7 +74,7 @@ fn vendor_name(vendor: &str) -> &str {
 fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
     let console = request.console.as_deref().unwrap_or_default();
     let mut text = format!("{} console", vendor_name(&request.vendor));
-    if let Some(name) = ctx.names.get(console) {
+    if let Some(name) = &request.name {
         text.push_str(&format!(" \"{name}\""));
     }
     if let Some(repo) = &request.repo {
@@ -409,19 +397,14 @@ impl Notifier {
     }
 
     /// One tick: keep what the last send did, then start the send of the
-    /// messages due for `requests` of `consoles` and for the console
-    /// requests of the peers.
-    pub(crate) async fn tick(&mut self, requests: &[AttentionRequest], consoles: &[SessionInfo]) {
-        self.tick_at(requests, consoles, SystemTime::now()).await;
+    /// messages due for `requests` and for the console requests of the
+    /// peers.
+    pub(crate) async fn tick(&mut self, requests: &[AttentionRequest]) {
+        self.tick_at(requests, SystemTime::now()).await;
     }
 
     /// [`Notifier::tick`] at `now`.
-    pub(crate) async fn tick_at(
-        &mut self,
-        requests: &[AttentionRequest],
-        consoles: &[SessionInfo],
-        now: SystemTime,
-    ) {
+    pub(crate) async fn tick_at(&mut self, requests: &[AttentionRequest], now: SystemTime) {
         if !self.landed().await || !self.sends(now).await {
             return;
         }
@@ -430,7 +413,6 @@ impl Notifier {
         let ctx = Context {
             daemon_id: self.daemon_id.clone(),
             origin,
-            names: Context::names_of(consoles),
         };
         let all: Vec<AttentionRequest> = requests.iter().cloned().chain(peers.requests).collect();
         let messages = self

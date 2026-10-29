@@ -62,6 +62,10 @@ pub struct AttentionRequest {
     pub vendor: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console: Option<String>,
+    /// The console's name, when it has one; a main daemon's message for a
+    /// peer's console names it from here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -142,6 +146,7 @@ fn console_request(info: &SessionInfo) -> Option<AttentionRequest> {
         kind,
         vendor: info.agent.clone(),
         console: Some(info.id.to_string()),
+        name: info.name.clone(),
         repo: Some(info.repo.clone()),
         run: None,
         issue: None,
@@ -170,6 +175,7 @@ fn run_request(source: &RunSource) -> Option<AttentionRequest> {
         kind,
         vendor: vendor.clone(),
         console: None,
+        name: None,
         repo: Some(source.repo.clone()),
         run: Some(snap.runid.clone()),
         issue: snap.phase.active.map(|n| n.to_string()),
@@ -210,6 +216,7 @@ fn finished_request(run: &FinishedRun, issue: &IssueBlock) -> Option<AttentionRe
         kind,
         vendor: run.snapshot.exec_agent.clone(),
         console: None,
+        name: None,
         repo: Some(run.repo.clone()),
         run: Some(run.snapshot.runid.clone()),
         issue: Some(issue.number.to_string()),

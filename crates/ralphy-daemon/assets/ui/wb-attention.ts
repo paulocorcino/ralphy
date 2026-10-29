@@ -64,6 +64,7 @@ export type AttentionRequest = {
   kind: AttentionKind;
   vendor: string;
   console?: string;
+  name?: string;
   repo?: string;
   run?: string;
   issue?: string;

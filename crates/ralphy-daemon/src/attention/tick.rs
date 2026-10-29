@@ -218,7 +218,7 @@ pub(crate) async fn tick_once(
     if seen.changed(&requests) {
         push(pushes, Push::Attention);
     }
-    telegram.tick(&requests, &consoles).await;
+    telegram.tick(&requests).await;
 }
 
 /// Tick every [`EVERY`] until the daemon stops.

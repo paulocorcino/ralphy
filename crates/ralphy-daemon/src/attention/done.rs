@@ -153,6 +153,7 @@ pub fn requests<'a>(
             kind,
             vendor: info.agent.clone(),
             console: Some(info.id.to_string()),
+            name: info.name.clone(),
             repo: Some(info.repo.clone()),
             run: None,
             issue: None,
