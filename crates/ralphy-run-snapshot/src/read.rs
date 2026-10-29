@@ -120,12 +120,28 @@ fn visit(repo_root: &Path, path: &Path, is_alive: &impl Fn(u32) -> bool, listing
         listing.live.push(snap);
     } else {
         // Orphan sweep: a hard crash must not accumulate documents.
-        let _ = std::fs::remove_file(path);
+        remove_swept(path);
         // …nor sentinels. A stop written for a run that died before noticing
         // it would otherwise sit here forever. It is already inert (the next
         // run has a different runid), so this is hygiene, not correctness —
         // but the directory is the operator's, and it should stay readable.
-        let _ = std::fs::remove_file(crate::stop_path(repo_root, &snap.runid));
+        remove_swept(&crate::stop_path(repo_root, &snap.runid));
+    }
+}
+
+/// Remove `path`, a file of a run that is gone. A file that is already gone
+/// is no error: another reader's sweep removed it first, or no stop was
+/// written. Any other failure is logged at debug, since the next pass tries
+/// again and a warning there would repeat on each tick of the daemon.
+fn remove_swept(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => tracing::debug!(
+            path = %path.display(),
+            error = %e,
+            "could not remove a file of a run that is gone"
+        ),
     }
 }
 
@@ -309,6 +325,22 @@ mod tests {
         let mut listing = RunListing::default();
         visit(dir.path(), &path, &|_| true, &mut listing);
         assert_eq!(listing, RunListing::default());
+    }
+
+    /// A document that is there but cannot be read is reported, not skipped
+    /// as a run that is gone.
+    #[test]
+    fn a_document_that_exists_but_cannot_be_read_is_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        // A folder named like a document: it is listed, and reading it fails.
+        std::fs::create_dir_all(snapshot_path(dir.path(), "01DIR")).unwrap();
+        let listing = list_runs(dir.path(), |_| true);
+        assert!(listing.live.is_empty(), "{listing:?}");
+        assert_eq!(
+            listing.unreadable,
+            [UnreadableRun::new("01DIR", "unreadable")],
+            "{listing:?}"
+        );
     }
 
     #[test]

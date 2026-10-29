@@ -115,7 +115,7 @@ mod tests {
     fn an_unchanged_final_snapshot_is_read_once() {
         let repo = tempfile::tempdir().expect("a temp dir");
         let first = finished_run(repo.path(), "20261028-100000");
-        finished_run(repo.path(), "20261028-110000");
+        let second = finished_run(repo.path(), "20261028-110000");
         let reads = Cell::new(0);
         let read = |dir: &Path| {
             reads.set(reads.get() + 1);
@@ -140,8 +140,31 @@ mod tests {
         );
         assert_eq!(reads.get(), 2, "and reads no file again");
 
+        // A final snapshot whose file time changed is read again.
+        let path = ralphy_run_snapshot::final_snapshot_path(&second);
+        let rewritten = RunSnapshot {
+            runid: "01REWRITTEN".to_string(),
+            ..RunSnapshot::default()
+        };
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&rewritten).expect("a snapshot serializes"),
+        )
+        .expect("rewrite the final snapshot");
+        let later = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .expect("the file time")
+            + std::time::Duration::from_secs(60);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|f| f.set_modified(later))
+            .expect("move the file time");
+        assert_eq!(pass(&mut finals), ["0120261028-100000", "01REWRITTEN"]);
+        assert_eq!(reads.get(), 3, "only the changed file is read again");
+
         std::fs::remove_dir_all(&first).expect("remove a run folder");
-        assert_eq!(pass(&mut finals), ["0120261028-110000"]);
+        assert_eq!(pass(&mut finals), ["01REWRITTEN"]);
         assert!(
             !finals.kept.contains_key(&first),
             "a removed folder leaves the cache"
