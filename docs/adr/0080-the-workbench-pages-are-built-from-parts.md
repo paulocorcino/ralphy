@@ -1,6 +1,7 @@
 # The workbench pages are built from parts
 
-Status: proposed
+Status: accepted
+Amended 2026-10-29 (a test may read a page put together from its parts).
 Kind: structural
 Protects: testability, extensibility
 
@@ -10,13 +11,14 @@ Amends ADR-0057 D6 (`index.html` is not split) and ADR-0073 D9
 ## Context
 
 The workbench has three pages, one for each `Shell` in
-`crates/ralphy-daemon/src/assets.rs`: `index.html` (the desk, 3,273 lines),
-`detached.html` (57 lines) and `detached-fence.html` (117 lines). Measured on
-2026-10-12 with a script that finds each `x-data` element and its close tag:
+`crates/ralphy-daemon/src/assets.rs`: `index.html` (the desk, 3,460 lines),
+`detached.html` (57 lines) and `detached-fence.html` (118 lines). Measured on
+`a4a02caa` (2026-10-29) with a script that finds each `x-data` element and its
+close tag:
 
-- 16 Alpine components own 2,676 lines of `index.html`. The largest are
-  `wbSpend` (407), `wbBoard` (295), `wbRuns` (282), `wbHostsDialog` (279),
-  `wbSettingsDialog` (210) and `wbChanges` (200). The shell keeps about 600
+- 20 Alpine components own 2,826 lines of `index.html`. The largest are
+  `wbSpend` (407), `wbBoard` (295), `wbRuns` (289), `wbHostsDialog` (279),
+  `wbSettingsDialog` (210) and `wbChanges` (200). The shell keeps about 630
   lines: the head, the rail, the side panel and the canvas tabs.
 - Each component's markup reads 0 to 2 members of `shell()`. `shell()` has
   30 members (`cargo run -p xtask -- ui-groups`). The markup of a component
@@ -26,7 +28,7 @@ The workbench has three pages, one for each `Shell` in
   `every_shell_links_the_whole_cascade` checks that each page has all of
   them.
 
-An agent that changes the Hosts dialog today searches a 3,273-line file for
+An agent that changes the Hosts dialog today searches a 3,460-line file for
 the 279 lines it needs. The size gate (ADR-0022 §7) does not measure HTML, so
 nothing stops the file from growing.
 
@@ -37,10 +39,10 @@ first premise is no longer true. Since ADR-0075 D3, `build.rs`
 The same step can put parts into a page, and the daemon does not change:
 it serves the built page as it does today.
 
-What reads the markup today (measured on 2026-10-12):
+What reads the markup today (measured on `a4a02caa`):
 
 - 36 tests in `crates/ralphy-daemon/src/tests/` read
-  `include_str!("../assets/ui/index.html")`, with 170 claims
+  `include_str!("../assets/ui/index.html")`, with 178 claims
   (`cargo run -p xtask -- asset-pins`). About 12 of them count matches or cut
   the file at a position. These would give wrong results on one part.
 - 22 files in `ui-tests/` read `index.html`. `componentMarkup`
@@ -146,8 +148,9 @@ markup.
 
 - D1: checked by `build/ui.rs`: the build writes the page from the source
   and its markers. The pilot adds a unit test of the marker rule.
-- D2: checked by `crates/ralphy-daemon/src/tests/` (a test the pilot adds:
-  no path in the embedded tree ends with `.part.html`).
+- D2: checked by `no_part_file_is_served`
+  (`crates/ralphy-daemon/src/tests/asset_graph.rs`): no path in the embedded
+  tree ends with `.part.html`.
 - D3: checked by `build/ui.rs`: each case stops the build with an error.
   The pilot adds a unit test for each case.
 - D4: not checked by code: reviewed in the PR.
@@ -156,7 +159,35 @@ markup.
   still checks, on the built pages, that each page links every stylesheet.
 - D6: not checked by code: reviewed in the PR. A test that reads the source
   page still passes while the page has its markup.
-- D7: not checked by code: reviewed in the PR.
+- D7 (as amended by A1): not checked by code: reviewed in the PR. The test
+  `a page put together from its parts` (`ui-tests/wb-modals.test.mjs`)
+  checks that `assembledPage` gives back every component, the 14 scrims and
+  the 14 dialogs in document order.
 - D8: not checked by code: the PR of each move shows the diff of the built
   page before and after, and it must be empty.
 - D9: checked by `cargo run -q -p xtask -- oversized --base main` in CI.
+
+## Amendment 2026-10-29 — a test may read a page put together from its parts
+
+The pilot moved the head (`head.part.html`, named by all three pages) and the
+Hosts dialog (`wb-hosts-dialog.part.html`). The built pages are equal to the
+source pages on `a4a02caa` (D8), and the Rust tests read the built pages (D6).
+Two Node tests cannot read one part, because their claim is about the whole
+page:
+
+- `wb-modals.test.mjs` reads every modal scrim in document order. The window
+  asks the scrims for Escape in that order, so the order is the claim.
+- `wb-settings.test.mjs` walks every modal to check that each password field
+  is gated by the flag of its own modal.
+
+Some component tests also check that nothing outside the component names its
+state, which needs the page without that component.
+
+**A1. Amends D7.** `ui-tests/harness.mjs` has one helper that puts a page
+together, `assembledPage(page, { skip })`. It replaces each marker line with
+its part by the rule of D1, and leaves out the part named by `skip`. A test
+uses it only when its claim is about the whole page or about the page outside
+one component. A test about one component reads its part with
+`partMarkup(part)`; `componentMarkup` stays only for the components that are
+not in a part yet. `build/ui.rs` is still the only code that puts together a
+page the daemon serves.
