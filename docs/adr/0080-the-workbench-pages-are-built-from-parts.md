@@ -45,9 +45,9 @@ What reads the markup today (measured on `a4a02caa`):
   `include_str!("../assets/ui/index.html")`, with 178 claims
   (`cargo run -p xtask -- asset-pins`). About 12 of them count matches or cut
   the file at a position. These would give wrong results on one part.
-- 22 files in `ui-tests/` read `index.html`. `componentMarkup`
-  (`harness.mjs`) cuts a component out of it, from its `x-data` to the next
-  banner comment.
+- 22 files in `ui-tests/` read `index.html`. At that commit, `componentMarkup`
+  (`harness.mjs`) cut a component out of it, from its `x-data` to the next
+  banner comment. That helper is gone: every component is in a part now.
 - `ui-copy` reads every `*.html` file at the top of `assets/ui/` and does not
   go into subfolders (`sources` in `crates/xtask/src/ui_copy.rs`).
   `docs/ui-copy-rules.json` has 5 exceptions keyed by `"file": "index.html"`.
@@ -83,7 +83,7 @@ links for anything only it loads, and for any link whose position differs.
 `$OUT_DIR/ui/<page>.html` (`include_str!(concat!(env!("OUT_DIR"), …))`),
 not the source. A claim counts over the whole page, as it does today.
 
-**D7. Node tests read the part.** `componentMarkup` reads
+**D7. Node tests read the part.** `partMarkup` reads
 `<name>.part.html` and does not cut a page. The Node tests do not assemble
 pages. The only code that puts parts into a page is `build/ui.rs`.
 
@@ -188,8 +188,7 @@ together, `assembledPage(page, { skip })`. It replaces each marker line with
 its part by the rule of D1, and leaves out the part named by `skip`. A test
 uses it only when its claim is about the whole page or about the page outside
 one component. A test about one component reads its part with
-`partMarkup(part)`; `componentMarkup` stays only for the components that are
-not in a part yet. `build/ui.rs` is still the only code that puts together a
+`partMarkup(part)`. `build/ui.rs` is still the only code that puts together a
 page the daemon serves.
 
 **A2. Amends D4.** A module that defines two components gives each part
