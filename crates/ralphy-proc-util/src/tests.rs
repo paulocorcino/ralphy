@@ -94,6 +94,8 @@ fn program_dir_on_path_leaves_a_bare_program_alone() {
 use super::*;
 use std::fs;
 
+mod find;
+
 /// Mark a freshly-written fixture executable so `find_program`'s Unix
 /// execute-bit check accepts it. A no-op off Unix (Windows gates on PATHEXT).
 fn mark_executable(p: &Path) {
