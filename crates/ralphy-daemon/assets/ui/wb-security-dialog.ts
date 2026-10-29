@@ -23,6 +23,7 @@ type CheckboxChange = { target: HTMLInputElement | null };
 /** The members of the dialog that the login switch calls. */
 type LoginDialog = {
   $store: AlpineMagics["$store"];
+  securityForm: { requireLoginError: string };
   stepUpBody(fields: Record<string, string>, code: string): string;
   noteStepUpRefusal(r: Response): void;
   closeSecurity(): void;
@@ -34,21 +35,26 @@ function syncCheckbox(ev: CheckboxChange | undefined, checked: boolean) {
 }
 
 // Ask the daemon to put the login gate on or off. True when it did. A refusal
-// to lift the gate says why under the card that asked.
+// to lift the gate is a step-up refusal; any other failure is said under the
+// switch.
 async function postRequireLogin(dialog: LoginDialog, want: boolean, code: string) {
-  let ok = false;
   try {
     const r = await fetch("/api/security/require-login", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: dialog.stepUpBody({ enable: String(want) }, code),
     });
-    ok = r.ok;
-    if (!ok && !want) dialog.noteStepUpRefusal(r);
+    if (!r.ok) noteLoginRefusal(dialog, want, r);
+    return r.ok;
   } catch {
-    ok = false;
+    dialog.securityForm.requireLoginError = "Cannot reach the daemon. Try again.";
+    return false;
   }
-  return ok;
+}
+
+function noteLoginRefusal(dialog: LoginDialog, want: boolean, r: Response) {
+  if (want) dialog.securityForm.requireLoginError = `The daemon refused (${r.status}).`;
+  else dialog.noteStepUpRefusal(r);
 }
 
 // What follows a change of the gate that the daemon took.
@@ -91,6 +97,8 @@ export function securityDialog() {
       passwordCurrent: "",
       // The last step-up refusal, shown under the card that asked.
       stepUpError: "",
+      // Why the login switch did not change, shown under it.
+      requireLoginError: "",
     },
     // The step-up prompt (ADR-0032 amendment E): lowering the auth posture —
     // rotating the token, lifting the login gate, revoking TOTP — costs a
@@ -129,6 +137,7 @@ export function securityDialog() {
       this.securityForm.totpError = "";
       this.securityForm.passwordCurrent = "";
       this.securityForm.stepUpError = "";
+      this.securityForm.requireLoginError = "";
       this.cancelStepUp();
     },
 
@@ -365,9 +374,11 @@ export function securityDialog() {
       // Only meaningful once TOTP is enrolled; the server refuses (400) an
       // enable with no seed, the client guard just avoids the round-trip.
       const want = !this.$store.connection.security.requireLogin;
+      this.securityForm.requireLoginError = "";
       if (want && !this.$store.connection.security.totpEnrolled) {
         this.$store.connection.securityChanged({ requireLogin: false });
         syncCheckbox(ev, false);
+        this.securityForm.requireLoginError = "Enroll two-factor above first.";
         return;
       }
       // Turning the gate OFF is the gate itself being lowered: it costs a
