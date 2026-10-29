@@ -227,13 +227,15 @@ pub(crate) fn parse_transcript_usage(jsonl: &str) -> Usage {
         let Some(message) = line_message(line) else {
             continue;
         };
+        // A line without `usage` must not use up its `message.id`: a later line
+        // with the same id may carry the usage.
+        let Some(usage) = message.get("usage") else {
+            continue;
+        };
         // Mandatory dedup: count one `usage` per unique `message.id`.
         if !first_sight(&message, &mut seen) {
             continue;
         }
-        let Some(usage) = message.get("usage") else {
-            continue;
-        };
         let tokens = usage_tokens(usage);
         total.add_tokens(&tokens);
         // Attribute this line's tokens to its assistant `message.model` so the
@@ -463,6 +465,15 @@ mod tests {
                 model: None,
             }
         );
+    }
+
+    #[test]
+    fn a_line_without_usage_does_not_use_up_its_message_id() {
+        let jsonl = "\
+{\"type\":\"assistant\",\"message\":{\"id\":\"m1\"}}
+{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":5}}}
+";
+        assert_eq!(parse_transcript_usage(jsonl).input, 5);
     }
 
     #[test]
