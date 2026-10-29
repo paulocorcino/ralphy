@@ -220,7 +220,9 @@ export function createTitle(deps: TitleDeps) {
       setWin(win, { doneMark: !doneMarkOn(win) });
       paint();
     });
-    title.append(" ", btn);
+    // No text node before the bell: it has no text, so a space would leave
+    // two spaces in the title's text (`wt-a  · repo`). The gap is CSS.
+    title.append(btn);
   }
 
   // The checkout segment of the title: ` · <checkout> ▾`.
