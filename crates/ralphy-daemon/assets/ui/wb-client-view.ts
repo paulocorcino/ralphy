@@ -102,41 +102,53 @@ export const WBView = (function () {
         // launch". A truthy coercion here would turn a corrupt or half-written
         // record into permission to spawn a vendor CLI per saved console.
         relaunch: parsed.relaunch === true,
-        // The console key bar's mode. Only the two EXPLICIT choices are stored;
-        // anything else — absent, corrupt, a stale spelling — is auto, which is
-        // what the pure `keyBarVisible` reads a null as.
-        keys: parsed.keys === "on" || parsed.keys === "off" ? parsed.keys : null,
-        // The terminal font size, in px. Clamped to the same range the buttons
-        // step through: a hand-edited 400 would paint one glyph per console.
-        font:
-          typeof parsed.font === "number" && Number.isInteger(parsed.font) && parsed.font >= 10 && parsed.font <= 28
-            ? parsed.font
-            : null,
+        keys: keysOf(parsed.keys),
+        font: fontOf(parsed.font),
         off: isRecord(parsed.off) ? parsed.off : null,
         // The secondary pane (ADR-0037 §3c): a pin names a file the way `tabs`
         // does; a mirror names nothing. The ratio is the left column's share,
         // held to the range the divider drag can produce. Anything else is
         // "no slot" — `WBSplit.fromStored` folds the survivor against the tabs.
         split: splitOf(parsed.split),
-        // The column grid (ADR-0051 §8, columns and rows amendments): window
-        // ids only, as a list of columns that are lists of ids, or the flat
-        // list stored before rows. `WBColumns.fromStored` folds both and
-        // checks them against the desk on restore.
-        columns: Array.isArray(parsed.columns)
-          ? parsed.columns.flatMap((c: unknown): (string | string[])[] => {
-              if (typeof c === "string") return [c];
-              return Array.isArray(c) ? [c.filter((s): s is string => typeof s === "string")] : [];
-            })
-          : null,
+        columns: columnsOf(parsed.columns),
         // "Notify me in this browser" (the attention list): a stored `true`
         // only, so a corrupt record never turns notifications on.
         notify: parsed.notify === true,
-        // Where "Slice" opens, as last picked in this browser.
-        columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
+        columnDir: columnDirOf(parsed.columnDir),
       };
     } catch {
       return null;
     }
+  }
+
+  // The console key bar's mode. Only the two EXPLICIT choices are stored;
+  // anything else — absent, corrupt, a stale spelling — is auto, which is
+  // what the pure `keyBarVisible` reads a null as.
+  function keysOf(raw: unknown): "on" | "off" | null {
+    return raw === "on" || raw === "off" ? raw : null;
+  }
+
+  // The terminal font size, in px. Clamped to the same range the buttons
+  // step through: a hand-edited 400 would paint one glyph per console.
+  function fontOf(raw: unknown) {
+    return typeof raw === "number" && Number.isInteger(raw) && raw >= 10 && raw <= 28 ? raw : null;
+  }
+
+  // The column grid (ADR-0051 §8, columns and rows amendments): window
+  // ids only, as a list of columns that are lists of ids, or the flat
+  // list stored before rows. `WBColumns.fromStored` folds both and
+  // checks them against the desk on restore.
+  function columnsOf(raw: unknown) {
+    if (!Array.isArray(raw)) return null;
+    return raw.flatMap((c: unknown): (string | string[])[] => {
+      if (typeof c === "string") return [c];
+      return Array.isArray(c) ? [c.filter((s): s is string => typeof s === "string")] : [];
+    });
+  }
+
+  // Where "Slice" opens, as last picked in this browser.
+  function columnDirOf(raw: unknown) {
+    return raw === "right" || raw === "down" ? raw : null;
   }
 
   function splitOf(raw: unknown) {

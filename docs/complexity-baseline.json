@@ -208,11 +208,6 @@
         14
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-client-view.ts": {
-      "read": [
-        17
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-columns.ts": {
       "fromStored": [
         11
