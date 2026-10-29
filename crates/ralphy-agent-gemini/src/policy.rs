@@ -196,4 +196,29 @@ mod tests {
         assert!(path.starts_with(&root.home), "{path:?}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
     }
+
+    /// Files are read in sorted path order and the rules of one file in the order
+    /// they were written, so the generated document does not depend on how the
+    /// directory happens to be listed.
+    #[test]
+    fn imported_rules_follow_the_file_order_then_the_rule_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let deny = |tool: &str| format!("[[rule]]\ntoolName = \"{tool}\"\ndecision = \"deny\"\n");
+        std::fs::write(dir.path().join("b.toml"), deny("b1")).unwrap();
+        std::fs::write(
+            dir.path().join("a.toml"),
+            format!("{}\n{}", deny("a1"), deny("a2")),
+        )
+        .unwrap();
+
+        let imported = import_deny_rules(Some(dir.path()));
+        let tools: Vec<String> = imported
+            .iter()
+            .map(|body| {
+                let doc: toml::Table = body.parse().expect("an imported rule parses");
+                doc["rule"][0]["toolName"].as_str().unwrap().to_string()
+            })
+            .collect();
+        assert_eq!(tools, ["a1", "a2", "b1"]);
+    }
 }
