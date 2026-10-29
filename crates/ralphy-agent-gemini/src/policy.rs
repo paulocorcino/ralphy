@@ -60,6 +60,16 @@ pub(crate) fn import_deny_rules(policies_dir: Option<&Path>) -> Vec<String> {
     let Some(dir) = policies_dir else {
         return Vec::new();
     };
+    let mut out = Vec::new();
+    for file in policy_files(dir) {
+        out.extend(deny_rules_in(&file));
+    }
+    out
+}
+
+/// The `*.toml` files directly in `dir`, in sorted path order. An unreadable
+/// directory has none.
+fn policy_files(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -69,36 +79,47 @@ pub(crate) fn import_deny_rules(policies_dir: Option<&Path>) -> Vec<String> {
         .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("toml"))
         .collect();
     files.sort();
+    files
+}
 
+/// The deny rules of one policy file, in file order. An unreadable file is
+/// skipped silently and an unparsable one with a warning.
+fn deny_rules_in(file: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(file) else {
+        return Vec::new();
+    };
+    let Ok(doc) = text.parse::<toml::Table>() else {
+        tracing::warn!("skipping unparsable gemini policy {}", file.display());
+        return Vec::new();
+    };
+    let Some(rules) = doc.get("rule").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
-    for file in files {
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
-        let Ok(doc) = text.parse::<toml::Table>() else {
-            tracing::warn!("skipping unparsable gemini policy {}", file.display());
-            continue;
-        };
-        let Some(rules) = doc.get("rule").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        for rule in rules {
-            let is_deny = rule
-                .get("decision")
-                .and_then(|d| d.as_str())
-                .is_some_and(|d| d == "deny");
-            if !is_deny {
-                continue;
-            }
-            let mut table = toml::Table::new();
-            table.insert("rule".into(), toml::Value::Array(vec![rule.clone()]));
-            match toml::to_string(&table) {
-                Ok(body) => out.push(body),
-                Err(e) => tracing::warn!("skipping unserializable gemini deny rule: {e}"),
-            }
+    for rule in rules {
+        let is_deny = rule
+            .get("decision")
+            .and_then(|d| d.as_str())
+            .is_some_and(|d| d == "deny");
+        if is_deny {
+            out.extend(deny_rule_body(rule));
         }
     }
     out
+}
+
+/// One deny rule re-emitted as a TOML `[[rule]]` body; `None` when it cannot be
+/// serialized.
+fn deny_rule_body(rule: &toml::Value) -> Option<String> {
+    let mut table = toml::Table::new();
+    table.insert("rule".into(), toml::Value::Array(vec![rule.clone()]));
+    match toml::to_string(&table) {
+        Ok(body) => Some(body),
+        Err(e) => {
+            tracing::warn!("skipping unserializable gemini deny rule: {e}");
+            None
+        }
+    }
 }
 
 /// Write the document into Ralphy's own root and return the path to pass on argv.

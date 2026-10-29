@@ -21,11 +21,6 @@
         13
       ]
     },
-    "crates/ralphy-agent-gemini/src/policy.rs": {
-      "import_deny_rules": [
-        17
-      ]
-    },
     "crates/ralphy-agent-gemini/src/revocation.rs": {
       "inspect_admin_tier": [
         13
