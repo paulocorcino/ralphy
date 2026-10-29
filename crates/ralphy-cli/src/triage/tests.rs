@@ -395,3 +395,57 @@ fn interactive_triage_does_not_hold() {
         "the hold is called outside the `--yes` branch"
     );
 }
+
+fn draft_of(verdict: TriageVerdict) -> TriageDraft {
+    TriageDraft {
+        items: vec![TriageItem {
+            number: 22,
+            verdict,
+            comment: Some("Needs a maintainer.".into()),
+            draft_issue: Some(DraftIssue {
+                title: "Restricted follow-up".into(),
+                body: "Closes #22".into(),
+                labels: vec![],
+            }),
+            drew_on: vec![],
+        }],
+    }
+}
+
+/// An operator who answers yes gets the follow-up issue an escalate drafted,
+/// after being asked once.
+#[test]
+fn a_yes_creates_the_drafted_follow_up_of_an_escalate() {
+    let t = RecordingTracker::default();
+    let mut asked = Vec::new();
+    offer_follow_up_issues(&draft_of(TriageVerdict::Escalate), &t, |prompt| {
+        asked.push(prompt.to_string());
+        Ok(true)
+    })
+    .unwrap();
+    assert_eq!(asked, ["  > Create this follow-up issue? [y/N] "]);
+    assert_eq!(
+        *t.created.borrow(),
+        vec![("Restricted follow-up".to_string(), "Closes #22".to_string())]
+    );
+}
+
+/// An operator who answers no gets no issue.
+#[test]
+fn a_no_creates_no_follow_up() {
+    let t = RecordingTracker::default();
+    offer_follow_up_issues(&draft_of(TriageVerdict::Escalate), &t, |_| Ok(false)).unwrap();
+    assert!(t.created.borrow().is_empty());
+}
+
+/// Only an escalate offers a follow-up: a promote never asks and never
+/// creates one.
+#[test]
+fn a_promote_offers_no_follow_up() {
+    let t = RecordingTracker::default();
+    offer_follow_up_issues(&draft_of(TriageVerdict::Promote), &t, |_| {
+        panic!("a promote must not ask")
+    })
+    .unwrap();
+    assert!(t.created.borrow().is_empty());
+}
