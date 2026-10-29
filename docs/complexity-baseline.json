@@ -21,11 +21,6 @@
         13
       ]
     },
-    "crates/ralphy-agent-gemini/src/outcome.rs": {
-      "fold_gemini_stream": [
-        20
-      ]
-    },
     "crates/ralphy-agent-gemini/src/policy.rs": {
       "import_deny_rules": [
         17
