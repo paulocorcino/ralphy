@@ -4,9 +4,6 @@
     "crates/ralphy-agent-claude/src/usage.rs": {
       "newest_jsonl_since": [
         20
-      ],
-      "parse_transcript_usage": [
-        16
       ]
     },
     "crates/ralphy-agent-codex/src/usage.rs": {

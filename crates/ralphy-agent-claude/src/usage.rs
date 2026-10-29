@@ -224,48 +224,67 @@ pub(crate) fn parse_transcript_usage(jsonl: &str) -> Usage {
     // leaving the bulk of a run's spend unpriced (`~$?`) in `ralphy usage`.
     let mut by_model: BTreeMap<String, u64> = BTreeMap::new();
     for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(message) = value.get("message") else {
+        let Some(message) = line_message(line) else {
             continue;
         };
         // Mandatory dedup: count one `usage` per unique `message.id`.
-        if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
-            if !seen.insert(id.to_string()) {
-                continue;
-            }
+        if !first_sight(&message, &mut seen) {
+            continue;
         }
         let Some(usage) = message.get("usage") else {
             continue;
         };
-        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        // Only the top-level `message.usage` is read; `iterations[]` is never
-        // descended into, so its repeated `usage` is ignored by construction.
-        let input = field("input_tokens");
-        let output = field("output_tokens");
-        let cache_read = field("cache_read_input_tokens");
-        let cache_creation = cache_creation_tokens(usage);
-        total.input += input;
-        total.output += output;
-        total.cache_read += cache_read;
-        total.cache_creation += cache_creation;
+        let tokens = usage_tokens(usage);
+        total.add_tokens(&tokens);
         // Attribute this line's tokens to its assistant `message.model` so the
         // dominant model can be picked once the whole transcript is summed.
         if let Some(m) = message.get("model").and_then(|v| v.as_str()) {
-            *by_model.entry(m.to_string()).or_insert(0) +=
-                input + output + cache_read + cache_creation;
+            *by_model.entry(m.to_string()).or_insert(0) += tokens.total();
         }
     }
-    // The dominant model (most tokens) is the one the price table resolves on; a
-    // tie resolves to the last key, which is immaterial (equal spend → same price
-    // for the figures that matter). `None` when no line carried a `model`.
-    total.model = by_model.into_iter().max_by_key(|(_, n)| *n).map(|(k, _)| k);
+    total.model = dominant_model(by_model);
     total
+}
+
+/// The `message` object of one transcript line, `None` for a blank line, a line
+/// that is not JSON, or a record without a `message`.
+fn line_message(line: &str) -> Option<serde_json::Value> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let mut value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    value.get_mut("message").map(serde_json::Value::take)
+}
+
+/// Whether this message's `id` has not been counted yet. A message with no `id`
+/// has nothing to dedup on, so it always counts.
+fn first_sight(message: &serde_json::Value, seen: &mut std::collections::HashSet<String>) -> bool {
+    match message.get("id").and_then(|v| v.as_str()) {
+        Some(id) => seen.insert(id.to_string()),
+        None => true,
+    }
+}
+
+/// The four token counts of one `message.usage`. Only the top-level object is
+/// read; `iterations[]` is never descended into, so its repeated `usage` is
+/// ignored by construction.
+fn usage_tokens(usage: &serde_json::Value) -> Usage {
+    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    Usage {
+        input: field("input_tokens"),
+        output: field("output_tokens"),
+        cache_read: field("cache_read_input_tokens"),
+        cache_creation: cache_creation_tokens(usage),
+        model: None,
+    }
+}
+
+/// The dominant model (most tokens) is the one the price table resolves on; a
+/// tie resolves to the last key, which is immaterial (equal spend → same price
+/// for the figures that matter). `None` when no line carried a `model`.
+fn dominant_model(by_model: std::collections::BTreeMap<String, u64>) -> Option<String> {
+    by_model.into_iter().max_by_key(|(_, n)| *n).map(|(k, _)| k)
 }
 
 /// The most recent `claude` transcript JSONL under `~/.claude/projects`, read in
