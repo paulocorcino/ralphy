@@ -818,7 +818,7 @@
     },
     "crates/xtask/src/ui_copy/js/scan.rs": {
       "alternatives": [
-        17
+        11
       ],
       "emit": [
         11

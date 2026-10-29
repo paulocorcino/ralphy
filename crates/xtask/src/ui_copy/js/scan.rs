@@ -128,6 +128,25 @@ impl Scan<'_> {
         at
     }
 
+    /// The `:` that pairs with the `?` at `q`, skipping the `? … :` pairs
+    /// nested in the true branch.
+    fn ternary_colon(&self, q: usize, b: usize) -> Option<usize> {
+        let mut nested = 0;
+        self.top_level(q + 1, b, |t| t.is("?") || t.is(":"))
+            .into_iter()
+            .find(|&k| {
+                if self.toks[k].is("?") {
+                    nested += 1;
+                    false
+                } else if nested > 0 {
+                    nested -= 1;
+                    false
+                } else {
+                    true
+                }
+            })
+    }
+
     /// The alternatives an expression can show. The condition of a ternary is
     /// not shown, and neither is the left side of `&&`.
     fn alternatives(&self, a: usize, b: usize, out: &mut Vec<(usize, usize)>) {
@@ -139,22 +158,7 @@ impl Scan<'_> {
             return self.alternatives(a + 1, b - 1, out);
         }
         if let Some(&q) = self.top_level(a, b, |t| t.is("?")).first() {
-            let mut nested = 0;
-            let colon = self
-                .top_level(q + 1, b, |t| t.is("?") || t.is(":"))
-                .into_iter()
-                .find(|&k| {
-                    if self.toks[k].is("?") {
-                        nested += 1;
-                        false
-                    } else if nested > 0 {
-                        nested -= 1;
-                        false
-                    } else {
-                        true
-                    }
-                });
-            if let Some(colon) = colon {
+            if let Some(colon) = self.ternary_colon(q, b) {
                 self.alternatives(q + 1, colon, out);
                 self.alternatives(colon + 1, b, out);
                 return;
