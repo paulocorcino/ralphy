@@ -59,6 +59,8 @@ struct StoppingAgent {
     /// The issue whose `plan` raises the stop from inside the call, and whether
     /// that planner is then reaped without a plan (`Err`) or finishes one.
     stop_in_plan: Option<(u64, PlannerEnd)>,
+    /// When set, the first `execute` ends on a usage limit with a scheduled reset.
+    limit_first: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -75,11 +77,17 @@ impl StoppingAgent {
             stop_at,
             litter: None,
             stop_in_plan: None,
+            limit_first: false,
         }
     }
 
     fn stopping_in_plan(mut self, number: u64, end: PlannerEnd) -> Self {
         self.stop_in_plan = Some((number, end));
+        self
+    }
+
+    fn limiting_first(mut self) -> Self {
+        self.limit_first = true;
         self
     }
 
@@ -146,8 +154,13 @@ impl Agent for StoppingAgent {
         if self.stop_at == Some(number) {
             ralphy_core::stop::request();
         }
+        let outcome = if self.limit_first && self.executed.borrow().len() == 1 {
+            Outcome::Limit(Some("15:00".into()))
+        } else {
+            Outcome::Done
+        };
         Ok(Execution {
-            outcome: Outcome::Done,
+            outcome,
             usage: Usage::default(),
             session_id: None,
         })
@@ -577,6 +590,33 @@ fn without_a_stop_the_verify_gate_runs_its_command_to_completion() {
         report.passed,
         "an unstopped gate runs its command normally: {:?}",
         report.commands
+    );
+    fs::remove_dir_all(&repo).ok();
+}
+
+/// A stop read after a `Limit` outcome comes BEFORE the resume decision: the
+/// child the operator stopped ended with a limit line in its transcript, and
+/// resuming would wait for the reset and then run `execute` a second time.
+#[test]
+fn a_stop_while_the_outcome_is_a_limit_executes_once_and_never_resumes() {
+    let _flag = StopFlagGuard::acquire();
+    let repo = init_repo("stop-limit");
+    let agent = StoppingAgent::new(Some(1)).limiting_first();
+
+    let report = run_queue(
+        &cfg(&repo, "20260729-000000"),
+        &[issue(1)],
+        &agent,
+        &SilentTracker,
+        &FreeClock,
+    )
+    .expect("the run completes its unwind");
+
+    assert_eq!(*agent.executed.borrow(), vec![1], "no resume after a stop");
+    assert!(
+        matches!(report.stop, Some(StopReason::Stopped { number: Some(1) })),
+        "expected a stop naming #1, got {:?}",
+        report.stop
     );
     fs::remove_dir_all(&repo).ok();
 }
