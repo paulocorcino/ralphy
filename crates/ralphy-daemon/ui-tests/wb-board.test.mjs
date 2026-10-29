@@ -5,11 +5,10 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the board's markup.
+const PART = "wb-board.part.html";
 
 // `init()` starts the backstop on the global timer; here it never ticks.
 // Returns the intervals it asked for.
@@ -69,7 +68,7 @@ test("wbBoard lists only shell() names in uses, and its members left shell()", (
 
 test("every name the markup of wbBoard reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbBoard");
-  const markup = componentMarkup(HTML, "wbBoard");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variables of the board, the issue view and the label menu.
   const loopVars = new Set(["col", "s", "iss", "l", "b", "c", "idx"]);
@@ -89,8 +88,8 @@ test("every name the markup of wbBoard reads is its own or in its uses list", ()
 });
 
 test("nothing outside the board element names its state", () => {
-  const start = HTML.indexOf('x-data="wbBoard"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  // The page without the board's part: the shell and the other components.
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["kanbanSel", "openIssue", "selectedIssue", "kanbanColumns", "planModal", "openPlanModal", "discardPlan", "toggleLabel", "labelMenuOpen", "labelsLocked", "issueRunning"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
