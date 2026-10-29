@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use axum::extract::Query;
+use axum::extract::{DefaultBodyLimit, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -25,6 +25,10 @@ use crate::telegram_state::{self, SharedClaim, TelegramState};
 /// The longest daemon id a claim may name. A daemon id is a ULID (26
 /// characters); the rest is room.
 const MAX_MAIN_ID_BYTES: usize = 64;
+
+/// The largest claim body the route reads (ADR-0072 D11). The body is one
+/// object with an id of at most [`MAX_MAIN_ID_BYTES`] bytes.
+const CLAIM_MAX_BYTES: usize = 256;
 
 #[derive(serde::Deserialize)]
 pub(crate) struct TelegramQuery {
@@ -241,9 +245,10 @@ pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
         move |Query(query): Query<TelegramQuery>| telegram_route(t.clone(), query.local == Some(1))
     };
     let claim = move |Json(body): Json<ClaimBody>| claim_route(t.clone(), body);
-    Router::new()
-        .route("/api/telegram", get(read))
-        .route("/api/telegram/main", post(claim))
+    Router::new().route("/api/telegram", get(read)).route(
+        "/api/telegram/main",
+        post(claim).layer(DefaultBodyLimit::max(CLAIM_MAX_BYTES)),
+    )
 }
 
 #[cfg(test)]

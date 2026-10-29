@@ -69,53 +69,64 @@ pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_string();
-        let raw = match std::fs::read_to_string(&path) {
-            Ok(raw) => raw,
-            Err(_) => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "unreadable"));
-                continue;
-            }
-        };
-        let snap = match parse(&raw) {
-            Ok(snap) => snap,
-            Err(reason) => {
-                listing.unreadable.push(UnreadableRun::new(&name, reason));
-                continue;
-            }
-        };
-        // `pid` is `#[serde(default)]`, so a document that omits it parses as 0
-        // — and 0 is not a process: on Unix `kill(0, 0)` targets the CALLER's
-        // process group and would classify it alive forever, so the orphan sweep
-        // could never reclaim it. Refuse it before the predicate ever sees it.
-        if snap.pid == 0 {
-            listing
-                .unreadable
-                .push(UnreadableRun::new(&name, "malformed"));
-            continue;
-        }
-        if is_alive(snap.pid) {
-            listing.live.push(snap);
-        } else {
-            // Orphan sweep: a hard crash must not accumulate documents.
-            let _ = std::fs::remove_file(&path);
-            // …nor sentinels. A stop written for a run that died before noticing
-            // it would otherwise sit here forever. It is already inert (the next
-            // run has a different runid), so this is hygiene, not correctness —
-            // but the directory is the operator's, and it should stay readable.
-            let _ = std::fs::remove_file(crate::stop_path(repo_root, &snap.runid));
-        }
+        visit(repo_root, &path, &is_alive, &mut listing);
     }
     listing
         .live
         .sort_by(|a, b| (&a.started_at, &a.runid).cmp(&(&b.started_at, &b.runid)));
     listing
+}
+
+/// Classify one `.json` document of the snapshot directory into `listing`.
+fn visit(repo_root: &Path, path: &Path, is_alive: &impl Fn(u32) -> bool, listing: &mut RunListing) {
+    let name = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        // Listed, then gone: another reader's orphan sweep (the attention
+        // tick runs this function too) or the run's own exit removed it.
+        // A run that is gone is not an unreadable run. On Windows a file in
+        // the middle of its deletion fails the read with `PermissionDenied`,
+        // not `NotFound`, so the test is whether the file still exists.
+        Err(_) if !path.exists() => return,
+        Err(_) => {
+            listing
+                .unreadable
+                .push(UnreadableRun::new(&name, "unreadable"));
+            return;
+        }
+    };
+    let snap = match parse(&raw) {
+        Ok(snap) => snap,
+        Err(reason) => {
+            listing.unreadable.push(UnreadableRun::new(&name, reason));
+            return;
+        }
+    };
+    // `pid` is `#[serde(default)]`, so a document that omits it parses as 0
+    // — and 0 is not a process: on Unix `kill(0, 0)` targets the CALLER's
+    // process group and would classify it alive forever, so the orphan sweep
+    // could never reclaim it. Refuse it before the predicate ever sees it.
+    if snap.pid == 0 {
+        listing
+            .unreadable
+            .push(UnreadableRun::new(&name, "malformed"));
+        return;
+    }
+    if is_alive(snap.pid) {
+        listing.live.push(snap);
+    } else {
+        // Orphan sweep: a hard crash must not accumulate documents.
+        let _ = std::fs::remove_file(path);
+        // …nor sentinels. A stop written for a run that died before noticing
+        // it would otherwise sit here forever. It is already inert (the next
+        // run has a different runid), so this is hygiene, not correctness —
+        // but the directory is the operator's, and it should stay readable.
+        let _ = std::fs::remove_file(crate::stop_path(repo_root, &snap.runid));
+    }
 }
 
 /// One document from its text, or why it is not one: `malformed`, or
@@ -284,6 +295,20 @@ mod tests {
             "{:?}",
             listing.unreadable[0]
         );
+    }
+
+    /// A document listed and then removed before the read (the orphan sweep of
+    /// another reader, or the run's own exit) is a run that is gone: not live,
+    /// and not "unreadable".
+    #[test]
+    fn a_document_removed_after_the_listing_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        seed(dir.path(), "01GONE", 111, "2026-07-24T10:00:00-03:00");
+        let path = snapshot_path(dir.path(), "01GONE");
+        std::fs::remove_file(&path).unwrap();
+        let mut listing = RunListing::default();
+        visit(dir.path(), &path, &|_| true, &mut listing);
+        assert_eq!(listing, RunListing::default());
     }
 
     #[test]

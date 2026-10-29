@@ -135,6 +135,26 @@ fn a_long_wait_is_one_message() {
     assert_eq!(fake.count(), 1, "three hours of waiting is one message");
 }
 
+/// A console's request id is always `console:<session id>`, so the second
+/// wait of a console has the id of the first.
+#[test]
+fn a_console_that_waits_again_is_sent_again() {
+    let (_dir, path) = config();
+    let fake = Fake::default();
+    let mut sender = Sender::default();
+    tick(&mut sender, &path, &fake, &[waiting(at(0))], at(121));
+    assert_eq!(fake.count(), 1, "the first wait");
+
+    // The operator answered: the request left the list.
+    tick(&mut sender, &path, &fake, &[], at(130));
+    assert_eq!(fake.count(), 1);
+
+    tick(&mut sender, &path, &fake, &[waiting(at(200))], at(300));
+    assert_eq!(fake.count(), 1, "open 100 s: no message yet");
+    tick(&mut sender, &path, &fake, &[waiting(at(200))], at(321));
+    assert_eq!(fake.count(), 2, "the second wait, past 120 s, is sent");
+}
+
 #[test]
 fn a_daemon_with_no_config_sends_nothing() {
     let dir = tempfile::tempdir().expect("a temp dir");

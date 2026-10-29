@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use axum::extract::Query;
+use axum::extract::{DefaultBodyLimit, Query};
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -165,6 +165,11 @@ pub(crate) async fn attention_route(
     name_unanswered(&mut response, &unanswered);
     response
 }
+
+/// The largest dismiss body the route reads (ADR-0072 D11). The body is one
+/// object with a request id: a daemon id (26 characters), a `/`, and a
+/// short local id.
+const DISMISS_MAX_BYTES: usize = 1024;
 
 /// The body of `POST /api/attention/dismiss`.
 #[derive(serde::Deserialize)]
@@ -332,7 +337,11 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
             body,
         )
     };
-    Router::new()
-        .route("/api/attention", get(read))
-        .route("/api/attention/dismiss", post(dismiss))
+    Router::new().route("/api/attention", get(read)).route(
+        "/api/attention/dismiss",
+        post(dismiss).layer(DefaultBodyLimit::max(DISMISS_MAX_BYTES)),
+    )
 }
+
+#[cfg(test)]
+mod tests;
