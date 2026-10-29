@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 pub mod client;
 pub mod key;
 pub mod nudge;
+pub(crate) mod telegram_claim;
 pub mod tunnel;
 
 #[cfg(test)]

@@ -102,7 +102,10 @@ interface ApiRoutes {
   "GET /api/attention": { ok: AttentionReply };
   /** `409` for a request that still waits, `404` for an unknown id. */
   "POST /api/attention/dismiss": { ok: { dismissed: true } };
-  /** This daemon's Telegram state, read from its config at each request. */
+  /** This daemon's Telegram state, read from its config at each request,
+   * and each peer's. A daemon a main daemon claimed is `through-main`, with
+   * the id of that `main?`. The names of the peers that did not answer are
+   * in `x-ralphy-unanswered`. */
   "GET /api/telegram": { ok: TelegramReply };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {

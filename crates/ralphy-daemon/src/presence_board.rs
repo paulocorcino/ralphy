@@ -4,6 +4,8 @@
 //! board keeps one entry per open socket, in memory only. The operator is
 //! present when one page is visible and its last input is less than
 //! [`WINDOW`] old. No page, a hidden page, or an old input is "not present".
+//! A peer's pages count too: a main daemon reads the peer's `present` on the
+//! peer's own attention list.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -113,9 +115,27 @@ impl PresenceBoard {
         })
     }
 
+    /// Whether the operator is present at `now` at a page of this daemon or
+    /// at a page of a peer: `peers_present` holds what each peer said.
+    pub(crate) fn present_with(&self, peers_present: &[bool], now: SystemTime) -> bool {
+        self.present(now) || peers_present.iter().any(|present| *present)
+    }
+
     /// The origin of the last report: where a link to a console opens.
     pub(crate) fn last_origin(&self) -> Option<String> {
         self.last_origin.clone()
+    }
+}
+
+/// Whether the operator is present now at a page of this daemon. A poisoned
+/// board is logged and reads as "not present".
+pub(crate) fn present_now(board: &Shared) -> bool {
+    match board.lock() {
+        Ok(board) => board.present(SystemTime::now()),
+        Err(e) => {
+            tracing::warn!(error = %e, "the presence board is poisoned");
+            false
+        }
     }
 }
 

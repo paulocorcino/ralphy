@@ -341,6 +341,12 @@ fn the_telegram_line_says_whether_this_machine_sends() {
     let rows = [
         (TelegramState::Off, "off"),
         (TelegramState::Sends, "sends from this machine"),
+        (
+            TelegramState::ThroughMain {
+                main: "m".to_string(),
+            },
+            "sends through the main daemon m",
+        ),
     ];
     for (state, text) in rows {
         let report = evaluate(

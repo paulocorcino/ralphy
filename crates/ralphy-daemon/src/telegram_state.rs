@@ -4,15 +4,22 @@
 //! each time it is asked for: the operator can run `ralphy telegram setup`
 //! while the daemon runs. `GET /api/telegram` serves it and `ralphy doctor`
 //! prints it.
+//!
+//! A main daemon that sends claims each of its peers (`POST
+//! /api/telegram/main`, `peer::telegram_claim`). While a claim is less than
+//! [`CLAIM_HOLDS`] old the peer is [`TelegramState::ThroughMain`], whatever its
+//! own config says, so one request is one message.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use ralphy_telegram::config::{effective_token, TelegramConfig};
 
 /// What this daemon does with a console request that waits for an operator
 /// who is away. Matched exhaustively.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum TelegramState {
     /// No bot is set up on this machine: no message is sent.
@@ -82,6 +89,97 @@ pub fn state_at(path: &Path) -> TelegramState {
         Err(e) => {
             tracing::warn!(error = %e, "the Telegram config could not be read");
             TelegramState::Off
+        }
+    }
+}
+
+/// How long the claim of a main daemon holds. The main claims every minute,
+/// so a peer whose main stopped sends by itself again after three minutes.
+pub(crate) const CLAIM_HOLDS: Duration = Duration::from_secs(3 * 60);
+
+/// The last claim of a main daemon on this daemon, in memory only: after a
+/// restart the main's next claim comes within a minute.
+#[derive(Debug, Default)]
+pub(crate) struct Claim {
+    last: Option<(String, SystemTime)>,
+}
+
+/// The claim, shared by `POST /api/telegram/main`, `GET /api/telegram` and
+/// the attention tick.
+pub(crate) type SharedClaim = Arc<Mutex<Claim>>;
+
+impl Claim {
+    /// The main daemon `main` claimed this daemon at `at`.
+    pub(crate) fn take(&mut self, main: String, at: SystemTime) {
+        self.last = Some((main, at));
+    }
+
+    /// The main daemon whose claim holds at `now`. A claim the clock puts
+    /// after `now` is a fresh one.
+    pub(crate) fn holder(&self, now: SystemTime) -> Option<&str> {
+        let (main, at) = self.last.as_ref()?;
+        let age = now.duration_since(*at).unwrap_or(Duration::ZERO);
+        (age < CLAIM_HOLDS).then_some(main.as_str())
+    }
+}
+
+/// The main daemon whose claim on this daemon holds at `now`. A poisoned
+/// lock is logged and holds no claim.
+pub(crate) fn holder_at(claim: &SharedClaim, now: SystemTime) -> Option<String> {
+    match claim.lock() {
+        Ok(claim) => claim.holder(now).map(str::to_string),
+        Err(e) => {
+            tracing::warn!(error = %e, "the Telegram claim is poisoned");
+            None
+        }
+    }
+}
+
+/// The state of this daemon at `now`: a claim that holds wins over the
+/// config at `path`, so a peer with its own bot sends no second message.
+pub(crate) fn state_with(path: &Path, claim: &SharedClaim, now: SystemTime) -> TelegramState {
+    match holder_at(claim, now) {
+        Some(main) => TelegramState::ThroughMain { main },
+        None => state_at(path),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(secs: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000 + secs)
+    }
+
+    #[test]
+    fn a_claim_expires_after_three_minutes() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let with_bot = dir.path().join("telegram.toml");
+        std::fs::write(
+            &with_bot,
+            "token = \"123:abc\"
+chat_id = 42
+",
+        )
+        .expect("write the config");
+        let no_config = dir.path().join("none.toml");
+        let through = TelegramState::ThroughMain {
+            main: "m".to_string(),
+        };
+        // (case, config, seconds since the claim, state)
+        let rows = [
+            ("2 min 59 s, a config", &with_bot, 179, through),
+            ("3 min 1 s, a config", &with_bot, 181, TelegramState::Sends),
+            ("3 min 1 s, no config", &no_config, 181, TelegramState::Off),
+        ];
+        for (case, config, age, want) in rows {
+            let claim = SharedClaim::default();
+            claim
+                .lock()
+                .expect("the claim lock")
+                .take("m".to_string(), at(0));
+            assert_eq!(state_with(config, &claim, at(age)), want, "{case}");
         }
     }
 }

@@ -23,17 +23,80 @@ use crate::attention::telegram::Notifier;
 use crate::attention::tick::{self, Dismissed, Runs};
 use crate::attention::{AttentionRequest, RunsRead};
 use crate::routes::read_peer_store;
-use crate::{fleet, peer, session};
+use crate::{fleet, peer, presence_board, session};
 
 #[derive(serde::Deserialize)]
 pub(crate) struct AttentionQuery {
     pub(crate) local: Option<u32>,
 }
 
-/// The body of `GET /api/attention`.
+/// The body of `GET /api/attention`. `present` is only in the `?local=1`
+/// reply: whether the operator is at one of the pages of the daemon that
+/// answers (docs/adr/0085 D14). A main daemon reads it from each peer, and
+/// an older peer, which has no such field, is "not present".
 #[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) struct AttentionList {
     pub(crate) requests: Vec<AttentionRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) present: Option<bool>,
+}
+
+/// The reply of each peer in `peers_dir` to `GET <path>`, asked at the same
+/// time.
+pub(crate) async fn ask_peers(
+    peers_dir: PathBuf,
+    path: &str,
+) -> Vec<(peer::PeerDescriptor, anyhow::Result<(u16, Vec<u8>)>)> {
+    let (peers, _) = read_peer_store(peers_dir).await;
+    futures_util::future::join_all(peers.into_iter().map(|peer| async move {
+        let reply = peer::client::get(&peer, path).await;
+        (peer, reply)
+    }))
+    .await
+}
+
+/// Name the peers in `unanswered` in the reply's `x-ralphy-unanswered`.
+pub(crate) fn name_unanswered(response: &mut Response, unanswered: &[String]) {
+    if unanswered.is_empty() {
+        return;
+    }
+    match unanswered.join(",").parse() {
+        Ok(value) => {
+            response.headers_mut().insert(UNANSWERED_HEADER, value);
+        }
+        Err(e) => tracing::warn!(error = %e, "could not name the peers that did not answer"),
+    }
+}
+
+/// One peer's own list, as its `?local=1` reply has it.
+pub(crate) struct PeerList {
+    pub(crate) daemon_id: String,
+    pub(crate) list: AttentionList,
+}
+
+/// The own list of each peer in `peers_dir`, and the ids of the peers that
+/// did not answer with one. An older peer has no such route, and is named
+/// too.
+pub(crate) async fn read_peer_lists(peers_dir: PathBuf) -> (Vec<PeerList>, Vec<String>) {
+    let mut lists = Vec::new();
+    let mut unanswered = Vec::new();
+    for (peer, reply) in ask_peers(peers_dir, "/api/attention?local=1").await {
+        let Ok((200, body)) = reply else {
+            unanswered.push(peer.daemon_id);
+            continue;
+        };
+        match serde_json::from_slice::<AttentionList>(&body) {
+            Ok(list) => lists.push(PeerList {
+                daemon_id: peer.daemon_id,
+                list,
+            }),
+            Err(_) => {
+                tracing::warn!(daemon_id = %peer.daemon_id, "peer returned an invalid attention list");
+                unanswered.push(peer.daemon_id);
+            }
+        }
+    }
+    (lists, unanswered)
 }
 
 /// A peer's request as the page reads it: `id`, `console` and `repo` carry
@@ -72,47 +135,34 @@ fn local_list(
 pub(crate) async fn attention_route(
     sessions: Arc<session::SessionManager>,
     (runs, dismissed): (Runs, Dismissed),
-    peers_dir: PathBuf,
+    (peers_dir, presence): (PathBuf, presence_board::Shared),
     local_only: bool,
 ) -> Response {
     let mut requests = local_list(&sessions, &runs, &dismissed);
     if local_only {
-        return Json(AttentionList { requests }).into_response();
+        let present = presence_board::present_now(&presence);
+        return Json(AttentionList {
+            requests,
+            present: Some(present),
+        })
+        .into_response();
     }
-    let (peers, _) = read_peer_store(peers_dir).await;
-    let replies = futures_util::future::join_all(peers.into_iter().map(|peer| async move {
-        let reply = peer::client::get(&peer, "/api/attention?local=1").await;
-        (peer, reply)
-    }))
-    .await;
     // A peer that did not answer is named, never read as "nothing waits
-    // there". An older peer has no such route, and is named too.
-    let mut unanswered = Vec::new();
-    for (peer, reply) in replies {
-        let Ok((200, body)) = reply else {
-            unanswered.push(peer.daemon_id);
-            continue;
-        };
-        let Ok(list) = serde_json::from_slice::<AttentionList>(&body) else {
-            tracing::warn!(daemon_id = %peer.daemon_id, "peer returned an invalid attention list");
-            unanswered.push(peer.daemon_id);
-            continue;
-        };
+    // there".
+    let (lists, unanswered) = read_peer_lists(peers_dir).await;
+    for PeerList { daemon_id, list } in lists {
         requests.extend(
             list.requests
                 .into_iter()
-                .map(|request| from_peer(&peer.daemon_id, request)),
+                .map(|request| from_peer(&daemon_id, request)),
         );
     }
-    let mut response = Json(AttentionList { requests }).into_response();
-    if !unanswered.is_empty() {
-        match unanswered.join(",").parse() {
-            Ok(value) => {
-                response.headers_mut().insert(UNANSWERED_HEADER, value);
-            }
-            Err(e) => tracing::warn!(error = %e, "could not name the peers that did not answer"),
-        }
-    }
+    let mut response = Json(AttentionList {
+        requests,
+        present: None,
+    })
+    .into_response();
+    name_unanswered(&mut response, &unanswered);
     response
 }
 
@@ -235,6 +285,7 @@ async fn dismiss_on_peer(peers_dir: PathBuf, daemon_id: &str, id: &str) -> Respo
 pub(crate) fn attention_routes(s: &RouterShared) -> Router {
     let sessions = s.sessions.clone();
     let peers = s.peers_dir.clone();
+    let presence = s.presence.clone();
     let runs = Runs::default();
     let dismissed: Dismissed = Arc::new(Mutex::new(Dismissals::in_store_of(&s.registry_path)));
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
@@ -245,7 +296,8 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
         };
         let telegram = Notifier::new(
             s.stores.telegram_config.clone(),
-            s.presence.clone(),
+            (s.presence.clone(), s.telegram_claim.clone()),
+            s.peers_dir.clone(),
             s.daemon_id.clone(),
         );
         runtime.spawn(tick::run(
@@ -267,7 +319,7 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
             attention_route(
                 sessions.clone(),
                 (runs.clone(), dismissed.clone()),
-                peers.clone(),
+                (peers.clone(), presence.clone()),
                 query.local == Some(1),
             )
         }

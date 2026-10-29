@@ -1,6 +1,6 @@
 # The daemon keeps one attention list, and every agent state comes from one kind of state source
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: observability and cost, consistency of the workbench; constraint security
 
@@ -177,11 +177,28 @@ nothing. The message links to the console.
 
 The operator is **present** when a page has its tab visible and the
 operator's last key, click or touch in it is less than five minutes old.
-Each page reports both facts to the daemon it is connected to, and that
-daemon passes "present" to its peers on the link it already holds. With no
+Each page reports both facts to the daemon it is connected to. With no
 signal (no page, a peer without the link, a report older than the window)
 the operator is not present: one message too many costs less than an agent
-that waits all night. The bot client and its config move from `ralphy-cli` to a crate
+that waits all night.
+
+A WSL or SSH peer that is integrated with a main daemon sends no Telegram
+message itself (amendment, Paulo, 2026-10-28). A main daemon that has its
+own bot claims each peer in its peers folder every minute
+(`POST /api/telegram/main {"daemon_id"}`); the claim holds three minutes.
+While it holds, the peer sends nothing, even with a bot of its own, and the
+main sends the peer's console requests under the same rules, with a link to
+`?console=<peer daemon_id>/<session id>` on the main's last page. The main
+reads them, and the peer's presence (`"present"`), from the peer's
+`?local=1` attention list on each tick, so the operator at a page of the
+peer is present for the main too. Each daemon has one Telegram state:
+`off` (no bot), `sends` (it sends), or `through-main` (a main sends for it);
+the attention panel shows it per daemon, and `ralphy doctor` prints it. Two
+daemons that are each other's peers, both with a bot, do not claim each
+other: the one whose daemon id sorts first is the main. An older peer has
+no claim route and keeps sending by itself if it has a bot; until both run
+the new version the operator may get one message from each. The peer
+protocol version does not change. The bot client and its config move from `ralphy-cli` to a crate
 that both the CLI and the daemon use (`ralphy-telegram`); it depends on no
 other Ralphy crate.
 
@@ -250,6 +267,9 @@ hibernated one loses it. `unknown` and `none` keep the ADR-0083 rules.
 - D5, D6: not checked by code: needs a live vendor CLI.
 - D10: not checked by code: manual.
 - D14: checked by `crates/xtask/tests/crate_dependencies.rs`: `ralphy-telegram`
-  has no `ralphy-*` dependency (ARCHITECTURE.md §5).
+  has no `ralphy-*` dependency (ARCHITECTURE.md §5). The integrated peer is
+  checked by the tests of `telegram_state.rs`, `routes/api_telegram` and
+  `attention/telegram/peer_tests.rs`: a claim makes the peer `through-main`
+  for three minutes, and the main sends the peer's console request once.
 - D16: not checked by code: manual; no inbound Telegram call exists outside
   `ralphy telegram setup`.

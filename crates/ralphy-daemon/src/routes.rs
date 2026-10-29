@@ -109,6 +109,10 @@ pub(crate) struct RouterShared {
     /// Whether the operator is at one of this daemon's pages: `/ws` writes
     /// it, the attention tick reads it (ADR-0085 D14).
     pub(crate) presence: crate::presence_board::Shared,
+    /// The claim of a main daemon on this one: `POST /api/telegram/main`
+    /// writes it, `GET /api/telegram` and the attention tick read it
+    /// (ADR-0085 D14).
+    pub(crate) telegram_claim: crate::telegram_state::SharedClaim,
 }
 
 pub(crate) fn router_with_roster(
@@ -240,6 +244,7 @@ pub(crate) fn router_with_roster(
         pushes,
         audit: audit.clone(),
         presence: Default::default(),
+        telegram_claim: Default::default(),
     };
     Router::new()
         .merge(read_routes(&shared))

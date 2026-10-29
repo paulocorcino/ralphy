@@ -18,7 +18,7 @@ use ralphy_daemon::{auth, password, totp};
 
 mod bootstrap;
 pub(crate) mod confirm;
-mod describe;
+pub(crate) mod describe;
 mod first_start;
 mod register;
 pub(crate) mod restart;

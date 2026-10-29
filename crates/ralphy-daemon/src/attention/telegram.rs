@@ -8,9 +8,15 @@
 //! and tried again on the next tick. The send itself ([`deliver`]) is
 //! blocking and reads the config each time, so the tick runs it off the
 //! runtime ([`Notifier`]).
+//!
+//! A daemon that sends also sends the console requests of its peers, which
+//! it reads from each peer's own list, and the operator is present when a
+//! page of the daemon or of a peer is. A peer whose main daemon claimed it
+//! (`telegram_state::Claim`) sends nothing: its main sends for it.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use ralphy_telegram::client::{BotClient, Transport, UreqTransport};
@@ -18,7 +24,7 @@ use ralphy_telegram::client::{BotClient, Transport, UreqTransport};
 use super::{AttentionRequest, Kind};
 use crate::presence_board;
 use crate::session::{Agent, SessionInfo};
-use crate::telegram_state;
+use crate::telegram_state::{self, SharedClaim};
 
 /// How long a console request is open before it is sent.
 pub(crate) const DELAY: Duration = Duration::from_secs(120);
@@ -92,10 +98,24 @@ fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
         text.push_str(": ");
         text.push_str(&short(detail));
     }
-    if let (Some(origin), Some(daemon_id)) = (&ctx.origin, &ctx.daemon_id) {
-        text.push_str(&format!("\n{origin}/?console={daemon_id}/{console}"));
+    if let Some(link) = link_of(console, ctx) {
+        text.push('\n');
+        text.push_str(&link);
     }
     text
+}
+
+/// The link that opens `console`: `{origin}/?console={daemon_id}/{session}`.
+/// A peer's request names its console `{peer daemon_id}/{session}` already;
+/// a request of this daemon names its session only.
+fn link_of(console: &str, ctx: &Context) -> Option<String> {
+    let origin = ctx.origin.as_ref()?;
+    let target = if console.contains('/') {
+        console.to_string()
+    } else {
+        format!("{}/{console}", ctx.daemon_id.as_ref()?)
+    };
+    Some(format!("{origin}/?console={target}"))
 }
 
 /// The most of a detail a message carries, in characters. Telegram refuses a
@@ -192,8 +212,8 @@ pub(crate) struct Sender {
 }
 
 impl Sender {
-    /// The messages due now. An id no longer in `requests` is forgotten, so
-    /// a console that waits again later is sent again.
+    /// [`Sender::next_with`], with every peer answered.
+    #[cfg(test)]
     pub(crate) fn next(
         &mut self,
         requests: &[AttentionRequest],
@@ -201,9 +221,31 @@ impl Sender {
         now: SystemTime,
         ctx: &Context,
     ) -> Vec<Message> {
+        self.next_with(requests, &[], present, now, ctx)
+    }
+
+    /// The messages due now. An id no longer in `requests` is forgotten, so
+    /// a console that waits again later is sent again; the ids of a peer in
+    /// `unanswered` are kept, so a peer that misses one tick is not sent
+    /// again.
+    pub(crate) fn next_with(
+        &mut self,
+        requests: &[AttentionRequest],
+        unanswered: &[String],
+        present: bool,
+        now: SystemTime,
+        ctx: &Context,
+    ) -> Vec<Message> {
         let open: HashSet<&str> = requests.iter().map(|r| r.id.as_str()).collect();
-        self.sent.retain(|id| open.contains(id.as_str()));
-        self.failing.retain(|id| open.contains(id.as_str()));
+        let keep = |id: &String| {
+            open.contains(id.as_str())
+                || unanswered.iter().any(|peer| {
+                    id.strip_prefix(peer.as_str())
+                        .is_some_and(|rest| rest.starts_with('/'))
+                })
+        };
+        self.sent.retain(keep);
+        self.failing.retain(keep);
         due(requests, &self.sent, present, now, ctx)
     }
 
@@ -255,14 +297,35 @@ impl Sender {
     }
 }
 
+/// A transport of the sender, whatever its type: the Telegram API, or a
+/// test's fake.
+pub(crate) struct AnyTransport(pub(crate) Box<dyn Transport + Send>);
+
+impl Transport for AnyTransport {
+    fn get(&self, method: &str) -> anyhow::Result<serde_json::Value> {
+        self.0.get(method)
+    }
+
+    fn post(&self, method: &str, body: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+        self.0.post(method, body)
+    }
+}
+
+/// What builds the transport for a token.
+pub(crate) type Transports = Arc<dyn Fn(String) -> AnyTransport + Send + Sync>;
+
 /// The sender as the attention tick runs it: the config path, the presence
-/// board, this daemon's id, and the send in flight. A tick starts no send
-/// while one is in flight, so a slow network holds back neither the tick nor
-/// a second copy of a message.
+/// board, the claim of a main daemon on this one, the peers, this daemon's
+/// id, and the send in flight. A tick starts no send while one is in flight,
+/// so a slow network holds back neither the tick nor a second copy of a
+/// message.
 pub(crate) struct Notifier {
     config: PathBuf,
     board: presence_board::Shared,
+    claim: SharedClaim,
+    peers_dir: PathBuf,
     daemon_id: Option<String>,
+    transport: Transports,
     sender: Sender,
     flight: Option<tokio::task::JoinHandle<Delivery>>,
 }
@@ -270,23 +333,28 @@ pub(crate) struct Notifier {
 impl Notifier {
     pub(crate) fn new(
         config: PathBuf,
-        board: presence_board::Shared,
+        (board, claim): (presence_board::Shared, SharedClaim),
+        peers_dir: PathBuf,
         daemon_id: Option<String>,
     ) -> Self {
         Notifier {
             config,
             board,
+            claim,
+            peers_dir,
             daemon_id,
+            transport: Arc::new(|token| AnyTransport(Box::new(UreqTransport::new(token)))),
             sender: Sender::default(),
             flight: None,
         }
     }
 
-    /// Whether the operator is present now, and the origin of the last page.
-    /// A poisoned board is logged and reads as "not present".
-    fn presence(&self, now: SystemTime) -> (bool, Option<String>) {
+    /// Whether the operator is present now, at a page of this daemon or of a
+    /// peer (`peers_present`), and the origin of the last page of this
+    /// daemon. A poisoned board is logged and reads as "not present".
+    fn presence(&self, peers_present: &[bool], now: SystemTime) -> (bool, Option<String>) {
         match self.board.lock() {
-            Ok(board) => (board.present(now), board.last_origin()),
+            Ok(board) => (board.present_with(peers_present, now), board.last_origin()),
             Err(e) => {
                 tracing::warn!(error = %e, "the presence board is poisoned");
                 (false, None)
@@ -294,11 +362,11 @@ impl Notifier {
         }
     }
 
-    /// One tick: keep what the last send did, then start the send of the
-    /// messages due for `requests` of `consoles`.
-    pub(crate) async fn tick(&mut self, requests: &[AttentionRequest], consoles: &[SessionInfo]) {
+    /// Keep what the send in flight did, once it ended. `false` while it
+    /// runs.
+    async fn landed(&mut self) -> bool {
         if self.flight.as_ref().is_some_and(|f| !f.is_finished()) {
-            return;
+            return false;
         }
         if let Some(flight) = self.flight.take() {
             match flight.await {
@@ -308,23 +376,77 @@ impl Notifier {
                 Err(e) => tracing::warn!(error = %e, "the Telegram send stopped"),
             }
         }
-        let now = SystemTime::now();
-        let (present, origin) = self.presence(now);
+        true
+    }
+
+    /// Whether this daemon sends at `now`: no main daemon's claim holds, and
+    /// its config has a bot. A config with no bot, or one that cannot be
+    /// read, is kept as the sender keeps a send that found it so.
+    async fn sends(&mut self, now: SystemTime) -> bool {
+        if telegram_state::holder_at(&self.claim, now).is_some() {
+            return false;
+        }
+        let config = self.config.clone();
+        let bot = tokio::task::spawn_blocking(move || {
+            telegram_state::bot_at(&config).map(|bot| bot.is_some())
+        })
+        .await;
+        match bot {
+            Ok(Ok(true)) => true,
+            Ok(Ok(false)) => {
+                self.sender.finish(Delivery::Off);
+                false
+            }
+            Ok(Err(e)) => {
+                self.sender.finish(Delivery::NoConfig(e.to_string()));
+                false
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "the Telegram config read stopped");
+                false
+            }
+        }
+    }
+
+    /// One tick: keep what the last send did, then start the send of the
+    /// messages due for `requests` of `consoles` and for the console
+    /// requests of the peers.
+    pub(crate) async fn tick(&mut self, requests: &[AttentionRequest], consoles: &[SessionInfo]) {
+        self.tick_at(requests, consoles, SystemTime::now()).await;
+    }
+
+    /// [`Notifier::tick`] at `now`.
+    pub(crate) async fn tick_at(
+        &mut self,
+        requests: &[AttentionRequest],
+        consoles: &[SessionInfo],
+        now: SystemTime,
+    ) {
+        if !self.landed().await || !self.sends(now).await {
+            return;
+        }
+        let peers = super::tick::peer_requests(self.peers_dir.clone()).await;
+        let (present, origin) = self.presence(&peers.present, now);
         let ctx = Context {
             daemon_id: self.daemon_id.clone(),
             origin,
             names: Context::names_of(consoles),
         };
-        let messages = self.sender.next(requests, present, now, &ctx);
+        let all: Vec<AttentionRequest> = requests.iter().cloned().chain(peers.requests).collect();
+        let messages = self
+            .sender
+            .next_with(&all, &peers.unanswered, present, now, &ctx);
         if messages.is_empty() {
             return;
         }
-        let config = self.config.clone();
+        let (config, transport) = (self.config.clone(), self.transport.clone());
         self.flight = Some(tokio::task::spawn_blocking(move || {
-            deliver(&config, UreqTransport::new, messages)
+            deliver(&config, |token| transport(token), messages)
         }));
     }
 }
 
+#[cfg(test)]
+mod peer_tests;
 #[cfg(test)]
 mod tests;

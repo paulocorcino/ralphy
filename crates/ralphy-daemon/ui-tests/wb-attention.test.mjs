@@ -385,3 +385,23 @@ test("the panel shows the Telegram state of this daemon", async (t) => {
   assert.equal(data.telegram, "Telegram: off");
   assert.match(attentionElement(), /x-text="telegram"/);
 });
+
+test("the footer shows each daemon's telegram state", async (t) => {
+  const joined = {
+    state: "sends",
+    peers: [
+      // A peer's own state, as the claim of its main left it.
+      { ...fixture("api-telegram-main"), daemon_id: PEER, environment: "WSL: Ubuntu" },
+      { daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAX", environment: "Ubuntu 24.04", state: "off" },
+    ],
+  };
+  const named = { state: "through-main", main: "m", main_name: "octopus" };
+  const { data } = page(t, { replies: [joined, named] });
+  await data.readTelegram();
+  assert.equal(data.telegram, "Telegram: sends from this machine");
+  assert.deepEqual(data.telegramPeers, ["WSL: Ubuntu · Telegram: through m", "Ubuntu 24.04 · Telegram: off"]);
+  await data.readTelegram();
+  assert.equal(data.telegram, "Telegram: through octopus", "the main's name when it is known");
+  assert.deepEqual(data.telegramPeers, []);
+  assert.match(attentionElement(), /x-for="r in telegramPeers"/);
+});

@@ -11,8 +11,12 @@
 //!
 //! The route reads the runs this tick read last, so the list it serves and
 //! the list the push announced are the same list.
+//!
+//! A daemon that sends Telegram messages also reads each peer's own list on
+//! the tick ([`peer_requests`]), for the peers' console requests and for
+//! whether the operator is at a page of the peer.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -23,7 +27,7 @@ use super::done::{self, DeskFiles, Marks};
 use super::telegram::Notifier;
 use super::{list, AttentionRequest, FinishedRun, RunSource, RunsRead};
 use crate::registry;
-use crate::routes::{push, Push};
+use crate::routes::{push, read_peer_lists, PeerList, Push};
 use crate::session::{SessionInfo, SessionManager};
 
 /// How often the tick reads the runs.
@@ -120,6 +124,43 @@ fn list_of(
             list(consoles, runs, &|_| false)
         }
     }
+}
+
+/// What the peers' own lists hold for the Telegram sender.
+#[derive(Debug, Default)]
+pub(crate) struct PeerRequests {
+    /// The peers' requests, with the peer's daemon id before their `id` and
+    /// their `console`: two daemons' `console:1` stay two requests, and the
+    /// link names the peer's console. The repo stays the peer's slug, as a
+    /// person reads it.
+    pub(crate) requests: Vec<AttentionRequest>,
+    /// What each peer that answered said of the operator's presence.
+    pub(crate) present: Vec<bool>,
+    /// The peers that did not answer.
+    pub(crate) unanswered: Vec<String>,
+}
+
+/// The own list of each peer in `peers_dir`, read as the route reads it.
+/// An empty `peers_dir` is no peers folder: a daemon built with no store.
+pub(crate) async fn peer_requests(peers_dir: PathBuf) -> PeerRequests {
+    if peers_dir.as_os_str().is_empty() {
+        return PeerRequests::default();
+    }
+    let (lists, unanswered) = read_peer_lists(peers_dir).await;
+    let mut read = PeerRequests {
+        unanswered,
+        ..PeerRequests::default()
+    };
+    for PeerList { daemon_id, list } in lists {
+        read.present.push(list.present.unwrap_or(false));
+        read.requests
+            .extend(list.requests.into_iter().map(|mut request| {
+                request.id = format!("{daemon_id}/{}", request.id);
+                request.console = request.console.map(|c| format!("{daemon_id}/{c}"));
+                request
+            }));
+    }
+    read
 }
 
 /// What the last tick saw: the id and the detail of each request, and the
@@ -233,7 +274,12 @@ mod tests {
 
     /// A sender with no config: it sends nothing.
     fn no_telegram() -> Notifier {
-        Notifier::new(Default::default(), Default::default(), None)
+        Notifier::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            None,
+        )
     }
 
     /// Whether the tick sent one push, and only one.
