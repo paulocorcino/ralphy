@@ -76,3 +76,70 @@ test("the opener's answer mounts a fence only when it names one", () => {
     assert.equal(isFenceOpen(bad), false, JSON.stringify(bad));
   }
 });
+
+// The window after the opener's answer, on a stubbed `BroadcastChannel`. `hear`
+// delivers a message of the channel; `closes` counts `window.close()`.
+function openedFence(t, { tab = "t1", pid = "p1" } = {}) {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"] });
+  const saved = {};
+  const set = (name, value) => {
+    saved[name] = globalThis[name];
+    globalThis[name] = value;
+  };
+  const channels = [];
+  set("BroadcastChannel", class { constructor() { channels.push(this); } postMessage() {} close() {} });
+  set("MutationObserver", class { observe() {} });
+  set("WBConsole", { mountDetached() {}, peerFold: (peer) => ({ state: peer, effects: [] }), list: () => [] });
+  t.after(() => {
+    for (const [name, value] of Object.entries(saved)) globalThis[name] = value;
+  });
+  const handlers = {};
+  const opener = { postMessage() {}, closed: false };
+  const stage = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] };
+  const tool = () => ({ append() {}, addEventListener() {} });
+  const closes = { count: 0, focus: 0 };
+  const window = {
+    location: { origin: ORIGIN },
+    opener,
+    addEventListener: (type, fn) => (handlers[type] = fn),
+    close: () => closes.count++,
+    focus: () => closes.focus++,
+  };
+  const document = {
+    title: "",
+    body: { append() {} },
+    createElement: tool,
+    addEventListener() {},
+    getElementById: () => stage,
+  };
+  wireDetachedFence(window, document);
+  handlers.message({
+    origin: ORIGIN,
+    source: opener,
+    data: { type: "wb-fence-open", fence: { id: "f1", name: "Build" }, members: [], tab, pid },
+  });
+  const hear = (data) => channels[0].onmessage({ data });
+  return { hear, closes };
+}
+
+test("origin-close for another window of the fence keeps this one, and for this one closes it", (t) => {
+  const w = openedFence(t);
+  w.hear({ type: "origin-close", tab: "t1", fenceId: "f1", pid: "other" });
+  assert.equal(w.closes.count, 0, "another window's order");
+  w.hear({ type: "origin-close", tab: "t1", fenceId: "f2", pid: "p1" });
+  assert.equal(w.closes.count, 0, "another fence's order");
+  w.hear({ type: "origin-close", tab: "t2", fenceId: "f1", pid: "p1" });
+  assert.equal(w.closes.count, 0, "another tab's order");
+  w.hear({ type: "origin-close", tab: "t1", fenceId: "f1", pid: "p1" });
+  assert.equal(w.closes.count, 1);
+});
+
+test("an order with no pid is for this window, and origin-focus follows the same rule", (t) => {
+  const w = openedFence(t);
+  w.hear({ type: "origin-focus", tab: "t1", fenceId: "f1", pid: "other" });
+  assert.equal(w.closes.focus, 0);
+  w.hear({ type: "origin-focus", tab: "t1", fenceId: "f1" });
+  assert.equal(w.closes.focus, 1, "an opener that has not adopted this window yet");
+  w.hear({ type: "origin-close", tab: "t1", fenceId: "f1" });
+  assert.equal(w.closes.count, 1);
+});

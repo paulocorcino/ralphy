@@ -112,3 +112,7 @@ import "./opencode-state-plugin.test.mjs";
 import "./wb-hosts-progress.test.mjs";
 import "./wb-security-login.test.mjs";
 import "./wb-settings-save.test.mjs";
+import "./wb-console-checkout.test.mjs";
+import "./wb-console-press.test.mjs";
+import "./wb-consoles-tab-paint.test.mjs";
+import "./wb-desk-restore.test.mjs";

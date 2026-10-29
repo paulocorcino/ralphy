@@ -44,6 +44,13 @@ test("a terminal frame is the big-endian session id and the bytes after it", () 
   assert.equal(new TextDecoder().decode(event.bytes), "hi");
 });
 
+test("a terminal frame of exactly 9 bytes is an output with no bytes", () => {
+  const event = readSocketEvent(terminalBytes(5, new Uint8Array(0)));
+  assert.equal(event.kind, "output");
+  assert.equal(event.sessionId, 5);
+  assert.equal(event.bytes.length, 0);
+});
+
 test("a session-open frame carries its payload", () => {
   const event = readSocketEvent(commandFrame("session-open", { id: 7, watch: true }));
   assert.equal(event.kind, "open");

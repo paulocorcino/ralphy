@@ -60,3 +60,73 @@ test("createOver renders with the same options as create, gutter included", () =
     WBMonaco.gutterOptions(true),
   );
 });
+
+// The boot turns the language services off: the workers are not vendored, so a
+// provider left on would ask for a worker that does not exist. `ready()` is
+// memoized per module, so each of the two tests below boots its own copy of the
+// module (the query on the path makes a new one).
+function bootWith(extra) {
+  const log = [];
+  const service = (name) => ({
+    setModeConfiguration: (config) => log.push([name, "mode", config]),
+    setOptions: (options) => log.push([name, "options", options]),
+    setDiagnosticsOptions: (options) => log.push([name, "diagnostics", options]),
+  });
+  globalThis.window = {
+    require: Object.assign((_modules, onLoad) => onLoad(), { config() {} }),
+    monaco: {
+      editor: { defineTheme() {} },
+      languages: {
+        register() {},
+        setMonarchTokensProvider() {},
+        setLanguageConfiguration() {},
+        json: { jsonDefaults: service("json") },
+        css: { cssDefaults: service("css") },
+        typescript: { typescriptDefaults: service("typescript"), javascriptDefaults: service("javascript") },
+        ...extra(service),
+      },
+    },
+  };
+  return log;
+}
+
+const ALL_OFF = (config) => Object.keys(config).length === 9 && Object.values(config).every((v) => v === false);
+const NO_TS_CHECKS = { noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true };
+
+test("ready turns every language service off, in the order JSON, CSS, HTML, TypeScript, JavaScript", async () => {
+  const withHtml = (await import("../assets/ui/wb-monaco.ts?with-html")).WBMonaco;
+  const log = bootWith((service) => ({ html: { htmlDefaults: service("html") } }));
+  await withHtml.ready();
+  assert.deepEqual(
+    log.map(([name, what]) => `${name} ${what}`),
+    [
+      "json mode",
+      "json diagnostics",
+      "css mode",
+      "css options",
+      "html mode",
+      "typescript mode",
+      "typescript diagnostics",
+      "javascript mode",
+      "javascript diagnostics",
+    ],
+  );
+  for (const [name, what, arg] of log) {
+    if (what === "mode") assert.ok(ALL_OFF(arg), `${name} has every provider off`);
+  }
+  assert.equal("tokens" in log[0][2], false, "JSON keeps its token colors");
+  assert.deepEqual(log[1][2], { validate: false, schemaValidation: "ignore" });
+  assert.deepEqual(log[3][2], { validate: false });
+  assert.deepEqual(log[6][2], NO_TS_CHECKS);
+  assert.deepEqual(log[8][2], NO_TS_CHECKS);
+});
+
+test("ready skips a language whose service the build does not ship", async () => {
+  const without = (await import("../assets/ui/wb-monaco.ts?without-html")).WBMonaco;
+  const log = bootWith(() => ({}));
+  await without.ready();
+  assert.deepEqual(
+    log.map(([name, what]) => `${name} ${what}`),
+    ["json mode", "json diagnostics", "css mode", "css options", "typescript mode", "typescript diagnostics", "javascript mode", "javascript diagnostics"],
+  );
+});
