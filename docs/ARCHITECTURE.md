@@ -119,6 +119,7 @@ The component names are CONTEXT.md terms.
 | Forge access | `ralphy-core::github` (the only GitHub code; see §6) |
 | Change set, Sync status, Working-tree operations | `ralphy-core` (`changes`, `sync`, `worktree`, `git`) |
 | Read-only git facts | `ralphy-git-read` |
+| Telegram bot client and config | `ralphy-telegram` |
 | Event bus, Event sink | `ralphy-core::emit`; sinks in `ralphy-cli` (`ui`, `telegram`, `events`) |
 | Run snapshot | `ralphy-run-snapshot` (format); written by `ralphy-cli`, read by `ralphy-daemon` |
 | Usage ledger, Priced usage, Usage scan | `ralphy-core::ledger`, `ralphy-pricing`, `ralphy-usage-scan` |
@@ -140,6 +141,7 @@ The component names are CONTEXT.md terms.
 | No adapter depends on another adapter | ADR-0002, ADR-0040 | the same test |
 | `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
 | `ralphy-git-read` is a leaf crate | ADR-0069 | the same test |
+| `ralphy-telegram` is a leaf crate | ADR-0085 D14 | the same test |
 | `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | None yet (planned: the same test) |
 | The daemon links no vendor crate and does not import `ralphy-core` | ADR-0032 §10 | `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`); the core half has none yet |
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
@@ -162,7 +164,7 @@ outside the adapter uses Ralphy's words.
 | GitHub, as the **Forge** | `ralphy-core::github` | the `ralphy_core::github::` items used from `ralphy-cli` (the forge ratchet in §8 holds the count); label names and body conventions in `runner`, `acceptance`, `blocked`; `gh issue view` in the prompts |
 | Agent CLIs | one `ralphy-agent-*` crate each | vendor reset-time formats parsed in `ralphy-core/src/runner/clock.rs`; the vendor enums the ADR-0040 inventory lists |
 | models.dev | `ralphy-pricing` | — |
-| Telegram | `ralphy-cli/src/telegram` | — |
+| Telegram | `ralphy-telegram` (client and config); the notifier in `ralphy-cli/src/telegram` | — |
 | GitHub Releases (Ralphy's own distribution) | `ralphy-release` | — |
 
 **Platforms.** An open standard, used directly, but by one owner.

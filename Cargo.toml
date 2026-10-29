@@ -19,6 +19,7 @@ members = [
     "crates/ralphy-usage-scan",
     "crates/ralphy-pricing",
     "crates/ralphy-release",
+    "crates/ralphy-telegram",
     "crates/xtask",
 ]
 
@@ -80,6 +81,7 @@ ralphy-daemon = { path = "crates/ralphy-daemon" }
 ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 ralphy-pricing = { path = "crates/ralphy-pricing" }
 ralphy-release = { path = "crates/ralphy-release" }
+ralphy-telegram = { path = "crates/ralphy-telegram" }
 
 [profile.release]
 strip = true

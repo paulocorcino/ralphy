@@ -2224,6 +2224,7 @@ dependencies = [
  "ralphy-proc-util",
  "ralphy-release",
  "ralphy-run-snapshot",
+ "ralphy-telegram",
  "ralphy-usage-scan",
  "regex",
  "serde",
@@ -2375,6 +2376,18 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "ralphy-telegram"
+version = "0.1.0-rc.41"
+dependencies = [
+ "anyhow",
+ "directories",
+ "serde",
+ "serde_json",
+ "toml",
+ "ureq",
 ]
 
 [[package]]

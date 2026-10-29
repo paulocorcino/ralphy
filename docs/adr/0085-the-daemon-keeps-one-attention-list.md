@@ -249,7 +249,7 @@ hibernated one loses it. `unknown` and `none` keep the ADR-0083 rules.
   the fold of the adapter and of the daemon.
 - D5, D6: not checked by code: needs a live vendor CLI.
 - D10: not checked by code: manual.
-- D14: not checked by code: the crate graph is reviewed in the PR
-  (ARCHITECTURE.md §5).
+- D14: checked by `crates/xtask/tests/crate_dependencies.rs`: `ralphy-telegram`
+  has no `ralphy-*` dependency (ARCHITECTURE.md §5).
 - D16: not checked by code: manual; no inbound Telegram call exists outside
   `ralphy telegram setup`.
