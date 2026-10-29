@@ -413,8 +413,8 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // carries IS the shell's staleness signal, so a resume here is what re-arms
   // the probe every other resume depends on.
   // The same socket carries the daemon's pushes for the shown facts it owns
-  // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`; ADR-0070
-  // D2): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
+  // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`,
+  // `attention.dirty`; ADR-0070 D2, ADR-0085 D10): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
   // `onOpen(reopened)`, so a reopen reads again what a lost push would have said.
   // The page's presence reports (wb-presence.ts) ride the same socket:
   // `reportPresence` sends one when it is open, and each open runs the
