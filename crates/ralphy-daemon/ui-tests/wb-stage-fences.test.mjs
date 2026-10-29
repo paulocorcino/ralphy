@@ -274,3 +274,63 @@ test("tiling a detached fence changes no console", (t) => {
     ["setWin"],
   );
 });
+
+// A fence already detached, with a popup entry `more` describes.
+function detachedFence(more) {
+  const { deps, calls } = fakeDeps();
+  deps.popups.put("f", { ...deps.popups.newPopupEntry(), ...more });
+  deps.popups.commitDetached(["f"]);
+  return { deps, calls, detachFence: createFences(deps).detachFence };
+}
+
+test("a second detach of a fence whose popup is open raises that popup", (t) => {
+  const emitted = withWB(t);
+  const raised = [];
+  const { deps, calls, detachFence } = detachedFence({ handle: { closed: false, focus: () => raised.push("f") }, pid: "p9" });
+  detachFence("f");
+  assert.deepEqual(raised, ["f"]);
+  assert.deepEqual(calls, [], "no message goes through the channel");
+  assert.equal(deps.popups.size(), 1);
+  assert.deepEqual(emitted, [{ type: "fence-focus", detail: { fence: "f" } }]);
+});
+
+test("a second detach of a fence whose popup handle is closed asks the popup through the channel", (t) => {
+  const emitted = withWB(t);
+  const raised = [];
+  const { calls, detachFence } = detachedFence({ handle: { closed: true, focus: () => raised.push("f") }, pid: "p9" });
+  detachFence("f");
+  assert.deepEqual(raised, []);
+  assert.deepEqual(calls, [["post", { type: "origin-focus", tab: "t1", fenceId: "f", pid: "p9" }]]);
+  assert.deepEqual(emitted, [{ type: "fence-focus", detail: { fence: "f" } }]);
+});
+
+test("a detached popup that is closed later brings its fence home at the next beat", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+  withWB(t);
+  const handle = { closed: false };
+  const { deps, calls } = fakeDeps({ window: { open: () => handle } });
+  const { detachFence } = createFences(deps);
+  detachFence("f");
+  t.mock.timers.tick(500);
+  assert.deepEqual(calls.filter(([name]) => name === "reattachFence"), [], "an open popup is left alone");
+  handle.closed = true;
+  t.mock.timers.tick(500);
+  assert.deepEqual(calls.filter(([name]) => name === "reattachFence"), [["reattachFence", "f"]]);
+});
+
+test("a popup that never greets is brought home after five seconds, and one that did is left", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+  withWB(t);
+  const { deps, calls } = fakeDeps({ window: { open: () => ({ closed: false }) } });
+  const { detachFence } = createFences(deps);
+  detachFence("f");
+  t.mock.timers.tick(4999);
+  assert.deepEqual(calls.filter(([name]) => name === "reattachFence"), []);
+  t.mock.timers.tick(1);
+  assert.deepEqual(calls.filter(([name]) => name === "reattachFence"), [["reattachFence", "f"]]);
+  const greeted = fakeDeps({ window: { open: () => ({ closed: false }) } });
+  createFences(greeted.deps).detachFence("f");
+  greeted.deps.popups.entry("f").greeted = true;
+  t.mock.timers.tick(5000);
+  assert.deepEqual(greeted.calls.filter(([name]) => name === "reattachFence"), []);
+});

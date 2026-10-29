@@ -56,6 +56,38 @@ function runHostVerb(verb: string, payload: Record<string, string>): Promise<str
   });
 }
 
+// The live state a local row keeps when `/api/repos` is read again: the dot
+// stays until `refreshLive` answers, and an offline row that answers is idle.
+function carriedState(reachable: boolean, prev: Project | undefined) {
+  if (!reachable) return "offline";
+  return prev?.state === "offline" ? "idle" : prev?.state || "idle";
+}
+
+// The environment label and the daemon name stay until `loadFleet` answers.
+function carriedEnv(prev: Project | undefined) {
+  return prev?.env || "";
+}
+
+function carriedDaemonName(prev: Project | undefined) {
+  return prev?.daemonName || "";
+}
+
+// `/api/fleet` is the ONLY source of this daemon's own environment label and
+// name; `mine` is its row of this daemon. The rows are written in place.
+function stampLocalRows(projects: Project[], mine: { environment?: string; os?: string; daemon_name?: string }) {
+  for (const p of projects) {
+    p.env = mine.environment || "";
+    p.os = mine.os || "";
+    p.daemonName = mine.daemon_name || "";
+  }
+}
+
+// Why a failed `/api/fleet` read failed: the daemon's own words when it
+// answered, else that it did not.
+function fleetFailReason(e: unknown) {
+  return String((e as Error)?.message || "").startsWith("the daemon") ? (e as Error).message : "the daemon did not answer";
+}
+
 export function projectsStore(deps: ProjectsStoreDeps) {
   return {
     // The ref of the open project (`repoRef`), or null.
@@ -217,31 +249,34 @@ export function projectsStore(deps: ProjectsStoreDeps) {
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
           const before = new Map(this.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
-          const local: Project[] = repos.map((x) => ({
-            slug: x.slug,
-            // What the operator calls the project; the SLUG stays the identity
-            // (ADR-0008 D7), and for a remoteless repo it is a hash key.
-            name: x.name || x.slug,
-            // The on-disk path: the tooltip of a remoteless repo shows it.
-            path: x.path || "",
-            // The ABSOLUTE native root (#362), distinct from `path` (git's
-            // forward-slashed `--show-toplevel` that peers parse).
-            root: x.root || "",
-            branch: x.branch || "",
-            branches: x.branch ? [x.branch] : [],
-            // `{kind:"branch",name}` or `{kind:"detached",sha}`; `null` when
-            // the daemon has no answer or is older than this field.
-            head: x.head || null,
-            // `remote` is the github|local classification the dot binds to; the
-            // raw origin url rides in `remoteUrl` for `githubUrl()`.
-            dirty: !!x.dirty,
-            state: !x.reachable ? "offline" : before.get(x.slug)?.state === "offline" ? "idle" : before.get(x.slug)?.state || "idle",
-            env: before.get(x.slug)?.env || "",
-            daemonName: before.get(x.slug)?.daemonName || "",
-            remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
-            remoteUrl: x.remote || "",
-            tree: [],
-          }));
+          const local: Project[] = repos.map((x) => {
+            const prev = before.get(x.slug);
+            return {
+              slug: x.slug,
+              // What the operator calls the project; the SLUG stays the identity
+              // (ADR-0008 D7), and for a remoteless repo it is a hash key.
+              name: x.name || x.slug,
+              // The on-disk path: the tooltip of a remoteless repo shows it.
+              path: x.path || "",
+              // The ABSOLUTE native root (#362), distinct from `path` (git's
+              // forward-slashed `--show-toplevel` that peers parse).
+              root: x.root || "",
+              branch: x.branch || "",
+              branches: x.branch ? [x.branch] : [],
+              // `{kind:"branch",name}` or `{kind:"detached",sha}`; `null` when
+              // the daemon has no answer or is older than this field.
+              head: x.head || null,
+              // `remote` is the github|local classification the dot binds to; the
+              // raw origin url rides in `remoteUrl` for `githubUrl()`.
+              dirty: !!x.dirty,
+              state: carriedState(x.reachable, prev),
+              env: carriedEnv(prev),
+              daemonName: carriedDaemonName(prev),
+              remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
+              remoteUrl: x.remote || "",
+              tree: [],
+            };
+          });
           this.setProjects(local.concat(this._fleetRows));
           this.shareProjectNames();
           this.reposError = "";
@@ -309,16 +344,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
         const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
-        // `/api/fleet` is the ONLY source of this daemon's own environment label
-        // and name; the local rows are stamped with it here.
         const mine = rows.find((x) => x.local);
-        if (mine) {
-          for (const p of this.projects) {
-            p.env = mine.environment || "";
-            p.os = mine.os || "";
-            p.daemonName = mine.daemon_name || "";
-          }
-        }
+        if (mine) stampLocalRows(this.projects, mine);
         const peerRows = rows.filter((x) => !x.local);
         this._fleetRows = peerRows.map((x) => ({
             // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
@@ -353,7 +380,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         if (seq !== this._fleetSeq) return;
         // After a good read the peers and their rows stay, marked not current
         // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
-        const reason = String((e as Error)?.message || "").startsWith("the daemon") ? (e as Error).message : "the daemon did not answer";
+        const reason = fleetFailReason(e);
         this.fleetRead = WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
         if (this.fleetRead.goodAt) {
           this.setProjects(localRows().concat(this._fleetRows));

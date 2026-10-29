@@ -456,6 +456,22 @@ test("a commit draft does not hold the build reload", () => {
   assert.equal(t.reloads(), 1);
 });
 
+test("a hidden tab with no unsaved work holds the desk and does not reload", () => {
+  const t = skewShell();
+  t.loaded.document.visibilityState = "hidden";
+  const holds = [];
+  const realSetHold = WBDeskSink.setHold;
+  WBDeskSink.setHold = (on) => holds.push(on);
+  try {
+    t.beat({ uptime_secs: 1, build: "B" });
+  } finally {
+    WBDeskSink.setHold = realSetHold;
+  }
+  assert.equal(t.reloads(), 0, "a hidden tab waits for the next heartbeat");
+  assert.deepEqual(holds, [true], "its desk is held until it reloads");
+  assert.equal(t.store.buildSkew, false, "no unsaved work: no notice");
+});
+
 test("the desk hold ends right before the build reload, so the saved work's desk changes go out", () => {
   const { state, window } = loadShell(VISIBLE);
   const store = state.$store.connection;

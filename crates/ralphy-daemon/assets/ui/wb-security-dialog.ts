@@ -13,11 +13,57 @@
    `main.ts` registers it as `wbSecurityDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { wbQr } from "./wb-settings.ts";
 
 /** The change of a toggle: the checkbox, which the handler puts back in sync. */
 type CheckboxChange = { target: HTMLInputElement | null };
+
+/** The members of the dialog that the login switch calls. */
+type LoginDialog = {
+  $store: AlpineMagics["$store"];
+  stepUpBody(fields: Record<string, string>, code: string): string;
+  noteStepUpRefusal(r: Response): void;
+  closeSecurity(): void;
+};
+
+// `:checked` won't re-sync when the bound value did not change.
+function syncCheckbox(ev: CheckboxChange | undefined, checked: boolean) {
+  if (ev?.target) ev.target.checked = checked;
+}
+
+// Ask the daemon to put the login gate on or off. True when it did. A refusal
+// to lift the gate says why under the card that asked.
+async function postRequireLogin(dialog: LoginDialog, want: boolean, code: string) {
+  let ok = false;
+  try {
+    const r = await fetch("/api/security/require-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: dialog.stepUpBody({ enable: String(want) }, code),
+    });
+    ok = r.ok;
+    if (!ok && !want) dialog.noteStepUpRefusal(r);
+  } catch {
+    ok = false;
+  }
+  return ok;
+}
+
+// What follows a change of the gate that the daemon took.
+async function afterRequireLogin(dialog: LoginDialog, want: boolean) {
+  if (want) {
+    // The gate applies to THIS bind, loopback included (ADR-0032 §A); the
+    // daemon invalidated sessions, so drop to the login screen.
+    dialog.$store.connection.securityChanged({ policy: "session" });
+    dialog.closeSecurity();
+    dialog.$store.connection.logOff();
+  } else {
+    // Gate lifted — re-sync authed/policy from the server.
+    await dialog.$store.connection.probeSession();
+  }
+}
 
 export function securityDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -321,42 +367,21 @@ export function securityDialog() {
       const want = !this.$store.connection.security.requireLogin;
       if (want && !this.$store.connection.security.totpEnrolled) {
         this.$store.connection.securityChanged({ requireLogin: false });
-        if (ev?.target) ev.target.checked = false;
+        syncCheckbox(ev, false);
         return;
       }
       // Turning the gate OFF is the gate itself being lowered: it costs a
       // fresh code (step-up). Turning it on stays free.
       const code = want ? "" : await this.askFreshCode("turn login off");
       if (code === null) {
-        if (ev?.target) ev.target.checked = this.$store.connection.security.requireLogin;
+        syncCheckbox(ev, this.$store.connection.security.requireLogin);
         return;
       }
-      let ok = false;
-      try {
-        const r = await fetch("/api/security/require-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: this.stepUpBody({ enable: String(want) }, code),
-        });
-        ok = r.ok;
-        if (!ok && !want) this.noteStepUpRefusal(r);
-      } catch {
-        ok = false;
-      }
+      const ok = await postRequireLogin(this, want, code);
       if (ok) this.$store.connection.securityChanged({ requireLogin: want });
-      // `:checked` won't re-sync when the bound value did not change.
-      if (ev?.target) ev.target.checked = this.$store.connection.security.requireLogin;
+      syncCheckbox(ev, this.$store.connection.security.requireLogin);
       if (!ok) return;
-      if (want) {
-        // The gate applies to THIS bind, loopback included (ADR-0032 §A); the
-        // daemon invalidated sessions, so drop to the login screen.
-        this.$store.connection.securityChanged({ policy: "session" });
-        this.closeSecurity();
-        this.$store.connection.logOff();
-      } else {
-        // Gate lifted — re-sync authed/policy from the server.
-        await this.$store.connection.probeSession();
-      }
+      await afterRequireLogin(this, want);
     },
 
     async toggleRemoteImages(ev?: CheckboxChange) {

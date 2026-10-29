@@ -42,22 +42,11 @@ pub(crate) async fn serve(
         Some(listener) => listener.local_addr().context("reading the bound address")?,
         None => addr,
     };
-    if tcp.is_some() {
-        tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
-    }
     #[cfg(unix)]
-    if let Some(socket) = &socket {
-        tracing::info!(path = %socket.path().display(), "daemon listening on its socket");
-    }
-    if tcp.is_some() && !addr.ip().is_loopback() {
-        // TLS-aware, not TLS-enforcing (ADR-0032 §4 and its audit amendment):
-        // the daemon never terminates TLS, and never refuses the bind either —
-        // it says so once, where the operator who chose the bind will read it.
-        tracing::warn!(
-            %addr,
-            "this listener speaks plain HTTP — put it behind a TLS front (dev tunnel, ngrok) or a tailnet"
-        );
-    }
+    let socket_path = socket.as_ref().map(|socket| socket.path().to_path_buf());
+    #[cfg(not(unix))]
+    let socket_path: Option<PathBuf> = None;
+    log_listening(addr, tcp.is_some(), socket_path.as_deref());
 
     // Resolve the own binary now, while it is still the file this daemon
     // runs: a later first read can name a file replaced since.
@@ -141,15 +130,62 @@ pub(crate) async fn serve(
         shutdown_rx,
         auth_state,
     );
-    // One task waits for the signal and fans it out on the watch: every `/ws`
-    // loop and every listener's graceful shutdown wait on a receiver, so a
-    // held-open heartbeat cannot stall the stop.
+    spawn_shutdown_fanout(shutdown_tx);
+    serve_listeners(
+        tcp,
+        #[cfg(unix)]
+        socket,
+        app,
+        stop,
+    )
+    .await?;
+    if let Some(dir) = store.as_deref() {
+        pidfile::clear_own_in(dir, std::process::id());
+    }
+    tracing::info!("daemon stopped");
+    Ok(())
+}
+
+/// Say where the daemon listens, and warn once when its TCP listener is not
+/// on loopback.
+fn log_listening(addr: SocketAddr, tcp_bound: bool, socket_path: Option<&Path>) {
+    if tcp_bound {
+        tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
+    }
+    if let Some(path) = socket_path {
+        tracing::info!(path = %path.display(), "daemon listening on its socket");
+    }
+    if tcp_bound && !addr.ip().is_loopback() {
+        // TLS-aware, not TLS-enforcing (ADR-0032 §4 and its audit amendment):
+        // the daemon never terminates TLS, and never refuses the bind either —
+        // it says so once, where the operator who chose the bind will read it.
+        tracing::warn!(
+            %addr,
+            "this listener speaks plain HTTP — put it behind a TLS front (dev tunnel, ngrok) or a tailnet"
+        );
+    }
+}
+
+/// One task waits for the signal and fans it out on the watch: every `/ws`
+/// loop and every listener's graceful shutdown wait on a receiver, so a
+/// held-open heartbeat cannot stall the stop.
+fn spawn_shutdown_fanout(shutdown_tx: tokio::sync::watch::Sender<bool>) {
     tokio::spawn(async move {
         shutdown_signal().await;
         if let Err(e) = shutdown_tx.send(true) {
             tracing::debug!(error = %e, "nothing was waiting for the shutdown");
         }
     });
+}
+
+/// Serve `app` on each listener that is bound until `stop` says stop. A
+/// daemon with no listener of a kind serves nothing on it and returns at once.
+async fn serve_listeners(
+    tcp: Option<tokio::net::TcpListener>,
+    #[cfg(unix)] socket: Option<socket::BoundSocket>,
+    app: axum::Router,
+    stop: tokio::sync::watch::Receiver<bool>,
+) -> Result<()> {
     let served_tcp = async {
         match tcp {
             // The connection's address reaches the audit log (ADR-0074).
@@ -188,10 +224,6 @@ pub(crate) async fn serve(
     }
     #[cfg(not(unix))]
     served_tcp.await?;
-    if let Some(dir) = store.as_deref() {
-        pidfile::clear_own_in(dir, std::process::id());
-    }
-    tracing::info!("daemon stopped");
     Ok(())
 }
 
@@ -504,3 +536,6 @@ static STOP: tokio::sync::Notify = tokio::sync::Notify::const_new();
 pub(crate) fn request_stop() {
     STOP.notify_one();
 }
+
+#[cfg(test)]
+mod tests;

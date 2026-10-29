@@ -117,14 +117,7 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
         let kind = obj.get("type").and_then(Value::as_str).unwrap_or_default();
         let role = obj.get("role").and_then(Value::as_str).unwrap_or_default();
         match kind {
-            "init" | "system" => {
-                if let Some(id) = obj.get("session_id").and_then(Value::as_str) {
-                    fold.session_id = Some(id.to_string());
-                }
-                if let Some(m) = obj.get("model").and_then(Value::as_str) {
-                    fold.model = Some(m.to_string());
-                }
-            }
+            "init" | "system" => fold_init(&mut fold, &obj),
             // The delta join: append, never match. A sentinel split after `RAL`
             // is only recoverable because the pieces are concatenated first.
             //
@@ -135,18 +128,7 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
             "message" if role == "assistant" => {
                 fold.final_text.push_str(&record_text(&obj));
             }
-            "result" => {
-                fold.saw_result = true;
-                if let Some(s) = obj.get("status").and_then(Value::as_str) {
-                    fold.status = Some(s.to_string());
-                }
-                if let Some(m) = obj.get("model").and_then(Value::as_str) {
-                    fold.model = Some(m.to_string());
-                }
-                if let Some(stats) = obj.get("stats") {
-                    fold.usage = Some(crate::usage::parse_stream_stats(stats));
-                }
-            }
+            "result" => fold_result(&mut fold, &obj),
             _ => {}
         }
         // Independent of `type`: the auth-failure record the spike captured
@@ -157,6 +139,31 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
         }
     }
     fold
+}
+
+/// An `init` or `system` record: the session id and the announced model.
+fn fold_init(fold: &mut GeminiFold, obj: &Value) {
+    if let Some(id) = obj.get("session_id").and_then(Value::as_str) {
+        fold.session_id = Some(id.to_string());
+    }
+    if let Some(m) = obj.get("model").and_then(Value::as_str) {
+        fold.model = Some(m.to_string());
+    }
+}
+
+/// The terminal `result` record: its status, the model it names (which replaces
+/// the one `init` announced) and the usage stats.
+fn fold_result(fold: &mut GeminiFold, obj: &Value) {
+    fold.saw_result = true;
+    if let Some(s) = obj.get("status").and_then(Value::as_str) {
+        fold.status = Some(s.to_string());
+    }
+    if let Some(m) = obj.get("model").and_then(Value::as_str) {
+        fold.model = Some(m.to_string());
+    }
+    if let Some(stats) = obj.get("stats") {
+        fold.usage = Some(crate::usage::parse_stream_stats(stats));
+    }
 }
 
 /// The vendor's documented exit-code taxonomy (ADR-0043 D3).

@@ -48,6 +48,19 @@ export type ConnectionStoreDeps = {
   detached: DetachedWindows;
 };
 
+// Whether this tab holds work that only it can save. A commit draft is not
+// counted: the skew lock refuses the commit, so it is work the tab could never
+// save. A detached file window is: it saves through this tab, and a reloaded
+// tab no longer hears it.
+function unsavedWork(detached: DetachedWindows) {
+  return !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.() || detached.dirty());
+}
+
+// Hold the desk changes of this tab, or let them go out.
+function holdDesk(on: boolean) {
+  WBDeskSink?.setHold?.(on);
+}
+
 // `deps` is the shape every store takes; the connection tells the operator
 // nothing itself (the notice and the login gate are markup).
 export function connectionStore(deps: ConnectionStoreDeps) {
@@ -358,17 +371,14 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // stays, only saving that work is allowed, and each heartbeat asks again.
     // A console never holds the reload back: the daemon owns its PTY.
     onBuildSkew() {
-      // A commit draft is not counted: the skew lock refuses the commit, so
-      // it is work the tab could never save. A detached file window is: it
-      // saves through this tab, and a reloaded tab no longer hears it.
-      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.() || detached.dirty());
+      const unsaved = unsavedWork(detached);
       // A hidden tab waits: reloaded now, it would read every fact unseen.
       // The next heartbeat after it becomes visible asks again.
       if (!unsaved && !this.tabHidden()) {
         // The desk changes held back while the work was saved (a new note's
         // path among them) go out with the page's last write; the daemon
         // merges them per record.
-        WBDeskSink?.setHold?.(false);
+        holdDesk(false);
         // A detached file window would outlive the reload with no tab that
         // hears its Save; closing it sends the file home as a tab.
         detached.close();
@@ -378,12 +388,12 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       // A hidden tab writes no desk until it reloads: its JavaScript may not
       // know the daemon's desk.
       if (!unsaved) {
-        WBDeskSink?.setHold?.(true);
+        holdDesk(true);
         return;
       }
       if (!this.buildSkew) {
         this.buildSkew = true;
-        WBDeskSink?.setHold?.(true);
+        holdDesk(true);
       }
     },
     // True while this tab runs an older build than the daemon and holds unsaved

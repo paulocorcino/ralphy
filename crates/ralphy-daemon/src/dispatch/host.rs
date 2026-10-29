@@ -112,53 +112,59 @@ pub fn host_password(
 /// Compose `ralphy host …` for a host verb. Any other verb, or any value
 /// that fails its check, yields [`ArgvError`] and no argv.
 pub fn host_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let mut argv: Vec<String> = vec!["host".to_string()];
-    let mut push = |parts: &[&str]| argv.extend(parts.iter().map(|s| s.to_string()));
-    match verb {
-        Verb::HostAliases => push(&["aliases"]),
-        Verb::HostKey => push(&["key", destination(payload, "destination")?]),
-        Verb::HostTrust => push(&[
+    let parts = match verb {
+        Verb::HostAliases => vec!["aliases"],
+        Verb::HostKey => vec!["key", destination(payload, "destination")?],
+        Verb::HostTrust => vec![
             "trust",
             destination(payload, "destination")?,
             "--fingerprint",
             fingerprint(payload)?,
-        ]),
-        Verb::HostCheck | Verb::HostAdd => {
-            let sub = if verb == Verb::HostCheck {
-                "check"
-            } else {
-                "add"
-            };
-            push(&[sub, destination(payload, "destination")?, "--json"]);
-            if let Some(path) = identity(payload)? {
-                push(&["--identity", path]);
-            }
-            if let Some(name) = name(payload)? {
-                push(&["--name", name]);
-            }
-            if host_password(verb, payload)?.is_some() {
-                push(&["--password-stdin"]);
-            }
-        }
+        ],
+        Verb::HostCheck => sign_in_argv("check", verb, payload, true)?,
+        Verb::HostAdd => sign_in_argv("add", verb, payload, true)?,
         // The dialog sends its whole payload; a name belongs to `add` only.
-        Verb::HostInstall => {
-            push(&["install", destination(payload, "destination")?, "--json"]);
-            if let Some(path) = identity(payload)? {
-                push(&["--identity", path]);
-            }
-            if host_password(verb, payload)?.is_some() {
-                push(&["--password-stdin"]);
-            }
-        }
-        Verb::HostRemove => {
-            push(&["remove", destination(payload, "host")?, "--json"]);
-            if rotate_token(payload)? {
-                push(&["--rotate-token"]);
-            }
-        }
+        Verb::HostInstall => sign_in_argv("install", verb, payload, false)?,
+        Verb::HostRemove => remove_argv(payload)?,
         _ => return Err(ArgvError::BadParam("verb")),
+    };
+    Ok(std::iter::once("host")
+        .chain(parts)
+        .map(str::to_string)
+        .collect())
+}
+
+/// The words after `host` for a verb that signs in to the destination:
+/// the destination, then the key, the name when the verb takes one, and the
+/// flag that says the password comes on standard input.
+fn sign_in_argv<'a>(
+    sub: &'static str,
+    verb: Verb,
+    payload: &'a serde_json::Value,
+    with_name: bool,
+) -> Result<Vec<&'a str>, ArgvError> {
+    let mut parts = vec![sub, destination(payload, "destination")?, "--json"];
+    if let Some(path) = identity(payload)? {
+        parts.extend(["--identity", path]);
     }
-    Ok(argv)
+    if with_name {
+        if let Some(name) = name(payload)? {
+            parts.extend(["--name", name]);
+        }
+    }
+    if host_password(verb, payload)?.is_some() {
+        parts.push("--password-stdin");
+    }
+    Ok(parts)
+}
+
+/// The words after `host` for `remove`.
+fn remove_argv(payload: &serde_json::Value) -> Result<Vec<&str>, ArgvError> {
+    let mut parts = vec!["remove", destination(payload, "host")?, "--json"];
+    if rotate_token(payload)? {
+        parts.push("--rotate-token");
+    }
+    Ok(parts)
 }
 
 #[cfg(test)]

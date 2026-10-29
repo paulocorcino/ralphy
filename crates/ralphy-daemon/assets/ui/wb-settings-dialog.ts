@@ -13,6 +13,7 @@
    `main.ts` registers it as `wbSettingsDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
@@ -20,6 +21,44 @@ import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults } from "./wb
 
 /** One row of the Desk history section (`WBDeskHistory.rows`). */
 type DeskRow = ReturnType<typeof WBDeskHistory.rows>[number];
+
+// The client-scoped keys that hold more than a flag: the key bar's mode and
+// the console text size. `settings` is the dialog's own, so the field shows
+// what was used.
+function saveClientSetting(settings: Record<string, unknown>, key: string, value: unknown) {
+  // "unset" is the ABSENCE of a preference: written as null.
+  if (key === "consoles.key_bar")
+    window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
+  // Held to the range the key bar steps through; an emptied field is
+  // the default size. `setFont` writes the store and refits every console.
+  if (key === "consoles.font_size") {
+    const px = window.WBConsole.stepFont(value === "" ? NaN : Number(value), 0);
+    settings[key] = window.WBConsole.setFont(px);
+  }
+}
+
+// The run-lock-aware config Mutates; an empty/"unset" value clears the
+// key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
+async function writeProjectSetting(
+  dialog: { $store: AlpineMagics["$store"] },
+  slug: string,
+  key: string,
+  value: unknown,
+) {
+  const empty = value === "" || value === "unset" || value == null;
+  try {
+    const reply = await window.WBDaemon.observe(empty ? "config.unset" : "config.set", {
+      repo: slug,
+      key,
+      value: String(value),
+    });
+    if (WBFail.isError(reply)) {
+      dialog.$store.modals.flash(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
+    }
+  } catch {
+    // No daemon reachable — leave the optimistic setting in place.
+  }
+}
 
 export function settingsDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -185,38 +224,16 @@ export function settingsDialog() {
       // `config.set`.
       if (this.CLIENT_KEYS.has(key)) {
         if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
-        // "unset" is the ABSENCE of a preference: written as null.
-        if (key === "consoles.key_bar")
-          window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
-        // Held to the range the key bar steps through; an emptied field is
-        // the default size. `setFont` writes the store and refits every console.
-        if (key === "consoles.font_size") {
-          const px = window.WBConsole.stepFont(value === "" ? NaN : Number(value), 0);
-          this.settings[key] = window.WBConsole.setFont(px);
-        }
+        saveClientSetting(this.settings, key, value);
         window.WB.emit("setting-change", { project: null, key, value });
         return;
       }
-      // The run-lock-aware config Mutates; an empty/"unset" value clears the
-      // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
       if (this.$store.projects.openSlug && this.settingsError) {
         this.$store.modals.flash("Could not change the setting: the settings were not read. Open the settings again.");
         return;
       }
       if (this.$store.projects.openSlug) {
-        const empty = value === "" || value === "unset" || value == null;
-        try {
-          const reply = await window.WBDaemon.observe(empty ? "config.unset" : "config.set", {
-            repo: this.$store.projects.openSlug,
-            key,
-            value: String(value),
-          });
-          if (WBFail.isError(reply)) {
-            this.$store.modals.flash(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
-          }
-        } catch {
-          // No daemon reachable — leave the optimistic setting in place.
-        }
+        await writeProjectSetting(this, this.$store.projects.openSlug, key, value);
       }
       window.WB.emit("setting-change", { project: this.$store.projects.openSlug, key, value });
     },

@@ -332,16 +332,8 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     let ws = Workspace::new(&repo);
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
     let lock_path = ws.run_lock_path();
-    match presence_gate(&lock_path, args.if_idle, runlock::pid_is_alive) {
-        PresenceGate::Defer(msg) => {
-            println!("{msg}");
-            return Ok(());
-        }
-        PresenceGate::Proceed { warn } => {
-            if let Some(w) = warn {
-                eprintln!("{w}");
-            }
-        }
+    if !pass_presence_gate(&lock_path, args.if_idle) {
+        return Ok(());
     }
     let _lock = runlock::acquire(&lock_path)?;
 
@@ -365,15 +357,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     );
 
     let agent = select_triage_agent(args.agent)?;
-    let queue_label = resolve_triage_label(&repo);
-    let labels = TriageLabels {
-        queue_label: queue_label.clone(),
-        needs_info_label: NEEDS_INFO_LABEL.to_string(),
-        human_label: resolve_human_label(&repo),
-        triage_agent_label: TRIAGE_AGENT_LABEL.to_string(),
-        marker: CONSOLIDATED_SPEC_MARKER.to_string(),
-        promote_marker: PROMOTE_EVIDENCE_MARKER.to_string(),
-    };
+    let labels = triage_labels(&repo);
 
     // Mechanically pre-fetch text + (capability-gated) image attachments as
     // guardrailed evidence (ADR-0025). Best-effort: only a temp-dir creation
@@ -388,7 +372,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     let out_path = repo.join(".ralphy").join("triage-draft.json");
     let req = TriageRequest {
         issue_numbers: &numbers,
-        queue_label: &queue_label,
+        queue_label: &labels.queue_label,
         thread_block: &thread_block,
         attachments_manifest: &attachments.manifest,
         image_paths: &attachments.image_paths,
@@ -434,13 +418,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
 
     // Interactive confirm: default No, so a bulk external write is never silent.
     // Bounces apply regardless (safe); the confirm gates promote/consolidate.
-    print!("\n  > Publish these verdicts? [y/N] ");
-    std::io::stdout().flush().ok();
-    let mut line = String::new();
-    std::io::stdin()
-        .read_line(&mut line)
-        .context("reading answer from stdin")?;
-    let confirmed = matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes");
+    let confirmed = ask_yes("\n  > Publish these verdicts? [y/N] ")?;
     apply_triage(&draft, &tracker, &labels, |_| confirmed)?;
     if confirmed {
         println!("Applied {} verdict(s).", draft.item_count());
@@ -448,10 +426,62 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         println!("Declined — promote/consolidate skipped; any bounces/escalates were applied.");
     }
 
-    // Interactive redirect flow (ADR-0018 §4): a drafted follow-up issue is
-    // created ONLY after an explicit per-draft `y`. Never reached under `--yes`
-    // (that branch returns above), so escalate can never author a new issue
-    // non-interactively.
+    offer_follow_up_issues(&draft, &tracker, ask_yes)
+}
+
+/// Print why `triage` defers, or the warning when it goes on; `false` when it
+/// must stop with a success exit.
+fn pass_presence_gate(lock_path: &Path, if_idle: bool) -> bool {
+    match presence_gate(lock_path, if_idle, runlock::pid_is_alive) {
+        PresenceGate::Defer(msg) => {
+            println!("{msg}");
+            false
+        }
+        PresenceGate::Proceed { warn } => {
+            if let Some(w) = warn {
+                eprintln!("{w}");
+            }
+            true
+        }
+    }
+}
+
+/// The labels `triage` swaps, each resolved from the repo's settings.
+fn triage_labels(repo: &Path) -> TriageLabels {
+    TriageLabels {
+        queue_label: resolve_triage_label(repo),
+        needs_info_label: NEEDS_INFO_LABEL.to_string(),
+        human_label: resolve_human_label(repo),
+        triage_agent_label: TRIAGE_AGENT_LABEL.to_string(),
+        marker: CONSOLIDATED_SPEC_MARKER.to_string(),
+        promote_marker: PROMOTE_EVIDENCE_MARKER.to_string(),
+    }
+}
+
+/// Print `prompt` and read the operator's answer from stdin: `true` for `y` or
+/// `yes`, whatever the case.
+fn ask_yes(prompt: &str) -> Result<bool> {
+    print!("{prompt}");
+    std::io::stdout().flush().ok();
+    let mut answer = String::new();
+    std::io::stdin()
+        .read_line(&mut answer)
+        .context("reading answer from stdin")?;
+    Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
+/// Interactive redirect flow (ADR-0018 §4): a drafted follow-up issue of an
+/// escalate verdict is created ONLY after an explicit per-draft `y`. `run`
+/// never calls it under `--yes`, so escalate can never author a new issue
+/// non-interactively.
+fn offer_follow_up_issues(
+    draft: &TriageDraft,
+    tracker: &dyn IssueTracker,
+    mut ask: impl FnMut(&str) -> Result<bool>,
+) -> Result<()> {
     for item in &draft.items {
         if item.verdict != TriageVerdict::Escalate {
             continue;
@@ -465,13 +495,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
             draft_issue.title,
             indent_body(&draft_issue.body)
         );
-        print!("  > Create this follow-up issue? [y/N] ");
-        std::io::stdout().flush().ok();
-        let mut answer = String::new();
-        std::io::stdin()
-            .read_line(&mut answer)
-            .context("reading answer from stdin")?;
-        if matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        if ask("  > Create this follow-up issue? [y/N] ")? {
             let number =
                 tracker.create_issue(&draft_issue.title, &draft_issue.body, &draft_issue.labels)?;
             println!("  created follow-up issue #{number}.");

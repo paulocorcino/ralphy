@@ -41,6 +41,25 @@ export type Slot = { kind: "pin"; id: string } | { kind: "mirror"; id?: undefine
 /** A tab as the split reads it. */
 type Tab = { id: string; kind?: string; closable?: boolean; project?: string; path?: string; checkout?: string | null };
 
+function findTab(tabs: Tab[] | null | undefined, id: string) {
+  return (tabs || []).find((t) => t.id === id);
+}
+
+// A mirror doubles the active tab, when it is a code pane.
+function mirrorPanes(active: string, tabs: Tab[] | null | undefined) {
+  return findTab(tabs, active)?.kind === "code"
+    ? { left: active, right: active, mirror: true, focus: "left" }
+    : single(active);
+}
+
+// The left column when the pinned tab itself is active: the last tab the
+// operator read on the left, else the nearest other tab that has a pane.
+function pinnedLeft(slotId: string, lastLeft: string | null | undefined, tabs: Tab[] | null | undefined) {
+  return lastLeft && lastLeft !== slotId && findTab(tabs, lastLeft)
+    ? lastLeft
+    : ((tabs || []).find((t) => t.closable && t.id !== slotId) || {}).id;
+}
+
 function resolve({
   active,
   slot,
@@ -58,21 +77,12 @@ function resolve({
 }) {
   if (paneless || !active) return single(null);
   if (!slot || !available(width)) return single(active);
-  const tab = (id: string) => (tabs || []).find((t) => t.id === id);
-  if (slot.kind === "mirror") {
-    return tab(active)?.kind === "code"
-      ? { left: active, right: active, mirror: true, focus: "left" }
-      : single(active);
-  }
-  if (slot.kind !== "pin" || !tab(slot.id)) return single(active);
+  if (slot.kind === "mirror") return mirrorPanes(active, tabs);
+  if (slot.kind !== "pin" || !findTab(tabs, slot.id)) return single(active);
   if (active !== slot.id) return { left: active, right: slot.id, mirror: false, focus: "left" };
-  // The pinned tab was activated from the strip: the pane it sits beside is
-  // the last tab the operator read on the left, else the nearest other tab
-  // that has a pane; with no such tab there is nothing to split against.
-  const left =
-    lastLeft && lastLeft !== slot.id && tab(lastLeft)
-      ? lastLeft
-      : ((tabs || []).find((t) => t.closable && t.id !== slot.id) || {}).id;
+  // The pinned tab was activated from the strip; with no tab to sit beside
+  // there is nothing to split against.
+  const left = pinnedLeft(slot.id, lastLeft, tabs);
   return left ? { left, right: slot.id, mirror: false, focus: "right" } : single(active);
 }
 

@@ -361,6 +361,13 @@ test("fenceCycle breaks a tie on id, so every client walks the same order", () =
   assert.equal(fenceCycle(same, "a", 1), "z");
 });
 
+test("fenceCycle reads a fence with no rect as the top-left corner and does not throw", () => {
+  const fences = [at("far", 0, 500), { id: "b" }, { id: "a", rect: null }];
+  assert.equal(fenceCycle(fences, null, 1), "a");
+  assert.equal(fenceCycle(fences, "a", 1), "b");
+  assert.equal(fenceCycle(fences, "b", 1), "far");
+});
+
 // ---- detachFold: the detach registry's transitions ---------------------------
 // The fold is the whole decision surface for detaching a fence into its own
 // window — every case below is a RELATION (what the registry becomes, which

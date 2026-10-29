@@ -188,6 +188,36 @@ fn plain_words_contractions_and_sentence_length_are_reported() {
 }
 
 #[test]
+fn a_banned_term_carries_its_replacement_as_the_hint() {
+    let rules = rules();
+    let report = check(&[row(Kind::Title, "Fences on the plane")], &rules);
+    assert_eq!(report.violations.len(), 1);
+    assert_eq!(report.violations[0].rule, "banned:plane");
+    assert_eq!(report.violations[0].hint, "use stage");
+}
+
+#[test]
+fn a_plain_word_in_a_long_sentence_is_reported_after_the_sentence_length() {
+    assert_eq!(
+        broken(Kind::Text, "Just wait for one more thing here"),
+        vec!["sentence-length", "plain:just"]
+    );
+}
+
+#[test]
+fn casing_banned_punctuation_and_contraction_are_reported_in_that_order() {
+    assert_eq!(
+        broken(Kind::Text, "plane don't stop..."),
+        vec![
+            "casing:first",
+            "banned:plane",
+            "punctuation:...",
+            "contraction"
+        ]
+    );
+}
+
+#[test]
 fn the_report_counts_violations_per_rule_and_the_concatenated_texts() {
     let rules = rules();
     let rows = [

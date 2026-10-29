@@ -373,3 +373,66 @@ fn charters_never_tell_the_agent_to_run_a_denied_command() {
         assert!(denied.is_empty(), "{}: {denied:?}", file.display());
     }
 }
+
+/// A cmd.exe switch with a `:` (`/a:h`) is a switch, not a target.
+#[test]
+fn a_cmd_switch_with_a_colon_is_not_a_delete_target() {
+    assert_eq!(
+        eval("Bash", &bash("del /s /q /a:h build")),
+        GuardDecision::Allow
+    );
+}
+
+/// A slash argument that is not a short switch is a target: `/etc/x` and
+/// `/windows` escape the worktree, so `rmdir /s` is refused.
+#[test]
+fn a_long_slash_argument_of_rmdir_is_a_delete_target() {
+    for target in ["/etc/x", "/windows"] {
+        assert!(
+            matches!(
+                eval("Bash", &bash(&format!("rmdir /s /q {target}"))),
+                GuardDecision::Deny(_)
+            ),
+            "{target}"
+        );
+    }
+}
+
+/// A project root whose plan has two open steps and a `## Verify` command
+/// measured at two minutes, and the payload of a tool call run from it.
+fn costly_project(tool: &str) -> (tempfile::TempDir, String) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join(".ralphy")).unwrap();
+    std::fs::write(
+        root.path().join(".ralphy").join("plan.md"),
+        "## Verify\ncargo test --workspace\n\n## Steps\n- [ ] one\n- [ ] two\n",
+    )
+    .unwrap();
+    let mut state = ralphy_core::cmdcost::CostState::default();
+    state.costs.insert("cargo test --workspace".into(), 120.0);
+    ralphy_core::cmdcost::save(root.path(), &state);
+    let payload = json!({
+        "cwd": root.path().to_str().unwrap(),
+        "tool_name": tool,
+        "tool_input": {"command": "cargo test --workspace"},
+    })
+    .to_string();
+    (root, payload)
+}
+
+/// The cost gate denies a Bash call to a verify command measured as
+/// expensive while the plan has steps open, and says which command.
+#[test]
+fn the_cost_gate_steers_a_bash_call_to_an_expensive_verify_command() {
+    let (_root, payload) = costly_project("Bash");
+    let reason = cost_gate_reason(&payload).expect("a steering message");
+    assert!(reason.contains("cargo test --workspace"), "{reason}");
+}
+
+/// The cost gate judges Bash calls only: the same payload from another tool
+/// runs.
+#[test]
+fn the_cost_gate_ignores_a_call_that_is_not_bash() {
+    let (_root, payload) = costly_project("Write");
+    assert_eq!(cost_gate_reason(&payload), None);
+}

@@ -84,17 +84,7 @@ pub(crate) fn execute_phase(
             exec_session_id = session_id;
         }
         let after_sha = cx.repo.head_sha().ok();
-
-        // Track progress: a commit resets the streak, a no-commit execute
-        // advances it. Done/non-limit outcomes break below before it matters.
-        // If either SHA read failed, progress is unknown — leave the streak
-        // untouched rather than collapse both errors to "" and read it as a
-        // false no-commit.
-        match (&before_sha, &after_sha) {
-            (Some(b), Some(a)) if b != a => no_commit_streak = 0,
-            (Some(_), Some(_)) => no_commit_streak += 1,
-            _ => {}
-        }
+        no_commit_streak = advance_streak(no_commit_streak, &before_sha, &after_sha);
 
         // The operator's stop (docs/adr/0054), read BEFORE the resume decision.
         // A stop-killed child ends with no verdict, and a transcript that already
@@ -105,42 +95,20 @@ pub(crate) fn execute_phase(
             break outcome;
         }
 
-        let (reset, synthetic) = match &outcome {
-            // A scheduled reset (Codex/Claude) auto-resumes at its target time.
-            Outcome::Limit(Some(r)) if !cx.cfg.stop_on_limit_exec => (r.clone(), false),
-            // A limit with no parseable reset is an account-wide pause: park a
-            // synthetic ~30-min window and retry, unbounded until the deadline or a
-            // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap
-            // below skips it.
-            Outcome::Limit(None) if !cx.cfg.stop_on_limit_exec => (synthetic_reset(), true),
-            // Done, any non-limit outcome, or `stop_on_limit_exec` leave the loop
-            // with the outcome as-is.
-            _ => break outcome,
+        // Done, any non-limit outcome, or `stop_on_limit_exec` leave the loop
+        // with the outcome as-is.
+        let Some((reset, synthetic)) = resume_target(&outcome, cx.cfg.stop_on_limit_exec) else {
+            break outcome;
         };
-
-        // Progress-aware cap: two consecutive no-commit limits abandon the issue.
-        // Only the scheduled-reset path is capped — a synthetic wait makes no
-        // per-issue progress by definition (the whole account is throttled), so the
-        // human resolves it (re-running continues the work), not the cap (B2).
-        if !synthetic && no_commit_streak >= 2 {
-            info!(
-                number = issue.number,
-                "progress-aware cap reached — abandoning issue"
-            );
-            break outcome;
+        match keep_resuming(cx, issue, &reset, synthetic, no_commit_streak) {
+            // Loop: re-run execute() against the same on-disk plan.md.
+            Resume::Again => {}
+            Resume::Abandon => break outcome,
+            Resume::DeadlineCut => {
+                deadline_cut = true;
+                break outcome;
+            }
         }
-
-        // Deadline beats resume: a reset beyond the deadline, or a deadline
-        // already/just passed, stops the run instead of waiting.
-        if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
-            info!(
-                number = issue.number,
-                "deadline beats resume — stopping the run"
-            );
-            deadline_cut = true;
-            break outcome;
-        }
-        // Otherwise loop: re-run execute() against the same on-disk plan.md.
     };
 
     let exec_usage = Usage::fold_usage(&exec_attempts, None);
@@ -164,4 +132,73 @@ pub(crate) fn execute_phase(
             deadline_cut,
         }
     })
+}
+
+/// The streak of executes that committed nothing, after one more execute.
+/// A commit resets it, a no-commit execute advances it. If either SHA read
+/// failed, progress is unknown — the streak is left untouched rather than
+/// collapsing both errors to "" and reading it as a false no-commit.
+fn advance_streak(streak: u32, before_sha: &Option<String>, after_sha: &Option<String>) -> u32 {
+    match (before_sha, after_sha) {
+        (Some(b), Some(a)) if b != a => 0,
+        (Some(_), Some(_)) => streak + 1,
+        _ => streak,
+    }
+}
+
+/// The reset to wait for and whether it is synthetic, when `outcome` calls for
+/// an auto-resume; `None` when the loop ends with the outcome as it is.
+fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(String, bool)> {
+    match outcome {
+        // A scheduled reset (Codex/Claude) auto-resumes at its target time.
+        Outcome::Limit(Some(r)) if !stop_on_limit_exec => Some((r.clone(), false)),
+        // A limit with no parseable reset is an account-wide pause: park a
+        // synthetic ~30-min window and retry, unbounded until the deadline or a
+        // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap
+        // skips it.
+        Outcome::Limit(None) if !stop_on_limit_exec => Some((synthetic_reset(), true)),
+        _ => None,
+    }
+}
+
+/// What the resume loop does after a limit outcome.
+enum Resume {
+    /// Wait for the reset happened; run `execute()` again.
+    Again,
+    /// The no-progress cap fired; the issue is abandoned.
+    Abandon,
+    /// The reset lies beyond the deadline; the run stops.
+    DeadlineCut,
+}
+
+/// Apply the progress-aware cap, then wait for `reset`.
+fn keep_resuming(
+    cx: &IssueCtx,
+    issue: &Issue,
+    reset: &str,
+    synthetic: bool,
+    no_commit_streak: u32,
+) -> Resume {
+    // Progress-aware cap: two consecutive no-commit limits abandon the issue.
+    // Only the scheduled-reset path is capped — a synthetic wait makes no
+    // per-issue progress by definition (the whole account is throttled), so the
+    // human resolves it (re-running continues the work), not the cap (B2).
+    if !synthetic && no_commit_streak >= 2 {
+        info!(
+            number = issue.number,
+            "progress-aware cap reached — abandoning issue"
+        );
+        return Resume::Abandon;
+    }
+
+    // Deadline beats resume: a reset beyond the deadline, or a deadline
+    // already/just passed, stops the run instead of waiting.
+    if cx.clock.wait_for_reset(reset) == WaitOutcome::DeadlinePassed {
+        info!(
+            number = issue.number,
+            "deadline beats resume — stopping the run"
+        );
+        return Resume::DeadlineCut;
+    }
+    Resume::Again
 }

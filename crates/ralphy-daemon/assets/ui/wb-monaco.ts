@@ -245,11 +245,20 @@ export const WBMonaco = (function () {
 
   function disableLanguageServices(monaco: Monaco) {
     const langs = monaco.languages;
+    disableJson(langs);
+    disableCssAndHtml(langs);
+    disableScripts(langs);
+  }
+  function disableJson(langs: Monaco["languages"]) {
     langs.json?.jsonDefaults?.setModeConfiguration(NO_PROVIDERS);
     langs.json?.jsonDefaults?.setDiagnosticsOptions({ validate: false, schemaValidation: "ignore" });
+  }
+  function disableCssAndHtml(langs: Monaco["languages"]) {
     langs.css?.cssDefaults?.setModeConfiguration(NO_PROVIDERS);
     langs.css?.cssDefaults?.setOptions({ validate: false });
     langs.html?.htmlDefaults?.setModeConfiguration(NO_PROVIDERS);
+  }
+  function disableScripts(langs: Monaco["languages"]) {
     for (const d of [langs.typescript?.typescriptDefaults, langs.typescript?.javascriptDefaults]) {
       d?.setModeConfiguration(NO_PROVIDERS);
       d?.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true });

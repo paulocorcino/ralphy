@@ -342,44 +342,58 @@ async fn pump(
     tx: broadcast::Sender<(String, String)>,
 ) {
     while let Some(batch) = evt_rx.recv().await {
-        let mut dirs: BTreeSet<String> = BTreeSet::new();
-        for event in &batch {
-            // A READ is not a change. Linux inotify reports `IN_OPEN` /
-            // `IN_CLOSE_NOWRITE` on a watched dir, and `notify`'s inotify backend
-            // subscribes to them, so every `tree.list` (which opens the dir and
-            // each child dir) arrived here as an `Access` event and became a
-            // nudge — and the browser answers a nudge with another `tree.list`.
-            // On a Linux daemon that was a self-sustaining loop (~25 nudges/s on
-            // an idle repo). Windows never emits these, which is why it hid.
-            if matches!(event.kind, EventKind::Access(_)) {
-                continue;
-            }
-            // A directory's OWN modify — its mtime moved because a child was
-            // written, which Windows and FSEvents both bubble to the parent's
-            // watch — changes no listing: a listing is names and the dir
-            // flag, and the names under the watched dir are what they were.
-            // A rename (`Modify(Name)`) does change one and stays. Measured
-            // on the macOS runner (2026-09-17): `unwatched/y` nudged the root
-            // through `unwatched` itself.
-            if matches!(
-                event.kind,
-                EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_) | ModifyKind::Metadata(_))
-            ) && !event.paths.is_empty()
-                && event.paths.iter().all(|p| p.is_dir())
-            {
-                continue;
-            }
-            for path in &event.paths {
-                if let Some(rel) = map_to_watched_dir(&root, path, &watch_set) {
-                    dirs.insert(rel);
-                }
-            }
-        }
-        for rel in dirs {
+        for rel in touched_dirs(&batch, &root, &watch_set) {
             // No subscribers → Err; ignored (a nudge with no listener is a no-op).
             let _ = tx.send((repo.clone(), rel));
         }
     }
+}
+
+/// The distinct watched dirs one settled batch touched, in sorted order.
+/// Sync on purpose: the watch-set lock is never held across an `.await`.
+fn touched_dirs(
+    batch: &[DebouncedEvent],
+    root: &Path,
+    watch_set: &Mutex<BTreeSet<String>>,
+) -> BTreeSet<String> {
+    let mut dirs: BTreeSet<String> = BTreeSet::new();
+    for event in batch {
+        if changes_no_listing(event) {
+            continue;
+        }
+        for path in &event.paths {
+            if let Some(rel) = map_to_watched_dir(root, path, watch_set) {
+                dirs.insert(rel);
+            }
+        }
+    }
+    dirs
+}
+
+/// Whether an event can change no listing, so it nudges nothing.
+fn changes_no_listing(event: &notify::Event) -> bool {
+    // A READ is not a change. Linux inotify reports `IN_OPEN` /
+    // `IN_CLOSE_NOWRITE` on a watched dir, and `notify`'s inotify backend
+    // subscribes to them, so every `tree.list` (which opens the dir and
+    // each child dir) arrived here as an `Access` event and became a
+    // nudge — and the browser answers a nudge with another `tree.list`.
+    // On a Linux daemon that was a self-sustaining loop (~25 nudges/s on
+    // an idle repo). Windows never emits these, which is why it hid.
+    if matches!(event.kind, EventKind::Access(_)) {
+        return true;
+    }
+    // A directory's OWN modify — its mtime moved because a child was
+    // written, which Windows and FSEvents both bubble to the parent's
+    // watch — changes no listing: a listing is names and the dir
+    // flag, and the names under the watched dir are what they were.
+    // A rename (`Modify(Name)`) does change one and stays. Measured
+    // on the macOS runner (2026-09-17): `unwatched/y` nudged the root
+    // through `unwatched` itself.
+    matches!(
+        event.kind,
+        EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_) | ModifyKind::Metadata(_))
+    ) && !event.paths.is_empty()
+        && event.paths.iter().all(|p| p.is_dir())
 }
 
 /// Map one event path to the watched rel dir it belongs to, or `None` to drop it.
@@ -454,6 +468,12 @@ mod tests {
             .await
             .ok()
             .and_then(Result::ok)
+    }
+
+    #[test]
+    fn an_access_event_changes_no_listing() {
+        let read = notify::Event::new(EventKind::Access(notify::event::AccessKind::Any));
+        assert!(changes_no_listing(&read));
     }
 
     #[tokio::test]

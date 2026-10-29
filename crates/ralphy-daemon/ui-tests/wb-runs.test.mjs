@@ -28,6 +28,13 @@ test("a document with no plan key yields no steps and no plan issue", () => {
   assert.equal(run.planIssue, null);
 });
 
+test("a queue total of 0 stays 0, and an absent total is the issue count", () => {
+  const issues = [{ number: 1, status: "pending" }, { number: 2, status: "pending" }];
+  assert.equal(load().fromSnapshot({ runid: "01X", queue: { total: 0 }, issues }).queueTotal, 0);
+  assert.equal(load().fromSnapshot({ runid: "01X", queue: { total: 5 }, issues }).queueTotal, 5);
+  assert.equal(load().fromSnapshot({ runid: "01X", issues }).queueTotal, 2);
+});
+
 // --- what is running, and for how long --------------------------------------
 // The picker used to print the VENDOR ("codex"), which does not say which model
 // is burning quota. The document has carried model/effort/budget per issue since

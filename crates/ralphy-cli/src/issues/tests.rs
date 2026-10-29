@@ -477,3 +477,42 @@ fn list_and_show_never_mutate_the_tracker() {
         "the query surface must never mutate the tracker"
     );
 }
+
+fn refusal(board: bool, push: bool, show: Option<u64>, format: Format) -> String {
+    refuse_queue_mode(board, push, show, format)
+        .unwrap_err()
+        .to_string()
+}
+
+#[test]
+fn board_with_show_is_refused_before_the_format_is_checked() {
+    let why = refusal(true, false, Some(7), Format::Text);
+    assert_eq!(
+        why,
+        "`--board` emits the whole board fold and cannot be combined with `show <n>`"
+    );
+}
+
+#[test]
+fn board_needs_json() {
+    assert_eq!(
+        refusal(true, false, None, Format::Text),
+        "`--board` requires `--format json`"
+    );
+}
+
+#[test]
+fn push_with_show_is_refused() {
+    assert_eq!(
+        refusal(false, true, Some(7), Format::Json),
+        "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
+    );
+}
+
+#[test]
+fn a_queue_mode_that_fits_its_arguments_is_not_refused() {
+    refuse_queue_mode(true, false, None, Format::Json).unwrap();
+    refuse_queue_mode(false, true, None, Format::Text).unwrap();
+    refuse_queue_mode(false, false, Some(7), Format::Text).unwrap();
+    refuse_queue_mode(false, false, None, Format::Json).unwrap();
+}

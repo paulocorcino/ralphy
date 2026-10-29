@@ -180,3 +180,22 @@ test("a shift-wheel in lines pans the plane sideways by lines", () => {
   onWheel(wheel({ deltaY: 3, deltaMode: 1, target: { closest: () => ({}) } }));
   assert.equal(h.ws.scrollLeft, 58);
 });
+
+test("after the landing latched, a stored offset is applied again on every call", () => {
+  const stored = { left: 300, top: 200 };
+  const h = harness({ settled: true, stored });
+  h.wins.push({ _deskId: "w1", rect: { left: 2000, top: 1200, width: 400, height: 300 } });
+  const want = WBGeometry.viewLanding(
+    stored,
+    h.wins.map((w) => w.rect),
+    { width: 1000, height: 700 },
+    { width: 3000, height: 2000 },
+  );
+  h.view.applyLanding();
+  assert.deepEqual({ left: h.ws.scrollLeft, top: h.ws.scrollTop }, want);
+  // A viewport that measured 0 lost its scroll position: the stored offset comes back.
+  h.ws.scrollLeft = 0;
+  h.ws.scrollTop = 0;
+  h.view.applyLanding();
+  assert.deepEqual({ left: h.ws.scrollLeft, top: h.ws.scrollTop }, want);
+});

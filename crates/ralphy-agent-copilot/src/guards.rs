@@ -36,39 +36,12 @@ pub(crate) fn builtin_mcp_violation(stdout: &str, require_receipt: bool) -> Opti
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if v.get("type").and_then(|t| t.as_str()) != Some("session.mcp_servers_loaded") {
-            continue;
-        }
-        // A receipt only counts as SEEN once its payload is readable: a renamed
-        // or missing `data.servers` is vendor drift, and treating it as a pass
-        // would re-arm the credentialled server while the run reports green.
-        let Some(servers) = v
-            .get("data")
-            .and_then(|d| d.get("servers"))
-            .and_then(|s| s.as_array())
-        else {
+        let Some(servers) = receipt_servers(&v) else {
             continue;
         };
         saw_receipt = true;
-        for server in servers {
-            let field = |k: &str| server.get(k).and_then(|x| x.as_str()).unwrap_or_default();
-            if field("source") != "builtin" {
-                continue;
-            }
-            // An ALLOW-list, not a `== "connected"` deny-list: an unrecognized
-            // status is exactly the case where the kill switch is unproven, and
-            // this guard's whole doctrine is that unproven means failed.
-            let status = field("status");
-            if status == "disabled" {
-                continue;
-            }
-            let name = field("name");
-            // ADR-0041 D7.
-            return Some(format!(
-                "Copilot's built-in MCP server `{name}` is still on (status \
-                 `{status}`) even with --disable-builtin-mcps; it has your GitHub \
-                 credentials and can open a pull request by itself"
-            ));
+        if let Some(msg) = live_builtin(servers) {
+            return Some(msg);
         }
     }
     if require_receipt && !saw_receipt {
@@ -79,6 +52,45 @@ pub(crate) fn builtin_mcp_violation(stdout: &str, require_receipt: bool) -> Opti
              built-in GitHub server is off; stopping to be safe"
                 .into(),
         );
+    }
+    None
+}
+
+/// The `data.servers` list of a `session.mcp_servers_loaded` record, `None` for
+/// any other record. A receipt only counts as SEEN once its payload is readable:
+/// a renamed or missing `data.servers` is vendor drift, and treating it as a pass
+/// would re-arm the credentialled server while the run reports green.
+fn receipt_servers(v: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    if v.get("type").and_then(|t| t.as_str()) != Some("session.mcp_servers_loaded") {
+        return None;
+    }
+    v.get("data")
+        .and_then(|d| d.get("servers"))
+        .and_then(|s| s.as_array())
+}
+
+/// The violation message for the first builtin server in `servers` that is not
+/// known to be off.
+fn live_builtin(servers: &[serde_json::Value]) -> Option<String> {
+    for server in servers {
+        let field = |k: &str| server.get(k).and_then(|x| x.as_str()).unwrap_or_default();
+        if field("source") != "builtin" {
+            continue;
+        }
+        // An ALLOW-list, not a `== "connected"` deny-list: an unrecognized
+        // status is exactly the case where the kill switch is unproven, and
+        // this guard's whole doctrine is that unproven means failed.
+        let status = field("status");
+        if status == "disabled" {
+            continue;
+        }
+        let name = field("name");
+        // ADR-0041 D7.
+        return Some(format!(
+            "Copilot's built-in MCP server `{name}` is still on (status \
+             `{status}`) even with --disable-builtin-mcps; it has your GitHub \
+             credentials and can open a pull request by itself"
+        ));
     }
     None
 }
@@ -247,5 +259,27 @@ mod tests {
             "the live receipt is ephemeral; the guard must not filter on it"
         );
         assert_eq!(builtin_mcp_violation(fixture, true), None);
+    }
+
+    /// Only a BUILTIN server is the guard's business: a user's own MCP server may
+    /// be connected, and it is not what `--disable-builtin-mcps` turns off.
+    #[test]
+    fn a_connected_user_server_next_to_a_disabled_builtin_passes() {
+        let stream = concat!(
+            r#"{"type":"session.mcp_servers_loaded","data":{"servers":["#,
+            r#"{"name":"github-mcp-server","status":"disabled","source":"builtin"},"#,
+            r#"{"name":"my-docs","status":"connected","source":"user"}]}}"#,
+            "\n"
+        );
+        assert_eq!(builtin_mcp_violation(stream, true), None);
+    }
+
+    /// An unreadable receipt is skipped, not fatal: a later readable one still
+    /// settles the verdict.
+    #[test]
+    fn a_drifted_receipt_followed_by_a_valid_disabled_one_passes() {
+        let drifted = r#"{"type":"session.mcp_servers_loaded","data":{"mcpServers":[]}}"#;
+        let stream = format!("{drifted}\n{}\n", receipt("disabled"));
+        assert_eq!(builtin_mcp_violation(&stream, true), None);
     }
 }

@@ -3,6 +3,7 @@ use crate::host::report::Report;
 use ralphy_daemon::peer::key::ensure_peer_key;
 
 mod add;
+mod add_fix;
 mod add_socket;
 mod connect_key;
 mod remove;

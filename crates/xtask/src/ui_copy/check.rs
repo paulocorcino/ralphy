@@ -175,34 +175,8 @@ pub(crate) fn check<'a>(rows: &[Row], rules: &'a Rules) -> Report<'a> {
 /// Every `(rule, hint)` one text breaks.
 fn row_violations(row: &Row, rules: &Rules) -> Vec<(String, String)> {
     let text = mask_holes(&row.text);
-    let mut out = Vec::new();
-    let casing = &rules.casing;
-    let whole = text.trim().to_lowercase();
-    let chip_or_key = casing
-        .state_words
-        .iter()
-        .chain(&casing.key_names)
-        .any(|w| w.to_lowercase() == whole);
-    if !casing.exempt_kinds.iter().any(|k| k == row.kind.label()) && !chip_or_key {
-        if !row.continues && starts_lowercase(&text) {
-            out.push((
-                "casing:first".to_string(),
-                "start with a capital letter".to_string(),
-            ));
-        }
-        let capitals = title_case_words(&text, &rules.proper_nouns);
-        if !capitals.is_empty() {
-            out.push((
-                "casing:title".to_string(),
-                format!("lowercase {}", capitals.join(", ")),
-            ));
-        }
-    }
-    for t in &rules.banned {
-        if has_term(&text, &t.term, t.whole_word, t.case_sensitive) {
-            out.push((format!("banned:{}", t.term), format!("use {}", t.instead)));
-        }
-    }
+    let mut out = casing_violations(row, &text, rules);
+    out.extend(term_violations("banned", &rules.banned, &text));
     for p in &rules.punctuation {
         if text.contains(&p.find) {
             out.push((
@@ -217,25 +191,65 @@ fn row_violations(row: &Row, rules: &Rules) -> Vec<(String, String)> {
             format!("{words} words; the limit is {}", rules.sentence_max_words),
         ));
     }
-    for t in &rules.plain {
-        if has_term(&text, &t.term, t.whole_word, t.case_sensitive) {
-            out.push((format!("plain:{}", t.term), format!("use {}", t.instead)));
-        }
+    out.extend(term_violations("plain", &rules.plain, &text));
+    out.extend(contraction_violation(&text, rules));
+    out
+}
+
+/// The casing rows of a text: a lowercase start, and title case. A kind the
+/// rules exempt, a state word and a key name have none.
+fn casing_violations(row: &Row, text: &str, rules: &Rules) -> Vec<(String, String)> {
+    let casing = &rules.casing;
+    let whole = text.trim().to_lowercase();
+    let chip_or_key = casing
+        .state_words
+        .iter()
+        .chain(&casing.key_names)
+        .any(|w| w.to_lowercase() == whole);
+    if casing.exempt_kinds.iter().any(|k| k == row.kind.label()) || chip_or_key {
+        return Vec::new();
     }
+    let mut out = Vec::new();
+    if !row.continues && starts_lowercase(text) {
+        out.push((
+            "casing:first".to_string(),
+            "start with a capital letter".to_string(),
+        ));
+    }
+    let capitals = title_case_words(text, &rules.proper_nouns);
+    if !capitals.is_empty() {
+        out.push((
+            "casing:title".to_string(),
+            format!("lowercase {}", capitals.join(", ")),
+        ));
+    }
+    out
+}
+
+/// One `(<rule>:<term>, hint)` row for each listed term the text uses.
+fn term_violations(rule: &str, terms: &[Term], text: &str) -> Vec<(String, String)> {
+    terms
+        .iter()
+        .filter(|t| has_term(text, &t.term, t.whole_word, t.case_sensitive))
+        .map(|t| (format!("{rule}:{}", t.term), format!("use {}", t.instead)))
+        .collect()
+}
+
+/// The one `contraction` row of a text, naming every banned contraction in it.
+fn contraction_violation(text: &str, rules: &Rules) -> Option<(String, String)> {
     let found: Vec<&str> = rules
         .contractions
         .banned
         .iter()
-        .filter(|c| has_contraction(&text, c))
+        .filter(|c| has_contraction(text, c))
         .map(String::as_str)
         .collect();
-    if !found.is_empty() {
-        out.push((
+    (!found.is_empty()).then(|| {
+        (
             "contraction".to_string(),
             format!("write the two full words ({})", found.join(", ")),
-        ));
-    }
-    out
+        )
+    })
 }
 
 /// The text with every `{expr}` hole replaced by `{}`: a hole is code, and no

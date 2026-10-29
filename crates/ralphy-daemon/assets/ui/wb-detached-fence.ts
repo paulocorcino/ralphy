@@ -320,6 +320,14 @@ export function wireDetachedFence(window: Window, document: Document) {
     // An order with no `pid` comes from an opener that reloaded and has
     // not adopted this window yet, and it is still for this window.
     const mine = (m: DetachMessage) => m.pid == null || m.pid === PID;
+    // Both mean "are you there": one broadcast at the opener's boot, one aimed
+    // by a glyph click.
+    function heardHere(m: DetachMessage) {
+      return m.type === "origin-here" || m.type === "origin-ping";
+    }
+    function forThisFence(m: DetachMessage) {
+      return m.fenceId === fenceId && mine(m);
+    }
     LINK.onMessage((m) => {
       if (!m || typeof m.type !== "string") return;
       if (TAB == null || m.tab !== TAB) return;
@@ -330,17 +338,16 @@ export function wireDetachedFence(window: Window, document: Document) {
       // Any word from the opener answers the probe — `silent` asks "has
       // it spoken SINCE I asked", and every branch below is speech.
       if (m.type.startsWith("origin-")) probed = false;
-      if (m.type === "origin-here" || m.type === "origin-ping") {
-        // Both mean "are you there" — one broadcast at the opener's boot,
-        // one aimed by a glyph click. The answer is the same, and it is
-        // what re-adopts this window after the opener's reload.
+      if (heardHere(m)) {
+        // The answer is the same, and it is what re-adopts this window after
+        // the opener's reload.
         peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
         say("popup-here");
       } else if (m.type === "origin-beat") {
         peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
-      } else if (m.type === "origin-focus" && m.fenceId === fenceId && mine(m)) {
+      } else if (m.type === "origin-focus" && forThisFence(m)) {
         window.focus();
-      } else if (m.type === "origin-close" && m.fenceId === fenceId && mine(m)) {
+      } else if (m.type === "origin-close" && forThisFence(m)) {
         evicted();
       }
     });

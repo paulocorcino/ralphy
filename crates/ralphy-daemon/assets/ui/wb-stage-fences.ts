@@ -340,13 +340,7 @@ export function createFences(deps: FenceDeps) {
     const out = detachFold(popups.detachedIds(), { type: "detach", fenceId: id });
     for (const effect of out.effects) {
       if (effect.type === "focus") {
-        // Raising a popup that already holds this fence — the ONLY way to raise
-        // one. The handle is the direct route; after a reload it died with the
-        // document and the channel is the only one left.
-        const live = popups.entry(id);
-        if (live?.handle && !live.handle.closed) live.handle.focus();
-        else link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
-        WB.emit("fence-focus", { fence: id });
+        focusDetached(id);
         return;
       }
       if (effect.type === "refuse") {
@@ -372,7 +366,7 @@ export function createFences(deps: FenceDeps) {
     // The fence's consoles leave the columns BEFORE the snapshot, so a leftmost
     // that left travels with `max: false` and no terminal shows in two places.
     // Synchronous: the popup document loads later.
-    const leaving = st ? fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [] : [];
+    const leaving = fenceMemberIds(st, id);
     sendDocument(document, "workbench:columns-leave", { ids: leaving });
     const members = fenceSnapshot(id);
 
@@ -394,18 +388,8 @@ export function createFences(deps: FenceDeps) {
     // persist. Still nothing is torn down yet — the invariant above holds.
     popups.put(id, entry);
     popups.commitDetached(out.registry);
-    // Armed BEFORE the teardown: a throw there would leave the entry with no
-    // watcher, and a force-closed popup fires no `beforeunload`. The fold is
-    // idempotent on a re-attach, so the doubled signal costs nothing.
-    entry.poll = setInterval(() => {
-      if (entry.handle.closed) reattachFence(id);
-    }, 500);
-    // A page that never completes the handshake (load failure, navigation, an
-    // auth interstitial) is NOT closed, so the poll never fires. Bring the
-    // consoles home instead.
-    entry.rescue = setTimeout(() => {
-      if (!entry.greeted && popups.entry(id) === entry) reattachFence(id);
-    }, 5000);
+    // BEFORE the teardown: a throw there would leave the entry with no watcher.
+    armPopupWatch(id, entry);
     for (const m of members) {
       if (m.kind === "note") continue;
       const win = [...wins].find((w) => w._deskId === m.id);
@@ -419,6 +403,35 @@ export function createFences(deps: FenceDeps) {
     applyExtent();
     refreshFenceChrome();
     WB.emit("fence-detach", { fence: id });
+  }
+
+  // Raising a popup that already holds this fence — the ONLY way to raise
+  // one. The handle is the direct route; after a reload it died with the
+  // document and the channel is the only one left.
+  function focusDetached(id: string) {
+    const live = popups.entry(id);
+    if (live?.handle && !live.handle.closed) live.handle.focus();
+    else link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
+    WB.emit("fence-focus", { fence: id });
+  }
+
+  // The ids of the windows the stage holds in fence `id`.
+  function fenceMemberIds(st: HTMLElement | null, id: string) {
+    return st ? fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [] : [];
+  }
+
+  // A force-closed popup fires no `beforeunload`, so the opener watches for it.
+  // The fold is idempotent on a re-attach, so the doubled signal costs nothing.
+  function armPopupWatch(id: string, entry: PopupEntry & { handle: Window }) {
+    entry.poll = setInterval(() => {
+      if (entry.handle.closed) reattachFence(id);
+    }, 500);
+    // A page that never completes the handshake (load failure, navigation, an
+    // auth interstitial) is NOT closed, so the poll never fires. Bring the
+    // consoles home instead.
+    entry.rescue = setTimeout(() => {
+      if (!entry.greeted && popups.entry(id) === entry) reattachFence(id);
+    }, 5000);
   }
 
   // Tile ONE fence's members into its own rect (#342); windows animate via

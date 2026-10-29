@@ -224,48 +224,67 @@ pub(crate) fn parse_transcript_usage(jsonl: &str) -> Usage {
     // leaving the bulk of a run's spend unpriced (`~$?`) in `ralphy usage`.
     let mut by_model: BTreeMap<String, u64> = BTreeMap::new();
     for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(message) = value.get("message") else {
+        let Some(message) = line_message(line) else {
             continue;
         };
         // Mandatory dedup: count one `usage` per unique `message.id`.
-        if let Some(id) = message.get("id").and_then(|v| v.as_str()) {
-            if !seen.insert(id.to_string()) {
-                continue;
-            }
+        if !first_sight(&message, &mut seen) {
+            continue;
         }
         let Some(usage) = message.get("usage") else {
             continue;
         };
-        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        // Only the top-level `message.usage` is read; `iterations[]` is never
-        // descended into, so its repeated `usage` is ignored by construction.
-        let input = field("input_tokens");
-        let output = field("output_tokens");
-        let cache_read = field("cache_read_input_tokens");
-        let cache_creation = cache_creation_tokens(usage);
-        total.input += input;
-        total.output += output;
-        total.cache_read += cache_read;
-        total.cache_creation += cache_creation;
+        let tokens = usage_tokens(usage);
+        total.add_tokens(&tokens);
         // Attribute this line's tokens to its assistant `message.model` so the
         // dominant model can be picked once the whole transcript is summed.
         if let Some(m) = message.get("model").and_then(|v| v.as_str()) {
-            *by_model.entry(m.to_string()).or_insert(0) +=
-                input + output + cache_read + cache_creation;
+            *by_model.entry(m.to_string()).or_insert(0) += tokens.total();
         }
     }
-    // The dominant model (most tokens) is the one the price table resolves on; a
-    // tie resolves to the last key, which is immaterial (equal spend → same price
-    // for the figures that matter). `None` when no line carried a `model`.
-    total.model = by_model.into_iter().max_by_key(|(_, n)| *n).map(|(k, _)| k);
+    total.model = dominant_model(by_model);
     total
+}
+
+/// The `message` object of one transcript line, `None` for a blank line, a line
+/// that is not JSON, or a record without a `message`.
+fn line_message(line: &str) -> Option<serde_json::Value> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let mut value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    value.get_mut("message").map(serde_json::Value::take)
+}
+
+/// Whether this message's `id` has not been counted yet. A message with no `id`
+/// has nothing to dedup on, so it always counts.
+fn first_sight(message: &serde_json::Value, seen: &mut std::collections::HashSet<String>) -> bool {
+    match message.get("id").and_then(|v| v.as_str()) {
+        Some(id) => seen.insert(id.to_string()),
+        None => true,
+    }
+}
+
+/// The four token counts of one `message.usage`. Only the top-level object is
+/// read; `iterations[]` is never descended into, so its repeated `usage` is
+/// ignored by construction.
+fn usage_tokens(usage: &serde_json::Value) -> Usage {
+    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    Usage {
+        input: field("input_tokens"),
+        output: field("output_tokens"),
+        cache_read: field("cache_read_input_tokens"),
+        cache_creation: cache_creation_tokens(usage),
+        model: None,
+    }
+}
+
+/// The dominant model (most tokens) is the one the price table resolves on; a
+/// tie resolves to the last key, which is immaterial (equal spend → same price
+/// for the figures that matter). `None` when no line carried a `model`.
+fn dominant_model(by_model: std::collections::BTreeMap<String, u64>) -> Option<String> {
+    by_model.into_iter().max_by_key(|(_, n)| *n).map(|(k, _)| k)
 }
 
 /// The most recent `claude` transcript JSONL under `~/.claude/projects`, read in
@@ -300,24 +319,10 @@ fn newest_jsonl(base: &Path) -> Option<PathBuf> {
 }
 
 fn newest_jsonl_since(base: &Path, min_modified: Option<SystemTime>) -> Option<PathBuf> {
-    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    let mut newest: Option<(SystemTime, PathBuf)> = None;
     let mut stack = vec![base.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                continue;
-            }
-            let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
-                continue;
-            };
+        for (path, modified) in jsonl_in_dir(&dir, &mut stack) {
             if min_modified.is_some_and(|min| modified < min) {
                 continue;
             }
@@ -327,10 +332,39 @@ fn newest_jsonl_since(base: &Path, min_modified: Option<SystemTime>) -> Option<P
         }
     }
     let (modified, path) = newest?;
-    let age = std::time::SystemTime::now()
+    fresh(modified).then_some(path)
+}
+
+/// The `*.jsonl` files directly in `dir` with their modified times, in listing
+/// order; every subdirectory is pushed onto `stack` for the caller to visit.
+fn jsonl_in_dir(dir: &Path, stack: &mut Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            stack.push(path);
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        found.push((path, modified));
+    }
+    found
+}
+
+/// Whether a transcript modified at `modified` is younger than 5 minutes.
+fn fresh(modified: SystemTime) -> bool {
+    let age = SystemTime::now()
         .duration_since(modified)
         .unwrap_or(Duration::ZERO);
-    (age < Duration::from_secs(300)).then_some(path)
+    age < Duration::from_secs(300)
 }
 
 #[cfg(test)]
@@ -609,5 +643,50 @@ mod tests {
         let usage = parse_transcript_usage(jsonl);
         assert_eq!(usage.input, 1);
         assert_eq!(usage.cache_creation, 42);
+    }
+
+    #[test]
+    fn parse_transcript_usage_sums_messages_that_carry_no_id() {
+        // Without an id there is nothing to dedup on, so every such line counts.
+        let jsonl = concat!(
+            r#"{"message":{"usage":{"input_tokens":3,"output_tokens":1}}}"#,
+            "\n",
+            r#"{"message":{"usage":{"input_tokens":4,"output_tokens":2}}}"#,
+            "\n"
+        );
+        let usage = parse_transcript_usage(jsonl);
+        assert_eq!(usage.input, 7);
+        assert_eq!(usage.output, 3);
+    }
+
+    /// Write `name` under `dir` and stamp its modified time `age` seconds ago.
+    fn aged_file(dir: &Path, name: &str, age: u64) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, "{}\n").expect("write a transcript file");
+        let file = fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("reopen the file to stamp its time");
+        file.set_modified(SystemTime::now() - Duration::from_secs(age))
+            .expect("stamp the modified time");
+        path
+    }
+
+    #[test]
+    fn newest_jsonl_picks_the_newest_transcript_and_ignores_a_json_sidecar() {
+        let tmp = tempfile::tempdir().expect("tempdir for transcripts");
+        aged_file(tmp.path(), "old.jsonl", 60);
+        let newest = aged_file(tmp.path(), "new.jsonl", 20);
+        aged_file(tmp.path(), "new.meta.json", 1);
+        assert_eq!(newest_jsonl_since(tmp.path(), None), Some(newest));
+    }
+
+    #[test]
+    fn newest_jsonl_since_is_none_when_every_transcript_is_older_than_the_floor() {
+        let tmp = tempfile::tempdir().expect("tempdir for transcripts");
+        aged_file(tmp.path(), "a.jsonl", 60);
+        aged_file(tmp.path(), "b.jsonl", 30);
+        let floor = SystemTime::now() - Duration::from_secs(10);
+        assert_eq!(newest_jsonl_since(tmp.path(), Some(floor)), None);
     }
 }

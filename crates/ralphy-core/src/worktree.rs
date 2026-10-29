@@ -260,43 +260,87 @@ pub fn discard(repo: &Path, paths: &[String]) -> Result<DiscardOutcome> {
     if paths.is_empty() {
         return Ok(DiscardOutcome::NoPaths);
     }
-    let mut known: HashSet<String> = HashSet::new();
-    let mut loose: HashSet<String> = HashSet::new();
-    let mut conflicted: HashSet<String> = HashSet::new();
-    let mut no_worktree_side: HashSet<String> = HashSet::new();
-    for change in changes(repo)? {
-        if change.status == ChangeStatus::Conflicted {
-            conflicted.insert(change.path.clone());
-        } else if change.status == ChangeStatus::Untracked {
-            loose.insert(change.path.clone());
-        } else if change.worktree_status.is_none() {
-            no_worktree_side.insert(change.path.clone());
+    let ix = ChangeIndex::read(repo)?;
+    let (tracked, untracked) = match split_paths(&ix, paths) {
+        Ok(split) => split,
+        Err(refusal) => return Ok(refusal),
+    };
+    apply_discard(repo, &tracked, &untracked)?;
+    Ok(DiscardOutcome::Discarded {
+        restored: tracked.len(),
+        deleted: untracked.len(),
+    })
+}
+
+/// The change set of a repo, sorted into the sets [`discard`] decides on.
+struct ChangeIndex {
+    /// Every path the change set names.
+    known: HashSet<String>,
+    /// The untracked entries: deleted, not restored.
+    loose: HashSet<String>,
+    conflicted: HashSet<String>,
+    /// The entries with no working-tree side (a staged deletion).
+    no_worktree_side: HashSet<String>,
+}
+
+impl ChangeIndex {
+    fn read(repo: &Path) -> Result<Self> {
+        let mut ix = ChangeIndex {
+            known: HashSet::new(),
+            loose: HashSet::new(),
+            conflicted: HashSet::new(),
+            no_worktree_side: HashSet::new(),
+        };
+        for change in changes(repo)? {
+            if change.status == ChangeStatus::Conflicted {
+                ix.conflicted.insert(change.path.clone());
+            } else if change.status == ChangeStatus::Untracked {
+                ix.loose.insert(change.path.clone());
+            } else if change.worktree_status.is_none() {
+                ix.no_worktree_side.insert(change.path.clone());
+            }
+            ix.known.insert(change.path);
         }
-        known.insert(change.path);
+        Ok(ix)
     }
+}
+
+/// Partition `paths` into the tracked ones to restore and the untracked ones to
+/// delete, or the first refusal, checked in this order for each path: unknown,
+/// conflicted, no working-tree side. Nothing is written here.
+fn split_paths(
+    ix: &ChangeIndex,
+    paths: &[String],
+) -> Result<(Vec<String>, Vec<String>), DiscardOutcome> {
     let mut tracked: Vec<String> = Vec::new();
     let mut untracked: Vec<String> = Vec::new();
     for path in paths {
-        if !known.contains(path) {
-            return Ok(DiscardOutcome::NotInChangeSet { path: path.clone() });
+        if !ix.known.contains(path) {
+            return Err(DiscardOutcome::NotInChangeSet { path: path.clone() });
         }
-        if conflicted.contains(path) {
-            return Ok(DiscardOutcome::Conflicted { path: path.clone() });
+        if ix.conflicted.contains(path) {
+            return Err(DiscardOutcome::Conflicted { path: path.clone() });
         }
-        if no_worktree_side.contains(path) {
-            return Ok(DiscardOutcome::NothingInTheWorkingTree { path: path.clone() });
+        if ix.no_worktree_side.contains(path) {
+            return Err(DiscardOutcome::NothingInTheWorkingTree { path: path.clone() });
         }
-        if loose.contains(path) {
+        if ix.loose.contains(path) {
             untracked.push(path.clone());
         } else {
             tracked.push(path.clone());
         }
     }
+    Ok((tracked, untracked))
+}
+
+/// Run the two writes: the restore first, the unrecoverable delete last, so a
+/// failed restore stops before anything is deleted.
+fn apply_discard(repo: &Path, tracked: &[String], untracked: &[String]) -> Result<()> {
     if !tracked.is_empty() {
         run_on_paths(
             repo,
             &["--literal-pathspecs", "restore", "--worktree", "--"],
-            &tracked,
+            tracked,
             "discarding",
         )?;
     }
@@ -304,14 +348,11 @@ pub fn discard(repo: &Path, paths: &[String]) -> Result<DiscardOutcome> {
         run_on_paths(
             repo,
             &["--literal-pathspecs", "clean", "--force", "-d", "--"],
-            &untracked,
+            untracked,
             "deleting",
         )?;
     }
-    Ok(DiscardOutcome::Discarded {
-        restored: tracked.len(),
-        deleted: untracked.len(),
-    })
+    Ok(())
 }
 
 /// Which side(s) of a rename count as "in the change set" for one direction.

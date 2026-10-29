@@ -181,19 +181,41 @@ export function createStageColumns(deps: StageColumnsDeps) {
     }
   }
 
+  // A window that was a column and is not in `list` any more.
+  function clearStaleColumns(list: Painted[]) {
+    for (const win of wins) {
+      if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
+        clearColumn(win);
+      }
+    }
+  }
+
+  // The old first console, when the paint no longer shows it as a column.
+  function unmaxGone(list: Painted[], unmax: string | null | undefined, persist: boolean) {
+    const gone = unmax ? findWindow(unmax) : null;
+    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
+  }
+
+  // Raised in reading order only on an open or a restore: a repaint on every
+  // `consoles-changed` would bury a console just spawned, and move the focus
+  // mark off the column the operator is typing in.
+  function raiseAndFit(shown: ConsoleWin[], raise: boolean | undefined) {
+    for (const win of shown) {
+      if (raise) focusWin(win);
+      try {
+        win._term?.fit.fit();
+      } catch {}
+    }
+  }
+
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
   function applyColumns(painted: Painted[] | null | undefined, opts?: { unmax?: string | null; raise?: boolean; persist?: boolean }) {
     const list = painted || [];
     const persist = !!opts?.persist;
-    for (const win of wins) {
-      if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
-        clearColumn(win);
-      }
-    }
-    const gone = opts?.unmax ? findWindow(opts.unmax) : null;
-    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
+    clearStaleColumns(list);
+    unmaxGone(list, opts?.unmax, persist);
     const shown = [];
     for (const p of list) {
       const win = syncSlot(p, list, persist);
@@ -201,15 +223,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
     }
     syncMaxLock();
     syncMaxPin();
-    // Raised in reading order only on an open or a restore: a repaint on every
-    // `consoles-changed` would bury a console just spawned, and move the focus
-    // mark off the column the operator is typing in.
-    for (const win of shown) {
-      if (opts?.raise) focusWin(win);
-      try {
-        win._term?.fit.fit();
-      } catch {}
-    }
+    raiseAndFit(shown, opts?.raise);
     paintListButtons();
     paintFenceColumns();
   }

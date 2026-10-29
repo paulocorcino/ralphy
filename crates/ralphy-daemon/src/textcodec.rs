@@ -127,8 +127,8 @@ fn bare_utf16_shape(window: &[u8]) -> Option<&'static Encoding> {
 /// UTF-16 is hand-rolled: per WHATWG, `encoding_rs`'s UTF-16 encoders emit
 /// UTF-8, and a save must give back the bytes the read took.
 pub fn encode(text: &str, encoding: &'static Encoding, bom: bool) -> Result<Vec<u8>, usize> {
-    let mut out = Vec::with_capacity(text.len() * 2 + 3);
     if encoding == UTF_8 {
+        let mut out = Vec::with_capacity(text.len() + 3);
         if bom {
             out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
         }
@@ -136,26 +136,38 @@ pub fn encode(text: &str, encoding: &'static Encoding, bom: bool) -> Result<Vec<
         return Ok(out);
     }
     if encoding == UTF_16LE || encoding == UTF_16BE {
-        let le = encoding == UTF_16LE;
-        if bom {
-            out.extend_from_slice(if le { &[0xFF, 0xFE] } else { &[0xFE, 0xFF] });
-        }
-        for unit in text.encode_utf16() {
-            out.extend_from_slice(&if le {
-                unit.to_le_bytes()
-            } else {
-                unit.to_be_bytes()
-            });
-        }
-        return Ok(out);
+        return Ok(encode_utf16(text, encoding == UTF_16LE, bom));
     }
+    encode_legacy(text, encoding)
+}
+
+/// `text` as UTF-16 code units, little-endian when `le`, after the BOM of
+/// that byte order when `bom` is set.
+fn encode_utf16(text: &str, le: bool, bom: bool) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() * 2 + 2);
+    if bom {
+        out.extend_from_slice(if le { &[0xFF, 0xFE] } else { &[0xFE, 0xFF] });
+    }
+    for unit in text.encode_utf16() {
+        out.extend_from_slice(&if le {
+            unit.to_le_bytes()
+        } else {
+            unit.to_be_bytes()
+        });
+    }
+    out
+}
+
+/// `text` in a single-byte or legacy multi-byte encoding, or the index of
+/// the first char it cannot represent.
+fn encode_legacy(text: &str, encoding: &'static Encoding) -> Result<Vec<u8>, usize> {
     let mut encoder = encoding.new_encoder();
     let cap = encoder
         .max_buffer_length_from_utf8_without_replacement(text.len())
         // `None` only when the worst-case size overflows `usize`, which a string
         // that already fits in memory cannot reach.
         .expect("worst-case encoded length of an in-memory string fits usize");
-    out.resize(cap, 0);
+    let mut out = vec![0; cap];
     let (result, read, written) =
         encoder.encode_from_utf8_without_replacement(text, &mut out, true);
     match result {

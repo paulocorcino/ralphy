@@ -18,11 +18,11 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
-import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, TONES, anchorsOf, applyLook, bodyOf, colorOf, fillOf, fontOf, inkOf, isSafeScheme, lockedBy, noCredential, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, popupLinkTarget, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
-import { sendDocument } from "./wb-events.ts";
+import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, TONES, anchorsOf, applyLook, bodyOf, colorOf, fillOf, fontOf, inkOf, lockedBy, noCredential, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
 import { createNoteDormancy } from "./wb-notes-dormancy.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
 import { createNoteFile } from "./wb-notes-file.ts";
+import { installLinks } from "./wb-notes-links.ts";
 import { createNoteMenus } from "./wb-notes-menus.ts";
 import { createNoteOnTop } from "./wb-notes-on-top.ts";
 import { createNoteVeil } from "./wb-notes-veil.ts";
@@ -48,6 +48,9 @@ type NewNote = {
   viewport?: Partial<Size> | null;
   offset?: Partial<Offset> | null;
 };
+
+/** The cards of the stage, by note id. */
+type CardNodes = Map<string, NoteCard>;
 
 /** What the entry module hands the cards. */
 export type NotesDeps = {
@@ -475,7 +478,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       } catch {}
     });
     installKeys(el);
-    installLinks(el);
+    linkCard(el);
     // Leaving the card writes what was typed: `focusout` fires before whatever
     // the operator clicked next does anything (ADR-0064 §7).
     el.addEventListener("focusout", () => {
@@ -505,6 +508,10 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     markDirty: (el) => markDirty(el),
     flush: (el) => flush(el),
   });
+
+  // ---- the links (in `wb-notes-links.ts`) --------------------------------------
+
+  const linkCard = installLinks({ window, document, recordOf });
 
   // ---- the editor (in `wb-notes-editor.ts`) ------------------------------------
 
@@ -582,51 +589,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     paintTitle(el);
   }
 
-  // ---- links, keys ----------------------------------------------------
-
-  // A link inside a note obeys the viewer's rule (ADR-0064 §12): an external
-  // one opens in a new tab, a repo-relative one is an open REQUEST to the
-  // shell. A raw `href` would navigate the whole workbench away.
-  function installLinks(el: NoteCard) {
-    el.addEventListener("click", (ev) => {
-      const a = (ev.target as Element | null)?.closest?.<HTMLAnchorElement>("a[href]");
-      if (!a || !el.contains(a)) return;
-      const record = recordOf(el.dataset.noteId);
-      // Resolved against the CHECKOUT ROOT, not the note's own directory: a
-      // note lands in `.ralphy/notes/` by default, and a path written there is
-      // the operator's path into their repo, not into the run-state directory.
-      const href = a.getAttribute("href");
-      const target = window.WBViewer?.linkTarget?.("", href) || popupLinkTarget(href);
-      if (!target || target.kind === "fragment") {
-        ev.preventDefault();
-        return;
-      }
-      if (target.kind === "external") {
-        // The SCHEME is an allowlist, and that is a security control, not
-        // tidiness. The viewer's `linkTarget` answers "external" for ANY
-        // scheme and leaves it to the browser — safe there only because the
-        // viewer's markdown went through DOMPurify first (wb-file-viewer.ts), which
-        // drops a `javascript:` href. A note's markdown never meets that pass:
-        // Crepe renders the link straight into the document, so a `.note` file
-        // — repo bytes, which an agent may have written — could otherwise run
-        // script on the daemon's own origin with one click.
-        if (!isSafeScheme(href)) {
-          ev.preventDefault();
-          return;
-        }
-        a.target = "_blank";
-        a.rel = "noopener";
-        return;
-      }
-      ev.preventDefault();
-      sendDocument(document, "workbench:open-request", {
-        project: record?.repo || null,
-        path: target.path,
-        fragment: target.fragment,
-        checkout: record?.checkout ?? null,
-      });
-    });
-  }
+  // ---- keys ----------------------------------------------------------
 
   // The card's own keys (ADR-0064 §13). `consoleShortcutsBlocked()` already
   // stands down inside a `contentEditable`, so the plane's accelerators do not
@@ -775,18 +738,34 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     if (!st) return;
     const records = consoleHost?.notes?.() || [];
     const fences = consoleHost?.fenceRecords?.() || [];
-    const nodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId, el);
-    const seen = new Set();
+    const nodes = cardNodes(st);
+    const seen = new Set<string>();
     for (const record of records) {
-      if (isAway(record, fences)) continue;
-      // In a fragment, an unknown record is not this window's to show.
-      if (fragment && !nodes.has(record.id)) continue;
+      if (!showsHere(record, fences, nodes)) continue;
       seen.add(record.id);
       const el = nodes.get(record.id) || mountCard(record);
       el._noteListed = true;
       paint(el, record, fences);
     }
+    dropUnseen(nodes, seen);
+  }
+
+  // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
+  function cardNodes(st: HTMLElement): CardNodes {
+    const nodes: CardNodes = new Map();
+    for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId as string, el);
+    return nodes;
+  }
+
+  // Is this record's card this window's to show? Not when its fence is in a
+  // popup. In a fragment, an unknown record is not this window's either.
+  function showsHere(record: NoteSource, fences: DeskFence[], nodes: CardNodes) {
+    if (isAway(record, fences)) return false;
+    return !fragment || nodes.has(record.id);
+  }
+
+  // A card no record names any more leaves the stage.
+  function dropUnseen(nodes: CardNodes, seen: Set<string>) {
     for (const [id, el] of nodes) {
       if (!seen.has(id)) dropCard(id, el);
     }

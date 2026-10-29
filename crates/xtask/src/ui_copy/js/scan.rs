@@ -128,6 +128,25 @@ impl Scan<'_> {
         at
     }
 
+    /// The `:` that pairs with the `?` at `q`, skipping the `? … :` pairs
+    /// nested in the true branch.
+    fn ternary_colon(&self, q: usize, b: usize) -> Option<usize> {
+        let mut nested = 0;
+        self.top_level(q + 1, b, |t| t.is("?") || t.is(":"))
+            .into_iter()
+            .find(|&k| {
+                if self.toks[k].is("?") {
+                    nested += 1;
+                    false
+                } else if nested > 0 {
+                    nested -= 1;
+                    false
+                } else {
+                    true
+                }
+            })
+    }
+
     /// The alternatives an expression can show. The condition of a ternary is
     /// not shown, and neither is the left side of `&&`.
     fn alternatives(&self, a: usize, b: usize, out: &mut Vec<(usize, usize)>) {
@@ -139,22 +158,7 @@ impl Scan<'_> {
             return self.alternatives(a + 1, b - 1, out);
         }
         if let Some(&q) = self.top_level(a, b, |t| t.is("?")).first() {
-            let mut nested = 0;
-            let colon = self
-                .top_level(q + 1, b, |t| t.is("?") || t.is(":"))
-                .into_iter()
-                .find(|&k| {
-                    if self.toks[k].is("?") {
-                        nested += 1;
-                        false
-                    } else if nested > 0 {
-                        nested -= 1;
-                        false
-                    } else {
-                        true
-                    }
-                });
-            if let Some(colon) = colon {
+            if let Some(colon) = self.ternary_colon(q, b) {
                 self.alternatives(q + 1, colon, out);
                 self.alternatives(colon + 1, b, out);
                 return;
@@ -175,52 +179,56 @@ impl Scan<'_> {
         out.push((a, b));
     }
 
-    /// Render one alternative as copy: literals as written, anything else as
-    /// `{expr}`. `None` when no literal in it says anything.
-    fn render(&self, a: usize, b: usize, strip_html: bool) -> Option<(String, bool, Vec<String>)> {
-        let mut text = String::new();
-        let mut concatenated = false;
-        let mut fragments = Vec::new();
-        let mut lit = |s: &str, text: &mut String| {
-            let s = if strip_html {
-                strip_tags(s)
-            } else {
-                s.to_string()
-            };
-            text.push_str(&s);
-            fragments.push(s);
-        };
+    /// The pieces of the `+`-joined operands in `a..b`, in order.
+    fn parts(&self, a: usize, b: usize) -> Vec<Part<'_>> {
+        let mut parts = Vec::new();
         let mut start = a;
         for k in self
             .top_level(a, b, |t| t.is("+"))
             .into_iter()
             .chain(std::iter::once(b))
         {
-            match self.toks.get(start..k) {
-                Some([one]) => match &one.tok {
-                    Tok::Str(s) => lit(s, &mut text),
-                    Tok::Tpl(pieces) => {
-                        for piece in pieces {
-                            match piece {
-                                Piece::Lit(s) => lit(s, &mut text),
-                                Piece::Expr(e) => {
-                                    concatenated = true;
-                                    text.push_str(&format!("{{{}}}", squeeze(e)));
-                                }
-                            }
-                        }
-                    }
-                    _ => {
-                        concatenated = true;
-                        text.push_str(&format!("{{{}}}", self.source(start, k)));
-                    }
-                },
-                _ => {
+            parts.extend(self.operand_parts(start, k));
+            start = k + 1;
+        }
+        parts
+    }
+
+    /// The pieces of the one operand in `start..k`: a string is one literal, a
+    /// template is one literal or hole per piece, and anything else is one hole.
+    fn operand_parts(&self, start: usize, k: usize) -> Vec<Part<'_>> {
+        if let Some([one]) = self.toks.get(start..k) {
+            match &one.tok {
+                Tok::Str(s) => return vec![Part::Lit(s)],
+                Tok::Tpl(pieces) => return template_parts(pieces),
+                _ => {}
+            }
+        }
+        vec![Part::Hole(self.source(start, k))]
+    }
+
+    /// Render one alternative as copy: literals as written, anything else as
+    /// `{expr}`. `None` when no literal in it says anything.
+    fn render(&self, a: usize, b: usize, strip_html: bool) -> Option<(String, bool, Vec<String>)> {
+        let mut text = String::new();
+        let mut concatenated = false;
+        let mut fragments = Vec::new();
+        for part in self.parts(a, b) {
+            match part {
+                Part::Lit(s) => {
+                    let s = if strip_html {
+                        strip_tags(s)
+                    } else {
+                        s.to_string()
+                    };
+                    text.push_str(&s);
+                    fragments.push(s);
+                }
+                Part::Hole(e) => {
                     concatenated = true;
-                    text.push_str(&format!("{{{}}}", self.source(start, k)));
+                    text.push_str(&format!("{{{}}}", squeeze(&e)));
                 }
             }
-            start = k + 1;
         }
         let says_something = fragments.iter().any(|f| f.chars().any(char::is_alphabetic));
         let text = squeeze(&text);
@@ -236,39 +244,11 @@ impl Scan<'_> {
     /// plain text keeps the one-row path.
     fn markup(&self, a: usize, b: usize) -> Option<String> {
         let mut src = String::new();
-        let hole = |e: &str, src: &mut String| {
-            // A hole that builds markup of its own is not read as markup here.
-            let shown = if e.contains(['<', '>']) {
-                "markup".to_string()
-            } else {
-                squeeze(e)
-            };
-            src.push_str(&format!("{{{shown}}}"));
-            // Keep the line count of what follows.
-            src.push_str(&"\n".repeat(e.matches('\n').count()));
-        };
-        let mut start = a;
-        for k in self
-            .top_level(a, b, |t| t.is("+"))
-            .into_iter()
-            .chain(std::iter::once(b))
-        {
-            match self.toks.get(start..k) {
-                Some([one]) => match &one.tok {
-                    Tok::Str(s) => src.push_str(s),
-                    Tok::Tpl(pieces) => {
-                        for piece in pieces {
-                            match piece {
-                                Piece::Lit(s) => src.push_str(s),
-                                Piece::Expr(e) => hole(e, &mut src),
-                            }
-                        }
-                    }
-                    _ => hole(&self.source(start, k), &mut src),
-                },
-                _ => hole(&self.source(start, k), &mut src),
+        for part in self.parts(a, b) {
+            match part {
+                Part::Lit(s) => src.push_str(s),
+                Part::Hole(e) => src.push_str(&markup_hole(&e)),
             }
-            start = k + 1;
         }
         let cs: Vec<char> = src.chars().collect();
         let has_element = cs
@@ -332,6 +312,35 @@ impl Scan<'_> {
             });
         }
     }
+}
+
+/// One piece of an expression joined by `+`: text written as a literal, or a
+/// hole, which is code that stands for a value.
+enum Part<'t> {
+    Lit(&'t str),
+    Hole(String),
+}
+
+/// The literal and hole pieces of a template literal, in order.
+fn template_parts(pieces: &[Piece]) -> Vec<Part<'_>> {
+    pieces
+        .iter()
+        .map(|piece| match piece {
+            Piece::Lit(s) => Part::Lit(s),
+            Piece::Expr(e) => Part::Hole(e.clone()),
+        })
+        .collect()
+}
+
+/// A hole in markup: `{expr}`, or `{markup}` when it builds markup of its own.
+/// The newlines it spans follow it, so the lines after it keep their numbers.
+fn markup_hole(e: &str) -> String {
+    let shown = if e.contains(['<', '>']) {
+        "markup".to_string()
+    } else {
+        squeeze(e)
+    };
+    format!("{{{shown}}}{}", "\n".repeat(e.matches('\n').count()))
 }
 
 /// The text with every `{expr}` hole removed.

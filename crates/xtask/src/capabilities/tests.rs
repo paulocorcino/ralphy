@@ -132,6 +132,69 @@ fn encoded_and_minified_text_is_found() {
     assert!(caps("a.rs", &prose).is_empty());
 }
 
+/// The details of every finding on one line, in the order they were found.
+fn details(path: &str, text: &str) -> Vec<String> {
+    line_findings(path, 1, text)
+        .0
+        .into_iter()
+        .map(|f| f.detail)
+        .collect()
+}
+
+#[test]
+fn several_findings_on_one_rust_line_come_in_rule_order() {
+    let blob = "QUJD".repeat(30);
+    let tail = "a+b;".repeat(300);
+    let line = format!("ureq Command::new unsafe {{ env::var(\"API_TOKEN\") .ssh/ {blob}{tail}");
+    let chars = line.chars().count();
+
+    assert_eq!(
+        details("a.rs", &line),
+        [
+            "uses `ureq`".to_string(),
+            "uses `Command::new`".to_string(),
+            "adds an `unsafe` block or item".to_string(),
+            "reads a secret from the environment".to_string(),
+            "names `.ssh/`".to_string(),
+            "a long encoded string".to_string(),
+            format!("a line of {chars} characters with few spaces"),
+        ]
+    );
+}
+
+#[test]
+fn a_ts_line_reports_dynamic_code_before_a_credential_path() {
+    let blob = "QUJD".repeat(30);
+    assert_eq!(
+        caps("ui/app.ts", &format!("eval(x); // .npmrc {blob}")),
+        [
+            Capability::DynamicCode,
+            Capability::Credential,
+            Capability::Encoded
+        ]
+    );
+}
+
+#[test]
+fn a_hex_blob_is_encoded() {
+    let hex = "ab12".repeat(30);
+    assert_eq!(
+        caps("a.rs", &format!("const H: &str = \"{hex}\";")),
+        [Capability::Encoded]
+    );
+}
+
+#[test]
+fn a_long_cargo_lock_line_gives_nothing() {
+    let line = format!(
+        "checksum = \"{}\" source = \"https://github.com/rust-lang/crates.io-index\"",
+        "ab12".repeat(40)
+    );
+    let (found, hosts) = line_findings("crates/x/Cargo.lock", 1, &line);
+    assert!(found.is_empty(), "{found:?}");
+    assert!(hosts.is_empty(), "{hosts:?}");
+}
+
 #[test]
 fn vendored_code_is_reported_once_by_path_not_by_line() {
     assert!(caps("ui/vendor/lib.min.js", "eval(x)").is_empty());

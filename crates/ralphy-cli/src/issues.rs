@@ -16,12 +16,14 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 use serde::Serialize;
-use serde_json::{Map, Value};
 
 use ralphy_core::{
     blocked, git, github, read_project_rows, resolve_queue_view, GhTracker, IssueTracker,
-    IssueView, QueueStatus, QueueView, UsageRow,
+    QueueStatus, QueueView, UsageRow,
 };
+
+mod render;
+use render::{render_board_json, render_json, render_show_json, render_show_text, render_text};
 
 /// `ralphy issues` arguments.
 #[derive(Args)]
@@ -145,83 +147,145 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         settings.queue.assignee.as_deref(),
     );
 
-    // `--board` emits the Kanban fold (ADR-0036) instead of the flat queue
-    // array; JSON-only, list-only, so it cannot combine with `show <n>` or a
-    // non-JSON format.
+    refuse_queue_mode(args.board, args.push, show, args.format)?;
     if args.board {
+        return print_board(&repo_root, assignee.as_deref());
+    }
+    if args.push {
+        return push_queue(&repo_root, &tracker, &human_return, assignee.as_deref());
+    }
+    match show {
+        Some(number) => print_show(
+            number,
+            &repo_root,
+            &tracker,
+            &human_return,
+            fields.as_deref(),
+            args.format,
+        ),
+        None => print_list(
+            &repo_root,
+            &tracker,
+            &human_return,
+            assignee.as_deref(),
+            fields.as_deref(),
+            args.format,
+        ),
+    }
+}
+
+/// `--board` and `--push` are queue-level modes: neither combines with
+/// `show <n>`, and `--board` prints JSON only.
+fn refuse_queue_mode(board: bool, push: bool, show: Option<u64>, format: Format) -> Result<()> {
+    if board {
         if show.is_some() {
             anyhow::bail!(
                 "`--board` emits the whole board fold and cannot be combined with `show <n>`"
             );
         }
-        if args.format != Format::Json {
+        if format != Format::Json {
             anyhow::bail!("`--board` requires `--format json`");
         }
-        // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
-        // union applies later in the fold, so unassigned issues are present to
-        // union over) and graph-ordered by the same resolver the runner uses
-        // (`build_list_queue` already sorts via `sort_queue_in_graph`); the
-        // open+closed reads feed the Backlog/Closed columns.
-        let queue = build_list_queue(&repo_root, None)?;
-        let open = github::list_all_open_meta(&repo_root)?;
-        let closed = github::list_closed_board(&repo_root)?;
-        let repo_labels = github::list_repo_labels(&repo_root)?;
-        // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
-        let login = match assignee.as_deref() {
-            Some(a) => Some(github::resolve_login(a, &repo_root)?),
-            None => None,
-        };
-        println!(
-            "{}",
-            render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
+    }
+    if push && show.is_some() {
+        anyhow::bail!(
+            "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
         );
-        return Ok(());
     }
+    Ok(())
+}
 
-    // `--push` emits the whole judged queue as a snapshot event rather than
-    // printing it — the on-demand twin of the runner's enriched `queue.built`.
-    // It is a queue-level operation, so it cannot be combined with `show <n>`.
-    if args.push {
-        if show.is_some() {
-            anyhow::bail!(
-                "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
-            );
-        }
-        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
-        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        // Resolve the assignee scope mark for the snapshot (ADR-0021 §5). Unlike
-        // `ralphy run` (best-effort telemetry), this one-shot explicit command fails
-        // loud on a resolve error — propagate via `?`.
-        let assignee_filter = match assignee.as_deref() {
-            Some(a) => Some(github::resolve_login(a, &repo_root)?),
-            None => None,
-        };
-        return push_snapshot(&repo_root, &view, assignee_filter.as_deref());
+/// The login `assignee` stands for (`@me` is resolved through `gh`), or
+/// `None` when there is no assignee filter.
+fn resolve_login_opt(
+    assignee: Option<&str>,
+    repo_root: &std::path::Path,
+) -> Result<Option<String>> {
+    match assignee {
+        Some(a) => Ok(Some(github::resolve_login(a, repo_root)?)),
+        None => Ok(None),
     }
+}
 
-    if let Some(number) = show {
-        let issue = github::fetch_issue(number, &repo_root)?;
-        // Best-effort: a comment-fetch failure degrades to body-only, never a stop
-        // (matching the runner's own tolerance).
-        let comments = github::issue_comments_detailed(number, &repo_root).unwrap_or_default();
-        let slug = git::project_slug(&repo_root);
-        let history = issue_history(&slug, number);
-        let view = show_view(&issue, &comments, &history, &human_return, &tracker)?;
-        let out = match args.format {
-            Format::Json => render_show_json(&view, fields.as_deref())?,
-            Format::Text => render_show_text(&view),
-        };
-        println!("{out}");
-    } else {
-        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
-        // The list is never a forced selection, so `stop-before` is honoured.
-        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        let out = match args.format {
-            Format::Json => render_json(&view, fields.as_deref())?,
-            Format::Text => render_text(&view, assignee.as_deref()),
-        };
-        println!("{out}");
-    }
+/// `--board` emits the Kanban fold (ADR-0036) instead of the flat queue
+/// array.
+fn print_board(repo_root: &std::path::Path, assignee: Option<&str>) -> Result<()> {
+    // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
+    // union applies later in the fold, so unassigned issues are present to
+    // union over) and graph-ordered by the same resolver the runner uses
+    // (`build_list_queue` already sorts via `sort_queue_in_graph`); the
+    // open+closed reads feed the Backlog/Closed columns.
+    let queue = build_list_queue(repo_root, None)?;
+    let open = github::list_all_open_meta(repo_root)?;
+    let closed = github::list_closed_board(repo_root)?;
+    let repo_labels = github::list_repo_labels(repo_root)?;
+    // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
+    let login = resolve_login_opt(assignee, repo_root)?;
+    println!(
+        "{}",
+        render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
+    );
+    Ok(())
+}
+
+/// `--push` emits the whole judged queue as a snapshot event rather than
+/// printing it — the on-demand twin of the runner's enriched `queue.built`.
+fn push_queue(
+    repo_root: &std::path::Path,
+    tracker: &GhTracker,
+    human_return: &[String],
+    assignee: Option<&str>,
+) -> Result<()> {
+    let queue = build_list_queue(repo_root, assignee)?;
+    let view = resolve_queue_view(&queue, &[], human_return, tracker)?;
+    // Resolve the assignee scope mark for the snapshot (ADR-0021 §5). Unlike
+    // `ralphy run` (best-effort telemetry), this one-shot explicit command fails
+    // loud on a resolve error — propagate via `?`.
+    let assignee_filter = resolve_login_opt(assignee, repo_root)?;
+    push_snapshot(repo_root, &view, assignee_filter.as_deref())
+}
+
+/// `ralphy issues show <number>`: the detail view of one issue.
+fn print_show(
+    number: u64,
+    repo_root: &std::path::Path,
+    tracker: &GhTracker,
+    human_return: &[String],
+    fields: Option<&[String]>,
+    format: Format,
+) -> Result<()> {
+    let issue = github::fetch_issue(number, repo_root)?;
+    // Best-effort: a comment-fetch failure degrades to body-only, never a stop
+    // (matching the runner's own tolerance).
+    let comments = github::issue_comments_detailed(number, repo_root).unwrap_or_default();
+    let slug = git::project_slug(repo_root);
+    let history = issue_history(&slug, number);
+    let view = show_view(&issue, &comments, &history, human_return, tracker)?;
+    let out = match format {
+        Format::Json => render_show_json(&view, fields)?,
+        Format::Text => render_show_text(&view),
+    };
+    println!("{out}");
+    Ok(())
+}
+
+/// `ralphy issues`: the judged queue, as a table or as JSON.
+fn print_list(
+    repo_root: &std::path::Path,
+    tracker: &GhTracker,
+    human_return: &[String],
+    assignee: Option<&str>,
+    fields: Option<&[String]>,
+    format: Format,
+) -> Result<()> {
+    let queue = build_list_queue(repo_root, assignee)?;
+    // The list is never a forced selection, so `stop-before` is honoured.
+    let view = resolve_queue_view(&queue, &[], human_return, tracker)?;
+    let out = match format {
+        Format::Json => render_json(&view, fields)?,
+        Format::Text => render_text(&view, assignee),
+    };
+    println!("{out}");
     Ok(())
 }
 
@@ -419,246 +483,8 @@ fn parse_fields(raw: Option<&str>) -> Option<Vec<String>> {
     })
 }
 
-/// Keep only `fields` keys of a JSON object, or the whole value when `fields` is
-/// `None`. A requested key absent from the object is silently skipped. Key order
-/// in the result is not preserved — `serde_json::Map` sorts keys — but JSON object
-/// key order is not semantically meaningful.
-fn select_fields(full: Value, fields: Option<&[String]>) -> Value {
-    match fields {
-        None => full,
-        Some(keys) => {
-            let obj = full.as_object().cloned().unwrap_or_default();
-            let mut m = Map::new();
-            for k in keys {
-                if let Some(v) = obj.get(k) {
-                    m.insert(k.clone(), v.clone());
-                }
-            }
-            Value::Object(m)
-        }
-    }
-}
-
-/// Render the judged queue as a JSON array of per-issue objects, optionally
-/// projected to `--fields`.
-fn render_json(view: &QueueView, fields: Option<&[String]>) -> Result<String> {
-    let arr: Vec<Value> = view
-        .issues
-        .iter()
-        .map(|iv| Ok(select_fields(serde_json::to_value(iv)?, fields)))
-        .collect::<Result<Vec<_>>>()?;
-    Ok(serde_json::to_string_pretty(&Value::Array(arr))?)
-}
-
-/// Render the `show` detail view as a JSON object, optionally projected.
-fn render_show_json(view: &ShowView, fields: Option<&[String]>) -> Result<String> {
-    let full = serde_json::to_value(view)?;
-    Ok(serde_json::to_string_pretty(&select_fields(full, fields))?)
-}
-
-/// A degraded board row synthesized from a queue [`ralphy_core::Issue`] when the
-/// open read did not carry it (e.g. a queue-labeled issue older than the open
-/// read's `--limit`). Preserves the parity invariant — a Ready row the runner
-/// would execute never silently vanishes — at the cost of the richer meta
-/// (assignees empty ⇒ kept by the union, dates blank) the drawer's `issue.show`
-/// backfills anyway.
-fn degraded_board_issue(iss: &ralphy_core::Issue) -> github::BoardIssue {
-    github::BoardIssue {
-        number: iss.number,
-        title: iss.title.clone(),
-        state: "open".to_string(),
-        reason: None,
-        labels: iss.labels.clone(),
-        assignees: Vec::new(),
-        blocked_by: blocked::parse_blocked_by(&iss.body),
-        created: String::new(),
-        updated: String::new(),
-    }
-}
-
-/// Render the whole-tracker Kanban board fold (ADR-0036 slice 6): the Ready
-/// subset (`ready`, already in the core's `sort_queue_in_graph` order) FIRST,
-/// then the remaining open issues, then the recent-closed batch. Every row is
-/// filtered by the assignee union ([`blocked::assignee_union_keep`]), so with no
-/// configured login the default hides assigned issues. A Ready issue absent from
-/// the `open` read is emitted from a synthesized [`degraded_board_issue`] rather
-/// than dropped — board-order == core-queue-order stays true even when the open
-/// read's limit does not cover the whole queue. Each row carries
-/// `{number,title,state,reason,labels,assignees,blocked_by,created,updated}`;
-/// `labels[]` is the repo's `{name,color}` vocabulary for chip rendering.
-fn render_board_json(
-    ready: &[ralphy_core::Issue],
-    open: &[github::BoardIssue],
-    closed: &[github::BoardIssue],
-    login: Option<&str>,
-    repo_labels: &[(String, String)],
-) -> Result<String> {
-    let ready_set: std::collections::BTreeSet<u64> = ready.iter().map(|i| i.number).collect();
-    let keep = |b: &github::BoardIssue| blocked::assignee_union_keep(&b.assignees, login);
-    let mut rows: Vec<Value> = Vec::new();
-    // Ready issues first, preserving the core's graph order — this is what makes
-    // board-order == core-queue-order true by construction. A row missing from the
-    // open read is synthesized so it is never silently dropped.
-    for iss in ready {
-        let b = match open.iter().find(|b| b.number == iss.number) {
-            Some(b) => b.clone(),
-            None => degraded_board_issue(iss),
-        };
-        if keep(&b) {
-            rows.push(serde_json::to_value(&b)?);
-        }
-    }
-    // Remaining open issues, then the closed batch — natural read order.
-    for b in open {
-        if !ready_set.contains(&b.number) && keep(b) {
-            rows.push(serde_json::to_value(b)?);
-        }
-    }
-    for b in closed {
-        if keep(b) {
-            rows.push(serde_json::to_value(b)?);
-        }
-    }
-    let labels: Vec<Value> = repo_labels
-        .iter()
-        .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
-        .collect();
-    Ok(serde_json::to_string_pretty(
-        &serde_json::json!({"issues": rows, "labels": labels}),
-    )?)
-}
-
-/// The wire word for a queue status, matching the ADR-0020 columns.
-fn status_word(status: QueueStatus) -> &'static str {
-    match status {
-        QueueStatus::Eligible => "eligible",
-        QueueStatus::Skipped => "skipped",
-        QueueStatus::Blocked => "blocked",
-        QueueStatus::StopBefore => "stop_before",
-    }
-}
-
-/// The trailing reason cell for a listed issue: `pos N` for eligibles, the
-/// parking label for skips, `by #a, #b` for blocked, and the boundary note for
-/// stop-before.
-fn status_extra(iv: &IssueView) -> String {
-    match iv.queue_status {
-        QueueStatus::Eligible => iv.position.map(|p| format!("pos {p}")).unwrap_or_default(),
-        QueueStatus::Skipped => iv.skip_reason.clone().unwrap_or_default(),
-        QueueStatus::Blocked => format!(
-            "by {}",
-            iv.blocked_by
-                .iter()
-                .map(|n| format!("#{n}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        QueueStatus::StopBefore => "run halts here".to_string(),
-    }
-}
-
-/// The `[a,b]` labels cell for a listed issue.
-fn labels_cell(labels: &[String]) -> String {
-    format!("[{}]", labels.join(","))
-}
-
-/// Truncate a title to `max` chars for the text table, appending `…` when cut.
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
-        out.push('…');
-        out
-    }
-}
-
-/// Render the judged queue as an aligned text table matching the ADR-0020 sample.
-fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
-    if view.issues.is_empty() {
-        return match assignee {
-            Some(a) => format!("No open issues in the queue assigned to {a}."),
-            None => "No open issues in the queue.".to_string(),
-        };
-    }
-    const TITLE_MAX: usize = 40;
-    let rows: Vec<(String, String, String, &'static str, String)> = view
-        .issues
-        .iter()
-        .map(|iv| {
-            (
-                format!("#{}", iv.number),
-                truncate(&iv.title, TITLE_MAX),
-                labels_cell(&iv.labels),
-                status_word(iv.queue_status),
-                status_extra(iv),
-            )
-        })
-        .collect();
-    let num_w = rows.iter().map(|r| r.0.chars().count()).max().unwrap_or(0);
-    let title_w = rows.iter().map(|r| r.1.chars().count()).max().unwrap_or(0);
-    let labels_w = rows.iter().map(|r| r.2.chars().count()).max().unwrap_or(0);
-    let mut out = String::new();
-    for (num, title, labels, status, extra) in &rows {
-        out.push_str(&format!(
-            "{num:<num_w$}  {title:<title_w$}  {labels:<labels_w$}  {status:<11}  {extra}\n"
-        ));
-    }
-    out.trim_end().to_string()
-}
-
-/// Render the `show` detail view as a readable text block.
-fn render_show_text(view: &ShowView) -> String {
-    let mut out = String::new();
-    out.push_str(&format!("#{}  {}\n", view.number, view.title));
-    out.push_str(&format!("labels: {}\n", labels_cell(&view.labels)));
-    let judgment = match view.queue_status {
-        // A detail view has no list to rank against, so `eligible` carries no
-        // position (position is a list-relative concept — see `IssueView`).
-        QueueStatus::Eligible => "eligible".to_string(),
-        QueueStatus::Skipped => format!(
-            "skipped ({})",
-            view.skip_reason.as_deref().unwrap_or("human-return")
-        ),
-        QueueStatus::Blocked => format!(
-            "blocked by {}",
-            view.blocked_by
-                .iter()
-                .map(|n| format!("#{n}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        QueueStatus::StopBefore => "stop_before (run halts here)".to_string(),
-    };
-    out.push_str(&format!("queue: {judgment}\n"));
-    if let Some(spec) = &view.consolidated_spec {
-        out.push_str("\n--- consolidated spec ---\n");
-        out.push_str(spec);
-        out.push('\n');
-    } else if !view.body.is_empty() {
-        out.push_str("\n--- body ---\n");
-        out.push_str(&view.body);
-        out.push('\n');
-    }
-    if !view.history.is_empty() {
-        out.push_str("\n--- history ---\n");
-        for h in &view.history {
-            out.push_str(&format!(
-                "{}  {}  {}  {}  {} tok\n",
-                h.ts, h.phase, h.outcome, h.model, h.tokens
-            ));
-        }
-    }
-    if !view.comments.is_empty() {
-        out.push_str(&format!("\n--- comments ({}) ---\n", view.comments.len()));
-        for c in &view.comments {
-            out.push_str(&format!("{}  {}\n", c.author, c.at));
-            out.push_str(&c.body);
-            out.push('\n');
-        }
-    }
-    out.trim_end().to_string()
-}
+#[cfg(test)]
+use serde_json::Value;
 
 #[cfg(test)]
 mod tests;

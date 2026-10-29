@@ -317,3 +317,28 @@ fn both_channels_feed_the_diagnosis() {
         other => panic!("expected a named stop, got {other:?}"),
     }
 }
+
+/// The terminal `result` record names the model the vendor actually used, so it
+/// replaces the one `init` announced; the session id has only `init` to come from.
+#[test]
+fn the_result_model_replaces_the_init_model_and_the_session_id_stays() {
+    let fold = fold_gemini_stream(&format!(
+        "{}\n{}\n",
+        serde_json::json!({"type": "init", "session_id": "s-1", "model": "model-a"}),
+        serde_json::json!({"type": "result", "status": "success", "model": "model-b"})
+    ));
+    assert_eq!(fold.model.as_deref(), Some("model-b"));
+    assert_eq!(fold.session_id.as_deref(), Some("s-1"));
+}
+
+/// The first sentence the vendor gave is the one the operator sees; a later
+/// record's error does not replace it.
+#[test]
+fn the_first_vendor_error_is_kept() {
+    let fold = fold_gemini_stream(&format!(
+        "{}\n{}\n",
+        serde_json::json!({"type": "result", "status": "error", "error": {"message": "first"}}),
+        serde_json::json!({"error": {"message": "second"}})
+    ));
+    assert_eq!(fold.vendor_error.as_deref(), Some("first"));
+}

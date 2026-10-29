@@ -363,3 +363,32 @@ fn discard_refuses_a_staged_deletion() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A batch of one tracked edit and one untracked file runs both writes and counts
+/// each on its own side.
+#[test]
+fn discard_runs_both_writes_for_a_mixed_batch() {
+    let dir = init_repo("discard-mixed-success");
+    commit_file(&dir, "good.txt", "committed\n", "add good");
+    std::fs::write(dir.join("good.txt"), "edited\n").unwrap();
+    std::fs::write(dir.join("loose.txt"), "loose\n").unwrap();
+
+    assert_eq!(
+        discard(&dir, &["good.txt".to_string(), "loose.txt".to_string()]).unwrap(),
+        DiscardOutcome::Discarded {
+            restored: 1,
+            deleted: 1
+        }
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("good.txt")).unwrap(),
+        "committed\n",
+        "the tracked edit was restored"
+    );
+    assert!(
+        !dir.join("loose.txt").exists(),
+        "the untracked file is gone"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

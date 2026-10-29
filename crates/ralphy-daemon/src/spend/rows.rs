@@ -149,83 +149,113 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
         lower_bound: false,
     };
 
-    for row in input.records {
-        let Some(object) = row.as_object() else {
-            continue;
-        };
-        if field(object, "project") != Some(input.project) {
-            continue;
+    for object in input
+        .records
+        .iter()
+        .filter_map(serde_json::Value::as_object)
+    {
+        if let Some(row) = ledger_row(object, input) {
+            out.rows.push(row);
         }
-        let ts = field(object, "ts");
-        if !in_window(ts, input.since) {
-            continue;
-        }
-        let tokens = ledger_tokens(object);
-        let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let model = recover_ledger_model(field(object, "model"), session, input.recovered);
-        let (usd, cause) = price(model, session, &tokens, input.prices);
-        out.rows.push(Priced {
-            source: Source::Ledger {
-                issue: object
-                    .get("issue")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0),
-            },
-            outcome: field(object, "outcome").unwrap_or(""),
-            phase: field(object, "phase").unwrap_or(""),
-            model,
-            date: civil_date(ts),
-            tokens,
-            usd,
-            cause,
-            lower_bound: false,
-        });
     }
 
-    for row in input.interactive {
-        let Some(object) = row.as_object() else {
-            continue;
-        };
-        if field(object, "project") != Some(input.project) {
-            continue;
+    for object in input
+        .interactive
+        .iter()
+        .filter_map(serde_json::Value::as_object)
+    {
+        match interactive_row(object, input) {
+            InteractiveRow::Skip => {}
+            InteractiveRow::Unmetered => out.unmetered_sessions += 1,
+            InteractiveRow::Row(row) => {
+                out.lower_bound |= row.lower_bound;
+                out.rows.push(row);
+            }
         }
-        // A session's window membership is its MOST RECENT activity, falling
-        // back to when it started; a record with neither is kept, matching
-        // `usage.rs`'s best-effort stance on the scan's data.
-        let seen = field(object, "last_ts").or_else(|| field(object, "first_ts"));
-        if !in_window(seen, input.since) {
-            continue;
-        }
-        let Some(tokens) = interactive_tokens(object) else {
-            // The vendor keeps no count at all — unavailable, never zero.
-            out.unmetered_sessions += 1;
-            continue;
-        };
-        let lower_bound = object
-            .get("lower_bound")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        out.lower_bound |= lower_bound;
-        // An interactive record always carries its `session_id`, so an
-        // unpriceable one is never *lost* — that property falls out of
-        // `session.is_some()` rather than needing a rule of its own.
-        let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let model = recover_interactive_model(field(object, "model"), session, input.recovered);
-        let (usd, cause) = price(model, session, &tokens, input.prices);
-        out.rows.push(Priced {
-            source: Source::Interactive,
-            outcome: "",
-            phase: "",
-            model,
-            date: civil_date(seen),
-            tokens,
-            usd,
-            cause,
-            lower_bound,
-        });
     }
 
     out
+}
+
+type Object = serde_json::Map<String, serde_json::Value>;
+
+/// One ledger line of the open project inside the window, priced.
+fn ledger_row<'a>(object: &'a Object, input: &SpendInput<'a>) -> Option<Priced<'a>> {
+    if field(object, "project") != Some(input.project) {
+        return None;
+    }
+    let ts = field(object, "ts");
+    if !in_window(ts, input.since) {
+        return None;
+    }
+    let tokens = ledger_tokens(object);
+    let session = field(object, "session_id").filter(|id| !id.is_empty());
+    let model = recover_ledger_model(field(object, "model"), session, input.recovered);
+    let (usd, cause) = price(model, session, &tokens, input.prices);
+    Some(Priced {
+        source: Source::Ledger {
+            issue: object
+                .get("issue")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0),
+        },
+        outcome: field(object, "outcome").unwrap_or(""),
+        phase: field(object, "phase").unwrap_or(""),
+        model,
+        date: civil_date(ts),
+        tokens,
+        usd,
+        cause,
+        lower_bound: false,
+    })
+}
+
+/// What one interactive record adds to the classification.
+enum InteractiveRow<'a> {
+    /// Another project's record, or one outside the window.
+    Skip,
+    /// A session of the window whose vendor keeps no token count.
+    Unmetered,
+    Row(Priced<'a>),
+}
+
+/// One interactive record, classified.
+fn interactive_row<'a>(object: &'a Object, input: &SpendInput<'a>) -> InteractiveRow<'a> {
+    if field(object, "project") != Some(input.project) {
+        return InteractiveRow::Skip;
+    }
+    // A session's window membership is its MOST RECENT activity, falling
+    // back to when it started; a record with neither is kept, matching
+    // `usage.rs`'s best-effort stance on the scan's data.
+    let seen = field(object, "last_ts").or_else(|| field(object, "first_ts"));
+    if !in_window(seen, input.since) {
+        return InteractiveRow::Skip;
+    }
+    let Some(tokens) = interactive_tokens(object) else {
+        // The vendor keeps no count at all — unavailable, never zero.
+        return InteractiveRow::Unmetered;
+    };
+    let lower_bound = object
+        .get("lower_bound")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    // An interactive record always carries its `session_id`, so an
+    // unpriceable one is never *lost* — that property falls out of
+    // `session.is_some()` rather than needing a rule of its own.
+    let session = field(object, "session_id").filter(|id| !id.is_empty());
+    let model = recover_interactive_model(field(object, "model"), session, input.recovered);
+    let (usd, cause) = price(model, session, &tokens, input.prices);
+    InteractiveRow::Row(Priced {
+        source: Source::Interactive,
+        outcome: "",
+        phase: "",
+        model,
+        date: civil_date(seen),
+        tokens,
+        usd,
+        cause,
+        lower_bound,
+    })
 }
 
 /// The UTC civil date an RFC3339 timestamp falls on — its first 10 characters,
@@ -241,7 +271,8 @@ fn civil_date(ts: Option<&str>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spend::fixtures::{table, OPUS};
+    use crate::spend::fixtures::{table, InteractiveRow, OPUS, PROJECT};
+    use crate::spend::Window;
 
     /// The shared verdict, arm by arm. The `None`-model pair is the one that
     /// MOVED when `classify`'s two matches collapsed into this function
@@ -311,5 +342,53 @@ mod tests {
             Some(OPUS)
         );
         assert_eq!(recover_interactive_model(Some(""), Some("s9"), &map), None);
+    }
+
+    fn classify_interactive(records: &[serde_json::Value]) -> Classified<'_> {
+        static PRICES: std::sync::OnceLock<PriceTable> = std::sync::OnceLock::new();
+        static RECOVERED: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        classify(&SpendInput {
+            records: &[],
+            interactive: records,
+            recovered: &RECOVERED,
+            prices: PRICES.get_or_init(table),
+            project: PROJECT,
+            window: Window::Week,
+            since: Some(SINCE),
+        })
+    }
+
+    const SINCE: &str = "2026-07-15T00:00:00+00:00";
+
+    /// A session record with no `last_ts` is placed by its `first_ts`.
+    #[test]
+    fn a_session_known_only_by_its_start_before_the_window_is_out() {
+        let mut record = InteractiveRow {
+            first_ts: "2026-07-01T00:00:00+00:00",
+            tokens: Some((1_000_000, 0)),
+            ..Default::default()
+        }
+        .json();
+        record
+            .as_object_mut()
+            .expect("a fixture row is an object")
+            .remove("last_ts");
+        let records = [record];
+        assert!(classify_interactive(&records).rows.is_empty());
+    }
+
+    /// A session that keeps no count is counted as unmetered only when it is
+    /// inside the window.
+    #[test]
+    fn an_unmetered_session_outside_the_window_is_not_counted() {
+        let records = [InteractiveRow {
+            first_ts: "2026-07-01T00:00:00+00:00",
+            last_ts: "2026-07-02T00:00:00+00:00",
+            tokens: None,
+            ..Default::default()
+        }
+        .json()];
+        assert_eq!(classify_interactive(&records).unmetered_sessions, 0);
     }
 }

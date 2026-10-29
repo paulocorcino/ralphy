@@ -93,47 +93,18 @@ impl WatchSubs {
     /// stay refusals — those are caller bugs, not the world moving.
     pub fn subscribe(&self, sub_id: &str, repo: &str, root: &Path, paths: &[String]) -> Result<()> {
         let normalized: BTreeSet<String> = paths.iter().map(|path| watch::norm_rel(path)).collect();
-        if normalized
-            .iter()
-            .any(|path| path.split('/').any(|part| part == ".."))
-        {
+        if escapes_root(&normalized) {
             bail!("watch path escapes the repo root");
         }
 
         let mut subs = self.lock();
         if let Some(sub) = subs.get_mut(sub_id) {
-            if sub.repo != repo {
-                bail!("subscription id already names another repo");
-            }
-            let added: Vec<String> = normalized.difference(&sub.paths).cloned().collect();
-            for path in added {
-                match self.watchers.watch(repo, root, &path) {
-                    Ok(rx) => {
-                        if sub.rx.is_none() {
-                            sub.rx = Some(rx);
-                        }
-                        sub.paths.insert(path);
-                    }
-                    Err(error) => skipped(repo, &path, &error),
-                }
-            }
-            sub.last_poll = Instant::now();
-            return Ok(());
+            return extend(sub, repo, root, &normalized);
         }
 
         let mut held = BTreeSet::new();
         let mut rx = None;
-        for path in normalized {
-            match self.watchers.watch(repo, root, &path) {
-                Ok(new_rx) => {
-                    if rx.is_none() {
-                        rx = Some(new_rx);
-                    }
-                    held.insert(path);
-                }
-                Err(error) => skipped(repo, &path, &error),
-            }
-        }
+        arm(&self.watchers, repo, root, normalized, &mut held, &mut rx);
         subs.insert(
             sub_id.to_string(),
             Sub {
@@ -301,6 +272,56 @@ impl Drop for RxGuard<'_> {
             }
         }
     }
+}
+
+/// Whether a normalized watch path climbs out of the repo root.
+fn escapes_root(paths: &BTreeSet<String>) -> bool {
+    paths
+        .iter()
+        .any(|path| path.split('/').any(|part| part == ".."))
+}
+
+/// Watch each of `paths`, adding the ones that armed to `held`. The first
+/// receiver armed becomes `rx` when `rx` holds none yet; a path that cannot be
+/// armed is skipped (see [`WatchSubs::subscribe`]).
+fn arm(
+    watchers: &watch::WatcherManager,
+    repo: &str,
+    root: &Path,
+    paths: impl IntoIterator<Item = String>,
+    held: &mut BTreeSet<String>,
+    rx: &mut Option<watch::DirtyRx>,
+) {
+    for path in paths {
+        match watchers.watch(repo, root, &path) {
+            Ok(new_rx) => {
+                if rx.is_none() {
+                    *rx = Some(new_rx);
+                }
+                held.insert(path);
+            }
+            Err(error) => skipped(repo, &path, &error),
+        }
+    }
+}
+
+/// Hold for an existing subscription the paths it does not hold yet. A
+/// subscription id names one repo for its whole life.
+fn extend(sub: &mut Sub, repo: &str, root: &Path, paths: &BTreeSet<String>) -> Result<()> {
+    if sub.repo != repo {
+        bail!("subscription id already names another repo");
+    }
+    let added: Vec<String> = paths.difference(&sub.paths).cloned().collect();
+    arm(
+        &sub.watchers,
+        repo,
+        root,
+        added,
+        &mut sub.paths,
+        &mut sub.rx,
+    );
+    sub.last_poll = Instant::now();
+    Ok(())
 }
 
 /// One watch that could not be armed. Logged rather than propagated (see

@@ -19,6 +19,14 @@ fn parse_config_hosts_keeps_only_concrete_names() {
     assert!(parse_config_hosts("").is_empty());
 }
 
+/// A `#` ends the names of a `Host` line, and a `Host` keyword with no name
+/// gives none.
+#[test]
+fn parse_config_hosts_stops_at_a_comment_and_needs_a_name() {
+    assert_eq!(parse_config_hosts("Host a # b c"), ["a"]);
+    assert!(parse_config_hosts("Host").is_empty());
+}
+
 // format of `ssh -G svrapp`, OpenSSH 9
 const SSH_G: &str = "host svrapp
 user deploy

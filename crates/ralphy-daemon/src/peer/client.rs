@@ -22,7 +22,9 @@ use http_body_util::{BodyExt, Full};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use super::tunnel::Ensured;
-use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
+use super::PeerDescriptor;
+
+mod handshake;
 
 /// An authenticated WebSocket to another daemon in the local fleet.
 pub type PeerSocket =
@@ -596,95 +598,9 @@ pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
 /// it is reachable. `None` when the peer is not reachable or sent no label.
 pub async fn probe_hello(d: &PeerDescriptor, me: SelfRef<'_>) -> (PeerStatus, Option<String>) {
     let mut environment = None;
-    let status = handshake(d, me, &mut environment).await;
+    let status = handshake::handshake(d, me, &mut environment).await;
     if status != PeerStatus::Reachable {
         environment = None;
     }
     (status, environment)
-}
-
-async fn handshake(
-    d: &PeerDescriptor,
-    me: SelfRef<'_>,
-    environment: &mut Option<String>,
-) -> PeerStatus {
-    if let Some(refused) = classify_address(&d.address) {
-        return refused;
-    }
-    if let Some(refused) = classify_self_dial(&d.address, d.port, me) {
-        return refused;
-    }
-    let (status, body) = match get(d, "/api/peer/hello").await {
-        Ok(pair) => pair,
-        Err(e) => return diagnose_failed_dial(d, format!("{e:#}")).await,
-    };
-    // Any HTTP answer came through the tunnel, so the tunnel works.
-    if d.tunnel.is_some() {
-        super::tunnel::tunnels().answered(&d.daemon_id);
-    }
-    if status == 401 || status == 403 {
-        return PeerStatus::Unauthorized {
-            tunnel: d.tunnel.is_some(),
-        };
-    }
-    if status != 200 {
-        return PeerStatus::Unreachable {
-            why: format!("peer answered HTTP {status} to the handshake"),
-        };
-    }
-    let hello = serde_json::from_slice::<serde_json::Value>(&body).ok();
-    *environment = hello
-        .as_ref()
-        .and_then(|v| v.get("environment").and_then(|e| e.as_str()))
-        .filter(|e| !e.is_empty())
-        .map(str::to_string);
-    // Belt and braces for the gate above: a handshake that answers with THIS
-    // daemon's own id came back to us by some route the port check did not
-    // model, and treating it as a peer would federate this daemon with itself.
-    // Skipped when un-baptized, where the empty id is not an identity.
-    let answered_id = hello
-        .as_ref()
-        .and_then(|v| v.get("daemon_id").and_then(|id| id.as_str()));
-    if !me.daemon_id.is_empty() && answered_id == Some(me.daemon_id) {
-        return PeerStatus::Refused {
-            why: format!(
-                "the handshake at {}:{} answered with this daemon's own identity — \
-                 the connection loops back here rather than reaching another environment",
-                d.address, d.port
-            ),
-        };
-    }
-    // ADR-0067 amendment M5: several daemons can share one host, so a port can
-    // answer with another daemon than the one this descriptor names. Skipped
-    // when either side has no id.
-    if let Some(answered) = answered_id {
-        if !d.daemon_id.is_empty() && answered != d.daemon_id {
-            // Only `host add` writes a tunnel descriptor, and running it again
-            // reads the identity and the socket anew.
-            let remedy = if d.tunnel.is_some() {
-                ". Add the host again"
-            } else {
-                ""
-            };
-            return PeerStatus::Refused {
-                why: format!(
-                    "another daemon answers at {}:{}: it is {answered}, not {}{remedy}",
-                    d.address, d.port, d.daemon_id
-                ),
-            };
-        }
-    }
-    let theirs = hello
-        .as_ref()
-        .and_then(|v| v.get("protocol_version").and_then(|p| p.as_u64()));
-    match theirs {
-        Some(v) if v as u32 == PEER_PROTOCOL_VERSION => PeerStatus::Reachable,
-        Some(v) => PeerStatus::VersionMismatch {
-            theirs: v as u32,
-            ours: PEER_PROTOCOL_VERSION,
-        },
-        None => PeerStatus::Unreachable {
-            why: "the handshake answered without a protocol_version".to_string(),
-        },
-    }
 }

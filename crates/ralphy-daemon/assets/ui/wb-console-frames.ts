@@ -49,29 +49,36 @@ export function readSocketEvent(a: Uint8Array): SocketEvent {
     const sessionId = Number(new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0));
     return { kind: "output", sessionId, bytes: a.subarray(9) };
   }
-  if (a[0] === TAG_COMMAND) {
-    // The daemon's deliberate-end announcement, sent as DATA before the
-    // Close frame: the close metadata does not survive the trip (#334).
-    let c: SessionFrame | null = null;
-    try {
-      c = socketFrame<SessionFrame>(a);
-    } catch {}
-    if (c && c.verb === "session-open") return { kind: "open", payload: c.payload };
-    if (c && c.verb === "session-size") {
-      const rows = c.payload?.rows;
-      const cols = c.payload?.cols;
-      if (isCount(rows) && isCount(cols)) return { kind: "size", rows, cols };
-      return { kind: "other" };
-    }
-    if (c && c.verb === "session-end") {
-      return {
-        kind: "end",
-        reason: c.payload?.reason ?? "child-exited",
-        message: typeof c.payload?.message === "string" ? c.payload.message : null,
-      };
-    }
-  }
+  if (a[0] === TAG_COMMAND) return readCommandFrame(a);
   return { kind: "other" };
+}
+
+function readCommandFrame(a: Uint8Array): SocketEvent {
+  // The daemon's deliberate-end announcement, sent as DATA before the
+  // Close frame: the close metadata does not survive the trip (#334).
+  let c: SessionFrame | null = null;
+  try {
+    c = socketFrame<SessionFrame>(a);
+  } catch {}
+  if (c && c.verb === "session-open") return { kind: "open", payload: c.payload };
+  if (c && c.verb === "session-size") return sizeEvent(c.payload);
+  if (c && c.verb === "session-end") return endEvent(c.payload);
+  return { kind: "other" };
+}
+
+function sizeEvent(payload: FramePayload | undefined): SocketEvent {
+  const rows = payload?.rows;
+  const cols = payload?.cols;
+  if (isCount(rows) && isCount(cols)) return { kind: "size", rows, cols };
+  return { kind: "other" };
+}
+
+function endEvent(payload: FramePayload | undefined): SocketEvent {
+  return {
+    kind: "end",
+    reason: payload?.reason ?? "child-exited",
+    message: typeof payload?.message === "string" ? payload.message : null,
+  };
 }
 
 function isCount(n: unknown): n is number {

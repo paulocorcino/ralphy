@@ -82,15 +82,7 @@ pub(crate) async fn require_auth(
     // drive the whole surface — WS upgrades are not CORS-preflighted (RFC 6455
     // §10.2 makes the origin check the server's job) and a form POST is
     // CORS-simple. Refusing here covers every route and every upgrade at once.
-    let origin = req
-        .headers()
-        .get(header::ORIGIN)
-        .and_then(|v| v.to_str().ok());
-    let host = req
-        .headers()
-        .get(header::HOST)
-        .and_then(|v| v.to_str().ok());
-    if !state.same_origin(origin) || !state.host_allowed(host) {
+    if cross_site_refused(&state, req.headers()) {
         return (StatusCode::FORBIDDEN, "cross-origin request refused").into_response();
     }
     // Read the CURRENT policy: a security toggle may have swapped it since boot
@@ -104,46 +96,71 @@ pub(crate) async fn require_auth(
     if policy.authorizes(header) {
         return next.run(req).await;
     }
-    if let auth::AuthPolicy::Session(session) = &policy {
-        let cookie_header = req
-            .headers()
-            .get(header::COOKIE)
-            .and_then(|v| v.to_str().ok());
-        let now = now_unix();
-        if session.cookie_valid(cookie_header, now) {
-            // Idle-slide (amendment §D): re-issue the cookie with a later `exp`
-            // (same `iat`, so the absolute cap holds) when activity moved it far
-            // enough. The header must be owned before `req` is consumed by `next`.
-            // `Secure` follows the request's own scheme, as at login — the two
-            // must agree for one session.
-            let secure = request_is_https(req.headers());
-            let slid = session
-                .slide_cookie(cookie_header, now)
-                .map(|(c, kind)| cookie::set_cookie_value_with(&c, kind, secure));
-            let mut resp = next.run(req).await;
-            if let Some(set_cookie) = slid {
-                if let Ok(v) = header::HeaderValue::from_str(&set_cookie) {
-                    resp.headers_mut().append(header::SET_COOKIE, v);
-                }
-            }
-            return resp;
-        }
-        let path = req.uri().path();
-        if LOGIN_ALLOWLIST.contains(&path) {
-            return next.run(req).await;
-        }
-        // The workbench shell is non-secret static bytes: a GET for any non-`/api`,
-        // non-`/ws` path is served without a cookie so the SPA can render its own
-        // opaque login gate. Every DATA endpoint (`/api/*` except the allowlist,
-        // `/ws/*`) stays gated — the SPA can show nothing until `/api/login`
-        // succeeds. API/WS/other verbs fail closed with 401.
-        if req.method() == axum::http::Method::GET
-            && !path.starts_with("/api")
-            && !path.starts_with("/ws")
-        {
-            return next.run(req).await;
-        }
-        return (StatusCode::UNAUTHORIZED, "login required").into_response();
+    let auth::AuthPolicy::Session(session) = &policy else {
+        return (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response();
+    };
+    let now = now_unix();
+    if session.cookie_valid(cookie_of(&req), now) {
+        return run_with_slid_cookie(session, req, now, next).await;
     }
-    (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response()
+    if ungated_without_session(&req) {
+        return next.run(req).await;
+    }
+    (StatusCode::UNAUTHORIZED, "login required").into_response()
+}
+
+/// Whether the request comes from a page of another site, or names a host
+/// this daemon does not answer on.
+fn cross_site_refused(state: &auth::AuthState, headers: &header::HeaderMap) -> bool {
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
+    !state.same_origin(origin) || !state.host_allowed(host)
+}
+
+/// The `Cookie` header of the request, when it is text.
+fn cookie_of(req: &axum::extract::Request) -> Option<&str> {
+    req.headers()
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+}
+
+/// Serve a request whose session cookie is valid, and re-issue that cookie
+/// when activity moved its idle limit far enough.
+async fn run_with_slid_cookie(
+    session: &auth::SessionAuth,
+    req: axum::extract::Request,
+    now: u64,
+    next: axum::middleware::Next,
+) -> Response {
+    // Idle-slide (amendment §D): re-issue the cookie with a later `exp`
+    // (same `iat`, so the absolute cap holds) when activity moved it far
+    // enough. The header must be owned before `req` is consumed by `next`.
+    // `Secure` follows the request's own scheme, as at login — the two
+    // must agree for one session.
+    let secure = request_is_https(req.headers());
+    let slid = session
+        .slide_cookie(cookie_of(&req), now)
+        .map(|(c, kind)| cookie::set_cookie_value_with(&c, kind, secure));
+    let mut resp = next.run(req).await;
+    if let Some(set_cookie) = slid {
+        if let Ok(v) = header::HeaderValue::from_str(&set_cookie) {
+            resp.headers_mut().append(header::SET_COOKIE, v);
+        }
+    }
+    resp
+}
+
+/// Whether a request with no session is served under a `Session` policy: a
+/// login endpoint, or the workbench shell.
+fn ungated_without_session(req: &axum::extract::Request) -> bool {
+    let path = req.uri().path();
+    if LOGIN_ALLOWLIST.contains(&path) {
+        return true;
+    }
+    // The workbench shell is non-secret static bytes: a GET for any non-`/api`,
+    // non-`/ws` path is served without a cookie so the SPA can render its own
+    // opaque login gate. Every DATA endpoint (`/api/*` except the allowlist,
+    // `/ws/*`) stays gated — the SPA can show nothing until `/api/login`
+    // succeeds. API/WS/other verbs fail closed with 401.
+    req.method() == axum::http::Method::GET && !path.starts_with("/api") && !path.starts_with("/ws")
 }

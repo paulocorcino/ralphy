@@ -221,3 +221,27 @@ async fn a_cancelled_wait_hands_its_receiver_back() {
     );
     assert!(!dirty.is_empty());
 }
+
+/// A second subscribe on the same id holds only the paths it adds; the ones
+/// it already holds keep their one watch.
+#[tokio::test]
+async fn a_resubscribe_adds_only_new_paths_and_keeps_its_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let subs = WatchSubs::new(watchers.clone());
+    subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
+        .unwrap();
+    subs.subscribe(
+        "s",
+        "owner/repo",
+        dir.path(),
+        &[String::new(), "docs".to_string()],
+    )
+    .unwrap();
+    assert_eq!(watchers.watch_refcount("owner/repo", ""), 1);
+    assert_eq!(watchers.watch_refcount("owner/repo", "docs"), 1);
+    assert!(subs
+        .subscribe("s", "owner/other", dir.path(), &[String::new()])
+        .is_err());
+}

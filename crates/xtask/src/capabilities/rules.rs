@@ -130,67 +130,91 @@ pub(crate) fn path_findings(file: &FileDiff) -> Vec<Finding> {
     out
 }
 
+/// One capability found on a line, with what to tell the reviewer.
+type Hit = (Capability, String);
+
 /// The findings in one added line, and the URL hosts it names.
 pub(crate) fn line_findings(path: &str, line: u32, text: &str) -> (Vec<Finding>, Vec<String>) {
-    let mut out = Vec::new();
     // A lockfile holds hashes and registry URLs on every line. Its changes are
     // reported as dependencies, by crate name or once per npm lockfile.
     if is_vendored(path) || path.ends_with("Cargo.lock") || is_npm_lockfile(path) {
-        return (out, Vec::new());
+        return (Vec::new(), Vec::new());
     }
     let ext = extension(path);
-    let mut push = |cap: Capability, detail: String| {
-        out.push(Finding::new(cap, path, Some(line), &detail));
-    };
+    let mut hits = Vec::new();
     if ext == "rs" {
-        if let Some(m) = RUST_NETWORK.find(text) {
-            push(Capability::Network, format!("uses `{}`", m.as_str()));
-        }
-        if let Some(m) = RUST_PROCESS.find(text) {
-            push(Capability::Process, format!("uses `{}`", m.as_str()));
-        }
-        if RUST_UNSAFE.is_match(text) {
-            push(
-                Capability::Unsafe,
-                "adds an `unsafe` block or item".to_string(),
-            );
-        }
-        if RUST_SECRET_ENV.is_match(text) {
-            push(
-                Capability::Credential,
-                "reads a secret from the environment".to_string(),
-            );
-        }
+        hits.extend(rust_findings(text));
     }
+    hits.extend(content_findings(ext, text));
+    let found = hits
+        .into_iter()
+        .map(|(cap, detail)| Finding::new(cap, path, Some(line), &detail))
+        .collect();
+    (found, url_hosts(text))
+}
+
+/// The powers a Rust line adds: network, process, `unsafe`, a secret read from
+/// the environment, in that order.
+fn rust_findings(text: &str) -> Vec<Hit> {
+    let mut out = Vec::new();
+    if let Some(m) = RUST_NETWORK.find(text) {
+        out.push((Capability::Network, format!("uses `{}`", m.as_str())));
+    }
+    if let Some(m) = RUST_PROCESS.find(text) {
+        out.push((Capability::Process, format!("uses `{}`", m.as_str())));
+    }
+    if RUST_UNSAFE.is_match(text) {
+        out.push((
+            Capability::Unsafe,
+            "adds an `unsafe` block or item".to_string(),
+        ));
+    }
+    if RUST_SECRET_ENV.is_match(text) {
+        out.push((
+            Capability::Credential,
+            "reads a secret from the environment".to_string(),
+        ));
+    }
+    out
+}
+
+/// The findings that depend on the text and the file type, not on the
+/// language: dynamic code, a credential path, an encoded string, minified code.
+fn content_findings(ext: &str, text: &str) -> Vec<Hit> {
+    let mut out = Vec::new();
     if matches!(ext, "js" | "mjs" | "cjs" | "ts" | "html") {
         if let Some(m) = JS_DYNAMIC.find(text) {
-            push(
+            out.push((
                 Capability::DynamicCode,
                 format!("uses `{}`", m.as_str().trim()),
-            );
+            ));
         }
     }
     if let Some(m) = CREDENTIAL_PATH.find(text) {
-        push(Capability::Credential, format!("names `{}`", m.as_str()));
+        out.push((Capability::Credential, format!("names `{}`", m.as_str())));
     }
     if BASE64_BLOB.is_match(text) || HEX_BLOB.is_match(text) {
-        push(Capability::Encoded, "a long encoded string".to_string());
+        out.push((Capability::Encoded, "a long encoded string".to_string()));
     }
     let chars = text.chars().count();
     let spaces = text.chars().filter(|c| *c == ' ').count();
     if CODE_EXTENSIONS.contains(&ext) && chars > LONG_LINE && spaces * 100 < chars * MINIFIED_SPACES
     {
-        push(
+        out.push((
             Capability::Obfuscated,
             format!("a line of {chars} characters with few spaces"),
-        );
+        ));
     }
-    let hosts = URL_HOST
+    out
+}
+
+/// The lowercase hosts of the URLs in a line.
+fn url_hosts(text: &str) -> Vec<String> {
+    URL_HOST
         .captures_iter(text)
         .filter_map(|c| c.get(1))
         .map(|m| m.as_str().trim_end_matches('.').to_ascii_lowercase())
-        .collect();
-    (out, hosts)
+        .collect()
 }
 
 fn is_vendored(path: &str) -> bool {

@@ -161,54 +161,75 @@ pub(crate) fn build_run_queue(
     effective_labels: &[String],
     repo_root: &std::path::Path,
 ) -> Result<(Vec<ralphy_core::Issue>, Vec<u64>)> {
-    let forced_issues: Vec<u64> = if !args.issues.is_empty() {
+    let forced_issues = forced_issue_set(args);
+    let queue = if args.issues.is_empty() {
+        label_queue(args.only_issue, assignee, effective_labels, repo_root)?
+    } else {
+        fetch_selected(&args.issues, repo_root)?
+    };
+    Ok((queue, forced_issues))
+}
+
+/// The issues whose `stop-before` is ignored: `--issues` verbatim, else the
+/// single `--only-issue`, else none.
+fn forced_issue_set(args: &RunArgs) -> Vec<u64> {
+    if !args.issues.is_empty() {
         args.issues.clone()
     } else {
         args.only_issue.into_iter().collect()
-    };
+    }
+}
 
-    let queue = if !args.issues.is_empty() {
-        let mut selected = Vec::with_capacity(args.issues.len());
-        for number in &args.issues {
-            selected.push(github::fetch_issue(*number, repo_root)?);
-        }
-        selected
-    } else {
-        // `--only-issue` fetches its single target unfiltered (criterion 5), so drop
-        // the assignee filter on that path; a bare label queue applies it.
-        let queue_assignee = if args.only_issue.is_some() {
-            None
-        } else {
-            assignee
-        };
-        let mut queue = github::list_queue(effective_labels, queue_assignee, repo_root)?;
-        if let Some(only) = args.only_issue {
-            queue.retain(|i| i.number == only);
-        }
-        // Order by dependency (Blocked-by edges + split-bundle children), ascending
-        // number as tie-break — the pending list shown to the user IS the sequence
-        // run_queue will work, and a dependency-consistent order lets one run drain
-        // a graph whose numbering disagrees with its edges.
-        //
-        // Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
-        // itself open (a partially-labelled chain) still orders the queue: edges are
-        // walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
-        // failure fall back to in-queue-only ordering rather than abort the run. Skip
-        // the extra call when ordering can't matter (0 or 1 issue).
-        if queue.len() > 1 {
-            match github::list_open_issues(repo_root) {
-                Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
-                Err(e) => {
-                    warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
-                    ralphy_core::blocked::sort_queue(queue)
-                }
-            }
-        } else {
+/// The issues of `--issues`, in the order given.
+fn fetch_selected(numbers: &[u64], repo_root: &std::path::Path) -> Result<Vec<ralphy_core::Issue>> {
+    let mut selected = Vec::with_capacity(numbers.len());
+    for number in numbers {
+        selected.push(github::fetch_issue(*number, repo_root)?);
+    }
+    Ok(selected)
+}
+
+/// The open issues that carry the queue labels, ordered by dependency.
+fn label_queue(
+    only_issue: Option<u64>,
+    assignee: Option<&str>,
+    effective_labels: &[String],
+    repo_root: &std::path::Path,
+) -> Result<Vec<ralphy_core::Issue>> {
+    // `--only-issue` fetches its single target unfiltered (criterion 5), so drop
+    // the assignee filter on that path; a bare label queue applies it.
+    let queue_assignee = if only_issue.is_some() { None } else { assignee };
+    let mut queue = github::list_queue(effective_labels, queue_assignee, repo_root)?;
+    if let Some(only) = only_issue {
+        queue.retain(|i| i.number == only);
+    }
+    Ok(order_by_dependency(queue, repo_root))
+}
+
+/// Order by dependency (Blocked-by edges + split-bundle children), ascending
+/// number as tie-break — the pending list shown to the user IS the sequence
+/// run_queue will work, and a dependency-consistent order lets one run drain
+/// a graph whose numbering disagrees with its edges.
+///
+/// Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
+/// itself open (a partially-labelled chain) still orders the queue: edges are
+/// walked transitively through those out-of-queue nodes. Best-effort — on a `gh`
+/// failure fall back to in-queue-only ordering rather than abort the run. Skip
+/// the extra call when ordering can't matter (0 or 1 issue).
+fn order_by_dependency(
+    queue: Vec<ralphy_core::Issue>,
+    repo_root: &std::path::Path,
+) -> Vec<ralphy_core::Issue> {
+    if queue.len() <= 1 {
+        return ralphy_core::blocked::sort_queue(queue);
+    }
+    match github::list_open_issues(repo_root) {
+        Ok(open) => ralphy_core::blocked::sort_queue_in_graph(queue, &open),
+        Err(e) => {
+            warn!(error = %e, "could not list open issues for dependency ordering; using in-queue edges only");
             ralphy_core::blocked::sort_queue(queue)
         }
-    };
-
-    Ok((queue, forced_issues))
+    }
 }
 
 /// Build a fully-configured adapter for one `CliAgent`, boxed as `&dyn Agent`.

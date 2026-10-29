@@ -436,14 +436,8 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     if (!repo || repo === "~" || typeof win._relaunchIn !== "function") return;
     const daemon = window.WBDaemon;
     if (typeof daemon?.observe !== "function") return;
-    let branches: string[] = [];
-    let base = "";
-    try {
-      const reply = await daemon.observe("branch.list", { repo });
-      const data = (reply && reply.status === "ok" && reply.branches) || {};
-      if (Array.isArray(data.branches)) branches = data.branches;
-      if (data.current && data.current !== "HEAD") base = data.current;
-    } catch {}
+    const { branches, base: first } = await readBranches(daemon, repo);
+    let base = first;
     let error = "";
     let name = "";
     for (;;) {
@@ -462,11 +456,28 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
         error = WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
         continue;
       }
-      ensureListing(repo, true);
-      WB.emit("worktree-created", { project: repo, name, message: typeof reply.message === "string" ? reply.message : "" });
+      announceWorktree(repo, name, reply);
       moveTo(win, name);
       return;
     }
+  }
+  // The branches the prompt offers and the one it starts from; unreadable
+  // gives no list and no base.
+  async function readBranches(daemon: NonNullable<Window["WBDaemon"]>, repo: string) {
+    let branches: string[] = [];
+    let base = "";
+    try {
+      const reply = await daemon.observe("branch.list", { repo });
+      const data = (reply && reply.status === "ok" && reply.branches) || {};
+      if (Array.isArray(data.branches)) branches = data.branches;
+      if (data.current && data.current !== "HEAD") base = data.current;
+    } catch {}
+    return { branches, base };
+  }
+  // The listing is read again, then the shell is told the worktree exists.
+  function announceWorktree(repo: string, name: string, reply: { message?: unknown }) {
+    ensureListing(repo, true);
+    WB.emit("worktree-created", { project: repo, name, message: typeof reply.message === "string" ? reply.message : "" });
   }
 
   return {

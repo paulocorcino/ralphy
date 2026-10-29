@@ -350,6 +350,27 @@ test("foldSync marks a detached HEAD (#316)", () => {
   assert.equal(s.counts, "");
 });
 
+test("foldSync reads a tracking that is not an object as no upstream", () => {
+  const s = load().foldSync(syncReply({ head: { kind: "branch", name: "wip" }, tracking: "origin/wip" }), NOW);
+  assert.equal(s.state, "no-upstream");
+  assert.equal(s.upstream, "");
+  assert.equal(s.counts, "");
+});
+
+test("foldSync reads a count that is not a number as 0", () => {
+  const s = load().foldSync(
+    syncReply({
+      head: { kind: "branch", name: "main" },
+      tracking: { upstream: "origin/main", ahead: "many", behind: null },
+    }),
+    NOW,
+  );
+  assert.equal(s.state, "tracking");
+  assert.equal(s.ahead, 0);
+  assert.equal(s.behind, 0);
+  assert.equal(s.counts, "↑0 ↓0");
+});
+
 test("foldSync never throws on a malformed or failed frame (#316)", () => {
   const foldSync = load().foldSync;
   for (const reply of [

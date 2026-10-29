@@ -410,3 +410,29 @@ fn strip_secret_tokens_from_env_removes_both() {
     assert!(std::env::var(events::config::TOKEN_ENV).is_err());
     assert!(std::env::var(telegram::config::TOKEN_ENV).is_err());
 }
+
+fn run_args(extra: &[&str]) -> RunArgs {
+    use clap::Parser;
+    let argv = ["ralphy", "run"].into_iter().chain(extra.iter().copied());
+    let cli = crate::cli::Cli::try_parse_from(argv).expect("the run arguments parse");
+    let crate::cli::Command::Run(args) = cli.command else {
+        panic!("not a run command");
+    };
+    *args
+}
+
+/// `--only-issue` alone forces that one issue.
+#[test]
+fn the_only_issue_is_the_forced_set() {
+    assert_eq!(forced_issue_set(&run_args(&["--only-issue", "4"])), [4]);
+}
+
+/// `--issues` forces the issues in the order given, and no flag forces none.
+#[test]
+fn the_issues_flag_is_the_forced_set_verbatim() {
+    assert_eq!(
+        forced_issue_set(&run_args(&["--issues", "5,3,9"])),
+        [5, 3, 9]
+    );
+    assert!(forced_issue_set(&run_args(&[])).is_empty());
+}

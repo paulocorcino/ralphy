@@ -76,6 +76,26 @@ test("a runs reply that arrives after a newer read is dropped", async () => {
   assert.equal(store.currentRun().runid, "new");
 });
 
+test("a re-read keeps the plan text of a run whose plan path did not change, and drops it when it changed", async () => {
+  const run = (planPath) => ({ runid: "r1", plan_path: planPath });
+  const { store } = page(
+    scripted([
+      { status: "ok", runs: [run(".ralphy/plan-a.md")] },
+      { status: "ok", runs: [run(".ralphy/plan-a.md")] },
+      { status: "ok", runs: [run(".ralphy/plan-b.md")] },
+    ]),
+  );
+  await store.hydrateRuns();
+  store.setRunPlan(store.projectRuns()[0], "# the plan");
+  await store.hydrateRuns();
+  assert.equal(store.projectRuns()[0].planMd, "# the plan", "the same path: the text stays");
+  store.setRunPlan(store.projectRuns()[0], null);
+  assert.equal(store.projectRuns()[0].planReadFailed, true);
+  await store.hydrateRuns();
+  assert.equal(store.projectRuns()[0].planMd, "", "another path: the text is dropped");
+  assert.equal(store.projectRuns()[0].planReadFailed, false);
+});
+
 test("a kept runs read is told on the window, and a failed one is not", async () => {
   const { store, events } = page(scripted([{ status: "ok", runs: [{ runid: "a" }] }, { status: "error", reason: "x" }]));
   await store.hydrateRuns();

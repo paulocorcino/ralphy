@@ -341,6 +341,27 @@ function columnLead(ids: readonly string[]): string | undefined {
   return ids[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
 }
 
+// What the first column's console asks before a paint: "restore" when it is on
+// the stage but neither maximized nor a column, "wait" when it is off the
+// stage for a relaunch, else nothing. At a cap of 1 the first console is
+// painted as a plain maximize, so its Restore took the maximize path; it is
+// still a column restore. A console in a relaunch comes back under the same id.
+function headGap(
+  head: string | undefined,
+  headWin: ConsoleWin | null | undefined,
+  relaunching: (id: string) => boolean,
+): "restore" | "wait" | null {
+  if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) return "restore";
+  if (head && !headWin && relaunching(head)) return "wait";
+  return null;
+}
+
+// A paint raises the windows when the caller asks or when the painted columns
+// changed.
+function shouldRaise(opts: { raise?: boolean } | undefined, moved: boolean) {
+  return !!opts?.raise || moved;
+}
+
 // After a paint, the focus goes back to the column that had it, or to the
 // last painted one, while the keys are free on the Consoles tab.
 function refocusAfterPaint(tabActive: boolean, columnIds: readonly (string | null)[], ids: string[], before: string | null, moved: boolean) {
@@ -436,14 +457,12 @@ export function wbColumns() {
       );
       const head = this.columnIds()[0];
       const headWin = head ? byId.get(head) : null;
-      // At a cap of 1 the first console is painted as a plain maximize, so its
-      // Restore took the maximize path. It is still a column restore.
-      if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
+      const gap = headGap(head, headWin, WBConsole.isRelaunching);
+      if (gap === "restore") {
         this.restoreColumn(head);
         return;
       }
-      // A first console off the stage for a relaunch comes back under the same id.
-      if (head && !headWin && WBConsole.isRelaunching(head)) return;
+      if (gap === "wait") return;
       const kept = WBColumns.keep(this.columns, new Set(byId.keys()));
       const keptIds = WBColumns.flat(kept);
       // The first console left the stage and one is left: it takes the maximize.
@@ -469,7 +488,7 @@ export function wbColumns() {
       // old z-index; raising the painted ones keeps it behind them.
       const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
-      WBConsole.applyColumns(painted, { unmax: null, raise: !!opts?.raise || moved, persist: true });
+      WBConsole.applyColumns(painted, { unmax: null, raise: shouldRaise(opts, moved), persist: true });
       refocusAfterPaint(this.$store.tabs.active === "consoles", this.columnIds(), ids, before, moved);
     },
     // A fence detached to a popup takes its consoles out of the columns.

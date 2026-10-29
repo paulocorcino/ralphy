@@ -121,44 +121,50 @@ pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
 /// `"<name>: not logged in"` are guaranteed for present agents so tests can
 /// assert them literally.
 pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
-    let mut out = String::new();
+    let mut out = tool_lines(f);
+    out.push_str("agents:\n");
+    for agent in &Agent::ALL {
+        let (name, status) = (agent.cli_name(), agent_status(f, agent));
+        out.push_str(&format!("  {name}: {status}\n"));
+    }
+    out.push_str(&notes(f));
+    out.push_str(&result_line(fails));
+    out
+}
 
+/// The line of each tool the gate checks, padded to one column.
+fn tool_lines(f: &EnvFindings) -> String {
     let git = if f.git { "ok" } else { "MISSING" };
-    out.push_str(&format!("git:           {git}\n"));
-
     let py = if f.python { "ok" } else { "MISSING" };
-    out.push_str(&format!("python:        {py}\n"));
-
     let gh = if f.gh_authenticated {
         "ok"
     } else {
         "NOT AUTHENTICATED"
     };
-    out.push_str(&format!("gh auth:       {gh}\n"));
-
     let remote = if f.github_remote {
         "ok"
     } else {
         "NO GITHUB REMOTE"
     };
-    out.push_str(&format!("github remote: {remote}\n"));
+    format!(
+        "git:           {git}\npython:        {py}\ngh auth:       {gh}\ngithub remote: {remote}\n"
+    )
+}
 
-    out.push_str("agents:\n");
-    for agent in &Agent::ALL {
-        let name = agent.cli_name();
-        let present = f.agents_present.contains(agent);
-        if present {
-            let logged_in = f.agents_logged_in.contains(agent);
-            if logged_in {
-                out.push_str(&format!("  {name}: logged in\n"));
-            } else {
-                out.push_str(&format!("  {name}: not logged in\n"));
-            }
-        } else {
-            out.push_str(&format!("  {name}: absent\n"));
-        }
+/// What the report says of one agent: `absent`, `logged in` or `not logged in`.
+fn agent_status(f: &EnvFindings, agent: &Agent) -> &'static str {
+    if !f.agents_present.contains(agent) {
+        "absent"
+    } else if f.agents_logged_in.contains(agent) {
+        "logged in"
+    } else {
+        "not logged in"
     }
+}
 
+/// The notes that explain a cost or a missing tool; empty when there is none.
+fn notes(f: &EnvFindings) -> String {
+    let mut out = String::new();
     // The router tax is a COST, not a blocker: unpinned, this vendor spends a
     // second, billed routing call per turn (ADR-0043 D8/#257). Surfaced here so it
     // is read before the first run rather than on a bill.
@@ -180,15 +186,15 @@ pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
              also provides the git-bash shell ralphy uses), or your package manager on Linux/macOS\n",
         );
     }
-
-    let blocker_count = fails.len();
-    if blocker_count == 0 {
-        out.push_str("result: all checks passed\n");
-    } else {
-        out.push_str(&format!("result: {blocker_count} blocker(s)\n"));
-    }
-
     out
+}
+
+/// The last line of the report: all checks passed, or how many blockers.
+fn result_line(fails: &[HardFail]) -> String {
+    match fails.len() {
+        0 => "result: all checks passed\n".to_string(),
+        blockers => format!("result: {blockers} blocker(s)\n"),
+    }
 }
 
 pub(crate) fn github_remote(repo: &Path) -> bool {
@@ -496,5 +502,34 @@ mod tests {
         let report = format_report(&without, &evaluate_gate(&without));
         assert!(!report.contains("gemini.exec_model"), "{report}");
         assert!(!report.contains("halve request consumption"), "{report}");
+    }
+
+    /// The whole report of a machine with git and one logged-in agent, and
+    /// with python, the gh login and the GitHub remote missing.
+    #[test]
+    fn format_report_of_a_machine_with_three_blockers() {
+        let f = EnvFindings {
+            python: false,
+            gh_authenticated: false,
+            github_remote: false,
+            agents_present: vec![Agent::Claude],
+            agents_logged_in: vec![Agent::Claude],
+            ..all_green()
+        };
+        let want = "git:           ok
+python:        MISSING
+gh auth:       NOT AUTHENTICATED
+github remote: NO GITHUB REMOTE
+agents:
+  claude: logged in
+  codex: absent
+  kimi: absent
+  opencode: absent
+  copilot: absent
+  cursor: absent
+  gemini: absent
+result: 3 blocker(s)
+";
+        assert_eq!(format_report(&f, &evaluate_gate(&f)), want);
     }
 }

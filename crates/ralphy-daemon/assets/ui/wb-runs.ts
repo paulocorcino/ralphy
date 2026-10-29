@@ -108,6 +108,32 @@ function agentOf(doc: RunSnapshot): Run["agentState"] {
   return doc.phase?.agent || null;
 }
 
+/** Where the run is: the phase, the issue it works on, and the clock's anchor. */
+function phaseFields(doc: RunSnapshot): Pick<Run, "phase" | "active" | "since" | "sleep"> {
+  return {
+    phase: doc.phase?.state || "starting",
+    active: doc.phase?.active ?? null,
+    // When the current phase began (ADR-0047 amendment): the anchor the panel's
+    // clock counts from. Absent in a document written by an older build, and
+    // `phaseClock` renders nothing rather than guessing.
+    since: doc.phase?.since || "",
+    sleep: doc.phase?.sleep || null,
+  };
+}
+
+/** The plan of the run: its path, the text (read later) and the steps. */
+function planFields(doc: RunSnapshot): Pick<Run, "planPath" | "planMd" | "steps" | "planIssue" | "planReadFailed"> {
+  return {
+    planPath: doc.plan_path || "",
+    planMd: "",
+    // Steps come from the DOCUMENT, not from a plan.md read: they survive a
+    // deleted/unreadable plan and are already accumulated when the panel opens.
+    steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
+    planIssue: doc.plan?.issue ?? null,
+    planReadFailed: false,
+  };
+}
+
 export const WBRun = {
   // per-status glyph, matching notifier.rs status_emoji + render.rs scroll glyphs.
   // `sleep`/`pending` are panel-only overlays (a sleeping active issue, and a
@@ -475,25 +501,13 @@ export const WBRun = {
       agent: doc.exec_agent || "",
       branch: doc.branch || "",
       base: "",
-      phase: doc.phase?.state || "starting",
-      active: doc.phase?.active ?? null,
-      // When the current phase began (ADR-0047 amendment): the anchor the panel's
-      // clock counts from. Absent in a document written by an older build, and
-      // `phaseClock` renders nothing rather than guessing.
-      since: doc.phase?.since || "",
+      ...phaseFields(doc),
       startedAt: doc.started_at || "",
       completed: issues.filter((i: Issue) => this.TERMINAL.has(i.status)).length,
       // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
       queueTotal: doc.queue?.total ?? issues.length,
-      sleep: doc.phase?.sleep || null,
       agentState: agentOf(doc),
-      planPath: doc.plan_path || "",
-      planMd: "",
-      // Steps come from the DOCUMENT, not from a plan.md read: they survive a
-      // deleted/unreadable plan and are already accumulated when the panel opens.
-      steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
-      planIssue: doc.plan?.issue ?? null,
-      planReadFailed: false,
+      ...planFields(doc),
       issues,
     };
   },

@@ -94,6 +94,26 @@ test("columnDir reads right or down, anything else is null", () => {
   assert.equal(load(JSON.stringify({ v: 1 })).read().columnDir, null, "absent is null, not undefined");
 });
 
+test("font reads as an integer from 10 to 28, anything else is null", () => {
+  const read = (font) => load(JSON.stringify({ v: 1, font })).read().font;
+  assert.equal(read(10), 10);
+  assert.equal(read(28), 28);
+  assert.equal(read(9), null);
+  assert.equal(read(29), null);
+  assert.equal(read(12.5), null);
+  assert.equal(read("12"), null);
+  assert.equal(load(JSON.stringify({ v: 1 })).read().font, null, "absent is null, not undefined");
+});
+
+test("keys reads on or off, anything else is null", () => {
+  const read = (keys) => load(JSON.stringify({ v: 1, keys })).read().keys;
+  assert.equal(read("on"), "on");
+  assert.equal(read("off"), "off");
+  assert.equal(read("auto"), null);
+  assert.equal(read(true), null);
+  assert.equal(load(JSON.stringify({ v: 1 })).read().keys, null, "absent is null, not undefined");
+});
+
 // The startup-command setting is gone: an old record's `command` is not read,
 // and the next write leaves it out.
 test("a legacy command is dropped on read and on the next patch", () => {

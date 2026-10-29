@@ -596,17 +596,7 @@ pub fn find_program(
     pathext: Option<std::ffi::OsString>,
 ) -> Option<PathBuf> {
     let path_var = path_var?;
-    let exts: Vec<String> = if cfg!(windows) {
-        pathext
-            .and_then(|p| p.into_string().ok())
-            .unwrap_or_else(|| ".EXE".into())
-            .split(';')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let exts = pathext_list(pathext);
     for dir in std::env::split_paths(&path_var) {
         // Under WSL the Windows PATH leaks in: a `/mnt/c/…` hit is a Windows
         // binary that cannot run as a Linux program (ADR-0043 D16). Skip it and
@@ -615,34 +605,57 @@ pub fn find_program(
             continue;
         }
         let direct = dir.join(name);
-        // On Windows a file is only executable when its extension is in PATHEXT,
-        // so a bare extensionless `direct` must be skipped — npm ships agent CLIs
-        // as a pair (`opencode` shell shim + `opencode.cmd`), and returning the
-        // extensionless shim yields "not a valid Win32 application" (os error 193).
-        // Off Windows, any existing file on PATH is a candidate as-is.
-        let direct_ok = if cfg!(windows) {
-            direct.is_file()
-                && direct
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| {
-                        exts.iter()
-                            .any(|x| x.trim_start_matches('.').eq_ignore_ascii_case(e))
-                    })
-        } else {
-            is_executable_file(&direct)
-        };
-        if direct_ok {
+        if direct_runnable(&direct, &exts) {
             return Some(direct);
         }
-        for ext in &exts {
-            let cand = dir.join(name).with_extension(ext.trim_start_matches('.'));
-            if cand.is_file() {
-                return Some(cand);
-            }
+        if let Some(found) = with_pathext(&dir, name, &exts) {
+            return Some(found);
         }
     }
     None
+}
+
+/// The `PATHEXT` extensions to try, empty off Windows. An unset or non-UTF-8
+/// `PATHEXT` falls back to `.EXE`.
+fn pathext_list(pathext: Option<std::ffi::OsString>) -> Vec<String> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    pathext
+        .and_then(|p| p.into_string().ok())
+        .unwrap_or_else(|| ".EXE".into())
+        .split(';')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Is `direct`, a file named as given, runnable as it is?
+///
+/// On Windows a file is only executable when its extension is in PATHEXT,
+/// so a bare extensionless `direct` must be skipped — npm ships agent CLIs
+/// as a pair (`opencode` shell shim + `opencode.cmd`), and returning the
+/// extensionless shim yields "not a valid Win32 application" (os error 193).
+/// Off Windows, any existing file on PATH is a candidate as-is.
+fn direct_runnable(direct: &Path, exts: &[String]) -> bool {
+    if !cfg!(windows) {
+        return is_executable_file(direct);
+    }
+    direct.is_file()
+        && direct
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| {
+                exts.iter()
+                    .any(|x| x.trim_start_matches('.').eq_ignore_ascii_case(e))
+            })
+}
+
+/// The first `name` + extension file in `dir`, trying `exts` in order.
+fn with_pathext(dir: &Path, name: &str, exts: &[String]) -> Option<PathBuf> {
+    exts.iter()
+        .map(|ext| dir.join(name).with_extension(ext.trim_start_matches('.')))
+        .find(|cand| cand.is_file())
 }
 
 #[cfg(test)]

@@ -32,6 +32,25 @@ export type ModalsStoreDeps = {
   messages: Messages;
 };
 
+// Whether the focus is on an element that takes the keys: a field, an editable
+// element or the code editor.
+function focusTakesKeys(el: HTMLElement | null) {
+  return !!(
+    el &&
+    (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
+  );
+}
+
+// Whether the Settings, Security, Run or Branch dialog is on the modal stack.
+function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
+  return (
+    modals.modalOpen(WBSettingsDialog.openFlag) ||
+    modals.modalOpen(WBSecurityDialog.openFlag) ||
+    modals.modalOpen("runOpen") ||
+    modals.modalOpen("branchOpen")
+  );
+}
+
 // `deps` is the shape every store takes; the store is where the door's flash
 // and confirm end, so it never calls the door.
 export function modalsStore(_deps: ModalsStoreDeps) {
@@ -150,14 +169,11 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // column walk); xterm's input is a TEXTAREA.
     consoleShortcutsBlocked(allowTerminal = false) {
       if (!window.Alpine.store("connection").authed) return true;
-      if (this.modalOpen(WBSettingsDialog.openFlag) || this.modalOpen(WBSecurityDialog.openFlag) || this.modalOpen("runOpen") || this.modalOpen("branchOpen")) return true;
+      if (blockingDialogOpen(this)) return true;
       if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;
       const el = document.activeElement as HTMLElement | null;
       if (allowTerminal && el?.closest?.(".xterm")) return false;
-      return !!(
-        el &&
-        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
-      );
+      return focusTakesKeys(el);
     },
     // Resolve `true`/`false` on the operator's choice. A pending dialog is
     // settled `false` first so a second call never strands its promise.

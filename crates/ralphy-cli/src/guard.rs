@@ -163,34 +163,40 @@ enum DeleteKind {
 /// denied.
 fn evaluate_recursive_delete(cmd: &str, ctx: &GuardContext) -> GuardDecision {
     for segment in cmd.split(['\n', ';', '&', '|']) {
-        let tokens = shell_tokens(segment);
-        let Some((kind, args)) = classify_delete(&tokens) else {
-            continue;
-        };
-        for tok in args {
-            let is_flag = match kind {
-                DeleteKind::Rm | DeleteKind::RemoveItem => tok.starts_with('-'),
-                // cmd.exe switches: `/s`, `/q`, `/a:h`, … (also tolerate `-`).
-                DeleteKind::DelRmdir => {
-                    tok.starts_with('-')
-                        || (tok.starts_with('/')
-                            && tok.len() <= 4
-                            && tok[1..]
-                                .chars()
-                                .all(|c| c.is_ascii_alphanumeric() || c == ':'))
-                }
-            };
-            if is_flag {
-                continue;
-            }
-            if !recursive_delete_target_allowed(tok, ctx) {
-                return GuardDecision::Deny(format!(
-                    "recursive delete outside the worktree/temp is blocked ({tok})"
-                ));
-            }
+        if let Some(tok) = first_disallowed_target(segment, ctx) {
+            return GuardDecision::Deny(format!(
+                "recursive delete outside the worktree/temp is blocked ({tok})"
+            ));
         }
     }
     GuardDecision::Allow
+}
+
+/// The first target of `segment` that a recursive delete may not touch, or
+/// `None` when the segment is not a recursive delete or every target is
+/// allowed.
+fn first_disallowed_target(segment: &str, ctx: &GuardContext) -> Option<String> {
+    let tokens = shell_tokens(segment);
+    let (kind, args) = classify_delete(&tokens)?;
+    args.iter()
+        .find(|tok| !is_delete_flag(&kind, tok) && !recursive_delete_target_allowed(tok, ctx))
+        .cloned()
+}
+
+/// Is `tok` an option of the delete command, not a target?
+fn is_delete_flag(kind: &DeleteKind, tok: &str) -> bool {
+    match kind {
+        DeleteKind::Rm | DeleteKind::RemoveItem => tok.starts_with('-'),
+        // cmd.exe switches: `/s`, `/q`, `/a:h`, … (also tolerate `-`).
+        DeleteKind::DelRmdir => {
+            tok.starts_with('-')
+                || (tok.starts_with('/')
+                    && tok.len() <= 4
+                    && tok[1..]
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == ':'))
+        }
+    }
 }
 
 /// Classify a tokenised segment as a recursive delete, returning the kind and
@@ -441,31 +447,32 @@ pub fn run_guard_hook(cost_gate: bool) -> ! {
     let process_cwd = std::env::current_dir().ok();
     let temp_dir = normalise_path(&std::env::temp_dir());
 
-    match decide_hook_input(&raw, process_cwd.as_deref(), tool_dir, temp_dir) {
-        GuardDecision::Allow => {
-            // Verification-cost gate (Bash only, execute sessions only): deny
-            // re-paying a plan `## Verify` command already measured as
-            // expensive while the plan still has real work open.
-            // Safety-neutral and fail-open — any missing file or unknown cost
-            // allows.
-            if cost_gate {
-                if let Some(payload) = read_payload(&raw) {
-                    let (tool_name, tool_input) = tool_call(&payload);
-                    if tool_name == "Bash" {
-                        if let Some(reason) = evaluate_cmd_cost(&payload, tool_input) {
-                            eprintln!("BLOCKED by Ralphy guard: {reason}");
-                            std::process::exit(2);
-                        }
-                    }
-                }
-            }
-            std::process::exit(0)
-        }
-        GuardDecision::Deny(reason) => {
+    let reason = match decide_hook_input(&raw, process_cwd.as_deref(), tool_dir, temp_dir) {
+        GuardDecision::Allow if cost_gate => cost_gate_reason(&raw),
+        GuardDecision::Allow => None,
+        GuardDecision::Deny(reason) => Some(reason),
+    };
+    match reason {
+        Some(reason) => {
             eprintln!("BLOCKED by Ralphy guard: {reason}");
             std::process::exit(2);
         }
+        None => std::process::exit(0),
     }
+}
+
+/// The steering message of the verification-cost gate for an allowed call, or
+/// `None` to let it run. The gate judges Bash calls only, in execute sessions:
+/// it denies re-paying a plan `## Verify` command already measured as
+/// expensive while the plan still has real work open. Safety-neutral and
+/// fail-open: any missing file or unknown cost allows.
+fn cost_gate_reason(raw: &str) -> Option<String> {
+    let payload = read_payload(raw)?;
+    let (tool_name, tool_input) = tool_call(&payload);
+    if tool_name != "Bash" {
+        return None;
+    }
+    evaluate_cmd_cost(&payload, tool_input)
 }
 
 /// The verification-cost gate over one allowed Bash call: consult the durable
