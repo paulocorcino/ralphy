@@ -346,15 +346,37 @@ fn an_and_gives_its_right_side_and_not_its_condition() {
 
 #[test]
 fn a_hole_over_several_lines_keeps_the_line_of_a_later_attribute() {
-    let js = r#"
+    // (case, source, line of the button)
+    let cases = [
+        (
+            "a newline inside the hole",
+            r#"
 el.innerHTML = `<p>${a +
   b}</p><button title="Later one">Go</button>`;
-"#;
-    let out = rows("wb-console.js", js);
-    assert_eq!(
-        out.iter()
-            .map(|r| (r.line, r.kind.label(), r.text.as_str()))
-            .collect::<Vec<_>>(),
-        vec![(3, "title", "Later one"), (3, "js:text-content", "Go")]
-    );
+"#,
+            3,
+        ),
+        (
+            "newlines at the start and the end of the hole",
+            r#"
+el.innerHTML = `<p>${
+  a
+}</p><button title="Later one">Go</button>`;
+"#,
+            4,
+        ),
+    ];
+    for (case, js, line) in cases {
+        let out = rows("wb-console.js", js);
+        assert_eq!(
+            out.iter()
+                .map(|r| (r.line, r.kind.label(), r.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (line, "title", "Later one"),
+                (line, "js:text-content", "Go")
+            ],
+            "{case}"
+        );
+    }
 }

@@ -6,7 +6,8 @@
 //! derail every token after it. Everything else is an identifier, a punctuator
 //! or `Other`.
 
-/// One piece of a template literal: text as written, or a `${…}` hole.
+/// One piece of a template literal: text as written, or a `${…}` hole. The
+/// hole keeps its outer whitespace, so a reader can count the lines it spans.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Piece {
     Lit(String),
@@ -288,7 +289,7 @@ fn read_template(cs: &[char], open: usize, line: &mut usize) -> (Vec<Piece>, usi
                 }
                 let end = hole_end(cs, i + 2, line);
                 let expr: String = cs[i + 2..end.saturating_sub(1).max(i + 2)].iter().collect();
-                pieces.push(Piece::Expr(expr.trim().to_string()));
+                pieces.push(Piece::Expr(expr));
                 i = end;
             }
             _ => {
