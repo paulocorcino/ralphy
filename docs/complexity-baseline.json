@@ -745,9 +745,6 @@
       ]
     },
     "crates/ralphy-proc-util/src/lib.rs": {
-      "find_program": [
-        17
-      ],
       "tree_to_kill": [
         11
       ]
