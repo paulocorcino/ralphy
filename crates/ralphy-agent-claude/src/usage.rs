@@ -346,7 +346,11 @@ fn jsonl_in_dir(dir: &Path, stack: &mut Vec<PathBuf>) -> Vec<(PathBuf, SystemTim
     let mut found = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        // `file_type` does not follow links, so a symlinked folder is not walked.
+        if kind.is_dir() {
             stack.push(path);
             continue;
         }
@@ -690,6 +694,34 @@ mod tests {
         let newest = aged_file(tmp.path(), "new.jsonl", 20);
         aged_file(tmp.path(), "new.meta.json", 1);
         assert_eq!(newest_jsonl_since(tmp.path(), None), Some(newest));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn newest_jsonl_does_not_follow_a_symlinked_folder() {
+        let tmp = tempfile::tempdir().expect("tempdir for transcripts");
+        let dir = tmp.path().join("projects");
+        fs::create_dir(&dir).expect("create the transcript folder");
+        aged_file(&dir, "old.jsonl", 60);
+        let newest = aged_file(&dir, "new.jsonl", 20);
+        // Two links back to the parent: a walk that follows them visits
+        // exponentially many paths.
+        for name in ["loop-a", "loop-b"] {
+            std::os::unix::fs::symlink(&dir, dir.join(name)).expect("link back to the parent");
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let walked = dir.clone();
+        std::thread::spawn(move || {
+            if tx.send(newest_jsonl_since(&walked, None)).is_err() {
+                // The test already gave up waiting; nobody reads the result.
+            }
+        });
+
+        let found = rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the walk did not end");
+        assert_eq!(found, Some(newest));
     }
 
     #[test]
