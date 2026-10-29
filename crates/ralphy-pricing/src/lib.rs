@@ -516,6 +516,26 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_cache_key_beats_the_same_overlay_key() {
+        let price = |input: f64| ModelPrice {
+            input,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_creation: 0.0,
+        };
+        let table = PriceTable::from_layers(
+            BTreeMap::new(),
+            BTreeMap::from([("k2p6".into(), price(1.0))]),
+            BTreeMap::new(),
+            BTreeMap::from([("k2p6".into(), price(2.0))]),
+        );
+        let cost = table
+            .cost_usd("k2p6", &one_million_each())
+            .expect("k2p6 is in the cache");
+        assert!((cost - 1.0).abs() < 1e-9, "cache must win; got {cost}");
+    }
+
+    #[test]
     fn dated_model_id_falls_back_to_undated_family_price() {
         let table = PriceTable::defaults();
         let tokens = one_million_each();
