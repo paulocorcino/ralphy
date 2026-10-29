@@ -15,6 +15,7 @@ use crate::session::SessionInfo;
 
 pub(crate) mod dismissals;
 pub(crate) mod done;
+mod finals;
 pub(crate) mod telegram;
 pub(crate) mod tick;
 

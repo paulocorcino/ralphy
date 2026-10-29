@@ -24,8 +24,9 @@ use tokio::sync::broadcast;
 
 use super::dismissals::Dismissals;
 use super::done::{self, DeskFiles, Marks};
+use super::finals::Finals;
 use super::telegram::Notifier;
-use super::{list, AttentionRequest, FinishedRun, RunSource, RunsRead};
+use super::{list, AttentionRequest, RunSource, RunsRead};
 use crate::registry;
 use crate::routes::{push, read_peer_lists, PeerList, Push};
 use crate::session::{SessionInfo, SessionManager};
@@ -41,12 +42,13 @@ pub(crate) type Dismissed = Arc<Mutex<Dismissals>>;
 
 /// The live and the finished runs of every registered repo, in key order. A
 /// repo that is not reachable has none; an unreadable registry is logged and
-/// has none.
-fn read_runs(registry_path: &Path) -> RunsRead {
+/// has none. `finals` keeps the final snapshots already read.
+fn read_runs(registry_path: &Path, finals: &mut Finals) -> RunsRead {
     let store = match registry::load_from(registry_path) {
         Ok(store) => store,
         Err(e) => {
             tracing::warn!(error = %e, "the attention tick could not read the repo registry");
+            finals.end_pass();
             return RunsRead::default();
         }
     };
@@ -59,46 +61,11 @@ fn read_runs(registry_path: &Path) -> RunsRead {
                 repo: slug.clone(),
                 snapshot,
             }));
-        runs.finished.extend(read_finished(root, slug));
+        runs.finished
+            .extend(finals.of_repo(root, slug, &ralphy_run_snapshot::read_final));
     }
+    finals.end_pass();
     runs
-}
-
-/// The final snapshots in the run folders of the repo at `root`, in folder
-/// name order. `<repo>/.ralphy/runs/` is the run folders' directory
-/// (`Workspace::runs_dir` in ralphy-core, which the daemon does not import).
-/// A folder with no final snapshot this build reads is not a finished run.
-fn read_finished(root: &Path, slug: &str) -> Vec<FinishedRun> {
-    let Ok(entries) = std::fs::read_dir(root.join(".ralphy").join("runs")) else {
-        return Vec::new();
-    };
-    let mut finished: Vec<FinishedRun> = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let dir = entry.path();
-            let snapshot = ralphy_run_snapshot::read_final(&dir)?;
-            let stamp = entry.file_name().into_string().ok()?;
-            Some(FinishedRun {
-                repo: slug.to_string(),
-                stamp,
-                ended: ended_at(&dir).unwrap_or_else(|| snapshot.started_at.clone()),
-                snapshot,
-            })
-        })
-        .collect();
-    finished.sort_by(|a, b| a.stamp.cmp(&b.stamp));
-    finished
-}
-
-/// When the run in `run_dir` ended: the time its final snapshot was written.
-fn ended_at(run_dir: &Path) -> Option<String> {
-    let modified = std::fs::metadata(ralphy_run_snapshot::final_snapshot_path(run_dir))
-        .and_then(|m| m.modified())
-        .ok()?;
-    Some(
-        chrono::DateTime::<chrono::Utc>::from(modified)
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-    )
 }
 
 /// The list of `sessions` now, the runs `runs` and the `dismissed` ids. A
@@ -163,12 +130,13 @@ pub(crate) async fn peer_requests(peers_dir: PathBuf) -> PeerRequests {
     read
 }
 
-/// What the last tick saw: the id and the detail of each request, and the
-/// done marks it looked at.
+/// What the last tick saw: the id and the detail of each request, the done
+/// marks it looked at, and the final snapshots it read.
 #[derive(Default)]
 pub(crate) struct Seen {
     last: Vec<(String, Option<String>)>,
     marks: Marks,
+    finals: Finals,
 }
 
 impl Seen {
@@ -197,8 +165,13 @@ pub(crate) async fn tick_once(
     pushes: &broadcast::Sender<Push>,
 ) {
     let path = files.registry.clone();
-    let mut read = match tokio::task::spawn_blocking(move || read_runs(&path)).await {
-        Ok(read) => read,
+    let mut finals = std::mem::take(&mut seen.finals);
+    let joined = tokio::task::spawn_blocking(move || (read_runs(&path, &mut finals), finals)).await;
+    let mut read = match joined {
+        Ok((read, finals)) => {
+            seen.finals = finals;
+            read
+        }
         Err(e) => {
             tracing::warn!(error = %e, "the attention tick could not read the runs");
             return;
