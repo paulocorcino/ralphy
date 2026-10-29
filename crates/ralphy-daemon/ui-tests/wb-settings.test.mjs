@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { UI, withoutComments } from "./harness.mjs";
+import { assembledPage, UI, withoutComments } from "./harness.mjs";
 import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 
 // A password field is kept out of the DOM while its modal is closed (the
@@ -13,8 +13,9 @@ import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 // the next text field typed into). The gate must be the flag of the modal the
 // field sits in: gated on another modal's flag, the field never renders at all.
 test("each modal's password fields render when THAT modal is open", () => {
-  // Comments dropped first: their prose quotes tags like `<div>`.
-  const html = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
+  // The whole page with its parts put in, so every modal is walked. Comments
+  // dropped first: their prose quotes tags like `<div>`.
+  const html = withoutComments(assembledPage("index.html"));
   // The scrim's body runs to the `</div>` that closes it, found by depth.
   const scrimBody = (start) => {
     let depth = 0;

@@ -214,7 +214,7 @@ fn shell_lists_the_fences() {
             "wb-consoles-tab.ts must keep the #343 pin {pin}"
         );
     }
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     // `class="fence-item"`, not the bare noun: the markup's own comment
     // names the class, so a rename on the real element would leave a bare
     // `"fence-item"` pin green while every row loses its styling.

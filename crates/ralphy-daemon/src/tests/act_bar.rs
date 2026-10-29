@@ -11,7 +11,7 @@ use super::*;
 /// on the same bargain as the #331 gate above: no Playwright in CI.
 #[test]
 fn a_refused_change_act_reports_in_the_changes_panel() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [
         r#"class="chg-error""#,
         r#"x-show="changesError""#,
@@ -53,7 +53,7 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
 /// Playwright in CI.
 #[test]
 fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [
         r#"data-act="fetch" :disabled="$store.connection.writeLocked() || !!syncBusy""#,
         r#"data-act="pull" :disabled="$store.connection.writeLocked() || !!syncBusy || !!pullBlocked()""#,
@@ -92,7 +92,7 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
 /// label was cut on both sides.
 #[test]
 fn pull_leaves_the_bar_while_the_branch_has_no_upstream() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     let pull = html
         .split(r#"data-act="pull""#)
         .nth(1)
@@ -127,7 +127,7 @@ fn pull_leaves_the_bar_while_the_branch_has_no_upstream() {
 /// `treeError` would make a working project read as an unreadable one.
 #[test]
 fn a_refused_branch_change_reports_in_the_projects_panel() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [
         r#"class="files-error branch-error""#,
         r#"class="files-error branch-error" x-show="$store.checkouts.branchError""#,
@@ -231,7 +231,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         console_js[trash_click..trash_click + 200].contains("e.stopPropagation();"),
         "the remove action must stop the row's selecting click"
     );
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     assert!(
         html.contains(r#"onRemove: (row) => this.removeWorktree(ref, row),"#)
             || shell_family().contains("onRemove: (row) => this.removeWorktree(ref, row),"),

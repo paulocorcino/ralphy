@@ -1,6 +1,6 @@
 //! `oversized` holds the size of every source file (ADR-0022 §7). A Rust
-//! file may have [`Lang::Rust`]'s limit of lines of code, and a TypeScript
-//! file [`Lang::TypeScript`]'s. With no argument it lists the files over
+//! file may have [`Lang::Rust`]'s limit of lines of code, a TypeScript file
+//! [`Lang::TypeScript`]'s, and an HTML file [`Lang::Html`]'s. With no argument it lists the files over
 //! their limit. With `--base <rev>` it fails when a file over its limit is
 //! larger than at `<rev>`: an old large file may shrink but never grow, and a
 //! new file, or a file that grows past the limit, is split. The pull-request
@@ -10,7 +10,9 @@
 //! Comment and blank lines do not count, so a well-commented file is not
 //! penalised. A line counts as a comment when it starts with `//` after its
 //! indentation, or when it starts with `/*` or is inside the block comment
-//! such a line opens. Code after a `*/` on the same line is not counted.
+//! such a line opens. Code after a `*/` on the same line is not counted. In an
+//! HTML file, text inside `<!-- … -->` is a comment, and a line with code
+//! before or after a comment is code.
 
 use std::path::{Path, PathBuf};
 
@@ -19,12 +21,13 @@ use anyhow::{bail, Context, Result};
 use crate::asset_pins::repo_root;
 use crate::capabilities::{git, git_show};
 
-/// The two languages of the repo's source files. A file of any other
-/// extension is not measured.
+/// The languages of the repo's source files. A file of any other extension
+/// is not measured.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Lang {
     Rust,
     TypeScript,
+    Html,
 }
 
 impl Lang {
@@ -33,6 +36,8 @@ impl Lang {
             Some(Lang::Rust)
         } else if name.ends_with(".ts") {
             Some(Lang::TypeScript)
+        } else if name.ends_with(".html") {
+            Some(Lang::Html)
         } else {
             None
         }
@@ -40,10 +45,11 @@ impl Lang {
 
     /// Lines of code a file may have. Rust: the split threshold of ADR-0022
     /// §5. TypeScript: the module size of ADR-0073 (its 2026-10-11
-    /// amendment), so an agent can read a workbench module whole.
+    /// amendment), so an agent can read a workbench module whole. HTML: the
+    /// page and each part of the workbench (ADR-0080 D9).
     fn limit(self) -> usize {
         match self {
-            Lang::Rust => 500,
+            Lang::Rust | Lang::Html => 500,
             Lang::TypeScript => 700,
         }
     }
@@ -78,8 +84,7 @@ pub fn oversized_cmd(args: &[String]) -> Result<()> {
         .with_context(|| format!("{base} is not a commit"))?;
     let mut errors = Vec::new();
     for file in &over {
-        let before = code_lines(&git_show(&root, base, &file.path)?);
-        errors.extend(growth_error(file, before));
+        errors.extend(growth_since(file, &git_show(&root, base, &file.path)?));
     }
     if errors.is_empty() {
         return Ok(());
@@ -102,7 +107,7 @@ fn measure(root: &Path) -> Result<Vec<Oversized>> {
     for (path, lang) in files {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let lines = code_lines(&text);
+        let lines = lines_of_code(lang, &text);
         if lines > lang.limit() {
             over.push(Oversized {
                 path: rel_path(root, &path)?,
@@ -125,6 +130,58 @@ fn growth_error(file: &Oversized, before: usize) -> Option<String> {
             file.path, file.lines, file.limit
         )
     })
+}
+
+/// The error for `file` when its lines of code grew against `base_text`, the
+/// text it had at the base. Both sides are counted the way the file's own
+/// language counts.
+fn growth_since(file: &Oversized, base_text: &str) -> Option<String> {
+    let lang = Lang::of(&file.path)?;
+    growth_error(file, lines_of_code(lang, base_text))
+}
+
+/// The lines of code of `text`, counted by the rules of `lang`.
+fn lines_of_code(lang: Lang, text: &str) -> usize {
+    match lang {
+        Lang::Rust | Lang::TypeScript => code_lines(text),
+        Lang::Html => html_code_lines(text),
+    }
+}
+
+/// Lines of HTML that have something outside `<!-- … -->`. A comment may
+/// span lines.
+fn html_code_lines(text: &str) -> usize {
+    let mut in_comment = false;
+    text.lines()
+        .filter(|line| html_line_has_code(line, &mut in_comment))
+        .count()
+}
+
+/// Whether `line` has text outside a comment. `in_comment` says whether the
+/// line starts inside a comment, and is left saying whether it ends inside
+/// one.
+fn html_line_has_code(line: &str, in_comment: &mut bool) -> bool {
+    let mut rest = line;
+    let mut code = false;
+    while let Some((text, tail)) = html_next_piece(rest, *in_comment) {
+        code |= has_text(text);
+        *in_comment = !*in_comment;
+        rest = tail;
+    }
+    code || (!*in_comment && has_text(rest))
+}
+
+/// The text of `rest` up to the next comment boundary, and what follows the
+/// boundary. Outside a comment the boundary is `<!--`, inside one it is
+/// `-->`; the text of a piece inside a comment is not code, so the caller
+/// reads it only when it is outside one.
+fn html_next_piece(rest: &str, in_comment: bool) -> Option<(&str, &str)> {
+    let (text, tail) = rest.split_once(if in_comment { "-->" } else { "<!--" })?;
+    Some((if in_comment { "" } else { text }, tail))
+}
+
+fn has_text(text: &str) -> bool {
+    !text.trim().is_empty()
 }
 
 /// Lines of code above the first inline `#[cfg(test)] mod … {`, comment and
@@ -162,7 +219,7 @@ fn opens_inline_mod(line: &str) -> bool {
     head.starts_with("mod ") && head.ends_with('{')
 }
 
-/// Every `.rs` and `.ts` file under `dir`, test code included. Not read:
+/// Every `.rs`, `.ts` and `.html` file under `dir`, test code included. Not read:
 /// build output, installed packages, vendored code and hidden directories.
 fn collect_sources(dir: &Path, out: &mut Vec<(PathBuf, Lang)>) -> Result<()> {
     let entries = std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))?;
@@ -242,6 +299,68 @@ mod tests {
         assert_eq!(Lang::of("wb-desk.ts").map(Lang::limit), Some(700));
         assert_eq!(Lang::of("globals.d.ts").map(Lang::limit), Some(700));
         assert_eq!(Lang::of("app.js"), None);
+    }
+
+    #[test]
+    fn html_has_a_limit_of_500_code_lines() {
+        assert_eq!(Lang::of("index.html").map(Lang::limit), Some(500));
+        assert_eq!(
+            Lang::of("wb-hosts-dialog.part.html").map(Lang::limit),
+            Some(500)
+        );
+    }
+
+    #[test]
+    fn an_html_comment_is_not_code() {
+        let src = "<div>
+                   <!-- a comment
+                   that spans
+                   <p>not code</p>
+                   -->
+                   <!-- one line -->
+                   
+                   <b>x</b> <!-- after code -->
+                   </div>
+";
+        assert_eq!(
+            lines_of_code(Lang::Html, src),
+            3,
+            "`<div>`, the line with code before a comment, `</div>`"
+        );
+        let after = "<!-- opens
+closes --> <i>y</i>
+";
+        assert_eq!(lines_of_code(Lang::Html, after), 1, "code after `-->`");
+    }
+
+    #[test]
+    fn a_page_that_grows_past_its_limit_fails() {
+        let page = |code: usize| {
+            let mut text = String::from(
+                "<!-- a long
+comment
+of three lines -->
+",
+            );
+            text.push_str(
+                &"<p>x</p>
+"
+                .repeat(code),
+            );
+            text
+        };
+        let file = Oversized {
+            path: "crates/a/ui/index.html".to_string(),
+            lines: lines_of_code(Lang::Html, &page(501)),
+            limit: 500,
+        };
+        assert_eq!(file.lines, 501);
+        let grown = growth_since(&file, &page(500)).expect("it grew by one code line");
+        assert!(
+            grown.starts_with("crates/a/ui/index.html: 500 -> 501"),
+            "{grown}"
+        );
+        assert_eq!(growth_since(&file, &page(501)), None, "the same size");
     }
 
     #[test]

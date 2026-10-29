@@ -25,15 +25,9 @@ fn every_shell_links_the_whole_cascade() {
     expected.sort();
 
     for (shell, html) in [
-        ("index.html", include_str!("../../assets/ui/index.html")),
-        (
-            "detached.html",
-            include_str!("../../assets/ui/detached.html"),
-        ),
-        (
-            "detached-fence.html",
-            include_str!("../../assets/ui/detached-fence.html"),
-        ),
+        ("index.html", super::INDEX_HTML),
+        ("detached.html", super::DETACHED_HTML),
+        ("detached-fence.html", super::DETACHED_FENCE_HTML),
     ] {
         let linked: Vec<String> = tag_references(html)
             .into_iter()
@@ -97,15 +91,9 @@ fn the_sweep_set_covers_every_asset_we_wrote() {
 #[test]
 fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     const SHELLS: [(&str, &str); 3] = [
-        ("index.html", include_str!("../../assets/ui/index.html")),
-        (
-            "detached.html",
-            include_str!("../../assets/ui/detached.html"),
-        ),
-        (
-            "detached-fence.html",
-            include_str!("../../assets/ui/detached-fence.html"),
-        ),
+        ("index.html", super::INDEX_HTML),
+        ("detached.html", super::DETACHED_HTML),
+        ("detached-fence.html", super::DETACHED_FENCE_HTML),
     ];
     let embedded = embedded_ui_paths();
     let mut referenced: Vec<String> = Vec::new();
@@ -346,5 +334,22 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
         found >= 10,
         "expected the UI suite to hold at least the ten test files it had \
          when this gate was written, found {found} — did the glob break?"
+    );
+}
+
+/// A part is put into its page at build time and is never served (ADR-0080
+/// D2): no path of the embedded tree is a `*.part.html` file.
+#[test]
+fn no_part_file_is_served() {
+    let paths = embedded_ui_paths();
+    assert!(
+        paths.iter().any(|p| p == "index.html"),
+        "the embedded tree must hold the desk page: {} paths read",
+        paths.len()
+    );
+    let parts: Vec<&String> = paths.iter().filter(|p| p.ends_with(".part.html")).collect();
+    assert!(
+        parts.is_empty(),
+        "a part is put into its page and never served: {parts:?}"
     );
 }

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
 
 const ALIASES = [
   { alias: "svrapp", hostname: "10.0.0.5", user: "deploy", port: 2222 },
@@ -15,6 +15,8 @@ const ALIASES = [
 ];
 
 const VPS_ID = "01TUNNELPEER0000000000000A";
+// The part that holds the dialog's markup.
+const PART = "wb-hosts-dialog.part.html";
 const line = (o) => JSON.stringify(o) + "\n";
 
 // `state` is the scope the dialog's code sees; `shell` is the shell() object
@@ -317,7 +319,7 @@ test("dialog: Back from the checks keeps the fields; it waits while a command ru
   state.addHostBack();
   assert.equal(state.addHost.step, "connection");
   assert.equal(state.addHost.address, "10.1.1.4");
-  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const html = readFileSync(join(UI, PART), "utf8");
   assert.match(html, /@click="addHostBack\(\)"[^>]*>Back</);
   assert.match(html, /@click="addHostNext\(\)"[^>]*>Connect</);
   assert.match(html, /'Save' : 'Add host'/);
@@ -439,8 +441,6 @@ test("dialog: a host row's tooltip holds the state, not the name the row prints"
 
 // ---- the component's contract with shell() and the page ----
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
-
 test("the dialog lists at most 12 shell() names, and shell() has each one", () => {
   const { data, shell } = dialog();
   assert.ok(data.uses.length <= 12, `${data.uses.length} names: ${data.uses.join(", ")}`);
@@ -453,7 +453,7 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
-  const markup = componentMarkup(HTML, "wbHostsDialog");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // `x-data` names the component; `x-for` adds its loop variables.
   const loopVars = new Set();
@@ -487,13 +487,15 @@ test("the dialog's scope refuses a shell() name outside uses, and any shell() wr
 });
 
 test("the sidebar button asks the dialog to open with workbench:hosts-open", () => {
-  const html = withoutComments(HTML);
-  const opener = html.match(/<button class="side-refresh side-add-host"[^>]*>/)[0];
+  // The page without the dialog's part: the shell and the other components.
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
+  const opener = outside.match(/<button class="side-refresh side-add-host"[^>]*>/)[0];
   assert.match(opener, /@click="\$dispatch\('workbench:hosts-open'\)"/);
-  assert.match(html, /<div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open\.window="openAddHost\(\)">/);
+  assert.match(
+    partMarkup(PART),
+    /<div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open\.window="openAddHost\(\)">/,
+  );
   // Nothing outside the component names its state.
-  const start = HTML.indexOf('x-data="wbHostsDialog"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
   for (const name of ["addHost", "removeHost", "hostSecretShown", "openAddHost"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }

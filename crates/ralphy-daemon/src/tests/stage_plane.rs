@@ -160,7 +160,7 @@ fn shell_has_no_clamp_and_carries_the_stage() {
     );
     // The extent itself (`stageExtent`) is driven by the node suite.
 
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     assert!(
         html.contains(r#"id="stage""#),
         "index.html must carry the stage plane (#336)"
@@ -280,7 +280,7 @@ fn shell_navigates_the_plane() {
         );
     }
 
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [r#"class="dropdown window-menu""#, r#"class="window-item""#] {
         assert!(
             html.contains(pin),
@@ -296,7 +296,7 @@ fn shell_navigates_the_plane() {
 /// the chrome sliding back onto the plane.
 #[test]
 fn shell_pins_the_frame_chrome() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     // The stage element is EMPTY in the markup, so the chrome physically
     // cannot be a child of it — a stronger pin than "is not inside" prose.
     assert!(

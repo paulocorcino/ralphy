@@ -5,8 +5,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { UI } from "./harness.mjs";
+import { assembledPage, UI } from "./harness.mjs";
 import * as WBHosts from "../assets/ui/wb-hosts.ts";
+
+// The markup of the Hosts dialog, comments kept.
+const dialogPart = () => readFileSync(join(UI, "wb-hosts-dialog.part.html"), "utf8");
 
 // The fold keeps no state, so one import serves every test.
 function load() {
@@ -275,7 +278,7 @@ test("the add button sits in the Projects header, outside any group header", () 
 });
 
 test("each row of Your hosts has Edit and Remove, and Remove asks in that row", () => {
-  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const html = dialogPart();
   const start = html.indexOf('<ul class="host-list"');
   const end = html.indexOf("</ul>", start);
   assert.ok(start > 0 && end > start);
@@ -285,15 +288,14 @@ test("each row of Your hosts has Edit and Remove, and Remove asks in that row", 
   assert.match(list, /@click="openRemoveHost\(h\)"[^>]*>Remove</);
   assert.match(list, /x-show="removeHost\.open && removeHost\.daemon === h\.daemon_id"/);
   assert.match(list, /@click="confirmRemoveHost\(\)"/);
-  assert.doesNotMatch(html, /scrim\('removeHost\.open'/, "no second dialog for Remove");
+  assert.doesNotMatch(assembledPage("index.html"), /scrim\('removeHost\.open'/, "no second dialog for Remove");
 });
 
 test("the Hosts dialog renders host text with x-text only", () => {
-  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const html = dialogPart();
   const start = html.indexOf("scrim('addHost.open'");
-  const end = html.indexOf("Login gate", start);
-  assert.ok(start > 0 && end > start);
-  const block = html.slice(start, end);
+  assert.ok(start > 0);
+  const block = html.slice(start);
   assert.ok(block.includes('class="host-list"'), "the list is in the block");
   assert.doesNotMatch(block, /x-html|innerHTML/);
 });
@@ -399,7 +401,7 @@ test("the main button is Install while Ralphy can be sent to the host", () => {
 });
 
 test("the connection fields are never offered to autofill or a password manager", () => {
-  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const html = dialogPart();
   const start = html.indexOf("<!-- 1. Connection");
   const end = html.indexOf("<!-- 2. Host identity", start);
   assert.ok(start > 0 && end > start);

@@ -173,7 +173,7 @@ fn every_workbench_event_name_is_in_the_typed_list() {
         "globals.d.ts lists workbench events that no module and no markup uses: {unused:?}"
     );
     // A dialog hears its `-open` event with `.window`: that name is a window event.
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for (at, _) in html.match_indices("@workbench:") {
         let rest = &html[at + 1..];
         let event = workbench_event_names(rest)
@@ -260,19 +260,11 @@ fn alpine_data_calls(js: &str) -> Vec<(&str, &str)> {
 #[test]
 fn each_page_starts_from_one_entry_module() {
     for (page, html, entry) in [
-        (
-            "index.html",
-            include_str!("../../assets/ui/index.html"),
-            "main.js",
-        ),
-        (
-            "detached.html",
-            include_str!("../../assets/ui/detached.html"),
-            "detached-main.js",
-        ),
+        ("index.html", super::INDEX_HTML, "main.js"),
+        ("detached.html", super::DETACHED_HTML, "detached-main.js"),
         (
             "detached-fence.html",
-            include_str!("../../assets/ui/detached-fence.html"),
+            super::DETACHED_FENCE_HTML,
             "detached-fence-main.js",
         ),
     ] {
@@ -317,7 +309,7 @@ fn each_page_starts_from_one_entry_module() {
         "main.ts starts Alpine once"
     );
 
-    let index = include_str!("../../assets/ui/index.html");
+    let index = super::INDEX_HTML;
     let mut bound: Vec<&str> = index
         .split("x-data=\"")
         .skip(1)

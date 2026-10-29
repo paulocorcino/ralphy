@@ -42,7 +42,7 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
             "the shell must keep {symbol} to wake a peer"
         );
     }
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     assert!(
         html.contains(r#"@click.stop="$store.projects.wakePeer(g.daemon)""#),
         "the group header must carry the wake control"
@@ -89,7 +89,7 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
         js.contains("createHere(kind: \"file\" | \"folder\") {"),
         "wb-files.ts must keep createHere(kind) — the Files header calls it"
     );
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for symbol in ["createHere('file')", "createHere('folder')"] {
         assert!(
             html.contains(symbol),
@@ -107,7 +107,7 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
 /// `app.test.mjs`; this pins the markup the dialog renders into.
 #[test]
 fn naming_a_new_entry_uses_the_design_system_prompt() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for symbol in ["prompt-modal", "id=\"prompt-input\"", "promptSubmit()"] {
         assert!(
             html.contains(symbol),
@@ -132,7 +132,7 @@ fn naming_a_new_entry_uses_the_design_system_prompt() {
 /// descriptive span, closes, and only then come the actions.
 #[test]
 fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     let rows: Vec<&str> = html.matches("class=\"chg-row\"").collect();
     assert_eq!(
         rows.len(),
@@ -207,7 +207,7 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
 /// `wb_icons_487.py` owns the rendering; this pin keeps the markup on it.
 #[test]
 fn every_icon_is_drawn_by_the_x_icon_directive() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     let js = shell_family();
     assert!(
         js.contains("export function iconDirective(")
@@ -266,7 +266,7 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
          otherwise introduce; found: {filter:?}"
     );
 
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     assert!(
         html.contains(r#"x-text="repoLabel(p)""#),
         "the row must render the label through `repoLabel`"
@@ -312,7 +312,7 @@ fn the_project_name_truncates_instead_of_wrapping() {
 /// each to its first `</div>` is exact.
 #[test]
 fn the_branch_chip_carries_the_change_count_on_the_project_row() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     let slice = |open: &str| -> String {
         html.split_once(open)
             .unwrap_or_else(|| panic!("index.html must carry `{open}`"))

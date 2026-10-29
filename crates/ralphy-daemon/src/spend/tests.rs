@@ -395,7 +395,7 @@ fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
         );
     }
 
-    let html = include_str!("../../assets/ui/index.html");
+    let html = crate::tests::INDEX_HTML;
     assert!(
         html.contains("spendModel.total") && html.contains("spendModel.meter"),
         "index.html must render the daemon's total and meter verbatim"

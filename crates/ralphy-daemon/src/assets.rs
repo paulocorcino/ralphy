@@ -434,8 +434,8 @@ mod tests {
     async fn a_page_is_served_at_its_route_and_never_at_its_file_name() {
         for (route, source) in [
             ("/", desk_page()),
-            ("/popup", include_bytes!("../assets/ui/detached.html")),
-            ("/fence", include_bytes!("../assets/ui/detached-fence.html")),
+            ("/popup", crate::tests::DETACHED_HTML.as_bytes()),
+            ("/fence", crate::tests::DETACHED_FENCE_HTML.as_bytes()),
         ] {
             let resp = get(route, &[]).await;
             assert_eq!(resp.status(), StatusCode::OK, "GET {route}");
@@ -455,7 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_desk_page_carries_the_build_id() {
-        let source = include_bytes!("../assets/ui/index.html");
+        let source = crate::tests::INDEX_HTML.as_bytes();
         assert!(
             String::from_utf8_lossy(source).contains(BUILD_META),
             "index.html keeps the empty tag the daemon fills"

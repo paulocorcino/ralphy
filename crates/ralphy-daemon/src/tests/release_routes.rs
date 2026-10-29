@@ -30,7 +30,7 @@ async fn api_about_route_reports_version_and_facts() {
 /// surface is deleted.
 #[test]
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     let app = shell_family();
     let module = include_str!("../../assets/ui/wb-release.ts");
     let dialogs = include_str!("../../assets/ui/wb-release-dialogs.ts");

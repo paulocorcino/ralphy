@@ -43,7 +43,7 @@ fn shell_draws_fences_below_the_windows() {
         tab.contains("newFence("),
         "wb-consoles-tab.ts must wire the toolbar act"
     );
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     assert!(
         html.contains("newFence()"),
         "index.html must carry the Fence button (#340)"
@@ -149,7 +149,7 @@ fn shell_draws_fences_below_the_windows() {
         app.contains("return this.fenceItems.length >= window.WBConsole.FENCE_MAX;"),
         "fenceAtCap must read the snapshot Alpine can observe changing"
     );
-    let shell = include_str!("../../assets/ui/index.html");
+    let shell = super::INDEX_HTML;
     assert!(
         shell.contains(r#":disabled="fenceAtCap()""#),
         "the New fence row must be disabled at the cap, not merely refused"
@@ -416,7 +416,7 @@ fn shell_arranges_into_the_fence() {
         !app.contains("arrangeConsoles"),
         "the shell's global arrange action must be gone (#342)"
     );
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     assert!(
         !html.contains("Arrange"),
         "the canvas toolbar must carry no Arrange control (#342)"
