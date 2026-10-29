@@ -398,11 +398,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-hosts.ts": {
-      "progress": [
-        18
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-modals-store.ts": {
       "consoleShortcutsBlocked": [
         16

@@ -205,6 +205,41 @@ function upsert(checks: Check[], check: Check): Check[] {
   return copy;
 }
 
+// The check a `check` event reports, as the dialog keeps it.
+function checkOf(ev: Extract<Progress, { event: "check" }>): Check {
+  return {
+    id: ev.id,
+    label: ev.label || ev.id,
+    status: ev.status,
+    text: ev.text || "",
+    command: ev.command || null,
+  };
+}
+
+// What `ralphy host install` would send, from an `install` event.
+function installOf(ev: Extract<Progress, { event: "install" }>): Install {
+  return {
+    version: String(ev.version || ""),
+    target: String(ev.target || ""),
+    source: ev.source === "release" ? ("release" as const) : ("this-computer" as const),
+    folder: String(ev.folder || ""),
+  };
+}
+
+// The state after a `failed` event.
+function failedState(s: State, ev: Extract<Progress, { event: "failed" }>): State {
+  const failure = {
+    kind: ev.kind || "other",
+    message: sentence(ev.message),
+    keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
+  };
+  const next: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
+  // Sign-in failed: back to the fields, where the password is typed.
+  if (ev.kind === "auth_refused") next.step = "connection";
+  if (ev.kind === "password_refused") Object.assign(next, { step: "connection", password: "" });
+  return next;
+}
+
 // One progress event of the CLI's `--json` mode.
 function progress(s: State, ev: Progress | undefined): State {
   if (!ev) return s;
@@ -213,15 +248,7 @@ function progress(s: State, ev: Progress | undefined): State {
     case "connected":
       return Object.assign({}, s, { os: ev.os || "", password: "" });
     case "check":
-      return Object.assign({}, s, {
-        checks: upsert(s.checks, {
-          id: ev.id,
-          label: ev.label || ev.id,
-          status: ev.status,
-          text: ev.text || "",
-          command: ev.command || null,
-        }),
-      });
+      return Object.assign({}, s, { checks: upsert(s.checks, checkOf(ev)) });
     case "fixed":
       return Object.assign({}, s, {
         checks: s.checks.map((c) =>
@@ -229,28 +256,11 @@ function progress(s: State, ev: Progress | undefined): State {
         ),
       });
     case "install":
-      return Object.assign({}, s, {
-        install: {
-          version: String(ev.version || ""),
-          target: String(ev.target || ""),
-          source: ev.source === "release" ? ("release" as const) : ("this-computer" as const),
-          folder: String(ev.folder || ""),
-        },
-      });
+      return Object.assign({}, s, { install: installOf(ev) });
     case "note":
       return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
-    case "failed": {
-      const failure = {
-        kind: ev.kind || "other",
-        message: sentence(ev.message),
-        keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
-      };
-      const next: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
-      // Sign-in failed: back to the fields, where the password is typed.
-      if (ev.kind === "auth_refused") next.step = "connection";
-      if (ev.kind === "password_refused") Object.assign(next, { step: "connection", password: "" });
-      return next;
-    }
+    case "failed":
+      return failedState(s, ev);
     case "added":
       return Object.assign({}, s, { done: true, addedName: String(ev.name || "") });
     default:
