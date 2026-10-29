@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -180,7 +181,7 @@ pub(crate) async fn peer_tree_poll_route(
             poll.paths.push(watch::RUNSTATE_REL.to_string());
         }
     }
-    if let Err(e) = subs.subscribe(&poll.sub, &poll.repo, root, &poll.paths) {
+    if let Err(e) = subscribe_off_reactor(&subs, &poll, root).await {
         tracing::warn!(error = %e, "refused a peer tree subscription");
         // NOT `{"dirty": []}`. A refusal dressed as "nothing changed" is answered
         // in milliseconds and re-posted at once; saying it is an error is what
@@ -215,6 +216,22 @@ pub(crate) async fn peer_tree_poll_route(
         .map(|(repo, path)| serde_json::json!({ "repo": repo, "path": path }))
         .collect();
     Json(serde_json::json!({ "dirty": dirty })).into_response()
+}
+
+/// Run [`fleet::watchsub::WatchSubs::subscribe`] on a blocking thread: it
+/// resolves paths and starts OS watchers while it holds a std mutex, and the
+/// reactor it would block also drives every console.
+async fn subscribe_off_reactor(
+    subs: &Arc<fleet::watchsub::WatchSubs>,
+    poll: &PeerTreePoll,
+    root: &Path,
+) -> anyhow::Result<()> {
+    let subs = Arc::clone(subs);
+    let (sub, repo, paths) = (poll.sub.clone(), poll.repo.clone(), poll.paths.clone());
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || subs.subscribe(&sub, &repo, &root, &paths))
+        .await
+        .context("the tree subscription did not finish")?
 }
 
 pub(crate) async fn peer_tree_close_route(
