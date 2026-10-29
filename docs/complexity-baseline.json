@@ -94,11 +94,6 @@
         12
       ]
     },
-    "crates/ralphy-cli/src/run/wiring.rs": {
-      "build_run_queue": [
-        17
-      ]
-    },
     "crates/ralphy-cli/src/telegram/notifier.rs": {
       "on_event": [
         12
