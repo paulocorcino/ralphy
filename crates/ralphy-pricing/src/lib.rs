@@ -150,39 +150,28 @@ impl PriceTable {
     /// applied to bare candidates, and provider-prefix synthesis for catalog keys.
     fn resolve(&self, model: &str) -> Option<&ModelPrice> {
         let candidates = bare_candidates(model);
+        first_bare(&self.overrides, &candidates)
+            .or_else(|| self.cache_hit(&candidates))
+            .or_else(|| self.seed_hit(&candidates))
+            .or_else(|| first_bare(&self.overlay, &candidates))
+    }
 
-        for c in &candidates {
-            if let Some(p) = self.overrides.get(c.as_str()) {
-                return Some(p);
-            }
-        }
+    /// The first candidate whose synthesized catalog key is in the cache, else
+    /// whose bare id is.
+    fn cache_hit(&self, candidates: &[String]) -> Option<&ModelPrice> {
+        candidates.iter().find_map(|c| {
+            synthesize(c)
+                .and_then(|key| self.cache.get(&key))
+                .or_else(|| self.cache.get(c.as_str()))
+        })
+    }
 
-        for c in &candidates {
-            if let Some(key) = synthesize(c) {
-                if let Some(p) = self.cache.get(&key) {
-                    return Some(p);
-                }
-            }
-            if let Some(p) = self.cache.get(c.as_str()) {
-                return Some(p);
-            }
-        }
-
-        for c in &candidates {
-            if let Some(key) = synthesize(c) {
-                if let Some(p) = self.seed.get(&key) {
-                    return Some(p);
-                }
-            }
-        }
-
-        for c in &candidates {
-            if let Some(p) = self.overlay.get(c.as_str()) {
-                return Some(p);
-            }
-        }
-
-        None
+    /// The first candidate whose synthesized catalog key is in the seed. The
+    /// seed is keyed by catalog id only, so a bare id is never looked up.
+    fn seed_hit(&self, candidates: &[String]) -> Option<&ModelPrice> {
+        candidates
+            .iter()
+            .find_map(|c| synthesize(c).and_then(|key| self.seed.get(&key)))
     }
 
     /// Load the effective table: embedded floor, optional disk cache, then
@@ -270,6 +259,14 @@ pub fn pricing_offline_from_file() -> bool {
     parse_pricing_toml(&text)
         .map(|f| f.offline)
         .unwrap_or(false)
+}
+
+/// The price of the first candidate that is a key of `layer`.
+fn first_bare<'a>(
+    layer: &'a BTreeMap<String, ModelPrice>,
+    candidates: &[String],
+) -> Option<&'a ModelPrice> {
+    candidates.iter().find_map(|c| layer.get(c.as_str()))
 }
 
 /// Bare-id lookup candidates, preserving the historical resolve order.
