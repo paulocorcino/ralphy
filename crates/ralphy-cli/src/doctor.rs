@@ -212,10 +212,29 @@ fn source_of(agent: Agent) -> StateSource {
         .map_or(StateSource::None, state_source)
 }
 
+/// Whether the state source of `agent` is a plugin the vendor loads, with no
+/// command the doctor can run: its first line in each console shows that it
+/// runs (ADR-0085 D9).
+fn checked_by_first_line(agent: Agent) -> bool {
+    match agent {
+        Agent::Opencode => true,
+        Agent::Claude
+        | Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Gemini
+        | Agent::Kimi => false,
+    }
+}
+
 /// One line for an installed agent: whether its state hooks run. A hook
 /// that fails is a warning, never a missing tool.
 fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
     let (ok, text) = match source_of(agent) {
+        StateSource::Hooks if checked_by_first_line(agent) => (
+            true,
+            "a plugin; checked by its first line in each console".to_string(),
+        ),
         StateSource::Hooks => match facts.hooks.iter().find(|(a, _)| *a == agent) {
             Some((_, HookCheck::Ok)) => (
                 true,
@@ -354,7 +373,7 @@ fn hook_probe(agent: Agent) -> Option<(Agent, HookCheck)> {
 /// The hook command a console of `agent` gets, whose program is `cli`: for
 /// Claude the same command as `agent_state::run_start_check`; for Codex the
 /// program and the arguments its inline hooks run. `None` for an agent that
-/// gives no state through hooks.
+/// gives no state through hooks, or whose source is a plugin with no command.
 fn hook_command(agent: Agent, cli: &Path) -> Option<hook_form::HookCommand> {
     match agent {
         Agent::Claude => Some(ralphy_daemon::agent_state::console_hook(cli)),

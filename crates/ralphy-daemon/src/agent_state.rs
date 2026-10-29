@@ -4,7 +4,9 @@
 //! (each `<ralphy exe> hook status`), points the child at a per-session
 //! status file through `RALPHY_STATUS_FILE`, and tails that file from the
 //! session's own pump tick. A Codex console takes its hooks inline, as `-c`
-//! arguments, and gets no settings file. The fold from hook line to state
+//! arguments, and gets no settings file. An OpenCode console gets a state
+//! plugin file instead, named in `OPENCODE_CONFIG_CONTENT`, which appends to
+//! the same kind of status file (ADR-0085 D2). The fold from hook line to state
 //! (ADR-0085 D7) is **duplicated** here, in [`fold`] and the vendor maps —
 //! the daemon never imports an adapter (ADR-0032 §10) — and pinned against
 //! each adapter's fixture (`tests/fixtures/agent_state_mapping.json`) so the
@@ -28,6 +30,7 @@ pub mod fold;
 
 mod claude;
 mod codex;
+pub(crate) mod opencode;
 
 use fold::{Fold, MapFn, StatusLine};
 
@@ -221,8 +224,9 @@ impl Tail {
                 continue;
             };
             let map = self.vendor.map();
-            // Any line the map reads is proof of life, a subagent's too.
-            out.activity |= map(&line).is_some();
+            // Any line the map reads is proof of life, a subagent's too, and
+            // so is a plugin's first line.
+            out.activity |= map(&line).is_some() || self.vendor.is_first_line(&line);
             if let Some(folded) = self.fold.apply(&line, map) {
                 out.transitions.push(Observed {
                     state: folded.state.as_str(),
@@ -278,10 +282,8 @@ pub enum StateSource {
 /// without choosing one (docs/adr/0059 A1, docs/adr/0040 Tier 4).
 pub fn state_source(agent: Agent) -> StateSource {
     match agent {
-        Agent::Claude | Agent::Codex => StateSource::Hooks,
-        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::OpenCode => {
-            StateSource::None
-        }
+        Agent::Claude | Agent::Codex | Agent::OpenCode => StateSource::Hooks,
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => StateSource::None,
     }
 }
 
@@ -290,6 +292,8 @@ pub fn state_source(agent: Agent) -> StateSource {
 pub enum HookVendor {
     Claude,
     Codex,
+    /// OpenCode, whose state plugin writes the lines (ADR-0085 D2).
+    OpenCode,
 }
 
 impl HookVendor {
@@ -298,7 +302,8 @@ impl HookVendor {
         match agent {
             Agent::Claude => Some(HookVendor::Claude),
             Agent::Codex => Some(HookVendor::Codex),
-            Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::OpenCode => None,
+            Agent::OpenCode => Some(HookVendor::OpenCode),
+            Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => None,
         }
     }
 
@@ -306,15 +311,27 @@ impl HookVendor {
         match self {
             HookVendor::Claude => claude::claude_signal,
             HookVendor::Codex => codex::launched,
+            HookVendor::OpenCode => opencode::opencode_signal,
+        }
+    }
+
+    /// Whether `line` is the first line a vendor's plugin writes when it
+    /// loads: it changes no state, but it proves that the source runs
+    /// (ADR-0085 D9).
+    fn is_first_line(self, line: &StatusLine) -> bool {
+        match self {
+            HookVendor::OpenCode => line.event == opencode::PLUGIN_LOADED,
+            HookVendor::Claude | HookVendor::Codex => false,
         }
     }
 
     /// Whether the vendor sends an event when the operator grants a
     /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
-    /// runs; Codex sends nothing until the tool ends.
+    /// runs, OpenCode sends `permission.replied`; Codex sends nothing until
+    /// the tool ends.
     fn sends_a_grant(self) -> bool {
         match self {
-            HookVendor::Claude => true,
+            HookVendor::Claude | HookVendor::OpenCode => true,
             HookVendor::Codex => false,
         }
     }
@@ -323,12 +340,15 @@ impl HookVendor {
 /// The files one console's hooks need, under `<store>/sessions/`: the
 /// settings file a Claude console is launched with, and the status file the
 /// hooks append to. A Codex console takes its hooks as arguments, so it has
-/// no settings file. The files are the session's and go with it.
+/// no settings file. An OpenCode console has the state plugin file instead.
+/// The files are the session's and go with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusFiles {
     pub vendor: HookVendor,
     pub settings: Option<PathBuf>,
     pub status: PathBuf,
+    /// The state plugin an OpenCode console loads.
+    pub plugin: Option<PathBuf>,
 }
 
 impl StatusFiles {
@@ -338,6 +358,7 @@ impl StatusFiles {
             vendor: HookVendor::Claude,
             settings: Some(sessions_dir.join(format!("{id}.settings.json"))),
             status: sessions_dir.join(format!("{id}.agent-status.jsonl")),
+            plugin: None,
         }
     }
 
@@ -351,6 +372,13 @@ impl StatusFiles {
                 vendor: HookVendor::Codex,
                 settings: None,
                 status: claude.status,
+                plugin: None,
+            }),
+            HookVendor::OpenCode => Some(StatusFiles {
+                vendor: HookVendor::OpenCode,
+                settings: None,
+                status: claude.status,
+                plugin: Some(sessions_dir.join(format!("{id}.state-plugin.js"))),
             }),
         }
     }
@@ -367,12 +395,17 @@ impl StatusFiles {
         }
     }
 
-    /// Write the empty status file, and the folder it is in.
+    /// Write the empty status file, and the folder it is in, and the state
+    /// plugin when the console has one.
     pub fn create_status(&self) -> std::io::Result<()> {
         if let Some(dir) = self.status.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&self.status, b"")
+        std::fs::write(&self.status, b"")?;
+        match &self.plugin {
+            Some(plugin) => std::fs::write(plugin, opencode::STATE_PLUGIN),
+            None => Ok(()),
+        }
     }
 
     pub fn remove(&self) {
@@ -380,6 +413,9 @@ impl StatusFiles {
         // about a file the daemon itself created.
         if let Some(settings) = &self.settings {
             let _settings = std::fs::remove_file(settings);
+        }
+        if let Some(plugin) = &self.plugin {
+            let _plugin = std::fs::remove_file(plugin);
         }
         let _status = std::fs::remove_file(&self.status);
     }
@@ -747,12 +783,13 @@ mod tests {
         );
     }
 
-    /// Claude and Codex have hooks; no other agent gives a state. The match
-    /// names every variant, so a new agent has to choose.
+    /// Claude and Codex have hooks, OpenCode has its state plugin; no other
+    /// agent gives a state. The match names every variant, so a new agent
+    /// has to choose.
     #[test]
     fn every_agent_has_a_state_source() {
         for agent in Agent::ALL {
-            let want = if matches!(agent, Agent::Claude | Agent::Codex) {
+            let want = if matches!(agent, Agent::Claude | Agent::Codex | Agent::OpenCode) {
                 StateSource::Hooks
             } else {
                 StateSource::None
@@ -791,5 +828,55 @@ mod tests {
         assert!(codex.status.ends_with("8.agent-status.jsonl") && codex.status.is_file());
         codex.remove();
         assert!(!codex.status.exists());
+        // An OpenCode console has its status file and its state plugin.
+        let opencode = StatusFiles::for_agent(Agent::OpenCode, &dir.path().join("sessions"), 9)
+            .expect("OpenCode has a plugin");
+        assert_eq!(opencode.settings, None);
+        let plugin = opencode.plugin.clone().expect("a plugin file");
+        assert!(plugin.ends_with("9.state-plugin.js"), "{plugin:?}");
+        opencode.create_status().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&plugin).unwrap(),
+            opencode::STATE_PLUGIN
+        );
+        assert!(opencode.status.is_file());
+        opencode.remove();
+        assert!(!plugin.exists() && !opencode.status.exists());
+    }
+
+    /// An OpenCode console whose plugin wrote no line in the 31 s after the
+    /// operator's first input is silent; the plugin's first line alone,
+    /// which changes no state, is enough to show that it runs (ADR-0085 D9).
+    #[test]
+    fn an_opencode_console_with_no_line_is_silent() {
+        use std::io::Write;
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let first_input = Some(now - Duration::from_secs(31));
+        let source = state_source(Agent::OpenCode);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        std::fs::write(&path, b"").unwrap();
+        let mut tail = Tail::new(path.clone(), HookVendor::OpenCode);
+        let first_line = tail.poll().activity.then_some(now);
+        assert_eq!(
+            silence(source, first_input, first_line, None, now).as_deref(),
+            Some(CLOCK_REASON),
+            "no line at all"
+        );
+
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(f, r#"{{"event":"plugin.loaded","ts":"t0"}}"#).unwrap();
+        f.flush().unwrap();
+        let polled = tail.poll();
+        assert!(polled.transitions.is_empty(), "{polled:?}");
+        let first_line = polled.activity.then_some(now);
+        assert_eq!(
+            silence(source, first_input, first_line, None, now),
+            None,
+            "the plugin's first line"
+        );
     }
 }

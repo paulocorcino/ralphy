@@ -40,6 +40,7 @@ mod command;
 mod events;
 mod outcome;
 mod skills;
+mod status;
 mod tasks;
 mod usage;
 
@@ -48,7 +49,7 @@ mod usage;
 /// input)` (ADR-0025 §4). A future vision OpenCode flips this in its own crate.
 pub const ACCEPTS_IMAGES: bool = false;
 
-use command::build_opencode_command;
+use command::{build_watched_opencode_command, StatePlugin};
 use events::{
     is_opencode_auth_error, parse_opencode_events, parse_opencode_limit, parse_opencode_log_limit,
     usage_limit_regex, OPENCODE_AUTH_ERROR_MSG,
@@ -101,6 +102,10 @@ pub struct OpenCodeAgent {
     exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
+    #[cfg(test)]
+    run_hook: Option<
+        std::sync::Arc<dyn Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync>,
+    >,
 }
 
 impl OpenCodeAgent {
@@ -112,7 +117,53 @@ impl OpenCodeAgent {
             exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
+            #[cfg(test)]
+            run_hook: None,
         }
+    }
+
+    /// A stand-in for the `opencode run` child, so a test drives a plan or an
+    /// execute with no OpenCode installed.
+    #[cfg(test)]
+    fn with_run_hook(
+        mut self,
+        hook: impl Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync + 'static,
+    ) -> Self {
+        self.run_hook = Some(std::sync::Arc::new(hook));
+        self
+    }
+
+    /// One `opencode run` call with the state plugin loaded: the plugin and
+    /// the status file are written in the run dir before the child starts,
+    /// and the status file is tailed while it runs (ADR-0085 D2).
+    fn run_watched(
+        &self,
+        skills_dir: &std::path::Path,
+        root: &std::path::Path,
+        prompt: &str,
+        timeout: std::time::Duration,
+        kill_on_stderr_line: impl Fn(&str) -> bool + Send + Sync + 'static,
+    ) -> Result<ralphy_adapter_support::HeadlessRun> {
+        let status = status::Watcher::start(&self.run_dir)?;
+        let cmd = build_watched_opencode_command(
+            self.model.as_deref(),
+            self.variant.as_deref(),
+            root,
+            Some(skills_dir),
+            &StatePlugin {
+                plugin: status.plugin(),
+                status: status.path(),
+            },
+        );
+        #[cfg(test)]
+        let r = match &self.run_hook {
+            Some(hook) => hook(),
+            None => self.run_opencode(cmd, prompt, timeout, kill_on_stderr_line),
+        };
+        #[cfg(not(test))]
+        let r = self.run_opencode(cmd, prompt, timeout, kill_on_stderr_line);
+        status.stop();
+        r
     }
 
     /// Set the operator's optional `--variant` knob (ADR-0005 D3). Provider-native
@@ -175,12 +226,6 @@ impl Agent for OpenCodeAgent {
 
         let run = || {
             let skills_dir = materialize_opencode_skills(ws)?;
-            let cmd = build_opencode_command(
-                self.model.as_deref(),
-                self.variant.as_deref(),
-                ws.repo_root(),
-                Some(&skills_dir),
-            );
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". `--variant`
             // stays `--exec-variant`-only (D8).
@@ -197,10 +242,13 @@ impl Agent for OpenCodeAgent {
             // No early-kill on plan: plan surfaces no usage limit today (the detector
             // below is `|_log| None`), so there is nothing for a kill to hand off to.
             // The call still streams the log live, like execute.
-            let r =
-                self.run_opencode(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout, |_| {
-                    false
-                })?;
+            let r = self.run_watched(
+                &skills_dir,
+                ws.repo_root(),
+                ralphy_adapter_support::PLAN_CHARTER,
+                timeout,
+                |_| false,
+            )?;
             let stdout = r.stdout.clone();
             Ok((r, stdout))
         };
@@ -257,12 +305,6 @@ impl Agent for OpenCodeAgent {
 
         let run = || {
             let skills_dir = materialize_opencode_skills(ws)?;
-            let cmd = build_opencode_command(
-                self.model.as_deref(),
-                self.variant.as_deref(),
-                ws.repo_root(),
-                Some(&skills_dir),
-            );
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". `--variant`
             // stays `--exec-variant`-only (D8).
@@ -284,8 +326,9 @@ impl Agent for OpenCodeAgent {
             // early-killed run classifies as `Limit` identically — only ~sub-second
             // instead of burning the whole per-issue budget.
             let limit_re = usage_limit_regex();
-            let r = self.run_opencode(
-                cmd,
+            let r = self.run_watched(
+                &skills_dir,
+                ws.repo_root(),
                 ralphy_adapter_support::PROMPT_EXECUTE,
                 timeout,
                 move |line| limit_re.is_match(line),

@@ -313,3 +313,24 @@ fn doctor_names_the_codex_state_source() {
     );
     assert!(hook_command(Agent::Copilot, Path::new("copilot")).is_none());
 }
+
+/// OpenCode's state comes from a plugin: there is no command to run, so the
+/// doctor names the source and says how it is checked, as an `ok` line.
+#[test]
+fn doctor_names_the_opencode_state_source() {
+    let facts = MachineFacts {
+        agents: vec![(Agent::Opencode, "1.19.0".to_string())],
+        hooks: Vec::new(),
+        ..all_found()
+    };
+    let report = evaluate(&facts, false);
+    let opencode = line(&report, "opencode hooks");
+    assert_eq!(opencode.tool, Tool::Hooks);
+    assert!(opencode.ok, "{opencode:?}");
+    let mut out = Vec::new();
+    print_report(&report, &mut out).expect("printing");
+    let out = String::from_utf8(out).expect("utf-8");
+    let want = "[ok  ] opencode hooks: a plugin; checked by its first line in each console";
+    assert!(out.contains(want), "{want}\n{out}");
+    assert!(hook_command(Agent::Opencode, Path::new("opencode")).is_none());
+}

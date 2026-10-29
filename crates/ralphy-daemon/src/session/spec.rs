@@ -221,7 +221,8 @@ pub fn spec_with_status(
     match agent {
         Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
         Agent::Codex => add_codex_launch(&mut spec, status),
-        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::OpenCode => {}
+        Agent::OpenCode => add_opencode_launch(&mut spec, status),
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => {}
     }
     spec
 }
@@ -244,6 +245,33 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
             .into_iter()
             .map(OsString::from),
     );
+    spec.env.push((
+        OsString::from(crate::agent_state::STATUS_ENV),
+        files.status.clone().into_os_string(),
+    ));
+    spec.status = Some(files);
+}
+
+/// The OpenCode part of [`spec_with_status`]: the state plugin file, named
+/// in `OPENCODE_CONFIG_CONTENT`, and `RALPHY_STATUS_FILE` (ADR-0085 D2). The
+/// config holds the plugin only: OpenCode merges it with the operator's own
+/// config, so their settings and plugins still load. A failed write launches
+/// the console without the plugin, as for Claude.
+fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+    let Some(files) = status else {
+        return;
+    };
+    let Some(plugin) = files.plugin.clone() else {
+        return;
+    };
+    if let Err(e) = files.create_status() {
+        tracing::warn!(error = %e, "could not write the console's agent-state plugin; launching without it");
+        return;
+    }
+    spec.env.push((
+        OsString::from("OPENCODE_CONFIG_CONTENT"),
+        OsString::from(crate::agent_state::opencode::console_config(&plugin)),
+    ));
     spec.env.push((
         OsString::from(crate::agent_state::STATUS_ENV),
         files.status.clone().into_os_string(),
