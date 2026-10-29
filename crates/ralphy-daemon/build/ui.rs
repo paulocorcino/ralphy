@@ -7,7 +7,11 @@
 //! is the line and column of the source: an error in the browser points at the
 //! `.ts` line. A relative import path then changes from `.ts` to `.js`, which is
 //! the same length, so the columns still hold.
+//!
+//! A top-level `.html` file is not copied: the pages are written with their
+//! parts put in (`parts.rs`, ADR-0080), and a part is never written.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -19,29 +23,59 @@ use swc_ecma_ast::{EsVersion, ModuleDecl, ModuleItem, Str};
 use swc_ecma_parser::{parse_file_as_module, EsSyntax, Syntax};
 use swc_ts_fast_strip::{operate, Mode, Options};
 
+use crate::parts;
+
 /// Source files that type-check the tree and are not served.
 fn is_type_only(name: &str) -> bool {
     name == "tsconfig.json" || name.ends_with(".d.ts")
 }
 
+/// A source file `copy_dir` leaves for another step: a type-only file is not
+/// served, and a top-level `.html` file is a page or a part, which `put_pages`
+/// writes.
+fn is_left_out(name: &str, top: bool) -> bool {
+    is_type_only(name) || (top && name.ends_with(".html"))
+}
+
 /// Build `out` from `src`: an exact copy, except that a `.ts` file becomes a
-/// `.js` file. `out` is emptied first, so a deleted source leaves no file.
+/// `.js` file and a page has its parts put in (ADR-0080 D1). `out` is emptied
+/// first, so a deleted source leaves no file.
 pub fn build(src: &Path, out: &Path) -> Result<()> {
     if out.exists() {
         fs::remove_dir_all(out).with_context(|| format!("empty {}", out.display()))?;
     }
-    copy_dir(src, out)
+    copy_dir(src, out, true)?;
+    put_pages(src, out)
 }
 
-fn copy_dir(src: &Path, out: &Path) -> Result<()> {
+/// Write the pages of the top level of `src` with their parts put in. A part
+/// is read and never written (ADR-0080 D2).
+fn put_pages(src: &Path, out: &Path) -> Result<()> {
+    let mut files = BTreeMap::new();
+    for entry in fs::read_dir(src).with_context(|| format!("read {}", src.display()))? {
+        let entry = entry.with_context(|| format!("read an entry of {}", src.display()))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().is_file() && name.ends_with(".html") {
+            let text = fs::read_to_string(entry.path())
+                .with_context(|| format!("read {}", entry.path().display()))?;
+            files.insert(name, text);
+        }
+    }
+    for (name, text) in parts::put_together(files).context("put the parts into the pages")? {
+        fs::write(out.join(&name), text).with_context(|| format!("write {name}"))?;
+    }
+    Ok(())
+}
+
+fn copy_dir(src: &Path, out: &Path, top: bool) -> Result<()> {
     fs::create_dir_all(out).with_context(|| format!("create {}", out.display()))?;
     for entry in fs::read_dir(src).with_context(|| format!("read {}", src.display()))? {
         let entry = entry.with_context(|| format!("read an entry of {}", src.display()))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
-            copy_dir(&path, &out.join(&name))?;
-        } else if is_type_only(&name) {
+            copy_dir(&path, &out.join(&name), false)?;
+        } else if is_left_out(&name, top) {
             continue;
         } else if let Some(stem) = name.strip_suffix(".ts") {
             let js = format!("{stem}.js");

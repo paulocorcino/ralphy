@@ -7,6 +7,8 @@
 
 #[path = "../ralphy-cli/build/git_version.rs"]
 mod git_version;
+#[path = "build/parts.rs"]
+mod parts;
 #[path = "build/ui.rs"]
 mod ui;
 
