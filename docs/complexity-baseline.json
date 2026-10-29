@@ -55,12 +55,6 @@
       ]
     },
     "crates/ralphy-cli/src/guard.rs": {
-      "evaluate_recursive_delete": [
-        17
-      ],
-      "run_guard_hook": [
-        16
-      ],
       "shell_tokens": [
         11
       ]

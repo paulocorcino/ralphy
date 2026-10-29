@@ -397,3 +397,42 @@ fn a_long_slash_argument_of_rmdir_is_a_delete_target() {
         );
     }
 }
+
+/// A project root whose plan has two open steps and a `## Verify` command
+/// measured at two minutes, and the payload of a tool call run from it.
+fn costly_project(tool: &str) -> (tempfile::TempDir, String) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join(".ralphy")).unwrap();
+    std::fs::write(
+        root.path().join(".ralphy").join("plan.md"),
+        "## Verify\ncargo test --workspace\n\n## Steps\n- [ ] one\n- [ ] two\n",
+    )
+    .unwrap();
+    let mut state = ralphy_core::cmdcost::CostState::default();
+    state.costs.insert("cargo test --workspace".into(), 120.0);
+    ralphy_core::cmdcost::save(root.path(), &state);
+    let payload = json!({
+        "cwd": root.path().to_str().unwrap(),
+        "tool_name": tool,
+        "tool_input": {"command": "cargo test --workspace"},
+    })
+    .to_string();
+    (root, payload)
+}
+
+/// The cost gate denies a Bash call to a verify command measured as
+/// expensive while the plan has steps open, and says which command.
+#[test]
+fn the_cost_gate_steers_a_bash_call_to_an_expensive_verify_command() {
+    let (_root, payload) = costly_project("Bash");
+    let reason = cost_gate_reason(&payload).expect("a steering message");
+    assert!(reason.contains("cargo test --workspace"), "{reason}");
+}
+
+/// The cost gate judges Bash calls only: the same payload from another tool
+/// runs.
+#[test]
+fn the_cost_gate_ignores_a_call_that_is_not_bash() {
+    let (_root, payload) = costly_project("Write");
+    assert_eq!(cost_gate_reason(&payload), None);
+}
