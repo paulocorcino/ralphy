@@ -1,5 +1,5 @@
 {
-  "ceiling": 20,
+  "ceiling": 15,
   "functions": {
     "crates/ralphy-agent-codex/src/usage.rs": {
       "parse_codex_rollout_usage": [
