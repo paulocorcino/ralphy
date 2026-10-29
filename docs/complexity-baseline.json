@@ -191,7 +191,7 @@
     },
     "crates/ralphy-core/src/runner/phases/execute.rs": {
       "execute_phase": [
-        16
+        11
       ]
     },
     "crates/ralphy-core/src/sync.rs": {
