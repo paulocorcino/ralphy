@@ -319,24 +319,10 @@ fn newest_jsonl(base: &Path) -> Option<PathBuf> {
 }
 
 fn newest_jsonl_since(base: &Path, min_modified: Option<SystemTime>) -> Option<PathBuf> {
-    let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
+    let mut newest: Option<(SystemTime, PathBuf)> = None;
     let mut stack = vec![base.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                continue;
-            }
-            let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
-                continue;
-            };
+        for (path, modified) in jsonl_in_dir(&dir, &mut stack) {
             if min_modified.is_some_and(|min| modified < min) {
                 continue;
             }
@@ -346,10 +332,39 @@ fn newest_jsonl_since(base: &Path, min_modified: Option<SystemTime>) -> Option<P
         }
     }
     let (modified, path) = newest?;
-    let age = std::time::SystemTime::now()
+    fresh(modified).then_some(path)
+}
+
+/// The `*.jsonl` files directly in `dir` with their modified times, in listing
+/// order; every subdirectory is pushed onto `stack` for the caller to visit.
+fn jsonl_in_dir(dir: &Path, stack: &mut Vec<PathBuf>) -> Vec<(PathBuf, SystemTime)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            stack.push(path);
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        found.push((path, modified));
+    }
+    found
+}
+
+/// Whether a transcript modified at `modified` is younger than 5 minutes.
+fn fresh(modified: SystemTime) -> bool {
+    let age = SystemTime::now()
         .duration_since(modified)
         .unwrap_or(Duration::ZERO);
-    (age < Duration::from_secs(300)).then_some(path)
+    age < Duration::from_secs(300)
 }
 
 #[cfg(test)]

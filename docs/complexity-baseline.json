@@ -1,11 +1,6 @@
 {
   "ceiling": 20,
   "functions": {
-    "crates/ralphy-agent-claude/src/usage.rs": {
-      "newest_jsonl_since": [
-        20
-      ]
-    },
     "crates/ralphy-agent-codex/src/usage.rs": {
       "parse_codex_rollout_usage": [
         12
