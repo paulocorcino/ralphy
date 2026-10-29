@@ -336,3 +336,20 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
          when this gate was written, found {found} — did the glob break?"
     );
 }
+
+/// A part is put into its page at build time and is never served (ADR-0080
+/// D2): no path of the embedded tree is a `*.part.html` file.
+#[test]
+fn no_part_file_is_served() {
+    let paths = embedded_ui_paths();
+    assert!(
+        paths.iter().any(|p| p == "index.html"),
+        "the embedded tree must hold the desk page: {} paths read",
+        paths.len()
+    );
+    let parts: Vec<&String> = paths.iter().filter(|p| p.ends_with(".part.html")).collect();
+    assert!(
+        parts.is_empty(),
+        "a part is put into its page and never served: {parts:?}"
+    );
+}
