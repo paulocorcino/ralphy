@@ -373,3 +373,27 @@ fn charters_never_tell_the_agent_to_run_a_denied_command() {
         assert!(denied.is_empty(), "{}: {denied:?}", file.display());
     }
 }
+
+/// A cmd.exe switch with a `:` (`/a:h`) is a switch, not a target.
+#[test]
+fn a_cmd_switch_with_a_colon_is_not_a_delete_target() {
+    assert_eq!(
+        eval("Bash", &bash("del /s /q /a:h build")),
+        GuardDecision::Allow
+    );
+}
+
+/// A slash argument that is not a short switch is a target: `/etc/x` and
+/// `/windows` escape the worktree, so `rmdir /s` is refused.
+#[test]
+fn a_long_slash_argument_of_rmdir_is_a_delete_target() {
+    for target in ["/etc/x", "/windows"] {
+        assert!(
+            matches!(
+                eval("Bash", &bash(&format!("rmdir /s /q {target}"))),
+                GuardDecision::Deny(_)
+            ),
+            "{target}"
+        );
+    }
+}

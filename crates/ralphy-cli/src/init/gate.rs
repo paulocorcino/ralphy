@@ -497,4 +497,33 @@ mod tests {
         assert!(!report.contains("gemini.exec_model"), "{report}");
         assert!(!report.contains("halve request consumption"), "{report}");
     }
+
+    /// The whole report of a machine with git and one logged-in agent, and
+    /// with python, the gh login and the GitHub remote missing.
+    #[test]
+    fn format_report_of_a_machine_with_three_blockers() {
+        let f = EnvFindings {
+            python: false,
+            gh_authenticated: false,
+            github_remote: false,
+            agents_present: vec![Agent::Claude],
+            agents_logged_in: vec![Agent::Claude],
+            ..all_green()
+        };
+        let want = "git:           ok
+python:        MISSING
+gh auth:       NOT AUTHENTICATED
+github remote: NO GITHUB REMOTE
+agents:
+  claude: logged in
+  codex: absent
+  kimi: absent
+  opencode: absent
+  copilot: absent
+  cursor: absent
+  gemini: absent
+result: 3 blocker(s)
+";
+        assert_eq!(format_report(&f, &evaluate_gate(&f)), want);
+    }
 }
