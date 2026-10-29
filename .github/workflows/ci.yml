@@ -86,7 +86,7 @@ jobs:
       # jscpd below. Nothing is installed in the repository; tsc reads
       # crates/ralphy-daemon/assets/ui/tsconfig.json.
       - name: UI type check (tsc)
-        run: npx -y -p typescript@5.9.3 tsc --noEmit -p crates/ralphy-daemon/assets/ui
+        run: npx -y -p typescript@7.0.2 tsc --noEmit -p crates/ralphy-daemon/assets/ui
 
       # The release binary, pinned by version and checksum, so the workbench
       # still needs no npm install (ADR-0057 D3). Rules: .oxlintrc.json.

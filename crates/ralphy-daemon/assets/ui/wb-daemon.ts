@@ -243,7 +243,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
     return {
       // Send on the current socket if it is open; `false` means the frame was
       // not sent, and the caller's `onOpen` is what re-sends its state.
-      sendIfOpen: (frame: Uint8Array) => {
+      sendIfOpen: (frame: Uint8Array<ArrayBuffer>) => {
         if (!live) return false;
         // `live` is set only on the open socket, so `ws` is that socket.
         ws!.send(frame);
@@ -419,7 +419,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // The page's presence reports (wb-presence.ts) ride the same socket:
   // `reportPresence` sends one when it is open, and each open runs the
   // `onPresenceOpen` hooks, so a new socket hears the page at once.
-  let presenceSocket: { sendIfOpen: (frame: Uint8Array) => boolean } | null = null;
+  let presenceSocket: { sendIfOpen: (frame: Uint8Array<ArrayBuffer>) => boolean } | null = null;
   const presenceOpens: (() => void)[] = [];
   function reportPresence(report: PresenceReport) {
     if (!presenceSocket) return false;

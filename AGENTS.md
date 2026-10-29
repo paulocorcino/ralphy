@@ -85,7 +85,7 @@ ubiquitous language, and each crate is roughly one bounded context.
 
   ```sh
   node --test crates/ralphy-daemon/ui-tests
-  npx -y -p typescript@5.9.3 tsc --noEmit -p crates/ralphy-daemon/assets/ui
+  npx -y -p typescript@7.0.2 tsc --noEmit -p crates/ralphy-daemon/assets/ui
   npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
   cargo run -q -p xtask -- ui-copy --check
   ```
