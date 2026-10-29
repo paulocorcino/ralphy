@@ -20,7 +20,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -200,7 +200,7 @@ impl WatcherManager {
         }
         let canon_root = std::fs::canonicalize(root)
             .with_context(|| format!("canonicalizing watch root {}", root.display()))?;
-        let mut repos = self.repos.lock().unwrap();
+        let mut repos = lock(&self.repos);
         if !repos.contains_key(repo) {
             repos.insert(repo.to_string(), RepoWatcher::new(repo, canon_root)?);
         }
@@ -216,7 +216,7 @@ impl WatcherManager {
                     }
                     return Err(e).with_context(|| format!("watching {}", target.display()));
                 }
-                rw.watch_set.lock().unwrap().insert(rel.clone());
+                lock(&rw.watch_set).insert(rel.clone());
             }
             *rw.watches.entry(rel.clone()).or_insert(0) += 1;
             rw.tx.subscribe()
@@ -247,15 +247,13 @@ impl WatcherManager {
     /// whole watcher (debouncer + pump) tears down. Unknown repo/dir is a no-op.
     pub fn unwatch(&self, repo: &str, rel: &str) {
         let rel = norm_rel(rel);
-        release(&mut self.repos.lock().unwrap(), repo, &rel);
+        release(&mut lock(&self.repos), repo, &rel);
     }
 
     #[cfg(test)]
     pub(crate) fn watch_refcount(&self, repo: &str, rel: &str) -> u32 {
         let rel = norm_rel(rel);
-        self.repos
-            .lock()
-            .unwrap()
+        lock(&self.repos)
             .get(repo)
             .and_then(|r| r.watches.get(&rel).copied())
             .unwrap_or(0)
@@ -263,13 +261,20 @@ impl WatcherManager {
 
     #[cfg(test)]
     pub(crate) fn repo_active(&self, repo: &str) -> bool {
-        self.repos.lock().unwrap().contains_key(repo)
+        lock(&self.repos).contains_key(repo)
     }
 
     #[cfg(test)]
     fn mode(&self, repo: &str) -> Option<WatchMode> {
-        self.repos.lock().unwrap().get(repo).map(|r| r.mode)
+        lock(&self.repos).get(repo).map(|r| r.mode)
     }
+}
+
+/// Lock `mutex` even after a thread panicked while it held it. Each change under
+/// these locks is one map or set call, so the data stays whole, and refusing
+/// every later lock would stop the tree nudges of every repo.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Drop one hold on `repo`'s normalized `rel` dir, under the caller's lock (see
@@ -284,7 +289,7 @@ fn release(repos: &mut BTreeMap<String, RepoWatcher>, repo: &str, rel: &str) {
     *count -= 1;
     if *count == 0 {
         rw.watches.remove(rel);
-        rw.watch_set.lock().unwrap().remove(rel);
+        lock(&rw.watch_set).remove(rel);
         let target = rw.target(rel);
         let _ = rw.debouncer.unwatch(&target);
     }
@@ -419,7 +424,7 @@ fn map_to_watched_dir(
     if is_head_rel(&parent) && child != "HEAD" {
         return None;
     }
-    let set = watch_set.lock().unwrap();
+    let set = lock(watch_set);
     set.contains(&parent).then_some(parent)
 }
 
@@ -738,6 +743,28 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mgr = WatcherManager::new(8);
         assert!(mgr.watch("owner/repo", dir.path(), "no-such-dir").is_err());
+        assert!(!mgr.repo_active("owner/repo"));
+    }
+
+    /// A thread that panicked while it held the registry lock does not stop
+    /// later watches: each entry is changed in one step under the lock.
+    #[tokio::test]
+    async fn a_poisoned_registry_still_watches() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = Arc::new(WatcherManager::new(MAX_WATCHES));
+        let holder = Arc::clone(&mgr);
+        let panicked = std::thread::spawn(move || {
+            let _held = holder.repos.lock();
+            panic!("a panic while the registry is locked");
+        })
+        .join();
+        assert!(panicked.is_err());
+        assert!(mgr.repos.is_poisoned());
+
+        let watched = mgr.watch("owner/repo", dir.path(), "");
+        assert!(watched.is_ok(), "{:?}", watched.err());
+        assert_eq!(mgr.watch_refcount("owner/repo", ""), 1);
+        mgr.unwatch("owner/repo", "");
         assert!(!mgr.repo_active("owner/repo"));
     }
 
