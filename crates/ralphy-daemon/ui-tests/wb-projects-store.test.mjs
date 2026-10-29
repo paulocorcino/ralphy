@@ -196,6 +196,63 @@ test("a failed fleet read after a good one keeps the peers and their rows", asyn
   assert.match(state.fleetError, /Not current: the daemon answered 502/);
 });
 
+test("the fleet row marked local stamps its environment, os and name on the local rows", async () => {
+  const state = loadShell().state.$store.projects;
+  state.setProjects([{ slug: "o/a" }, { slug: "o/b" }]);
+  const restore = scriptedFetch([
+    {
+      status: 200,
+      body: {
+        peers: [],
+        repos: [{ slug: "o/a", local: true, environment: "WSL: U", os: "linux", daemon_name: "anvil" }],
+      },
+    },
+  ]);
+  try {
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  assert.deepEqual(
+    state.projects.map((p) => [p.slug, p.env, p.os, p.daemonName]),
+    [
+      ["o/a", "WSL: U", "linux", "anvil"],
+      ["o/b", "WSL: U", "linux", "anvil"],
+    ],
+  );
+});
+
+test("an unreachable repo is offline, and an offline row that answers again is idle", async () => {
+  const state = loadShell().state.$store.projects;
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  const restore = scriptedFetch([
+    { status: 200, body: [{ slug: "a/b", reachable: false }] },
+    { status: 200, body: [{ slug: "a/b", reachable: true }] },
+    { status: 200, body: [{ slug: "a/b", reachable: true }] },
+    { status: 200, body: [{ slug: "a/b", reachable: false }] },
+  ]);
+  try {
+    await state.loadRepos();
+    assert.equal(state.projects[0].state, "offline");
+    await state.loadRepos();
+    assert.equal(state.projects[0].state, "idle", "it answers again");
+    state.projects[0].state = "running";
+    state.projects[0].env = "WSL: U";
+    state.projects[0].daemonName = "anvil";
+    await state.loadRepos();
+    assert.deepEqual(
+      [state.projects[0].state, state.projects[0].env, state.projects[0].daemonName],
+      ["running", "WSL: U", "anvil"],
+      "a row that stays reachable keeps its state and its environment",
+    );
+    await state.loadRepos();
+    assert.equal(state.projects[0].state, "offline", "an unreachable repo is offline, whatever it was");
+  } finally {
+    restore();
+  }
+});
+
 test("a failed session read after a good one keeps the list, marked not current", async () => {
   const state = loadShell().state.$store.projects;
   const restore = scriptedFetch([

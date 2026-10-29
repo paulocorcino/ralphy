@@ -206,6 +206,13 @@ test("worktreeNameProblem says why the daemon would refuse a name, and nothing f
   assert.equal(why("wt-a"), "A worktree named “wt-a” already exists.");
 });
 
+test("worktreeNameProblem refuses a name that ends with a dot, and takes any name before a listing answered", () => {
+  assert.equal(wb.worktreeNameProblem({ worktrees: [] }, "x."), "The name cannot start or end with “.”.");
+  assert.equal(wb.worktreeNameProblem(null, "wt-a"), "", "no listing: no worktree is taken");
+  assert.equal(wb.worktreeNameProblem({ worktrees: [{ name: "wt-a" }] }, "wt-b"), "");
+  assert.equal(wb.worktreeNameProblem({ worktrees: [{ name: "wt-a" }] }, "wt-a"), "A worktree named “wt-a” already exists.");
+});
+
 test("chipIcon draws a folder only for a selected worktree", () => {
   assert.equal(wb.chipIcon(null), "git-branch");
   assert.equal(wb.chipIcon(""), "git-branch");

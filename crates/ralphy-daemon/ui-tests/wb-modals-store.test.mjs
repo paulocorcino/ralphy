@@ -14,6 +14,34 @@ import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 // The store alone. It calls the door for nothing: the door ends here.
 const storeOnly = () => modalsStore({ messages: {} });
 
+// The accelerators of the page stay out of a typing field. Inside the terminal
+// (xterm's input is a TEXTAREA) only a key that asks for it gets through.
+test("a focused input blocks the shortcuts, and inside xterm only an allowed terminal key passes", () => {
+  const { state } = loadShell();
+  state.$store.connection.authChanged(true);
+  const modals = state.$store.modals;
+  const focus = (el) => (globalThis.document.activeElement = el);
+  const field = (tagName, extra = {}) => ({ tagName, closest: () => null, ...extra });
+  focus(null);
+  assert.equal(modals.consoleShortcutsBlocked(), false, "nothing focused");
+  focus(field("DIV"));
+  assert.equal(modals.consoleShortcutsBlocked(), false, "a plain element");
+  focus(field("INPUT"));
+  assert.equal(modals.consoleShortcutsBlocked(), true, "an input");
+  focus(field("TEXTAREA"));
+  assert.equal(modals.consoleShortcutsBlocked(), true, "a textarea");
+  focus(field("DIV", { isContentEditable: true }));
+  assert.equal(modals.consoleShortcutsBlocked(), true, "an editable element");
+  focus(field("DIV", { closest: (sel) => (sel === ".monaco-editor" ? {} : null) }));
+  assert.equal(modals.consoleShortcutsBlocked(), true, "the code editor");
+  const terminal = field("TEXTAREA", { closest: (sel) => (sel === ".xterm" ? {} : null) });
+  focus(terminal);
+  assert.equal(modals.consoleShortcutsBlocked(), true, "xterm's input blocks a plain key");
+  assert.equal(modals.consoleShortcutsBlocked(true), false, "a terminal key passes inside xterm");
+  focus(field("INPUT"));
+  assert.equal(modals.consoleShortcutsBlocked(true), true, "a terminal key does not pass an input outside xterm");
+});
+
 // The Security, Settings and What's new dialogs' open flags are their own
 // (wb-security-dialog.ts, wb-settings-dialog.ts, wb-release-dialogs.ts), so the
 // shortcuts ask the modal stack for them (ADR-0073 amendment of 2026-10-05).

@@ -75,6 +75,19 @@ test("activating the pinned tab focuses the right pane; the left keeps the last 
   });
 });
 
+test("a last left tab that is closed falls back to the nearest closable tab", () => {
+  const { resolve } = load();
+  const pinned = { active: B, slot: { kind: "pin", id: B } };
+  assert.deepEqual(resolve(base({ ...pinned, lastLeft: "file:p:closed.js" })), {
+    left: A,
+    right: B,
+    mirror: false,
+    focus: "right",
+  });
+  // The pinned tab itself is no left side of itself.
+  assert.equal(resolve(base({ ...pinned, lastLeft: B })).left, A);
+});
+
 test("a pin of a tab that is gone paints single; the state is the caller's to clear", () => {
   const { resolve, afterClose } = load();
   assert.equal(resolve(base({ slot: { kind: "pin", id: "file:p:gone" } })).right, null);
