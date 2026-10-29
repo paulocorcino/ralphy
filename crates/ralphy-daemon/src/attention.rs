@@ -134,7 +134,8 @@ pub fn list(
 
 /// One request per console whose shown agent state is `waiting`, and one per
 /// silent console, with the silence reason as its detail. A console with no
-/// state source by design is none: it would stay open for its whole life.
+/// state source by design opens no request: it would stay open for the
+/// console's whole life.
 fn console_request(info: &SessionInfo) -> Option<AttentionRequest> {
     let state = info.agent_state.as_ref()?;
     let (kind, detail) = match state.source {
