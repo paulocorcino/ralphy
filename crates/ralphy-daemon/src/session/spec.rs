@@ -218,10 +218,37 @@ pub fn spec_with_status(
         name: None,
         status: None,
     };
-    if agent == Agent::Claude {
-        add_claude_launch(&mut spec, root, repo_slug, console, status);
+    match agent {
+        Agent::Claude => add_claude_launch(&mut spec, root, repo_slug, console, status),
+        Agent::Codex => add_codex_launch(&mut spec, status),
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::OpenCode => {}
     }
     spec
+}
+
+/// The Codex part of [`spec_with_status`]: the status hooks as `-c`
+/// arguments, and `RALPHY_STATUS_FILE`. Codex takes the hooks inline, so no
+/// settings file is written (ADR-0085 D3). The TUI has no subcommand, so the
+/// `-c` arguments are all on one side of it. A failed write launches the
+/// console without the hooks, as for Claude.
+fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
+    let Some(files) = status else {
+        return;
+    };
+    if let Err(e) = files.create_status() {
+        tracing::warn!(error = %e, "could not write the console's agent-state file; launching without the hooks");
+        return;
+    }
+    spec.args.extend(
+        crate::agent_state::codex_console_hook_args()
+            .into_iter()
+            .map(OsString::from),
+    );
+    spec.env.push((
+        OsString::from(crate::agent_state::STATUS_ENV),
+        files.status.clone().into_os_string(),
+    ));
+    spec.status = Some(files);
 }
 
 /// The Claude part of [`spec_with_status`]: the opt-in name, the opt-in
@@ -251,8 +278,10 @@ fn add_claude_launch(
         let hook = crate::agent_state::console_hook(Path::new(&spec.program));
         match files.write(&hook) {
             Ok(()) => {
-                spec.args.push(OsString::from("--settings"));
-                spec.args.push(files.settings.clone().into_os_string());
+                if let Some(settings) = &files.settings {
+                    spec.args.push(OsString::from("--settings"));
+                    spec.args.push(settings.clone().into_os_string());
+                }
                 spec.env.push((
                     OsString::from(crate::agent_state::STATUS_ENV),
                     files.status.clone().into_os_string(),

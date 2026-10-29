@@ -3,11 +3,12 @@
 //! The daemon writes a per-session settings file registering the §4 hook set
 //! (each `<ralphy exe> hook status`), points the child at a per-session
 //! status file through `RALPHY_STATUS_FILE`, and tails that file from the
-//! session's own pump tick. The fold from hook line to state (ADR-0085 D7) is
-//! **duplicated** here, in [`fold`] and the Claude map — the daemon never
-//! imports an adapter (ADR-0032 §10) — and pinned against the adapter's
-//! fixture (`crates/ralphy-agent-claude/tests/fixtures/agent_state_mapping.json`)
-//! so the two cannot drift. Staleness (§6) is applied at READ time: a `working`
+//! session's own pump tick. A Codex console takes its hooks inline, as `-c`
+//! arguments, and gets no settings file. The fold from hook line to state
+//! (ADR-0085 D7) is **duplicated** here, in [`fold`] and the vendor maps —
+//! the daemon never imports an adapter (ADR-0032 §10) — and pinned against
+//! each adapter's fixture (`tests/fixtures/agent_state_mapping.json`) so the
+//! two cannot drift. Staleness (§6) is applied at READ time: a `working`
 //! older than the interactive idle window renders `unknown`; a `waiting`
 //! never goes stale; the state dies with the PTY and is never persisted.
 //!
@@ -26,8 +27,9 @@ use crate::session::Agent;
 pub mod fold;
 
 mod claude;
+mod codex;
 
-use fold::{Fold, StatusLine};
+use fold::{Fold, MapFn, StatusLine};
 
 /// The idle window a `working` may age past before it renders `unknown` —
 /// the interactive default `ralphy-core` reaps a wedged run at
@@ -180,16 +182,36 @@ pub struct Tail {
     offset: u64,
     carry: Vec<u8>,
     fold: Fold,
+    vendor: HookVendor,
 }
 
 impl Tail {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf, vendor: HookVendor) -> Self {
         Tail {
             path,
             offset: 0,
             carry: Vec::new(),
             fold: Fold::new(),
+            vendor,
         }
+    }
+
+    /// The operator wrote to the console (ADR-0085 D7.5). For a vendor that
+    /// sends no event when the operator grants a permission, an open
+    /// permission `waiting` ends here; the result is the new state, else
+    /// `None`.
+    pub fn operator_input(&mut self) -> Option<Observed> {
+        if self.vendor.sends_a_grant() {
+            return None;
+        }
+        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let folded = self.fold.operator_input(ts)?;
+        Some(Observed {
+            state: folded.state.as_str(),
+            detail: folded.detail,
+            since: folded.ts,
+            seen: SystemTime::now(),
+        })
     }
 
     pub fn poll(&mut self) -> Polled {
@@ -198,9 +220,10 @@ impl Tail {
             let Some(line) = StatusLine::parse(text.trim()) else {
                 continue;
             };
+            let map = self.vendor.map();
             // Any line the map reads is proof of life, a subagent's too.
-            out.activity |= claude::claude_signal(&line).is_some();
-            if let Some(folded) = self.fold.apply(&line, claude::claude_signal) {
+            out.activity |= map(&line).is_some();
+            if let Some(folded) = self.fold.apply(&line, map) {
                 out.transitions.push(Observed {
                     state: folded.state.as_str(),
                     detail: folded.detail,
@@ -255,30 +278,80 @@ pub enum StateSource {
 /// without choosing one (docs/adr/0059 A1, docs/adr/0040 Tier 4).
 pub fn state_source(agent: Agent) -> StateSource {
     match agent {
-        Agent::Claude => StateSource::Hooks,
-        Agent::Codex
-        | Agent::Copilot
-        | Agent::Cursor
-        | Agent::Gemini
-        | Agent::Kimi
-        | Agent::OpenCode => StateSource::None,
+        Agent::Claude | Agent::Codex => StateSource::Hooks,
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::OpenCode => {
+            StateSource::None
+        }
     }
 }
 
-/// The two files one console's hooks need, under `<store>/sessions/`: the
-/// settings file the vendor is launched with and the status file the hooks
-/// append to. Both are the session's and go with it.
+/// A vendor whose hooks fill a console's status file, and how its lines fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookVendor {
+    Claude,
+    Codex,
+}
+
+impl HookVendor {
+    /// The vendor of `agent`, when its state comes from hooks.
+    pub fn of(agent: Agent) -> Option<HookVendor> {
+        match agent {
+            Agent::Claude => Some(HookVendor::Claude),
+            Agent::Codex => Some(HookVendor::Codex),
+            Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::OpenCode => None,
+        }
+    }
+
+    fn map(self) -> MapFn {
+        match self {
+            HookVendor::Claude => claude::claude_signal,
+            HookVendor::Codex => codex::launched,
+        }
+    }
+
+    /// Whether the vendor sends an event when the operator grants a
+    /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
+    /// runs; Codex sends nothing until the tool ends.
+    fn sends_a_grant(self) -> bool {
+        match self {
+            HookVendor::Claude => true,
+            HookVendor::Codex => false,
+        }
+    }
+}
+
+/// The files one console's hooks need, under `<store>/sessions/`: the
+/// settings file a Claude console is launched with, and the status file the
+/// hooks append to. A Codex console takes its hooks as arguments, so it has
+/// no settings file. The files are the session's and go with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusFiles {
-    pub settings: PathBuf,
+    pub vendor: HookVendor,
+    pub settings: Option<PathBuf>,
     pub status: PathBuf,
 }
 
 impl StatusFiles {
+    /// The files of a Claude console.
     pub fn for_session(sessions_dir: &Path, id: u64) -> Self {
         StatusFiles {
-            settings: sessions_dir.join(format!("{id}.settings.json")),
+            vendor: HookVendor::Claude,
+            settings: Some(sessions_dir.join(format!("{id}.settings.json"))),
             status: sessions_dir.join(format!("{id}.agent-status.jsonl")),
+        }
+    }
+
+    /// The files of a console of `agent`, or `None` when its state does not
+    /// come from hooks.
+    pub fn for_agent(agent: Agent, sessions_dir: &Path, id: u64) -> Option<Self> {
+        let claude = StatusFiles::for_session(sessions_dir, id);
+        match HookVendor::of(agent)? {
+            HookVendor::Claude => Some(claude),
+            HookVendor::Codex => Some(StatusFiles {
+                vendor: HookVendor::Codex,
+                settings: None,
+                status: claude.status,
+            }),
         }
     }
 
@@ -287,19 +360,46 @@ impl StatusFiles {
     /// else: the vendor merges `--settings` over the operator's own file, so
     /// their permissions and hooks stay (ADR-0059 §5).
     pub fn write(&self, hook: &HookCommand) -> std::io::Result<()> {
-        if let Some(dir) = self.settings.parent() {
+        self.create_status()?;
+        match &self.settings {
+            Some(settings) => std::fs::write(settings, console_settings_json(hook)),
+            None => Ok(()),
+        }
+    }
+
+    /// Write the empty status file, and the folder it is in.
+    pub fn create_status(&self) -> std::io::Result<()> {
+        if let Some(dir) = self.status.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(&self.settings, console_settings_json(hook))?;
         std::fs::write(&self.status, b"")
     }
 
     pub fn remove(&self) {
         // Best effort, and quiet: a session that ended has nothing to report
         // about a file the daemon itself created.
-        let _settings = std::fs::remove_file(&self.settings);
+        if let Some(settings) = &self.settings {
+            let _settings = std::fs::remove_file(settings);
+        }
         let _status = std::fs::remove_file(&self.status);
     }
+}
+
+/// The arguments that give a Codex console its status hooks (ADR-0085 D2):
+/// each hook runs this ralphy program with `hook status codex`.
+pub fn codex_console_hook_args() -> Vec<String> {
+    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+    ralphy_proc_util::hook_form::codex_hook_args(
+        &exe,
+        &ralphy_proc_util::hook_form::CODEX_STATUS_EVENTS,
+    )
+}
+
+/// The command that checks the hook of a Codex console: the program and the
+/// arguments its hooks run. `ralphy doctor` runs it.
+pub fn codex_check_hook() -> HookCommand {
+    let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+    ralphy_proc_util::hook_form::codex_check_hook(&exe)
 }
 
 /// The hook events of a Claude console and their matchers, the same list the
@@ -508,7 +608,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         let mut f = std::fs::File::create(&path).unwrap();
-        let mut tail = Tail::new(path.clone());
+        let mut tail = Tail::new(path.clone(), HookVendor::Claude);
         let line = |event: &str| {
             format!(r#"{{"event":"{event}","tool_name":"Bash","tool_input":null,"ts":"t"}}"#)
         };
@@ -647,17 +747,22 @@ mod tests {
         );
     }
 
-    /// Claude has hooks; no other agent gives a state. The match names every
-    /// variant, so a new agent has to choose.
+    /// Claude and Codex have hooks; no other agent gives a state. The match
+    /// names every variant, so a new agent has to choose.
     #[test]
     fn every_agent_has_a_state_source() {
         for agent in Agent::ALL {
-            let want = if agent == Agent::Claude {
+            let want = if matches!(agent, Agent::Claude | Agent::Codex) {
                 StateSource::Hooks
             } else {
                 StateSource::None
             };
             assert_eq!(state_source(agent), want, "{agent:?}");
+            assert_eq!(
+                HookVendor::of(agent).is_some(),
+                want == StateSource::Hooks,
+                "{agent:?}: a source of hooks has a vendor map"
+            );
         }
         let src = include_str!("agent_state.rs");
         let start = src.find("pub fn state_source(").unwrap();
@@ -670,12 +775,21 @@ mod tests {
     fn status_files_are_written_under_the_sessions_dir_and_removed_together() {
         let dir = tempfile::tempdir().unwrap();
         let files = StatusFiles::for_session(&dir.path().join("sessions"), 7);
-        assert!(files.settings.ends_with("7.settings.json"));
+        let settings = files.settings.clone().expect("a Claude settings file");
+        assert!(settings.ends_with("7.settings.json"));
         assert!(files.status.ends_with("7.agent-status.jsonl"));
         files.write(&hook_of("2.1.139")).unwrap();
-        assert!(files.settings.is_file() && files.status.is_file());
+        assert!(settings.is_file() && files.status.is_file());
         assert_eq!(std::fs::read(&files.status).unwrap(), b"");
         files.remove();
-        assert!(!files.settings.exists() && !files.status.exists());
+        assert!(!settings.exists() && !files.status.exists());
+        // A Codex console has its status file only.
+        let codex = StatusFiles::for_agent(Agent::Codex, &dir.path().join("sessions"), 8)
+            .expect("Codex has hooks");
+        assert_eq!(codex.settings, None);
+        codex.create_status().unwrap();
+        assert!(codex.status.ends_with("8.agent-status.jsonl") && codex.status.is_file());
+        codex.remove();
+        assert!(!codex.status.exists());
     }
 }

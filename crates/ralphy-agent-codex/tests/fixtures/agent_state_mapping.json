@@ -1,0 +1,272 @@
+[
+  {
+    "why": "an exec turn with one tool: the session starts idle, the prompt works, the tool changes nothing, the stop is a turn end",
+    "lines": [
+      {"event": "SessionStart", "session_id": "s1", "ts": "t1"},
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t2"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-1", "ts": "t3"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-1", "ts": "t4"},
+      {"event": "Stop", "session_id": "s1", "ts": "t5"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"},
+      null,
+      null,
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a permission prompt in the TUI: the request is a wait, and the tool's PostToolUse, when the tool ends, gives back the working",
+    "rule": "D7.2",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-2", "ts": "t2"},
+      {"event": "PermissionRequest", "session_id": "s1", "tool_name": "Bash", "ts": "t3"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-2", "ts": "t4"},
+      {"event": "Stop", "session_id": "s1", "ts": "t5"}
+    ],
+    "states": [
+      {"state": "working"},
+      null,
+      {"state": "waiting", "detail": "permission: Bash"},
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "under auto-review the reviewer grants the tool and no human is asked: the request is work, never a wait",
+    "auto_review": true,
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-3", "ts": "t2"},
+      {"event": "PermissionRequest", "session_id": "s1", "tool_name": "Bash", "ts": "t3"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-3", "ts": "t4"},
+      {"event": "Stop", "session_id": "s1", "ts": "t5"}
+    ],
+    "states": [
+      {"state": "working"},
+      null,
+      null,
+      null,
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a denied permission (Esc): Codex sends only Interrupt, which is done and ends the wait; the next prompt works",
+    "rule": "D7.4",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PermissionRequest", "session_id": "s1", "tool_name": "Bash", "ts": "t2"},
+      {"event": "Interrupt", "session_id": "s1", "ts": "t3"},
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: Bash"},
+      {"state": "done", "cause": "interrupt"},
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "an interrupt in a turn with no wait is done too",
+    "rule": "D7.4",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-4", "ts": "t2"},
+      {"event": "Interrupt", "session_id": "s1", "ts": "t3"}
+    ],
+    "states": [
+      {"state": "working"},
+      null,
+      {"state": "done", "cause": "interrupt"}
+    ]
+  },
+  {
+    "why": "a question to the operator is request_user_input, with its question text; the answer is its PostToolUse",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-1", "question": "Which color should the file be?", "ts": "t2"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-1", "ts": "t3"},
+      {"event": "Stop", "session_id": "s1", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "request_user_input: Which color should the file be?"},
+      {"state": "working"},
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a question with no text still names the tool",
+    "lines": [
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "request_user_input", "ts": "t1"}
+    ],
+    "states": [
+      {"state": "waiting", "detail": "request_user_input"}
+    ]
+  },
+  {
+    "why": "a PostToolUse of another tool use does not end a question wait; its own does",
+    "rule": "D7.3",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-2", "question": "Which port?", "ts": "t2"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-5", "ts": "t3"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-6", "ts": "t4"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-2", "ts": "t5"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "request_user_input: Which port?"},
+      null,
+      null,
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a permission request carries no tool use id: a PostToolUse of another tool does not end it, one of the same tool does",
+    "rule": "D7.3",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PermissionRequest", "session_id": "s1", "tool_name": "Bash", "ts": "t2"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "apply_patch", "tool_use_id": "p-1", "ts": "t3"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "Bash", "tool_use_id": "exec-7", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: Bash"},
+      null,
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a wait gives back the state it replaced, here the done of a session that started",
+    "rule": "D7.2",
+    "lines": [
+      {"event": "SessionStart", "session_id": "s1", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-3", "question": "Go on?", "ts": "t2"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-3", "ts": "t3"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "waiting", "detail": "request_user_input: Go on?"},
+      {"state": "done", "cause": "session-boundary"}
+    ]
+  },
+  {
+    "why": "a tool that starts behind an open wait keeps the waiting, and the wait then gives back working",
+    "rule": "D7.2",
+    "lines": [
+      {"event": "SessionStart", "session_id": "s1", "ts": "t1"},
+      {"event": "PermissionRequest", "session_id": "s1", "tool_name": "Bash", "ts": "t2"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "Read", "tool_use_id": "r-1", "ts": "t3"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "Bash", "ts": "t4"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "waiting", "detail": "permission: Bash"},
+      null,
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a subagent shares the lead's session_id and has an agent_id: its tools and its stop never set the state",
+    "rule": "D7.1",
+    "lines": [
+      {"event": "SessionStart", "session_id": "s1", "ts": "t1"},
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t2"},
+      {"event": "SubagentStart", "session_id": "s1", "agent_id": "a1", "ts": "t3"},
+      {"event": "PreToolUse", "session_id": "s1", "agent_id": "a1", "tool_name": "Bash", "tool_use_id": "exec-8", "ts": "t4"},
+      {"event": "Stop", "session_id": "s1", "agent_id": "a1", "ts": "t5"},
+      {"event": "SubagentStop", "session_id": "s1", "agent_id": "a1", "ts": "t6"},
+      {"event": "Stop", "session_id": "s1", "ts": "t7"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"},
+      null,
+      null,
+      null,
+      null,
+      {"state": "done", "cause": "turn-end"}
+    ]
+  },
+  {
+    "why": "a subagent's permission request is the lead's wait: the operator answers it in the same console",
+    "rule": "D7.1",
+    "lines": [
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"},
+      {"event": "PermissionRequest", "session_id": "s1", "agent_id": "a1", "tool_name": "Bash", "ts": "t2"},
+      {"event": "PostToolUse", "session_id": "s1", "agent_id": "a1", "tool_name": "Bash", "tool_use_id": "exec-9", "ts": "t3"}
+    ],
+    "states": [
+      {"state": "working"},
+      {"state": "waiting", "detail": "permission: Bash"},
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a new session takes the lead: a late line of the old session does not set the state",
+    "rule": "D7.1",
+    "lines": [
+      {"event": "SessionStart", "session_id": "s1", "ts": "t1"},
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t2"},
+      {"event": "SessionStart", "session_id": "s2", "ts": "t3"},
+      {"event": "Stop", "session_id": "s1", "ts": "t4"},
+      {"event": "UserPromptSubmit", "session_id": "s2", "ts": "t5"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"},
+      {"state": "done", "cause": "session-boundary"},
+      null,
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "the events with no state: SessionEnd, the subagent events, the compactions and an unknown event",
+    "lines": [
+      {"event": "SessionEnd", "session_id": "s1", "ts": "t1"},
+      {"event": "SubagentStart", "session_id": "s1", "agent_id": "a1", "ts": "t2"},
+      {"event": "SubagentStop", "session_id": "s1", "agent_id": "a1", "ts": "t3"},
+      {"event": "PreCompact", "session_id": "s1", "ts": "t4"},
+      {"event": "PostCompact", "session_id": "s1", "ts": "t5"},
+      {"event": "Notification", "session_id": "s1", "ts": "t6"}
+    ],
+    "states": [null, null, null, null, null, null]
+  },
+  {
+    "why": "a TUI sends SessionStart only with the first prompt, just before UserPromptSubmit",
+    "lines": [
+      {"event": "SessionStart", "session_id": "s1", "ts": "t1"},
+      {"event": "UserPromptSubmit", "session_id": "s1", "ts": "t1"}
+    ],
+    "states": [
+      {"state": "done", "cause": "session-boundary"},
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a second question while one is open is news: a new detail, still waiting",
+    "lines": [
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-4", "question": "Which port?", "ts": "t1"},
+      {"event": "PreToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-5", "question": "Which host?", "ts": "t2"},
+      {"event": "PostToolUse", "session_id": "s1", "tool_name": "request_user_input", "tool_use_id": "q-5", "ts": "t3"}
+    ],
+    "states": [
+      {"state": "waiting", "detail": "request_user_input: Which port?"},
+      {"state": "waiting", "detail": "request_user_input: Which host?"},
+      {"state": "working"}
+    ]
+  },
+  {
+    "why": "a permission request with no tool name",
+    "lines": [
+      {"event": "PermissionRequest", "session_id": "s1", "ts": "t1"}
+    ],
+    "states": [
+      {"state": "waiting", "detail": "permission"}
+    ]
+  }
+]

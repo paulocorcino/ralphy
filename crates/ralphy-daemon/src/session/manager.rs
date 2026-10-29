@@ -94,15 +94,29 @@ impl ManagedSession {
     /// the single writer and a concurrent `close` do not race; the lock is held
     /// only to queue the bytes, never for the PTY write itself. The first
     /// write that is the operator's input starts the silence clock; a reply
-    /// the terminal sent by itself does not.
+    /// the terminal sent by itself does not. The operator's input also ends
+    /// the permission `waiting` of a vendor that sends no grant event
+    /// (ADR-0085 D7.5); the next tick reports the change.
     fn write(&self, bytes: &[u8]) -> Result<()> {
         if !bytes.is_empty() && !crate::agent_state::is_terminal_report(bytes) {
             self.first_input
                 .lock()
                 .expect("first_input mutex")
                 .get_or_insert_with(SystemTime::now);
+            self.operator_input();
         }
         self.session.lock().expect("session mutex").write(bytes)
+    }
+
+    /// Fold the operator's input into the agent state (ADR-0085 D7.5).
+    fn operator_input(&self) {
+        let Some(status) = &self.status else {
+            return;
+        };
+        let folded = status.tail.lock().expect("tail mutex").operator_input();
+        if let Some(obs) = folded {
+            *self.agent_state.lock().expect("agent_state mutex") = Some(obs);
+        }
     }
 
     /// Resize the PTY window and the screen to the same clamped size
@@ -282,7 +296,10 @@ impl SessionManager {
         // Lifted before the spec is consumed by the spawn.
         let name = spec.name.clone();
         let status = spec.status.clone().map(|files| StatusTail {
-            tail: Mutex::new(crate::agent_state::Tail::new(files.status.clone())),
+            tail: Mutex::new(crate::agent_state::Tail::new(
+                files.status.clone(),
+                files.vendor,
+            )),
             files,
         });
         // The hook files were written before the spawn (the child reads them

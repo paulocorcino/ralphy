@@ -335,17 +335,32 @@ pub(crate) fn probe() -> MachineFacts {
     })
 }
 
-/// Run the hook command of `agent` as a console of the daemon would get it:
-/// the same command as `agent_state::run_start_check`, so the two answer for
-/// the same command. `None` when the agent is not installed.
+/// Run the hook command of `agent` as a console of the daemon would get it,
+/// so the check answers for the command a console gets. `None` when the
+/// agent is not installed or gives no state through hooks.
 fn hook_probe(agent: Agent) -> Option<(Agent, HookCheck)> {
     let cli = agent_program(&agent)?;
-    let hook = ralphy_daemon::agent_state::console_hook(&cli);
-    let home = ralphy_proc_util::home_dir();
+    let hook = hook_command(agent, &cli)?;
+    // A `disableAllHooks` file of Claude Code says nothing about Codex.
+    let home = (agent == Agent::Claude)
+        .then(ralphy_proc_util::home_dir)
+        .flatten();
     Some((
         agent,
         hook_form::check(&hook, hook_form::CHECK_LIMIT, home.as_deref()),
     ))
+}
+
+/// The hook command a console of `agent` gets, whose program is `cli`: for
+/// Claude the same command as `agent_state::run_start_check`; for Codex the
+/// program and the arguments its inline hooks run. `None` for an agent that
+/// gives no state through hooks.
+fn hook_command(agent: Agent, cli: &Path) -> Option<hook_form::HookCommand> {
+    match agent {
+        Agent::Claude => Some(ralphy_daemon::agent_state::console_hook(cli)),
+        Agent::Codex => Some(ralphy_daemon::agent_state::codex_check_hook()),
+        Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi | Agent::Opencode => None,
+    }
 }
 
 fn on_path(name: &str) -> Option<PathBuf> {

@@ -2107,11 +2107,13 @@ dependencies = [
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
+ "ralphy-proc-util",
  "regex",
  "saphyr-parser",
  "serde_json",
  "tempfile",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

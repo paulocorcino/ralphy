@@ -224,7 +224,11 @@ fn a_hook_line_warns_and_never_fails() {
         ),
     ];
     for (check, want) in rows {
-        let report = evaluate(&two_agents(vec![(Agent::Claude, check)]), false);
+        let mut facts = two_agents(vec![(Agent::Claude, check)]);
+        facts
+            .agents
+            .push((Agent::Copilot, "GitHub Copilot CLI 1.0".to_string()));
+        let report = evaluate(&facts, false);
         assert_eq!(report.missing_required(), 0, "{want}");
         let mut out = Vec::new();
         print_report(&report, &mut out).expect("printing");
@@ -235,7 +239,7 @@ fn a_hook_line_warns_and_never_fails() {
 {out}"
         );
         assert!(
-            out.contains("[ok  ] codex hooks: no state source"),
+            out.contains("[ok  ] copilot hooks: no state source"),
             "an agent with no state source is ok: {out}"
         );
         assert!(out.contains("result: every required tool is here"), "{out}");
@@ -273,4 +277,39 @@ fn a_missing_git_on_windows_says_how_to_install_it() {
         Some("winget install --id Git.Git -e")
     );
     assert_eq!(line(&evaluate(&facts, false), "git").fix, None);
+}
+
+/// Codex gives its state through hooks: its doctor line is a hooks line
+/// with the result of its own check, and the check runs the program and the
+/// arguments a Codex console's hooks run.
+#[test]
+fn doctor_names_the_codex_state_source() {
+    let rows = [
+        (
+            HookCheck::Ok,
+            "[ok  ] codex hooks: the hook command ran and wrote a status line",
+        ),
+        (
+            HookCheck::Failed {
+                cause: "ralphy.exe exited with code 1".to_string(),
+            },
+            "[warn] codex hooks: ralphy.exe exited with code 1",
+        ),
+    ];
+    for (check, want) in rows {
+        let report = evaluate(&two_agents(vec![(Agent::Codex, check)]), false);
+        let codex = line(&report, "codex hooks");
+        assert_eq!(codex.tool, Tool::Hooks);
+        let mut out = Vec::new();
+        print_report(&report, &mut out).expect("printing");
+        let out = String::from_utf8(out).expect("utf-8");
+        assert!(out.contains(want), "{want}\n{out}");
+    }
+    let hook = hook_command(Agent::Codex, Path::new("codex")).expect("Codex has hooks");
+    let entry = hook.entry();
+    assert_eq!(
+        entry["args"],
+        serde_json::json!(["hook", "status", "codex"])
+    );
+    assert!(hook_command(Agent::Copilot, Path::new("copilot")).is_none());
 }

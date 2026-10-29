@@ -141,7 +141,7 @@ impl Upgrade {
         let status = match agent_state::state_source(agent) {
             agent_state::StateSource::Hooks => auth::store_dir()
                 .ok()
-                .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
+                .and_then(|d| agent_state::StatusFiles::for_agent(agent, &d.join("sessions"), id)),
             agent_state::StateSource::None => None,
         };
         // The fallback `--name` is built from the project NAME: a remoteless repo's

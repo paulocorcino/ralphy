@@ -366,3 +366,84 @@ async fn the_silence_clock_starts_at_the_first_input() {
     );
     manager.close(id);
 }
+
+/// A console of `agent` with hooks, on the platform shell, after its tick
+/// folded one `PermissionRequest` line: the state is `waiting`.
+fn waiting_for_a_permission(
+    manager: &Arc<SessionManager>,
+    dir: &std::path::Path,
+    agent: crate::session::Agent,
+) -> (SessionId, Attachment, Arc<ManagedSession>) {
+    let files = crate::agent_state::StatusFiles::for_agent(agent, dir, 1).expect("hooks");
+    std::fs::write(
+        &files.status,
+        "{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"t1\"}\n",
+    )
+    .expect("write the status line");
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(files);
+    let (id, att) = manager
+        .spawn_attached(
+            "owner/r".to_string(),
+            format!("{agent:?}").to_lowercase(),
+            "agent".to_string(),
+            None,
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    sess.poll_status_with(SystemTime::now(), None);
+    (id, att, sess)
+}
+
+/// The state and detail the list shows for `sess` now.
+fn shown(sess: &ManagedSession) -> (Option<String>, Option<String>) {
+    let block = sess.shown_at(SystemTime::now()).expect("a state");
+    (block.state, block.detail)
+}
+
+/// Codex sends no event when the operator grants a permission (ADR-0085
+/// D7.5): the operator's next input ends the wait, and a reply the
+/// terminal sent by itself does not.
+#[tokio::test]
+async fn operator_input_ends_a_codex_permission_wait() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (id, att, sess) =
+        waiting_for_a_permission(&manager, dir.path(), crate::session::Agent::Codex);
+    let waiting = (Some("waiting".into()), Some("permission: Bash".into()));
+    assert_eq!(shown(&sess), waiting);
+    att.write(b"\x1b[12;40R").expect("a cursor report");
+    assert_eq!(shown(&sess), waiting, "a terminal reply is no input");
+    att.write(b"y").expect("a write");
+    assert_eq!(
+        shown(&sess),
+        (
+            Some("working".into()),
+            Some("approved, the tool runs".into())
+        )
+    );
+    assert!(
+        sess.poll_status_with(SystemTime::now(), None),
+        "the next tick reports the change"
+    );
+    manager.close(id);
+}
+
+/// Claude sends `PostToolUse` when the tool runs, so the operator's input
+/// does not end its permission wait.
+#[tokio::test]
+async fn operator_input_does_not_end_a_claude_permission_wait() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (id, att, sess) =
+        waiting_for_a_permission(&manager, dir.path(), crate::session::Agent::Claude);
+    att.write(b"y").expect("a write");
+    assert_eq!(
+        shown(&sess),
+        (Some("waiting".into()), Some("permission: Bash".into()))
+    );
+    manager.close(id);
+}

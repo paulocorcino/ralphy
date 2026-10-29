@@ -27,6 +27,7 @@ mod command;
 mod forge_rules;
 mod outcome;
 mod skills;
+mod status;
 mod tasks;
 mod usage;
 /// `codex exec -i <FILE>` attaches images to the initial prompt, so the triage
@@ -191,12 +192,24 @@ impl Agent for CodexAgent {
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
             let effort = self.resolved_plan_effort();
-            let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
+            // Each status hook runs this ralphy program (ADR-0085 D2).
+            let exe = ralphy_proc_util::exe::running_exe()?;
+            let status = status::Watcher::start(&self.run_dir)?;
+            let cmd = build_codex_command(
+                &model,
+                effort,
+                ws.repo_root(),
+                &out_path,
+                &exe,
+                status.path(),
+            );
             ralphy_core::emit::planning("codex exec", &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-            let r = self.run_codex(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout)?;
+            let r = self.run_codex(cmd, ralphy_adapter_support::PLAN_CHARTER, timeout);
+            status.stop();
+            let r = r?;
             let after = snapshot();
             Ok((r, (before, after)))
         };
@@ -277,12 +290,24 @@ impl Agent for CodexAgent {
             install_forge_rules(ws.repo_root())?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
-            let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
+            // Each status hook runs this ralphy program (ADR-0085 D2).
+            let exe = ralphy_proc_util::exe::running_exe()?;
+            let status = status::Watcher::start(&self.run_dir)?;
+            let cmd = build_codex_command(
+                &model,
+                effort,
+                ws.repo_root(),
+                &out_path,
+                &exe,
+                status.path(),
+            );
             ralphy_core::emit::executing("codex exec", 0, &model, effort, "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/snapshot setup.
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
-            let r = self.run_codex(cmd, PROMPT_EXECUTE, timeout)?;
+            let r = self.run_codex(cmd, PROMPT_EXECUTE, timeout);
+            status.stop();
+            let r = r?;
             let after = snapshot();
             Ok((r, (before, after)))
         };

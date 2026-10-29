@@ -318,3 +318,31 @@ impl Fold {
     }
 }
 // jscpd:ignore-end
+
+/// The detail of a permission `waiting` that the operator's input ended.
+pub const APPROVED: &str = "approved, the tool runs";
+
+impl Fold {
+    /// The operator wrote to the console (D7.5). Call it only for a vendor
+    /// that sends no event when the operator grants a permission: an open
+    /// permission `waiting` then ends here, and the state becomes `working`
+    /// with the detail [`APPROVED`] until the tool's own end event. Any other
+    /// state stays. Daemon only: a run has no operator input.
+    pub fn operator_input(&mut self, ts: String) -> Option<Observed> {
+        if self.waiting() != Some(WaitKind::Permission) {
+            return None;
+        }
+        let shown = self.close(Shown {
+            state: State::Working,
+            detail: Some(APPROVED.to_string()),
+            cause: None,
+        });
+        self.current = Some(shown.clone());
+        Some(Observed {
+            state: shown.state,
+            detail: shown.detail,
+            ts,
+            cause: None,
+        })
+    }
+}
