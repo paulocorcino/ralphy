@@ -212,9 +212,9 @@ change to modules is mechanical.
   value fails too. The component's `$store` is a view of each store
   (`storeView` in the same file): a write to a store field, at any depth,
   fails, and the store's own methods still change it. The
-  component's test checks its markup with `componentMarkup` and
-  `bindingNames` from the same file. The D3 check requires the test file that
-  calls this helper.
+  component's test reads its markup from its part with `partMarkup`
+  (ADR-0080) and checks it with `bindingNames`, both from the same file.
+  The D3 check requires the test file that calls this helper.
 - D5: not checked by code: reviewed in the PR.
 - D6: not checked by code: reviewed in the PR, against the fact index.
 - D7: not checked by code until its pilot ships. The pilot adds the check.
