@@ -668,11 +668,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/textcodec.rs": {
-      "encode": [
-        18
-      ]
-    },
     "crates/ralphy-daemon/src/tree.rs": {
       "svg_root_element": [
         15
