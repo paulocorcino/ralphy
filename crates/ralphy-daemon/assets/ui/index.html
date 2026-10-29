@@ -596,74 +596,7 @@
          surfaces each gate's message verbatim (ADR-0063 §4); `.stop` keeps
          the row's own selecting click out of it.
     ==================================================================== -->
-    <div class="branch-dialog" x-data="wbBranchDialog">
-    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('branchOpen', () => closeBranchModal())">
-      <div
-        class="modal branch-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Switch branch"
-      >
-        <div class="modal-head">
-          <svg x-icon="'git-branch'"></svg>
-          <span class="modal-title">Switch branch</span>
-          <span class="modal-sub" x-text="$store.projects.projectLabel(branchModal.slug)" :title="$store.projects.projectTitle(branchModal.slug)"></span>
-          <span class="sec-badge off" x-show="branchModal.checkoutDirty"
-                title="The working tree has uncommitted changes">uncommitted</span>
-          <span class="spacer"></span>
-          <button class="modal-x" @click="closeBranchModal()" title="Close"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <!-- Branches ONLY (ADR-0063 amendment 2026-09-16 b): where a console
-             works is the console's own switcher, and what Files shows is the
-             Files bar's chip. Under a selected checkout the act lands on THAT
-             tree's HEAD (#407). -->
-        <div class="branch-body">
-          <!-- filter box doubles as the create field -->
-          <div class="branch-search">
-            <svg x-icon="'search'"></svg>
-            <input
-              x-ref="branchFilter"
-              x-model="branchModal.filter"
-              placeholder="Find or create a branch…"
-              @keydown.enter.prevent="branchEnter()"
-            />
-          </div>
-          <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
-               can fail against uncommitted files. -->
-          <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
-            <i class="bi bi-exclamation-triangle"></i>
-            There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail. Commit or stash them first.
-          </p>
-          <ul class="branch-list">
-            <template x-for="b in branchList()" :key="b">
-              <li
-                class="branch-item"
-                :class="{ current: b === branchModal.current, held: branchHeldBy(b) }"
-                :aria-disabled="branchHeldBy(b) ? 'true' : null"
-                @click="switchBranch(b)"
-              >
-                <i class="bi" :class="b === branchModal.current ? 'bi-check2' : 'bi-git'"></i>
-                <span class="branch-name" x-text="b"></span>
-                <span class="branch-tag" x-show="b === branchModal.current">current</span>
-                <span class="branch-tag" x-show="branchHeldBy(b)" :title="branchHeldBy(b)" x-text="'Open in ' + branchHeldBy(b)"></span>
-              </li>
-            </template>
-            <!-- create-from-current, shown only when the typed name is new -->
-            <li class="branch-item create" x-show="canCreateBranch()" @click="createBranch()">
-              <i class="bi bi-plus-lg"></i>
-              <span class="branch-name">Create branch “<span x-text="branchModal.filter.trim()"></span>”</span>
-              <span class="branch-tag">from <span x-text="branchModal.current"></span></span>
-            </li>
-            <li class="branch-empty" x-show="branchList().length === 0 && !canCreateBranch()">No branches match.</li>
-          </ul>
-        </div>
-        <div class="modal-foot">
-          <span class="foot-note">The daemon runs the checkout.</span>
-          <button class="btn" @click="closeBranchModal()">Cancel</button>
-        </div>
-      </div>
-    </div>
-    </div>
+    <!-- part: wb-branch-dialog.part.html -->
 
     <!-- ===================================================================
          Confirm dialog — the design-system replacement for the native
