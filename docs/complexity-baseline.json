@@ -813,7 +813,7 @@
     },
     "crates/xtask/src/ui_copy/html.rs": {
       "scan": [
-        17
+        14
       ]
     },
     "crates/xtask/src/ui_copy/js/scan.rs": {

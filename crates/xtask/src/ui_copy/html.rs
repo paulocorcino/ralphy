@@ -53,27 +53,60 @@ pub(super) fn scan(src: &str, fns: CopyFns, out: &mut Vec<Found>) {
         }
         let shown = flush_text(&mut text, text_line, &stack, in_sentence, out);
 
-        if starts_at(&cs, i, "<!--") {
-            i = skip_past(&cs, i + 4, "-->", &mut line);
-        } else if starts_at(&cs, i, "<!") {
-            i = skip_past(&cs, i + 2, ">", &mut line);
+        if let Some(end) = skip_declaration(&cs, i, &mut line) {
+            i = end;
         } else if cs[i + 1] == '/' {
             let (name, end) = close_tag(&cs, i, &mut line, &mut stack);
             in_sentence = continues_sentence(&name, &[], in_sentence, shown);
             i = end;
         } else {
-            let (name, attrs, self_closing, end) = read_tag(&cs, i + 1, &mut line);
-            in_sentence = continues_sentence(&name, &attrs, in_sentence, shown);
+            let (end, continues, raw_text) =
+                start_tag(&cs, i, &mut line, &mut stack, out, in_sentence || shown);
+            in_sentence = continues;
             i = end;
-            let own = book_attributes(&name, &attrs, &stack, out);
-            if name == "script" || name == "style" {
+            if let Some((name, attrs)) = raw_text {
                 i = raw_text_body(&cs, i, &name, &attrs, &mut line, fns, out);
-            } else if !self_closing && !VOID.contains(&name.as_str()) {
-                stack.push((name, own));
             }
         }
     }
     flush_text(&mut text, text_line, &stack, in_sentence, out);
+}
+
+/// Skip the comment or the declaration (`<!DOCTYPE …>`) at `i`. Returns the
+/// index after it, or `None` when `i` starts neither.
+fn skip_declaration(cs: &[char], i: usize, line: &mut usize) -> Option<usize> {
+    if starts_at(cs, i, "<!--") {
+        Some(skip_past(cs, i + 4, "-->", line))
+    } else if starts_at(cs, i, "<!") {
+        Some(skip_past(cs, i + 2, ">", line))
+    } else {
+        None
+    }
+}
+
+/// Read the start tag at `i`, book its attributes and open the element.
+/// `carry` is whether text was shown in the sentence the tag may continue.
+/// Returns the index after the tag, whether text after it goes on with the
+/// sentence, and, for a `<script>` or `<style>`, its name and attributes: its
+/// body follows and is not markup.
+fn start_tag(
+    cs: &[char],
+    i: usize,
+    line: &mut usize,
+    stack: &mut Vec<(String, Option<String>)>,
+    out: &mut Vec<Found>,
+    carry: bool,
+) -> (usize, bool, Option<(String, Vec<Attr>)>) {
+    let (name, attrs, self_closing, end) = read_tag(cs, i + 1, line);
+    let continues = continues_sentence(&name, &attrs, carry, false);
+    let own = book_attributes(&name, &attrs, stack, out);
+    if name == "script" || name == "style" {
+        return (end, continues, Some((name, attrs)));
+    }
+    if !self_closing && !VOID.contains(&name.as_str()) {
+        stack.push((name, own));
+    }
+    (end, continues, None)
 }
 
 fn starts_at(cs: &[char], i: usize, s: &str) -> bool {
