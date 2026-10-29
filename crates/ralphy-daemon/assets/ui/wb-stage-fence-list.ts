@@ -17,7 +17,7 @@ import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { inTab } from "./wb-console-place.ts";
 import type { PopupRegistry } from "./wb-desk-popups.ts";
-import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, NoteCard, Rect } from "./wb-types.d.ts";
+import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, NoteCard, Offset, Rect, Size } from "./wb-types.d.ts";
 
 const { PHONE_MAX_WIDTH } = WBConsoleInput;
 const { fenceSpawnRect, rectsOverlap, fenceOf, fenceHolds } = WBGeometry;
@@ -135,8 +135,7 @@ export function createFenceList(deps: FenceListDeps) {
     // there writes `0 consoles` onto every fence. `refitAll` calls this again
     // on the first frame that can measure.
     if (!st || !st.offsetWidth || !st.offsetHeight) return;
-    const els = new Map<string, FenceElement>();
-    for (const el of st.querySelectorAll<FenceElement>(".fence")) els.set(el.dataset.fenceId, el);
+    const els = indexFences(st);
     // A DETACHED fence's consoles are in a popup, so the membership fold
     // answers zero — but the fence is emptied, not empty (ADR-0051 §7a). Take
     // the count from the registry for those; the fold stays pure.
@@ -303,36 +302,52 @@ export function createFenceList(deps: FenceListDeps) {
   function renderFences() {
     const st = stage();
     if (!st) return;
-    // Index the DOM by id rather than building an attribute SELECTOR: an id is
-    // daemon data (a hand-edited `desk.toml` can carry any string), and one
-    // quote in it would throw a SyntaxError out of the whole restore.
-    const nodes = new Map<string, FenceElement>();
-    for (const el of st.querySelectorAll<FenceElement>(".fence")) nodes.set(el.dataset.fenceId, el);
+    const nodes = indexFences(st);
     const seen = new Set<string>();
     for (const f of fences()) {
       seen.add(f.id);
       const el = nodes.get(f.id) || buildFence(f);
-      const r = f.rect || {};
-      if (!inGesture(el)) {
-        el.style.left = (r.left || 0) + "px";
-        el.style.top = (r.top || 0) + "px";
-        el.style.width = (r.width || 0) + "px";
-        el.style.height = (r.height || 0) + "px";
-      }
-      const name = el.querySelector<HTMLInputElement>(".fence-name");
-      if (name && name !== document.activeElement) name.value = f.name || "";
+      placeFence(el, f);
       paintFenceLock(el, !!f.locked);
     }
     for (const [id, el] of nodes) {
       if (!seen.has(id)) el.remove();
     }
-    // A focused fence that is gone must not leave a dangling id: the birth path
-    // resolves it, and a stale one would place the next console nowhere (#343).
+    settleFenceFocus(seen);
+    refreshFenceChrome();
+  }
+
+  // The fence elements on the stage, by id. Indexed rather than found with an
+  // attribute SELECTOR: an id is daemon data (a hand-edited `desk.toml` can
+  // carry any string), and one quote in it would throw a SyntaxError out of
+  // the whole restore.
+  function indexFences(st: HTMLElement) {
+    const nodes = new Map<string, FenceElement>();
+    for (const el of st.querySelectorAll<FenceElement>(".fence")) nodes.set(el.dataset.fenceId, el);
+    return nodes;
+  }
+
+  // One record onto its element: the rect unless the fence is under a gesture,
+  // and the name unless the operator is typing in it.
+  function placeFence(el: HTMLElement, f: DeskFence) {
+    const r = f.rect || {};
+    if (!inGesture(el)) {
+      el.style.left = (r.left || 0) + "px";
+      el.style.top = (r.top || 0) + "px";
+      el.style.width = (r.width || 0) + "px";
+      el.style.height = (r.height || 0) + "px";
+    }
+    const name = el.querySelector<HTMLInputElement>(".fence-name");
+    if (name && name !== document.activeElement) name.value = f.name || "";
+  }
+
+  // A focused fence that is gone must not leave a dangling id: the birth path
+  // resolves it, and a stale one would place the next console nowhere (#343).
+  function settleFenceFocus(seen: Set<string>) {
     if (focusedFence && !seen.has(focusedFence)) clearFenceFocus();
     // The class rides the ELEMENT, and `buildFence` makes a fresh one for a
     // fence that arrived after the focus was taken.
     else if (focusedFence) focusFence(focusedFence);
-    refreshFenceChrome();
   }
 
   // The next default name, from the numbers ALREADY on the plane, not the
@@ -349,9 +364,7 @@ export function createFenceList(deps: FenceListDeps) {
     // answers `false` and `newFence()` in app.ts does the talking; `atFenceCap`
     // is exported so the row can be disabled BEFORE the click.
     if (atFenceCap()) return false;
-    const ws = workspace();
-    const offset = { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 };
-    const viewport = { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
+    const { offset, viewport } = workspaceView(workspace());
     const slot = nextFenceSlot(
       fences().map((f: DeskFence) => f.rect),
       offset,
@@ -360,14 +373,7 @@ export function createFenceList(deps: FenceListDeps) {
     // The whole scanned band is full. REFUSE — do not nudge the new fence into
     // a gap the operator never chose.
     if (slot < 0) {
-      const blocked = fenceSpawnRect(offset, viewport, 0);
-      const hit = fences().find((x: DeskFence) => rectsOverlap(blocked, x.rect || {}));
-      const el = hit && fenceEl(hit.id);
-      if (el) {
-        clearFenceFlash();
-        el.classList.add("fence-invalid");
-        fenceFlash = { el, timer: setTimeout(clearFenceFlash, 600) };
-      }
+      flashBlockingFence(offset, viewport);
       return;
     }
     const spawn = fenceSpawnRect(offset, viewport, slot);
@@ -388,13 +394,39 @@ export function createFenceList(deps: FenceListDeps) {
     // A slot below the fold is still a fence the operator asked for, so travel
     // to it; a creation the screen does not acknowledge reads as a no-op. One
     // already on screen is left alone.
-    const onScreen =
-      spawn.left >= offset.left &&
-      spawn.top >= offset.top &&
-      spawn.left + spawn.width <= offset.left + viewport.width &&
-      spawn.top + spawn.height <= offset.top + viewport.height;
-    if (!onScreen) jumpToFence(id);
+    if (!rectInView(spawn, offset, viewport)) jumpToFence(id);
     return true;
+  }
+
+  // Where the operator is looking: the scroll offset and the size of the
+  // viewport, 0 before the page has one.
+  function workspaceView(ws: HTMLElement | null) {
+    return {
+      offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
+      viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
+    };
+  }
+
+  // The refusal said on the fence that holds the first spawn slot.
+  function flashBlockingFence(offset: Offset, viewport: Size) {
+    const blocked = fenceSpawnRect(offset, viewport, 0);
+    const hit = fences().find((x: DeskFence) => rectsOverlap(blocked, x.rect || {}));
+    const el = hit && fenceEl(hit.id);
+    if (el) {
+      clearFenceFlash();
+      el.classList.add("fence-invalid");
+      fenceFlash = { el, timer: setTimeout(clearFenceFlash, 600) };
+    }
+  }
+
+  // Does `rect` sit whole inside the viewport at `offset`?
+  function rectInView(rect: Rect, offset: Offset, viewport: Size) {
+    return (
+      rect.left >= offset.left &&
+      rect.top >= offset.top &&
+      rect.left + rect.width <= offset.left + viewport.width &&
+      rect.top + rect.height <= offset.top + viewport.height
+    );
   }
 
   function renameFence(id: string, name: string | null | undefined) {

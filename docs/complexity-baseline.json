@@ -445,14 +445,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-fence-list.ts": {
-      "createFence": [
-        17
-      ],
-      "renderFences": [
-        19
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-stage-fences.ts": {
       "arrangeFence": [
         12
