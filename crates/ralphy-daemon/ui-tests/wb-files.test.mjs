@@ -5,9 +5,7 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 import {
   classify,
   fileTabId,
@@ -17,7 +15,8 @@ import {
   tabIcon,
   underProtectedDir, fullPath } from "../assets/ui/wb-file-paths.ts";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the files pane's markup.
+const PART = "wb-files.part.html";
 
 // One page with the shell and the files, and a window that delivers the
 // events it is sent, as the browser does. `init()` adds the listeners, as
@@ -109,7 +108,7 @@ test("wbFiles lists only shell() names in uses, and its members left shell()", (
 
 test("every name the markup of wbFiles reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbFiles");
-  const markup = componentMarkup(HTML, "wbFiles");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   let read = 0;
   for (const [, attr, value] of attrs) {
@@ -127,8 +126,7 @@ test("every name the markup of wbFiles reads is its own or in its uses list", ()
 });
 
 test("nothing outside the files element names their state", () => {
-  const start = HTML.indexOf('x-data="wbFiles"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["fileSearch", "treeStale", "treeError", "treeNotLive", "treeLoading", "openPeerDown", "createHere", "toggleFileSearch"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
