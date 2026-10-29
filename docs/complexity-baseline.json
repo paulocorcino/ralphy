@@ -209,11 +209,6 @@
         11
       ]
     },
-    "crates/ralphy-core/src/worktree.rs": {
-      "discard": [
-        18
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
       "sepOf": [
         11
