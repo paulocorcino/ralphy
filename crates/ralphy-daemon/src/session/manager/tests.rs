@@ -335,7 +335,7 @@ async fn a_console_that_becomes_silent_logs_one_line() {
         .agent_state
         .clone()
         .expect("a block");
-    assert_eq!(state.source.as_deref(), Some("silent"));
+    assert_eq!(state.source, Some(crate::agent_state::Unreported::Silent));
     let log = std::fs::read_to_string(&log_path).expect("read the log");
     let warnings = log.lines().filter(|l| l.contains("WARN")).count();
     assert_eq!(warnings, 1, "{log}");
@@ -450,13 +450,14 @@ async fn operator_input_does_not_end_a_claude_permission_wait() {
     manager.close(id);
 }
 
-/// A console launched with a silence reason is silent with it from its
-/// start, with no hook line and no input.
+/// A console launched with a reason its state is not reported shows it from
+/// its start, with no hook line and no input, as a console with no state
+/// source: not a silent one.
 #[tokio::test]
-async fn a_console_launched_with_a_silence_reason_is_silent_at_once() {
+async fn a_console_launched_with_an_unreported_reason_shows_it_at_once() {
     let manager = Arc::new(SessionManager::new());
     let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
-    spec.silent_reason = Some("no hooks here".to_string());
+    spec.unreported_reason = Some("no hooks here".to_string());
     let (id, _att) = manager
         .spawn_attached(
             "owner/r".to_string(),
@@ -472,7 +473,7 @@ async fn a_console_launched_with_a_silence_reason_is_silent_at_once() {
         .agent_state
         .clone()
         .expect("a block");
-    assert_eq!(block.source.as_deref(), Some("silent"));
+    assert_eq!(block.source, Some(crate::agent_state::Unreported::NoSource));
     assert_eq!(block.reason.as_deref(), Some("no hooks here"));
     manager.close(id);
 }
@@ -562,7 +563,7 @@ async fn a_failed_start_check_silences_only_a_vendor_that_runs_ralphy() {
         let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
         sess.poll_status_with(SystemTime::now(), Some("exit 127"));
         let shown = sess.shown_at(SystemTime::now());
-        let got = shown.is_some_and(|b| b.source.as_deref() == Some("silent"));
+        let got = shown.is_some_and(|b| b.source == Some(crate::agent_state::Unreported::Silent));
         assert_eq!(got, silent, "{agent:?}");
         manager.close(id);
     }

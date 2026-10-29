@@ -11,6 +11,7 @@
 
 use ralphy_run_snapshot::{IssueBlock, RunSnapshot};
 
+use crate::agent_state::Unreported;
 use crate::session::SessionInfo;
 
 pub(crate) mod dismissals;
@@ -132,15 +133,17 @@ pub fn list(
 }
 
 /// One request per console whose shown agent state is `waiting`, and one per
-/// silent console, with the silence reason as its detail.
+/// silent console, with the silence reason as its detail. A console with no
+/// state source by design is none: it would stay open for its whole life.
 fn console_request(info: &SessionInfo) -> Option<AttentionRequest> {
     let state = info.agent_state.as_ref()?;
-    let (kind, detail) = if state.source.as_deref() == Some("silent") {
-        (Kind::ConsoleSilent, state.reason.clone())
-    } else if state.state.as_deref() == Some("waiting") {
-        (Kind::ConsoleWaiting, state.detail.clone())
-    } else {
-        return None;
+    let (kind, detail) = match state.source {
+        Some(Unreported::Silent) => (Kind::ConsoleSilent, state.reason.clone()),
+        Some(Unreported::NoSource) => return None,
+        None if state.state.as_deref() == Some("waiting") => {
+            (Kind::ConsoleWaiting, state.detail.clone())
+        }
+        None => return None,
     };
     Some(AttentionRequest {
         id: format!("console:{}", info.id),
@@ -387,6 +390,24 @@ mod tests {
         assert!(!request.dismissable);
         let wire = serde_json::to_value(request).expect("a request serializes");
         assert_eq!(wire["kind"], "console-silent", "{wire}");
+    }
+
+    /// A console launched with no state source on purpose shows its reason,
+    /// but is not a request; a console that went silent next to it still is.
+    #[test]
+    fn a_console_with_no_state_source_by_design_is_no_request() {
+        let at = std::time::SystemTime::UNIX_EPOCH;
+        let mut by_design = console(4, None, None);
+        by_design.agent_state = Some(AgentState::unreported(
+            Unreported::NoSource,
+            "This project has its own Codex hooks.".to_string(),
+            at,
+        ));
+        let mut went_silent = console(5, None, None);
+        went_silent.agent_state = Some(AgentState::silent("No hook event.".to_string(), at));
+        let got = list(&[by_design, went_silent], &RunsRead::default(), &|_| false);
+        let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["console:5"], "{got:?}");
     }
 
     /// A finished run of `repo` in the folder `stamp`, started at `started`,

@@ -70,7 +70,7 @@ fn spec_at(cwd: PathBuf) -> SessionSpec {
         env: Vec::new(),
         name: None,
         status: None,
-        silent_reason: None,
+        unreported_reason: None,
     }
 }
 

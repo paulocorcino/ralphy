@@ -60,9 +60,9 @@ pub struct Observed {
 
 /// The wire shape on `/api/sessions` and the fleet: `state` is one of
 /// `working`, `waiting`, `done`, `unknown` (ADR-0085 D1); `since` the hook's
-/// timestamp; `detail` what a `waiting` agent asks. A silent console
-/// (docs/adr/0059 A2) has no `state`: `source` is `silent`, `reason` says
-/// why, and `since` is when the silence began.
+/// timestamp; `detail` what a `waiting` agent asks. A console whose state
+/// is not reported has no `state`: `source` says why ([`Unreported`]),
+/// `reason` says it in words, and `since` is when it began.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -71,21 +71,40 @@ pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
+    pub source: Option<Unreported>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// Why a console's agent state is not reported. Matched exhaustively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Unreported {
+    /// The console has a state source and it sent nothing (docs/adr/0059
+    /// A2): the console is **silent**, an attention request.
+    #[serde(rename = "silent")]
+    Silent,
+    /// The launch gave the console no state source on purpose. It is not
+    /// an attention request: it would stay open for the console's whole life.
+    #[serde(rename = "none")]
+    NoSource,
 }
 
 impl AgentState {
     /// The block of a silent console: no state, the reason, and when the
     /// silence began (RFC 3339, UTC).
     pub fn silent(reason: String, since: SystemTime) -> Self {
+        Self::unreported(Unreported::Silent, reason, since)
+    }
+
+    /// The block of a console whose state is not reported, for `why`: no
+    /// state, the reason, and when it began (RFC 3339, UTC).
+    pub fn unreported(why: Unreported, reason: String, since: SystemTime) -> Self {
         AgentState {
             state: None,
             since: chrono::DateTime::<chrono::Utc>::from(since)
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             detail: None,
-            source: Some("silent".to_string()),
+            source: Some(why),
             reason: Some(reason),
         }
     }
@@ -102,7 +121,7 @@ const CLOCK_REASON: &str = "No hook event reached Ralphy in the 30 seconds after
 /// it is launched without the status hooks (ADR-0085 amendment of
 /// 2026-10-29).
 pub const CODEX_OWN_HOOKS_REASON: &str =
-    "This project has its own Codex hooks, so Ralphy does not turn on hook trust for it and cannot see what this agent is doing.";
+    "This project has its own Codex hooks, so Ralphy does not show the agent state here.";
 
 /// The silence rule (docs/adr/0059 A2): the reason a console is silent, or
 /// `None` when it is not. Only a console whose state comes from hooks can be

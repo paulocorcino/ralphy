@@ -296,8 +296,11 @@ launch, or folders above the one with `.git` that a user's
 `project_root_markers` makes Codex read. These cases are not measured, and
 are accepted for now (ADR-0072, amendment of 2026-10-29). The rule is one function,
 `hook_form::codex_project_has_hooks` in `ralphy-proc-util`, used by the
-daemon and the Codex adapter. Such a console is silent from its start, with
-a reason that says why, so it is listed as a silent console (D11) until it
-closes; such a run has no agent state, and its log says why. The user's own
+daemon and the Codex adapter. Such a console has no state source from its
+start: its agent block on `/api/sessions` has `source: "none"` and a reason
+that says why, and the console shows the reason where a silent console
+shows its own. It is not an attention request (D11), because it would stay
+open for the console's whole life and keep the count at the top of the page
+above zero. Such a run has no agent state, and its log says why. The user's own
 hooks in `~/.codex` still run under the flag: they are the operator's own
 choice (ADR-0072, amendment of 2026-10-29).

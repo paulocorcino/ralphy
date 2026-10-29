@@ -60,8 +60,9 @@ struct ManagedSession {
     /// When the tick first read a hook line; once set, the console is never
     /// silent again.
     first_line: Mutex<Option<SystemTime>>,
-    /// The silence reason and when the silence began, while it lasts.
-    silent: Mutex<Option<(String, SystemTime)>>,
+    /// Why the state is not reported, the reason in words, and when it
+    /// began, while it lasts.
+    silent: Mutex<Option<(crate::agent_state::Unreported, String, SystemTime)>>,
     /// Whether this console already logged that it became silent.
     logged_silent: AtomicBool,
     /// The turns this console finished (docs/adr/0085 D11).
@@ -300,7 +301,13 @@ impl SessionManager {
         let kept = KeptOutput::new(id, spec.rows, spec.cols);
         // Lifted before the spec is consumed by the spawn.
         let name = spec.name.clone();
-        let silent = spec.silent_reason.take().map(|r| (r, SystemTime::now()));
+        let silent = spec.unreported_reason.take().map(|r| {
+            (
+                crate::agent_state::Unreported::NoSource,
+                r,
+                SystemTime::now(),
+            )
+        });
         let status = spec.status.clone().map(|files| StatusTail {
             tail: Mutex::new(crate::agent_state::Tail::new(
                 files.status.clone(),

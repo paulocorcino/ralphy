@@ -67,11 +67,14 @@ fn turn_ends_in(was: Option<&str>, transitions: &[Observed]) -> (u64, Option<Str
 }
 
 impl ManagedSession {
-    /// The agent block the list shows at `now`: the silent block while the
-    /// console is silent, else the observation rendered with §6 staleness.
+    /// The agent block the list shows at `now`: the unreported block while
+    /// the state is not reported, else the observation rendered with §6
+    /// staleness.
     pub(super) fn shown_at(&self, now: SystemTime) -> Option<crate::agent_state::AgentState> {
-        if let Some((reason, since)) = self.silent.lock().expect("silent mutex").clone() {
-            return Some(crate::agent_state::AgentState::silent(reason, since));
+        if let Some((why, reason, since)) = self.silent.lock().expect("silent mutex").clone() {
+            return Some(crate::agent_state::AgentState::unreported(
+                why, reason, since,
+            ));
         }
         self.agent_state
             .lock()
@@ -98,7 +101,7 @@ impl ManagedSession {
                 if !self.logged_silent.swap(true, Ordering::Relaxed) {
                     tracing::warn!(session = self.info.id, "a console became silent: {reason}");
                 }
-                *silent = Some((reason, now));
+                *silent = Some((crate::agent_state::Unreported::Silent, reason, now));
             }
             (None, true) => *silent = None,
             (Some(_), true) | (None, false) => {}

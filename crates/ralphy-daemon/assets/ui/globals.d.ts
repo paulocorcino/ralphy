@@ -126,9 +126,10 @@ type HostedSession = {
 
 /**
  * The agent's block on a session row. A console whose hooks sent nothing has
- * `source: "silent"`, a `reason`, and no `state`.
+ * `source: "silent"`, a `reason`, and no `state`. A console launched with no
+ * state source on purpose has `source: "none"` and a `reason`.
  */
-type AgentStateBlock = { state?: string; source?: "silent"; reason?: string; since: string; detail?: string };
+type AgentStateBlock = { state?: string; source?: "silent" | "none"; reason?: string; since: string; detail?: string };
 
 /** The reply to `verb`. */
 type ReplyOf<V extends string> = V extends keyof DaemonReplies ? DaemonReplies[V] : DaemonReply;

@@ -431,7 +431,7 @@ fn a_codex_console_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
     let plain = tempfile::tempdir().unwrap();
     let spec = launch(plain.path());
     assert!(spec.args.contains(&flag), "{:?}", spec.args);
-    assert_eq!(spec.silent_reason, None);
+    assert_eq!(spec.unreported_reason, None);
 
     let hooked = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(hooked.path().join(".codex")).unwrap();
@@ -440,7 +440,7 @@ fn a_codex_console_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
     assert!(!spec.args.contains(&flag), "{:?}", spec.args);
     assert!(spec.status.is_none(), "no status file is tailed");
     assert_eq!(
-        spec.silent_reason.as_deref(),
+        spec.unreported_reason.as_deref(),
         Some(crate::agent_state::CODEX_OWN_HOOKS_REASON)
     );
 }
