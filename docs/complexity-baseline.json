@@ -473,11 +473,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-split.ts": {
-      "resolve": [
-        17
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-stage-columns.ts": {
       "applyColumns": [
         17
