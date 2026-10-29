@@ -1,11 +1,6 @@
 {
   "ceiling": 20,
   "functions": {
-    "crates/ralphy-adapter-support/src/headless.rs": {
-      "drive_headless": [
-        20
-      ]
-    },
     "crates/ralphy-agent-claude/src/usage.rs": {
       "newest_jsonl_since": [
         20

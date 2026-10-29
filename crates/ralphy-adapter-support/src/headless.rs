@@ -5,7 +5,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, ExitStatus};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -274,7 +274,7 @@ struct Guards<'a> {
 /// arrives (streamed tee); `switch`, when set, early-kills the child the moment a
 /// stderr line matches its predicate.
 fn drive_headless(
-    mut cmd: Command,
+    cmd: Command,
     prompt: &str,
     timeout: Duration,
     guards: Guards<'_>,
@@ -286,44 +286,11 @@ fn drive_headless(
         degraded,
         gate,
     } = guards;
-    // On Unix, run the child in its own process group so a timeout can signal the
-    // whole tree, not just the direct child. An agent CLI that spawned helpers
-    // would otherwise leave a grandchild holding the stdout pipe open, blocking the
-    // reader forever and forcing the collect grace to return empty — silently
-    // dropping the very output the limit/auth detectors scan. Shared with the
-    // verify gate via `ralphy-proc-util` so both set up a killable tree identically.
-    ralphy_proc_util::own_process_group(&mut cmd);
-    // An agent CLI resolved from a directory that is not on `PATH` (nvm's global
-    // bin, `~/.local/bin`) may need its interpreter from that same directory —
-    // an npm shim's `#!/usr/bin/env node` finds nothing otherwise. Keeps
-    // `locate_program`'s "detection and execution can never disagree".
-    ralphy_proc_util::program_dir_on_path(&mut cmd);
-    // Hidden console on Windows: this child (an agent CLI) has its stdio piped and
-    // may run under the console-less daemon-dispatched `ralphy`, where a bare
-    // console child would flash a visible window. No-op off Windows.
-    ralphy_proc_util::no_window(&mut cmd);
-
-    let mut child = cmd
-        .spawn()
-        .context("failed to spawn the headless child process")?;
+    let (mut child, stdin, stdout, stderr) = spawn_piped(cmd)?;
 
     // Spawn the stdout/stderr reader threads *before* writing stdin, so a prompt
     // larger than the pipe buffer (~64KB) can't deadlock against a child that
-    // starts emitting output before it finishes draining stdin. A misconfigured
-    // `Command` (no piped stdio) degrades to a run error, not a panic.
-    let stdin = child
-        .stdin
-        .take()
-        .context("headless child stdin was not piped")?;
-    let stdout = child
-        .stdout
-        .take()
-        .context("headless child stdout was not piped")?;
-    let stderr = child
-        .stderr
-        .take()
-        .context("headless child stderr was not piped")?;
-
+    // starts emitting output before it finishes draining stdin.
     let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
     let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
     // The idle beacon starts now: the spawn itself counts as progress, so a child
@@ -358,78 +325,23 @@ fn drive_headless(
     if let Err(e) = release_prompt(gate, stdin, prompt, &mut child) {
         // The kill came first, so the readers reach EOF; collect them so no
         // thread outlives the call.
-        let collect = Duration::from_secs(5);
-        recv_and_join(&rx_out, out_handle, collect, "stdout");
-        recv_and_join(&rx_err, err_handle, collect, "stderr");
+        collect_both(&rx_out, out_handle, &rx_err, err_handle);
         return Err(e);
     }
 
     let deadline = Instant::now() + timeout;
-    let mut timed_out = false;
-    let mut idle_killed = false;
-    let mut stopped = false;
     // The API-degraded clock, only when a predicate was supplied — otherwise the
     // poll loop pays nothing for it. It never kills the child; it only turns a
     // persistent degraded stretch into a matched pair of tracing events.
     let mut degraded_watch = degraded.as_ref().map(|_| DegradedWatch::new());
-    let exit = loop {
+    let (exit, reap) = loop {
         if let Some(s) = child.try_wait().context("polling the headless child")? {
-            break Some(s);
+            break (Some(s), None);
         }
-        // An early-kill line landed on stderr: reap now instead of idling in the
-        // child's own silent backoff until the wall deadline. `timed_out` stays
-        // false — this is an explicit terminal signal from the child, not a timeout.
-        if switch
-            .as_ref()
-            .is_some_and(|sw| sw.fired.load(Ordering::Acquire))
-        {
-            tracing::info!(
-                "headless child emitted an early-kill line on stderr — reaping now instead of waiting out the wall timeout"
-            );
-            break None;
+        if let Some(reap) = reap_reason(switch.as_deref(), deadline, beat.as_deref(), &idle) {
+            break (None, Some(reap));
         }
-        // The operator's stop (docs/adr/0054). Checked BEFORE the clocks so a
-        // stop landing on the same tick as a deadline is reported as the button,
-        // and placed here — in `drive_headless` rather than in each adapter —
-        // because every child-driving entry point, plan phases included, funnels
-        // through this one loop. That is the whole payoff of the flag being process-global:
-        // every vendor gains a working stop without a builder change.
-        if ralphy_core::stop::requested() {
-            tracing::info!(
-                "operator stop — reaping the headless child instead of waiting out its budget"
-            );
-            stopped = true;
-            break None;
-        }
-        if Instant::now() >= deadline {
-            timed_out = true;
-            break None;
-        }
-        // The idle watchdog (docs/adr/0038): the child has emitted nothing on
-        // either stream for the whole window, so it is wedged rather than slow —
-        // a silently-retried provider quota block, a hung request, a deadlock.
-        // Reaped as a timeout so classification is unchanged; only the log says
-        // which clock fired.
-        if let Some(b) = &beat {
-            if idle.expired(b, Instant::now()) {
-                ralphy_core::emit::idle_reaped(
-                    idle.window().map(|w| w.as_secs() / 60).unwrap_or(0),
-                );
-                timed_out = true;
-                idle_killed = true;
-                break None;
-            }
-        }
-        // The API-degraded clock: a persistent degraded stretch (≥ ping) emits the
-        // shared degraded/recovered events, so the operator sees the same signal
-        // the PTY path surfaces. Advisory only — never kills the child.
-        if let (Some(sw), Some(w)) = (&degraded, &mut degraded_watch) {
-            match w.poll(Instant::now(), sw.any_active()) {
-                DegradedAction::Degraded => ralphy_core::emit::api_degraded(),
-                DegradedAction::Recovered => ralphy_core::emit::api_recovered(),
-                DegradedAction::None => {}
-            }
-        }
+        poll_degraded(degraded.as_deref(), degraded_watch.as_mut());
         thread::sleep(Duration::from_millis(500));
     };
 
@@ -443,24 +355,141 @@ fn drive_headless(
     // dies; on a natural exit it reaps whatever the CLI leaked.
     ralphy_proc_util::kill_tree(&mut child);
 
-    // Collect the captured output. The tree-kill closed every write-end, so the
-    // readers hit EOF and deliver the full buffer; the grace is a backstop
-    // against a kill that failed to close a handle — then that stream's capture
-    // is dropped and the stuck reader leaked rather than blocking the whole run.
-    let collect = Duration::from_secs(5);
-    let stdout_bytes = recv_and_join(&rx_out, out_handle, collect, "stdout");
-    let stderr_bytes = recv_and_join(&rx_err, err_handle, collect, "stderr");
+    let (stdout_bytes, stderr_bytes) = collect_both(&rx_out, out_handle, &rx_err, err_handle);
     Ok(HeadlessOutput {
         stdout: String::from_utf8_lossy(&stdout_bytes).into_owned(),
         stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
-        timed_out,
-        idle_killed,
-        stopped,
+        timed_out: matches!(reap, Some(Reap::Wall | Reap::Idle)),
+        idle_killed: matches!(reap, Some(Reap::Idle)),
+        stopped: matches!(reap, Some(Reap::Stopped)),
         exit,
     })
 }
 
-/// Run the gate, then write the prompt and close stdin. A gate error kills the
+/// Spawn `cmd` with its three pipes taken.
+fn spawn_piped(mut cmd: Command) -> Result<(Child, ChildStdin, ChildStdout, ChildStderr)> {
+    // On Unix, run the child in its own process group so a timeout can signal the
+    // whole tree, not just the direct child. An agent CLI that spawned helpers
+    // would otherwise leave a grandchild holding the stdout pipe open, blocking the
+    // reader forever and forcing the collect grace to return empty — silently
+    // dropping the very output the limit/auth detectors scan. Shared with the
+    // verify gate via `ralphy-proc-util` so both set up a killable tree identically.
+    ralphy_proc_util::own_process_group(&mut cmd);
+    // An agent CLI resolved from a directory that is not on `PATH` (nvm's global
+    // bin, `~/.local/bin`) may need its interpreter from that same directory —
+    // an npm shim's `#!/usr/bin/env node` finds nothing otherwise. Keeps
+    // `locate_program`'s "detection and execution can never disagree".
+    ralphy_proc_util::program_dir_on_path(&mut cmd);
+    // Hidden console on Windows: this child (an agent CLI) has its stdio piped and
+    // may run under the console-less daemon-dispatched `ralphy`, where a bare
+    // console child would flash a visible window. No-op off Windows.
+    ralphy_proc_util::no_window(&mut cmd);
+
+    let mut child = cmd
+        .spawn()
+        .context("failed to spawn the headless child process")?;
+    // A misconfigured `Command` (no piped stdio) degrades to a run error, not a
+    // panic.
+    let stdin = child
+        .stdin
+        .take()
+        .context("headless child stdin was not piped")?;
+    let stdout = child
+        .stdout
+        .take()
+        .context("headless child stdout was not piped")?;
+    let stderr = child
+        .stderr
+        .take()
+        .context("headless child stderr was not piped")?;
+    Ok((child, stdin, stdout, stderr))
+}
+
+/// Why the poll loop reaped a live child.
+enum Reap {
+    EarlyKill,
+    Stopped,
+    Wall,
+    Idle,
+}
+
+/// The reason to reap the child on this tick, if any. The order is the contract:
+/// early-kill, operator stop, wall deadline, idle watchdog.
+fn reap_reason(
+    switch: Option<&KillSwitch>,
+    deadline: Instant,
+    beat: Option<&ProgressBeat>,
+    idle: &IdleWatch,
+) -> Option<Reap> {
+    // An early-kill line landed on stderr: reap now instead of idling in the
+    // child's own silent backoff until the wall deadline. `timed_out` stays
+    // false — this is an explicit terminal signal from the child, not a timeout.
+    if switch.is_some_and(|sw| sw.fired.load(Ordering::Acquire)) {
+        tracing::info!(
+            "headless child emitted an early-kill line on stderr — reaping now instead of waiting out the wall timeout"
+        );
+        return Some(Reap::EarlyKill);
+    }
+    // The operator's stop (docs/adr/0054). Checked BEFORE the clocks so a
+    // stop landing on the same tick as a deadline is reported as the button,
+    // and placed here — in `drive_headless` rather than in each adapter —
+    // because every child-driving entry point, plan phases included, funnels
+    // through this one loop. That is the whole payoff of the flag being process-global:
+    // every vendor gains a working stop without a builder change.
+    if ralphy_core::stop::requested() {
+        tracing::info!(
+            "operator stop — reaping the headless child instead of waiting out its budget"
+        );
+        return Some(Reap::Stopped);
+    }
+    if Instant::now() >= deadline {
+        return Some(Reap::Wall);
+    }
+    // The idle watchdog (docs/adr/0038): the child has emitted nothing on
+    // either stream for the whole window, so it is wedged rather than slow —
+    // a silently-retried provider quota block, a hung request, a deadlock.
+    // Reaped as a timeout so classification is unchanged; only the log says
+    // which clock fired.
+    if let Some(b) = beat {
+        if idle.expired(b, Instant::now()) {
+            ralphy_core::emit::idle_reaped(idle.window().map(|w| w.as_secs() / 60).unwrap_or(0));
+            return Some(Reap::Idle);
+        }
+    }
+    None
+}
+
+/// The API-degraded clock: a persistent degraded stretch (≥ ping) emits the
+/// shared degraded/recovered events, so the operator sees the same signal
+/// the PTY path surfaces. Advisory only — never kills the child.
+fn poll_degraded(degraded: Option<&DegradedSwitch>, watch: Option<&mut DegradedWatch>) {
+    if let (Some(sw), Some(w)) = (degraded, watch) {
+        match w.poll(Instant::now(), sw.any_active()) {
+            DegradedAction::Degraded => ralphy_core::emit::api_degraded(),
+            DegradedAction::Recovered => ralphy_core::emit::api_recovered(),
+            DegradedAction::None => {}
+        }
+    }
+}
+
+/// Collect the captured output of both streams. The tree-kill closed every
+/// write-end, so the readers hit EOF and deliver the full buffer; the grace is a
+/// backstop against a kill that failed to close a handle — then that stream's
+/// capture is dropped and the stuck reader leaked rather than blocking the whole
+/// run.
+fn collect_both(
+    rx_out: &mpsc::Receiver<Vec<u8>>,
+    out_handle: thread::JoinHandle<()>,
+    rx_err: &mpsc::Receiver<Vec<u8>>,
+    err_handle: thread::JoinHandle<()>,
+) -> (Vec<u8>, Vec<u8>) {
+    let grace = Duration::from_secs(5);
+    let stdout = recv_and_join(rx_out, out_handle, grace, "stdout");
+    let stderr = recv_and_join(rx_err, err_handle, grace, "stderr");
+    (stdout, stderr)
+}
+
+// Run the gate, then write the prompt and close stdin. A gate error kills the
 /// process tree BEFORE stdin drops: a child that sees EOF on an empty stdin
 /// could otherwise act on it before the kill lands. No prompt is sent then.
 ///
