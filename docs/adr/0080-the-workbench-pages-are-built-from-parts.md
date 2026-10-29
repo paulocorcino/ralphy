@@ -1,7 +1,7 @@
 # The workbench pages are built from parts
 
 Status: accepted
-Amended 2026-10-29 (a test may read a page put together from its parts).
+Amended 2026-10-29 (a test may read a page put together from its parts; a module with two components names its parts).
 Kind: structural
 Protects: testability, extensibility
 
@@ -191,3 +191,9 @@ one component. A test about one component reads its part with
 `partMarkup(part)`; `componentMarkup` stays only for the components that are
 not in a part yet. `build/ui.rs` is still the only code that puts together a
 page the daemon serves.
+
+**A2. Amends D4.** A module that defines two components gives each part
+the module name plus a word for the component, so both parts sort next to
+the module: `wb-consoles-tab-menus.part.html` (`wbConsoleMenus`) and
+`wb-consoles-tab-columns.part.html` (`wbColumns`), both defined in
+`wb-consoles-tab.ts`.
