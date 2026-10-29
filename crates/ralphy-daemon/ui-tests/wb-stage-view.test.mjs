@@ -140,6 +140,23 @@ test("a reveal on a hidden viewport is parked and wins over the stored offset", 
   assert.deepEqual(h.patches, [{ off: want }], "the reveal is the new stored view");
 });
 
+test("a parked reveal whose window is gone leaves the landing to the content", () => {
+  const h = harness({ width: 0, height: 0 });
+  const gone = { _deskId: "w1", rect: { left: 200, top: 100, width: 400, height: 300 }, classList: { contains: () => false } };
+  const kept = { _deskId: "w2", rect: { left: 2000, top: 1200, width: 400, height: 300 }, classList: { contains: () => false } };
+  h.wins.push(gone, kept);
+  assert.equal(h.view.reveal("w1"), gone);
+  // The window closes while the tab is hidden; then the tab shows, with no
+  // stored offset.
+  h.wins.splice(0, 1);
+  h.ws.clientWidth = 1000;
+  h.ws.clientHeight = 700;
+  h.view.applyLanding();
+  const want = WBGeometry.viewLanding(null, [kept.rect], { width: 1000, height: 700 }, { width: 3000, height: 2000 });
+  assert.notDeepEqual(want, { left: 0, top: 0 }, "the content lands away from the origin");
+  assert.deepEqual({ left: h.ws.scrollLeft, top: h.ws.scrollTop }, want);
+});
+
 test("a new slide cancels the slide in flight", () => {
   withFrames(({ queued, cancelled }) => {
     const h = harness({ settled: true });

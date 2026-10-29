@@ -137,15 +137,19 @@ export function createView(deps: ViewDeps) {
 
   // A parked reveal outranks the stored offset: this is the frame it was
   // waiting for, and the operator's last act was asking for that window.
-  // Answers true when the reveal landed.
+  // Answers true when the reveal landed. A reveal whose window is gone lands
+  // nothing, so it leaves the latch as it was for the normal landing.
   function landParkedReveal(rects: Rect[]) {
     if (pendingReveal == null) return false;
     const wanted = pendingReveal;
     pendingReveal = null;
     // Latch FIRST: `revealNow` stores the offset it scrolls to, and that
     // store is suppressed until the landing has happened.
+    const wasLanded = landed;
     latchLanding(rects);
-    return !!revealNow(wanted);
+    if (revealNow(wanted)) return true;
+    landed = wasLanded;
+    return false;
   }
 
   function storedOffset() {
