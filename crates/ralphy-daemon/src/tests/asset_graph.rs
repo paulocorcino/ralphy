@@ -25,15 +25,9 @@ fn every_shell_links_the_whole_cascade() {
     expected.sort();
 
     for (shell, html) in [
-        ("index.html", include_str!("../../assets/ui/index.html")),
-        (
-            "detached.html",
-            include_str!("../../assets/ui/detached.html"),
-        ),
-        (
-            "detached-fence.html",
-            include_str!("../../assets/ui/detached-fence.html"),
-        ),
+        ("index.html", super::INDEX_HTML),
+        ("detached.html", super::DETACHED_HTML),
+        ("detached-fence.html", super::DETACHED_FENCE_HTML),
     ] {
         let linked: Vec<String> = tag_references(html)
             .into_iter()
@@ -97,15 +91,9 @@ fn the_sweep_set_covers_every_asset_we_wrote() {
 #[test]
 fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     const SHELLS: [(&str, &str); 3] = [
-        ("index.html", include_str!("../../assets/ui/index.html")),
-        (
-            "detached.html",
-            include_str!("../../assets/ui/detached.html"),
-        ),
-        (
-            "detached-fence.html",
-            include_str!("../../assets/ui/detached-fence.html"),
-        ),
+        ("index.html", super::INDEX_HTML),
+        ("detached.html", super::DETACHED_HTML),
+        ("detached-fence.html", super::DETACHED_FENCE_HTML),
     ];
     let embedded = embedded_ui_paths();
     let mut referenced: Vec<String> = Vec::new();

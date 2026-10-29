@@ -172,7 +172,7 @@ fn shell_detaches_a_fence() {
     // FRAGMENT of the plane from writing the whole desk or the shell's view.
     // The options are built by the page's entry module,
     // `detached-fence-main.ts`; the handshake is `wb-detached-fence.ts`.
-    let html = include_str!("../../assets/ui/detached-fence.html");
+    let html = super::DETACHED_FENCE_HTML;
     let entry = include_str!("../../assets/ui/detached-fence-main.ts");
     let page = include_str!("../../assets/ui/wb-detached-fence.ts");
     for pin in [
@@ -278,7 +278,7 @@ fn shell_survives_a_reload_with_its_detach() {
     ]
     .concat();
     let link = include_str!("../../assets/ui/wb-detach-link.ts");
-    let html = include_str!("../../assets/ui/detached-fence.html");
+    let html = super::DETACHED_FENCE_HTML;
     let entry = include_str!("../../assets/ui/detached-fence-main.ts");
     let page = include_str!("../../assets/ui/wb-detached-fence.ts");
     let body = |name: &str| -> String {

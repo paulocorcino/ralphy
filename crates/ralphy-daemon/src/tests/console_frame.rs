@@ -105,7 +105,7 @@ fn a_console_can_take_the_whole_screen() {
 
     // The iPad's OTHER answer, which needs no fullscreen state at all:
     // installed to the home screen the shell runs chrome-less for good.
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [
         r#"<link rel="manifest" href="manifest.webmanifest" />"#,
         r#"<link rel="apple-touch-icon" href="icon-192.png" />"#,
@@ -143,7 +143,7 @@ fn a_console_can_take_the_whole_screen() {
 fn the_console_chrome_holds_its_three_rules() {
     let app = shell_family();
     let tab = include_str!("../../assets/ui/wb-consoles-tab.ts");
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     // ONE dropdown at a time. Every toggler sends ONE event,
     // `workbench:menus-close`, and the shell and the two consoles components
     // each close their own menus on it — the account menu and the toolbar's

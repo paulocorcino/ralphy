@@ -156,7 +156,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
         app.contains("if(this.CLIENT_KEYS.has(key)){"),
         "a client-scoped key must return before the config.set path"
     );
-    let html = squeeze(include_str!("../../assets/ui/index.html"));
+    let html = squeeze(super::INDEX_HTML);
     assert!(
         html.contains(r#"it.type==='toggle'"#),
         "index.html must render the toggle control"
@@ -257,7 +257,7 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     // edit and still comes back refused.
     // One binding per control a readonly key can use: text, password, toggle.
     assert_eq!(
-        include_str!("../../assets/ui/index.html")
+        super::INDEX_HTML
             .matches(r#":disabled="it.readonly === true""#)
             .count(),
         3,

@@ -345,6 +345,14 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
         .0
 }
 
+// The page tests read the page `build/ui.rs` wrote, not the source file: a
+// page put together from parts has only marker lines in its source
+// (ADR-0080 D6).
+pub(crate) const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/ui/index.html"));
+pub(crate) const DETACHED_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/ui/detached.html"));
+pub(crate) const DETACHED_FENCE_HTML: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/ui/detached-fence.html"));
+
 mod act_bar;
 mod agents_repos;
 mod asset_graph;

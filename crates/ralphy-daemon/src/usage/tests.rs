@@ -453,7 +453,7 @@ fn the_usage_modal_is_gone_from_the_served_assets() {
         stylesheet.len()
     );
     let assets = [
-        ("index.html", include_str!("../../assets/ui/index.html")),
+        ("index.html", crate::tests::INDEX_HTML),
         ("app.ts", include_str!("../../assets/ui/app.ts")),
         ("the stylesheet", stylesheet.as_str()),
     ];

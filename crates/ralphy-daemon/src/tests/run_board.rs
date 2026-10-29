@@ -13,7 +13,7 @@ use super::*;
 fn the_run_picker_names_the_model_and_clocks_the_phase() {
     // The folds behind it (`fromSnapshot`, `modelEffort`, `fmtClock`,
     // `phaseClock`, `runTitle`) are driven by `ui-tests/wb-runs.test.mjs`.
-    let shell = include_str!("../../assets/ui/index.html");
+    let shell = super::INDEX_HTML;
     for pin in [
         r#"<span class="run-select-title" x-text="runTitle($store.runs.currentRun())"></span>"#,
         r#"<span class="run-sub-phase" x-text="runIdentity($store.runs.currentRun())"></span>"#,
@@ -140,7 +140,7 @@ fn the_design_system_scrollbar_is_the_default_not_a_list() {
 /// control in the shell with no gate.
 #[test]
 fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
-    let shell = include_str!("../../assets/ui/index.html");
+    let shell = super::INDEX_HTML;
     // The clip fix is structural: it must stop being a floating dropdown.
     assert!(
         shell.contains(r#"<div class="kd-label-menu" x-show="labelMenuOpen""#),
@@ -240,7 +240,7 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
         "a plan is shown against the issue it names, and no other"
     );
 
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [
         r#"class="kc-plan""#,
         r#"class="kanban-plan-chip""#,
@@ -276,7 +276,7 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
 /// both defects are invisible to every other test in this file.
 #[test]
 fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     let note = html
         .find(r#"class="plan-steps-note""#)
         .expect("index.html must keep the steps note");
@@ -311,7 +311,7 @@ fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
 /// bargain #318/#319 struck for the write controls.
 #[test]
 fn the_runs_feed_is_contained_in_the_markup() {
-    let html = include_str!("../../assets/ui/index.html");
+    let html = super::INDEX_HTML;
     for pin in [
         r#"class="runs-feed""#,
         r#"data-act="feed-collapse""#,
