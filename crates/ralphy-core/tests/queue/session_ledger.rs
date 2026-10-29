@@ -31,19 +31,18 @@ impl Agent for SessionedAgent {
     }
 }
 
-#[test]
-fn the_last_non_empty_session_of_the_resume_loop_reaches_the_ledger() {
+/// Run a two-attempt resume loop whose attempts report `sessions`, and return the
+/// execute line the ledger recorded.
+fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> String {
     let repo = init_repo("session-ledger");
     let usage_dir = ensure_usage_dir();
-    // The first attempt hits a limit and names its session; the resumed one
-    // reports none.
     let agent = SessionedAgent {
         inner: ScriptedAgent::new(vec![Outcome::Limit(Some("09:00".into())), Outcome::Done]),
-        sessions: RefCell::new(VecDeque::from([Some("sess-first".to_string()), None])),
+        sessions: RefCell::new(VecDeque::from(sessions)),
     };
 
     run_queue(
-        &cfg(&repo, "stamp-session-ledger", false),
+        &cfg(&repo, stamp, false),
         &[issue(78)],
         &agent,
         &RecordingTracker::default(),
@@ -58,11 +57,35 @@ fn the_last_non_empty_session_of_the_resume_loop_reaches_the_ledger() {
     let line = content
         .lines()
         .find(|l| l.contains("\"phase\":\"execute\""))
-        .unwrap_or_else(|| panic!("no execute line: {content}"));
+        .unwrap_or_else(|| panic!("no execute line: {content}"))
+        .to_string();
+
+    fs::remove_dir_all(&repo).ok();
+    line
+}
+
+#[test]
+fn the_last_non_empty_session_of_the_resume_loop_reaches_the_ledger() {
+    // The first attempt hits a limit and names its session; the resumed one
+    // reports none.
+    let line = execute_line_after_resume(
+        "stamp-session-ledger",
+        [Some("sess-first".to_string()), None],
+    );
     assert!(
         line.contains("\"session_id\":\"sess-first\""),
         "the execute line keeps the earlier session: {line}"
     );
+}
 
-    fs::remove_dir_all(&repo).ok();
+#[test]
+fn an_empty_session_of_the_resume_loop_does_not_replace_the_earlier_one() {
+    let line = execute_line_after_resume(
+        "stamp-session-ledger-empty",
+        [Some("sess-first".to_string()), Some(String::new())],
+    );
+    assert!(
+        line.contains("\"session_id\":\"sess-first\""),
+        "the execute line keeps the earlier session: {line}"
+    );
 }
