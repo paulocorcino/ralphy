@@ -114,13 +114,22 @@ impl ManagedSession {
 
     /// Fold the operator's input into the agent state (ADR-0085 D7.5).
     fn operator_input(&self) {
+        self.operator_input_between(|| {});
+    }
+
+    /// [`operator_input`](Self::operator_input), with `between` run after
+    /// the input is folded and before the state is stored, so a test can run
+    /// a tick there. The tail stays locked until the state is stored, as in
+    /// `poll_status_between`: a tick between the fold and the store would
+    /// else store a newer state that this older one then overwrites.
+    fn operator_input_between(&self, between: impl FnOnce()) {
         let Some(status) = &self.status else {
             return;
         };
-        // The tail stays locked until the state is stored, as in
-        // `poll_status_between`.
         let mut tail = status.tail.lock().expect("tail mutex");
-        if let Some(obs) = tail.operator_input() {
+        let folded = tail.operator_input();
+        between();
+        if let Some(obs) = folded {
             *self.agent_state.lock().expect("agent_state mutex") = Some(obs);
         }
     }

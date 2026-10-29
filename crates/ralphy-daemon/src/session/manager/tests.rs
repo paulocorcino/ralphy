@@ -531,6 +531,64 @@ async fn an_input_during_a_tick_is_not_overwritten_by_an_older_wait() {
     manager.close(id);
 }
 
+/// A tick that lands while an operator input stores its `working` is not
+/// overwritten by it: the tick waits for the tail, then reads the newer
+/// `waiting` line.
+#[tokio::test]
+async fn a_tick_during_an_input_is_not_overwritten_by_the_older_input() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let files =
+        crate::agent_state::StatusFiles::for_agent(crate::session::Agent::Codex, dir.path(), 1)
+            .expect("hooks");
+    let permission = |ts: &str| {
+        format!(
+            "{{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"{ts}\"}}\n"
+        )
+    };
+    std::fs::write(&files.status, permission("t1")).expect("write the status line");
+    let status = files.status.clone();
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(files);
+    let (id, _att) = manager
+        .spawn_attached(
+            "owner/r".to_string(),
+            "codex".to_string(),
+            "agent".to_string(),
+            None,
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    sess.poll_status_with(SystemTime::now(), None);
+    let tick = std::sync::Mutex::new(None);
+    sess.operator_input_between(|| {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&status)
+            .expect("open the status file");
+        file.write_all(permission("t2").as_bytes())
+            .expect("append the newer wait");
+        let poller = sess.clone();
+        *tick.lock().expect("tick mutex") = Some(std::thread::spawn(move || {
+            poller.poll_status_with(SystemTime::now(), None)
+        }));
+        // Time for the tick to read and store, if the tail let it.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    });
+    let handle = tick
+        .lock()
+        .expect("tick mutex")
+        .take()
+        .expect("the tick thread");
+    handle.join().expect("the tick thread ends");
+    assert_eq!(shown(&sess).0, Some("waiting".into()));
+    manager.close(id);
+}
+
 /// The daemon's start check runs the ralphy program, so its failure makes a
 /// Claude or Codex console silent at once, and not an OpenCode console,
 /// whose plugin never runs that program.

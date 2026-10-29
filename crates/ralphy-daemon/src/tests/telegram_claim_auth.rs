@@ -3,13 +3,13 @@
 
 use super::*;
 
-fn claim(auth: Option<(header::HeaderName, String)>) -> Request<Body> {
+fn claim(auth: &[(header::HeaderName, &str)]) -> Request<Body> {
     let mut req = Request::builder()
         .method("POST")
         .uri("/api/telegram/main")
         .header(header::CONTENT_TYPE, "application/json");
-    if let Some((name, value)) = auth {
-        req = req.header(name, value);
+    for (name, value) in auth {
+        req = req.header(name, *value);
     }
     req.body(Body::from(r#"{"daemon_id":"m"}"#)).unwrap()
 }
@@ -42,26 +42,41 @@ async fn a_claim_needs_the_bearer_of_a_daemon() {
 
     let page = app
         .clone()
-        .oneshot(claim(Some((header::COOKIE, cookie))))
+        .oneshot(claim(&[(header::COOKIE, &cookie)]))
         .await
         .unwrap();
     assert_eq!(page.status(), StatusCode::FORBIDDEN, "a page cannot claim");
+    // The cookie gets the request past the guard; the claim still asks for
+    // the daemon's own bearer, not any bearer.
+    let wrong = app
+        .clone()
+        .oneshot(claim(&[
+            (header::COOKIE, &cookie),
+            (header::AUTHORIZATION, "Bearer junk"),
+        ]))
+        .await
+        .unwrap();
+    assert_eq!(
+        wrong.status(),
+        StatusCode::FORBIDDEN,
+        "a cookie and a wrong bearer cannot claim"
+    );
     let peer = app
-        .oneshot(claim(Some((header::AUTHORIZATION, "Bearer tok".into()))))
+        .oneshot(claim(&[(header::AUTHORIZATION, "Bearer tok")]))
         .await
         .unwrap();
     assert_eq!(peer.status(), StatusCode::OK, "a daemon's bearer claims");
 
     let store = tempfile::tempdir().unwrap();
     let localhost = desk_router(store.path());
-    let bare = localhost.clone().oneshot(claim(None)).await.unwrap();
+    let bare = localhost.clone().oneshot(claim(&[])).await.unwrap();
     assert_eq!(
         bare.status(),
         StatusCode::FORBIDDEN,
         "under the localhost policy a claim still carries a bearer"
     );
     let peer = localhost
-        .oneshot(claim(Some((header::AUTHORIZATION, "Bearer any".into()))))
+        .oneshot(claim(&[(header::AUTHORIZATION, "Bearer any")]))
         .await
         .unwrap();
     assert_eq!(peer.status(), StatusCode::OK);
