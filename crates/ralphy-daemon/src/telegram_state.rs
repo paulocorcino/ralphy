@@ -11,7 +11,7 @@
 //! own config says, so one request is one message.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
@@ -79,12 +79,34 @@ pub fn bot_at(path: &Path) -> Result<Option<Bot>> {
         .map(|token| Bot { token, chat_id }))
 }
 
-/// The token of a config: `RALPHY_TELEGRAM_TOKEN` when it is set, else the
-/// file's. A unit test of this crate reads only the file's, so a developer's
-/// real token in the environment never reaches a test.
+/// `RALPHY_TELEGRAM_TOKEN` as the daemon had it when it started, read once.
+/// The config file is still read on each call, so `ralphy telegram setup`
+/// while the daemon runs takes effect; the environment cannot change from
+/// outside a running process.
+static ENV_TOKEN: OnceLock<Option<String>> = OnceLock::new();
+
+/// Read `RALPHY_TELEGRAM_TOKEN` now and keep it. The boot path calls it
+/// before the daemon serves; a later call keeps the first value.
+pub fn capture_env_token() {
+    ENV_TOKEN.get_or_init(read_env_token);
+}
+
+/// The non-blank value of `RALPHY_TELEGRAM_TOKEN`, if any.
+fn read_env_token() -> Option<String> {
+    std::env::var(ralphy_telegram::config::TOKEN_ENV)
+        .ok()
+        .filter(|token| !token.trim().is_empty())
+}
+
+/// The token of a config: `RALPHY_TELEGRAM_TOKEN` when it was set at boot,
+/// else the file's. A unit test of this crate reads only the file's, so a
+/// developer's real token in the environment never reaches a test.
 #[cfg(not(test))]
 fn token_of(stored: &str) -> Option<String> {
-    ralphy_telegram::config::effective_token(Some(stored))
+    ENV_TOKEN
+        .get_or_init(read_env_token)
+        .clone()
+        .or_else(|| Some(stored.to_string()))
 }
 
 /// [`token_of`] in a unit test: the file's token only.

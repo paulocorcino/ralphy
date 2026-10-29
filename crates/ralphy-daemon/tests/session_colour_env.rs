@@ -6,9 +6,11 @@
 //! environment into the child, and every workbench console came out monochrome —
 //! measured on claude, codex, gemini and copilot, which all honour it.
 //!
+//! The daemon's secrets do not reach the child either (ADR-0072 D7).
+//!
 //! Its own test binary on purpose: it mutates the process environment (the only
 //! way to have something to inherit), so it must not race a sibling test that
-//! reads it.
+//! reads it. Its two tests set different variables.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -124,6 +126,36 @@ async fn the_child_gets_the_daemons_terminal_not_the_launching_shells_suppressor
     assert_eq!(
         term, "vendor-term",
         "a spec's own env overrides the terminal default"
+    );
+
+    session.close();
+}
+
+/// A daemon started with the Telegram and events tokens in its environment
+/// gives neither to a console, while an ordinary variable still reaches it.
+#[tokio::test]
+async fn a_console_gets_none_of_the_daemons_secrets() {
+    // Fake values only.
+    std::env::set_var("RALPHY_TELEGRAM_TOKEN", "fake-telegram-token");
+    std::env::set_var("RALPHY_EVENTS_TOKEN", "fake-events-token");
+    std::env::set_var("RALPHY_TEST_INHERITED", "inherited");
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = Session::spawn(spec_at(dir.path().to_path_buf(), Vec::new())).unwrap();
+    let mut rx = session.take_output();
+    read_until(&mut session, &mut rx, "READY").await;
+
+    for secret in ["RALPHY_TELEGRAM_TOKEN", "RALPHY_EVENTS_TOKEN"] {
+        let value = child_env(&mut session, &mut rx, secret).await;
+        assert!(
+            value.is_empty(),
+            "{secret} must not reach a console; got {value:?}"
+        );
+    }
+    let inherited = child_env(&mut session, &mut rx, "RALPHY_TEST_INHERITED").await;
+    assert_eq!(
+        inherited, "inherited",
+        "the console still inherits the daemon's other variables"
     );
 
     session.close();

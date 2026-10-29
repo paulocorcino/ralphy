@@ -434,10 +434,10 @@ fn read_system_release() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn read_system_release() -> Option<String> {
-    match std::process::Command::new("sw_vers")
-        .arg("-productVersion")
-        .output()
-    {
+    let mut cmd = std::process::Command::new("sw_vers");
+    cmd.arg("-productVersion");
+    crate::child_env::remove_secrets(&mut cmd);
+    match cmd.output() {
         Ok(out) if out.status.success() => macos_release(&String::from_utf8_lossy(&out.stdout)),
         Ok(out) => {
             tracing::debug!(status = %out.status, "sw_vers did not give the macOS version");

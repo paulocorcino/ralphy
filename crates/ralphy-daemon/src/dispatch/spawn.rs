@@ -281,6 +281,7 @@ impl ProcessSpawner {
         if let Some(id) = daemon_id {
             cmd.env("RALPHY_DAEMON_ID", id);
         }
+        crate::child_env::remove_secrets(&mut cmd);
         // Detach so daemon shutdown never reaches the run. On Unix its own process
         // group isolates it from the daemon's group.
         ralphy_proc_util::own_process_group(&mut cmd);

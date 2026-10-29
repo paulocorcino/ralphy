@@ -480,10 +480,10 @@ fn build_spec() -> Result<AutostartSpec> {
 /// uninstall path, where "already absent" is not an error).
 fn run_argv(argv: &[String], tolerate_missing: bool) -> Result<()> {
     let (prog, rest) = argv.split_first().context("empty autostart command")?;
-    let status = ProcCommand::new(prog)
-        .args(rest)
-        .status()
-        .with_context(|| format!("running {prog}"))?;
+    let mut cmd = ProcCommand::new(prog);
+    cmd.args(rest);
+    crate::child_env::remove_secrets(&mut cmd);
+    let status = cmd.status().with_context(|| format!("running {prog}"))?;
     if !status.success() && !tolerate_missing {
         anyhow::bail!("{prog} exited with {status}");
     }
@@ -494,10 +494,10 @@ fn run_argv(argv: &[String], tolerate_missing: bool) -> Result<()> {
 /// and launchd status probes use, because neither tool's text is a contract.
 fn argv_succeeds(argv: &[String]) -> Result<bool> {
     let (prog, rest) = argv.split_first().context("empty autostart command")?;
-    let out = ProcCommand::new(prog)
-        .args(rest)
-        .output()
-        .with_context(|| format!("running {prog}"))?;
+    let mut cmd = ProcCommand::new(prog);
+    cmd.args(rest);
+    crate::child_env::remove_secrets(&mut cmd);
+    let out = cmd.output().with_context(|| format!("running {prog}"))?;
     Ok(out.status.success())
 }
 
@@ -632,10 +632,10 @@ pub fn uninstall() -> Result<()> {
 pub fn status() -> Result<AutostartStatus> {
     let argv = render_query(Platform::Systemd, &build_spec()?);
     let (prog, rest) = argv.split_first().context("empty autostart command")?;
-    let out = ProcCommand::new(prog)
-        .args(rest)
-        .output()
-        .with_context(|| format!("running {prog}"))?;
+    let mut cmd = ProcCommand::new(prog);
+    cmd.args(rest);
+    crate::child_env::remove_secrets(&mut cmd);
+    let out = cmd.output().with_context(|| format!("running {prog}"))?;
     Ok(AutostartStatus {
         registered: systemd_is_enabled(&String::from_utf8_lossy(&out.stdout)),
     })

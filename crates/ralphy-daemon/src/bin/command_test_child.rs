@@ -8,9 +8,10 @@
 //! Behavior: read `RALPHY_TEST_EXIT_CODE` (default `0`), print stdout+stderr
 //! markers, echoes its argv on stdout for the run-params test, and exit with that
 //! code. When `RALPHY_TEST_ENV_DUMP`
-//! names a path, first write the child's view of BOTH `RALPHY_DAEMON_TOKEN` and
-//! `RALPHY_DAEMON_ID` there (newline-separated) — one dump proving the boot-time
-//! token strip AND the dispatch-path daemon_id injection reached this child.
+//! names a path, first write the child's view of `RALPHY_DAEMON_TOKEN`,
+//! `RALPHY_DAEMON_ID`, `RALPHY_TELEGRAM_TOKEN` and `RALPHY_EVENTS_TOKEN` there
+//! (newline-separated) — one dump proving that no secret reached this child
+//! AND that the dispatch-path daemon_id injection did.
 //! `RALPHY_TEST_SLEEP_MS` delays the exit (lets a test drop the client mid-run);
 //! `RALPHY_TEST_DONE_FILE` names a path the child writes `dispatch-done` to just
 //! before exiting (a sentinel proving it ran to completion after a disconnect).
@@ -46,9 +47,14 @@ fn main() {
     if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
         let token = std::env::var("RALPHY_DAEMON_TOKEN").unwrap_or_else(|_| "ABSENT".into());
         let daemon_id = std::env::var("RALPHY_DAEMON_ID").unwrap_or_else(|_| "ABSENT".into());
+        let telegram = std::env::var("RALPHY_TELEGRAM_TOKEN").unwrap_or_else(|_| "ABSENT".into());
+        let events = std::env::var("RALPHY_EVENTS_TOKEN").unwrap_or_else(|_| "ABSENT".into());
         std::fs::write(
             &dump_path,
-            format!("RALPHY_DAEMON_TOKEN={token}\nRALPHY_DAEMON_ID={daemon_id}"),
+            format!(
+                "RALPHY_DAEMON_TOKEN={token}\nRALPHY_DAEMON_ID={daemon_id}\n\
+                 RALPHY_TELEGRAM_TOKEN={telegram}\nRALPHY_EVENTS_TOKEN={events}"
+            ),
         )
         .expect("writing the env dump");
     }

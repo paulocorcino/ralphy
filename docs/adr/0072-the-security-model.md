@@ -353,7 +353,13 @@ surface.
   tokens, then removes both from its environment before it spawns a child
   (`strip_secret_tokens_from_env_removes_both`); `triage`, `init` and
   `consolidate`, which read neither token, remove both before they start
-  (`agent_commands_outside_run_strip_the_secret_tokens`). One owner-only writer,
+  (`agent_commands_outside_run_strip_the_secret_tokens`). The daemon reads
+  the Telegram token of its environment once, at boot, and each spawn in
+  `ralphy-daemon` removes the daemon, events and Telegram tokens from its
+  child (`child_env::SECRET_ENV`; `a_console_gets_none_of_the_daemons_secrets`,
+  `spawned_child_does_not_inherit_the_token`). Not covered yet: the `git`,
+  `--version` and hook start-check children that `ralphy-git-read`,
+  `ralphy-usage-scan` and `ralphy-proc-util` start for the daemon. One owner-only writer,
   `crates/ralphy-daemon/src/owner_only.rs`, serves every store of the
   daemon and the CLI's events and Telegram stores: the file is created
   `0600` before a byte is written on Linux and macOS

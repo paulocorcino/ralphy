@@ -21,6 +21,7 @@ pub(crate) mod audit;
 pub mod auth;
 pub mod autostart;
 pub mod checkout;
+pub mod child_env;
 pub mod clipboard;
 pub mod confine;
 pub mod cookie;
