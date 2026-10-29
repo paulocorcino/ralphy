@@ -679,9 +679,6 @@
       ]
     },
     "crates/ralphy-daemon/src/watch.rs": {
-      "pump": [
-        19
-      ],
       "watch": [
         14
       ]
