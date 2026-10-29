@@ -245,3 +245,22 @@ fn the_message_links_to_the_console() {
         "Claude console \"fix login\" in owner/app is waiting: permission: Bash"
     );
 }
+
+/// A notifier built in a unit test, as every daemon router of a test builds
+/// one, reaches no Telegram API: each call fails before any network.
+#[test]
+fn a_unit_test_notifier_reaches_no_api() {
+    let notifier = Notifier::new(
+        PathBuf::from("telegram.toml"),
+        Default::default(),
+        PathBuf::from("peers"),
+        None,
+    );
+    let transport = (notifier.transport)("123:abc".to_string());
+    let sent = transport.post("sendMessage", json!({ "chat_id": 42, "text": "x" }));
+    let error = sent.expect_err("no API in a unit test");
+    assert!(
+        format!("{error:#}").contains("reaches no Telegram API"),
+        "{error:#}"
+    );
+}

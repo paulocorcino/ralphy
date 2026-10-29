@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
-use ralphy_telegram::config::{effective_token, TelegramConfig};
+use ralphy_telegram::config::TelegramConfig;
 
 /// What this daemon does with a console request that waits for an operator
 /// who is away. Matched exhaustively.
@@ -74,9 +74,23 @@ pub fn bot_at(path: &Path) -> Result<Option<Bot>> {
     let Some(chat_id) = config.chat_id else {
         return Ok(None);
     };
-    Ok(effective_token(Some(&config.token))
+    Ok(token_of(&config.token)
         .filter(|token| !token.trim().is_empty())
         .map(|token| Bot { token, chat_id }))
+}
+
+/// The token of a config: `RALPHY_TELEGRAM_TOKEN` when it is set, else the
+/// file's. A unit test of this crate reads only the file's, so a developer's
+/// real token in the environment never reaches a test.
+#[cfg(not(test))]
+fn token_of(stored: &str) -> Option<String> {
+    ralphy_telegram::config::effective_token(Some(stored))
+}
+
+/// [`token_of`] in a unit test: the file's token only.
+#[cfg(test)]
+fn token_of(stored: &str) -> Option<String> {
+    Some(stored.to_string())
 }
 
 /// The state of the config at `path`. A config that cannot be read is

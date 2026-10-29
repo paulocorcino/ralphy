@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use ralphy_telegram::client::{BotClient, Transport, UreqTransport};
+use ralphy_telegram::client::{BotClient, Transport};
 
 use super::{AttentionRequest, Kind};
 use crate::presence_board;
@@ -302,6 +302,35 @@ impl Transport for AnyTransport {
 /// What builds the transport for a token.
 pub(crate) type Transports = Arc<dyn Fn(String) -> AnyTransport + Send + Sync>;
 
+/// The transports of a [`Notifier`]: the Telegram API. In a unit test of
+/// this crate every router and every notifier gets [`NoApi`] instead, so no
+/// test can reach the API, whatever config or token it has.
+#[cfg(not(test))]
+fn api_transports() -> Transports {
+    Arc::new(|token| AnyTransport(Box::new(ralphy_telegram::client::UreqTransport::new(token))))
+}
+
+/// [`api_transports`] in a unit test: [`NoApi`].
+#[cfg(test)]
+fn api_transports() -> Transports {
+    Arc::new(|_token| AnyTransport(Box::new(NoApi)))
+}
+
+/// The transport of a unit test that sets none: every call fails.
+#[cfg(test)]
+pub(crate) struct NoApi;
+
+#[cfg(test)]
+impl Transport for NoApi {
+    fn get(&self, method: &str) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("a unit test reaches no Telegram API ({method})")
+    }
+
+    fn post(&self, method: &str, _body: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("a unit test reaches no Telegram API ({method})")
+    }
+}
+
 /// The sender as the attention tick runs it: the config path, the presence
 /// board, the claim of a main daemon on this one, the peers, this daemon's
 /// id, and the send in flight. A tick starts no send while one is in flight,
@@ -331,7 +360,7 @@ impl Notifier {
             claim,
             peers_dir,
             daemon_id,
-            transport: Arc::new(|token| AnyTransport(Box::new(UreqTransport::new(token)))),
+            transport: api_transports(),
             sender: Sender::default(),
             flight: None,
         }
