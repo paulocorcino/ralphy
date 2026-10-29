@@ -455,11 +455,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-security-dialog.ts": {
-      "toggleRequireLogin": [
-        17
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-session-route.ts": {
       "announcement": [
         15
