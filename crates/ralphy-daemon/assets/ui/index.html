@@ -165,7 +165,8 @@
               </div>
               <div class="attention-kind" x-text="kindOf(r)"></div>
               <div class="attention-detail" x-show="r.detail" x-text="r.detail"></div>
-              <button class="btn attention-go" @click="goTo(r)">Go to the console</button>
+              <button class="btn attention-go" x-show="actionOf(r) === 'console'" @click="goTo(r)">Go to the console</button>
+              <button class="btn attention-go" x-show="actionOf(r) === 'run'" @click="openRun(r)">Open the run</button>
             </div>
           </template>
         </div>
@@ -1961,7 +1962,14 @@
                   <span class="run-prog" x-text="($store.runs.currentRun()?.completed ?? 0) + '/' + ($store.runs.currentRun()?.queueTotal ?? 0)"></span>
                 </span>
                 <span class="run-select-sub">
+                  <!-- The run agent's own state (wb-runs-panel.ts `runAgentDot`):
+                       the dot of a console, and what a waiting agent asks. -->
+                  <span class="session-state run-agent-state" x-show="runAgentDot($store.runs.currentRun()).state"
+                        :class="runAgentDot($store.runs.currentRun()).state"
+                        :title="runAgentTitle($store.runs.currentRun())"></span>
                   <span class="run-sub-phase" x-text="runIdentity($store.runs.currentRun())"></span>
+                  <span class="run-agent-detail" x-show="runAgentDot($store.runs.currentRun()).detail"
+                        x-text="runAgentDot($store.runs.currentRun()).detail"></span>
                   <span class="run-clock" x-show="runClock($store.runs.currentRun())"
                         x-text="runClock($store.runs.currentRun())"></span>
                 </span>

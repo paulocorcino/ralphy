@@ -19,9 +19,9 @@ mod read;
 mod write;
 
 pub use document::{
-    snapshot_dir, snapshot_path, stop_path, AgentBlock, IssueBlock, PhaseBlock, PlanBlock,
-    PlanStepBlock, QueueBlock, RunSnapshot, SleepBlock, SNAPSHOT_VERSION,
+    final_snapshot_path, snapshot_dir, snapshot_path, stop_path, AgentBlock, IssueBlock,
+    PhaseBlock, PlanBlock, PlanStepBlock, QueueBlock, RunSnapshot, SleepBlock, SNAPSHOT_VERSION,
 };
 pub use guard::SnapshotGuard;
-pub use read::{list_runs, RunListing, UnreadableRun};
+pub use read::{list_runs, read_final, RunListing, UnreadableRun};
 pub use write::write_atomic;

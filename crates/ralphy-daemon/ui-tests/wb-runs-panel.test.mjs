@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { wbAttention } from "../assets/ui/wb-attention.ts";
+import { WBRun } from "../assets/ui/wb-runs.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
@@ -137,6 +139,51 @@ test("the Runs panel drops the trail and the verb refusal of the project that wa
   fire("workbench:project-changed", { slug: "owner/b", previous: "owner/a" });
   // The section is the first of the run the store now selects.
   assert.deepEqual([runs.trailFocus, runs.verbError, runs.planSection], [null, "", "Stage 1"]);
+});
+
+// ---- the run agent's state and the attention list ------------------------------
+
+test("a run card shows its agent state", () => {
+  const { scope: own } = loadComponent("wbRuns");
+  const run = WBRun.fromSnapshot({
+    v: 1,
+    runid: "01WAIT",
+    exec_agent: "claude",
+    phase: {
+      state: "executing",
+      active: 71,
+      agent: { state: "waiting", since: "2026-10-28T11:00:00-03:00", detail: "permission: Bash" },
+    },
+  });
+  assert.deepEqual(own.runAgentDot(run), { state: "waiting", detail: "permission: Bash" });
+  assert.equal(own.runAgentTitle(run), "Agent is waiting: permission: Bash");
+  // A run with no agent state draws no dot.
+  assert.equal(own.runAgentDot(WBRun.fromSnapshot({ v: 1, runid: "01OLD" })).state, null);
+  // The card draws the dot with the state as its class, and the detail as text.
+  const markup = componentMarkup(HTML, "wbRuns");
+  assert.match(markup, /class="session-state run-agent-state"[^>]*:class="runAgentDot\(\$store\.runs\.currentRun\(\)\)\.state"/);
+  assert.match(markup, /x-text="runAgentDot\(\$store\.runs\.currentRun\(\)\)\.detail"/);
+});
+
+test("open the run selects the run in the Runs panel of its project", () => {
+  const { shell } = page();
+  const { projects, runs, checkouts } = shell.$store;
+  Object.assign(projects, { loadAgents() {}, wakePeerFor() {}, refAvailable: () => true });
+  checkouts.ensureWorktreeListing = () => {};
+  Object.assign(runs, { hydrateRuns() {}, mountRunsSub() {} });
+  // The store hears the project change, as Alpine starts it: it then picks the
+  // first run of the project it opens.
+  runs.init();
+  const run = (runid) => WBRun.fromSnapshot({ v: 1, runid });
+  runs.runsByProject = { "owner/a": [run("01A"), run("01B")], "owner/b": [run("01C")] };
+  projects.setOpen("owner/b");
+  const attention = wbAttention();
+  attention.open = true;
+  attention.openRun({ id: "run:01B", kind: "run-waiting", vendor: "claude", repo: "owner/a", run: "01B", since: "", dismissable: false });
+  assert.equal(attention.open, false);
+  assert.equal(projects.openSlug, "owner/a", "the run's project opens");
+  assert.equal(runs.currentRun()?.runid, "01B", "not the first run of the project");
+  assert.equal(shell.runsOpen, true);
 });
 
 // ---- the folds -----------------------------------------------------------------

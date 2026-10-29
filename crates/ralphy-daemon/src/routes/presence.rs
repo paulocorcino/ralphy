@@ -26,6 +26,8 @@ pub(crate) enum Push {
     /// The peer store changed on disk (`ralphy host …` writes it from
     /// another process).
     Peers,
+    /// The attention list changed (`attention::tick`).
+    Attention,
 }
 
 impl Push {
@@ -34,20 +36,26 @@ impl Push {
             Push::Desk { .. } => "desk.dirty",
             Push::Repos => "repos.dirty",
             Push::Peers => "peers.dirty",
+            Push::Attention => "attention.dirty",
         }
     }
 
     fn payload(&self) -> serde_json::Value {
         match self {
             Push::Desk { tab } => serde_json::json!({ "tab": tab }),
-            Push::Repos | Push::Peers => serde_json::json!({}),
+            Push::Repos | Push::Peers | Push::Attention => serde_json::json!({}),
         }
     }
 
     /// Every push once: what a receiver that lagged sends, because a read
     /// again is harmless and a lost push is not.
-    fn all() -> [Push; 3] {
-        [Push::Desk { tab: None }, Push::Repos, Push::Peers]
+    fn all() -> [Push; 4] {
+        [
+            Push::Desk { tab: None },
+            Push::Repos,
+            Push::Peers,
+            Push::Attention,
+        ]
     }
 }
 
@@ -439,6 +447,7 @@ mod tests {
         assert_eq!(count(&commands, "sessions.dirty"), 1, "got: {verbs:?}");
         assert_eq!(count(&commands, "repos.dirty"), 1, "got: {verbs:?}");
         assert_eq!(count(&commands, "peers.dirty"), 1, "got: {verbs:?}");
+        assert_eq!(count(&commands, "attention.dirty"), 1, "got: {verbs:?}");
         let desk_tabs: Vec<&serde_json::Value> = commands
             .iter()
             .filter(|c| c.verb == "desk.dirty")

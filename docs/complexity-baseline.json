@@ -292,9 +292,6 @@
     "crates/ralphy-daemon/assets/ui/wb-connection-store.ts": {
       "onBuildSkew": [
         17
-      ],
-      "onPresencePush": [
-        11
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-console-checkout.ts": {
@@ -828,7 +825,7 @@
     },
     "crates/ralphy-run-snapshot/src/read.rs": {
       "list_runs": [
-        19
+        15
       ]
     },
     "crates/ralphy-usage-scan/src/copilot.rs": {

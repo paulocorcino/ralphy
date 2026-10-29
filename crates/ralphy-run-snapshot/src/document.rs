@@ -189,6 +189,15 @@ pub fn snapshot_path(repo_root: &Path, runid: &str) -> PathBuf {
     snapshot_dir(repo_root).join(format!("{runid}.json"))
 }
 
+/// `<run_dir>/snapshot.json`: the last document of a finished run, kept in
+/// its run folder (`<repo>/.ralphy/runs/<stamp>/`). The run writes it when it
+/// ends, before the live document is removed, so the daemon can still read
+/// what the run finished with (docs/adr/0085 D11). A run folder lives until
+/// the run-folder pruning removes it; the live document never outlives its run.
+pub fn final_snapshot_path(run_dir: &Path) -> PathBuf {
+    run_dir.join("snapshot.json")
+}
+
 /// `<repo>/.ralphy/runstate/<runid>.stop` — the cooperative-stop sentinel
 /// (docs/adr/0054). Written by `ralphy stop`, noticed by the run's own snapshot
 /// tick, removed by the run at exit.

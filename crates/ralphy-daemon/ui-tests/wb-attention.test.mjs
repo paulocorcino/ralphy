@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { bindingNames, UI, withoutComments } from "./harness.mjs";
 import { wbAttention } from "../assets/ui/wb-attention.ts";
+import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
@@ -104,6 +105,36 @@ test("a row names the console's project, not its slug", (t) => {
   const { data } = page(t, { projects: [{ slug: "path-d087a294b65ada0a", name: "plain" }] });
   assert.equal(data.nameOf(one), "plain");
   assert.equal(data.nameOf({ ...one, repo: "owner/other" }), "owner/other");
+});
+
+test("a run's row opens the run, and a console's row goes to the console", (t) => {
+  const { data } = page(t);
+  const sent = [];
+  window.dispatchEvent = (e) => sent.push([e.type, e.detail]);
+  const run = { id: "run:01R", kind: "run-waiting", vendor: "codex", repo: "owner/r", run: "01R", issue: "71", since: "", dismissable: false };
+  assert.equal(data.actionOf(run), "run");
+  assert.equal(data.kindOf(run), "Waits for you");
+  data.open = true;
+  data.openRun(run);
+  assert.equal(data.open, false);
+  assert.deepEqual(sent, [["workbench:run-select", { repo: "owner/r", runid: "01R" }]]);
+  for (const kind of ["console-waiting", "console-silent"]) {
+    assert.equal(data.actionOf({ ...run, kind }), "console", kind);
+  }
+  // Each action is one button of the row, shown by the row's action.
+  const markup = attentionElement();
+  assert.match(markup, /x-show="actionOf\(r\) === 'console'" @click="goTo\(r\)">Go to the console</);
+  assert.match(markup, /x-show="actionOf\(r\) === 'run'" @click="openRun\(r\)">Open the run</);
+});
+
+test("an attention.dirty push reads the list again", (t) => {
+  page(t);
+  const sent = [];
+  window.dispatchEvent = (e) => sent.push(e.type);
+  document.querySelector = () => null;
+  const store = connectionStore({ messages: { flash() {} }, detached: { dirty: () => false, close() {} } });
+  store.onPresencePush("attention.dirty", fixture("attention.dirty"));
+  assert.deepEqual(sent, ["workbench:attention-reread"]);
 });
 
 // The rail button and its panel, from the element's `<div` to the `</div>`

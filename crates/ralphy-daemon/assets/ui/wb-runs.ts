@@ -52,6 +52,9 @@ export type RunSnapshot = {
     since?: string | null;
     sleep?: RunSleep | null;
     final_summary?: string | null;
+    // The run agent's own state from its hooks: absent from an older run and
+    // from a vendor with no hooks.
+    agent?: { state: string; since: string; detail?: string } | null;
   };
   plan?: { issue?: number | null; steps?: { text?: string; status?: string }[] };
 };
@@ -73,6 +76,8 @@ export type Run = {
   completed: number;
   queueTotal: number;
   sleep: RunSleep | null;
+  /** The run agent's state (`phase.agent`), or null when the run has none. */
+  agentState: { state: string; since: string; detail?: string } | null;
   planPath: string;
   planMd: string;
   steps: PlanStep[];
@@ -97,6 +102,11 @@ export type PlanStep = { text: string; status: string };
 
 /** The two verdicts of `planSummary` the plan pill reads. */
 type PlanVerdict = { infeasible: boolean; needsSplit: boolean };
+
+/** The run agent's state of a snapshot, or null when it has none. */
+function agentOf(doc: RunSnapshot): Run["agentState"] {
+  return doc.phase?.agent || null;
+}
 
 export const WBRun = {
   // per-status glyph, matching notifier.rs status_emoji + render.rs scroll glyphs.
@@ -476,6 +486,7 @@ export const WBRun = {
       // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
       queueTotal: doc.queue?.total ?? issues.length,
       sleep: doc.phase?.sleep || null,
+      agentState: agentOf(doc),
       planPath: doc.plan_path || "",
       planMd: "",
       // Steps come from the DOCUMENT, not from a plan.md read: they survive a

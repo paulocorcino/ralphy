@@ -15,14 +15,16 @@
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import { agentStateTitle } from "./wb-console-session.ts";
 import { WBFail } from "./wb-fail.ts";
 import { sendWindow } from "./wb-events.ts";
+import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["runsOpen", "toggleRuns", "nowMs", "kanbanOpen", "toggleKanban"], {
+  return component(["runsOpen", "toggleRuns", "nowMs", "kanbanOpen", "toggleKanban", "toggle"], {
     // The trail node the operator arrived at from the board (#301): a marker,
     // not a selection.
     trailFocus: null as number | null,
@@ -65,6 +67,30 @@ export function wbRuns() {
       this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
       // each run has its own plan; the viewer follows the selection.
       this.loadRunPlan();
+    },
+
+    // The attention list's "Open the run" (wb-attention.ts): open the run's
+    // project when another one is open, then show the panel on that run. The
+    // store `runs` picks the first run of a project it opens, after the
+    // paint, so the run is chosen after that.
+    openRun(repo: string, runid: string) {
+      if (this.$store.projects.openSlug !== repo) this.toggle(repo);
+      this.$nextTick(() => {
+        this.$store.runs.setCurrentRun(runid);
+        this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
+        this.loadRunPlan();
+        if (!this.runsOpen) this.toggleRuns();
+      });
+    },
+
+    // The run agent's dot, read the way a console's dot is read: the state
+    // word for the class, and the detail of a `waiting` agent.
+    runAgentDot(run: Run | null) {
+      return WBProject.agentDotOf(run?.agentState);
+    },
+    runAgentTitle(run: Run | null) {
+      const { state, detail } = this.runAgentDot(run);
+      return agentStateTitle(state, detail);
     },
 
     // Thin delegations to the faithful helpers in wb-runs.ts.
@@ -359,6 +385,8 @@ export function wbRuns() {
       window.addEventListener("workbench:runs-closed", () => (this.trailFocus = null));
       // The run pill of a board card (#301).
       window.addEventListener("workbench:run-open", (e) => this.openRunFor(e.detail.issue));
+      // "Open the run" in the attention list.
+      window.addEventListener("workbench:run-select", (e) => this.openRun(e.detail.repo, e.detail.runid));
       // A raw output chunk (`window.WBRuns.output`), capped so the DOM never
       // grows unbounded.
       window.addEventListener("workbench:run-output", (e) => (this.rawFeed = (this.rawFeed + e.detail.text).slice(-8000)));

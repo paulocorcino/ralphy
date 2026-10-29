@@ -1,7 +1,8 @@
 //! `GET /api/attention` over HTTP (docs/adr/0085 D10, D11): a Claude console
 //! whose hooks report `waiting` is one request, and it leaves the list when
 //! the state moves on. The daemon the page talks to joins each peer's
-//! `?local=1` list, and names a peer that did not answer.
+//! `?local=1` list, and names a peer that did not answer. A run whose agent
+//! waits is listed from the snapshot it writes in its registered repo.
 //!
 //! "The hook" is this test, appending lines to the console's status file
 //! under `<store>/sessions/`; the agent is `session_test_child`.
@@ -21,6 +22,7 @@ use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
 use ralphy_daemon::peer::{self, PeerDescriptor, PEER_PROTOCOL_VERSION};
+use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -82,6 +84,27 @@ async fn wait_for(
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// The payload of the next `verb` push on the presence socket; panics after 10 s.
+async fn next_push(ws: &mut Ws, verb: &str) -> serde_json::Value {
+    use futures_util::StreamExt;
+    let read = async {
+        while let Some(msg) = ws.next().await {
+            let Ok(tokio_tungstenite::tungstenite::Message::Binary(bytes)) = msg else {
+                continue;
+            };
+            if let Ok(Frame::Command(c)) = protocol::decode(&bytes) {
+                if c.verb == verb {
+                    return c.payload;
+                }
+            }
+        }
+        panic!("the presence socket closed before {verb}");
+    };
+    tokio::time::timeout(Duration::from_secs(10), read)
+        .await
+        .unwrap_or_else(|_| panic!("no {verb} within 10 s"))
 }
 
 fn append(status: &Path, line: &str) {
@@ -277,4 +300,56 @@ async fn the_list_joins_a_peer_and_names_one_that_did_not_answer() {
         Some(DEAD_ID),
         "{head}"
     );
+}
+
+#[tokio::test]
+async fn a_run_snapshot_in_a_registered_repo_is_listed() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    prepare_environment(dir.path());
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).expect("create the repo dir");
+    let port = serve(&home, None, AuthState::localhost()).await;
+    let (mut presence, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
+        .await
+        .expect("connect the presence socket");
+
+    // The run is this test: the reader keeps a document whose pid lives.
+    let mut snapshot = ralphy_run_snapshot::RunSnapshot {
+        runid: "01RUNWAITS".to_string(),
+        pid: std::process::id(),
+        exec_agent: "codex".to_string(),
+        ..ralphy_run_snapshot::RunSnapshot::default()
+    };
+    snapshot.phase.state = "executing".to_string();
+    snapshot.phase.active = Some(71);
+    snapshot.phase.agent = Some(ralphy_run_snapshot::AgentBlock {
+        state: "waiting".to_string(),
+        since: "2026-10-28T11:00:00-03:00".to_string(),
+        detail: Some("permission: Bash".to_string()),
+    });
+    ralphy_run_snapshot::write_atomic(&home, &snapshot).expect("write the run snapshot");
+    let pushed = next_push(&mut presence, "attention.dirty").await;
+    golden::check("attention.dirty", pushed, &[]);
+
+    let (_, reply) = wait_for(port, "/api/attention", |r| {
+        r.as_array().is_some_and(|a| !a.is_empty())
+    })
+    .await;
+    let requests = reply["requests"].as_array().expect("an array");
+    assert_eq!(requests.len(), 1, "{reply}");
+    let request = &requests[0];
+    assert_eq!(request["id"], "run:01RUNWAITS", "{reply}");
+    assert_eq!(request["kind"], "run-waiting", "{reply}");
+    assert_eq!(request["run"], "01RUNWAITS", "{reply}");
+    assert_eq!(request["repo"], SLUG, "{reply}");
+    assert_eq!(request["issue"], "71", "{reply}");
+    assert_eq!(request["detail"], "permission: Bash", "{reply}");
+
+    std::fs::remove_file(ralphy_run_snapshot::snapshot_path(&home, "01RUNWAITS"))
+        .expect("remove the run snapshot");
+    let (_, reply) = wait_for(port, "/api/attention", |r| {
+        r.as_array().is_some_and(|a| a.is_empty())
+    })
+    .await;
+    assert_eq!(reply["requests"], serde_json::json!([]), "{reply}");
 }

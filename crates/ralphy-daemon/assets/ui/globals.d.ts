@@ -504,6 +504,8 @@ interface WindowEventMap {
   "workbench:runs-closed": CustomEvent<null>;
   /** Open the Runs panel on the run that works on this issue. */
   "workbench:run-open": CustomEvent<{ issue: number }>;
+  /** Show a run in the Runs panel (wb-runs-panel.ts). */
+  "workbench:run-select": CustomEvent<{ repo: string; runid: string }>;
   /** A chunk of the raw output of a run the daemon started. */
   "workbench:run-output": CustomEvent<{ text: string }>;
   /** A verb the daemon ran failed or ended; `message` says how. */

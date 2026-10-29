@@ -146,6 +146,10 @@ messages.
 | An agent the idle watchdog reaped | the same as the line above |
 | A console whose "tell me when it is done" mark is on, at its next `working → done` from `Stop` | the operator opens the console, or dismisses it |
 
+A finished run's requests come from `<run folder>/snapshot.json`, its last
+snapshot, which the run writes when it ends, before it removes the live one
+(amendment, Paulo, 2026-10-28).
+
 A usage-limit wait, a plain `done`, a `done` at a session boundary (resume,
 clear, compact) and a turn the operator interrupted open nothing. A stalled
 squad and an `ask_human` (ADR-0076) are sources when they are built.

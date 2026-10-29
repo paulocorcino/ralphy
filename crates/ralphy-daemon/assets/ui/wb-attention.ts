@@ -10,9 +10,13 @@
    and on `workbench:logged-in`. The page computes no request of its own: the
    list is the daemon's, joined across peers by the daemon the page talks to.
 
-   The count is shown on the rail and in the tab title. A row has one action,
-   "Go to the console", which shows the console the way the Go-to picker
-   does (`revealWindow` in wb-consoles-tab.ts).
+   The count is shown on the rail and in the tab title. A row has one action:
+   a console's row has "Go to the console", which shows the console the way
+   the Go-to picker does (`revealWindow` in wb-consoles-tab.ts); a run's row
+   has "Open the run", which shows the run in the Runs panel
+   (`workbench:run-select`, heard by wb-runs-panel.ts). The store
+   `connection` also sends `workbench:attention-reread` on an
+   `attention.dirty` push.
 
    `main.ts` registers it as `wbAttention`.
    --------------------------------------------------------------------------- */
@@ -23,7 +27,10 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 
 /** The kind of a request (`attention::Kind`). */
-export type AttentionKind = "console-waiting";
+export type AttentionKind = "console-waiting" | "console-silent" | "run-waiting";
+
+/** What a row's one action opens. */
+export type AttentionAction = "console" | "run";
 
 /** A request of `GET /api/attention` (`AttentionRequest` in `attention.rs`).
  * A peer's request has `id`, `console` and `repo` prefixed `<daemon_id>/`. */
@@ -55,7 +62,25 @@ export function attentionTitle(count: number) {
 export function kindText(kind: AttentionKind) {
   switch (kind) {
     case "console-waiting":
+    case "run-waiting":
       return "Waits for you";
+    case "console-silent":
+      return "No state from this agent";
+    default: {
+      const unknown: never = kind;
+      return unknown;
+    }
+  }
+}
+
+/** What the row of a request of `kind` opens. */
+export function actionOf(kind: AttentionKind): AttentionAction {
+  switch (kind) {
+    case "console-waiting":
+    case "console-silent":
+      return "console";
+    case "run-waiting":
+      return "run";
     default: {
       const unknown: never = kind;
       return unknown;
@@ -152,6 +177,16 @@ export function wbAttention() {
     },
     ageOf(request: AttentionRequest) {
       return ageText(request.since, this.now);
+    },
+    actionOf(request: AttentionRequest) {
+      return actionOf(request.kind);
+    },
+
+    // Show the run of `request` in the Runs panel.
+    openRun(request: AttentionRequest) {
+      this.open = false;
+      if (!request.repo || !request.run) return;
+      sendWindow(window, "workbench:run-select", { repo: request.repo, runid: request.run });
     },
 
     // Show the console of `request`, as the Go-to picker shows a window: its

@@ -83,38 +83,10 @@ pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing
                 continue;
             }
         };
-        // `v` is read before the struct so a document a newer ralphy retyped is
-        // refused as such rather than misreported as malformed.
-        let value: serde_json::Value = match serde_json::from_str(&raw) {
-            Ok(value) => value,
-            Err(_) => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "malformed"));
-                continue;
-            }
-        };
-        match value.get("v").and_then(|v| v.as_u64()) {
-            Some(v) if v > SNAPSHOT_VERSION as u64 => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "unsupported version"));
-                continue;
-            }
-            Some(_) => {}
-            None => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "malformed"));
-                continue;
-            }
-        }
-        let snap: RunSnapshot = match serde_json::from_value(value) {
+        let snap = match parse(&raw) {
             Ok(snap) => snap,
-            Err(_) => {
-                listing
-                    .unreadable
-                    .push(UnreadableRun::new(&name, "malformed"));
+            Err(reason) => {
+                listing.unreadable.push(UnreadableRun::new(&name, reason));
                 continue;
             }
         };
@@ -144,6 +116,30 @@ pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing
         .live
         .sort_by(|a, b| (&a.started_at, &a.runid).cmp(&(&b.started_at, &b.runid)));
     listing
+}
+
+/// One document from its text, or why it is not one: `malformed`, or
+/// `unsupported version` when a newer ralphy wrote it (ADR-0047 §6).
+fn parse(raw: &str) -> Result<RunSnapshot, &'static str> {
+    // `v` is read before the struct so a document a newer ralphy retyped is
+    // refused as such rather than misreported as malformed.
+    let value: serde_json::Value = serde_json::from_str(raw).map_err(|_| "malformed")?;
+    match value.get("v").and_then(|v| v.as_u64()) {
+        Some(v) if v > SNAPSHOT_VERSION as u64 => return Err("unsupported version"),
+        Some(_) => {}
+        None => return Err("malformed"),
+    }
+    serde_json::from_value(value).map_err(|_| "malformed")
+}
+
+/// The final snapshot a finished run left in `run_dir`
+/// ([`crate::final_snapshot_path`]). `None` when there is none, when it cannot
+/// be read, or when it is not a document this build reads — the same rule
+/// [`list_runs`] applies to a live document. Its `pid` is the finished run's
+/// and says nothing about liveness.
+pub fn read_final(run_dir: &Path) -> Option<RunSnapshot> {
+    let raw = std::fs::read_to_string(crate::final_snapshot_path(run_dir)).ok()?;
+    parse(&raw).ok()
 }
 
 #[cfg(test)]
@@ -339,5 +335,31 @@ mod tests {
         assert!(listing.live.is_empty());
         assert!(!snapshot_path(dir.path(), "01DEAD").exists());
         assert!(!sentinel.exists(), "the sentinel outlived its run");
+    }
+
+    /// A finished run's final snapshot is read by the rule of a live one: a
+    /// document from a newer ralphy is not read, and nor is a missing one.
+    #[test]
+    fn read_final_reads_only_a_document_this_build_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = crate::final_snapshot_path(dir.path());
+        // (case, body, the runid read)
+        let rows: [(&str, Option<&str>, Option<&str>); 4] = [
+            ("no file", None, None),
+            (
+                "this version",
+                Some(r#"{"v":1,"runid":"01DONE"}"#),
+                Some("01DONE"),
+            ),
+            ("a newer version", Some(r#"{"v":2,"runid":"01NEW"}"#), None),
+            ("not a document", Some("{"), None),
+        ];
+        for (case, body, runid) in rows {
+            if let Some(body) = body {
+                std::fs::write(&path, body).unwrap();
+            }
+            let got = read_final(dir.path());
+            assert_eq!(got.map(|s| s.runid).as_deref(), runid, "{case}");
+        }
     }
 }
