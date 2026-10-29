@@ -453,11 +453,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-view.ts": {
-      "applyLanding": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-stage-window.ts": {
       "setMax": [
         11

@@ -113,17 +113,8 @@ export function createView(deps: ViewDeps) {
     // nothing — and `saveOffset` would then persist that nothing.
     if (!ws.clientWidth || !ws.clientHeight) return;
     const rects = [...st.querySelectorAll<ConsoleWin>(".session-window")].map(restoreRect);
-    // A parked reveal outranks the stored offset: this is the frame it was
-    // waiting for, and the operator's last act was asking for that window.
-    if (pendingReveal != null) {
-      const wanted = pendingReveal;
-      pendingReveal = null;
-      // Latch FIRST: `revealNow` stores the offset it scrolls to, and that
-      // store is suppressed until the landing has happened.
-      if (rects.length || isDeskSettled()) landed = true;
-      if (revealNow(wanted)) return;
-    }
-    const stored = viewStore?.read()?.off || null;
+    if (landParkedReveal(rects)) return;
+    const stored = storedOffset();
     if (landed && !stored) return;
     const at = viewLanding(
       stored,
@@ -133,11 +124,32 @@ export function createView(deps: ViewDeps) {
     );
     ws.scrollLeft = at.left;
     ws.scrollTop = at.top;
-    // Latch only once the stage HOLDS something (or is known final):
-    // `restoreView` reaches here after ONE round trip, `restoreDesk` needs two
-    // plus the spawn; latching on the still-empty frame would make the real
-    // landing return early at the guard above.
+    latchLanding(rects);
+  }
+
+  // Latch only once the stage HOLDS something (or is known final):
+  // `restoreView` reaches here after ONE round trip, `restoreDesk` needs two
+  // plus the spawn; latching on the still-empty frame would make the real
+  // landing return early at the guard of `applyLanding`.
+  function latchLanding(rects: Rect[]) {
     if (rects.length || isDeskSettled()) landed = true;
+  }
+
+  // A parked reveal outranks the stored offset: this is the frame it was
+  // waiting for, and the operator's last act was asking for that window.
+  // Answers true when the reveal landed.
+  function landParkedReveal(rects: Rect[]) {
+    if (pendingReveal == null) return false;
+    const wanted = pendingReveal;
+    pendingReveal = null;
+    // Latch FIRST: `revealNow` stores the offset it scrolls to, and that
+    // store is suppressed until the landing has happened.
+    latchLanding(rects);
+    return !!revealNow(wanted);
+  }
+
+  function storedOffset() {
+    return viewStore?.read()?.off || null;
   }
 
   // The offset half of the store, debounced like the desk flush. SUPPRESSED
