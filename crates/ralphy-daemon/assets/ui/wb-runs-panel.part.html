@@ -1,0 +1,289 @@
+    <div class="runs-panel" x-data="wbRuns">
+    <!-- right-hand run panel: toggled by the Runs rail button. It currently
+         reveals an empty framed panel — its real contents (run history/detail)
+         come from a separate spec. Kept in the DOM always; the grid gives it a
+         0-width track until `runs-open`, so showing it is a pure layout flip. -->
+    <aside class="runs" x-show="runsOpen" aria-label="Runs">
+      <div class="runs-head">
+        <span>Runs</span>
+        <span class="runs-count" x-show="$store.projects.openSlug && $store.runs.projectRuns().length" x-text="$store.runs.projectRuns().length" title="Active runs"></span>
+        <span class="spacer"></span>
+        <button class="runs-close" @click="toggleRuns()" title="Close"><i class="bi bi-x"></i></button>
+      </div>
+
+      <!-- action toolbar: the three daemon verbs (dispatch.rs) scoped to the open
+           project. `run` opens a modal to pick agent(s) + branch mode; `triage`
+           and `push` are blessed no-arg invocations, fired straight onto the
+           seam (the client never composes a command line). -->
+      <div class="runs-actions" x-show="$store.projects.openSlug">
+        <!-- ONE control, two states (docs/adr/0054). While a run is live this
+             slot is the only thing an operator wants there — starting a second
+             run is exactly what the lock refuses — so `run` becomes `stop` and
+             returns to `run` when the run ends. Two side-by-side buttons, one of
+             them always dead, would say the same thing with more furniture.
+             The stop face is deliberately NOT `verbLocked()`-gated: that gate is
+             "a run holds the lock", which is precisely when stop applies. -->
+        <template x-if="!runIsLive()">
+          <button class="run-verb accent" @click="openRunModal()" :disabled="$store.connection.verbLocked()"
+                  :title="$store.connection.verbTitle('run')">
+            <i class="bi bi-play-fill"></i> Run
+          </button>
+        </template>
+        <template x-if="runIsLive()">
+          <button class="run-verb danger" data-act="run-stop" @click="stopRun($store.runs.currentRun()?.runid)"
+                  :disabled="!!runStopping" :title="runStopping ? 'Stop already requested' : 'Stop this run'">
+            <i class="bi bi-stop-fill"></i> Stop
+          </button>
+        </template>
+        <button class="run-verb" @click="fireVerb('triage')" :disabled="$store.connection.verbLocked()"
+                :title="$store.connection.verbTitle('triage')">
+          <svg x-icon="'stethoscope'"></svg> Triage
+        </button>
+        <button class="run-verb" @click="fireVerb('push')" :disabled="$store.connection.verbLocked()"
+                :title="$store.connection.verbTitle('push')">
+          <svg x-icon="'cloud-upload'"></svg> Push
+        </button>
+        <span class="spacer"></span>
+        <!-- No standing message here. The lock reason reaches the operator
+             through each disabled control's own `title` (`verbTitle`), and the
+             toolbar carries nothing that is not an act — a permanent line of
+             prose beside three buttons was furniture. The cost is stated where
+             it is paid: with no hover there is no tooltip, so on a touch screen
+             a dimmed verb explains itself only by being dimmed. -->
+        <span class="runs-action-status" x-text="$store.modals.runsActionMsg" x-show="$store.modals.runsActionMsg"></span>
+      </div>
+
+      <!-- a CLI refusal, surfaced as panel state (#331). The gate above is only
+           a hint; this is where the authority's answer lands, and it stays put
+           until the next verb click instead of flashing away in 2.6 s. -->
+      <div class="runs-verb-error" x-show="verbError">
+        <span x-text="verbError"></span>
+        <button data-act="verb-error-dismiss" @click="verbError = ''" title="Dismiss">✕</button>
+      </div>
+
+      <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
+           run streams here live (wb-daemon.js → WBRuns.output). Wrapped in its own sized box
+           (#331) so the feed can never deform the panel's flex distribution;
+           collapse keeps the buffer, dismiss clears it. The box arrives
+           COLLAPSED — the head appears with the first chunk, the bytes only when
+           the operator asks for them (`rawFeedOpen`). -->
+      <div class="runs-feed" x-show="rawFeed">
+        <div class="runs-feed-head">
+          <span>Output</span>
+          <span class="spacer"></span>
+          <button class="runs-feed-act" data-act="feed-collapse" @click="rawFeedOpen = !rawFeedOpen"
+                  :title="rawFeedOpen ? 'Collapse the output feed' : 'Expand the output feed'">
+            <i class="bi" :class="rawFeedOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+          </button>
+          <button class="runs-feed-act" data-act="feed-dismiss" @click="dismissFeed()"
+                  title="Dismiss the output feed"><i class="bi bi-x"></i></button>
+        </div>
+        <pre class="runs-raw" x-show="rawFeedOpen" x-text="rawFeed"></pre>
+      </div>
+
+      <div class="runs-empty" x-show="!$store.projects.openSlug">Open a project to see its runs.</div>
+      <!-- a failed read is its own state: an unreadable project must never be
+           rendered as an idle one (ADR-0047 §6). -->
+      <div class="runs-error" x-show="$store.runs.runsError" x-text="$store.runs.runsError"></div>
+      <div class="runs-empty" x-show="$store.projects.openSlug && $store.runs.projectRuns().length === 0 && !$store.runs.runsError">
+        No active runs in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>. Click <b>“Run”</b> to start one.
+      </div>
+
+      <!-- the panel proper renders only when the open project has a live run -->
+      <template x-if="$store.projects.openSlug && $store.runs.projectRuns().length">
+        <div class="runs-body">
+          <!-- ZONE 1 · run picker — a project can host several concurrent runs
+               (one per `runid`); pick which to inspect. -->
+          <div class="menu-wrap run-select">
+            <button class="run-select-btn" @click.stop="runMenu = !runMenu"
+                    :title="clockTitle($store.runs.currentRun())">
+              <span class="run-face" x-text="$store.runs.currentRun()?.face"></span>
+              <!-- The headline is the MODEL, not the vendor: "codex" does not say
+                   which of sol/terra/luna is burning quota. The vendor moves to
+                   the line below, in front of the phase it drives, and the phase
+                   clock is pinned to the right of it in tabular figures so the
+                   number that changes every second never shifts the text beside
+                   it — and so the clock is never what the ellipsis eats. -->
+              <span class="run-select-main">
+                <span class="run-select-head">
+                  <span class="run-select-title" x-text="runTitle($store.runs.currentRun())"></span>
+                  <span class="run-prog" x-text="($store.runs.currentRun()?.completed ?? 0) + '/' + ($store.runs.currentRun()?.queueTotal ?? 0)"></span>
+                </span>
+                <span class="run-select-sub">
+                  <!-- The run agent's own state (wb-runs-panel.ts `runAgentDot`):
+                       the dot of a console, and what a waiting agent asks. -->
+                  <span class="session-state run-agent-state" x-show="runAgentDot($store.runs.currentRun()).state"
+                        :class="runAgentDot($store.runs.currentRun()).state"
+                        :title="runAgentTitle($store.runs.currentRun())"></span>
+                  <span class="run-sub-phase" x-text="runIdentity($store.runs.currentRun())"></span>
+                  <span class="run-agent-detail" x-show="runAgentDot($store.runs.currentRun()).detail"
+                        x-text="runAgentDot($store.runs.currentRun()).detail"></span>
+                  <span class="run-clock" x-show="runClock($store.runs.currentRun())"
+                        x-text="runClock($store.runs.currentRun())"></span>
+                </span>
+              </span>
+              <svg x-icon="'chevron-down'"></svg>
+            </button>
+            <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="'Active runs · ' + $store.projects.projectLabel($store.projects.openSlug)"></div>
+              <template x-for="r in $store.runs.projectRuns()" :key="r.runid">
+                <button class="dropdown-item run-menu-item" :class="{ active: r.runid === $store.runs.currentRunId }"
+                        @click="selectRun(r.runid); runMenu = false">
+                  <span class="run-face" x-text="r.face"></span>
+                  <span class="run-menu-name">
+                    <b x-text="runTitle(r)"></b>
+                    <small x-text="runIdentity(r) + (runClock(r) ? ' · ' + runClock(r) : '')"></small>
+                  </span>
+                  <span class="run-prog" x-text="r.completed + '/' + r.queueTotal"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- ZONE 2 · the issue trail — the run's ordered queue, each node
+               glyph-coded by IssueStatus; the active node carries the live phase
+               (or 🌙 when the whole run is parked on a usage-limit reset). -->
+          <div class="trail-wrap">
+            <div class="trail-head">
+              <span class="trail-branch"><svg x-icon="'git-branch'"></svg><span x-text="$store.runs.currentRun()?.branch"></span></span>
+              <span class="spacer"></span>
+              <span class="trail-sleep" x-show="$store.runs.currentRun()?.phase === 'sleeping'">
+                🌙 <span x-text="sleepLabel($store.runs.currentRun())"></span>
+              </span>
+            </div>
+            <ol class="trail">
+              <template x-for="iss in ($store.runs.currentRun()?.issues || [])" :key="iss.number">
+                <li class="trail-node" :data-issue="iss.number"
+                    :class="'st-' + issueState($store.runs.currentRun(), iss) + (trailFocus === iss.number ? ' focus' : '')"
+                    :title="nodeTitle($store.runs.currentRun(), iss)" @click="focusIssue(iss.number)">
+                  <span class="trail-ic" x-text="issueGlyph($store.runs.currentRun(), iss)"></span>
+                  <span class="trail-n" x-text="'#' + iss.number"></span>
+                </li>
+              </template>
+            </ol>
+          </div>
+
+          <!-- ZONE 3 · plan viewer (Cursor-style) — the steps come from the run
+               snapshot document (`plan` block, #330), so they survive a deleted
+               or unreadable plan.md; a dropdown below reads any other `##`
+               section out of the prose the `file.read` verb returns. -->
+          <div class="plan-wrap">
+            <div class="plan-block plan-block-steps">
+              <div class="plan-block-head">
+                <svg x-icon="'list-checks'"></svg><span>Steps</span>
+                <span class="spacer"></span>
+                <span class="plan-issue" x-show="($store.runs.currentRun()?.planIssue ?? $store.runs.currentRun()?.active) != null"
+                      x-text="'#' + ($store.runs.currentRun()?.planIssue ?? $store.runs.currentRun()?.active)"></span>
+              </div>
+              <!-- ABOVE the list, not under it: the note explains why the list is
+                   empty, and an explanation parked below an empty box sits at the
+                   bottom of the block, far from the space it is about — during a
+                   plan phase that is the whole content of the block. -->
+              <div class="plan-steps-note" x-show="stepsNote()" x-text="stepsNote()"></div>
+              <ul class="plan-steps">
+                <template x-for="(s, i) in planSteps()" :key="i">
+                  <li :class="stepClass(s.status)" :title="stepLabel(s.status)">
+                    <span class="step-ic" x-text="stepGlyph(s.status)"></span>
+                    <span class="step-tx" x-text="s.text"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+            <div class="plan-block plan-block-more">
+              <!-- The head IS the section picker. `all: unset` on the select
+                   removes the native arrow, so the caret is restored explicitly —
+                   without it the band reads as a label and nobody discovers that
+                   the rest of the plan is behind it. Same glyph and same right
+                   edge as `.run-select-btn`, the panel's other dropdown, and
+                   `pointer-events: none` so it never eats the click it advertises. -->
+              <div class="plan-block-head">
+                <svg x-icon="'book-open'"></svg>
+                <select class="plan-picker" x-model="planSection">
+                  <option value="" x-show="!planHeadings($store.runs.currentRun()).length">No other sections yet</option>
+                  <template x-for="h in planHeadings($store.runs.currentRun())" :key="h">
+                    <option :value="h" x-text="h"></option>
+                  </template>
+                </select>
+                <svg class="plan-picker-caret" x-icon="'chevron-down'"></svg>
+              </div>
+              <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
+              <div class="plan-md md" x-html="renderPlanSection($store.runs.currentRun(), planSection || planHeadings($store.runs.currentRun())[0])"></div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </aside>
+
+    <!-- Run modal — the `run` verb, enriched. Pick the agent (executor); a
+         checkbox reveals a second picker to plan with a different agent
+         (`--agent` executor + `--plan-agent` planner); choose the branch mode.
+         Emits a `run-start` intent carrying the faithful flags; the daemon
+         spawns `ralphy run …`. Kept deliberately minimal. -->
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('runOpen', () => closeRunModal())">
+      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
+        <div class="modal-head">
+          <svg x-icon="'play'"></svg>
+          <span class="modal-title">Start a run</span>
+          <span class="modal-sub" x-text="$store.projects.projectLabel($store.projects.openSlug)" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body">
+          <!-- agent (executor; also the planner unless a split is chosen) -->
+          <div class="run-field">
+            <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
+            <p class="run-help">
+              Agent that does the work<span x-show="!runCfg.split">, planning and execution</span>.
+            </p>
+            <div class="seg">
+              <template x-for="a in $store.projects.agents" :key="a.id">
+                <button class="seg-btn" :class="{ on: runCfg.agent === a.id, unavailable: !a.available }"
+                        :title="a.title" @click="runCfg.agent = a.id" x-text="a.label"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- the split toggle: progressive disclosure of a second picker -->
+          <label class="run-check">
+            <input type="checkbox" x-model="runCfg.split" />
+            <span>Plan with a different agent</span>
+          </label>
+
+          <!-- plan agent, only when splitting -->
+          <div class="run-field" x-show="runCfg.split" x-cloak>
+            <label class="run-label">Plan agent</label>
+            <p class="run-help">Plans each issue. The execute agent carries the plan out.</p>
+            <div class="seg">
+              <template x-for="a in $store.projects.agents" :key="'plan-' + a.id">
+                <button class="seg-btn" :class="{ on: runCfg.planAgent === a.id, unavailable: !a.available }"
+                        :title="a.title" @click="runCfg.planAgent = a.id" x-text="a.label"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- branch mode -->
+          <div class="run-field">
+            <label class="run-label">Branch</label>
+            <div class="seg">
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">New</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">Current</button>
+            </div>
+            <p class="run-help" x-text="runCfg.branchMode === 'new'
+              ? 'Creates an afk/run-… branch from the base and commits there.'
+              : ('Commits on the current branch (' + $store.projects.openProjectBranch() + ').')"></p>
+          </div>
+
+          <!-- live command preview -->
+          <div class="run-preview">
+            <span class="run-preview-tag">ralphy</span>
+            <code x-text="runCommandPreview()"></code>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">The daemon starts the run.</span>
+          <button class="btn" @click="closeRunModal()">Cancel</button>
+          <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
+        </div>
+      </div>
+    </div>
+    </div>

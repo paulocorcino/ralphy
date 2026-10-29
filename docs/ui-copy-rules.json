@@ -244,13 +244,13 @@
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "index.html",
+      "file": "wb-runs-panel.part.html",
       "text": "ralphy",
       "rule": "banned:ralphy",
       "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
     },
     {
-      "file": "index.html",
+      "file": "wb-runs-panel.part.html",
       "text": "ralphy",
       "rule": "casing:first",
       "reason": "The first word of the command preview in “Start a run”. Code keeps its case."

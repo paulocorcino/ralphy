@@ -5,13 +5,12 @@
 // it does not list in `uses`, or assigns a shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 import { wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBRun } from "../assets/ui/wb-runs.ts";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the Runs panel's markup.
+const PART = "wb-runs-panel.part.html";
 
 // One page with the shell and the panel, and a window that delivers the
 // events it is sent, as the browser does. `init()` adds the listeners, as
@@ -56,7 +55,7 @@ test("wbRuns lists only shell() names in uses, and its members left shell()", ()
 
 test("every name the markup of wbRuns reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbRuns");
-  const markup = componentMarkup(HTML, "wbRuns");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variables of the panel and the modal.
   const loopVars = new Set(["r", "iss", "s", "i", "h", "a"]);
@@ -74,8 +73,8 @@ test("every name the markup of wbRuns reads is its own or in its uses list", () 
 });
 
 test("nothing outside the Runs panel element names its state", () => {
-  const start = HTML.indexOf('x-data="wbRuns"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  // The page without the Runs part: the shell and the other components.
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["openRunFor", "focusIssue", "selectRun", "runCfg", "verbError", "rawFeed", "trailFocus", "planSection", "openRunModal", "runIsLive"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
@@ -160,7 +159,7 @@ test("a run card shows its agent state", () => {
   // A run with no agent state draws no dot.
   assert.equal(own.runAgentDot(WBRun.fromSnapshot({ v: 1, runid: "01OLD" })).state, null);
   // The card draws the dot with the state as its class, and the detail as text.
-  const markup = componentMarkup(HTML, "wbRuns");
+  const markup = partMarkup(PART);
   assert.match(markup, /class="session-state run-agent-state"[^>]*:class="runAgentDot\(\$store\.runs\.currentRun\(\)\)\.state"/);
   assert.match(markup, /x-text="runAgentDot\(\$store\.runs\.currentRun\(\)\)\.detail"/);
 });
