@@ -281,6 +281,17 @@ function fakeEl(tag) {
   return el;
 }
 
+// Members of the host a test replaces, for `onStage` to spread over its own.
+let hostOver = {};
+function withHost(over, body) {
+  hostOver = over;
+  try {
+    return body();
+  } finally {
+    hostOver = {};
+  }
+}
+
 function onStage({ records, WBDaemon = {} }) {
   const stage = fakeEl("stage");
   const window = {
@@ -304,6 +315,7 @@ function onStage({ records, WBDaemon = {} }) {
     saveNotes() {},
     startResize: () => () => {},
     makeDraggable() {},
+    ...hostOver,
   };
   const notes = createNotes(window, document, { console: host });
   const ids = () => stage.querySelectorAll(".note-card").map((c) => c.dataset.noteId);
@@ -378,4 +390,18 @@ test("the card on top is put back before its card leaves the stage", () => {
   assert.equal(notes.onTopNow(), null);
   assert.equal(card.classList.contains("on-top"), false);
   assert.equal(card._noteShadow, null);
+});
+
+test("a render builds no card for a note whose fence is in a popup", () => {
+  const home = { id: "home", repo: "r", path: "a.note", rect: { left: 500, top: 500, width: 10, height: 10 } };
+  const away = { id: "away", repo: "r", path: "b.note", rect: RECT };
+  const fence = { id: "f", name: "popup", rect: { left: 0, top: 0, width: 200, height: 200 } };
+  const detached = { fenceRecords: () => [fence], isDetached: (id) => id === "f" };
+  const { notes, ids } = withHost(detached, () => onStage({ records: [home, away] }));
+  notes.render();
+  assert.deepEqual(ids(), ["home"]);
+  // The control: with no fence in a popup, the same desk shows both.
+  const shell = onStage({ records: [home, away] });
+  shell.notes.render();
+  assert.deepEqual(shell.ids(), ["home", "away"]);
 });

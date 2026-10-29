@@ -1021,3 +1021,24 @@ test("rectsOverlap: an undefined or empty rect is a zero box at the origin", () 
     assert.equal(WBGeometry.rectsOverlap(empty, AWAY), false, `${JSON.stringify(empty)} away`);
   }
 });
+
+// ---- what the folds read when a rect, a point or a viewport is missing -------
+
+test("stageExtent of no rects and no viewport is the margin on both sides", () => {
+  assert.deepEqual(load().stageExtent(null, null), { width: 200, height: 200 });
+});
+
+test("rectHolds of a missing rect holds nothing, not even the origin", () => {
+  assert.equal(load().rectHolds(null, { x: 0, y: 0 }), false);
+  assert.equal(load().rectHolds(undefined, undefined), false);
+});
+
+test("panNudge with no band and no step is the call with 48 and 24", () => {
+  for (const pointer of [{ x: 1100, y: 850 }, { x: 1076, y: 400 }, { x: 100, y: 50 }]) {
+    assert.deepEqual(WBGeometry.panNudge(pointer, PAN_VIEW), WBGeometry.panNudge(pointer, PAN_VIEW, 48, 24));
+  }
+});
+
+test("panNudge of a missing pointer and a missing viewport does not pan", () => {
+  assert.deepEqual(WBGeometry.panNudge(null, null, BAND, STEP), { dx: 0, dy: 0 });
+});

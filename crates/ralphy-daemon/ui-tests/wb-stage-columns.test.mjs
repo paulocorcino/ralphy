@@ -155,3 +155,66 @@ test("a window the paint no longer names leaves the columns and drops its variab
   assert.equal(stale.classes.has("column"), false);
   assert.deepEqual([...stale.vars.keys()], [], "a window that is not maximized drops its maximize box too");
 });
+
+// The columns `wins` painted with `raise`, each window found by its id; the
+// windows `focusWin` raised are answered in order.
+function raiseWindows(wins, painted, raise) {
+  const noop = () => {};
+  const byId = new Map(wins.map((w) => [w._deskId, w]));
+  const raised = [];
+  const cols = createStageColumns({
+    OPTS: { autoBoot: true },
+    wins: new Set(wins),
+    workspace: () => ({ clientWidth: 1200 }),
+    stage: () => null,
+    popups: { entries: () => [] },
+    desk: () => [],
+    focusWin: (win) => raised.push(win._deskId),
+    setMax: noop,
+    paintMaxButton: noop,
+    syncMaxLock: noop,
+    syncMaxPin: noop,
+    applyExtent: noop,
+    list: () => [],
+    paintFenceColumns: noop,
+    fenceList: () => [],
+    readFenceRects: () => [],
+    readWindowRects: () => [],
+    findWindow: (id) => byId.get(id) ?? null,
+    tearDownMember: noop,
+  });
+  cols.applyColumns(painted, { raise });
+  return raised;
+}
+
+test("a paint that raises focuses the columns in reading order, and a window whose fit throws does not stop the next", () => {
+  const fitted = [];
+  const a = fakeWindow("a");
+  const b = fakeWindow("b");
+  const c = fakeWindow("c");
+  a._term = { fit: { fit: () => fitted.push("a") } };
+  b._term = {
+    fit: {
+      fit: () => {
+        fitted.push("b");
+        throw new Error("a terminal that cannot be measured");
+      },
+    },
+  };
+  c._term = { fit: { fit: () => fitted.push("c") } };
+  const painted = [
+    { id: "a", index: 0, count: 3 },
+    { id: "b", index: 1, count: 3 },
+    { id: "c", index: 2, count: 3 },
+  ];
+  assert.deepEqual(raiseWindows([c, b, a], painted, true), ["a", "b", "c"]);
+  assert.deepEqual(fitted, ["a", "b", "c"], "every window is fitted, also after the one that threw");
+});
+
+test("a paint that does not ask to raise focuses nothing but still fits the columns", () => {
+  const fitted = [];
+  const a = fakeWindow("a");
+  a._term = { fit: { fit: () => fitted.push("a") } };
+  assert.deepEqual(raiseWindows([a], [{ id: "a", index: 0, count: 1 }], false), []);
+  assert.deepEqual(fitted, ["a"]);
+});

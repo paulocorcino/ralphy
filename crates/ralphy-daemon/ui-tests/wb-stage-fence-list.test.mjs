@@ -33,6 +33,18 @@ function fakeFence(id, rect) {
   };
 }
 
+// Members of the deps a test replaces. `harness()` spreads them over its own;
+// `withDeps` sets them for one body and puts them back.
+let depsOver = {};
+function withDeps(over, body) {
+  depsOver = over;
+  try {
+    return body();
+  } finally {
+    depsOver = {};
+  }
+}
+
 // The stage holds `els`, the fence elements; `state.fences` is the record
 // list the console holds, read through the getter at each use. The calls
 // that change the desk or the view are recorded in `calls`.
@@ -79,6 +91,7 @@ function harness() {
       els.push(el);
       return el;
     },
+    ...depsOver,
   });
   return { list, els, calls, state, popups };
 }
@@ -286,4 +299,75 @@ test("a console or a card locked on its own is not held by its locked fence", ()
   assert.equal(wins[0].classes.has("held"), false);
   assert.equal(card.classes.has("held"), false);
   assert.deepEqual(locks, [["n1", true]], "the card is still read-only");
+});
+
+test("a render leaves the rect of a fence under a gesture alone and places the others", () => {
+  const { list, els, state } = withDeps({ inGesture: (el) => el.dataset.fenceId === "a" }, harness);
+  state.fences = [
+    { id: "a", name: "A", rect: RECT },
+    { id: "b", name: "B", rect: { left: 900, top: 100, width: 300, height: 200 } },
+  ];
+  list.renderFences();
+  assert.deepEqual(els[0].style, {}, "the fence in the operator's hand keeps the place the hand gives it");
+  assert.equal(els[1].style.left, "900px");
+  assert.equal(els[1].style.height, "200px");
+});
+
+test("a render does not write the name of a fence the operator is typing in", () => {
+  const typing = { field: null };
+  const { list, els, state } = withDeps({ document: { get activeElement() { return typing.field; } } }, harness);
+  state.fences = [{ id: "a", name: "A", rect: RECT }];
+  list.renderFences();
+  typing.field = els[0].querySelector(".fence-name");
+  state.fences = [{ id: "a", name: "B", rect: RECT }];
+  list.renderFences();
+  assert.equal(typing.field.value, "A");
+  typing.field = null;
+  list.renderFences();
+  assert.equal(els[0].querySelector(".fence-name").value, "B");
+});
+
+// A viewport of `clientWidth` by `clientHeight` scrolled to the origin.
+function viewportOf(clientWidth, clientHeight) {
+  return { workspace: () => ({ scrollLeft: 0, scrollTop: 0, clientWidth, clientHeight }) };
+}
+
+test("a fence made in a viewport that shows its place is numbered from the names on the plane and the view stays", () => {
+  const { list, calls, state } = withDeps(viewportOf(1600, 900), harness);
+  assert.equal(list.createFence(), true);
+  assert.equal(state.fences.length, 1);
+  assert.equal(state.fences[0].name, "Fence 1");
+  assert.equal(state.fences[0].id, "new");
+  assert.deepEqual(
+    calls.map(([name]) => name),
+    ["saveFences", "buildFence", "applyExtent"],
+    "saved, built, fitted, and no jump",
+  );
+});
+
+test("a fence made in a viewport too small to show its place is jumped to", () => {
+  const { list, calls } = withDeps(viewportOf(200, 100), harness);
+  assert.equal(list.createFence(), true);
+  assert.deepEqual(calls.at(-1), ["jumpToFence", "new"]);
+});
+
+test("a fence refused because the plane is full flashes the fence in the way and saves nothing", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { list, els, calls, state } = withDeps(viewportOf(1600, 900), harness);
+  state.fences = [{ id: "big", name: "Big", rect: { left: 0, top: 0, width: 100000, height: 100000 } }];
+  list.renderFences();
+  calls.length = 0;
+  assert.equal(list.createFence(), undefined);
+  assert.deepEqual(calls, []);
+  assert.equal(els[0].classList.contains("fence-invalid"), true);
+  t.mock.timers.tick(600);
+  assert.equal(els[0].classList.contains("fence-invalid"), false, "the flash ends by itself");
+});
+
+test("a fence is born where the operator is looking, not at the origin", () => {
+  const scrolled = { workspace: () => ({ scrollLeft: 1000, scrollTop: 500, clientWidth: 1600, clientHeight: 900 }) };
+  const { list, calls, state } = withDeps(scrolled, harness);
+  assert.equal(list.createFence(), true);
+  assert.deepEqual([state.fences[0].rect.left, state.fences[0].rect.top], [1040, 540]);
+  assert.equal(calls.some(([name]) => name === "jumpToFence"), false, "it is on screen where it was born");
 });
