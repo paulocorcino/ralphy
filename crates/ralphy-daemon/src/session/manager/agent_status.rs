@@ -132,10 +132,29 @@ impl ManagedSession {
     /// [`poll_status`](Self::poll_status) with the start check's failure
     /// given, so a test does not depend on the daemon-wide check.
     pub(super) fn poll_status_with(&self, now: SystemTime, start_failure: Option<&str>) -> bool {
+        self.poll_status_between(now, start_failure, || {})
+    }
+
+    /// [`poll_status_with`](Self::poll_status_with), with `between` run
+    /// after the tail is read and before the state is stored, so a test can
+    /// write the operator's input there.
+    ///
+    /// LOCK ORDER: `tail`, then `agent_state`, as in `operator_input`. The
+    /// tail stays locked until the new state is stored: an input folded
+    /// between the read and the store would else be overwritten by the older
+    /// state the read returned (ADR-0085 D7.5).
+    pub(super) fn poll_status_between(
+        &self,
+        now: SystemTime,
+        start_failure: Option<&str>,
+        between: impl FnOnce(),
+    ) -> bool {
         let Some(status) = &self.status else {
             return false;
         };
-        let polled = status.tail.lock().expect("tail mutex").poll();
+        let mut tail = status.tail.lock().expect("tail mutex");
+        let polled = tail.poll();
+        between();
         if polled.activity {
             self.first_line
                 .lock()
@@ -152,6 +171,7 @@ impl ManagedSession {
             }
         }
         drop(slot);
+        drop(tail);
         self.update_silence(now, start_failure);
         let shown_now = self.shown_at(now);
         let mut shown = self.shown.lock().expect("shown mutex");

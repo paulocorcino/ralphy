@@ -476,3 +476,56 @@ async fn a_console_launched_with_a_silence_reason_is_silent_at_once() {
     assert_eq!(block.reason.as_deref(), Some("no hooks here"));
     manager.close(id);
 }
+
+/// An operator input that lands while a tick stores an older `waiting` is
+/// not lost: the tick keeps the tail locked until it stored the state, so
+/// the input folds after it and the shown state is the grant.
+#[tokio::test]
+async fn an_input_during_a_tick_is_not_overwritten_by_an_older_wait() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let files =
+        crate::agent_state::StatusFiles::for_agent(crate::session::Agent::Codex, dir.path(), 1)
+            .expect("hooks");
+    std::fs::write(
+        &files.status,
+        "{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"t1\"}\n",
+    )
+    .expect("write the status line");
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(files);
+    let (id, _att) = manager
+        .spawn_attached(
+            "owner/r".to_string(),
+            "codex".to_string(),
+            "agent".to_string(),
+            None,
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let input = std::sync::Mutex::new(None);
+    sess.poll_status_between(SystemTime::now(), None, || {
+        let writer = sess.clone();
+        *input.lock().expect("input mutex") =
+            Some(std::thread::spawn(move || writer.operator_input()));
+        // Time for the input to fold and store, if the tail let it.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    });
+    let handle = input
+        .lock()
+        .expect("input mutex")
+        .take()
+        .expect("the input thread");
+    handle.join().expect("the input thread ends");
+    assert_eq!(
+        shown(&sess),
+        (
+            Some("working".into()),
+            Some("approved, the tool runs".into())
+        )
+    );
+    manager.close(id);
+}

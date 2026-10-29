@@ -116,8 +116,10 @@ impl ManagedSession {
         let Some(status) = &self.status else {
             return;
         };
-        let folded = status.tail.lock().expect("tail mutex").operator_input();
-        if let Some(obs) = folded {
+        // The tail stays locked until the state is stored, as in
+        // `poll_status_between`.
+        let mut tail = status.tail.lock().expect("tail mutex");
+        if let Some(obs) = tail.operator_input() {
             *self.agent_state.lock().expect("agent_state mutex") = Some(obs);
         }
     }
