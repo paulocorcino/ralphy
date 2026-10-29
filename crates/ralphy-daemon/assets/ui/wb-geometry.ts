@@ -45,19 +45,29 @@ export const WBGeometry = (function () {
   // the viewport (right = 0 keeps the viewport leg on top).
   const STAGE_MARGIN = 200;
 
-  function stageExtent(rects: readonly Rect[], viewport: Size, margin?: number | null) {
-    const m = margin == null ? STAGE_MARGIN : margin;
-    const mx = Math.max(m, viewport?.width || 0);
-    const my = Math.max(m, viewport?.height || 0);
+  // The viewport's size; a missing viewport or side reads 0.
+  function viewSize(viewport: Partial<Size> | null | undefined) {
+    return { width: viewport?.width || 0, height: viewport?.height || 0 };
+  }
+
+  // The right and bottom edge of the farthest rect, from the origin.
+  function farCorner(rects: readonly Rect[] | null | undefined) {
     let right = 0;
     let bottom = 0;
     for (const r of rects || []) {
       right = Math.max(right, (r.left || 0) + (r.width || 0));
       bottom = Math.max(bottom, (r.top || 0) + (r.height || 0));
     }
+    return { right, bottom };
+  }
+
+  function stageExtent(rects: readonly Rect[], viewport: Size, margin?: number | null) {
+    const m = margin == null ? STAGE_MARGIN : margin;
+    const view = viewSize(viewport);
+    const far = farCorner(rects);
     return {
-      width: Math.max(viewport?.width || 0, right + mx),
-      height: Math.max(viewport?.height || 0, bottom + my),
+      width: Math.max(view.width, far.right + Math.max(m, view.width)),
+      height: Math.max(view.height, far.bottom + Math.max(m, view.height)),
     };
   }
 
@@ -93,8 +103,13 @@ export const WBGeometry = (function () {
     };
   }
 
+  // A point; a missing point or coordinate reads 0.
+  function pointOf(point: Partial<Point> | null | undefined) {
+    return { x: point?.x || 0, y: point?.y || 0 };
+  }
+
   // The four edges of a rect; a missing rect or field reads 0.
-  function edgesOf(r: Partial<Rect> | undefined) {
+  function edgesOf(r: Partial<Rect> | null | undefined) {
     const left = r?.left || 0;
     const top = r?.top || 0;
     return { left, top, right: left + (r?.width || 0), bottom: top + (r?.height || 0) };
@@ -129,15 +144,9 @@ export const WBGeometry = (function () {
   // #343) so membership and the floor's focus-clearing hit test can never drift
   // into two spellings of the same containment.
   function rectHolds(rect: Partial<Rect> | null | undefined, point: Point) {
-    const r = rect || {};
-    const left = r.left || 0;
-    const top = r.top || 0;
-    return (
-      (point?.x || 0) >= left &&
-      (point?.x || 0) < left + (r.width || 0) &&
-      (point?.y || 0) >= top &&
-      (point?.y || 0) < top + (r.height || 0)
-    );
+    const edge = edgesOf(rect);
+    const at = pointOf(point);
+    return at.x >= edge.left && at.x < edge.right && at.y >= edge.top && at.y < edge.bottom;
   }
 
   // `fences` is `[{ id, rect }]`, `windows` is `[{ id, rect }]`; the answer maps
@@ -367,6 +376,15 @@ export const WBGeometry = (function () {
   // viewport edge, and how wide the pressure band at each edge is.
   const PAN_BAND = 48;
   const PAN_STEP = 24;
+  // A client rect's edges; a missing viewport or edge reads 0.
+  function clientBox(viewport: Partial<ClientBox> | null | undefined) {
+    return {
+      left: viewport?.left || 0,
+      top: viewport?.top || 0,
+      right: viewport?.right || 0,
+      bottom: viewport?.bottom || 0,
+    };
+  }
   // The auto-pan rule, pure. `viewport` is a CLIENT rect; `pointer` is a client
   // point. Each edge contributes a pressure in `[0, band]` and the axis takes
   // their DIFFERENCE — deliberately, so a viewport narrower than two bands
@@ -376,15 +394,11 @@ export const WBGeometry = (function () {
     const s = step == null ? PAN_STEP : step;
     const press = (v: number) => Math.max(0, Math.min(v, b));
     const axis = (near: number, far: number) => Math.round((s * (far - near)) / b);
+    const at = pointOf(pointer);
+    const box = clientBox(viewport);
     return {
-      dx: axis(
-        press(b - ((pointer?.x || 0) - (viewport?.left || 0))),
-        press(b - ((viewport?.right || 0) - (pointer?.x || 0))),
-      ),
-      dy: axis(
-        press(b - ((pointer?.y || 0) - (viewport?.top || 0))),
-        press(b - ((viewport?.bottom || 0) - (pointer?.y || 0))),
-      ),
+      dx: axis(press(b - (at.x - box.left)), press(b - (box.right - at.x))),
+      dy: axis(press(b - (at.y - box.top)), press(b - (box.bottom - at.y))),
     };
   }
 
