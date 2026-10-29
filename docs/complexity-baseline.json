@@ -656,9 +656,6 @@
     "crates/ralphy-daemon/src/session/screen/snapshot.rs": {
       "apply": [
         16
-      ],
-      "write": [
-        16
       ]
     },
     "crates/ralphy-daemon/src/spend.rs": {

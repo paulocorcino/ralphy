@@ -6,7 +6,7 @@ use alacritty_terminal::grid::{Dimensions, Grid, Row};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags, Hyperlink};
 use alacritty_terminal::term::{Term, TermMode};
-use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor};
+use alacritty_terminal::vte::ansi::{Color, CursorShape, CursorStyle, NamedColor};
 
 use super::{with_primary, Listener};
 
@@ -69,26 +69,7 @@ pub(super) fn write(
 ) -> Vec<u8> {
     let mut out = String::from("\x1b[0m");
     let mut pen = Pen::default();
-    let alternate = term.mode().contains(TermMode::ALT_SCREEN);
-
-    // 1. The primary screen, its scrollback first.
-    with_primary(term, |grid| write_rows(grid, true, &mut out, &mut pen));
-
-    // 2. The alternate screen over it, with the primary cursor saved by 1049.
-    if alternate {
-        let primary_cursor = with_primary(term, |grid| grid.cursor.point);
-        out.push_str(&format!(
-            "\x1b[0m\x1b[{};{}H\x1b[?1049h",
-            primary_cursor.line.0.saturating_add(1),
-            primary_cursor.column.0.saturating_add(1)
-        ));
-        pen = Pen::default();
-        write_rows(term.grid(), false, &mut out, &mut pen);
-    }
-    if pen.link.is_some() {
-        out.push_str("\x1b]8;;\x1b\\");
-        pen.link = None;
-    }
+    write_screens(term, &mut out, &mut pen);
 
     let mode = *term.mode();
 
@@ -100,6 +81,60 @@ pub(super) fn write(
     }
 
     // 4. The input modes.
+    let origin = write_input_modes(mode, &mut out);
+
+    // 5. The cursor, then the modes that change how a cell is written.
+    let origin_top = match (origin, region) {
+        (true, Some((top, _))) => top.saturating_sub(1),
+        _ => 0,
+    };
+    write_cursor(term.grid(), origin_top, &mut out, &mut pen);
+    write_cell_modes(mode, &mut out);
+    let template = term.grid().cursor.template.clone();
+    pen.apply(&template, &mut out);
+    if !mode.contains(TermMode::SHOW_CURSOR) {
+        out.push_str("\x1b[?25l");
+    }
+    if let Some(shape) = cursor_shape_code(term.cursor_style()) {
+        out.push_str(&format!("\x1b[{shape} q"));
+    }
+
+    // 6. The title, without control characters.
+    if let Some(title) = title {
+        let clean: String = title.chars().filter(|c| !c.is_control()).collect();
+        out.push_str(&format!("\x1b]2;{clean}\x07"));
+    }
+    out.into_bytes()
+}
+
+/// The primary screen, then the alternate screen over it when it is the one
+/// shown. A hyperlink still open after the last cell is closed.
+fn write_screens(term: &mut Term<Listener>, out: &mut String, pen: &mut Pen) {
+    let alternate = term.mode().contains(TermMode::ALT_SCREEN);
+
+    // 1. The primary screen, its scrollback first.
+    with_primary(term, |grid| write_rows(grid, true, out, pen));
+
+    // 2. The alternate screen over it, with the primary cursor saved by 1049.
+    if alternate {
+        let primary_cursor = with_primary(term, |grid| grid.cursor.point);
+        out.push_str(&format!(
+            "\x1b[0m\x1b[{};{}H\x1b[?1049h",
+            primary_cursor.line.0.saturating_add(1),
+            primary_cursor.column.0.saturating_add(1)
+        ));
+        *pen = Pen::default();
+        write_rows(term.grid(), false, out, pen);
+    }
+    if pen.link.is_some() {
+        out.push_str("\x1b]8;;\x1b\\");
+        pen.link = None;
+    }
+}
+
+/// The input modes of [`MODES`], the kitty keyboard flags and origin mode.
+/// Returns whether origin mode is set.
+fn write_input_modes(mode: TermMode, out: &mut String) -> bool {
     for (flag, sequence) in MODES {
         if mode.contains(flag) {
             out.push_str(sequence);
@@ -117,13 +152,13 @@ pub(super) fn write(
     if origin {
         out.push_str("\x1b[?6h");
     }
+    origin
+}
 
-    // 5. The cursor, then the modes that change how a cell is written.
-    let origin_top = match (origin, region) {
-        (true, Some((top, _))) => top.saturating_sub(1),
-        _ => 0,
-    };
-    write_cursor(term.grid(), origin_top, &mut out, &mut pen);
+/// The modes that change how a cell is written: insert mode, new-line mode
+/// and no auto-wrap. They come after the cursor, whose last cell may be
+/// written again.
+fn write_cell_modes(mode: TermMode, out: &mut String) {
     if mode.contains(TermMode::INSERT) {
         out.push_str("\x1b[4h");
     }
@@ -133,13 +168,11 @@ pub(super) fn write(
     if !mode.contains(TermMode::LINE_WRAP) {
         out.push_str("\x1b[?7l");
     }
-    let template = term.grid().cursor.template.clone();
-    pen.apply(&template, &mut out);
-    if !mode.contains(TermMode::SHOW_CURSOR) {
-        out.push_str("\x1b[?25l");
-    }
-    let style = term.cursor_style();
-    let shape = match (style.shape, style.blinking) {
+}
+
+/// The DECSCUSR number of a cursor style, or `None` for the default.
+fn cursor_shape_code(style: CursorStyle) -> Option<u8> {
+    match (style.shape, style.blinking) {
         (CursorShape::Block, true) => Some(1),
         (CursorShape::Underline, true) => Some(3),
         (CursorShape::Underline, false) => Some(4),
@@ -148,17 +181,7 @@ pub(super) fn write(
         // A steady block is the default; a hidden or hollow shape has no
         // DECSCUSR number.
         (CursorShape::Block, false) | (CursorShape::HollowBlock | CursorShape::Hidden, _) => None,
-    };
-    if let Some(shape) = shape {
-        out.push_str(&format!("\x1b[{shape} q"));
     }
-
-    // 6. The title, without control characters.
-    if let Some(title) = title {
-        let clean: String = title.chars().filter(|c| !c.is_control()).collect();
-        out.push_str(&format!("\x1b]2;{clean}\x07"));
-    }
-    out.into_bytes()
 }
 
 /// Moves the cursor to its place. A pending wrap (the cursor past the last
