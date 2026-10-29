@@ -466,9 +466,6 @@
     "crates/ralphy-daemon/assets/ui/wb-settings-dialog.ts": {
       "(anonymous)": [
         11
-      ],
-      "saveSetting": [
-        16
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-spend-panel.ts": {
