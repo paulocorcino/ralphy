@@ -587,11 +587,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/src/fleet/watchsub.rs": {
-      "subscribe": [
-        19
-      ]
-    },
     "crates/ralphy-daemon/src/peer.rs": {
       "fold": [
         13
