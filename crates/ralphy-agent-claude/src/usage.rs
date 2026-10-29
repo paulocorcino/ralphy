@@ -610,4 +610,49 @@ mod tests {
         assert_eq!(usage.input, 1);
         assert_eq!(usage.cache_creation, 42);
     }
+
+    #[test]
+    fn parse_transcript_usage_sums_messages_that_carry_no_id() {
+        // Without an id there is nothing to dedup on, so every such line counts.
+        let jsonl = concat!(
+            r#"{"message":{"usage":{"input_tokens":3,"output_tokens":1}}}"#,
+            "\n",
+            r#"{"message":{"usage":{"input_tokens":4,"output_tokens":2}}}"#,
+            "\n"
+        );
+        let usage = parse_transcript_usage(jsonl);
+        assert_eq!(usage.input, 7);
+        assert_eq!(usage.output, 3);
+    }
+
+    /// Write `name` under `dir` and stamp its modified time `age` seconds ago.
+    fn aged_file(dir: &Path, name: &str, age: u64) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, "{}\n").expect("write a transcript file");
+        let file = fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("reopen the file to stamp its time");
+        file.set_modified(SystemTime::now() - Duration::from_secs(age))
+            .expect("stamp the modified time");
+        path
+    }
+
+    #[test]
+    fn newest_jsonl_picks_the_newest_transcript_and_ignores_a_json_sidecar() {
+        let tmp = tempfile::tempdir().expect("tempdir for transcripts");
+        aged_file(tmp.path(), "old.jsonl", 60);
+        let newest = aged_file(tmp.path(), "new.jsonl", 20);
+        aged_file(tmp.path(), "new.meta.json", 1);
+        assert_eq!(newest_jsonl_since(tmp.path(), None), Some(newest));
+    }
+
+    #[test]
+    fn newest_jsonl_since_is_none_when_every_transcript_is_older_than_the_floor() {
+        let tmp = tempfile::tempdir().expect("tempdir for transcripts");
+        aged_file(tmp.path(), "a.jsonl", 60);
+        aged_file(tmp.path(), "b.jsonl", 30);
+        let floor = SystemTime::now() - Duration::from_secs(10);
+        assert_eq!(newest_jsonl_since(tmp.path(), Some(floor)), None);
+    }
 }
