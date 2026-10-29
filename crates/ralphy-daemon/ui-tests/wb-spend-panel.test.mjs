@@ -5,11 +5,10 @@
 // field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the Spend tab's markup.
+const PART = "wb-spend-panel.part.html";
 
 // One page with the shell and the Spend tab, and a window that delivers the
 // events it is sent, as the browser does. `init()` adds the listeners, as
@@ -43,7 +42,7 @@ test("wbSpend lists only shell() names in uses, and its members left shell()", (
 
 test("every name the markup of wbSpend reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbSpend");
-  const markup = componentMarkup(HTML, "wbSpend");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variables of the two panes.
   const loopVars = new Set(["p", "t", "d", "o", "m", "r", "c", "i", "peer", "cause", "col", "row"]);
@@ -63,15 +62,14 @@ test("every name the markup of wbSpend reads is its own or in its uses list", ()
 });
 
 test("nothing outside the Spend element names its state", () => {
-  const start = HTML.indexOf('x-data="wbSpend"');
-  const after = HTML.indexOf("<!-- ===", start);
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(after));
+  // The page without the Spend part: the shell and the other components.
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["spendView", "spendModel", "ledgerModel", "ledgerView", "spendPane", "spendPeriod", "setSpendPane", "setSpendPeriod", "showUnpricedLedger", "loadLedger", "loadSpend", "refreshSpend"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
   // The rail button asks for the tab with an event: the element hears it.
   assert.match(outside, /\$dispatch\('workbench:spend-open'\)/);
-  assert.match(HTML.slice(start - 120, start + 120), /@workbench:spend-open\.window="openSpend\(\)"/);
+  assert.match(partMarkup(PART), /@workbench:spend-open\.window="openSpend\(\)"/);
 });
 
 // ---- the workbench events ------------------------------------------------------
