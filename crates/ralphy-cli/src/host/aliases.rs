@@ -13,27 +13,34 @@ use serde_json::json;
 /// blocks have no name at all.
 pub(crate) fn parse_config_hosts(text: &str) -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        let (keyword, rest) = match line.split_once(|c: char| c == '=' || c.is_whitespace()) {
-            Some((k, rest)) => (k, rest),
-            None => continue,
-        };
-        if !keyword.eq_ignore_ascii_case("host") {
-            continue;
-        }
-        let rest = rest.trim_start_matches(|c: char| c == '=' || c.is_whitespace());
-        for word in rest.split_whitespace() {
-            if word.starts_with('#') {
-                break;
+    for rest in text.lines().filter_map(host_line_rest) {
+        for word in concrete_names(rest) {
+            if !hosts.iter().any(|h| h == word) {
+                hosts.push(word.to_string());
             }
-            if word.contains(['*', '?', '!']) || hosts.iter().any(|h| h == word) {
-                continue;
-            }
-            hosts.push(word.to_string());
         }
     }
     hosts
+}
+
+/// What follows the `Host` keyword (and its `=` or blanks) on `line`; `None`
+/// for a line of any other keyword.
+fn host_line_rest(line: &str) -> Option<&str> {
+    let (keyword, rest) = line
+        .trim()
+        .split_once(|c: char| c == '=' || c.is_whitespace())?;
+    if !keyword.eq_ignore_ascii_case("host") {
+        return None;
+    }
+    Some(rest.trim_start_matches(|c: char| c == '=' || c.is_whitespace()))
+}
+
+/// The words of a `Host` line that name one host: a `#` ends the list, and a
+/// pattern or a negation names no one host.
+fn concrete_names(rest: &str) -> impl Iterator<Item = &str> {
+    rest.split_whitespace()
+        .take_while(|word| !word.starts_with('#'))
+        .filter(|word| !word.contains(['*', '?', '!']))
 }
 
 /// What `ssh -G` says it would use for a destination.

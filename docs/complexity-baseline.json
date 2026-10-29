@@ -59,11 +59,6 @@
         11
       ]
     },
-    "crates/ralphy-cli/src/host/aliases.rs": {
-      "parse_config_hosts": [
-        16
-      ]
-    },
     "crates/ralphy-cli/src/host/checks.rs": {
       "parse_facts": [
         12
