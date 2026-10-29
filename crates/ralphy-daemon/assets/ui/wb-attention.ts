@@ -19,19 +19,29 @@
    `attention.dirty` push.
 
    A request the daemon marks `dismissable` (an issue a finished run left for
-   the operator) has a "Dismiss" button instead: `POST /api/attention/dismiss`
-   hides it on every device, and the daemon of a peer's request stores it.
+   the operator, a console that finished a turn it was marked for) has a
+   "Dismiss" button: `POST /api/attention/dismiss` hides it on every device,
+   and the daemon of a peer's request stores it. A console's `console-done`
+   request also ends when the operator opens that console: the focus moving
+   into its window, or "Go to the console", dismisses it.
+
+   "Notify me in this browser" is a switch of this device (the per-client
+   view, `wb-client-view.ts`), off until the operator turns it on, which is when the browser is asked for
+   permission. With it on, a request id this page did not know before shows
+   one browser notification while the tab is hidden.
 
    `main.ts` registers it as `wbAttention`.
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { sendWindow } from "./wb-events.ts";
+import { WBView } from "./wb-client-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
+import type { ConsoleWin } from "./wb-types.d.ts";
 
 /** The kind of a request (`attention::Kind`). */
-export type AttentionKind = "console-waiting" | "console-silent" | "run-waiting" | "run-finished";
+export type AttentionKind = "console-waiting" | "console-silent" | "console-done" | "run-waiting" | "run-finished";
 
 /** What a row's one action opens: "none" for a finished run, which is no
  * longer in the Runs panel. */
@@ -71,6 +81,8 @@ export function kindText(kind: AttentionKind) {
       return "Waits for you";
     case "console-silent":
       return "No state from this agent";
+    case "console-done":
+      return "The agent is done";
     case "run-finished":
       return "A run stopped on this issue";
     default: {
@@ -85,6 +97,7 @@ export function actionOf(kind: AttentionKind): AttentionAction {
   switch (kind) {
     case "console-waiting":
     case "console-silent":
+    case "console-done":
       return "console";
     case "run-waiting":
       return "run";
@@ -95,6 +108,35 @@ export function actionOf(kind: AttentionKind): AttentionAction {
       return unknown;
     }
   }
+}
+
+/** The saved choice; off when nothing is saved or the store cannot be read. */
+function savedNotify() {
+  return WBView.read()?.notify === true;
+}
+
+/** Keep the choice on this device. A store that cannot be written keeps the
+ * switch working until the page is closed. */
+function saveNotify(on: boolean) {
+  WBView.patch({ notify: on });
+}
+
+function canNotify() {
+  return typeof Notification !== "undefined";
+}
+
+/** Ask the browser for permission to notify, unless it already answered. */
+async function askPermission() {
+  if (!canNotify()) return "denied";
+  if (Notification.permission !== "default") return Notification.permission;
+  return Notification.requestPermission();
+}
+
+function postDismiss(id: string) {
+  return apiFetch("POST /api/attention/dismiss", {
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
 }
 
 /** How long ago `since` (RFC 3339) was, at `now` (ms); "" when it is not a time. */
@@ -126,12 +168,19 @@ export function wbAttention() {
     // The clock the ages are read at: set at each read, and each minute.
     now: Date.now(),
     _seq: 0,
+    // The switch of this device, and the ids the last list held (`null`
+    // before the first list: what is on the page at load is not new).
+    notifyOn: false,
+    _known: null as Set<string> | null,
+    _dismissing: new Set<string>(),
 
     init() {
+      this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
       this.read();
       window.addEventListener("workbench:attention-reread", () => this.read());
       window.addEventListener("workbench:logged-in", () => this.read());
       window.addEventListener("workbench:menus-close", () => this.close());
+      document.addEventListener("focusin", (e) => this.focused(e.target));
       window.setInterval(() => {
         this.now = Date.now();
       }, 60000);
@@ -158,9 +207,43 @@ export function wbAttention() {
     },
 
     show(requests: AttentionRequest[]) {
+      const known = this._known;
+      this._known = new Set(requests.map((r) => r.id));
       this.requests = requests;
       this.now = Date.now();
       document.title = attentionTitle(this.requests.length);
+      if (known && this.notifyOn && document.hidden) {
+        for (const request of requests) if (!known.has(request.id)) this.announce(request);
+      }
+    },
+
+    // One browser notification for a new request. Its tag is the request id,
+    // so the browser shows a repeat of the same request once.
+    announce(request: AttentionRequest) {
+      if (!canNotify() || Notification.permission !== "granted") return;
+      const detail = request.detail ? `: ${request.detail}` : "";
+      const note = new Notification(this.nameOf(request), {
+        body: `${this.kindOf(request)}${detail}`,
+        tag: request.id,
+      });
+      note.onclick = () => window.focus();
+    },
+
+    canNotify() {
+      return canNotify();
+    },
+
+    // Turn the switch on or off. On: the browser is asked for permission,
+    // and the switch stays off when the answer is no.
+    async setNotify(on: boolean) {
+      if (!on) {
+        this.notifyOn = false;
+        saveNotify(false);
+        return;
+      }
+      this.notifyOn = (await askPermission()) === "granted";
+      saveNotify(this.notifyOn);
+      if (!this.notifyOn) this.$store.modals.flash("The browser did not allow notifications.");
     },
 
     toggle() {
@@ -200,13 +283,35 @@ export function wbAttention() {
     // keeps the row and says so.
     async dismiss(request: AttentionRequest) {
       try {
-        const r = await apiFetch("POST /api/attention/dismiss", {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: request.id }),
-        });
+        const r = await postDismiss(request.id);
         if (!r.ok) this.$store.modals.flash("Could not dismiss the request.");
       } catch {
         this.$store.modals.flash("Could not dismiss the request: the daemon did not answer.");
+      }
+      await this.read();
+    },
+
+    // The operator opened the console that holds `target`: its `console-done`
+    // requests end.
+    focused(target: EventTarget | null) {
+      const win = (target as Element | null)?.closest?.<ConsoleWin>(".session-window");
+      if (!win?._deskId) return;
+      for (const request of this.requests) {
+        const session = sessionOf(request, this.$store.projects.liveSessions);
+        if (request.kind === "console-done" && session?.record === win._deskId) this.finish(request);
+      }
+    },
+    // Dismiss `request` with nothing said when the daemon refuses: the row
+    // stays, with its button.
+    async finish(request: AttentionRequest) {
+      if (this._dismissing.has(request.id)) return;
+      this._dismissing.add(request.id);
+      try {
+        await postDismiss(request.id);
+      } catch {
+        // The daemon did not answer; the next read shows the row again.
+      } finally {
+        this._dismissing.delete(request.id);
       }
       await this.read();
     },
@@ -222,6 +327,7 @@ export function wbAttention() {
     // own tab when it has one, else the Consoles tab, panned to it.
     goTo(request: AttentionRequest) {
       this.open = false;
+      if (request.kind === "console-done") this.finish(request);
       const id = sessionOf(request, this.$store.projects.liveSessions)?.record;
       if (!id) return;
       const tab = this.$store.tabs.tabOf(id);

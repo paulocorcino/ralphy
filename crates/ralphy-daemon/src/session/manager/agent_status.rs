@@ -4,7 +4,67 @@
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
-use super::ManagedSession;
+use super::{ManagedSession, SessionManager};
+use crate::agent_state::fold::Cause;
+use crate::agent_state::Observed;
+use crate::session::SessionId;
+
+/// The turns a console finished, as the hooks showed them: how many, and the
+/// hook time of the last one.
+#[derive(Debug, Default)]
+pub(super) struct TurnEnds {
+    count: u64,
+    since: String,
+}
+
+/// A console that finished at least one turn since it started
+/// (docs/adr/0085 D11). `count` only grows, so a reader that kept the last
+/// count it saw knows a new turn ended when the count is higher.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnEnd {
+    pub id: SessionId,
+    /// The window record the launch named.
+    pub record: Option<String>,
+    pub count: u64,
+    /// The hook time of the last finished turn.
+    pub since: String,
+}
+
+impl SessionManager {
+    /// The consoles that finished a turn, in session order.
+    pub fn turn_ends(&self) -> Vec<TurnEnd> {
+        let sessions = self.sessions.lock().expect("sessions mutex");
+        sessions
+            .values()
+            .filter_map(|s| {
+                let ends = s.turn_ends.lock().expect("turn_ends mutex");
+                (ends.count > 0).then(|| TurnEnd {
+                    id: s.info.id,
+                    record: s.info.record.clone(),
+                    count: ends.count,
+                    since: ends.since.clone(),
+                })
+            })
+            .collect()
+    }
+}
+
+/// How many of `transitions` end a turn: a `done` caused by the turn end
+/// (never by a session start) right after a `working`. `was` is the state
+/// shown before the first one; the hook time of the last such one is
+/// returned with the count.
+fn turn_ends_in(was: Option<&str>, transitions: &[Observed]) -> (u64, Option<String>) {
+    let mut was = was;
+    let (mut count, mut since) = (0, None);
+    for t in transitions {
+        if t.state == "done" && t.cause == Some(Cause::TurnEnd) && was == Some("working") {
+            count += 1;
+            since = Some(t.since.clone());
+        }
+        was = Some(t.state);
+    }
+    (count, since)
+}
 
 impl ManagedSession {
     /// The agent block the list shows at `now`: the silent block while the
@@ -45,6 +105,16 @@ impl ManagedSession {
         }
     }
 
+    /// Add the turns `transitions` ended to this console's count.
+    fn count_turn_ends(&self, was: Option<&str>, transitions: &[Observed]) {
+        let (ended, at) = turn_ends_in(was, transitions);
+        if let Some(at) = at {
+            let mut ends = self.turn_ends.lock().expect("turn_ends mutex");
+            ends.count += ended;
+            ends.since = at;
+        }
+    }
+
     /// Read what the hooks appended since the last tick: keep the newest
     /// transition, and on ANY folded line refresh the observation's `seen` —
     /// a `working` that keeps producing `PreToolUse` lines is alive, and the
@@ -73,6 +143,7 @@ impl ManagedSession {
                 .get_or_insert(now);
         }
         let mut slot = self.agent_state.lock().expect("agent_state mutex");
+        self.count_turn_ends(slot.as_ref().map(|o| o.state), &polled.transitions);
         if let Some(last) = polled.transitions.into_iter().last() {
             *slot = Some(last);
         } else if polled.activity {

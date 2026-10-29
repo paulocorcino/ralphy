@@ -119,6 +119,7 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
             detail: None,
             since: "t".into(),
             seen,
+            cause: None,
         });
     };
     observe(
@@ -272,6 +273,7 @@ async fn a_working_state_that_ages_out_counts_as_a_change() {
         detail: None,
         since: "t".into(),
         seen: now - STALE_AFTER + std::time::Duration::from_secs(1),
+        cause: None,
     });
     assert!(sess.poll_status(now), "the first state shown is a change");
     assert!(!sess.poll_status(now), "the same state again is not");

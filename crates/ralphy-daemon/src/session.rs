@@ -24,7 +24,7 @@ mod manager;
 mod screen;
 mod spec;
 
-pub use manager::{AttachError, Attachment, RecordClaim, SessionManager};
+pub use manager::{AttachError, Attachment, RecordClaim, SessionManager, TurnEnd};
 pub use spec::{
     claude_console_named, console_cwd, console_name, console_spec, cursor_indexing_allowed,
     gemini_home, gemini_policy_path, peer_console_launcher, peer_console_spec, spec_for,

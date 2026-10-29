@@ -18,6 +18,7 @@ use axum::{Json, Router};
 
 use super::{RouterShared, UNANSWERED_HEADER};
 use crate::attention::dismissals::Dismissals;
+use crate::attention::done::DeskFiles;
 use crate::attention::tick::{self, Dismissed, Runs};
 use crate::attention::{AttentionRequest, RunsRead};
 use crate::routes::read_peer_store;
@@ -236,8 +237,13 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
     let runs = Runs::default();
     let dismissed: Dismissed = Arc::new(Mutex::new(Dismissals::in_store_of(&s.registry_path)));
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        let files = DeskFiles {
+            desk: s.desk_path.clone(),
+            registry: s.registry_path.clone(),
+            peers: s.peer_repo_cache.clone(),
+        };
         runtime.spawn(tick::run(
-            s.registry_path.clone(),
+            files,
             sessions.clone(),
             (runs.clone(), dismissed.clone()),
             s.pushes.clone(),

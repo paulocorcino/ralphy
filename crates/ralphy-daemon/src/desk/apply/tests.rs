@@ -178,6 +178,34 @@ fn a_create_cuts_a_long_console_name_by_char() {
     );
 }
 
+#[test]
+fn the_done_mark_round_trips_on_the_desk_record() {
+    let desk = desk_of(&[create("window", window("w-1"))]);
+    assert!(!desk.windows[0].done_mark, "a new record has no mark");
+    let wire = serde_json::to_string(&desk.windows[0]).expect("a record serializes");
+    assert!(!wire.contains("doneMark"), "no mark, no key: {wire}");
+
+    let set = |on: bool| json!({ "op": "set", "type": "window", "id": "w-1", "fields": { "doneMark": on } });
+    let on = apply(desk, &[set(true)], &BTreeMap::new(), NOW);
+    assert!(on.changed && on.refused.is_empty(), "{:?}", on.refused);
+    assert!(on.desk.windows[0].done_mark);
+    let wire = serde_json::to_string(&on.desk.windows[0]).expect("a record serializes");
+    assert!(wire.contains(r#""doneMark":true"#), "{wire}");
+    let text = toml::to_string_pretty(&on.desk).expect("the desk serializes");
+    let back: DeskStore = toml::from_str(&text).expect("desk.toml reads back");
+    assert!(back.windows[0].done_mark, "the mark survives desk.toml");
+
+    let again = apply(on.desk.clone(), &[set(true)], &BTreeMap::new(), NOW);
+    assert!(!again.changed, "the same mark changes nothing");
+    let off = apply(on.desk, &[set(false)], &BTreeMap::new(), NOW);
+    assert!(off.changed && !off.desk.windows[0].done_mark);
+    let wire = serde_json::to_string(&off.desk.windows[0]).expect("a record serializes");
+    assert!(
+        !wire.contains("doneMark"),
+        "cleared, the key leaves: {wire}"
+    );
+}
+
 fn fence(id: &str) -> serde_json::Value {
     json!({
         "id": id, "name": id,

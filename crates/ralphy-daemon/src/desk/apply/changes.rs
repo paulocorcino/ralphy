@@ -140,6 +140,7 @@ fn merge_window(w: &mut DeskRecord, fields: WindowFields) -> bool {
     if let Some(name) = fields.console_name {
         did |= put_console_name(w, name);
     }
+    did |= put_done_mark(w, fields.done_mark);
     if let Some(checkout) = fields.checkout {
         did |= put(&mut w.checkout, checkout);
     }
@@ -160,6 +161,12 @@ fn put_console_name(w: &mut DeskRecord, name: String) -> bool {
         Some(name) => put(&mut w.console_name, Some(name)),
         None => false,
     }
+}
+
+/// The mark that asks for a request at the next finished turn. A `set` that
+/// does not name it leaves it as it is.
+fn put_done_mark(w: &mut DeskRecord, on: Option<bool>) -> bool {
+    on.is_some_and(|on| put(&mut w.done_mark, on))
 }
 
 fn put_session(w: &mut DeskRecord, s: SessionFields) -> bool {

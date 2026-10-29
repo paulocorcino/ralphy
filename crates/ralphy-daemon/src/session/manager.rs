@@ -18,6 +18,7 @@ mod agent_status;
 mod kept;
 mod pump;
 mod record;
+pub use agent_status::TurnEnd;
 #[cfg(test)]
 use kept::publish;
 use kept::{replay_and_subscribe, KeptOutput, Subscribed};
@@ -63,6 +64,8 @@ struct ManagedSession {
     silent: Mutex<Option<(String, SystemTime)>>,
     /// Whether this console already logged that it became silent.
     logged_silent: AtomicBool,
+    /// The turns this console finished (docs/adr/0085 D11).
+    turn_ends: Mutex<agent_status::TurnEnds>,
 }
 
 /// Who holds the writer slot: the bridge's eviction token, and the holder the
@@ -345,6 +348,7 @@ impl SessionManager {
             first_line: Mutex::new(None),
             silent: Mutex::new(None),
             logged_silent: AtomicBool::new(false),
+            turn_ends: Mutex::default(),
         });
         self.sessions
             .lock()

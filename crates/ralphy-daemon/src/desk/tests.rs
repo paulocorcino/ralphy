@@ -26,6 +26,7 @@ fn record(id: &str, ts: i64) -> DeskRecord {
         checkout: None,
         locked: false,
         console_name: None,
+        done_mark: false,
         ts,
     }
 }

@@ -6,6 +6,9 @@
 //! change; a console's agent state also changes by the clock alone (a
 //! console goes silent with no event), and the same tick sees that.
 //!
+//! The tick also looks at the turns the consoles finished, and opens a
+//! request for the ones the operator marked ([`done`]).
+//!
 //! The route reads the runs this tick read last, so the list it serves and
 //! the list the push announced are the same list.
 
@@ -16,6 +19,7 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::broadcast;
 
 use super::dismissals::Dismissals;
+use super::done::{self, DeskFiles, Marks};
 use super::{list, AttentionRequest, FinishedRun, RunSource, RunsRead};
 use crate::registry;
 use crate::routes::{push, Push};
@@ -109,10 +113,12 @@ pub(crate) fn list_with(
     }
 }
 
-/// What the last tick saw: the id and the detail of each request.
-#[derive(Debug, Default)]
+/// What the last tick saw: the id and the detail of each request, and the
+/// done marks it looked at.
+#[derive(Default)]
 pub(crate) struct Seen {
     last: Vec<(String, Option<String>)>,
+    marks: Marks,
 }
 
 impl Seen {
@@ -129,23 +135,29 @@ impl Seen {
     }
 }
 
-/// One tick: read the runs, keep them for the route, and push
-/// `attention.dirty` when the list changed.
+/// One tick: read the runs, open the requests of the finished turns the
+/// operator marked, keep both for the route, and push `attention.dirty` when
+/// the list changed.
 pub(crate) async fn tick_once(
-    registry_path: &Path,
+    files: &DeskFiles,
     sessions: &SessionManager,
     (runs, dismissed): (&Runs, &Dismissed),
     seen: &mut Seen,
     pushes: &broadcast::Sender<Push>,
 ) {
-    let path = registry_path.to_path_buf();
-    let read = match tokio::task::spawn_blocking(move || read_runs(&path)).await {
+    let path = files.registry.clone();
+    let mut read = match tokio::task::spawn_blocking(move || read_runs(&path)).await {
         Ok(read) => read,
         Err(e) => {
             tracing::warn!(error = %e, "the attention tick could not read the runs");
             return;
         }
     };
+    let fresh = seen.marks.fresh(&sessions.turn_ends());
+    if !fresh.is_empty() {
+        done::fire(&mut seen.marks, &fresh, files, pushes).await;
+    }
+    read.done = seen.marks.open().to_vec();
     let requests = list_with(sessions, &read, dismissed);
     match runs.lock() {
         Ok(mut kept) => *kept = read,
@@ -158,7 +170,7 @@ pub(crate) async fn tick_once(
 
 /// Tick every [`EVERY`] until the daemon stops.
 pub(crate) async fn run(
-    registry_path: std::path::PathBuf,
+    files: DeskFiles,
     sessions: Arc<SessionManager>,
     (runs, dismissed): (Runs, Dismissed),
     pushes: broadcast::Sender<Push>,
@@ -171,7 +183,7 @@ pub(crate) async fn run(
         tokio::select! {
             _ = shutdown.changed() => break,
             _ = every.tick() => {
-                tick_once(&registry_path, &sessions, (&runs, &dismissed), &mut seen, &pushes).await;
+                tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &pushes).await;
             }
         }
     }
@@ -198,6 +210,15 @@ mod tests {
         snap
     }
 
+    /// The files the tick reads: the registry, and a desk that is not there.
+    fn files_of(dir: &tempfile::TempDir, registry_path: &std::path::Path) -> DeskFiles {
+        DeskFiles {
+            desk: dir.path().join("desk.toml"),
+            registry: registry_path.to_path_buf(),
+            peers: Default::default(),
+        }
+    }
+
     /// Whether the tick sent one push, and only one.
     fn pushed(rx: &mut broadcast::Receiver<Push>) -> bool {
         match rx.try_recv() {
@@ -219,6 +240,7 @@ mod tests {
         let mut reg = registry::RegistryStore::default();
         reg.upsert("owner/tick", &repo.to_string_lossy());
         registry::save_to(&reg, &registry_path).expect("save the registry");
+        let files = files_of(&dir, &registry_path);
         let sessions = SessionManager::new();
         let runs = Runs::default();
         let dismissed = Dismissed::default();
@@ -226,13 +248,7 @@ mod tests {
         let (tx, mut rx) = broadcast::channel(8);
         macro_rules! tick {
             () => {
-                tick_once(
-                    &registry_path,
-                    &sessions,
-                    (&runs, &dismissed),
-                    &mut seen,
-                    &tx,
-                )
+                tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &tx)
             };
         }
 
@@ -279,6 +295,7 @@ mod tests {
             serde_json::to_vec(&done).expect("a snapshot serializes"),
         )
         .expect("write the final snapshot");
+        let files = files_of(&dir, &registry_path);
         let sessions = SessionManager::new();
         let runs = Runs::default();
         let dismissed = Dismissed::default();
@@ -292,26 +309,12 @@ mod tests {
                 .collect()
         };
 
-        tick_once(
-            &registry_path,
-            &sessions,
-            (&runs, &dismissed),
-            &mut seen,
-            &tx,
-        )
-        .await;
+        tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &tx).await;
         assert!(pushed(&mut rx), "a finished run's request is a change");
         assert_eq!(ids(&runs), ["issue:20261028-100000:71"]);
 
         std::fs::remove_dir_all(&run_dir).expect("remove the run folder");
-        tick_once(
-            &registry_path,
-            &sessions,
-            (&runs, &dismissed),
-            &mut seen,
-            &tx,
-        )
-        .await;
+        tick_once(&files, &sessions, (&runs, &dismissed), &mut seen, &tx).await;
         assert!(pushed(&mut rx), "a request that ended is a change");
         assert!(ids(&runs).is_empty());
     }

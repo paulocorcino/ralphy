@@ -54,6 +54,8 @@ pub struct Observed {
     /// When THIS daemon read the line — the staleness clock, independent of
     /// the hook's string timestamp.
     pub seen: SystemTime,
+    /// Why a `done` is `done`; `None` on any other state.
+    pub cause: Option<fold::Cause>,
 }
 
 /// The wire shape on `/api/sessions` and the fleet: `state` is one of
@@ -214,6 +216,7 @@ impl Tail {
             detail: folded.detail,
             since: folded.ts,
             seen: SystemTime::now(),
+            cause: folded.cause,
         })
     }
 
@@ -233,6 +236,7 @@ impl Tail {
                     detail: folded.detail,
                     since: folded.ts,
                     seen: SystemTime::now(),
+                    cause: folded.cause,
                 });
             }
         }
@@ -566,6 +570,7 @@ mod tests {
             detail: None,
             since: "t".into(),
             seen: t0,
+            cause: None,
         };
         let fresh = t0 + STALE_AFTER - Duration::from_secs(1);
         let old = t0 + STALE_AFTER + Duration::from_secs(1);

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { bindingNames, UI, withoutComments } from "./harness.mjs";
 import { wbAttention } from "../assets/ui/wb-attention.ts";
+import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,7 @@ function fromPeer(request) {
 // answers each read with the next of `replies`, the stores it reads, and the
 // console's `reveal`. `init` is not run: each test calls what it needs. The
 // test files share one process, so `t.after` puts the globals back.
-const GLOBALS = ["window", "document", "WBConsole", "fetch"];
+const GLOBALS = ["window", "document", "WBConsole", "fetch", "Notification", "localStorage"];
 
 function page(t, { replies = [], sessions = [], projects = [], tabOf = () => undefined } = {}) {
   const saved = GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
@@ -45,7 +46,7 @@ function page(t, { replies = [], sessions = [], projects = [], tabOf = () => und
   const reveals = [];
   const activated = [];
   globalThis.window = { addEventListener() {}, dispatchEvent() {}, setInterval: () => 0 };
-  globalThis.document = { title: "Ralphy" };
+  globalThis.document = { title: "Ralphy", hidden: false, addEventListener() {} };
   globalThis.WBConsole = { reveal: (id) => reveals.push(id) };
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => replies.shift() });
   const tabs = {
@@ -195,4 +196,130 @@ test("every name the markup of wbAttention reads is its own", (t) => {
     }
   }
   assert.ok(read >= 8, `the markup was read: ${read} names`);
+});
+
+// The browser's notifications: a class that keeps what it was asked, and the
+// storage of this device.
+function notifications(permission, answer = permission) {
+  const shown = [];
+  const asked = [];
+  const stored = new Map();
+  globalThis.Notification = class {
+    static permission = permission;
+    static async requestPermission() {
+      asked.push(true);
+      this.permission = answer;
+      return answer;
+    }
+    constructor(title, options) {
+      shown.push({ title, ...options });
+    }
+  };
+  // The per-client view keeps one record under one key.
+  globalThis.localStorage = { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v) };
+  window.focus = () => {};
+  const view = () => JSON.parse(stored.get(WBView.KEY) ?? "{}");
+  return { shown, asked, stored, view };
+}
+
+const waitingRow = () => fixture("api-attention").requests[0];
+
+test("the notification is off by default", async (t) => {
+  const { data } = page(t, { replies: [{ requests: [waitingRow()] }] });
+  const { shown, asked, stored, view } = notifications("default", "granted");
+  data.init();
+  await data.read();
+  assert.equal(data.notifyOn, false, "off until the operator turns it on");
+  assert.deepEqual(asked, [], "no permission is asked before the switch");
+  assert.equal(stored.size, 0);
+  assert.deepEqual(shown, []);
+  assert.match(attentionElement(), /Notify me in this browser/);
+
+  await data.setNotify(true);
+  assert.equal(asked.length, 1, "turning it on asks once");
+  assert.equal(data.notifyOn, true);
+  assert.equal(view().notify, true, "the choice is kept on this device");
+  await data.setNotify(false);
+  assert.equal(data.notifyOn, false);
+  assert.equal(view().notify, false);
+
+  // A browser that already allowed notifications does not turn the switch on
+  // by itself; the saved choice does.
+  const granted = notifications("granted");
+  data.init();
+  assert.equal(data.notifyOn, false, "nothing saved: off");
+  granted.stored.set(WBView.KEY, JSON.stringify({ v: 1, notify: true }));
+  data.init();
+  assert.equal(data.notifyOn, true, "saved on, and allowed: on");
+});
+
+test("a refused permission leaves the switch off and says so", async (t) => {
+  const { data } = page(t);
+  const { view } = notifications("default", "denied");
+  const flashed = [];
+  data.$store.modals = { flash: (m) => flashed.push(m) };
+  await data.setNotify(true);
+  assert.equal(data.notifyOn, false);
+  assert.equal(view().notify, false);
+  assert.equal(flashed.length, 1, "the operator is told");
+});
+
+test("the notification fires only when the tab is hidden", async (t) => {
+  const first = waitingRow();
+  const second = { ...first, id: "console:2", console: "2" };
+  const { data } = page(t, { projects: [{ slug: first.repo, name: "plain" }] });
+  const { shown } = notifications("granted");
+  await data.setNotify(true);
+
+  data.show([]);
+  document.hidden = false;
+  data.show([first]);
+  assert.deepEqual(shown, [], "a visible tab shows none");
+
+  document.hidden = true;
+  data.show([first, second]);
+  assert.equal(shown.length, 1, "a hidden tab shows one for the new request");
+  assert.equal(shown[0].tag, "console:2");
+  assert.equal(shown[0].title, "plain");
+  data.show([first, second]);
+  assert.equal(shown.length, 1, "a request the page already knew shows none");
+
+  await data.setNotify(false);
+  data.show([first, second, { ...first, id: "console:3" }]);
+  assert.equal(shown.length, 1, "the switch off shows none");
+});
+
+test("what is on the page at load is not new", async (t) => {
+  const { data } = page(t);
+  const { shown } = notifications("granted");
+  await data.setNotify(true);
+  document.hidden = true;
+  data.show([waitingRow()]);
+  assert.deepEqual(shown, []);
+});
+
+test("opening the console of a done request dismisses it", async (t) => {
+  const waiting = waitingRow();
+  const done = { ...waiting, id: "done:1:1", kind: "console-done", detail: undefined, dismissable: true };
+  const session = { id: 1, repo: waiting.repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record: "w-local" };
+  const { data } = page(t, { sessions: [session], replies: [{ requests: [] }] });
+  assert.equal(data.kindOf(done), "The agent is done");
+  assert.equal(data.actionOf(done), "console");
+  assert.equal(data.canDismiss(done), true);
+  const sent = [];
+  globalThis.fetch = async (url, init) => {
+    sent.push([init.method, url, init.body]);
+    return { ok: true, status: 200, json: async () => ({ requests: [] }) };
+  };
+  const inside = (record) => ({ closest: () => ({ _deskId: record }) });
+  data.requests = [done, waiting];
+
+  await data.focused(inside("w-other"));
+  await data.focused({ closest: () => null });
+  assert.deepEqual(sent, [], "another window, or none, dismisses nothing");
+
+  data.focused(inside("w-local"));
+  await new Promise((resolve) => setImmediate(resolve));
+  const posts = sent.filter(([method]) => method === "POST");
+  assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "done:1:1" })]]);
 });

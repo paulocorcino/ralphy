@@ -253,5 +253,22 @@
       "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": true, "sessionId": 7, "locked": true, "ts": 1 }],
       "fences": [], "notes": [], "checkouts": {}
     }
+  },
+  {
+    "name": "the done mark is a field of a window, and clearing it removes the key",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "claude", "kind": "agent", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "doneMark": true } },
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "doneMark": false } },
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "doneMark": true } }
+    ],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "claude", "kind": "agent", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "doneMark": true, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
   }
 ]

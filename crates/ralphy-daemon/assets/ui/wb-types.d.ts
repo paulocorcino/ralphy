@@ -80,6 +80,8 @@ export type DeskRecord = {
   checkout?: string | null;
   locked?: boolean;
   consoleName?: string | null;
+  /** "Tell me when it is done": the daemon clears it when the request opens. */
+  doneMark?: boolean;
   ts?: number;
 };
 
@@ -136,6 +138,7 @@ export type DeskWindowFields = {
   max?: boolean;
   locked?: boolean;
   consoleName?: string;
+  doneMark?: boolean;
   /** Present with `null` means "the primary tree"; absent says nothing. */
   checkout?: string | null;
   session?: DeskSessionFields;

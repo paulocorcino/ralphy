@@ -14,6 +14,7 @@ use ralphy_run_snapshot::{IssueBlock, RunSnapshot};
 use crate::session::SessionInfo;
 
 pub(crate) mod dismissals;
+pub(crate) mod done;
 pub(crate) mod tick;
 
 /// The kind of a request. Matched exhaustively, so a new kind has to say
@@ -25,6 +26,10 @@ pub enum Kind {
     ConsoleWaiting,
     /// A console whose hooks sent nothing: Ralphy cannot see its agent.
     ConsoleSilent,
+    /// A console that finished the turn the operator marked "tell me when it
+    /// is done" for. It lasts until the operator opens the console or
+    /// dismisses it.
+    ConsoleDone,
     /// A run whose agent (`phase.agent` of its snapshot) is `waiting`.
     RunWaiting,
     /// An issue a finished run ended `blocked`, `hitl` or `needs_split`, or
@@ -39,13 +44,14 @@ impl Kind {
     pub fn dismissable(self) -> bool {
         match self {
             Kind::ConsoleWaiting | Kind::ConsoleSilent | Kind::RunWaiting => false,
-            Kind::RunFinished => true,
+            Kind::ConsoleDone | Kind::RunFinished => true,
         }
     }
 }
 
 /// One request on the wire of `GET /api/attention`. `id` is
-/// `console:<session id>` for a console, `run:<runid>` for a run and
+/// `console:<session id>` for a console, `done:<session id>:<n>` for the
+/// n-th finished turn a console was marked for, `run:<runid>` for a run and
 /// `issue:<run stamp>:<issue>` for a finished run's issue; a peer's request reaches the page
 /// with `id`, `console` and `repo` prefixed `<daemon_id>/`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -87,18 +93,20 @@ pub struct FinishedRun {
     pub snapshot: RunSnapshot,
 }
 
-/// What the attention tick read of the runs of every registered repo.
+/// What the attention tick read of the runs of every registered repo, and
+/// the done marks it fired.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RunsRead {
     pub live: Vec<RunSource>,
     pub finished: Vec<FinishedRun>,
+    pub done: Vec<done::DoneFired>,
 }
 
 /// The detail of a request for an issue whose agent the idle watchdog stopped.
 pub const IDLE_REAPED_DETAIL: &str = "the idle watchdog stopped the agent";
 
-/// The requests the consoles open, in the order of `sessions`, then the ones
-/// the live runs open, then the ones the finished runs open, in the order of
+/// The requests the consoles open, in the order of `sessions`, then the
+/// finished turns of marked consoles, then the ones the live runs open, then the ones the finished runs open, in the order of
 /// `runs`. `sessions` is the list as `/api/sessions` shows it, already
 /// rendered at the time of the read. A request whose id `is_dismissed` is
 /// not listed.
@@ -110,6 +118,7 @@ pub fn list(
     sessions
         .iter()
         .filter_map(console_request)
+        .chain(done::requests(sessions, &runs.done))
         .chain(runs.live.iter().filter_map(run_request))
         .chain(finished_requests(runs))
         .filter(|request| !is_dismissed(&request.id))
@@ -305,7 +314,7 @@ mod tests {
     fn live(source: RunSource) -> RunsRead {
         RunsRead {
             live: vec![source],
-            finished: Vec::new(),
+            ..RunsRead::default()
         }
     }
 
@@ -397,8 +406,8 @@ mod tests {
 
     fn finished_only(runs: Vec<FinishedRun>) -> RunsRead {
         RunsRead {
-            live: Vec::new(),
             finished: runs,
+            ..RunsRead::default()
         }
     }
 
@@ -477,6 +486,7 @@ mod tests {
         let runs = RunsRead {
             live: vec![working.clone()],
             finished: vec![old()],
+            ..RunsRead::default()
         };
         assert!(list(&[], &runs, &|_| false).is_empty());
         // The same number in another repo does not.
@@ -487,6 +497,7 @@ mod tests {
                 old(),
                 finished("owner/other", "20261028-110000", later, &[(71, "done")]),
             ],
+            ..RunsRead::default()
         };
         let got = list(&[], &runs, &|_| false);
         assert_eq!(got.len(), 1, "{got:?}");
