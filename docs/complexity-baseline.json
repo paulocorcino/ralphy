@@ -668,11 +668,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/spend/rows.rs": {
-      "classify": [
-        16
-      ]
-    },
     "crates/ralphy-daemon/src/textcodec.rs": {
       "encode": [
         18
