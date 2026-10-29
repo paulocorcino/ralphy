@@ -147,83 +147,145 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         settings.queue.assignee.as_deref(),
     );
 
-    // `--board` emits the Kanban fold (ADR-0036) instead of the flat queue
-    // array; JSON-only, list-only, so it cannot combine with `show <n>` or a
-    // non-JSON format.
+    refuse_queue_mode(args.board, args.push, show, args.format)?;
     if args.board {
+        return print_board(&repo_root, assignee.as_deref());
+    }
+    if args.push {
+        return push_queue(&repo_root, &tracker, &human_return, assignee.as_deref());
+    }
+    match show {
+        Some(number) => print_show(
+            number,
+            &repo_root,
+            &tracker,
+            &human_return,
+            fields.as_deref(),
+            args.format,
+        ),
+        None => print_list(
+            &repo_root,
+            &tracker,
+            &human_return,
+            assignee.as_deref(),
+            fields.as_deref(),
+            args.format,
+        ),
+    }
+}
+
+/// `--board` and `--push` are queue-level modes: neither combines with
+/// `show <n>`, and `--board` prints JSON only.
+fn refuse_queue_mode(board: bool, push: bool, show: Option<u64>, format: Format) -> Result<()> {
+    if board {
         if show.is_some() {
             anyhow::bail!(
                 "`--board` emits the whole board fold and cannot be combined with `show <n>`"
             );
         }
-        if args.format != Format::Json {
+        if format != Format::Json {
             anyhow::bail!("`--board` requires `--format json`");
         }
-        // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
-        // union applies later in the fold, so unassigned issues are present to
-        // union over) and graph-ordered by the same resolver the runner uses
-        // (`build_list_queue` already sorts via `sort_queue_in_graph`); the
-        // open+closed reads feed the Backlog/Closed columns.
-        let queue = build_list_queue(&repo_root, None)?;
-        let open = github::list_all_open_meta(&repo_root)?;
-        let closed = github::list_closed_board(&repo_root)?;
-        let repo_labels = github::list_repo_labels(&repo_root)?;
-        // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
-        let login = match assignee.as_deref() {
-            Some(a) => Some(github::resolve_login(a, &repo_root)?),
-            None => None,
-        };
-        println!(
-            "{}",
-            render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
+    }
+    if push && show.is_some() {
+        anyhow::bail!(
+            "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
         );
-        return Ok(());
     }
+    Ok(())
+}
 
-    // `--push` emits the whole judged queue as a snapshot event rather than
-    // printing it — the on-demand twin of the runner's enriched `queue.built`.
-    // It is a queue-level operation, so it cannot be combined with `show <n>`.
-    if args.push {
-        if show.is_some() {
-            anyhow::bail!(
-                "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
-            );
-        }
-        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
-        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        // Resolve the assignee scope mark for the snapshot (ADR-0021 §5). Unlike
-        // `ralphy run` (best-effort telemetry), this one-shot explicit command fails
-        // loud on a resolve error — propagate via `?`.
-        let assignee_filter = match assignee.as_deref() {
-            Some(a) => Some(github::resolve_login(a, &repo_root)?),
-            None => None,
-        };
-        return push_snapshot(&repo_root, &view, assignee_filter.as_deref());
+/// The login `assignee` stands for (`@me` is resolved through `gh`), or
+/// `None` when there is no assignee filter.
+fn resolve_login_opt(
+    assignee: Option<&str>,
+    repo_root: &std::path::Path,
+) -> Result<Option<String>> {
+    match assignee {
+        Some(a) => Ok(Some(github::resolve_login(a, repo_root)?)),
+        None => Ok(None),
     }
+}
 
-    if let Some(number) = show {
-        let issue = github::fetch_issue(number, &repo_root)?;
-        // Best-effort: a comment-fetch failure degrades to body-only, never a stop
-        // (matching the runner's own tolerance).
-        let comments = github::issue_comments_detailed(number, &repo_root).unwrap_or_default();
-        let slug = git::project_slug(&repo_root);
-        let history = issue_history(&slug, number);
-        let view = show_view(&issue, &comments, &history, &human_return, &tracker)?;
-        let out = match args.format {
-            Format::Json => render_show_json(&view, fields.as_deref())?,
-            Format::Text => render_show_text(&view),
-        };
-        println!("{out}");
-    } else {
-        let queue = build_list_queue(&repo_root, assignee.as_deref())?;
-        // The list is never a forced selection, so `stop-before` is honoured.
-        let view = resolve_queue_view(&queue, &[], &human_return, &tracker)?;
-        let out = match args.format {
-            Format::Json => render_json(&view, fields.as_deref())?,
-            Format::Text => render_text(&view, assignee.as_deref()),
-        };
-        println!("{out}");
-    }
+/// `--board` emits the Kanban fold (ADR-0036) instead of the flat queue
+/// array.
+fn print_board(repo_root: &std::path::Path, assignee: Option<&str>) -> Result<()> {
+    // Whole-tracker fold: build the Ready subset UNFILTERED (the assignee
+    // union applies later in the fold, so unassigned issues are present to
+    // union over) and graph-ordered by the same resolver the runner uses
+    // (`build_list_queue` already sorts via `sort_queue_in_graph`); the
+    // open+closed reads feed the Backlog/Closed columns.
+    let queue = build_list_queue(repo_root, None)?;
+    let open = github::list_all_open_meta(repo_root)?;
+    let closed = github::list_closed_board(repo_root)?;
+    let repo_labels = github::list_repo_labels(repo_root)?;
+    // The union login: resolve `@me` once; `None` ⇒ unassigned-only default.
+    let login = resolve_login_opt(assignee, repo_root)?;
+    println!(
+        "{}",
+        render_board_json(&queue, &open, &closed, login.as_deref(), &repo_labels)?
+    );
+    Ok(())
+}
+
+/// `--push` emits the whole judged queue as a snapshot event rather than
+/// printing it — the on-demand twin of the runner's enriched `queue.built`.
+fn push_queue(
+    repo_root: &std::path::Path,
+    tracker: &GhTracker,
+    human_return: &[String],
+    assignee: Option<&str>,
+) -> Result<()> {
+    let queue = build_list_queue(repo_root, assignee)?;
+    let view = resolve_queue_view(&queue, &[], human_return, tracker)?;
+    // Resolve the assignee scope mark for the snapshot (ADR-0021 §5). Unlike
+    // `ralphy run` (best-effort telemetry), this one-shot explicit command fails
+    // loud on a resolve error — propagate via `?`.
+    let assignee_filter = resolve_login_opt(assignee, repo_root)?;
+    push_snapshot(repo_root, &view, assignee_filter.as_deref())
+}
+
+/// `ralphy issues show <number>`: the detail view of one issue.
+fn print_show(
+    number: u64,
+    repo_root: &std::path::Path,
+    tracker: &GhTracker,
+    human_return: &[String],
+    fields: Option<&[String]>,
+    format: Format,
+) -> Result<()> {
+    let issue = github::fetch_issue(number, repo_root)?;
+    // Best-effort: a comment-fetch failure degrades to body-only, never a stop
+    // (matching the runner's own tolerance).
+    let comments = github::issue_comments_detailed(number, repo_root).unwrap_or_default();
+    let slug = git::project_slug(repo_root);
+    let history = issue_history(&slug, number);
+    let view = show_view(&issue, &comments, &history, human_return, tracker)?;
+    let out = match format {
+        Format::Json => render_show_json(&view, fields)?,
+        Format::Text => render_show_text(&view),
+    };
+    println!("{out}");
+    Ok(())
+}
+
+/// `ralphy issues`: the judged queue, as a table or as JSON.
+fn print_list(
+    repo_root: &std::path::Path,
+    tracker: &GhTracker,
+    human_return: &[String],
+    assignee: Option<&str>,
+    fields: Option<&[String]>,
+    format: Format,
+) -> Result<()> {
+    let queue = build_list_queue(repo_root, assignee)?;
+    // The list is never a forced selection, so `stop-before` is honoured.
+    let view = resolve_queue_view(&queue, &[], human_return, tracker)?;
+    let out = match format {
+        Format::Json => render_json(&view, fields)?,
+        Format::Text => render_text(&view, assignee),
+    };
+    println!("{out}");
     Ok(())
 }
 

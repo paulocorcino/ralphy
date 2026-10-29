@@ -89,11 +89,6 @@
         11
       ]
     },
-    "crates/ralphy-cli/src/issues.rs": {
-      "issues_cmd": [
-        18
-      ]
-    },
     "crates/ralphy-cli/src/issues/render.rs": {
       "render_board_json": [
         12
