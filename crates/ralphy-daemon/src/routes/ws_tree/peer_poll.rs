@@ -354,8 +354,23 @@ pub(crate) fn close_peer_tree_poller(poller: PeerTreePoller) {
     poller.task.abort();
     tokio::spawn(async move {
         let body = serde_json::json!({ "sub": poller.sub });
-        let _ = peer::client::post_json(&poller.peer, "/api/peer/tree/close", &body).await;
+        let closed = peer::client::post_json(&poller.peer, "/api/peer/tree/close", &body).await;
+        log_unconfirmed_close(&poller.peer.daemon_id, &poller.sub, closed);
     });
+}
+
+/// Say when the peer did not confirm a close. Its subscription then holds its
+/// watches until the peer's idle sweep ends it.
+fn log_unconfirmed_close(peer: &str, sub: &str, closed: anyhow::Result<(u16, Vec<u8>)>) {
+    match closed {
+        Ok((200, _)) => {}
+        Ok((code, _)) => {
+            tracing::warn!(peer = %peer, sub = %sub, status = code, "a peer refused to close a tree subscription");
+        }
+        Err(error) => {
+            tracing::warn!(peer = %peer, sub = %sub, error = %format!("{error:#}"), "closing a peer tree subscription failed");
+        }
+    }
 }
 
 #[cfg(test)]
