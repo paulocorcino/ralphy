@@ -592,11 +592,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/src/peer/client.rs": {
-      "handshake": [
-        18
-      ]
-    },
     "crates/ralphy-daemon/src/rekey.rs": {
       "rekey_desk": [
         13
