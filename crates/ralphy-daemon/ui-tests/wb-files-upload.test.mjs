@@ -4,13 +4,12 @@
 // it does not list in `uses` (ADR-0073 D4).
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, UI } from "./harness.mjs";
+import { bindingNames, loadComponent, partMarkup } from "./harness.mjs";
 import { askUpload, conflictFor, limitMb, pickFiles, REST_MS, restTracker, treeDrop } from "../assets/ui/wb-files-upload.ts";
 import { treeMenu } from "../assets/ui/wb-files-menu.ts";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the upload dialog's markup.
+const PART = "wb-files-upload.part.html";
 const MB = 1024 * 1024;
 
 after(() => {
@@ -43,7 +42,7 @@ const tick = () => new Promise((r) => setImmediate(r));
 test("every name the markup of wbUploadDialog reads is its own", () => {
   const { scope: state, data } = loadComponent("wbUploadDialog");
   assert.deepEqual(data.uses, []);
-  const markup = componentMarkup(HTML, "wbUploadDialog");
+  const markup = partMarkup(PART);
   let read = 0;
   for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
     if (attr === "x-data") continue;
@@ -55,7 +54,7 @@ test("every name the markup of wbUploadDialog reads is its own", () => {
     }
   }
   assert.ok(read > 8, `the markup was read: ${read} names`);
-  assert.match(HTML, /x-data="wbUploadDialog" @workbench:upload-open\.window="openUpload\(\$event\.detail\)"/);
+  assert.match(partMarkup(PART), /x-data="wbUploadDialog" @workbench:upload-open\.window="openUpload\(\$event\.detail\)"/);
 });
 
 test("the dialog refuses a file over the limit and marks the names that exist", async () => {

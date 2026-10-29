@@ -39,3 +39,23 @@ fn the_fence_has_a_stage() {
         ]
     );
 }
+
+/// A name that only contains a page constant is another name, not that page.
+#[test]
+fn a_longer_name_that_holds_a_page_constant_is_not_that_page() {
+    let pins = pins_of(
+        r#"
+fn a_prefixed_name_is_not_the_shell() {
+    let html = super::MY_INDEX_HTML;
+    assert!(html.contains("id=\"rail\""));
+}
+
+fn a_suffixed_name_is_not_the_shell() {
+    let html = super::INDEX_HTML_X;
+    assert!(html.contains("id=\"rail\""));
+}
+"#,
+    );
+    let assets: Vec<Option<&str>> = pins.iter().map(|p| p.asset.as_deref()).collect();
+    assert_eq!(assets, [None, None]);
+}

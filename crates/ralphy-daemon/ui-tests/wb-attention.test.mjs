@@ -7,12 +7,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { bindingNames, UI, withoutComments } from "./harness.mjs";
+import { bindingNames, partMarkup } from "./harness.mjs";
 import { LINK_BEAT_MS, LINK_TRIES, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// The part that holds the rail button and its panel.
+const PART = "wb-attention.part.html";
 const PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
 
 function fixture(name) {
@@ -129,7 +132,7 @@ test("a run's row opens the run, and a console's row goes to the console", (t) =
     assert.equal(data.actionOf({ ...run, kind }), "console", kind);
   }
   // Each action is one button of the row, shown by the row's action.
-  const markup = attentionElement();
+  const markup = partMarkup(PART);
   assert.match(markup, /x-show="actionOf\(r\) === 'console'" @click="goTo\(r\)">Go to the console</);
   assert.match(markup, /x-show="actionOf\(r\) === 'run'" @click="openRun\(r\)">Open the run</);
 });
@@ -149,7 +152,7 @@ test("only a finished run can be dismissed", async (t) => {
   assert.equal(data.canDismiss(finished[0]), true);
   assert.equal(data.actionOf(finished[0]), "none", "a finished run is no longer in the Runs panel");
   assert.equal(data.kindOf(finished[0]), "A run stopped on this issue");
-  const markup = attentionElement();
+  const markup = partMarkup(PART);
   assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)">Dismiss</);
 
   // "Dismiss" posts the id, then reads the list again.
@@ -176,22 +179,9 @@ test("an attention.dirty push reads the list again", (t) => {
   assert.deepEqual(sent, ["workbench:attention-reread"]);
 });
 
-// The rail button and its panel, from the element's `<div` to the `</div>`
-// that closes it, with comments cut out.
-function attentionElement() {
-  const html = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
-  const start = html.lastIndexOf("<div", html.indexOf('x-data="wbAttention"'));
-  let depth = 0;
-  for (const m of html.slice(start).matchAll(/<div\b|<\/div>/g)) {
-    depth += m[0] === "</div>" ? -1 : 1;
-    if (depth === 0) return html.slice(start, start + m.index + m[0].length);
-  }
-  throw new Error("the attention element is not closed");
-}
-
 test("every name the markup of wbAttention reads is its own", (t) => {
   const { data } = page(t);
-  const markup = attentionElement();
+  const markup = partMarkup(PART);
   let read = 0;
   for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
     if (attr === "x-data" || attr === "x-for" || attr === ":key") continue;
@@ -239,7 +229,7 @@ test("the notification is off by default", async (t) => {
   assert.deepEqual(asked, [], "no permission is asked before the switch");
   assert.equal(stored.size, 0);
   assert.deepEqual(shown, []);
-  assert.match(attentionElement(), /Notify me in this browser/);
+  assert.match(partMarkup(PART), /Notify me in this browser/);
 
   await data.setNotify(true);
   assert.equal(asked.length, 1, "turning it on asks once");
@@ -383,7 +373,7 @@ test("the panel shows the Telegram state of this daemon", async (t) => {
   assert.equal(data.telegram, "Telegram: sends from this machine");
   await data.readTelegram();
   assert.equal(data.telegram, "Telegram: off");
-  assert.match(attentionElement(), /x-text="telegram"/);
+  assert.match(partMarkup(PART), /x-text="telegram"/);
 });
 
 test("the footer shows each daemon's telegram state", async (t) => {
@@ -403,5 +393,5 @@ test("the footer shows each daemon's telegram state", async (t) => {
   await data.readTelegram();
   assert.equal(data.telegram, "Telegram: through octopus", "the main's name when it is known");
   assert.deepEqual(data.telegramPeers, []);
-  assert.match(attentionElement(), /x-for="r in telegramPeers"/);
+  assert.match(partMarkup(PART), /x-for="r in telegramPeers"/);
 });

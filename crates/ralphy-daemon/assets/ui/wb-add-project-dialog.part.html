@@ -1,0 +1,56 @@
+    <div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open.window="openAddProject()">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('addProject.open', () => closeAddProject())">
+      <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Add a project">
+        <div class="modal-head">
+          <svg x-icon="'folder-plus'"></svg>
+          <span class="modal-title">Add a project</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeAddProject()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body host-body add-project-body">
+          <label class="run-label" for="add-project-where">Where</label>
+          <select id="add-project-where" class="host-input" :value="addProject.daemon"
+                  :disabled="addProject.adding" @change="addProjectWhere($event.target.value)">
+            <template x-for="w in addProjectPlaces()" :key="w.id">
+              <option :value="w.id" :disabled="w.disabled" :title="w.reason" x-text="w.label"></option>
+            </template>
+          </select>
+
+          <label class="run-label" for="add-project-folder" x-show="addProjectListable()">Folder</label>
+          <input id="add-project-folder" class="host-input" x-ref="addProjectFolder" x-show="addProjectListable()"
+                 :value="addProject.text" :disabled="addProject.adding"
+                 @input="addProjectText($event.target.value)" @keydown="addProjectKey($event)"
+                 role="combobox" aria-autocomplete="list" aria-controls="add-project-list"
+                 :aria-expanded="addProjectEntries().length > 0"
+                 autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+          <p class="run-help" x-show="addProjectHelp()" x-text="addProjectHelp()"></p>
+          <p class="side-error" role="alert" x-show="addProject.error" x-text="addProject.error"></p>
+
+          <ul id="add-project-list" class="add-project-list" role="listbox" aria-label="Folders" x-show="addProjectListable()"
+              @pointerdown="_addProjectTouch = $event.pointerType !== 'mouse'">
+            <template x-for="(e, i) in addProjectEntries()" :key="e.name">
+              <li role="option" class="add-project-item" :class="{ active: i === addProject.active }"
+                  :aria-selected="i === addProject.active" @click="addProjectPick(e, $event)">
+                <svg x-icon="'folder'"></svg>
+                <span class="add-project-name" x-text="e.name"></span>
+                <span class="add-project-mark" x-show="e.up" x-text="'Up one folder'"></span>
+                <span class="add-project-mark" x-show="e.error" x-text="'No access'"></span>
+                <span class="add-project-mark" x-show="!e.error && e.added" x-text="'Added'"></span>
+                <span class="add-project-mark" x-show="!e.error && !e.added && e.repo" x-text="'Repository'"></span>
+              </li>
+            </template>
+          </ul>
+          <p class="run-help" x-show="addProject.loading" x-text="'Loading…'"></p>
+          <p class="run-help" x-show="addProject.listing && addProject.listing.more > 0"
+             x-text="addProject.listing ? addProject.listing.more + ' more. Type to filter.' : ''"></p>
+        </div>
+        <div class="modal-foot">
+          <span class="host-foot">
+            <button class="btn" @click="closeAddProject()">Cancel</button>
+            <button class="btn accent" @click="addProjectSubmit()" :disabled="addProjectPrimary().disabled"
+                    x-text="addProjectPrimary().label"></button>
+          </span>
+        </div>
+      </div>
+    </div>
+    </div>

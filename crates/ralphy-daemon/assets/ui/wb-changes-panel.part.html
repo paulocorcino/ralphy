@@ -1,0 +1,200 @@
+      <div class="changes-view" x-data="wbChanges" x-show="sideView === 'changes'">
+        <div class="side-head">
+          <span>Changes</span>
+          <!-- WHICH TREE this panel reads (#407): the Files bar's checkout chip
+               again, same menu, same pick. Without it the only place naming the
+               selected worktree is a chip on another rail view, and the sync
+               row's branch is not a substitute — a worktree and its branch need
+               not share a name. Present once the repo has a worktree. -->
+          <button
+            class="checkout-chip"
+            x-show="$store.projects.openProject() && $store.checkouts.hasWorktrees($store.projects.openProject())"
+            @click.stop="checkoutChipClick($store.projects.openProject(), $event.currentTarget)"
+            :title="$store.projects.openProject() ? $store.checkouts.checkoutTitle($store.projects.openProject()) : ''"
+          >
+            <i class="bi" :class="$store.checkouts.checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+            <span class="checkout-chip-name" x-text="$store.checkouts.checkoutOf($store.projects.openSlug) || 'primary'"></span>
+            <i class="bi bi-chevron-down"></i>
+          </button>
+          <span class="spacer"></span>
+          <!-- A failed read renders `—`, never `0`: a quiet zero would let a
+               broken daemon read exactly like a clean tree. -->
+          <span
+            class="count"
+            :class="{ zero: $store.checkouts.changesCount[$store.projects.openSlug] === 0 }"
+            x-text="$store.projects.openSlug ? ($store.checkouts.changesCount[$store.projects.openSlug] ?? '—') : ''"
+            :title="changesReadError[$store.projects.openSlug] || 'Working-tree changes'"
+          ></span>
+        </div>
+        <!-- The toolbar ships with the one act that exists today. It is sized
+             like the future stage/unstage row on purpose: an empty reserved box
+             proves nothing about the layout budget. -->
+        <div class="chg-toolbar">
+          <button
+            class="head-act"
+            :disabled="!$store.projects.openSlug"
+            @click="loadChanges($store.projects.openSlug); loadSync($store.projects.openSlug)"
+            title="Refresh changes"
+            aria-label="Refresh changes"
+          >
+            <svg x-icon="'refresh-cw'"></svg>
+          </button>
+        </div>
+        <div class="side-empty" x-show="!$store.projects.openSlug">Open a project to see its changes</div>
+        <div class="chg-body" x-show="$store.projects.openSlug">
+          <!-- Two groups, each header AND its list gated on that group's
+               length, so a clean tree renders neither headline (#315). The
+               `:key` is prefixed per group so the two rows a
+               staged-then-modified path produces stay distinguishable in a
+               log or a DOM dump; Alpine itself keys per `<template>`, so the
+               prefix is legibility, not a correctness requirement. -->
+          <div class="changes-list">
+            <!-- The sync row (#316) is pure STATUS: the acts it used to carry
+                 now live in the footer bar below the compose box, where the
+                 row's width no longer has to be shared between what the branch
+                 says and what the operator can do to it. -->
+            <div class="sync-row">
+              <span class="sync-branch" x-text="(syncByProject[$store.projects.openSlug] || {}).branch"></span>
+              <!-- The counts are meaningless without the ref they measure
+                   against, and the row has no width for it — so the upstream
+                   rides the hover title. -->
+              <span class="sync-counts" x-text="(syncByProject[$store.projects.openSlug] || {}).counts"
+                    :title="(syncByProject[$store.projects.openSlug] || {}).upstream"></span>
+              <span class="sync-note" x-text="(syncByProject[$store.projects.openSlug] || {}).note"></span>
+              <span class="sync-fetched" x-text="(syncByProject[$store.projects.openSlug] || {}).fetched"></span>
+            </div>
+            <!-- The row action is a real button in the flow, never a
+                 hover-revealed affordance: the panel has to be operable on a
+                 touch screen, where there is no hover to reveal anything. A
+                 group action expands in the BROWSER to the paths the daemon
+                 already sent (`groupPaths`), so no pattern is ever composed. -->
+            <div class="chg-group-head" x-show="(changesStaged[$store.projects.openSlug] || []).length">
+              <span class="chg-group-label">Staged changes</span>
+              <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
+              <button class="chg-act" data-act="unstage-all" :disabled="$store.connection.writeLocked()"
+                      :title="rowActTitle('unstage', true)" aria-label="Unstage all changes"
+                      @click.stop="unstagePaths($store.projects.openSlug, groupPaths(changesStaged[$store.projects.openSlug], true))">−</button>
+            </div>
+            <ul class="chg-group" x-show="(changesStaged[$store.projects.openSlug] || []).length">
+              <template x-for="c in (changesStaged[$store.projects.openSlug] || [])" :key="'s:' + c.path">
+                <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                    @click="$store.tabs.openDiff($store.projects.openSlug, c)" @keydown.enter="$store.tabs.openDiff($store.projects.openSlug, c)">
+                  <span class="chg-face">
+                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                    <span class="chg-name" x-text="c.name"></span>
+                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                  </span>
+                  <button class="chg-act" data-act="unstage" :disabled="$store.connection.writeLocked()"
+                          :title="rowActTitle('unstage')" aria-label="Unstage changes"
+                          @click.stop="unstagePaths($store.projects.openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
+                </li>
+              </template>
+            </ul>
+            <div class="chg-group-head" x-show="(changesUnstaged[$store.projects.openSlug] || []).length">
+              <span class="chg-group-label">Changes</span>
+              <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
+              <button class="chg-act" data-act="stage-all" :disabled="$store.connection.writeLocked()"
+                      :title="rowActTitle('stage', true)" aria-label="Stage all changes"
+                      @click.stop="stagePaths($store.projects.openSlug, groupPaths(changesUnstaged[$store.projects.openSlug]))">+</button>
+            </div>
+            <ul class="chg-group" x-show="(changesUnstaged[$store.projects.openSlug] || []).length">
+              <template x-for="c in (changesUnstaged[$store.projects.openSlug] || [])" :key="'u:' + c.path">
+                <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                    @click="$store.tabs.openDiff($store.projects.openSlug, c)" @keydown.enter="$store.tabs.openDiff($store.projects.openSlug, c)">
+                  <span class="chg-face">
+                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                    <span class="chg-name" x-text="c.name"></span>
+                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                  </span>
+                  <button class="chg-act" data-act="stage" :disabled="$store.connection.writeLocked()"
+                          :title="rowActTitle('stage')" aria-label="Stage changes"
+                          @click.stop="stagePaths($store.projects.openSlug, [c.path])">+</button>
+                  <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
+                       index, so a discard offered on a staged row would claim to
+                       throw away something it keeps. And NOT on a conflicted row:
+                       an unmerged path is all worktree work, so it lands in this
+                       group, but `restore --worktree` refuses it (`path … is
+                       unmerged`) — the core refuses it by value too. -->
+                  <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
+                          :disabled="$store.connection.writeLocked()"
+                          :title="rowActTitle('discard')" aria-label="Discard changes"
+                          @click.stop="discardRow($store.projects.openSlug, c)">×</button>
+                </li>
+              </template>
+            </ul>
+          </div>
+          <!-- The commit box. Its button NAMES the branch the commit lands on:
+               the operator is composing a commit in a sidebar with no prompt to
+               read the branch off. Every disabled control here states its reason
+               in the title — a disabled control that explains itself is this
+               shell's own idiom (`branchChipTitle`). -->
+          <div class="chg-compose">
+            <textarea
+              class="chg-msg"
+              x-model="commitMsg"
+              @input="commitMsgSlug = $store.projects.openSlug"
+              :disabled="$store.connection.writeLocked()"
+              placeholder="Message"
+              :title="commitTitle()"
+              rows="2"
+            ></textarea>
+            <button
+              class="chg-commit"
+              :disabled="!canCommit()"
+              :title="commitTitle()"
+              x-text="commitTarget().label"
+              @click="commitStaged($store.projects.openSlug)"
+            ></button>
+          </div>
+          <!-- The authority's answer to an act dispatched from THIS panel. It
+               has to render here, and not only in the runs toolbar: the acts
+               below are clicked in the left rail, while `$store.modals.flash` writes
+               into `aside.runs`, which is `x-show="runsOpen"` and closed by
+               default — so every refusal in this panel was written to a node
+               that was not in the DOM, and a refused Push read as a dead
+               button. Same contract as `runs-verb-error`: the message STAYS
+               until the next act, because a 2.6 s flash is a message an
+               operator reading their own diff can miss. -->
+          <div class="chg-error" x-show="changesError">
+            <span x-text="changesError"></span>
+            <button data-act="chg-error-dismiss" @click="changesError = ''"
+                    title="Dismiss">✕</button>
+          </div>
+          <!-- The remote bar: the acts that talk to the upstream, parked at the
+               panel's bottom edge under the compose box. They are the
+               operator's own clicks — nothing here fires on open or on a timer.
+               Each carries its label beside the icon: an icon-only remote act
+               is the one place in this panel where a mis-click costs a network
+               round trip against the wrong branch. -->
+          <div class="chg-bar">
+            <!-- While one act is out (`syncBusy`) the whole bar locks and the
+                 busy act trades its icon for a ring: the three share one
+                 upstream, and a push is the longest wait in this panel. The
+                 ring is a sibling the CSS swaps in. -->
+            <button class="bar-act" data-act="fetch" :disabled="$store.connection.writeLocked() || !!syncBusy"
+                    :class="{ busy: syncBusy === 'fetch' }"
+                    :title="syncBusyTitle('fetch') || $store.connection.writeLockReason() || 'Fetch from the upstream'"
+                    @click.stop="syncFetch($store.projects.openSlug)">
+              <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
+            </button>
+            <!-- Pull is hidden, not dimmed, on a branch with no upstream: it is
+                 not inert for a while, it has nothing to pull from until the
+                 Publish beside it runs. The freed width goes to Publish, whose
+                 label does not fit in a third of the bar. -->
+            <button class="bar-act" data-act="pull" :disabled="$store.connection.writeLocked() || !!syncBusy || !!pullBlocked()"
+                    x-show="!pullBlocked()"
+                    :class="{ busy: syncBusy === 'pull' }"
+                    :title="syncBusyTitle('pull') || pullBlocked() || $store.connection.writeLockReason() || 'Pull from the upstream (fast-forward only)'"
+                    @click.stop="syncPull($store.projects.openSlug)">
+              <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
+            </button>
+            <button class="bar-act bar-push" data-act="push" :disabled="$store.connection.writeLocked() || !!syncBusy"
+                    :class="{ busy: syncBusy === 'push' }"
+                    :title="pushTitle()" @click.stop="syncPush($store.projects.openSlug)">
+              <svg x-icon="'cloud-upload'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
+            </button>
+          </div>
+        </div>
+      </div>

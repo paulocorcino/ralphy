@@ -6,11 +6,10 @@
 // field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, withoutComments } from "./harness.mjs";
 
-const HTML = readFileSync(join(UI, "index.html"), "utf8");
+// The part that holds the Changes view's markup.
+const PART = "wb-changes-panel.part.html";
 
 // `init()` starts the backstop on the global timer; here it never ticks.
 // Returns the intervals it asked for.
@@ -73,7 +72,7 @@ test("wbChanges lists only shell() names in uses, and its members left shell()",
 
 test("every name the markup of wbChanges reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbChanges");
-  const markup = componentMarkup(HTML, "wbChanges");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variable of the two groups of rows, and a global.
   const loopVars = new Set(["c", "Boolean"]);
@@ -91,8 +90,8 @@ test("every name the markup of wbChanges reads is its own or in its uses list", 
 });
 
 test("nothing outside the Changes view element names its state", () => {
-  const start = HTML.indexOf('x-data="wbChanges"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  // The page without the Changes part: the shell and the other components.
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["changesError", "changesReadError", "changesStaged", "changesUnstaged", "syncByProject", "syncBusy", "commitMsg", "loadChanges", "loadSync", "stagePaths", "discardRow", "commitStaged", "syncPush", "pullBlocked", "rowActTitle"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }

@@ -166,19 +166,19 @@
       "reason": "Projects is the name of the panel the folder is already in (#501)."
     },
     {
-      "file": "index.html",
+      "file": "wb-release-dialogs.part.html",
       "text": "ralphy update",
       "rule": "banned:ralphy",
       "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
     },
     {
-      "file": "index.html",
+      "file": "wb-release-dialogs.part.html",
       "text": "ralphy update",
       "rule": "casing:first",
       "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
     },
     {
-      "file": "index.html",
+      "file": "wb-release-dialogs.part.html",
       "text": "What's new",
       "rule": "contraction",
       "reason": "The fixed name of this panel in most products. Readers know the phrase as a whole (#426)."
@@ -244,13 +244,13 @@
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "index.html",
+      "file": "wb-runs-panel.part.html",
       "text": "ralphy",
       "rule": "banned:ralphy",
       "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
     },
     {
-      "file": "index.html",
+      "file": "wb-runs-panel.part.html",
       "text": "ralphy",
       "rule": "casing:first",
       "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
