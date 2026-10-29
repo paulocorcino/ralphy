@@ -269,46 +269,70 @@ pub fn render_notes(record: &ReleaseRecord) -> String {
     if record.entries.is_empty() {
         return "No user-visible changes in this release.\n".to_string();
     }
-    let launched: Vec<&str> = record
-        .entries
-        .iter()
-        .filter(|e| e.kind == Kind::Feature)
-        .filter_map(|e| e.topic.as_deref())
-        .collect();
+    let launched = launched_topics(&record.entries);
 
     let mut out = String::new();
     let mut current: Option<Kind> = None;
     let mut seen: Vec<(Kind, &str)> = Vec::new();
     for (i, entry) in record.entries.iter().enumerate() {
-        if let Some(topic) = entry.topic.as_deref() {
-            if entry.kind == Kind::Fix && launched.contains(&topic) {
-                continue;
-            }
-            if seen.contains(&(entry.kind, topic)) {
-                continue;
-            }
-            seen.push((entry.kind, topic));
+        if is_repeat(entry, &launched, &mut seen) {
+            continue;
         }
-        // A topic's line is the first headline any of its fragments carries.
-        let source = match entry.topic.as_deref() {
-            Some(topic) => record.entries[i..]
-                .iter()
-                .filter(|e| e.kind == entry.kind && e.topic.as_deref() == Some(topic))
-                .find(|e| e.headline.is_some())
-                .unwrap_or(entry),
-            None => entry,
-        };
+        let source = topic_source(&record.entries[i..], entry);
         if current != Some(entry.kind) {
             out.push_str(&format!("\n### {}\n\n", entry.kind.page_heading()));
             current = Some(entry.kind);
         }
-        let line = match source.headline.as_deref() {
-            Some(headline) => headline.to_string(),
-            None => first_sentence(&source.text),
-        };
-        out.push_str(&bullet(&line, &source.id));
+        out.push_str(&bullet(&notes_line(source), &source.id));
     }
     out
+}
+
+/// The topics of the features in a release.
+fn launched_topics(entries: &[Entry]) -> Vec<&str> {
+    entries
+        .iter()
+        .filter(|e| e.kind == Kind::Feature)
+        .filter_map(|e| e.topic.as_deref())
+        .collect()
+}
+
+/// Does the page already have a line for this entry's topic? A fix of a
+/// launched topic has none of its own. An entry with a topic that the page does
+/// not have yet is recorded in `seen`.
+fn is_repeat<'a>(entry: &'a Entry, launched: &[&str], seen: &mut Vec<(Kind, &'a str)>) -> bool {
+    let Some(topic) = entry.topic.as_deref() else {
+        return false;
+    };
+    if entry.kind == Kind::Fix && launched.contains(&topic) {
+        return true;
+    }
+    if seen.contains(&(entry.kind, topic)) {
+        return true;
+    }
+    seen.push((entry.kind, topic));
+    false
+}
+
+/// The entry whose line stands for `entry`'s topic: the first headline any of
+/// its fragments in `rest` carries, else `entry` itself.
+fn topic_source<'a>(rest: &'a [Entry], entry: &'a Entry) -> &'a Entry {
+    match entry.topic.as_deref() {
+        Some(topic) => rest
+            .iter()
+            .filter(|e| e.kind == entry.kind && e.topic.as_deref() == Some(topic))
+            .find(|e| e.headline.is_some())
+            .unwrap_or(entry),
+        None => entry,
+    }
+}
+
+/// The page line of an entry: its headline, else the first sentence of its prose.
+fn notes_line(source: &Entry) -> String {
+    match source.headline.as_deref() {
+        Some(headline) => headline.to_string(),
+        None => first_sentence(&source.text),
+    }
 }
 
 fn render_entries(entries: &[Entry]) -> String {

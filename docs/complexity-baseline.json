@@ -793,11 +793,6 @@
         13
       ]
     },
-    "crates/xtask/src/changelog.rs": {
-      "render_notes": [
-        18
-      ]
-    },
     "crates/xtask/src/oversized.rs": {
       "code_lines": [
         11
