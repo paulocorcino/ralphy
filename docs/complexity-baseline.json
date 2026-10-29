@@ -620,11 +620,6 @@
         14
       ]
     },
-    "crates/ralphy-daemon/src/routes/guard.rs": {
-      "require_auth": [
-        18
-      ]
-    },
     "crates/ralphy-daemon/src/routes/presence.rs": {
       "watch_stores": [
         13
