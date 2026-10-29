@@ -8,7 +8,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { bindingNames, componentMarkup, loadComponent, UI, withoutComments } from "./harness.mjs";
+import { assembledPage, bindingNames, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
+
+// The part that holds the dialog's markup.
+const PART = "wb-add-project-dialog.part.html";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -136,7 +139,7 @@ test("dialog: a pick by touch does not focus the field; by mouse or key it does"
   state.addProjectPick({ name: "fincal" });
   assert.equal(focused, 2);
 
-  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const html = partMarkup(PART);
   assert.match(html, /id="add-project-list"[^>]*@pointerdown="_addProjectTouch = \$event\.pointerType !== 'mouse'"/);
   assert.match(html, /@click="addProjectPick\(e, \$event\)"/);
 });
@@ -171,7 +174,7 @@ test("the empty state offers Add a project", () => {
 });
 
 test("the dialog shows folder names and errors as text only", () => {
-  const dialogHtml = componentMarkup(HTML, "wbAddProjectDialog");
+  const dialogHtml = partMarkup(PART);
   assert.ok(dialogHtml.length > 0);
   assert.doesNotMatch(dialogHtml, /x-html/);
   assert.match(dialogHtml, /role="alert" x-show="addProject.error" x-text="addProject.error"/);
@@ -189,7 +192,7 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
-  const markup = componentMarkup(HTML, "wbAddProjectDialog");
+  const markup = partMarkup(PART);
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // `x-data` names the component; `x-for` adds its loop variables.
   const loopVars = new Set();
@@ -223,7 +226,7 @@ test("the dialog's scope refuses a shell() name outside uses, and any shell() wr
 });
 
 test("both openers ask the dialog to open with workbench:add-project-open", () => {
-  const html = withoutComments(HTML);
+  const html = withoutComments(assembledPage("index.html"));
   for (const opener of [
     html.match(/<button class="side-refresh side-add-project"[^>]*>/)[0],
     html.match(/<button class="btn accent"[^>]*workbench:add-project-open[^>]*>/)[0],
@@ -235,8 +238,7 @@ test("both openers ask the dialog to open with workbench:add-project-open", () =
     /<div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open\.window="openAddProject\(\)">/,
   );
   // Nothing outside the component names its state.
-  const start = HTML.indexOf('x-data="wbAddProjectDialog"');
-  const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
+  const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["addProject", "_addProjectTouch", "openAddProject", "closeAddProject"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
