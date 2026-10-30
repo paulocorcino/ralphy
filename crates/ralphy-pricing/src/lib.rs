@@ -4,6 +4,13 @@
 //! plus a bare-id slug overlay; an optional disk cache and `pricing.toml`
 //! override both. A model absent from every layer reports **unknown** cost
 //! (`None`) — never `0`, which would hide spend.
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "nextest runs each test in its own process, so a test may change its environment"
+    )
+)]
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -60,7 +67,10 @@ struct PricingTomlFile {
 /// Disk-cache envelope (ADR-0034 A6): already-normalized `data`, no re-ingest.
 #[derive(Debug, Deserialize)]
 struct PricingCacheFile {
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "read by no code; the envelope keeps the file's own shape"
+    )]
     timestamp: String,
     data: BTreeMap<String, ModelPrice>,
 }
@@ -387,6 +397,16 @@ mod tests {
     /// `cargo test`'s parallel runner can't race them (mirrors telegram config).
     pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    /// Remove a scratch directory a test made. It may be gone already, and a
+    /// leftover directory in the temp dir fails nothing.
+    pub(super) fn remove_scratch(dir: &std::path::Path) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "cleanup of a test directory that may be gone, and no test reads it after"
+        )]
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     pub(super) fn one_million_each() -> TokenCounts {
         TokenCounts {
             input: 1_000_000,
@@ -593,7 +613,7 @@ mod tests {
         );
 
         std::env::remove_var("RALPHY_PRICING_FILE");
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -619,7 +639,7 @@ mod tests {
             "offline + override must still reprice; got {cost}"
         );
         std::env::remove_var("RALPHY_PRICING_FILE");
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -701,6 +721,6 @@ mod tests {
 
         std::env::remove_var("RALPHY_PRICING_CACHE");
         std::env::remove_var("RALPHY_PRICING_FILE");
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 }

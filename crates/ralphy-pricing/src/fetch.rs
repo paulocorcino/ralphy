@@ -191,6 +191,10 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the rename error is the one to return; a failed cleanup would mask it"
+            )]
             let _ = std::fs::remove_file(&tmp);
             Err(e)
         }
@@ -200,7 +204,7 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{one_million_each, ENV_LOCK};
+    use crate::tests::{one_million_each, remove_scratch, ENV_LOCK};
     use crate::PriceTable;
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -298,11 +302,23 @@ mod tests {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         // Blocking reads for the request body are fine once connected.
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "a failure shows in the read that follows"
+                        )]
                         let _ = stream.set_nonblocking(false);
                         accepts_bg.fetch_add(1, Ordering::SeqCst);
                         let line = read_request_line(&mut stream);
                         assert!(line.starts_with("GET "), "expected GET, got: {line:?}");
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "the test client may have closed its end before the reply"
+                        )]
                         let _ = stream.write_all(&response);
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "the test client may have closed its end before the reply"
+                        )]
                         let _ = stream.flush();
                     }
                     Err(e)
@@ -376,7 +392,7 @@ mod tests {
         let cache = temp_cache_path("stale");
         // Missing cache ⇒ stale.
         refresh_if_stale(&opts(&url, &cache, false, false));
-        handle.join().ok();
+        handle.join().expect("server thread");
 
         assert_eq!(accepts.load(Ordering::SeqCst), 1, "exactly one GET");
         let written = std::fs::read_to_string(&cache).expect("cache written");
@@ -397,7 +413,7 @@ mod tests {
             "$0 bare key must not appear either"
         );
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     #[test]
@@ -418,14 +434,14 @@ mod tests {
         let (port, accepts, handle) = serve_n(http_response(200, &body), 1);
         let url = format!("http://127.0.0.1:{port}/api.json");
         refresh_if_stale(&opts(&url, &cache, true, false));
-        handle.join().ok();
+        handle.join().expect("server thread");
         assert_eq!(
             accepts.load(Ordering::SeqCst),
             1,
             "force must GET despite fresh cache"
         );
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     #[test]
@@ -439,14 +455,14 @@ mod tests {
         write_cache(&cache, &old, 5.0);
 
         refresh_if_stale(&opts(&url, &cache, false, false));
-        handle.join().ok();
+        handle.join().expect("server thread");
         assert_eq!(
             accepts.load(Ordering::SeqCst),
             1,
             "timestamp ≥25h ago must GET"
         );
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     /// A fetch that fails falls back: after its retries it creates no cache, and
@@ -484,12 +500,12 @@ mod tests {
             std::fs::write(&cache, prior).expect("prior");
             refresh_if_stale(&opts(&url, &cache, true, false));
             if let Some((_, _, handle)) = server {
-                handle.join().ok();
+                handle.join().expect("server thread");
             }
             let after = std::fs::read(&cache).unwrap();
             assert_eq!(after, prior, "{case}: must not rewrite prior cache");
 
-            let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+            remove_scratch(cache.parent().unwrap());
         }
     }
 
@@ -503,7 +519,7 @@ mod tests {
         let (port, accepts, handle) = serve_n(http_response(200, &body), 1);
         let url = format!("http://127.0.0.1:{port}/api.json");
         assert!(fetch_body(&url).is_err(), "an oversized body was read");
-        handle.join().ok();
+        handle.join().expect("server thread");
         assert_eq!(
             accepts.load(Ordering::SeqCst),
             1,
@@ -516,9 +532,9 @@ mod tests {
         let (port, _accepts, handle) = serve_n(http_response(200, &body), 1);
         let url = format!("http://127.0.0.1:{port}/api.json");
         refresh_if_stale(&opts(&url, &cache, true, false));
-        handle.join().ok();
+        handle.join().expect("server thread");
         assert_eq!(std::fs::read(&cache).unwrap(), prior);
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     #[test]
@@ -531,7 +547,7 @@ mod tests {
         let before = std::fs::read(&cache).unwrap();
 
         refresh_if_stale(&opts(&url, &cache, true, false));
-        handle.join().ok();
+        handle.join().expect("server thread");
         assert_eq!(accepts.load(Ordering::SeqCst), 1, "no retry on bad JSON");
         let after = std::fs::read(&cache).unwrap();
         assert_eq!(before, after, "malformed body must not poison cache");
@@ -554,7 +570,7 @@ mod tests {
         std::env::remove_var("RALPHY_PRICING_CACHE");
         std::env::remove_var("RALPHY_PRICING_FILE");
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     #[test]
@@ -571,7 +587,7 @@ mod tests {
         assert!(!cache.exists());
         std::env::remove_var("RALPHY_PRICING_OFFLINE");
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     #[test]
@@ -590,7 +606,7 @@ mod tests {
         assert_no_accept(&listener);
         std::env::remove_var("RALPHY_PRICING_FILE");
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        remove_scratch(cache.parent().unwrap());
     }
 
     #[test]
