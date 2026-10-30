@@ -410,10 +410,15 @@ mod tests {
     #[test]
     fn every_issue_status_is_known_to_the_runs_panel() {
         const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.ts");
-        let terminal_line = PANEL
-            .lines()
-            .find(|l| l.contains("TERMINAL: new Set("))
+        // The formatter may put the set on one line or one name per line, so
+        // the text runs from the declaration to the `])` that closes it.
+        let terminal_start = PANEL
+            .find("TERMINAL: new Set([")
             .expect("wb-runs.ts declares a TERMINAL set");
+        let terminal_set = PANEL[terminal_start..]
+            .split("])")
+            .next()
+            .expect("split always yields a first part");
         for status in all_statuses() {
             let wire = status_wire(&status);
             // Each table on its own: a whole-file `contains` stays green when
@@ -425,7 +430,7 @@ mod tests {
                 );
             }
             assert_eq!(
-                terminal_line.contains(&format!("\"{wire}\"")),
+                terminal_set.contains(&format!("\"{wire}\"")),
                 status.is_terminal(),
                 "wb-runs.ts TERMINAL disagrees with IssueStatus::is_terminal on `{wire}`"
             );
