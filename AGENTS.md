@@ -80,6 +80,26 @@ ubiquitous language, and each crate is roughly one bounded context.
   `cargo install cargo-nextest --locked`. Why nextest, and why the suite is
   slow on Windows: [docs/BUILDING.md](./docs/BUILDING.md).
 
+  **CI also runs four checks that no test makes,** and they must pass:
+
+  ```sh
+  actionlint
+  cargo machete
+  typos
+  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+  ```
+
+  The versions are pinned in the `env` of `ci.yml` (`ACTIONLINT_*`,
+  `MACHETE_*`, `TYPOS_*`). Install machete and typos with
+  `cargo install --locked --version <v> cargo-machete` and
+  `cargo install --locked --version <v> typos-cli`. For `actionlint`, take
+  the release binary of that version from
+  `https://github.com/rhysd/actionlint/releases` and put it on your `PATH`.
+  With `shellcheck` on your `PATH`, it checks the shell in each `run:` step
+  too, as CI does. Every `cargo` command in a workflow has `--locked`: the
+  ratchet `every_cargo_command_in_a_workflow_is_locked` fails when one does
+  not.
+
   **If you change `crates/ralphy-daemon/assets/ui/` or `ui-tests/`,** these
   must pass too:
 
