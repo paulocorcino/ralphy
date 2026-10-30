@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/session/screen.rs": {
-      "text": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/src/spend.rs": {
       "annotate_unpriced": [
         12

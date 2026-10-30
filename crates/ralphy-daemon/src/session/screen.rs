@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use alacritty_terminal::event::{Event, EventListener};
-use alacritty_terminal::grid::{Dimensions, Grid};
+use alacritty_terminal::grid::{Dimensions, Grid, Row};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::{Config, Osc52, Term, TermMode};
@@ -155,19 +155,7 @@ impl Screen {
         let mut line = String::new();
         for l in grid.topmost_line().0..=grid.bottommost_line().0 {
             let row = &grid[Line(l)];
-            for c in 0..=last {
-                let cell = &row[Column(c)];
-                if cell
-                    .flags
-                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-                {
-                    continue;
-                }
-                line.push(cell.c);
-                if let Some(zero_width) = cell.zerowidth() {
-                    line.extend(zero_width.iter());
-                }
-            }
+            push_cells(&mut line, row, last);
             if !row[Column(last)].flags.contains(Flags::WRAPLINE) {
                 lines.push(line.trim_end().to_string());
                 line.clear();
@@ -177,6 +165,24 @@ impl Screen {
             lines.push(line.trim_end().to_string());
         }
         lines.join("\n")
+    }
+}
+
+/// Append the characters of `row`, up to column `last`, to `line`. The spacer
+/// cell of a wide character adds nothing.
+fn push_cells(line: &mut String, row: &Row<Cell>, last: usize) {
+    for c in 0..=last {
+        let cell = &row[Column(c)];
+        if cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+        {
+            continue;
+        }
+        line.push(cell.c);
+        if let Some(zero_width) = cell.zerowidth() {
+            line.extend(zero_width.iter());
+        }
     }
 }
 
