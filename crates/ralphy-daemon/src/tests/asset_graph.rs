@@ -184,7 +184,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // and the resume rule), the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk and its records and
                 // restore, the console name,
-                // the input folds, the key bar, the feeds, the dormancy, the window birth and the
+                // the input folds, the key bar, the feeds, the dormancy, the parts of the stage
+                // (which import the window states, the columns, the fence list, the view and the
+                // chrome), the window birth and the
                 // placeholder, and they import the window state; the terminal imports its touch
                 // gesture and its paste; the title imports the worktree switcher, the fences
                 // import the fence gestures and the chrome the window gestures; the entry
@@ -226,6 +228,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-stage-fences.js",
                 "wb-stage-window.js",
                 "wb-stage-columns.js",
+                "wb-stage-parts.js",
                 "wb-stage-stack.js",
                 "wb-desk.js",
                 "wb-console.js",

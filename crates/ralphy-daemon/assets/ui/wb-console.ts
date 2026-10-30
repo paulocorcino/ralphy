@@ -7,12 +7,12 @@
    records `wb-desk-records.ts`; the desk `wb-desk.ts`; the feeds
    `wb-console-feeds.ts`; the title and the worktree switcher
    `wb-console-title.ts`; the popups `wb-desk-popups.ts`; sleep and resume
-   `wb-console-dormancy.ts`; the window states `wb-stage-window.ts`; the columns
-   `wb-stage-columns.ts`; the fence list `wb-stage-fence-list.ts`; the GPU budget
-   `wb-console-gpu.ts`; the opener's side of a detach `wb-desk-detach.ts`; the
-   view `wb-stage-view.ts`; the key bar `wb-console-keys.ts`; the terminal (a
-   live xterm.js on a PTY) `wb-console-terminal.ts`; the chrome
-   `wb-stage-chrome.ts`; the fences `wb-stage-fences.ts`; the window birth
+   `wb-console-dormancy.ts`; the parts of the stage `wb-stage-parts.ts` (the
+   window states, the columns, the fence list, the view and the chrome); the
+   GPU budget `wb-console-gpu.ts`; the opener's side of a detach
+   `wb-desk-detach.ts`; the key bar `wb-console-keys.ts`; the terminal (a
+   live xterm.js on a PTY) `wb-console-terminal.ts`; the fences
+   `wb-stage-fences.ts`; the window birth
    `wb-console-spawn.ts`; the placeholder `wb-console-placeholder.ts`; the
    `WBConsole` object `wb-console-api.ts`.
 
@@ -22,22 +22,18 @@
 --------------------------------------------------------------------------- */
 import { createGpuBudget } from "./wb-console-gpu.ts";
 import { createTitle } from "./wb-console-title.ts";
-import { createFenceList } from "./wb-stage-fence-list.ts";
 import { createDetach } from "./wb-desk-detach.ts";
-import { createView } from "./wb-stage-view.ts";
 import { createTerminal } from "./wb-console-terminal.ts";
 import { createConsoleKeys } from "./wb-console-keys.ts";
 import { createFeeds } from "./wb-console-feeds.ts";
 import { createDormancy } from "./wb-console-dormancy.ts";
 import { createSpawn } from "./wb-console-spawn.ts";
 import { createPlaceholders } from "./wb-console-placeholder.ts";
-import { createChrome } from "./wb-stage-chrome.ts";
 import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { createPopupRegistry } from "./wb-desk-popups.ts";
 import { createFences } from "./wb-stage-fences.ts";
-import { createStageWindow } from "./wb-stage-window.ts";
 import { createPlace, inTab } from "./wb-console-place.ts";
-import { createStageColumns } from "./wb-stage-columns.ts";
+import { createStageParts } from "./wb-stage-parts.ts";
 import { createDesk } from "./wb-desk.ts";
 import { createDeskRecords } from "./wb-desk-records.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
@@ -173,66 +169,47 @@ export function createConsole(window: Window, document: Document, location: Pick
     revivePlaceholders: () => revivePlaceholders(),
   });
   const { isCovered, applyDormancy, refreshCover, changed } = dormancy;
-  // ---- the window states: `wb-stage-window.ts` ---------------------------------
-  // Built before the fence list, which takes three of its functions.
-  const stageWindow = createStageWindow({
-    document,
-    workspace,
-    stage,
-    focusWin,
-    setWin,
-    heldByFence: (win: HTMLElement) => heldByFence(win),
-    refreshCover,
-  });
-  const { fillsViewport, restoreRect, setMax, toggleMax, paintMaxButton, isFull, isLocked, applyLock, paintLockGlyph, toggleLock, toggleFull, syncFullState, raiseMaximized, syncMaxLock, syncMaxPin, applyExtent, resetExtentEdge } = stageWindow;
-  // ---- the column paint: `wb-stage-columns.ts` (ADR-0051 §5) -------------
-  // Built before the fence list, which takes `columnMeasure`.
-  const columns = createStageColumns({
-    OPTS,
-    wins,
-    pageWindows,
-    workspace,
-    stage,
-    popups,
-    desk: () => currentDesk(),
-    focusWin,
-    setMax,
-    paintMaxButton,
-    syncMaxLock,
-    syncMaxPin,
-    applyExtent,
-    list,
-    paintFenceColumns: () => paintFenceColumns(),
-    fenceList: () => fenceList(),
-    readFenceRects: (st: HTMLElement) => readFenceRects(st),
-    readWindowRects: (st: HTMLElement) => readWindowRects(st),
-    findWindow: (id: string) => findWindow(id),
-    tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
-  });
-  const { columnMeasure, dropClosedElsewhere } = columns;
-  // ---- the fence list: `wb-stage-fence-list.ts` --------------------------------
-  // Built before the view and the fences, which it reaches through lazy arrows.
-  const fenceFloor = createFenceList({
+  // ---- the parts of the stage: `wb-stage-parts.ts` ----------------------------
+  // The window states, the column paint, the fence list, the view and the
+  // chrome. Built after the dormancy, which gives `refreshCover`.
+  const { stageWindow, columns, fenceFloor, view, chrome } = createStageParts({
     window,
     document,
     OPTS,
-    popups,
-    fences: () => currentFences(),
-    notes: () => currentNotes(),
-    stage,
     workspace,
+    stage,
     tabsPane,
-    restoreRect,
-    applyExtent,
-    columnMeasure,
-    inGesture: gestures.active,
-    newFenceId,
-    paintLockGlyph,
+    pageWindows,
+    wins,
+    popups,
+    gestures,
+    viewStore,
+    focusWin,
+    setWin,
     saveFences,
-    jumpToFence: (id: string) => jumpToFence(id),
+    refreshCover,
+    list,
+    newFenceId,
+    newDeskId,
+    currentDesk: () => currentDesk(),
+    currentFences: () => currentFences(),
+    currentNotes: () => currentNotes(),
+    isDeskSettled: () => isDeskSettled(),
+    tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
     buildFence: (f: DeskFence) => buildFence(f),
+    canRename,
+    consolePrefix,
+    renderTitle,
+    sessionPresentation,
+    startRename,
+    takenNames,
   });
-  const { fenceLocked, heldByFence, fenceEl, refreshFenceChrome, paintFenceColumns, readFenceRects, readWindowRects, renderNotes, fenceList, renderFences, focusedFenceId, focusFence, clearFenceFocus, showDetachGlyph } = fenceFloor;
+  const { fillsViewport, restoreRect, isFull, applyLock, paintMaxButton, raiseMaximized, applyExtent } =
+    stageWindow;
+  const { dropClosedElsewhere } = columns;
+  const { refreshFenceChrome, renderNotes, renderFences, showDetachGlyph } = fenceFloor;
+  const { applyLanding, flushPendingOffset, cancelSlide, autoPan, wireStage } = view;
+  const { buildChrome } = chrome;
 
   // ---- the GPU budget: `wb-console-gpu.ts` -------------------------------------
   const budget = createGpuBudget({
@@ -286,31 +263,6 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
   const { newPid, fenceSnapshot, tearDownMember, reattachFence, glyphClick } = detach;
 
-  // ---- the view: `wb-stage-view.ts` --------------------------------------------
-  // Built before the terminal, which takes `cancelSlide`.
-  const view = createView({
-    window,
-    document,
-    workspace,
-    stage,
-    pageWindows,
-    viewStore,
-    restoreRect,
-    focusWin,
-    syncFullState,
-    syncMaxPin,
-    fenceEl,
-    focusFence,
-    clearFenceFocus,
-    focusedFence: focusedFenceId,
-    isDeskSettled: () => isDeskSettled(),
-    wins,
-    resetExtentEdge,
-    applyExtent,
-    refreshFenceChrome,
-  });
-  const { applyLanding, flushPendingOffset, reveal, findWindow, jumpToFence, cancelSlide, autoPan, wireStage } = view;
-
   // ---- the key bar: `wb-console-keys.ts` ---------------------------------------
   const keys = createConsoleKeys({
     window,
@@ -340,41 +292,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     readClipboard,
     scrollProbe,
   });
-
-  // ---- the window chrome: `wb-stage-chrome.ts` ---------------------------------
-  const chrome = createChrome({
-    window,
-    document,
-    OPTS,
-    gestures,
-    stage,
-    workspace,
-    fences: () => currentFences(),
-    focusedFence: focusedFenceId,
-    applyExtent,
-    applyLock,
-    autoPan,
-    canRename,
-    consolePrefix,
-    fenceEl,
-    fenceLocked,
-    focusWin,
-    isFull,
-    isLocked,
-    newDeskId,
-    renderTitle,
-    restoreRect,
-    reveal,
-    sessionPresentation,
-    setMax,
-    setWin,
-    startRename,
-    takenNames,
-    toggleFull,
-    toggleLock,
-    toggleMax,
-  });
-  const { buildChrome } = chrome;
 
   // ---- the fences: `wb-stage-fences.ts` ----------------------------------------
   const fences = createFences({
