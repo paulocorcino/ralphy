@@ -380,6 +380,28 @@ fn no_session_start_line_is_refused_with_the_cause() {
 }
 
 #[test]
+fn the_refusal_names_the_settings_file_with_one_kind_of_slash() {
+    // A root with `/`, as `git rev-parse --show-toplevel` gives on Windows.
+    let root = if cfg!(windows) { "C:/Dev/X" } else { "/tmp/x" };
+    let settings = PathBuf::from(root)
+        .join(".ralphy")
+        .join("run")
+        .join("ralphy.settings.json");
+    let project = PathBuf::from(root);
+
+    let err = no_session_start(&settings, &project, Duration::from_secs(1));
+
+    let want = ralphy_proc_util::hook_form::native(&settings)
+        .display()
+        .to_string();
+    assert!(err.cause.contains(&want), "{} names {want}", err.cause);
+    if cfg!(windows) {
+        assert!(!want.contains('/'), "{want}");
+        assert!(!err.cause.contains("C:/Dev/X"), "{}", err.cause);
+    }
+}
+
+#[test]
 fn a_shell_form_session_is_refused_with_the_update_message() {
     let dir = tempfile::tempdir().unwrap();
     let settings = crate::settings::SettingsFile {

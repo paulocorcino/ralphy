@@ -337,8 +337,10 @@ pub fn disable_all_hooks(home: Option<&Path>, project: Option<&Path>) -> Option<
 
 /// `path` rebuilt one component at a time. On Windows, `git rev-parse
 /// --show-toplevel` gives a root with `/`, and a join adds `\`; the rebuilt
-/// path has `\` only.
-fn native(path: &Path) -> PathBuf {
+/// path has `\` only. Use it to show a path to a person: the text then has
+/// the separator of the platform and no other. On other platforms it is the
+/// same path.
+pub fn native(path: &Path) -> PathBuf {
     path.components().collect()
 }
 
