@@ -112,11 +112,6 @@
         13
       ]
     },
-    "crates/ralphy-core/src/checkouts/carry.rs": {
-      "unlink_in": [
-        12
-      ]
-    },
     "crates/ralphy-core/src/github/attachments.rs": {
       "fetch_one": [
         11
