@@ -28,7 +28,7 @@ use crate::{pricing, ui, CliAgent};
 /// `consolidate_defaults`: opus/medium for Claude (curation is judgment-heavy),
 /// the adapter's own default for the rest. 30-minute wall like the command.
 ///
-/// Returns the consolidation invocation's token [`Usage`] (issue #269) — default
+/// Returns the consolidation invocation's token [`ralphy_core::Usage`] (issue #269) — default
 /// (zero) when the pass did not run or failed. The pass is a real vendor call, so
 /// on success its tokens are recorded to the ledger as a run-level `consolidate`
 /// phase (`ledger::append_run_phase`, issue `0`) — so the project total counts it —

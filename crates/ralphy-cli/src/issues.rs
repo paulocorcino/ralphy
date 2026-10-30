@@ -106,7 +106,7 @@ struct CommentView {
 
 /// The `ralphy issues show <n>` detail view: enough to decide without opening
 /// GitHub. Body, labels, the ADR-0017 consolidated-spec (when present), the queue
-/// judgment (flattened from the single-issue [`IssueView`]), and the run history.
+/// judgment (flattened from the single-issue `IssueView`), and the run history.
 /// Carries no `position`: that is a list-relative rank with no meaning for one
 /// issue viewed in isolation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

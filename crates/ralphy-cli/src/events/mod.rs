@@ -2,7 +2,7 @@
 //!
 //! A second, independent `tracing_subscriber::Layer` (a
 //! [`crate::delivery::DeliveryLayer`], installed via
-//! [`sink::new_events_layer`](sink::new_events_layer)) decodes the run's event bus
+//! [`sink::new_events_layer`]) decodes the run's event bus
 //! through the canonical `event_to_runevent` decoder and POSTs each event as a
 //! CloudEvents 1.0 structured-mode JSON envelope to a per-repo configured URL —
 //! asynchronously, best-effort, never blocking the run. It shares the Telegram

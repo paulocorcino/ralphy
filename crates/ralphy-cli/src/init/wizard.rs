@@ -16,7 +16,7 @@ pub struct InitConfig {
     pub adopt_prd_roadmap: bool,
 }
 
-/// One onboarding stage of [`run`] that the checkpoint tracks as completed
+/// One onboarding stage of `run` that the checkpoint tracks as completed
 /// (ADR-0012 stage 9). Recorded so a re-run skips a stage already done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -1,7 +1,7 @@
 //! The run-time CloudEvents sink (ADR-0019, ADR-0024).
 //!
 //! The sink is a [`CloudEventsEngine`](delivery) fold over the shared
-//! [`crate::delivery`] worker: [`new_events_layer`](layer::new_events_layer) installs
+//! [`crate::delivery`] worker: [`new_events_layer`] installs
 //! a [`crate::delivery::DeliveryLayer`] that decodes each `tracing` event into a
 //! [`crate::runstate::RunEvent`] and pushes it onto the sink's bounded, drop-oldest
 //! ring on the logging thread — never touching the network. The background worker

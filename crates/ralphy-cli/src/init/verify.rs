@@ -169,7 +169,7 @@ fn run_smoke_test(repo: &Path, n: u64, agent: Agent) -> Result<()> {
 /// Stage 10: gather a [`VerifyReport`], print the final report, bail when any
 /// required artifact is missing, and — when the queue is non-empty — offer an
 /// optional `--dry-run` smoke test. Called from every completion point in
-/// [`run`] so the report always appears regardless of which path the dev took.
+/// `run` so the report always appears regardless of which path the dev took.
 pub(crate) fn finalize(
     repo: &Path,
     cfg: &InitConfig,

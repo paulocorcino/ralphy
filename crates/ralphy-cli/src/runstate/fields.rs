@@ -7,7 +7,7 @@ use tracing::Level;
 use super::UsageLite;
 
 /// The typed fields extracted off one `tracing` event. Populated by the [`Visit`]
-/// impl and consumed by [`event_to_runevent`]. The union of all fields across every
+/// impl and consumed by `event_to_runevent`. The union of all fields across every
 /// consumed event shape; unused fields remain at their `Default` values.
 #[derive(Debug)]
 pub struct EventFields {

@@ -1,7 +1,7 @@
 //! `ralphy changes list|stage|unstage|commit|discard` — the working-tree change
 //! set of a repo and the four acts that move paths through it. Every primitive
 //! delegates
-//! to an already-public [`ralphy_core::changes`] / [`ralphy_core::worktree`]
+//! to an already-public [`mod@ralphy_core::changes`] / [`ralphy_core::worktree`]
 //! function; this module is only the guard + clap surface and the output shapes.
 //!
 //! `list` is read-only and never consults `.ralphy/run.lock` (see
