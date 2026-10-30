@@ -232,6 +232,9 @@ pub(crate) async fn ws_presence_loop(
             break;
         }
     }
+    // A client that reads nothing keeps the writer blocked in the socket
+    // send, so the writer is stopped here, not left to the dropped handle.
+    writer.abort();
 }
 
 /// The entry of one `/ws` socket on the presence board, removed when the

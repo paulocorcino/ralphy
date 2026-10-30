@@ -99,6 +99,9 @@ pub(crate) async fn tree_ws(
     }
 
     conn.teardown();
+    // A client that reads nothing keeps the writer blocked in the socket
+    // send, so the writer is stopped here, not left to the dropped handle.
+    writer.abort();
 }
 
 /// Queue one push on the connection's channel. A closed writer means the
