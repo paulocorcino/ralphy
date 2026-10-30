@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-usage-scan/src/gemini.rs": {
-      "fold_session": [
-        12
-      ]
-    },
     "crates/ralphy-usage-scan/src/opencode.rs": {
       "read_opencode": [
         12

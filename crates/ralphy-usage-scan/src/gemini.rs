@@ -160,20 +160,36 @@ struct Fold {
 /// `$set` mutation: the header's copy is written at session creation and never
 /// rewritten, so trusting it alone dates every session to its first second.
 fn fold_session(lines: &str) -> Option<Fold> {
-    let mut session_id: Option<String> = None;
-    let mut first_ts = String::new();
-    let mut last_ts = String::new();
-    let mut by_model: BTreeMap<String, Tokens> = BTreeMap::new();
+    let mut open = OpenFold::default();
+    // A malformed line contributes nothing.
+    for value in lines
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+    {
+        open.add_record(&value);
+    }
+    open.close()
+}
 
-    for line in lines.lines() {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue; // a malformed line contributes nothing
-        };
+/// A [`Fold`] while its lines are read: the session id stays unknown until a
+/// header record names it.
+#[derive(Default)]
+struct OpenFold {
+    session_id: Option<String>,
+    by_model: BTreeMap<String, Tokens>,
+    first_ts: String,
+    last_ts: String,
+}
+
+impl OpenFold {
+    /// Adds what one record carries: the first `sessionId`, the span bounds,
+    /// and an assistant turn's tokens.
+    fn add_record(&mut self, value: &serde_json::Value) {
         if let Some(id) = value.get("sessionId").and_then(|v| v.as_str()) {
-            session_id.get_or_insert_with(|| id.to_string());
+            self.session_id.get_or_insert_with(|| id.to_string());
         }
         if let Some(start) = value.get("startTime").and_then(|v| v.as_str()) {
-            widen_first(&mut first_ts, start);
+            widen_first(&mut self.first_ts, start);
         }
         // `lastUpdated` appears both on the header and inside `$set` mutations.
         for updated in [value.get("lastUpdated"), value.pointer("/$set/lastUpdated")]
@@ -181,26 +197,32 @@ fn fold_session(lines: &str) -> Option<Fold> {
             .flatten()
             .filter_map(|v| v.as_str())
         {
-            widen_last(&mut last_ts, updated);
+            widen_last(&mut self.last_ts, updated);
         }
         if let (Some(tokens), Some(model)) = (
             value.get("tokens"),
             value.get("model").and_then(|v| v.as_str()),
         ) {
-            add_turn(&mut by_model, tokens, model);
+            add_turn(&mut self.by_model, tokens, model);
         }
     }
 
-    let session_id = session_id?;
-    if last_ts.is_empty() {
-        last_ts = first_ts.clone();
+    /// The finished fold, or `None` when no record named a session. A session
+    /// with no `lastUpdated` ends where it starts.
+    fn close(self) -> Option<Fold> {
+        let session_id = self.session_id?;
+        let last_ts = if self.last_ts.is_empty() {
+            self.first_ts.clone()
+        } else {
+            self.last_ts
+        };
+        Some(Fold {
+            session_id,
+            by_model: self.by_model,
+            first_ts: self.first_ts,
+            last_ts,
+        })
     }
-    Some(Fold {
-        session_id,
-        by_model,
-        first_ts,
-        last_ts,
-    })
 }
 
 /// Move `first_ts` back to `start` when `start` is the earliest seen.
