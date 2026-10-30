@@ -187,24 +187,11 @@ export function wireTouch(deps: TouchDeps) {
     "touchmove",
     (e: TouchEvent) => {
       if (selecting && selStart != null) {
-        if (e.touches.length === 1) {
-          const row = rowAt(e.touches[0].clientY);
-          try {
-            term.selectLines(Math.min(selStart, row), Math.max(selStart, row));
-          } catch {}
-        }
-        e.preventDefault();
+        dragSelection(e, selStart);
         return;
       }
       if (pan) {
-        if (e.touches.length !== 2) return;
-        const ws = workspace();
-        const c = touchCentroid(e.touches);
-        if (ws) {
-          ws.scrollLeft = pan.left - (c.x - pan.x);
-          ws.scrollTop = pan.top - (c.y - pan.y);
-        }
-        e.preventDefault();
+        dragPan(e, pan);
         return;
       }
       if (touchY == null || e.touches.length !== 1) return;
@@ -221,6 +208,30 @@ export function wireTouch(deps: TouchDeps) {
     },
     { passive: false },
   );
+  // One finger on an armed selection selects the lines from the first row
+  // touched to the row under the finger.
+  function dragSelection(e: TouchEvent, from: number) {
+    if (e.touches.length === 1) {
+      const row = rowAt(e.touches[0].clientY);
+      try {
+        term.selectLines(Math.min(from, row), Math.max(from, row));
+      } catch {
+        // xterm refused the range: the selection keeps its last lines.
+      }
+    }
+    e.preventDefault();
+  }
+  // Two fingers pan the workspace under the console.
+  function dragPan(e: TouchEvent, start: NonNullable<typeof pan>) {
+    if (e.touches.length !== 2) return;
+    const ws = workspace();
+    const c = touchCentroid(e.touches);
+    if (ws) {
+      ws.scrollLeft = start.left - (c.x - start.x);
+      ws.scrollTop = start.top - (c.y - start.y);
+    }
+    e.preventDefault();
+  }
   const endTouch = (e: TouchEvent) => {
     // The selection stays (the copy button reads it); the arming does not.
     if (selecting) {
