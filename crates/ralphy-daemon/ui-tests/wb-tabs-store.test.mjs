@@ -164,6 +164,24 @@ test("a rename re-keys the pin and repaints so the viewer follows the new id", a
   }
 });
 
+test("a folder move re-paths every tab under it and the active one, and closes a tab whose new path is open", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("dir/x.js");
+    sh.open("dirt.js");
+    sh.open("dir/y.js");
+    sh.open("new/y.js");
+    sh.state.$store.tabs.activate("file:o/r:dir/x.js");
+    sh.state.$store.tabs.repathTabs("dir", "new");
+    const ids = sh.state.$store.tabs.tabs.filter((t) => t.path).map((t) => t.id);
+    assert.deepEqual(ids.sort(), ["file:o/r:dirt.js", "file:o/r:new/x.js", "file:o/r:new/y.js"]);
+    assert.equal(sh.state.$store.tabs.active, "file:o/r:new/x.js");
+    assert.equal(sh.state.$store.tabs.tabs.find((t) => t.id === "file:o/r:new/x.js").path, "new/x.js");
+  } finally {
+    await sh.restore();
+  }
+});
+
 test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
   const sh = slotShell();
   try {
