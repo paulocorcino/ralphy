@@ -146,3 +146,61 @@ test("a period change drops the Ledger rows and reads the pane that is shown", (
   spend.setSpendPeriod("30d");
   assert.deepEqual(calls, ["spend", "ledger", "spend", "ledger"]);
 });
+
+// ---- the Ledger read --------------------------------------------------------------
+
+// `GET /api/usage` answered by `reply` (a response, or a throw for no answer).
+async function withUsage(reply, run) {
+  const real = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    if (reply instanceof Error) throw reply;
+    return reply;
+  };
+  try {
+    return await run(urls);
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+const usageReply = (ok, body) => ({ ok, status: ok ? 200 : 500, json: async () => body });
+
+test("a Ledger read keeps the rows of the open project and the period", async () => {
+  const { shell, spend } = page();
+  shell.$store.projects.setOpen("o/r");
+  spend.spendPeriod = "7d";
+  const body = { records: [{ id: 1 }], interactive: "junk", missing: [{ peer: "p" }], daemon_id: "d1" };
+  await withUsage(usageReply(true, body), async (urls) => {
+    await spend.loadLedger();
+    assert.match(urls[0], /project=o%2Fr/);
+    assert.match(urls[0], /period=7d/);
+  });
+  assert.deepEqual(
+    [spend.ledger.records, spend.ledger.interactive, spend.ledger.missing, spend.ledger.daemonId, spend.ledger.slug, spend.ledger.error],
+    [[{ id: 1 }], [], [{ peer: "p" }], "d1", "o/r", ""],
+  );
+});
+
+test("a refused or unanswered Ledger read says so and shows no rows", async () => {
+  for (const reply of [usageReply(false, {}), new Error("socket closed")]) {
+    const { shell, spend } = page();
+    shell.$store.projects.setOpen("o/r");
+    await withUsage(reply, () => spend.loadLedger());
+    assert.equal(spend.ledger.error, "Could not load the ledger: the daemon did not answer.");
+    assert.deepEqual(spend.ledger.records, []);
+    assert.equal(spend.ledger.loading, false);
+  }
+});
+
+test("a Ledger read that lands after a project switch writes no rows", async () => {
+  const { shell, spend } = page();
+  shell.$store.projects.setOpen("o/r");
+  await withUsage(usageReply(true, { records: [{ id: 1 }] }), async () => {
+    const read = spend.loadLedger();
+    shell.$store.projects.setOpen("o/x");
+    await read;
+  });
+  assert.deepEqual([spend.ledger.records, spend.ledger.slug, spend.ledger.loading], [[], null, false]);
+});

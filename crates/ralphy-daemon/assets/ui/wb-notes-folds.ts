@@ -370,24 +370,29 @@ export function styleOf(markdown: string | null | undefined) {
 // the document's name; `fill`/`ink` trail because they are refinements of
 // the colour above them.
 export function withHeader(body: string, title: string | null | undefined, style: Partial<NoteLook> | null | undefined, veiled?: boolean) {
-  const tone = toneOf(style?.tone);
-  const fill = fillOf(style?.fill);
-  const ink = inkOf(style?.ink);
-  const font = fontOf(style?.font);
-  const size = sizeOf(style?.size);
   const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
   const lines: string[] = [];
   if (name) lines.push(`title: ${titleYaml(name)}`);
-  lines.push(`color: ${tone}`);
-  if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
-  if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
-  if (font !== DEFAULT_FONT) lines.push(`font: ${font}`);
-  if (size !== DEFAULT_SIZE) lines.push(`size: ${size}`);
+  lines.push(`color: ${toneOf(style?.tone)}`, ...refinementLines(style));
   // Last, and only when true: `hidden: false` is what every note in the
   // world already is, and writing it would put a line in every file to say
   // nothing.
   if (veiled) lines.push("hidden: true");
   return `---\n${lines.join("\n")}\n---\n${body}`;
+}
+
+// The header lines of the look after the colour: a default is omitted.
+function refinementLines(style: Partial<NoteLook> | null | undefined) {
+  const fill = fillOf(style?.fill);
+  const ink = inkOf(style?.ink);
+  const font = fontOf(style?.font);
+  const size = sizeOf(style?.size);
+  const lines: string[] = [];
+  if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
+  if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
+  if (font !== DEFAULT_FONT) lines.push(`font: ${font}`);
+  if (size !== DEFAULT_SIZE) lines.push(`size: ${size}`);
+  return lines;
 }
 
 // Restyling keeps the name, whatever the caller happens to hold: the two

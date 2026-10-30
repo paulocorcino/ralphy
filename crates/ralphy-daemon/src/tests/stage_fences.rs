@@ -38,10 +38,10 @@ fn shell_draws_fences_below_the_windows() {
         js.contains(r#"querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")"#),
         "applyExtent must fold the fences and the cards into the stage extent (#340, ADR-0064)"
     );
-    let tab = include_str!("../../assets/ui/wb-consoles-tab.ts");
+    let tab = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");
     assert!(
         tab.contains("newFence("),
-        "wb-consoles-tab.ts must wire the toolbar act"
+        "wb-consoles-tab-menus.ts must wire the toolbar act"
     );
     let html = super::INDEX_HTML;
     assert!(
@@ -133,8 +133,8 @@ fn shell_draws_fences_below_the_windows() {
         "numbering by the fence COUNT collides at the cap — measured"
     );
 
-    // The console menus (wb-consoles-tab.ts) hold the toolbar acts and keys.
-    let tab_js = include_str!("../../assets/ui/wb-consoles-tab.ts");
+    // The console menus (wb-consoles-tab-menus.ts) hold the toolbar acts and keys.
+    let tab_js = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");
     let app: String = tab_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // The toolbar says why before the click and again if one gets through — the
     // #318 idiom, since `wb-console.ts` reaches no shell and can only refuse.

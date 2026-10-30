@@ -101,73 +101,14 @@ impl Session {
     /// runs on a dedicated `std::thread` (a blocking read must not sit on the
     /// tokio runtime); each chunk is sent non-blocking over the unbounded channel.
     pub fn spawn(spec: SessionSpec) -> Result<Session> {
-        // The same repair the headless runner applies (`program_dir_on_path`),
-        // expressed against this builder rather than a `std::process::Command`:
-        // a CLI resolved off `PATH` — nvm's global bin, `~/.local/bin` — may need
-        // its interpreter from that very directory, since an npm shim's
-        // `#!/usr/bin/env node` searches `PATH` and nvm keeps `node` beside the
-        // shim. Without it an interactive session dies the moment it starts, on a
-        // program the roster just reported as available (#353).
-        let program_dir = PathBuf::from(&spec.program)
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .map(Path::to_path_buf);
-        // A `PATH` this spec declares is the base — a vendor's own scrub still
-        // wins; otherwise the child would inherit ours, so that is what we widen.
-        let base_path = spec
-            .env
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
-            .map(|(_, v)| std::ffi::OsString::from(v))
-            .or_else(|| std::env::var_os("PATH"));
-        let widened =
-            program_dir.and_then(|dir| ralphy_proc_util::path_with_dir(&dir, base_path.as_deref()));
-
-        let mut cmd = PtyCommand::new(spec.program)
-            .args(spec.args)
-            .cwd(&spec.cwd)
-            .size(spec.rows, spec.cols);
-        // The terminal the daemon gives the child is described by the daemon,
-        // never inherited from the shell that started it: drop the suppressors
-        // first, then declare. Both come BEFORE `spec.env`, so a vendor's own
-        // containment still has the last word on any key it names. The
-        // daemon's secrets leave with the suppressors: no console gets them.
-        for key in COLOUR_SUPPRESSORS
-            .into_iter()
-            .chain(INHERITED_SESSION_MARKERS)
-            .chain(crate::child_env::SECRET_ENV)
-        {
-            cmd = cmd.env_remove(key);
-        }
-        for (key, value) in TERMINAL_ENV {
-            cmd = cmd.env(key, value);
-        }
-        for (k, v) in spec.env {
-            cmd = cmd.env(k, v);
-        }
-        if let Some(path) = widened {
-            cmd = cmd.env("PATH", path);
-        }
+        let cmd = pty_command(spec);
         let mut pty = PtySession::spawn(cmd)?;
         let writer = pty
             .take_writer()
             .context("the new PTY has no input writer")?;
         let input = Input::start(writer).context("starting the console input thread")?;
-        let mut reader = pty.reader()?;
-        let (tx, rx): (UnboundedSender<Vec<u8>>, UnboundedReceiver<Vec<u8>>) = unbounded_channel();
-        let reader_thread = std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break, // EOF (tree exited) or a broken master
-                    Ok(n) => {
-                        if tx.send(buf[..n].to_vec()).is_err() {
-                            break; // the consumer went away
-                        }
-                    }
-                }
-            }
-        });
+        let reader = pty.reader()?;
+        let (reader_thread, rx) = start_reader(reader);
         Ok(Session {
             pty: Some(pty),
             input: Some(input),
@@ -243,6 +184,79 @@ impl Drop for Session {
     fn drop(&mut self) {
         self.close();
     }
+}
+
+/// The command that starts `spec` in its PTY, with the environment the
+/// daemon gives every console.
+fn pty_command(spec: SessionSpec) -> PtyCommand {
+    // The same repair the headless runner applies (`program_dir_on_path`),
+    // expressed against this builder rather than a `std::process::Command`:
+    // a CLI resolved off `PATH` — nvm's global bin, `~/.local/bin` — may need
+    // its interpreter from that very directory, since an npm shim's
+    // `#!/usr/bin/env node` searches `PATH` and nvm keeps `node` beside the
+    // shim. Without it an interactive session dies the moment it starts, on a
+    // program the roster just reported as available (#353).
+    let program_dir = PathBuf::from(&spec.program)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(Path::to_path_buf);
+    // A `PATH` this spec declares is the base — a vendor's own scrub still
+    // wins; otherwise the child would inherit ours, so that is what we widen.
+    let base_path = spec
+        .env
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+        .map(|(_, v)| std::ffi::OsString::from(v))
+        .or_else(|| std::env::var_os("PATH"));
+    let widened =
+        program_dir.and_then(|dir| ralphy_proc_util::path_with_dir(&dir, base_path.as_deref()));
+
+    let mut cmd = PtyCommand::new(spec.program)
+        .args(spec.args)
+        .cwd(&spec.cwd)
+        .size(spec.rows, spec.cols);
+    // The terminal the daemon gives the child is described by the daemon,
+    // never inherited from the shell that started it: drop the suppressors
+    // first, then declare. Both come BEFORE `spec.env`, so a vendor's own
+    // containment still has the last word on any key it names. The
+    // daemon's secrets leave with the suppressors: no console gets them.
+    for key in COLOUR_SUPPRESSORS
+        .into_iter()
+        .chain(INHERITED_SESSION_MARKERS)
+        .chain(crate::child_env::SECRET_ENV)
+    {
+        cmd = cmd.env_remove(key);
+    }
+    for (key, value) in TERMINAL_ENV {
+        cmd = cmd.env(key, value);
+    }
+    for (k, v) in spec.env {
+        cmd = cmd.env(k, v);
+    }
+    if let Some(path) = widened {
+        cmd = cmd.env("PATH", path);
+    }
+    cmd
+}
+
+/// Start the thread that forwards the PTY output to the returned channel. It
+/// ends on EOF, on a broken master, or when the receiver is gone.
+fn start_reader(mut reader: Box<dyn Read + Send>) -> (JoinHandle<()>, UnboundedReceiver<Vec<u8>>) {
+    let (tx, rx): (UnboundedSender<Vec<u8>>, UnboundedReceiver<Vec<u8>>) = unbounded_channel();
+    let reader_thread = std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => break, // EOF (tree exited) or a broken master
+                Ok(n) => {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break; // the consumer went away
+                    }
+                }
+            }
+        }
+    });
+    (reader_thread, rx)
 }
 
 /// The input queue of one session and the thread that writes it to the PTY.

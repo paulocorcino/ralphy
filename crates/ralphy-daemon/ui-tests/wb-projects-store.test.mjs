@@ -427,3 +427,64 @@ test("updatePeer installs on the host, adds it again, and stops at a failure", a
   assert.deepEqual(calls.map((c) => c.verb), ["host.install"]);
   assert.equal(reloads, 1);
 });
+
+test("a fleet read lists each peer repo as a row of its daemon", async () => {
+  const state = loadShell().state.$store.projects;
+  state.setProjects([{ slug: "o/a" }]);
+  const peerRepo = {
+    key: "d2/o/p",
+    slug: "o/p",
+    reachable: false,
+    remote: "https://github.com/o/p.git",
+    daemon_id: "d2",
+    daemon_name: "vps",
+    environment: "Linux",
+    os: "linux",
+    peer_state: "online",
+  };
+  const restore = scriptedFetch([{ status: 200, body: { peers: [], repos: [peerRepo] } }]);
+  try {
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  const row = state.projects.find((p) => p.key === "d2/o/p");
+  assert.deepEqual(
+    [row.name, row.path, row.branch, row.state, row.remote, row.remoteUrl, row.daemon, row.daemonName, row.env, row.os, row.peerState],
+    ["o/p", "", "", "offline", "github", "https://github.com/o/p.git", "d2", "vps", "Linux", "linux", "online"],
+  );
+  assert.deepEqual(
+    state.projects.map((p) => p.slug),
+    ["o/a", "o/p"],
+  );
+});
+
+// `POST /api/fleet/nudge` answered by `replies`, and the flash line recorded.
+async function wake(replies) {
+  const { state: shell } = loadShell();
+  const state = shell.$store.projects;
+  const flashed = [];
+  shell.$store.modals.flash = (text) => flashed.push(text);
+  const reloads = [];
+  state.loadRepos = async () => reloads.push("repos");
+  const restore = scriptedFetch(replies);
+  try {
+    return { woke: await state.wakePeer("d2"), flashed, reloads };
+  } finally {
+    restore();
+  }
+}
+
+test("a wake that leaves the peer usable reads the projects again", async () => {
+  const got = await wake([{ status: 200, body: { nudged: true, ready: true } }]);
+  assert.deepEqual(got, { woke: true, flashed: [], reloads: ["repos"] });
+});
+
+test("a wake that fails says the daemon's own reason, or that the peer did not answer", async () => {
+  const notReady = await wake([{ status: 200, body: { nudged: true, ready: false, diagnosis: "WSL: Ubuntu is stopped" } }]);
+  assert.deepEqual(notReady, { woke: false, flashed: ["Could not wake the peer: WSL: Ubuntu is stopped."], reloads: [] });
+  const refused = await wake([{ status: 404, body: { error: "no such peer" } }]);
+  assert.deepEqual(refused.flashed, ["Could not wake the peer: no such peer."]);
+  const silent = await wake([{ status: 200, body: { nudged: true, ready: false } }]);
+  assert.deepEqual(silent.flashed, ["Could not wake the peer: the peer did not answer."]);
+});

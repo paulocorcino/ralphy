@@ -1,7 +1,8 @@
 use super::*;
 
 fn scores(src: &str) -> Vec<(String, u32)> {
-    file_scores(src).expect("the test source parses")
+    let found = file_scores(src).expect("the test source parses");
+    found.into_iter().map(|f| (f.name, f.value)).collect()
 }
 
 fn one(src: &str) -> u32 {

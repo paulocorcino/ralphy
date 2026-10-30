@@ -14,7 +14,7 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
 import type { ConsoleWin, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
@@ -263,6 +263,11 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         return;
       }
       if (!available) wasOffline = true;
+      showPeerTurn(group, available);
+    };
+    // What the box does with the fleet's latest word on the peer: relaunch,
+    // offer a relaunch, or say that the peer is offline or refused.
+    function showPeerTurn(group: Group, available: boolean) {
       const turn = peerReturnDecision({ kind: record.kind, canLaunch, available, wasOffline });
       if (turn === "relaunch") {
         btn.click();
@@ -274,7 +279,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       }
       if (available && !refused) return;
       show(peerOfflineView(available ? null : group, refused?.message, peerHost(group, record.environment)));
-    };
+    }
     if (refused) show(peerOfflineView(null, refused.message, peerHost(peerGroups.get(daemon), record.environment)));
     let unheard = !!(daemon && held?.unheard);
     // The box says why it waits: the list did not hear from the peer. "Try
@@ -368,19 +373,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
-      // The store's wake answers when the peer is usable, and reports its own
-      // failure; the box then says again what it said.
-      if (peerAction === "wake") {
-        text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;
-        const woke = typeof wakePeerNow() === "function" && (await wakePeerNow()!(daemon));
-        if (!win.isConnected) return;
-        if (!woke) {
-          btn.disabled = false;
-          show(shown!);
-          showPeer();
-          return;
-        }
-      }
+      if (peerAction === "wake" && !(await wakeFirst())) return;
       const session = await check();
       if (!win.isConnected) return;
       if (session) {
@@ -396,13 +389,31 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         showUnheard();
         return;
       }
+      relaunchHere();
+    });
+    // The store's wake answers when the peer is usable, and reports its own
+    // failure; the box then says again what it said. False when the click
+    // stops here.
+    async function wakeFirst() {
+      text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;
+      const woke = typeof wakePeerNow() === "function" && (await wakePeerNow()!(daemon));
+      if (!win.isConnected) return false;
+      if (!woke) {
+        btn.disabled = false;
+        show(shown!);
+        showPeer();
+        return false;
+      }
+      return true;
+    }
+    // The agent menu's launch path, reusing this record's id, rect and
+    // maximized state — in the recorded worktree unless that is the one that
+    // is gone, in which case the button said "primary". For a local record
+    // an unreadable session list launches too: the launch then fails as it
+    // always did.
+    function relaunchHere() {
       const carry = deskOf(win);
       markRelaunch(carry.id, () => drop(true));
-      // The agent menu's launch path, reusing this record's id, rect and
-      // maximized state — in the recorded worktree unless that is the one that
-      // is gone, in which case the button said "primary". For a local record
-      // an unreadable session list launches too: the launch then fails as it
-      // always did.
       if (missing) carry.checkout = null;
       spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
@@ -410,7 +421,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         record.repo,
         carry,
       );
-    });
+    }
     closeBtn.onclick = async () => {
       // Nothing is running here; the question says so rather than borrowing the
       // live console's warning.

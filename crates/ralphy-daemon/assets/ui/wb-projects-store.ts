@@ -28,6 +28,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Project } from "./wb-project.ts";
+import type { ApiResponse, FleetRepoRow } from "./wb-api.ts";
 import type { FleetPeer, Group, ReadState, RosterRow, Timer } from "./wb-shell-types.d.ts";
 
 /** What `main.ts` gives the store. */
@@ -80,6 +81,52 @@ function stampLocalRows(projects: Project[], mine: { environment?: string; os?: 
     p.os = mine.os || "";
     p.daemonName = mine.daemon_name || "";
   }
+}
+
+// The rows of a fleet read: this daemon's own (its facts stamp the local
+// rows) and every peer's.
+function fleetRows(repos: FleetRepoRow[] | undefined) {
+  const rows = Array.isArray(repos) ? repos : [];
+  return { mine: rows.find((x) => x.local), peers: rows.filter((x) => !x.local).map(peerRow) };
+}
+
+// One peer's repo as a project row.
+function peerRow(x: FleetRepoRow) {
+  return {
+    // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
+    key: x.key,
+    slug: x.slug,
+    name: x.name || x.slug,
+    path: x.path || "",
+    root: WBFleet.peerRoot(x),
+    branch: x.branch || "",
+    branches: [],
+    // The peer's OWN working-tree facts, same classification as `loadRepos`.
+    dirty: !!x.dirty,
+    state: x.reachable ? "idle" : "offline",
+    remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
+    remoteUrl: x.remote || "",
+    tree: [],
+    ...peerFacts(x),
+  };
+}
+
+// What makes a row a peer row: the daemon that serves it and its state.
+function peerFacts(x: FleetRepoRow) {
+  return {
+    daemon: x.daemon_id,
+    daemonName: x.daemon_name || "",
+    env: x.environment || "",
+    os: x.os || "",
+    peerState: x.peer_state || "",
+  };
+}
+
+// Why a wake did not leave the peer usable: the daemon's own sentence names
+// the environment and what is wrong.
+async function wakeRefusal(r: ApiResponse<"POST /api/fleet/nudge">, woke: { diagnosis?: string } | null) {
+  const refusal = r.ok ? null : await r.json().catch(() => null);
+  return WBFail.failed({ message: woke?.diagnosis || refusal?.error }, "Could not wake the peer: the peer did not answer.");
 }
 
 // Why a failed `/api/fleet` read failed: the daemon's own words when it
@@ -343,32 +390,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         if (seq !== this._fleetSeq) return;
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
-        const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
-        const mine = rows.find((x) => x.local);
+        const { mine, peers } = fleetRows(fleet.repos);
         if (mine) stampLocalRows(this.projects, mine);
-        const peerRows = rows.filter((x) => !x.local);
-        this._fleetRows = peerRows.map((x) => ({
-            // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
-            key: x.key,
-            slug: x.slug,
-            name: x.name || x.slug,
-            path: x.path || "",
-            root: WBFleet.peerRoot(x),
-            branch: x.branch || "",
-            branches: [],
-            // The peer's OWN working-tree facts, same classification as `loadRepos`.
-            dirty: !!x.dirty,
-            state: x.reachable ? "idle" : "offline",
-            remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
-            remoteUrl: x.remote || "",
-            tree: [],
-            // What makes this a peer row.
-            daemon: x.daemon_id,
-            daemonName: x.daemon_name || "",
-            env: x.environment || "",
-            os: x.os || "",
-            peerState: x.peer_state || "",
-          }));
+        this._fleetRows = peers;
         this.setProjects(localRows().concat(this._fleetRows));
         this.shareProjectNames();
         this.shareFleet();
@@ -425,11 +449,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         const r = await apiFetch("POST /api/fleet/nudge", { query: { daemon_id: daemonId } });
         const woke = r.ok ? await r.json().catch(() => null) : null;
         if (!woke?.ready) {
-          // The daemon's own sentence names the environment and what is wrong.
-          const refusal = r.ok ? null : await r.json().catch(() => null);
-          deps.messages.flash(
-            WBFail.failed({ message: woke?.diagnosis || refusal?.error }, "Could not wake the peer: the peer did not answer."),
-          );
+          deps.messages.flash(await wakeRefusal(r, woke));
           return false;
         }
         // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.

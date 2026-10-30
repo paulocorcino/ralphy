@@ -10,7 +10,7 @@
 --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
-import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal-types.d.ts";
 
 const { pasteOffered, rightClickAction, pasteDecision, scrubClipboard } = WBConsoleInput;
 

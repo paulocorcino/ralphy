@@ -100,28 +100,38 @@ fn logical_checkbox_items(lines: &[String]) -> Vec<(usize, String)> {
     let mut i = 0;
     while i < lines.len() {
         if lines[i].trim_start().starts_with("- [") {
-            let mut text = lines[i].clone();
-            let mut j = i + 1;
-            while j < lines.len() {
-                let trimmed = lines[j].trim_start();
-                let continues = !trimmed.is_empty()
-                    && lines[j].starts_with(char::is_whitespace)
-                    && !trimmed.starts_with('-')
-                    && !trimmed.starts_with('#');
-                if !continues {
-                    break;
-                }
-                text.push(' ');
-                text.push_str(trimmed);
-                j += 1;
-            }
+            let (text, next) = join_continuations(lines, i);
             items.push((i, text));
-            i = j;
+            i = next;
         } else {
             i += 1;
         }
     }
     items
+}
+
+/// The bullet that starts at `lines[start]` with its continuation lines joined
+/// by a single space, and the index of the first line after it.
+fn join_continuations(lines: &[String], start: usize) -> (String, usize) {
+    let mut text = lines[start].clone();
+    let mut next = start + 1;
+    while let Some(trimmed) = lines.get(next).and_then(|line| continuation(line)) {
+        text.push(' ');
+        text.push_str(trimmed);
+        next += 1;
+    }
+    (text, next)
+}
+
+/// The trimmed text of `line` when it continues the bullet above it: a
+/// non-empty indented line that does not start a new bullet or heading.
+fn continuation(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    let continues = !trimmed.is_empty()
+        && line.starts_with(char::is_whitespace)
+        && !trimmed.starts_with('-')
+        && !trimmed.starts_with('#');
+    continues.then_some(trimmed)
 }
 
 /// Apply verified verdicts to an issue body by flipping `- [ ] <criterion>` to
@@ -142,23 +152,7 @@ pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
         if verdict.kind != VerdictKind::Verified {
             continue;
         }
-        let target = normalize_ac(&format!("- [ ] {}", verdict.criterion));
-        // Recomputed per verdict so a bullet ticked by an earlier verdict no
-        // longer matches (its `[x]` normalizes differently), letting duplicate
-        // criteria tick successive occurrences exactly as before.
-        let mut found = false;
-        for (start, text) in logical_checkbox_items(&body_lines) {
-            // Compare normalized logical bullets, but flip the box on the
-            // original first line so its markdown and wrapping survive.
-            // Replacing `[ ]` (not `- [ ]`) tolerates bullet/whitespace
-            // variants the normalized match also accepts.
-            if normalize_ac(&text) == target {
-                body_lines[start] = body_lines[start].replacen("[ ]", "[x]", 1);
-                found = true;
-                break;
-            }
-        }
-        if found {
+        if tick_criterion(&mut body_lines, &verdict.criterion) {
             ticked.push(verdict.criterion.clone());
         } else {
             unmatched.push(verdict.criterion.clone());
@@ -177,6 +171,58 @@ pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
     }
 }
 
+/// Tick the first unchecked bullet of `body_lines` whose normalized logical
+/// text is `- [ ] <criterion>`. Returns whether one was found.
+fn tick_criterion(body_lines: &mut [String], criterion: &str) -> bool {
+    let target = normalize_ac(&format!("- [ ] {criterion}"));
+    // Recomputed per verdict so a bullet ticked by an earlier verdict no
+    // longer matches (its `[x]` normalizes differently), letting duplicate
+    // criteria tick successive occurrences exactly as before.
+    let found = logical_checkbox_items(body_lines)
+        .into_iter()
+        .find(|(_, text)| normalize_ac(text) == target);
+    let Some((start, _)) = found else {
+        return false;
+    };
+    // Compare normalized logical bullets, but flip the box on the original
+    // first line so its markdown and wrapping survive. Replacing `[ ]` (not
+    // `- [ ]`) tolerates bullet/whitespace variants the normalized match also
+    // accepts.
+    body_lines[start] = body_lines[start].replacen("[ ]", "[x]", 1);
+    true
+}
+
+/// One verdict's entry in the evidence comment: its tag, criterion and
+/// evidence, flagged `NEEDS REVIEW` when it is unmatched or review-only.
+fn evidence_entry(verdict: &Verdict, unmatched: &[String]) -> String {
+    let tag = match verdict.kind {
+        VerdictKind::Verified => "verified",
+        VerdictKind::ReviewOnly => "review-only",
+    };
+    let evidence = if verdict.evidence.is_empty() {
+        "(no evidence recorded)"
+    } else {
+        &verdict.evidence
+    };
+
+    if unmatched.contains(&verdict.criterion) {
+        format!(
+            "- **[{tag}]** {}  \n  Evidence: {}  \n  [NEEDS REVIEW: criterion not found in issue body — not auto-ticked]\n",
+            verdict.criterion, evidence
+        )
+    } else if verdict.kind == VerdictKind::ReviewOnly {
+        format!(
+            "- **[{tag}]** {}  \n  Evidence: {}  \n  [NEEDS REVIEW: review-only — not auto-ticked]\n",
+            verdict.criterion, evidence
+        )
+    } else {
+        format!(
+            "- **[{tag}]** {}  \n  Evidence: {}\n",
+            verdict.criterion, evidence
+        )
+    }
+}
+
 /// Render a structured evidence comment pairing each criterion with its verdict
 /// and evidence. Review-only and unmatched verified criteria are explicitly
 /// flagged for the human reviewer.
@@ -184,32 +230,7 @@ pub fn evidence_comment(verdicts: &[Verdict], unmatched: &[String]) -> String {
     let mut out = String::from("## Acceptance ledger\n\n");
 
     for verdict in verdicts {
-        let tag = match verdict.kind {
-            VerdictKind::Verified => "verified",
-            VerdictKind::ReviewOnly => "review-only",
-        };
-        let evidence = if verdict.evidence.is_empty() {
-            "(no evidence recorded)"
-        } else {
-            &verdict.evidence
-        };
-
-        if unmatched.contains(&verdict.criterion) {
-            out.push_str(&format!(
-                "- **[{tag}]** {}  \n  Evidence: {}  \n  [NEEDS REVIEW: criterion not found in issue body — not auto-ticked]\n",
-                verdict.criterion, evidence
-            ));
-        } else if verdict.kind == VerdictKind::ReviewOnly {
-            out.push_str(&format!(
-                "- **[{tag}]** {}  \n  Evidence: {}  \n  [NEEDS REVIEW: review-only — not auto-ticked]\n",
-                verdict.criterion, evidence
-            ));
-        } else {
-            out.push_str(&format!(
-                "- **[{tag}]** {}  \n  Evidence: {}\n",
-                verdict.criterion, evidence
-            ));
-        }
+        out.push_str(&evidence_entry(verdict, unmatched));
     }
 
     if !unmatched.is_empty() {
@@ -546,6 +567,21 @@ some note
         assert!(result.unmatched.is_empty());
         // Body unchanged (review-only, not an error).
         assert_eq!(result.new_body, body);
+    }
+
+    #[test]
+    fn evidence_comment_names_a_verdict_with_no_evidence() {
+        let verdicts = vec![Verdict {
+            criterion: "Bare verdict".into(),
+            kind: VerdictKind::Verified,
+            evidence: String::new(),
+        }];
+        let comment = evidence_comment(&verdicts, &[]);
+        assert!(
+            comment
+                .contains("- **[verified]** Bare verdict  \n  Evidence: (no evidence recorded)\n"),
+            "{comment}"
+        );
     }
 
     #[test]

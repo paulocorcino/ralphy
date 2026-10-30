@@ -71,26 +71,29 @@ pub(crate) fn fold(
     let peak_usd = days.values().map(|d| d.usd).fold(0.0_f64, f64::max);
     let peak_deliveries = days.values().map(|d| d.issues.len()).max().unwrap_or(0) as u64;
     days.into_iter()
-        .map(|(date, day)| {
-            let deliveries = day.issues.len() as u64;
-            ActivityDay {
-                date,
-                usd: day.usd,
-                // A day whose whole volume was unpriceable reads `~$?`, never
-                // `$0.00`: the bar is empty because nobody could price it, not
-                // because nothing was spent.
-                usd_label: fmt_total(day.priced.then_some(day.usd), day.floor),
-                usd_share: if peak_usd > 0.0 {
-                    day.usd / peak_usd
-                } else {
-                    0.0
-                },
-                deliveries,
-                deliveries_share: share_of(deliveries, peak_deliveries),
-                floor: day.floor,
-            }
-        })
+        .map(|(date, day)| activity_day(date, day, peak_usd, peak_deliveries))
         .collect()
+}
+
+/// One day of the band, with its bars relative to the peak days.
+fn activity_day(date: String, day: Day, peak_usd: f64, peak_deliveries: u64) -> ActivityDay {
+    let deliveries = day.issues.len() as u64;
+    ActivityDay {
+        date,
+        usd: day.usd,
+        // A day whose whole volume was unpriceable reads `~$?`, never
+        // `$0.00`: the bar is empty because nobody could price it, not
+        // because nothing was spent.
+        usd_label: fmt_total(day.priced.then_some(day.usd), day.floor),
+        usd_share: if peak_usd > 0.0 {
+            day.usd / peak_usd
+        } else {
+            0.0
+        },
+        deliveries,
+        deliveries_share: share_of(deliveries, peak_deliveries),
+        floor: day.floor,
+    }
 }
 
 /// Every civil date a bounded window covers, starting at `since`'s own date.

@@ -98,20 +98,32 @@ pub(crate) fn migrate_side_stores(reg: &Registration, former: &[String]) {
     if sources.is_empty() {
         return;
     }
-    for from in &sources {
-        match ralphy_core::ledger::rename_project(from, &reg.slug) {
+    carry_ledgers(&sources, &reg.slug);
+    carry_events_sink(&sources, &reg.slug);
+}
+
+/// Rename the usage ledger of every key in `sources` to `to`. A failure warns
+/// and the old file stays.
+fn carry_ledgers(sources: &[&str], to: &str) {
+    for from in sources {
+        match ralphy_core::ledger::rename_project(from, to) {
             Ok(true) => {
-                tracing::info!(from, to = %reg.slug, "usage ledger carried to the new project key")
+                tracing::info!(from, to = %to, "usage ledger carried to the new project key")
             }
             Ok(false) => {}
             Err(e) => {
-                tracing::warn!(error = %e, from, to = %reg.slug, "usage ledger not carried; the old file stays")
+                tracing::warn!(error = %e, from, to = %to, "usage ledger not carried; the old file stays")
             }
         }
     }
+}
+
+/// Move the events sink of the first key in `sources` that has one to `to`. A
+/// failure warns.
+fn carry_events_sink(sources: &[&str], to: &str) {
     match EventsStore::load() {
         Ok(mut events) => {
-            let moved = sources.iter().any(|from| events.rekey(from, &reg.slug));
+            let moved = sources.iter().any(|from| events.rekey(from, to));
             if moved {
                 if let Err(e) = events.save() {
                     tracing::warn!(error = %e, "events sink not carried to the new project key");

@@ -85,6 +85,14 @@ pub(super) fn gpu(raw: &str) -> Gpu {
         .strip_prefix("ANGLE (")
         .and_then(|r| r.strip_suffix(')'))
         .unwrap_or(raw);
+    Gpu {
+        vendor: gpu_vendor(inner),
+        model: gpu_model(inner),
+    }
+}
+
+/// The model inside the renderer text, with the driver details cut.
+fn gpu_model(inner: &str) -> String {
     let parts: Vec<&str> = inner.split(", ").collect();
     let model = if parts.len() >= 2 { parts[1] } else { inner };
     let model = model
@@ -103,24 +111,23 @@ pub(super) fn gpu(raw: &str) -> Gpu {
         .matches('(')
         .count()
         .saturating_sub(model.matches(')').count());
-    let model = format!("{model}{}", ")".repeat(open));
+    format!("{model}{}", ")".repeat(open))
+}
+
+/// The first vendor whose word the renderer text holds, in this order.
+fn gpu_vendor(inner: &str) -> GpuVendor {
+    const VENDORS: &[(&[&str], GpuVendor)] = &[
+        (&["nvidia"], GpuVendor::Nvidia),
+        (&["amd", "radeon"], GpuVendor::Amd),
+        (&["intel"], GpuVendor::Intel),
+        (&["apple"], GpuVendor::Apple),
+        (&["qualcomm", "adreno"], GpuVendor::Qualcomm),
+        (&["mali", "arm"], GpuVendor::Arm),
+        (&["swiftshader", "llvmpipe"], GpuVendor::Software),
+    ];
     let lower = inner.to_ascii_lowercase();
-    let vendor = if lower.contains("nvidia") {
-        GpuVendor::Nvidia
-    } else if lower.contains("amd") || lower.contains("radeon") {
-        GpuVendor::Amd
-    } else if lower.contains("intel") {
-        GpuVendor::Intel
-    } else if lower.contains("apple") {
-        GpuVendor::Apple
-    } else if lower.contains("qualcomm") || lower.contains("adreno") {
-        GpuVendor::Qualcomm
-    } else if lower.contains("mali") || lower.contains("arm") {
-        GpuVendor::Arm
-    } else if lower.contains("swiftshader") || lower.contains("llvmpipe") {
-        GpuVendor::Software
-    } else {
-        GpuVendor::Other
-    };
-    Gpu { vendor, model }
+    VENDORS
+        .iter()
+        .find(|(words, _)| words.iter().any(|w| lower.contains(w)))
+        .map_or(GpuVendor::Other, |(_, vendor)| *vendor)
 }

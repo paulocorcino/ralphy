@@ -140,17 +140,7 @@ pub(crate) fn router_with_roster(
     // nowhere else: production builds the router once (see `sessions` above),
     // which is what makes this "logged once" without a `Once`; `load_from` and
     // the routes never log it.
-    match registry::load_from(&registry_path) {
-        Ok(store) => {
-            for slug in store.retired_console_worktree() {
-                tracing::warn!(
-                    %slug,
-                    "repos.toml: the `console_worktree` setting is no longer used and is removed the next time the file is saved; a console now opens in the worktree you pick"
-                );
-            }
-        }
-        Err(e) => tracing::warn!(error = %e, "repo registry unreadable at startup"),
-    }
+    warn_retired_console_worktree(&registry_path);
     // The desk (ADR-0050) is a sibling of `repos.toml`, so it inherits the
     // `$RALPHY_DAEMON_DIR` rooting `registry_path` already resolved — same rule
     // the `sessions`/`watchers` managers follow: derived here, never a `router`
@@ -181,20 +171,7 @@ pub(crate) fn router_with_roster(
     // spawned by `serve`, never here — a router built in a test must not reach
     // the network, nor write a cache into whatever directory it was built from.
     let release_store = registry_path.parent().map(Path::to_path_buf);
-    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-        let weak_subs = Arc::downgrade(&peer_watch_subs);
-        runtime.spawn(async move {
-            let mut interval = tokio::time::interval(fleet::watchsub::IDLE_EXPIRY / 2);
-            interval.tick().await;
-            loop {
-                interval.tick().await;
-                let Some(subs) = weak_subs.upgrade() else {
-                    break;
-                };
-                subs.sweep(fleet::watchsub::IDLE_EXPIRY);
-            }
-        });
-    }
+    spawn_watch_sub_sweep(&peer_watch_subs);
     // The run-completion nudge bus (#310, ADR-0036 amendment): the Spawn path
     // sends the repo slug of every dispatched child that exits, and every
     // `/ws/tree` connection relays it as `changes.dirty`. Daemon-wide and
@@ -279,6 +256,39 @@ pub(crate) fn router_with_roster(
             auth,
             headers::security_headers,
         ))
+}
+
+fn warn_retired_console_worktree(registry_path: &Path) {
+    match registry::load_from(registry_path) {
+        Ok(store) => {
+            for slug in store.retired_console_worktree() {
+                tracing::warn!(
+                    %slug,
+                    "repos.toml: the `console_worktree` setting is no longer used and is removed the next time the file is saved; a console now opens in the worktree you pick"
+                );
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "repo registry unreadable at startup"),
+    }
+}
+
+/// Expire the idle peer watch subscriptions, while any router still holds
+/// them. Outside a runtime (a router built in a sync test) nothing runs.
+fn spawn_watch_sub_sweep(peer_watch_subs: &Arc<fleet::watchsub::WatchSubs>) {
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        let weak_subs = Arc::downgrade(peer_watch_subs);
+        runtime.spawn(async move {
+            let mut interval = tokio::time::interval(fleet::watchsub::IDLE_EXPIRY / 2);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let Some(subs) = weak_subs.upgrade() else {
+                    break;
+                };
+                subs.sweep(fleet::watchsub::IDLE_EXPIRY);
+            }
+        });
+    }
 }
 
 /// Seconds since the Unix epoch. A backward clock (`SystemTime` before epoch)

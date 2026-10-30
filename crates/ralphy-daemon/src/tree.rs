@@ -291,29 +291,19 @@ impl ImageType {
 /// operator sees, not bytes served under an unverified type — and such a
 /// prologue is vanishingly rare in a repo asset.
 fn svg_root_element(src: &str) -> bool {
+    // `<!--` must be tried BEFORE `<!`, which is its prefix.
+    const PROLOGUE: [(&str, &str); 3] = [("<?", "?>"), ("<!--", "-->"), ("<!", ">")];
     let mut rest = src.trim_start();
     loop {
-        // `<!--` must be tried BEFORE `<!`, which is its prefix.
-        let after = if let Some(a) = rest.strip_prefix("<?") {
-            match a.find("?>") {
-                Some(i) => &a[i + 2..],
-                None => return false,
-            }
-        } else if let Some(a) = rest.strip_prefix("<!--") {
-            match a.find("-->") {
-                Some(i) => &a[i + 3..],
-                None => return false,
-            }
-        } else if let Some(a) = rest.strip_prefix("<!") {
-            match a.find('>') {
-                Some(i) => &a[i + 1..],
-                None => return false,
-            }
-        } else {
+        let Some((open, close)) = PROLOGUE.iter().find(|(open, _)| rest.starts_with(open)) else {
             // Not a prologue construct: this is the root element (or not an SVG).
             return rest.starts_with("<svg");
         };
-        rest = after.trim_start();
+        let after = &rest[open.len()..];
+        let Some(i) = after.find(close) else {
+            return false;
+        };
+        rest = after[i + close.len()..].trim_start();
     }
 }
 
@@ -578,6 +568,17 @@ mod tests {
         fs::write(root.path().join("logo.svg"), svg).unwrap();
         assert_eq!(
             read_image(root.path(), "logo.svg").map(|i| i.media_type),
+            Ok("image/svg+xml")
+        );
+    }
+
+    #[test]
+    fn read_image_skips_a_comment_that_holds_a_closing_bracket() {
+        let root = tempfile::tempdir().unwrap();
+        let svg = "<!-- a > b <html> -->\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+        fs::write(root.path().join("note.svg"), svg).unwrap();
+        assert_eq!(
+            read_image(root.path(), "note.svg").map(|i| i.media_type),
             Ok("image/svg+xml")
         );
     }

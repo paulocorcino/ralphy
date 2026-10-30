@@ -294,14 +294,12 @@ fn tree_to_kill(
     while let Some(parent) = queue.pop() {
         let parent_created = created(parent);
         for &(pid, ppid) in table {
-            if ppid != parent || pid == parent || pid == me || doomed.contains(&pid) {
-                continue;
-            }
-            let older_than_parent = matches!(
-                (parent_created, created(pid)),
-                (Some(parent_at), Some(child_at)) if child_at < parent_at
-            );
-            if older_than_parent {
+            if ppid != parent
+                || pid == parent
+                || pid == me
+                || doomed.contains(&pid)
+                || created_before_parent(parent_created, created(pid))
+            {
                 continue;
             }
             doomed.push(pid);
@@ -309,6 +307,16 @@ fn tree_to_kill(
         }
     }
     doomed
+}
+
+/// Whether a process was created before the parent it records, so it is not
+/// that parent's child. An unknown time on either side keeps the edge.
+#[cfg(any(windows, test))]
+fn created_before_parent(parent_created: Option<u64>, child_created: Option<u64>) -> bool {
+    matches!(
+        (parent_created, child_created),
+        (Some(parent_at), Some(child_at)) if child_at < parent_at
+    )
 }
 
 /// When `pid` was created, in 100 ns units since 1601 (a `FILETIME`), or `None`

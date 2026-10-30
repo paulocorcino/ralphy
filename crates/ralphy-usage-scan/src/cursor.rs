@@ -57,41 +57,46 @@ fn scan_chats(
     let Ok(hashes) = fs::read_dir(input.cursor_dir.join("chats")) else {
         return;
     };
-    for hash in hashes.flatten() {
-        let Ok(sessions) = fs::read_dir(hash.path()) else {
+    let sessions = hashes
+        .flatten()
+        .filter_map(|hash| fs::read_dir(hash.path()).ok())
+        .flat_map(|sessions| sessions.flatten());
+    for session in sessions {
+        let session_id = session.file_name().to_string_lossy().to_string();
+        if input.run_session_ids.contains(&session_id) {
             continue;
-        };
-        for session in sessions.flatten() {
-            let session_id = session.file_name().to_string_lossy().to_string();
-            if input.run_session_ids.contains(&session_id) {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(session.path().join("meta.json")) else {
-                continue;
-            };
-            let Ok(meta) = serde_json::from_str::<serde_json::Value>(&text) else {
-                continue;
-            };
-            let ms = |k: &str| meta.get(k).and_then(|v| v.as_i64());
-            let cwd = meta.get("cwd").and_then(|v| v.as_str());
-            let matched = cwd.and_then(|c| crate::attribution::find_repo(input.repos, c));
-            let (project, actor_email) = attribute(email_cache, matched);
-            out.insert(
-                session_id.clone(),
-                InteractiveRecord {
-                    agent: "cursor".to_string(),
-                    model: "unknown".to_string(),
-                    session_id,
-                    project,
-                    actor_email,
-                    tokens: None,
-                    first_ts: ms_to_rfc3339(ms("createdAtMs")),
-                    last_ts: ms_to_rfc3339(ms("updatedAtMs")),
-                    lower_bound: false,
-                },
-            );
+        }
+        if let Some(record) = chat_record(input, email_cache, &session.path(), session_id) {
+            out.insert(record.session_id.clone(), record);
         }
     }
+}
+
+/// The record of one `chats/<hash>/<sid>/` session from its `meta.json`, or
+/// `None` when the file is missing or is not JSON.
+fn chat_record(
+    input: &CursorScan,
+    email_cache: &mut HashMap<String, Option<String>>,
+    session_dir: &Path,
+    session_id: String,
+) -> Option<InteractiveRecord> {
+    let text = fs::read_to_string(session_dir.join("meta.json")).ok()?;
+    let meta = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    let ms = |k: &str| meta.get(k).and_then(|v| v.as_i64());
+    let cwd = meta.get("cwd").and_then(|v| v.as_str());
+    let matched = cwd.and_then(|c| crate::attribution::find_repo(input.repos, c));
+    let (project, actor_email) = attribute(email_cache, matched);
+    Some(InteractiveRecord {
+        agent: "cursor".to_string(),
+        model: "unknown".to_string(),
+        session_id,
+        project,
+        actor_email,
+        tokens: None,
+        first_ts: ms_to_rfc3339(ms("createdAtMs")),
+        last_ts: ms_to_rfc3339(ms("updatedAtMs")),
+        lower_bound: false,
+    })
 }
 
 /// Walk `<cursor_dir>/projects/<slug>/agent-transcripts/<sid>/<sid>.jsonl`. Six ids
@@ -108,40 +113,55 @@ fn scan_transcripts(
         return;
     };
     for project_dir in projects.flatten() {
-        let slug_dir = project_dir.file_name().to_string_lossy().to_string();
-        let matched = input
-            .repos
-            .iter()
-            .find(|r| cursor_project_slug(&r.path).eq_ignore_ascii_case(&slug_dir));
-        let (project, actor_email) = attribute(email_cache, matched);
-        let Ok(sessions) = fs::read_dir(project_dir.path().join("agent-transcripts")) else {
+        scan_project_transcripts(input, out, email_cache, &project_dir.path());
+    }
+}
+
+/// Adds the sessions of one `projects/<slug>/agent-transcripts/` dir that no
+/// earlier record claimed. Every session of the dir shares the attribution of
+/// the repo whose slug matches `<slug>`.
+fn scan_project_transcripts(
+    input: &CursorScan,
+    out: &mut BTreeMap<String, InteractiveRecord>,
+    email_cache: &mut HashMap<String, Option<String>>,
+    project_dir: &Path,
+) {
+    let slug_dir = project_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let matched = input
+        .repos
+        .iter()
+        .find(|r| cursor_project_slug(&r.path).eq_ignore_ascii_case(&slug_dir));
+    let (project, actor_email) = attribute(email_cache, matched);
+    let Ok(sessions) = fs::read_dir(project_dir.join("agent-transcripts")) else {
+        return;
+    };
+    for session in sessions.flatten() {
+        let session_id = session.file_name().to_string_lossy().to_string();
+        if input.run_session_ids.contains(&session_id) || out.contains_key(&session_id) {
             continue;
-        };
-        for session in sessions.flatten() {
-            let session_id = session.file_name().to_string_lossy().to_string();
-            if input.run_session_ids.contains(&session_id) || out.contains_key(&session_id) {
-                continue;
-            }
-            let transcript = session.path().join(format!("{session_id}.jsonl"));
-            if !transcript.is_file() {
-                continue;
-            }
-            let ts = ms_to_rfc3339(mtime_ms(&transcript));
-            out.insert(
-                session_id.clone(),
-                InteractiveRecord {
-                    agent: "cursor".to_string(),
-                    model: "unknown".to_string(),
-                    session_id,
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
-                    tokens: None,
-                    first_ts: ts.clone(),
-                    last_ts: ts,
-                    lower_bound: false,
-                },
-            );
         }
+        let transcript = session.path().join(format!("{session_id}.jsonl"));
+        if !transcript.is_file() {
+            continue;
+        }
+        let ts = ms_to_rfc3339(mtime_ms(&transcript));
+        out.insert(
+            session_id.clone(),
+            InteractiveRecord {
+                agent: "cursor".to_string(),
+                model: "unknown".to_string(),
+                session_id,
+                project: project.clone(),
+                actor_email: actor_email.clone(),
+                tokens: None,
+                first_ts: ts.clone(),
+                last_ts: ts,
+                lower_bound: false,
+            },
+        );
     }
 }
 

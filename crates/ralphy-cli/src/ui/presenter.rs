@@ -146,29 +146,34 @@ impl Renderer {
         loop {
             match rx.recv_timeout(Duration::from_secs(1)) {
                 Ok(PresenterMsg::Event(event)) => self.apply(event),
-                Ok(PresenterMsg::Flush(ack)) => {
-                    // Drain everything already queued so no scroll line is lost before
-                    // the region is cleared; a superseded flush just gets acked too.
-                    while let Ok(msg) = rx.try_recv() {
-                        match msg {
-                            PresenterMsg::Event(event) => self.apply(event),
-                            PresenterMsg::Flush(prev) => {
-                                let _ = prev.send(());
-                            }
-                        }
-                    }
-                    let _ = ack.send(());
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Advance the elapsed clock between events (ADR-0006 D4). No-op off
-                    // a colour TTY or when no active bar exists.
-                    if self.opts.color {
-                        let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
-                        repaint_active_bar(&s, self.opts);
-                    }
-                }
+                Ok(PresenterMsg::Flush(ack)) => self.flush(&rx, ack),
+                Err(mpsc::RecvTimeoutError::Timeout) => self.tick(),
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+        }
+    }
+
+    /// Answer a [`PresenterMsg::Flush`]: drain everything already queued so no
+    /// scroll line is lost before the region is cleared, then ack. A superseded
+    /// flush just gets acked too.
+    fn flush(&self, rx: &Receiver<PresenterMsg>, ack: SyncSender<()>) {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                PresenterMsg::Event(event) => self.apply(event),
+                PresenterMsg::Flush(prev) => {
+                    let _ = prev.send(());
+                }
+            }
+        }
+        let _ = ack.send(());
+    }
+
+    /// The idle tick: advance the elapsed clock between events (ADR-0006 D4).
+    /// No-op off a colour TTY or when no active bar exists.
+    fn tick(&self) {
+        if self.opts.color {
+            let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            repaint_active_bar(&s, self.opts);
         }
     }
 

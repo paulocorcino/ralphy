@@ -121,6 +121,26 @@ pub(crate) fn serve<T>(
         .context("reading the password socket")?
         .port();
     let nonce = ralphy_daemon::auth::generate_token();
+    let env = askpass_env(port, &nonce)?;
+    let answers = Mutex::new(Answers::default());
+    let stop = AtomicBool::new(false);
+    let result = std::thread::scope(|scope| {
+        scope
+            .spawn(|| answer_until_stopped(&listener, nonce.as_bytes(), password, &answers, &stop));
+        let result = run(&env);
+        stop.store(true, Ordering::Relaxed);
+        result
+    });
+    let unhandled = answers
+        .into_inner()
+        .map_err(|_| anyhow::anyhow!("the password socket thread panicked"))?
+        .unhandled;
+    Ok((result?, unhandled))
+}
+
+/// The environment that makes `ssh` run this binary as its askpass program,
+/// pointed at the loopback socket on `port` with `nonce`.
+fn askpass_env(port: u16, nonce: &str) -> Result<Vec<(String, String)>> {
     let exe = std::env::current_exe().context("finding this ralphy binary")?;
     let mut env = vec![
         ("SSH_ASKPASS".to_string(), exe.display().to_string()),
@@ -132,36 +152,34 @@ pub(crate) fn serve<T>(
     if std::env::var_os("DISPLAY").is_none() {
         env.push(("DISPLAY".to_string(), ":0".to_string()));
     }
-    let answers = Mutex::new(Answers::default());
-    let stop = AtomicBool::new(false);
-    let result = std::thread::scope(|scope| {
-        scope.spawn(|| {
-            while !stop.load(Ordering::Relaxed) {
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        if let Err(e) = answer(stream, nonce.as_bytes(), password, &answers) {
-                            tracing::debug!(error = %format!("{e:#}"), "a password request failed");
-                        }
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(20));
-                    }
-                    Err(e) => {
-                        tracing::debug!(error = %e, "the password socket stopped");
-                        return;
-                    }
+    Ok(env)
+}
+
+/// Accept askpass requests on the non-blocking `listener` and answer each one
+/// until `stop` is set or the socket fails.
+fn answer_until_stopped(
+    listener: &TcpListener,
+    nonce: &[u8],
+    password: &Password,
+    answers: &Mutex<Answers>,
+    stop: &AtomicBool,
+) {
+    while !stop.load(Ordering::Relaxed) {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                if let Err(e) = answer(stream, nonce, password, answers) {
+                    tracing::debug!(error = %format!("{e:#}"), "a password request failed");
                 }
             }
-        });
-        let result = run(&env);
-        stop.store(true, Ordering::Relaxed);
-        result
-    });
-    let unhandled = answers
-        .into_inner()
-        .map_err(|_| anyhow::anyhow!("the password socket thread panicked"))?
-        .unhandled;
-    Ok((result?, unhandled))
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "the password socket stopped");
+                return;
+            }
+        }
+    }
 }
 
 /// One askpass request: `<nonce>\n<prompt>`. The password is written back only

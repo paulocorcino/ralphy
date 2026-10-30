@@ -91,11 +91,16 @@ function initial(): State {
 
 // The separator of the daemon's paths, read from what it answered.
 function sepOf(state: State) {
-  const l = state.listing;
   // Only a Windows daemon lists drives, with an empty folder path.
-  if (l && l.dir && l.dir.path === "") return "\\";
-  const sample = (l && (l.start || (l.dir && l.dir.path))) || state.text || "";
+  if (state.listing?.dir?.path === "") return "\\";
+  const sample = pathSample(state);
   return /^[A-Za-z]:/.test(sample) || sample.includes("\\") ? "\\" : "/";
+}
+
+// A path the daemon answered, or else the text in the field.
+function pathSample(state: State) {
+  const l = state.listing;
+  return l?.start || l?.dir?.path || state.text || "";
 }
 
 function isSep(c: string) {
@@ -208,22 +213,25 @@ function samePath(a: string, b: string, sep: string) {
 // `{ action, label, help, path, init, create }`, where `action` is "add",
 // "init", "create", "root", "added", "missing", "unreadable" or "none".
 function target(state: State): Target {
-  const sep = sepOf(state);
   const none = { action: "none", label: "Add project", help: "", path: "", init: false };
-  if (state.wslMissing) return none;
-  const text = state.text;
-  if (!text || !state.chosen) return none;
-  // A reply to an older text says nothing about this one.
-  if (state.listedText !== text) return none;
+  if (!answersText(state)) return none;
   if (state.failure === "this folder does not exist") {
     return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
   }
-  const l = state.listing;
-  if (!l || !l.dir || l.dir.path === "") return none;
-  const dir = l.dir;
+  const dir = state.listing?.dir;
+  if (!dir || dir.path === "") return none;
+  const text = state.text;
+  const sep = sepOf(state);
   if (!endsWithSep(text)) return entryTarget(state, dir, text, sep);
   const repo = !!dir.root && samePath(dir.root, dir.path, sep);
   return finalTarget(dir.path, repo, !!dir.added, dir.root && !repo ? dir.root : null);
+}
+
+// The newest listing answers the text in the field, for a chosen place with
+// no missing WSL peer. A reply to an older text says nothing about this one.
+function answersText(state: State) {
+  if (state.wslMissing || !state.text || !state.chosen) return false;
+  return state.listedText === state.text;
 }
 
 /** The folder `dir` of a listing. */

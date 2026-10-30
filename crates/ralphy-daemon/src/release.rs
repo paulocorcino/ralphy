@@ -193,31 +193,38 @@ fn parse_body(body: &str) -> (Vec<String>, Vec<String>) {
     for line in body.lines() {
         let line = line.trim();
         if let Some(heading) = line.strip_prefix("### ") {
-            // The page heads each kind with an emoji (`### ✨ New`, ADR-0056 §10).
-            let kind = heading
-                .trim_start_matches(|c: char| !c.is_alphanumeric())
-                .trim()
-                .to_ascii_lowercase();
+            let kind = heading_kind(heading);
             if !kinds.contains(&kind) {
                 kinds.push(kind);
             }
         } else if let Some(item) = line.strip_prefix("- ") {
-            // Drop the trailing `(#123)`: the workbench shows prose, and the
-            // number belongs to a page it is not linking to.
-            let text = match item.rsplit_once(" (#") {
-                Some((head, tail)) if tail.ends_with(')') => head,
-                _ => item,
-            };
-            // The panel renders text, not markdown: a headline's bold would print
-            // its asterisks.
-            let text = text.replace("**", "");
-            let text = text.trim();
-            if !text.is_empty() {
-                highlights.push(text.to_string());
-            }
+            highlights.extend(highlight(item));
         }
     }
     (kinds, highlights)
+}
+
+fn heading_kind(heading: &str) -> String {
+    // The page heads each kind with an emoji (`### ✨ New`, ADR-0056 §10).
+    heading
+        .trim_start_matches(|c: char| !c.is_alphanumeric())
+        .trim()
+        .to_ascii_lowercase()
+}
+
+/// The prose of one bullet, or `None` when nothing is left of it.
+fn highlight(item: &str) -> Option<String> {
+    // Drop the trailing `(#123)`: the workbench shows prose, and the
+    // number belongs to a page it is not linking to.
+    let text = match item.rsplit_once(" (#") {
+        Some((head, tail)) if tail.ends_with(')') => head,
+        _ => item,
+    };
+    // The panel renders text, not markdown: a headline's bold would print
+    // its asterisks.
+    let text = text.replace("**", "");
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 #[cfg(test)]

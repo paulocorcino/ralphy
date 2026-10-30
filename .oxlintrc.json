@@ -23,9 +23,14 @@
     "typescript/no-explicit-any": "error",
     // `scrim()` in app.ts keeps `this` as `self`: Alpine calls `x-effect` with
     // its own `this`, so the arrow-function fix does not apply there.
-    "typescript/no-this-alias": "off"
+    "typescript/no-this-alias": "off",
+    // A function may score 10 (ADR-0081). `modified` counts a `switch` once.
+    // An exception is a `// oxlint-disable-next-line complexity -- <reason>`
+    // line, counted by `complexity_exceptions_do_not_grow`.
+    "complexity": ["error", { "max": 10, "variant": "modified" }]
   },
   "overrides": [
-    { "files": ["**/ui-tests/**"], "env": { "node": true } }
+    // Test code is not measured for complexity (ADR-0081 D3).
+    { "files": ["**/ui-tests/**"], "env": { "node": true }, "rules": { "complexity": "off" } }
   ]
 }

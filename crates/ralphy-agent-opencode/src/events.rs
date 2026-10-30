@@ -123,17 +123,24 @@ pub(crate) fn parse_opencode_events(stdout: &str) -> (String, bool) {
         if is_error_event(&val) {
             saw_error = true;
         }
-        let payload = event_payload(&val);
-        let is_text = val.get("type").and_then(|v| v.as_str()) == Some("text")
-            || payload.get("type").and_then(|v| v.as_str()) == Some("text");
-        if is_text {
-            if let Some(t) = payload.get("text").and_then(|v| v.as_str()) {
-                text.push_str(t);
-                text.push('\n');
-            }
+        if let Some(t) = text_part(&val) {
+            text.push_str(t);
+            text.push('\n');
         }
     }
     (text, saw_error)
+}
+
+/// The assistant text one event carries when the event, or its `part`
+/// payload, is typed `text`. The text is read from the payload.
+fn text_part(val: &serde_json::Value) -> Option<&str> {
+    let payload = event_payload(val);
+    let is_text = val.get("type").and_then(|v| v.as_str()) == Some("text")
+        || payload.get("type").and_then(|v| v.as_str()) == Some("text");
+    if !is_text {
+        return None;
+    }
+    payload.get("text").and_then(|v| v.as_str())
 }
 
 /// Extract a reset hint from an OpenCode error event or message text (best-effort).

@@ -248,52 +248,13 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
     let mut accepted: Vec<PeerDescriptor> = Vec::new();
     let mut rejected: Vec<PeerReject> = Vec::new();
     for (file, text) in records {
-        let d: PeerDescriptor = match toml::from_str(text) {
+        let d = match read_record(file, text) {
             Ok(d) => d,
-            Err(e) => {
-                rejected.push(PeerReject::Malformed {
-                    file: file.clone(),
-                    why: e.to_string(),
-                });
+            Err(reject) => {
+                rejected.push(reject);
                 continue;
             }
         };
-        if saved_version_refused(&d) {
-            rejected.push(PeerReject::IncompatibleVersion {
-                file: file.clone(),
-                daemon_id: d.daemon_id,
-                environment: d.environment,
-                theirs: d.protocol_version,
-            });
-            continue;
-        }
-        if let Some(t) = d.tunnel.as_ref().filter(|t| t.local_port != d.port) {
-            rejected.push(PeerReject::Malformed {
-                file: file.clone(),
-                why: format!(
-                    "its tunnel local port {} is not its port {}",
-                    t.local_port, d.port
-                ),
-            });
-            continue;
-        }
-        if let Some(t) = d.tunnel.as_ref().filter(|t| {
-            let bad_socket = t
-                .peer_socket
-                .as_deref()
-                .is_some_and(|s| !s.starts_with('/'));
-            let has_target = t.peer_port != 0 || t.peer_socket.is_some();
-            t.destination.trim().is_empty() || !has_target || bad_socket || t.local_port == 0
-        }) {
-            rejected.push(PeerReject::Malformed {
-                file: file.clone(),
-                why: format!(
-                    "its tunnel needs a destination, a local port that is not 0, and a peer port that is not 0 or an absolute peer socket path (destination `{}`, peer port {}, peer socket {:?}, local port {})",
-                    t.destination, t.peer_port, t.peer_socket, t.local_port
-                ),
-            });
-            continue;
-        }
         if accepted.iter().any(|a| a.daemon_id == d.daemon_id) {
             rejected.push(PeerReject::DuplicateIdentity {
                 file: file.clone(),
@@ -304,6 +265,53 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
         accepted.push(d);
     }
     (accepted, rejected)
+}
+
+/// One record as a descriptor, or the reason it is refused on its own,
+/// before it is compared with the other records.
+fn read_record(file: &str, text: &str) -> Result<PeerDescriptor, PeerReject> {
+    let d: PeerDescriptor = toml::from_str(text).map_err(|e| PeerReject::Malformed {
+        file: file.to_string(),
+        why: e.to_string(),
+    })?;
+    if saved_version_refused(&d) {
+        return Err(PeerReject::IncompatibleVersion {
+            file: file.to_string(),
+            daemon_id: d.daemon_id,
+            environment: d.environment,
+            theirs: d.protocol_version,
+        });
+    }
+    if let Some(why) = d.tunnel.as_ref().and_then(|t| tunnel_flaw(t, d.port)) {
+        return Err(PeerReject::Malformed {
+            file: file.to_string(),
+            why,
+        });
+    }
+    Ok(d)
+}
+
+/// What is wrong in a tunnel of a descriptor whose port is `port`, if
+/// anything.
+fn tunnel_flaw(t: &TunnelSpec, port: u16) -> Option<String> {
+    if t.local_port != port {
+        return Some(format!(
+            "its tunnel local port {} is not its port {}",
+            t.local_port, port
+        ));
+    }
+    let bad_socket = t
+        .peer_socket
+        .as_deref()
+        .is_some_and(|s| !s.starts_with('/'));
+    let has_target = t.peer_port != 0 || t.peer_socket.is_some();
+    if t.destination.trim().is_empty() || !has_target || bad_socket || t.local_port == 0 {
+        return Some(format!(
+            "its tunnel needs a destination, a local port that is not 0, and a peer port that is not 0 or an absolute peer socket path (destination `{}`, peer port {}, peer socket {:?}, local port {})",
+            t.destination, t.peer_port, t.peer_socket, t.local_port
+        ));
+    }
+    None
 }
 
 /// Read every `*.toml` in `dir`, sorted by file name, and [`fold`] them. A

@@ -107,29 +107,39 @@ pub(crate) fn rekey_desk(mut store: DeskStore, aliases: &BTreeMap<String, String
         return store;
     }
     for record in &mut store.windows {
-        if let Some(to) = aliases.get(&record.repo) {
-            record.repo = to.clone();
-        }
+        rekey_repo(&mut record.repo, aliases);
     }
     for note in &mut store.notes {
-        if let Some(to) = aliases.get(&note.repo) {
-            note.repo = to.clone();
-        }
+        rekey_repo(&mut note.repo, aliases);
     }
+    store.checkouts = rekey_checkouts(&store.checkouts, aliases);
+    store
+}
+
+fn rekey_repo(repo: &mut String, aliases: &BTreeMap<String, String>) {
+    if let Some(to) = aliases.get(repo) {
+        *repo = to.clone();
+    }
+}
+
+/// The checkout selections under their canonical keys.
+fn rekey_checkouts(
+    old: &BTreeMap<String, String>,
+    aliases: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
     let mut checkouts = BTreeMap::new();
     // Canonical keys first, so a stale alias never overwrites one.
-    for (repo, name) in &store.checkouts {
+    for (repo, name) in old {
         if !aliases.contains_key(repo) {
             checkouts.insert(repo.clone(), name.clone());
         }
     }
-    for (repo, name) in &store.checkouts {
+    for (repo, name) in old {
         if let Some(to) = aliases.get(repo) {
             checkouts.entry(to.clone()).or_insert_with(|| name.clone());
         }
     }
-    store.checkouts = checkouts;
-    store
+    checkouts
 }
 
 #[cfg(test)]

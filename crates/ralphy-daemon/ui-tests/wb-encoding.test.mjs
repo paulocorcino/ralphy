@@ -287,6 +287,15 @@ test("the dirty mark waits for the daemon's ack and comes back on a refusal", ()
   viewer.saveFailed("nope", "refused"); // an unknown id is a no-op
 });
 
+test("a nudge on a clean image pane repaints the image with the fresh bytes", () => {
+  const { viewer, mount } = loadViewer();
+  viewer.open({ id: "i2", project: "o/r", path: "a.png", ftype: "image", content: "data:image/png;base64,AA==" });
+  const img = mount.children[0].querySelector(".img-canvas");
+  viewer.externalChange("i2", "data:image/png;base64,BB==");
+  assert.equal(img.src, "data:image/png;base64,BB==");
+  assert.equal(viewer.descOf("i2").content, "data:image/png;base64,BB==");
+});
+
 test("a refused open builds a pane that saves nothing and ignores nudges", () => {
   const { viewer, emitted } = loadViewer();
   viewer.open({ id: "t4", project: "o/r", path: "d.bin", ftype: "code", refused: "binary" });

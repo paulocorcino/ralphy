@@ -22,19 +22,27 @@ use syn::parse::{ParseStream, Parser};
 use syn::visit::{self, Visit};
 use syn::{BinOp, Block, Expr, Item, Pat, Token};
 
+/// One scored function.
+pub(super) struct Found {
+    pub(super) name: String,
+    pub(super) value: u32,
+    /// The function has the attribute [`super::EXCEPTION_ATTR`].
+    pub(super) marked: bool,
+}
+
 /// The score of each function in `file`, by name. Items under `#[cfg(test)]`
 /// and `#[test]` functions are not production code and are left out.
-pub(super) fn file_scores(src: &str) -> Result<Vec<(String, u32)>> {
+pub(super) fn file_scores(src: &str) -> Result<Vec<Found>> {
     let file = syn::parse_file(src)?;
     let mut out = Vec::new();
     items(&file.items, &mut out);
     Ok(out)
 }
 
-fn items(list: &[Item], out: &mut Vec<(String, u32)>) {
+fn items(list: &[Item], out: &mut Vec<Found>) {
     for item in list.iter().filter(|item| !is_test(item_attrs(item))) {
         match item {
-            Item::Fn(f) => function(&f.sig.ident, &f.block, out),
+            Item::Fn(f) => function(&f.sig.ident, &f.attrs, &f.block, out),
             Item::Impl(i) => impl_fns(i, out),
             Item::Trait(t) => trait_fns(t, out),
             Item::Mod(m) => m.content.iter().for_each(|(_, inner)| items(inner, out)),
@@ -54,31 +62,37 @@ fn item_attrs(item: &Item) -> &[syn::Attribute] {
     }
 }
 
-fn impl_fns(block: &syn::ItemImpl, out: &mut Vec<(String, u32)>) {
+fn impl_fns(block: &syn::ItemImpl, out: &mut Vec<Found>) {
     let fns = block.items.iter().filter_map(|item| match item {
         syn::ImplItem::Fn(f) if !is_test(&f.attrs) => Some(f),
         _ => None,
     });
     for f in fns {
-        function(&f.sig.ident, &f.block, out);
+        function(&f.sig.ident, &f.attrs, &f.block, out);
     }
 }
 
 /// The trait methods that have a default body.
-fn trait_fns(t: &syn::ItemTrait, out: &mut Vec<(String, u32)>) {
+fn trait_fns(t: &syn::ItemTrait, out: &mut Vec<Found>) {
     let fns = t.items.iter().filter_map(|item| match item {
-        syn::TraitItem::Fn(f) if !is_test(&f.attrs) => Some((&f.sig.ident, f.default.as_ref()?)),
+        syn::TraitItem::Fn(f) if !is_test(&f.attrs) => f.default.as_ref().map(|body| (f, body)),
         _ => None,
     });
-    for (name, body) in fns {
-        function(name, body, out);
+    for (f, body) in fns {
+        function(&f.sig.ident, &f.attrs, body, out);
     }
 }
 
-fn function(name: &syn::Ident, body: &Block, out: &mut Vec<(String, u32)>) {
+fn function(name: &syn::Ident, attrs: &[syn::Attribute], body: &Block, out: &mut Vec<Found>) {
     let mut score = Score::default();
     score.visit_block(body);
-    out.push((name.to_string(), score.total));
+    out.push(Found {
+        name: name.to_string(),
+        value: score.total,
+        marked: attrs
+            .iter()
+            .any(|a| a.path().is_ident(super::EXCEPTION_ATTR)),
+    });
     items(&score.nested_items, out);
 }
 

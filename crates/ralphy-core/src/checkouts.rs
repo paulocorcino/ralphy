@@ -73,26 +73,31 @@ pub(crate) fn parse_porcelain(text: &str) -> Vec<Entry> {
             }
             continue;
         }
-        let entry = current.get_or_insert_with(Entry::default);
-        if let Some(path) = line.strip_prefix("worktree ") {
-            entry.path = path.to_string();
-        } else if let Some(branch) = line.strip_prefix("branch ") {
-            entry.branch = branch
-                .strip_prefix("refs/heads/")
-                .unwrap_or(branch)
-                .to_string();
-        } else if line == "detached" {
-            entry.detached = true;
-        } else if line == "prunable" || line.starts_with("prunable ") {
-            entry.prunable = true;
-        } else if line == "locked" || line.starts_with("locked ") {
-            entry.locked = true;
-        }
+        read_attribute(current.get_or_insert_with(Entry::default), line);
     }
     if let Some(entry) = current.take() {
         entries.push(entry);
     }
     entries
+}
+
+/// Record one attribute line of a porcelain record on `entry`. An attribute
+/// this module does not use is ignored.
+fn read_attribute(entry: &mut Entry, line: &str) {
+    if let Some(path) = line.strip_prefix("worktree ") {
+        entry.path = path.to_string();
+    } else if let Some(branch) = line.strip_prefix("branch ") {
+        entry.branch = branch
+            .strip_prefix("refs/heads/")
+            .unwrap_or(branch)
+            .to_string();
+    } else if line == "detached" {
+        entry.detached = true;
+    } else if line == "prunable" || line.starts_with("prunable ") {
+        entry.prunable = true;
+    } else if line == "locked" || line.starts_with("locked ") {
+        entry.locked = true;
+    }
 }
 
 /// Keep the entries that are workbench worktrees of `primary`: a direct child
@@ -193,6 +198,21 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
     let entries = entries(start)?;
     let primary_path = entries[0].path.clone();
     let primary = Path::new(&primary_path);
+    refuse_unusable_name(primary, &entries, name)?;
+    let rel = format!("{WORKTREES_DIR}/{name}");
+    let base = resolve_base(primary, base)?;
+    create_and_record(primary, name, &rel, &base)?;
+    Ok(Checkout {
+        name: name.to_string(),
+        path: format!("{primary_path}/{WORKTREES_DIR}/{name}"),
+        branch: name.to_string(),
+        base,
+        dirty: false,
+    })
+}
+
+/// The five refusals [`add`] lists, each checked before anything is written.
+fn refuse_unusable_name(primary: &Path, entries: &[Entry], name: &str) -> Result<()> {
     crate::git::validate_branch_name(primary, name)
         .with_context(|| format!("invalid worktree name '{name}': not a valid branch name"))?;
     if name.contains(['/', '\\']) {
@@ -216,7 +236,14 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
     if primary.join(&rel).exists() {
         bail!("a directory already exists at {rel}: remove it first");
     }
-    let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
+    Ok(())
+}
+
+/// The branch [`add`] cuts the new one from: `base` when given, the primary's
+/// current branch otherwise. Refused when it is `HEAD` or does not resolve to
+/// a commit, and when the primary tree is detached with no `base`.
+fn resolve_base(primary: &Path, base: Option<&str>) -> Result<String> {
+    match base.map(str::trim).filter(|b| !b.is_empty()) {
         Some("HEAD") => bail!("base 'HEAD' is not a branch: pass a branch name"),
         // The last positional of `git worktree add`: a `-`-leading base would
         // be read as an option (`--detach`, `--lock`), so it must resolve to a
@@ -224,21 +251,27 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
         Some(b) => {
             crate::git::validate_commitish(primary, b)
                 .with_context(|| format!("invalid base '{b}'"))?;
-            b.to_string()
+            Ok(b.to_string())
         }
         None => {
             let current = crate::git::current_branch(primary)?;
             if current == "HEAD" {
                 bail!("the primary tree is detached: pass --base <ref>");
             }
-            current
+            Ok(current)
         }
-    };
+    }
+}
+
+/// Create the worktree at `rel` on the new branch `name` and record `base` as
+/// `branch.<name>.base`. On every error path either both exist or neither
+/// does.
+fn create_and_record(primary: &Path, name: &str, rel: &str, base: &str) -> Result<()> {
     std::fs::create_dir_all(primary.join(WORKTREES_DIR))
         .with_context(|| format!("creating {}/{WORKTREES_DIR}", primary.display()))?;
     if let Err(e) = git(
         primary,
-        &["worktree", "add", "--no-track", "-b", name, &rel, &base],
+        &["worktree", "add", "--no-track", "-b", name, rel, base],
     ) {
         // `-b` lands before git validates the target: delete the branch it may
         // have left, so a retry is not refused with `already exists`.
@@ -246,21 +279,15 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
         return Err(e.context(format!("creating worktree '{name}'")));
     }
     let key = format!("branch.{name}.base");
-    if let Err(e) = git(primary, &["config", "--local", &key, &base]) {
+    if let Err(e) = git(primary, &["config", "--local", &key, base]) {
         // Roll back so nothing half-made survives.
-        if let Err(rm) = git(primary, &["worktree", "remove", "--force", &rel]) {
+        if let Err(rm) = git(primary, &["worktree", "remove", "--force", rel]) {
             tracing::warn!(error = %rm, path = %rel, "could not roll back the worktree");
         }
         delete_branch_best_effort(primary, name);
         return Err(e.context(format!("recording {key} (the worktree was rolled back)")));
     }
-    Ok(Checkout {
-        name: name.to_string(),
-        path: format!("{primary_path}/{WORKTREES_DIR}/{name}"),
-        branch: name.to_string(),
-        base,
-        dirty: false,
-    })
+    Ok(())
 }
 
 /// Why [`remove`] refused, one variant per gate (ADR-0063 §1). Returned bare —

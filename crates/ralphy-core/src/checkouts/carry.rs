@@ -227,20 +227,25 @@ fn unlink_in(dir: &Path, warnings: &mut Vec<String>) {
         }
     };
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.file_name().is_some_and(|n| n == ".git") {
-            continue;
+        unlink_entry(&entry.path(), warnings);
+    }
+}
+
+/// One entry of the walk: a directory link is unlinked, a plain directory is
+/// walked, and the `.git` pointer and every other entry are left alone.
+fn unlink_entry(path: &Path, warnings: &mut Vec<String>) {
+    if path.file_name().is_some_and(|n| n == ".git") {
+        return;
+    }
+    let Ok(meta) = path.symlink_metadata() else {
+        return;
+    };
+    if is_dir_link(path, &meta) {
+        if let Err(e) = remove_dir_link(path) {
+            warnings.push(format!("could not unlink {}: {e}", path.display()));
         }
-        let Ok(meta) = path.symlink_metadata() else {
-            continue;
-        };
-        if is_dir_link(&path, &meta) {
-            if let Err(e) = remove_dir_link(&path) {
-                warnings.push(format!("could not unlink {}: {e}", path.display()));
-            }
-        } else if meta.is_dir() {
-            unlink_in(&path, warnings);
-        }
+    } else if meta.is_dir() {
+        unlink_in(path, warnings);
     }
 }
 

@@ -628,7 +628,8 @@ returned object. Ten workbench modules have more than 700 lines: `app.ts`
    listed at about 900. `workbench_ts_modules_stay_small` in
    `crates/xtask/tests/ratchets/` holds the rule. *Replaced (2026-10-12)
    by ADR-0022 §7: the limit stays 700, counted as lines of code, and the
-   base branch is the baseline instead of `TS_SIZE_BASELINE`.*
+   base branch is the baseline instead of `TS_SIZE_BASELINE`. The limit is
+   500 since the 2026-10-30 amendment of ADR-0022 §7.*
 
 4. **The pins on console text read the whole console family.** The console
    family is every module named `wb-console.ts`, `wb-console-*.ts`,

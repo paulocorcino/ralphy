@@ -3,6 +3,7 @@
 Status: accepted
 Amended 2026-10-12 (Rust is scored from the source text, not by clippy).
 Amended 2026-10-12 (a ceiling on the baseline goes down to 15).
+Amended 2026-10-29 (every function scores 10 or less).
 Kind: process
 Protects: integrity of change, testability
 
@@ -141,6 +142,12 @@ issue when this ADR is accepted.
 - D9 (as amended by A4–A7): A5 is checked by `complexity --check`, and its
   rule is tested in `crates/xtask/src/complexity/tests.rs`. The issue of
   each step (A6) is opened by hand.
+- Amendment A8–A11: A8 and A9 are reviewed in the pull requests of step 5.
+  When step 5 closes (A10), TypeScript is checked by the `complexity` rule
+  in `.oxlintrc.json`, which the `oxlint --deny-warnings` step of CI runs.
+  Rust is checked by `cargo run -q -p xtask -- complexity --check`. The
+  exceptions of A11 are counted by `complexity_exceptions_do_not_grow`
+  (`crates/xtask/tests/ratchets/`).
 
 ## Amendment 2026-10-12 — Rust is scored from the source text
 
@@ -226,3 +233,63 @@ cognitive complexity and the TypeScript score is modified cyclomatic
 complexity, so 15 in one language is not 15 in the other. One number keeps
 the rule simple. The measured TypeScript maximum is 43, so TypeScript enters
 the work at step 2.
+
+## Amendment 2026-10-29 — every function scores 10 or less
+
+Steps 1 to 4 of A6 (#709, #711, #712, #713) brought the ceiling to 15. On
+`86f5b3b1` the baseline lists 156 functions that score 11 to 15: 85 in Rust
+and 71 in TypeScript. A4 says that these functions stay on the baseline
+until a change edits them for another reason. In practice that rule does
+not move them, and the baseline stays as a list that a human has to read.
+Issue #815 is step 5: it splits the 156 functions and then removes the
+list.
+
+**A8. Replaces A4. The target for code on the baseline is 10, the limit of
+D2, in both languages.** A function at 11 to 15 no longer stays on the
+baseline as a normal state. Step 5 brings each one to 10 or less.
+
+**A9. Adds step 5 to the table of A6.**
+
+| Step | Functions | Ceiling when the step closes |
+|---|---|---|
+| 5 | the 156 at 11–15 (#815) | 10 |
+
+The step is cut into sub-issues by file, as the other steps are. It has no
+date, for the reason A6 gives.
+
+**A10. Replaces D4, D6, A5 and A6 when step 5 closes.** There is no
+baseline and no ceiling. `docs/complexity-baseline.json` and `--bless` are
+removed. The limit of D2 is a plain rule:
+
+- TypeScript is checked by oxlint's `complexity` rule, set to `error` in
+  `.oxlintrc.json` with `max: 10` and `variant: "modified"`. The
+  `oxlint --deny-warnings` step that CI already runs refuses a function over
+  10, and the editor shows the same error.
+- Rust is checked by the xtask scorer of A1, which keeps reading the source
+  with `syn`. `cargo run -q -p xtask -- complexity --check` fails when a
+  production function scores more than 10. The xtask stores nothing.
+  Clippy's `cognitive_complexity` is not used, for the reason of A1.
+
+The xtask no longer runs oxlint. The oxlint pin (D7, A2) stays in `ci.yml`
+and `AGENTS.md`, and a ratchet test compares them. The near-limit list of D6
+stays for Rust, because it needs no stored state.
+
+**A11. How a function goes to 10 or less.** A function goes down by one of
+two ways:
+
+1. a split along a responsibility the function already has; or
+2. a rewrite that keeps its meaning: guard clauses and early returns, a
+   table of cases, a `match` on a tuple, an iterator in place of a loop
+   with state.
+
+A function is never cut into helpers that follow no responsibility
+(ADR-0022 §7.4). A function that neither way brings to 10 keeps an
+exception next to it, with the reason:
+
+- Rust: `// complexity-exception: <reason>` on the line above the `fn`.
+- TypeScript: `// oxlint-disable-next-line complexity -- <reason>`.
+
+The reason says why the function cannot be split along a responsibility. It
+is never "to pass the check". A ratchet counts these exceptions, and the
+count may only go down. Issue #815 lists them, and a human decides what to
+do with each one.

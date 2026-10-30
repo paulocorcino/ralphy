@@ -14,10 +14,10 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
-import type { ConsoleTerm, ConsoleWin, DeskRecord, DeskWindowFields, ExtentOpts, Presentation, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type { ConsoleTerm, ConsoleWin, DeskRecord, DeskSessionFields, DeskWindowFields, ExtentOpts, Presentation, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
 const { birthDecision, peerOfflineView, peerActionLabel, consoleCommand } = WBConsoleSession;
 const { sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
@@ -142,13 +142,7 @@ export function createSpawn(deps: SpawnDeps) {
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
     if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };
-    // Every NEW launch names its record: the daemon keeps one session per
-    // record, so a second page relaunching it joins this one (ADR-0050
-    // amendment 2026-10-04).
-    if (termOpts.id == null) termOpts = { ...termOpts, record: win._deskId };
-    // A launch that names a worktree records the intent NOW, so a daemon that
-    // dies mid-launch still leaves it behind.
-    if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
+    termOpts = launchRecord(termOpts, win);
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;
     // the key-bar buttons (assigned below) only REFLECT them.
@@ -472,11 +466,7 @@ export function createSpawn(deps: SpawnDeps) {
   function recordBirth(win: ConsoleWin, carry: SpawnCarry | undefined) {
     const r = currentDesk().find((x) => x.id === win._deskId);
     if (r) {
-      const fields: DeskWindowFields = {};
-      if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
-      if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
-        fields.consoleName = win._deskConsoleName;
-      }
+      const fields = birthFields(r, win);
       if (Object.keys(fields).length) setWin(win, fields);
       return;
     }
@@ -513,14 +503,8 @@ export function createSpawn(deps: SpawnDeps) {
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
     };
-    if (
-      (r.sessionId ?? null) !== session.sessionId ||
-      (r.daemonId ?? null) !== session.daemonId ||
-      (r.environment ?? null) !== session.environment
-    ) {
-      fields.session = session;
-    }
-    if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
+    if (sessionDiffers(r, session)) fields.session = session;
+    if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
     if (Object.keys(fields).length) setWin(win, fields);
   }
 
@@ -561,4 +545,42 @@ export function createSpawn(deps: SpawnDeps) {
   }
 
   return { spawnWindow, recordBirth, recordSession, deskOf, open };
+}
+
+// The terminal options of a launch with the record of the window `win`, and
+// the worktree intent written on the window.
+function launchRecord(termOpts: TerminalOpts, win: ConsoleWin): TerminalOpts {
+  // Every NEW launch names its record: the daemon keeps one session per
+  // record, so a second page relaunching it joins this one (ADR-0050
+  // amendment 2026-10-04).
+  if (termOpts.id == null) termOpts = { ...termOpts, record: win._deskId };
+  // A launch that names a worktree records the intent NOW, so a daemon that
+  // dies mid-launch still leaves it behind.
+  if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
+  return termOpts;
+}
+
+// The fields of the record `r` that the birth of `win` changed: a relaunch in
+// another tree, a name the record lacked.
+function birthFields(r: DeskRecord, win: ConsoleWin): DeskWindowFields {
+  const fields: DeskWindowFields = {};
+  if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
+  if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
+    fields.consoleName = win._deskConsoleName;
+  }
+  return fields;
+}
+
+// The window is in another checkout than its record names.
+function checkoutDiffers(r: DeskRecord, win: ConsoleWin) {
+  return (r.checkout ?? null) !== (win._deskCheckout ?? null);
+}
+
+// The session the daemon announced is not the one the record names.
+function sessionDiffers(r: DeskRecord, session: DeskSessionFields) {
+  return (
+    (r.sessionId ?? null) !== session.sessionId ||
+    (r.daemonId ?? null) !== session.daemonId ||
+    (r.environment ?? null) !== session.environment
+  );
 }

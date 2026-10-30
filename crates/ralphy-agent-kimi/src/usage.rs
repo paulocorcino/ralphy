@@ -23,23 +23,7 @@ fn parse_kimi_wire_usage(jsonl: &str, model: Option<String>) -> Usage {
         model,
         ..Usage::default()
     };
-    for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if value.get("type").and_then(|v| v.as_str()) != Some("usage.record") {
-            continue;
-        }
-        if value.get("usageScope").and_then(|v| v.as_str()) != Some("turn") {
-            continue;
-        }
-        let Some(tu) = value.get("usage") else {
-            continue;
-        };
+    for tu in jsonl.lines().filter_map(turn_usage_record) {
         let field = |k: &str| tu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
         usage.input += field("inputOther");
         usage.output += field("output");
@@ -47,6 +31,23 @@ fn parse_kimi_wire_usage(jsonl: &str, model: Option<String>) -> Usage {
         usage.cache_creation += field("inputCacheCreation");
     }
     usage
+}
+
+/// The `usage` object of one wire line when it is a top-level `usage.record`
+/// scoped `turn`, or `None` for any other line.
+fn turn_usage_record(line: &str) -> Option<serde_json::Value> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let mut value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    if value.get("type").and_then(|v| v.as_str()) != Some("usage.record") {
+        return None;
+    }
+    if value.get("usageScope").and_then(|v| v.as_str()) != Some("turn") {
+        return None;
+    }
+    value.get_mut("usage").map(serde_json::Value::take)
 }
 
 /// `$RALPHY_KIMI_CODE_DIR/sessions` when set (tests point it at a temp dir), else

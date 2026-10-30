@@ -118,10 +118,12 @@ pub fn find(
         return Ok(reply);
     }
     let clock = Clock::start(budget);
-    for entry in walker(&dir).build().filter_map(Result::ok) {
-        if entry.depth() == 0 {
-            continue;
-        }
+    // Depth 0 is `root` itself, never a hit.
+    let entries = walker(&dir)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.depth() != 0);
+    for entry in entries {
         if clock.expired() {
             reply.truncated = true;
             break;
@@ -138,17 +140,19 @@ pub fn find(
             reply.truncated = true;
             break;
         }
-        if let Some(path) = rel_of(&dir, &entry) {
-            reply.hits.push(FindHit {
-                path,
-                dir: entry.file_type().map(|t| t.is_dir()).unwrap_or(false),
-            });
-        }
+        reply.hits.extend(find_hit(&dir, &entry));
     }
     reply
         .hits
         .sort_by(|a, b| b.dir.cmp(&a.dir).then_with(|| a.path.cmp(&b.path)));
     Ok(reply)
+}
+
+fn find_hit(root: &Path, entry: &ignore::DirEntry) -> Option<FindHit> {
+    Some(FindHit {
+        path: rel_of(root, entry)?,
+        dir: entry.file_type().map(|t| t.is_dir()).unwrap_or(false),
+    })
 }
 
 /// Find the text files under `root` containing `query` (literal,

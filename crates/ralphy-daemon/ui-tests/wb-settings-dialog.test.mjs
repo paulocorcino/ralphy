@@ -150,6 +150,24 @@ test("a failed settings read says so, and a project setting is not written", asy
   assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
 });
 
+test("a settings read copies the project's values, but not the masked token, a null, or a key the panel lacks", async () => {
+  const { scope: state, shell, window } = loadComponent("wbSettingsDialog");
+  window.WBDaemon.observe = async () => ({
+    status: "ok",
+    config: { "events.url": "https://e.example", "claude.plan_model": null, "events.token": "****", "no.such.key": 1 },
+  });
+  shell.$store.projects.setOpen("o/r");
+  const planModel = state.settings["claude.plan_model"];
+  const token = state.settings["events.token"];
+  state.readSettings();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  assert.equal(state.settings["events.url"], "https://e.example");
+  assert.equal(state.settings["claude.plan_model"], planModel, "a null keeps the field");
+  assert.equal(state.settings["events.token"], token, "the mask is never copied");
+  assert.equal("no.such.key" in state.settings, false);
+  assert.equal(state.settingsError, "");
+});
+
 test("the dialog lists at most 12 shell() names, and shell() has each one", () => {
   const { data, shell } = loadComponent("wbSettingsDialog");
   assert.ok(data.uses.length <= 12, `${data.uses.length} names: ${data.uses.join(", ")}`);

@@ -270,13 +270,13 @@ fn shell_navigates_the_plane() {
         "the stage itself must advertise the grab cursor (#337)"
     );
 
-    // The picker's wiring lives in wb-consoles-tab.ts; without this the
+    // The picker's wiring lives in wb-consoles-tab-menus.ts; without this the
     // `@click` handlers in index.html can go dangling with every test still green.
-    let tab = include_str!("../../assets/ui/wb-consoles-tab.ts");
+    let tab = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");
     for pin in ["toggleWindowMenu(", "revealWindow(", "windowList"] {
         assert!(
             tab.contains(pin),
-            "wb-consoles-tab.ts must keep the #337 pin {pin}"
+            "wb-consoles-tab-menus.ts must keep the #337 pin {pin}"
         );
     }
 

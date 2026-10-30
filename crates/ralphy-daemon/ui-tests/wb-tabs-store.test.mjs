@@ -164,6 +164,47 @@ test("a rename re-keys the pin and repaints so the viewer follows the new id", a
   }
 });
 
+test("a folder move re-paths every tab under it and the active one, and closes a tab whose new path is open", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("dir/x.js");
+    sh.open("dirt.js");
+    sh.open("dir/y.js");
+    sh.open("new/y.js");
+    sh.state.$store.tabs.activate("file:o/r:dir/x.js");
+    sh.state.$store.tabs.repathTabs("dir", "new");
+    const ids = sh.state.$store.tabs.tabs.filter((t) => t.path).map((t) => t.id);
+    assert.deepEqual(ids.sort(), ["file:o/r:dirt.js", "file:o/r:new/x.js", "file:o/r:new/y.js"]);
+    assert.equal(sh.state.$store.tabs.active, "file:o/r:new/x.js");
+    assert.equal(sh.state.$store.tabs.tabs.find((t) => t.id === "file:o/r:new/x.js").path, "new/x.js");
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("a move leaves a diff tab and a tab of another project on their path, and the last tab on the left follows its file", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.state.$store.tabs.tabs.push(
+      { id: "diff:o/r:a.js", kind: "diff", title: "a.js", path: "a.js", project: "o/r", closable: true, checkout: null },
+      { id: "file:x/y:a.js", kind: "code", title: "a.js", path: "a.js", project: "x/y", closable: true, checkout: null },
+    );
+    sh.state.$store.tabs.activate("consoles");
+    sh.state.$store.tabs.lastLeft = A;
+    sh.state.$store.tabs.repathTabs("a.js", "z.js");
+    const paths = sh.state.$store.tabs.tabs.filter((t) => t.path).map((t) => [t.id, t.path]);
+    assert.deepEqual(paths, [
+      ["file:o/r:z.js", "z.js"],
+      ["diff:o/r:a.js", "a.js"],
+      ["file:x/y:a.js", "a.js"],
+    ]);
+    assert.equal(sh.state.$store.tabs.lastLeft, "file:o/r:z.js");
+  } finally {
+    await sh.restore();
+  }
+});
+
 test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
   const sh = slotShell();
   try {
@@ -229,6 +270,31 @@ test("the slot and its ratio persist per client and come back after the tabs do"
     } finally {
       await fresh.restore();
     }
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("a restore skips a stored tab with no project or path, and a stored active tab it does not carry falls back to Consoles", async () => {
+  const seed = {
+    tabs: [
+      { project: "o/r", path: "a.js", title: "a.js", kind: "code", checkout: null },
+      { project: "o/r", title: "no path", kind: "code" },
+      { path: "b.js", title: "no project", kind: "code" },
+      null,
+    ],
+    active: "file:o/r:gone.js",
+    split: null,
+  };
+  const sh = slotShell(1280, seed);
+  try {
+    sh.window.Alpine.nextTick = () => {};
+    sh.state.$store.tabs.restoreView();
+    assert.deepEqual(
+      sh.state.$store.tabs.tabs.filter((t) => t.id.startsWith("file:")).map((t) => t.id),
+      [A],
+    );
+    assert.equal(sh.state.$store.tabs.active, "consoles");
   } finally {
     await sh.restore();
   }

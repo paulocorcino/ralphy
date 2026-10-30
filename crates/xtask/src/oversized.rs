@@ -1,11 +1,12 @@
-//! `oversized` holds the size of every source file (ADR-0022 §7). A Rust
-//! file may have [`Lang::Rust`]'s limit of lines of code, a TypeScript file
-//! [`Lang::TypeScript`]'s, and an HTML file [`Lang::Html`]'s. With no argument it lists the files over
-//! their limit. With `--base <rev>` it fails when a file over its limit is
-//! larger than at `<rev>`: an old large file may shrink but never grow, and a
-//! new file, or a file that grows past the limit, is split. The pull-request
-//! job runs it against the base branch, so no list of large files is kept by
-//! hand.
+//! `oversized` holds the size of every source file (ADR-0022 §7) and the
+//! width of its lines (§8). A Rust, TypeScript or HTML file may have
+//! [`LIMIT`] lines of code, and a line of Rust [`WIDTH`] characters. With no
+//! argument it lists the files over a limit. With `--base <rev>` it fails
+//! when a count over its limit is larger than at `<rev>`: an old large file
+//! may shrink but never grow, and a new file, or a file that grows past the
+//! limit, is split; an old wide line may stay, and a new one is wrapped. The
+//! pull-request job runs it against the base branch, so no list of large
+//! files is kept by hand.
 //!
 //! Comment and blank lines do not count, so a well-commented file is not
 //! penalised. A line counts as a comment when it starts with `//` after its
@@ -42,26 +43,76 @@ impl Lang {
             None
         }
     }
+}
 
-    /// Lines of code a file may have. Rust: the split threshold of ADR-0022
-    /// §5. TypeScript: the module size of ADR-0073 (its 2026-10-11
-    /// amendment), so an agent can read a workbench module whole. HTML: the
-    /// page and each part of the workbench (ADR-0080 D9).
+/// Lines of code a source file may have, in every language: the split
+/// threshold of ADR-0022 §5, which its 2026-10-30 amendment applies to
+/// TypeScript and HTML too.
+const LIMIT: usize = 500;
+
+/// Characters a line of Rust may have: the default `max_width` of rustfmt,
+/// so the code `cargo fmt` wraps already fits, and only a string literal or
+/// a comment, which stable rustfmt does not wrap, goes over (ADR-0022 §8).
+/// Characters, not bytes: an accent counts once.
+const WIDTH: usize = 100;
+
+/// What the gate counts in a file. Once a count is over its limit, it may
+/// not grow against the base branch.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Rule {
+    /// Lines of code, over [`LIMIT`].
+    Size,
+    /// Lines of Rust wider than [`WIDTH`], over none.
+    Width,
+}
+
+impl Rule {
+    const ALL: [Rule; 2] = [Rule::Size, Rule::Width];
+
+    /// The count of `text`, or `None` when the rule does not measure `lang`.
+    fn count(self, lang: Lang, text: &str) -> Option<usize> {
+        match self {
+            Rule::Size => Some(lines_of_code(lang, text)),
+            Rule::Width => (lang == Lang::Rust).then(|| wide_lines(text)),
+        }
+    }
+
     fn limit(self) -> usize {
         match self {
-            Lang::Rust | Lang::Html => 500,
-            Lang::TypeScript => 700,
+            Rule::Size => LIMIT,
+            Rule::Width => 0,
+        }
+    }
+
+    fn label(self) -> String {
+        match self {
+            Rule::Size => format!("lines of code, over the limit of {LIMIT}"),
+            Rule::Width => format!("lines wider than {WIDTH} characters"),
+        }
+    }
+
+    /// What a change does when the count of a file grew.
+    fn fix(self) -> &'static str {
+        match self {
+            Rule::Size => {
+                "split the file along a responsibility it already has, in a commit that \
+                 changes no behavior"
+            }
+            Rule::Width => {
+                "wrap the comment, continue the string on the next line with `\\` or \
+                 `concat!`, or move the test data to `tests/fixtures/`"
+            }
         }
     }
 }
 
-/// A file over its limit, by its path from the repo root with `/`
-/// separators.
+/// A count over its limit, with the path of its file from the repo root
+/// with `/` separators.
 #[derive(Debug)]
 struct Oversized {
+    rule: Rule,
     path: String,
     lines: usize,
-    limit: usize,
 }
 
 pub fn oversized_cmd(args: &[String]) -> Result<()> {
@@ -74,7 +125,7 @@ pub fn oversized_cmd(args: &[String]) -> Result<()> {
     let over = measure(&root)?;
     let Some(base) = base else {
         for file in &over {
-            println!("{}\t{}\t{}", file.path, file.lines, file.limit);
+            println!("{}\t{}\t{}", file.path, file.lines, file.rule.label());
         }
         return Ok(());
     };
@@ -93,13 +144,13 @@ pub fn oversized_cmd(args: &[String]) -> Result<()> {
         eprintln!("{error}");
     }
     bail!(
-        "{} file(s) over the size limit grew against {base}; split each one along a \
-         responsibility it already has, in a commit that changes no behavior",
+        "{} count(s) over a limit grew against {base}; each line above says what to do",
         errors.len()
     )
 }
 
-/// Every source file under `crates/` that is over its limit, sorted by path.
+/// Every count over its limit in a source file under `crates/`, sorted by
+/// path.
 fn measure(root: &Path) -> Result<Vec<Oversized>> {
     let mut files = Vec::new();
     collect_sources(&root.join("crates"), &mut files)?;
@@ -107,37 +158,56 @@ fn measure(root: &Path) -> Result<Vec<Oversized>> {
     for (path, lang) in files {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        let lines = lines_of_code(lang, &text);
-        if lines > lang.limit() {
+        for (rule, lines) in counts_over(lang, &text) {
             over.push(Oversized {
+                rule,
                 path: rel_path(root, &path)?,
                 lines,
-                limit: lang.limit(),
             });
         }
     }
+    // A stable sort: the counts of one file keep the order of `Rule::ALL`.
     over.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(over)
 }
 
-/// The error for a file over its limit that has more lines of code than the
-/// `before` it had at the base. A file the base does not have, under its
-/// path, has 0 lines there.
+/// Each rule whose count of `text` is over its limit, with the count.
+fn counts_over(lang: Lang, text: &str) -> Vec<(Rule, usize)> {
+    Rule::ALL
+        .into_iter()
+        .filter_map(|rule| Some((rule, rule.count(lang, text)?)))
+        .filter(|(rule, lines)| *lines > rule.limit())
+        .collect()
+}
+
+/// The error for a count over its limit that is larger than the `before` it
+/// had at the base. A file the base does not have, under its path, counts 0
+/// there.
 fn growth_error(file: &Oversized, before: usize) -> Option<String> {
     (file.lines > before).then(|| {
         format!(
-            "{}: {before} -> {} lines of code, over the limit of {}",
-            file.path, file.lines, file.limit
+            "{}: {before} -> {} {}; {}",
+            file.path,
+            file.lines,
+            file.rule.label(),
+            file.rule.fix()
         )
     })
 }
 
-/// The error for `file` when its lines of code grew against `base_text`, the
-/// text it had at the base. Both sides are counted the way the file's own
-/// language counts.
+/// The error for `file` when its count grew against `base_text`, the text it
+/// had at the base. Both sides are counted the way the file's own language
+/// counts.
 fn growth_since(file: &Oversized, base_text: &str) -> Option<String> {
     let lang = Lang::of(&file.path)?;
-    growth_error(file, lines_of_code(lang, base_text))
+    growth_error(file, file.rule.count(lang, base_text)?)
+}
+
+/// Lines of `text` wider than [`WIDTH`] characters.
+fn wide_lines(text: &str) -> usize {
+    text.lines()
+        .filter(|line| line.chars().count() > WIDTH)
+        .count()
 }
 
 /// The lines of code of `text`, counted by the rules of `lang`.
@@ -204,11 +274,17 @@ fn code_lines(text: &str) -> usize {
             in_block = !rest.contains("*/");
             continue;
         }
-        if !trimmed.is_empty() && !trimmed.starts_with("//") {
+        if is_code(trimmed) {
             count += 1;
         }
     }
     count
+}
+
+/// A trimmed line outside a block comment holds code when it is not blank
+/// and not a line comment.
+fn is_code(trimmed: &str) -> bool {
+    !trimmed.is_empty() && !trimmed.starts_with("//")
 }
 
 /// `mod x {` or `pub(crate) mod x {`. A `mod x;` declaration is not the cut:
@@ -294,19 +370,37 @@ mod tests {
     }
 
     #[test]
-    fn each_language_has_its_limit() {
-        assert_eq!(Lang::of("lib.rs").map(Lang::limit), Some(500));
-        assert_eq!(Lang::of("wb-desk.ts").map(Lang::limit), Some(700));
-        assert_eq!(Lang::of("globals.d.ts").map(Lang::limit), Some(700));
-        assert_eq!(Lang::of("app.js"), None);
-    }
-
-    #[test]
-    fn html_has_a_limit_of_500_code_lines() {
-        assert_eq!(Lang::of("index.html").map(Lang::limit), Some(500));
+    fn every_language_has_a_limit_of_500_code_lines() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = dir.path();
+        for (rel, lines, line) in [
+            ("crates/a/src/big.rs", 501, "let a = 1;\n"),
+            ("crates/a/src/fits.rs", 500, "let a = 1;\n"),
+            ("crates/ui/big.ts", 501, "const a = 1;\n"),
+            ("crates/ui/fits.ts", 500, "const a = 1;\n"),
+            ("crates/ui/globals.d.ts", 501, "declare const a: 1;\n"),
+            ("crates/ui/big.part.html", 501, "<p>x</p>\n"),
+            ("crates/ui/fits.html", 500, "<p>x</p>\n"),
+            ("crates/ui/app.js", 501, "const a = 1;\n"),
+        ] {
+            let path = root.join(rel);
+            let parent = path.parent().expect("a relative path with a parent");
+            std::fs::create_dir_all(parent).expect("create the parent");
+            std::fs::write(&path, line.repeat(lines)).expect("write the file");
+        }
+        let over: Vec<String> = measure(root)
+            .expect("measure")
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
         assert_eq!(
-            Lang::of("wb-hosts-dialog.part.html").map(Lang::limit),
-            Some(500)
+            over,
+            [
+                "crates/a/src/big.rs",
+                "crates/ui/big.part.html",
+                "crates/ui/big.ts",
+                "crates/ui/globals.d.ts",
+            ]
         );
     }
 
@@ -350,9 +444,9 @@ of three lines -->
             text
         };
         let file = Oversized {
+            rule: Rule::Size,
             path: "crates/a/ui/index.html".to_string(),
             lines: lines_of_code(Lang::Html, &page(501)),
-            limit: 500,
         };
         assert_eq!(file.lines, 501);
         let grown = growth_since(&file, &page(500)).expect("it grew by one code line");
@@ -366,9 +460,9 @@ of three lines -->
     #[test]
     fn a_file_over_its_limit_may_shrink_but_not_grow() {
         let file = Oversized {
+            rule: Rule::Size,
             path: "crates/a/src/big.rs".to_string(),
             lines: 900,
-            limit: 500,
         };
         assert_eq!(growth_error(&file, 900), None, "the same size");
         assert_eq!(growth_error(&file, 950), None, "it shrank");
@@ -380,6 +474,64 @@ of three lines -->
         assert!(
             growth_error(&file, 0).is_some(),
             "a file the base does not have"
+        );
+    }
+
+    #[test]
+    fn a_line_of_rust_may_have_100_characters() {
+        let text = format!(
+            "{}\n{}\n{}\n",
+            "a".repeat(100),
+            "b".repeat(101),
+            "é".repeat(100)
+        );
+        assert_eq!(
+            Rule::Width.count(Lang::Rust, &text),
+            Some(1),
+            "101 characters; 100 accented letters are 200 bytes but 100 characters"
+        );
+        assert_eq!(
+            Rule::Width.count(Lang::TypeScript, &text),
+            None,
+            "only Rust is measured"
+        );
+        assert_eq!(Rule::Width.count(Lang::Html, &text), None);
+    }
+
+    #[test]
+    fn a_rust_file_with_a_wide_line_is_listed() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = dir.path();
+        let src = root.join("crates/a/src");
+        std::fs::create_dir_all(&src).expect("create the dir");
+        let wide = format!("let a = \"{}\";\n", "x".repeat(100));
+        std::fs::write(src.join("wide.rs"), &wide).expect("write wide.rs");
+        std::fs::write(src.join("narrow.rs"), "let a = 1;\n").expect("write narrow.rs");
+        let over: Vec<(Rule, String, usize)> = measure(root)
+            .expect("measure")
+            .into_iter()
+            .map(|file| (file.rule, file.path, file.lines))
+            .collect();
+        assert_eq!(over, [(Rule::Width, "crates/a/src/wide.rs".to_string(), 1)]);
+    }
+
+    #[test]
+    fn a_new_wide_line_fails_and_an_old_one_may_stay() {
+        let line = format!("    // {}\n", "x".repeat(100));
+        let file = Oversized {
+            rule: Rule::Width,
+            path: "crates/a/src/lib.rs".to_string(),
+            lines: 2,
+        };
+        assert_eq!(
+            growth_since(&file, &line.repeat(2)),
+            None,
+            "the same two lines"
+        );
+        let grown = growth_since(&file, &line).expect("one wide line more");
+        assert!(
+            grown.starts_with("crates/a/src/lib.rs: 1 -> 2 lines wider than 100 characters"),
+            "{grown}"
         );
     }
 

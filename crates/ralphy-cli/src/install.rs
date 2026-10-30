@@ -290,26 +290,29 @@ fn put_on_path(dir: &Path, no_modify_path: bool) {
         return;
     }
     match user_path::add_to_user_path(dir) {
-        Ok(added) => {
-            if added.places.is_empty() {
-                println!("{} is already set to be on your PATH.", dir.display());
-            } else {
-                println!("Added {} to your PATH in:", dir.display());
-                for place in &added.places {
-                    println!("  {place}");
-                }
-            }
-            match added.reload {
-                Some(cmd) => println!(
-                    "Open a new terminal to use `ralphy`, or run this in this one: {cmd}"
-                ),
-                None => println!("Open a new terminal to use `ralphy`."),
-            }
-        }
+        Ok(added) => print_path_added(dir, &added),
         Err(e) => println!(
             "Note: could not add {} to your PATH ({e:#}). Add it by hand so `ralphy` resolves from any directory.",
             dir.display()
         ),
+    }
+}
+
+/// Tell the operator where `dir` was added to `PATH` and how to use it now.
+fn print_path_added(dir: &Path, added: &user_path::Added) {
+    if added.places.is_empty() {
+        println!("{} is already set to be on your PATH.", dir.display());
+    } else {
+        println!("Added {} to your PATH in:", dir.display());
+        for place in &added.places {
+            println!("  {place}");
+        }
+    }
+    match &added.reload {
+        Some(cmd) => {
+            println!("Open a new terminal to use `ralphy`, or run this in this one: {cmd}")
+        }
+        None => println!("Open a new terminal to use `ralphy`."),
     }
 }
 

@@ -28,14 +28,20 @@ type FenceOpen = {
  * build than this page, which the daemon served when the window opened. */
 export function isFenceOpen(v: unknown): v is FenceOpen {
   if (!isRecord(v) || v.type !== "wb-fence-open") return false;
-  const fence = v.fence;
+  return (
+    isOpenedFence(v.fence) &&
+    (v.members === undefined || (Array.isArray(v.members) && v.members.every(isPopupMember))) &&
+    (v.tab === undefined || isNullableString(v.tab))
+  );
+}
+
+// The `fence` of the opener's answer: an id, and maybe a name and a rect.
+function isOpenedFence(fence: unknown) {
   return (
     isRecord(fence) &&
     typeof fence.id === "string" &&
     isOptionalString(fence.name) &&
-    (fence.rect == null || isPartialRect(fence.rect)) &&
-    (v.members === undefined || (Array.isArray(v.members) && v.members.every(isPopupMember))) &&
-    (v.tab === undefined || isNullableString(v.tab))
+    (fence.rect == null || isPartialRect(fence.rect))
   );
 }
 
@@ -339,9 +345,14 @@ export function wireDetachedFence(window: Window, document: Document) {
     }, LINK.HEARTBEAT_MS);
     let leaving = false;
 
+    // A message of the opener's tab. The channel is browser-wide: a message
+    // of another tab, or of a malformed sender, is dropped.
+    function fromOurTab(m: DetachMessage | null | undefined) {
+      if (!m || typeof m.type !== "string") return false;
+      return TAB != null && m.tab === TAB;
+    }
     LINK.onMessage((m) => {
-      if (!m || typeof m.type !== "string") return;
-      if (TAB == null || m.tab !== TAB) return;
+      if (!fromOurTab(m)) return;
       // A window that is unloading answers nothing: its `popup-here`
       // could be the one a reloaded opener adopts, over the popup that
       // replaced it (#476).

@@ -146,26 +146,7 @@ pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
         .unwrap_or("");
     let mut conflicts = Vec::new();
 
-    let ua_os = os_from_ua(ua);
-    let mut os = match (hints.platform.as_deref().and_then(os_from_hint), ua_os) {
-        (Some(h), u) => {
-            if u.is_some_and(|u| !same_os(h, u)) {
-                conflicts.push("os");
-            }
-            field(h, Source::Hint)
-        }
-        (None, Some(u)) => field(u, Source::Ua),
-        (None, None) => None,
-    };
-    // Safari on iPad reports a Mac; a Mac has no touch points.
-    if let Some(f) = &mut os {
-        if f.value == Os::Macos && client.touch_points.unwrap_or(0) > 1 {
-            *f = Field {
-                value: Os::Ipados,
-                source: Source::Inferred,
-            };
-        }
-    }
+    let os = os_field(&hints, ua, client, &mut conflicts);
     let os_value = os.as_ref().map(|f| f.value);
 
     let (browser, browser_version) = browser(&hints.brands, ua, os_value);
@@ -183,18 +164,7 @@ pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
     {
         conflicts.push("form");
     }
-    let model_hint = hints
-        .model
-        .clone()
-        .filter(|m| !m.is_empty())
-        .and_then(|m| field(m, Source::Hint))
-        .or_else(|| {
-            (os_value == Some(Os::Ios))
-                .then_some(())
-                .and(screen_size)
-                .and_then(iphone_family)
-                .and_then(|m| field(m.to_string(), Source::Inferred))
-        });
+    let model_hint = model_hint(&hints, os_value, screen_size);
     let gpu = client.gpu.as_ref().and_then(|g| {
         let raw = g.unmasked_renderer.as_ref().or(g.renderer.as_ref())?;
         Some(gpu(raw.as_str()))
@@ -210,16 +180,7 @@ pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
         .as_ref()
         .map(|m| m.as_str() == "standalone")
         .or(client.engine_signals.ios_standalone);
-    // A phone or tablet turns, so its sides are sorted; a computer's screen
-    // keeps the orientation it reports (a 2560x1080 monitor is not 1080x2560).
-    let shown = match form.as_ref().map(|f| f.value) {
-        Some(Form::Desktop) => client
-            .screen
-            .as_ref()
-            .and_then(|s| Some((s.width?, s.height?, client.dpr.unwrap_or(1.0)))),
-        _ => screen_size,
-    };
-    let screen = shown.map(|(w, h, dpr)| format!("{w}x{h}@{}", ratio(dpr)));
+    let screen = shown_screen(client, form.as_ref(), screen_size);
 
     let profile = profile(&[
         &format!("{:?}", os_value),
@@ -258,6 +219,74 @@ pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
         conflicts,
         profile,
     }
+}
+
+/// The system, from the hints first and the user agent after. A hint that
+/// disagrees with the user agent adds the `os` conflict.
+fn os_field(
+    hints: &Hints,
+    ua: &str,
+    client: &ClientFacts,
+    conflicts: &mut Vec<&'static str>,
+) -> Option<Field<Os>> {
+    let ua_os = os_from_ua(ua);
+    let mut os = match (hints.platform.as_deref().and_then(os_from_hint), ua_os) {
+        (Some(h), u) => {
+            if u.is_some_and(|u| !same_os(h, u)) {
+                conflicts.push("os");
+            }
+            field(h, Source::Hint)
+        }
+        (None, Some(u)) => field(u, Source::Ua),
+        (None, None) => None,
+    };
+    // Safari on iPad reports a Mac; a Mac has no touch points.
+    if let Some(f) = &mut os {
+        if f.value == Os::Macos && client.touch_points.unwrap_or(0) > 1 {
+            *f = Field {
+                value: Os::Ipados,
+                source: Source::Inferred,
+            };
+        }
+    }
+    os
+}
+
+fn model_hint(
+    hints: &Hints,
+    os: Option<Os>,
+    screen_size: Option<(u32, u32, f64)>,
+) -> Option<Field<String>> {
+    hints
+        .model
+        .clone()
+        .filter(|m| !m.is_empty())
+        .and_then(|m| field(m, Source::Hint))
+        .or_else(|| {
+            (os == Some(Os::Ios))
+                .then_some(())
+                .and(screen_size)
+                .and_then(iphone_family)
+                .and_then(|m| field(m.to_string(), Source::Inferred))
+        })
+}
+
+/// `<width>x<height>@<pixel ratio>` as the device shows it.
+fn shown_screen(
+    client: &ClientFacts,
+    form: Option<&Field<Form>>,
+    screen_size: Option<(u32, u32, f64)>,
+) -> Option<String> {
+    // A phone or tablet turns, so its sides are sorted; a computer's screen
+    // keeps the orientation it reports (a 2560x1080 monitor is not 1080x2560).
+    let shown = match form.map(|f| f.value) {
+        Some(Form::Desktop) => client
+            .screen
+            .as_ref()
+            .and_then(|s| Some((s.width?, s.height?, client.dpr.unwrap_or(1.0)))),
+        _ => screen_size,
+    };
+    shown.map(|(w, h, dpr)| format!("{w}x{h}@{}", ratio(dpr)))
 }
 
 /// The fields of `next` that differ from `prev`, among those the profile

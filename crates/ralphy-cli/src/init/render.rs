@@ -133,57 +133,60 @@ pub(crate) fn print_gate_report(f: &EnvFindings, fails: &[HardFail]) {
         return;
     }
 
-    let mark = |good: bool| {
-        if good {
-            forced(Style::new().green().bold())
-                .apply_to("✓")
-                .to_string()
-        } else {
-            forced(Style::new().red().bold()).apply_to("✗").to_string()
-        }
-    };
-    let dim = |s: &str| {
-        forced(Style::new().dim())
-            .apply_to(s.to_string())
-            .to_string()
-    };
-
     println!(
         "\n{}",
         forced(Style::new().cyan().bold()).apply_to("Environment")
     );
-    println!("  {} git", mark(f.git));
-    println!("  {} python", mark(f.python));
-    println!("  {} gh auth", mark(f.gh_authenticated));
-    println!("  {} GitHub remote", mark(f.github_remote));
+    println!("  {} git", check_mark(f.git));
+    println!("  {} python", check_mark(f.python));
+    println!("  {} gh auth", check_mark(f.gh_authenticated));
+    println!("  {} GitHub remote", check_mark(f.github_remote));
     println!("  {}", dim("agents"));
     for agent in &Agent::ALL {
         let name = agent.cli_name();
-        let present = f.agents_present.contains(agent);
-        let logged = present && f.agents_logged_in.contains(agent);
-        let (glyph, status) = if logged {
-            (
-                forced(Style::new().green().bold())
-                    .apply_to("✓")
-                    .to_string(),
-                "logged in",
-            )
-        } else if present {
-            (dim("·"), "not logged in")
-        } else {
-            (dim("·"), "absent")
-        };
+        let (glyph, status) = agent_status(f, agent);
         println!("    {glyph} {name:<9} {}", dim(status));
     }
 
     if fails.is_empty() {
         println!(
             "  {} {}",
-            mark(true),
+            check_mark(true),
             forced(Style::new().green()).apply_to("all checks passed")
         );
     } else {
-        println!("  {} {} blocker(s)", mark(false), fails.len());
+        println!("  {} {} blocker(s)", check_mark(false), fails.len());
+    }
+}
+
+/// The gate's check mark: a green ✓ when `good`, a red ✗ otherwise.
+fn check_mark(good: bool) -> String {
+    if good {
+        forced(Style::new().green().bold())
+            .apply_to("✓")
+            .to_string()
+    } else {
+        forced(Style::new().red().bold()).apply_to("✗").to_string()
+    }
+}
+
+/// `s` dimmed.
+fn dim(s: &str) -> String {
+    forced(Style::new().dim())
+        .apply_to(s.to_string())
+        .to_string()
+}
+
+/// The glyph and the status word of one agent in the gate checklist.
+fn agent_status(f: &EnvFindings, agent: &Agent) -> (String, &'static str) {
+    let present = f.agents_present.contains(agent);
+    let logged = present && f.agents_logged_in.contains(agent);
+    if logged {
+        (check_mark(true), "logged in")
+    } else if present {
+        (dim("·"), "not logged in")
+    } else {
+        (dim("·"), "absent")
     }
 }
 

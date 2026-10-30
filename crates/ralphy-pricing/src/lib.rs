@@ -219,32 +219,36 @@ impl PriceTable {
 fn parse_pricing_toml(text: &str) -> Result<PricingTomlFile, String> {
     match toml::from_str::<PricingTomlFile>(text) {
         Ok(file) => Ok(file),
-        Err(flatten_err) => {
-            let value: toml::Value =
-                toml::from_str(text).map_err(|e| format!("toml: {e}; flatten: {flatten_err}"))?;
-            let offline = value
-                .get("offline")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let mut overrides = BTreeMap::new();
-            if let toml::Value::Table(table) = value {
-                for (k, v) in table {
-                    if k == "offline" {
-                        continue;
-                    }
-                    match v.try_into::<ModelPrice>() {
-                        Ok(price) => {
-                            overrides.insert(k, price);
-                        }
-                        Err(e) => {
-                            return Err(format!("override `{k}`: {e}; flatten: {flatten_err}"));
-                        }
-                    }
-                }
+        Err(flatten_err) => parse_pricing_table(text, &flatten_err),
+    }
+}
+
+/// The fallback of [`parse_pricing_toml`]: `offline` read from a `toml::Value`,
+/// and every other top-level key deserialized as an override. `flatten_err` is
+/// the error of the flatten struct, carried into every message.
+fn parse_pricing_table(
+    text: &str,
+    flatten_err: &toml::de::Error,
+) -> Result<PricingTomlFile, String> {
+    let value: toml::Value =
+        toml::from_str(text).map_err(|e| format!("toml: {e}; flatten: {flatten_err}"))?;
+    let offline = value
+        .get("offline")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let mut overrides = BTreeMap::new();
+    if let toml::Value::Table(table) = value {
+        for (k, v) in table {
+            if k == "offline" {
+                continue;
             }
-            Ok(PricingTomlFile { offline, overrides })
+            let price = v
+                .try_into::<ModelPrice>()
+                .map_err(|e| format!("override `{k}`: {e}; flatten: {flatten_err}"))?;
+            overrides.insert(k, price);
         }
     }
+    Ok(PricingTomlFile { offline, overrides })
 }
 
 /// `offline = true` from the resolved `pricing.toml`, or `false` when missing /

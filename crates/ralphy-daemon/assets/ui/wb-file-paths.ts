@@ -82,6 +82,21 @@ export function parentRel(rel: string) {
   return i < 0 ? "" : rel.slice(0, i);
 }
 
+// Where a duplicate of `rel` lands, beside it: the first of `<stem>
+// copy<ext>`, `<stem> copy 2<ext>`, … that `taken` (the names in its folder)
+// does not hold. A leading dot is the whole name of a dotfile, not an
+// extension.
+export function duplicateRel(rel: string, taken: Set<string>) {
+  const parent = parentRel(rel);
+  const name = rel.slice(parent ? parent.length + 1 : 0);
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  let candidate = `${stem} copy${ext}`;
+  for (let i = 2; taken.has(candidate); i++) candidate = `${stem} copy ${i}${ext}`;
+  return parent ? `${parent}/${candidate}` : candidate;
+}
+
 // A file tab's identity (#406): project, path and — ONLY under a selected
 // worktree — the checkout, so the same rel in two trees is two tabs (the
 // primary's id is the pre-#406 spelling, byte for byte).

@@ -17,7 +17,8 @@
    draw button shows the tables as a Mermaid diagram in the zoom view.
    --------------------------------------------------------------------------- */
 
-import { colKey, DRAW_LIMIT, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMermaidEr } from "./wb-dbml.ts";
+import { colKey, DRAW_LIMIT, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMermaidEr } from "./wb-dbml.ts";
+import { groupTables } from "./wb-dbml-groups.ts";
 import type { DbmlColumn, DbmlEndpoint, DbmlRef, DbmlSchema, DbmlTable } from "./wb-dbml.ts";
 // The two modules import each other; both use the other only inside a function
 // that runs after both have loaded.

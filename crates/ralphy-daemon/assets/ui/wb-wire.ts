@@ -7,6 +7,7 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
+import type { FilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
 import type { SavePayload, WireDeps } from "./wb-shell-types.d.ts";
 
@@ -130,6 +131,11 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     if (!detachedWindows.has(e.source as Window)) return;
     const m: unknown = e.data;
     if (!isFilePopupMessage(m)) return;
+    popupMessage(m, e);
+  });
+
+  // One message of a detached file window this page opened.
+  function popupMessage(m: FilePopupMessage, e: MessageEvent) {
     if (m.type === "wb-detach-ready") {
       // The popup booted and is asking for its file.
       (e.source as Window).postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) }, window.location.origin);
@@ -150,7 +156,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       // unload) never gets here: the guard above drops a window no longer held.
       reattachFile(e.source as Window, m.desc);
     }
-  });
+  }
 
   // --- Write byte-ops (#197): the workspace-mutating seam actions go to the
   // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
@@ -341,13 +347,23 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
     if (e.key !== "F" && e.key !== "f") return;
-    const c = window.getShell();
-    if (!c || !window.Alpine.store("connection").authed || !window.Alpine.store("projects").openSlug) return;
-    const modals = window.Alpine.store("modals");
-    if (modals.modalOpen(WBSettingsDialog.openFlag) || modals.modalOpen(WBSecurityDialog.openFlag) || modals.modalOpen("runOpen") || modals.modalOpen("branchOpen") || modals.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
+    if (!filesSearchOffered() || dialogOverFiles()) return;
     e.preventDefault();
     sendWindow(window, "workbench:file-search-open");
   });
+
+  // The FILES search needs the shell, a login and an open project.
+  function filesSearchOffered() {
+    return !!window.getShell() && window.Alpine.store("connection").authed && !!window.Alpine.store("projects").openSlug;
+  }
+
+  // A dialog that the FILES search must not open over.
+  function dialogOverFiles() {
+    const modals = window.Alpine.store("modals");
+    return [WBSettingsDialog.openFlag, WBSecurityDialog.openFlag, "runOpen", "branchOpen", WBReleaseDialogs.whatsNewFlag].some((flag) =>
+      modals.modalOpen(flag),
+    );
+  }
 
   window.WBRuns = {
     // A raw output chunk: the Runs panel (wb-runs-panel.ts) appends it.

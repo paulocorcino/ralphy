@@ -133,7 +133,7 @@ fn has_escaped_quote(line: &str) -> bool {
             prev_backslash = false;
             // A quote the tokenizer would toggle, reached via `\`: the author meant
             // an escaped literal quote the tokenizer cannot honor.
-            if (ch == '"' && !in_single) || (ch == '\'' && !in_double) {
+            if toggles_quote(ch, in_single, in_double) {
                 return true;
             }
             // The char was escaped (a literal — including a literal `\`): it neither
@@ -148,6 +148,12 @@ fn has_escaped_quote(line: &str) -> bool {
         }
     }
     false
+}
+
+/// Whether [`tokenize`] takes `ch` as a quote toggle in the given quote state:
+/// a `"` outside single quotes, or a `'` outside double quotes.
+fn toggles_quote(ch: char, in_single: bool, in_double: bool) -> bool {
+    (ch == '"' && !in_single) || (ch == '\'' && !in_double)
 }
 
 /// The operator-facing error for a `## Verify` line whose backslash-escaped quote the

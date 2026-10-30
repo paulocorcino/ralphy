@@ -207,11 +207,11 @@ fn shell_lists_the_fences() {
         body("function refreshFenceChrome(").contains("fenceSummaries("),
         "the fence chrome must read the same fold the list does (#343)"
     );
-    let tab = include_str!("../../assets/ui/wb-consoles-tab.ts");
+    let tab = include_str!("../../assets/ui/wb-consoles-tab-menus.ts");
     for pin in ["jumpFence(", "fenceList()"] {
         assert!(
             tab.contains(pin),
-            "wb-consoles-tab.ts must keep the #343 pin {pin}"
+            "wb-consoles-tab-menus.ts must keep the #343 pin {pin}"
         );
     }
     let html = super::INDEX_HTML;

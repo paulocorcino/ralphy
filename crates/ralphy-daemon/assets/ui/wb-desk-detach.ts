@@ -21,7 +21,7 @@ import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-desk-popups.ts
 import type { DetachReason } from "./wb-console-session.ts";
 import type { FenceList } from "./wb-stage-fence-list.ts";
 import type { DetachMessage } from "./wb-detach-link.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleWin, DeskFence, DeskNote, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
 const { fenceMembership, fenceOf } = WBGeometry;
@@ -165,13 +165,7 @@ export function createDetach(deps: DetachDeps) {
       case "beat":
         return { state: { seen: typeof event.at === "number" ? event.at : seen, lost: false }, effects: [] };
       case "tick":
-        // `seen: null` — never heard from — expires nothing: the origin seeds
-        // every entry with `Date.now()` at creation AND at boot-restore, so one
-        // rule governs the post-reload adoption grace and steady state alike.
-        if (seen == null || typeof event.at !== "number") return { state: same, effects: [] };
-        if (event.at - seen > windowMs)
-          return { state: { seen, lost: true }, effects: [{ type: "peer-lost" }] };
-        return { state: same, effects: [] };
+        return tickFold(same, event.at, windowMs);
       case "gone":
         // An announced departure: the same effect, without waiting the window out.
         return { state: { seen, lost: true }, effects: [{ type: "peer-lost" }] };
@@ -330,6 +324,17 @@ export function createDetach(deps: DetachDeps) {
     if (entry) entry.probed = false;
   }
 
+  // A console closed INSIDE the popup. Same registry gate as `popup-here`.
+  function onPopupMembers(id: string, members: DetachMessage["members"]) {
+    if (isDetached(id)) adoptMembers(id, members);
+  }
+
+  // The popup asking whether THIS document is still here. Answering from a
+  // message handler is the point: a throttled tab still delivers messages.
+  function onPopupPing(id: string) {
+    if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
+  }
+
   // The origin's half of the lifecycle channel.
   link.onMessage((m) => {
     if (!heardFrom(m)) return;
@@ -339,14 +344,11 @@ export function createDetach(deps: DetachDeps) {
     if (m.type === "popup-here") {
       onPopupHere(id, m);
     } else if (m.type === "popup-members") {
-      // A console closed INSIDE the popup. Same registry gate as `popup-here`.
-      if (isDetached(id)) adoptMembers(id, m.members);
+      onPopupMembers(id, m.members);
     } else if (m.type === "popup-beat") {
       onPopupBeat(id);
     } else if (m.type === "popup-ping") {
-      // The popup asking whether THIS document is still here. Answering from a
-      // message handler is the point: a throttled tab still delivers messages.
-      if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
+      onPopupPing(id);
     } else if (m.type === "popup-note-named") {
       recordNoteName(id, m);
     } else if (m.type === "popup-note-claimed") {
@@ -524,23 +526,12 @@ export function createDetach(deps: DetachDeps) {
   // itself opened.
   window.addEventListener("message", (e) => {
     if (e.origin !== location.origin) return;
-    let owner: string | null = null;
-    for (const [id, entry] of popups.entries()) if (entry.handle === e.source) owner = id;
+    const owner = popupOwner(e.source);
     if (owner == null) return;
     const m: unknown = e.data;
     if (!isFencePopupMessage(m)) return;
     if (m.type === "wb-fence-ready") {
-      const entry = popups.entry(owner)!;
-      entry.greeted = true;
-      if (entry.rescue) {
-        clearTimeout(entry.rescue);
-        entry.rescue = null;
-      }
-      // `tab` rides the handover, never the popup's own storage — `window.open` gave it a COPY of ours.
-      (e.source as Window).postMessage(
-        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab, pid: entry.pid },
-        location.origin,
-      );
+      greetPopup(owner, e.source as Window);
     } else if (m.type === "wb-emit") {
       forwardAction(WB, m.action, m.detail);
     } else if (m.type === "wb-note-named") {
@@ -553,6 +544,30 @@ export function createDetach(deps: DetachDeps) {
       reattachFence(owner);
     }
   });
+
+  // The fence whose popup is the window `source`, or null for a window this
+  // tab did not open. The last entry that holds it wins.
+  function popupOwner(source: MessageEventSource | null) {
+    let owner: string | null = null;
+    for (const [id, entry] of popups.entries()) if (entry.handle === source) owner = id;
+    return owner;
+  }
+
+  // The popup of the fence `owner` is ready: its rescue stops, and it is
+  // handed the fence and its members.
+  function greetPopup(owner: string, source: Window) {
+    const entry = popups.entry(owner)!;
+    entry.greeted = true;
+    if (entry.rescue) {
+      clearTimeout(entry.rescue);
+      entry.rescue = null;
+    }
+    // `tab` rides the handover, never the popup's own storage — `window.open` gave it a COPY of ours.
+    source.postMessage(
+      { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab, pid: entry.pid },
+      location.origin,
+    );
+  }
 
   return {
     peerFold,
@@ -567,3 +582,18 @@ export function createDetach(deps: DetachDeps) {
 }
 
 export type Detach = ReturnType<typeof createDetach>;
+
+// A tick of the peer's clock at `at`: the peer is lost once it has been
+// silent for more than `windowMs`. `seen: null` — never heard from — expires
+// nothing: the origin seeds every entry with `Date.now()` at creation AND at
+// boot-restore, so one rule governs the post-reload adoption grace and steady
+// state alike.
+function tickFold(
+  same: PeerState,
+  at: number | undefined,
+  windowMs: number,
+): { state: PeerState; effects: { type: "peer-lost" }[] } {
+  if (same.seen == null || typeof at !== "number") return { state: same, effects: [] };
+  if (at - same.seen > windowMs) return { state: { seen: same.seen, lost: true }, effects: [{ type: "peer-lost" }] };
+  return { state: same, effects: [] };
+}

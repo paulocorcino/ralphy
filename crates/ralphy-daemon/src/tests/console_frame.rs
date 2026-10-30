@@ -142,7 +142,10 @@ fn a_console_can_take_the_whole_screen() {
 #[test]
 fn the_console_chrome_holds_its_three_rules() {
     let app = shell_family();
-    let tab = include_str!("../../assets/ui/wb-consoles-tab.ts");
+    let tab = concat!(
+        include_str!("../../assets/ui/wb-consoles-tab.ts"),
+        include_str!("../../assets/ui/wb-consoles-tab-menus.ts"),
+    );
     let html = super::INDEX_HTML;
     // ONE dropdown at a time. Every toggler sends ONE event,
     // `workbench:menus-close`, and the shell and the two consoles components

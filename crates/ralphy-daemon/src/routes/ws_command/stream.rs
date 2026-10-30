@@ -78,10 +78,7 @@ pub(super) async fn stream_child(
     // child never stalls on a full pipe (see dispatch.rs OUTPUT STREAMING). The
     // channel is bounded: a slow browser makes the drain wait, and a dropped
     // receiver makes it discard (see `drain`).
-    let (tx, mut rx) = mpsc::channel::<String>(OUTPUT_CHANNEL_CAP);
-    if let Some(reader) = output {
-        tokio::task::spawn_blocking(move || drain(reader, tx));
-    }
+    let mut rx = spawn_drain(output);
 
     let mut wait = spawn_wait(child, on_exit);
     // Disables the output arm once the drain channel closes (child pipe EOF), so
@@ -116,6 +113,16 @@ pub(super) async fn stream_child(
             }
         }
     }
+}
+
+/// Start the detached drain of `output`, and return the receiving end of its
+/// bounded channel. With no output, the channel is closed at once.
+fn spawn_drain(output: Option<Box<dyn Read + Send>>) -> mpsc::Receiver<String> {
+    let (tx, rx) = mpsc::channel::<String>(OUTPUT_CHANNEL_CAP);
+    if let Some(reader) = output {
+        tokio::task::spawn_blocking(move || drain(reader, tx));
+    }
+    rx
 }
 
 /// Wait for `child` off the tokio runtime, then run `on_exit`.
@@ -192,11 +199,19 @@ fn drain(mut reader: impl Read, tx: mpsc::Sender<String>) {
             }
         }
     }
-    if open && !carry.is_empty() {
-        let rest = String::from_utf8_lossy(&carry).into_owned();
-        if tx.blocking_send(rest).is_err() {
-            tracing::debug!("the output receiver closed before the last bytes");
-        }
+    if open {
+        send_rest(&carry, &tx);
+    }
+}
+
+/// Send the bytes of an incomplete UTF-8 sequence that EOF left in `carry`.
+fn send_rest(carry: &[u8], tx: &mpsc::Sender<String>) {
+    if carry.is_empty() {
+        return;
+    }
+    let rest = String::from_utf8_lossy(carry).into_owned();
+    if tx.blocking_send(rest).is_err() {
+        tracing::debug!("the output receiver closed before the last bytes");
     }
 }
 
@@ -245,6 +260,15 @@ mod tests {
         assert!(carry.is_empty());
         assert_eq!(decode_utf8(&mut carry, &[0xFF]), "\u{FFFD}");
         assert_eq!(decode_utf8(&mut carry, b"a"), "a");
+    }
+
+    #[test]
+    fn a_character_cut_by_eof_is_sent_as_a_replacement() {
+        let (tx, mut rx) = mpsc::channel(OUTPUT_CHANNEL_CAP);
+        drain(std::io::Cursor::new(vec![b'a', 0xC3]), tx);
+        assert_eq!(rx.blocking_recv().as_deref(), Some("a"));
+        assert_eq!(rx.blocking_recv().as_deref(), Some("\u{FFFD}"));
+        assert_eq!(rx.blocking_recv(), None);
     }
 
     /// Serves `left` reads of `b"x"`, then EOF, and counts every read.

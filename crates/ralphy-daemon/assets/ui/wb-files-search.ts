@@ -90,13 +90,7 @@ export async function applySearch(files: SearchFiles, hits: Hit[], truncated: bo
   files._restoringExpansion = true;
   tree.enableUpdate(false);
   try {
-    for (const dir of WBFileSearch.dirsToLoad(hits)) {
-      // A newer search, or a torn-down tree, owns the screen now.
-      if (seq !== files.fileSearch.seq || tree !== files.rawTree()) return;
-      const f = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === dir);
-      if (f && files.isFolder(f) && !f.expanded) await f.setExpanded(true);
-    }
-    if (seq !== files.fileSearch.seq || tree !== files.rawTree()) return;
+    if (!(await expandHitDirs(files, tree, hits, seq))) return;
     files._fileHits = WBFileSearch.hitMap(hits);
     // `autoExpand: false`: the extension would also open every MATCHED
     // folder, a burst of lazy loads.
@@ -116,6 +110,22 @@ export async function applySearch(files: SearchFiles, hits: Hit[], truncated: bo
       tree.enableUpdate(true);
     }
   }
+}
+
+// A newer search, or a torn-down tree, owns the screen now.
+function searchIsStale(files: SearchFiles, tree: WunderbaumTree, seq: number): boolean {
+  return seq !== files.fileSearch.seq || tree !== files.rawTree();
+}
+
+// Open every ancestor level of the hits, shallow-first. False when the
+// search went stale on the way.
+async function expandHitDirs(files: SearchFiles, tree: WunderbaumTree, hits: Hit[], seq: number): Promise<boolean> {
+  for (const dir of WBFileSearch.dirsToLoad(hits)) {
+    if (searchIsStale(files, tree, seq)) return false;
+    const f = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === dir);
+    if (f && files.isFolder(f) && !f.expanded) await f.setExpanded(true);
+  }
+  return !searchIsStale(files, tree, seq);
 }
 
 // Take the filter off and fold back what the search opened, deepest first.

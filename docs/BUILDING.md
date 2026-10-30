@@ -85,20 +85,20 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   that the fragments present parse. A human overrides it with the `no-changelog`
   label. The job `oversized`, also on pull requests only, runs
   `cargo run -p xtask -- oversized --base` against the base branch. It fails
-  when a source file over its limit (500 lines of code in Rust, 700 in
-  TypeScript) is larger than on the base branch (ADR-0022 §7). The job
+  when a source file over its limit (500 lines of code in Rust,
+  TypeScript and HTML) is larger than on the base branch (ADR-0022 §7), or
+  when a Rust file has more lines over 100 characters than there (§8). The job
   `duplication`, on pull requests only, runs jscpd (a release binary pinned
   by version and checksum) with the settings in `.jscpd.json`. It fails when
   the pull request adds a clone that the base branch does not have. An edit
   inside a clone that already exists also makes it new, because jscpd
   fingerprints the text of the clone. The job `complexity`, on every push
-  and pull request, runs `cargo run -p xtask -- complexity --check` with
-  the pinned oxlint binary. It fails when a production
-  function scores over 10 and `docs/complexity-baseline.json` does not list
-  it, or when a listed function scores higher or lower than its entry
-  (ADR-0081). The oxlint version and checksum are in the workflow `env`,
-  shared by `ui-tests` and `complexity` through
-  `.github/scripts/fetch-oxlint.sh`.
+  and pull request, runs `cargo run -p xtask -- complexity --check`. It
+  fails when a Rust production function scores over 10 and has no
+  `// complexity-exception: <reason>` line above it (ADR-0081). The
+  TypeScript limit is oxlint's `complexity` rule in `.oxlintrc.json`, which
+  the `ui-tests` job runs. The oxlint version and checksum are in the
+  workflow `env`, read by `.github/scripts/fetch-oxlint.sh`.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

@@ -69,6 +69,8 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     );
 
     let viewer = include_str!("../../assets/ui/wb-file-viewer.ts");
+    let slot = include_str!("../../assets/ui/wb-file-viewer-slot.ts");
+    let read_only = include_str!("../../assets/ui/wb-file-viewer-read-only.ts");
     assert!(
         viewer.contains("WBMonaco.create"),
         "wb-file-viewer.ts must mount its editor through WBMonaco"
@@ -77,15 +79,21 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     // model, never a second model: `wb_monaco_308.py` counts models per
     // open pane and a mirror must not move that count.
     assert!(
-        viewer.contains("WBMonaco.createOver"),
-        "wb-file-viewer.ts must mount the mirror through WBMonaco.createOver"
+        slot.contains("WBMonaco.createOver"),
+        "wb-file-viewer-slot.ts must mount the mirror through WBMonaco.createOver"
     );
     // Built from parts so this pin cannot trip on its own source text.
     let outgoing = concat!("Code", "Mirror(");
-    assert!(
-        !viewer.contains(outgoing),
-        "wb-file-viewer.ts must not construct a {outgoing} editor"
-    );
+    for (name, js) in [
+        ("wb-file-viewer.ts", viewer),
+        ("wb-file-viewer-slot.ts", slot),
+        ("wb-file-viewer-read-only.ts", read_only),
+    ] {
+        assert!(
+            !js.contains(outgoing),
+            "{name} must not construct a {outgoing} editor"
+        );
+    }
 }
 
 /// #309's deliverable is JS/HTML no Rust gate compiles — this pin over the
@@ -118,8 +126,8 @@ fn the_changes_section_renders_a_status_marked_list() {
         "index.html must open a diff from a changes row"
     );
     assert!(
-        include_str!("../../assets/ui/wb-file-viewer.ts").contains("WBMonaco.createDiff"),
-        "wb-file-viewer.ts must mount the diff through WBMonaco.createDiff"
+        include_str!("../../assets/ui/wb-file-viewer-read-only.ts").contains("WBMonaco.createDiff"),
+        "wb-file-viewer-read-only.ts must mount the diff through WBMonaco.createDiff"
     );
 
     // The staged/unstaged split (#315): the row's two halves, the group
