@@ -214,6 +214,13 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     applyLanding();
   }
 
+  // The restore relaunches agent consoles that no longer run. Read at restore
+  // time, not module load. `canLaunch === false` (the popup) refuses too: it
+  // must never author a session.
+  function relaunchesAgents() {
+    return OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true;
+  }
+
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — no relaunch, no phantom placeholders.
@@ -236,9 +243,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
         for (const verdict of reconcileDesk({
           layout: loadDesk(),
           sessions,
-          // Read at restore time, not module load. `canLaunch === false` (the
-          // popup) refuses too: it must never author a session.
-          relaunchAgents: OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true,
+          relaunchAgents: relaunchesAgents(),
         })) {
           // `adopt` carries NO record, so every read below is guarded — a
           // throw here is swallowed by the catch below and nothing renders.
