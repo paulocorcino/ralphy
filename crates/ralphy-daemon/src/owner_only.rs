@@ -483,7 +483,11 @@ mod unix_tests {
     use std::path::Path;
 
     fn mode(path: &Path) -> u32 {
-        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+        std::fs::metadata(path)
+            .expect("the file under test exists")
+            .permissions()
+            .mode()
+            & 0o777
     }
 
     /// The secret file never exists with a wider mode than `0o600`: the

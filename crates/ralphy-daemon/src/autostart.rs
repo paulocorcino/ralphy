@@ -17,8 +17,10 @@
 // so any single-platform build calls only one of them (the others are
 // exercised only from tests, which dead-code analysis ignores). The unused
 // arms are live on the other OSes — expect the dead code rather than lose them.
+// A Linux test build still leaves `argv_succeeds` unused: only the Windows and
+// launchd probes call it. A macOS test build gets no clippy run.
 #![cfg_attr(
-    any(windows, not(test)),
+    any(windows, target_os = "linux", not(test)),
     expect(
         dead_code,
         reason = "each build runs one platform's executor, so the other renderers are unused"
