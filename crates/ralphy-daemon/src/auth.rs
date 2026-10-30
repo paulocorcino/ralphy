@@ -36,8 +36,8 @@ pub use policy::{
 };
 use throttle::LoginThrottle;
 pub use token::{
-    effective_token, ensure_token_at, generate_token, load_token, load_token_from, save_token_to,
-    store_dir, strip_token_from_env, token_path, token_path_in, TOKEN_ENV,
+    effective_token, effective_token_from, ensure_token_at, env_token, generate_token, load_token,
+    load_token_from, save_token_to, store_dir, token_path, token_path_in, TOKEN_ENV,
 };
 
 /// The browser-session credentials for a hardened network bind (issue #179): the

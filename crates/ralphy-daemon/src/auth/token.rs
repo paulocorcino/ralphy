@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// Env override for the access token: when set non-empty it wins over the
-/// on-disk token (a spawned daemon can be handed its token this way). Stripped
-/// from the process env at boot so no child inherits it (mirrors
-/// `RALPHY_EVENTS_TOKEN`, ADR-0019).
+/// on-disk token (a spawned daemon can be handed its token this way). Removed
+/// from the process env at boot so no child inherits it
+/// (`crate::child_env::take_boot_secrets`).
 pub const TOKEN_ENV: &str = "RALPHY_DAEMON_TOKEN";
 
 /// The global daemon store root: `$RALPHY_DAEMON_DIR` when set (tests point it at
@@ -90,26 +90,23 @@ pub fn load_token() -> Result<Option<String>> {
 /// The effective token: a non-empty [`TOKEN_ENV`] override wins, else the
 /// on-disk token. `None` when neither resolves.
 pub fn effective_token() -> Result<Option<String>> {
-    if let Some(v) = std::env::var_os(TOKEN_ENV) {
-        let v = v.to_string_lossy().into_owned();
-        if !v.is_empty() {
-            return Ok(Some(v));
-        }
-    }
-    load_token()
+    effective_token_from(env_token())
 }
 
-/// Remove [`TOKEN_ENV`] from the process environment so no spawned child inherits
-/// the access token. Called once at boot after the effective token is captured
-/// into the [`super::AuthPolicy`] (mirrors `strip_events_token_from_env`, ADR-0019).
-#[expect(
-    clippy::disallowed_methods,
-    reason = "it removes the token from the daemon's own environment once, on the boot path, \
-              for every child started after it, and it is the only guard for the children \
-              that skip the per-spawn secret removal"
-)]
-pub fn strip_token_from_env() {
-    std::env::remove_var(TOKEN_ENV);
+/// The non-empty value of [`TOKEN_ENV`] in this process's environment.
+pub fn env_token() -> Option<String> {
+    std::env::var_os(TOKEN_ENV)
+        .map(|v| v.to_string_lossy().into_owned())
+        .filter(|v| !v.is_empty())
+}
+
+/// [`effective_token`] over a [`TOKEN_ENV`] value read earlier: the daemon
+/// reads it at boot, before it removes it from its environment.
+pub fn effective_token_from(env_token: Option<String>) -> Result<Option<String>> {
+    match env_token.filter(|v| !v.is_empty()) {
+        Some(v) => Ok(Some(v)),
+        None => load_token(),
+    }
 }
 
 #[cfg(test)]

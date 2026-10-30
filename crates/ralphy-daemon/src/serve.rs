@@ -19,6 +19,7 @@ pub(crate) async fn serve(
     addr: SocketAddr,
     allowed_hosts: Vec<String>,
     peer_stores: Vec<PathBuf>,
+    env_token: Option<String>,
 ) -> Result<()> {
     // Captured at daemon start so every presence heartbeat reports process
     // uptime, not per-connection age.
@@ -75,7 +76,9 @@ pub(crate) async fn serve(
     // `for_bind` returns Err and aborts startup on a non-loopback bind with no
     // token — the daemon must never begin serving an unauthenticated network
     // socket (ADR-0032 §4).
-    let token = auth::effective_token()?;
+    // `run` read the env token and removed it from the environment before
+    // the runtime started.
+    let token = auth::effective_token_from(env_token)?;
     // Announce this daemon into every peer store (ADR-0052 §3). Done AFTER the
     // listener is bound so the descriptor carries the BOUND port — an OS-assigned
     // port (`--port 0`) is announced correctly, never the requested one — and
@@ -99,23 +102,13 @@ pub(crate) async fn serve(
     // require-login flag, and computes the initial policy. The policy is now
     // runtime-swappable — a security toggle rebuilds it in place, no restart.
     let auth_state = auth::AuthState::boot(addr, token, session_epoch, &allowed_hosts)?;
-    // INVARIANT: strip the token from the process env on the boot path BEFORE any
-    // child can be spawned, so every subsequent `dispatch`/`session` child
-    // inherits a token-free env on ALL paths (mirrors RALPHY_EVENTS_TOKEN,
-    // ADR-0019). The auth state already holds the effective token as its
-    // signing-key fallback.
-    auth::strip_token_from_env();
-    // The Telegram token of the environment is read once, here. The Telegram
-    // and events tokens stay in the daemon's own environment: each spawn
-    // removes them from its child (`child_env`).
-    crate::telegram_state::capture_env_token();
 
     // Resolve the registry path once and hand it to the router. `/api/repos`
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
-    // AFTER `strip_token_from_env`: the keepalives and the tunnels are
-    // children like any other, and the token invariant above covers them.
+    // The keepalives and the tunnels are children like any other: `run`
+    // removed every secret from the environment before this function began.
     spawn_peer_tasks(
         registry_path.with_file_name("peers"),
         id.as_ref().map(|i| i.id.to_string()),

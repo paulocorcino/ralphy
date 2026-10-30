@@ -173,7 +173,7 @@ fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
     cause.push_str(&format!(
         "no SessionStart hook event came in {} s; the hooks in {} run {}. Fix the cause and start again",
         window.as_secs(),
-        settings.display(),
+        ralphy_proc_util::hook_form::native(settings).display(),
         program
     ));
     cause
