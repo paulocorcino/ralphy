@@ -1,6 +1,6 @@
 //! The Codex CLI adapter: drives `codex exec` behind the core [`Agent`] contract.
 //! Everything Codex-specific — the binary, the model and reasoning-effort flags,
-//! the headless invocation, and the signal→[`Outcome`] mapping — is confined here.
+//! the headless invocation, and the signal→[`ralphy_core::Outcome`] mapping — is confined here.
 //! See docs/adr/0004.
 //!
 //! Unlike the Claude adapter (a live PTY session with a Stop-hook flag file),
@@ -8,7 +8,7 @@
 //! `codex exec` with the prompt piped on stdin, and completion is detected from
 //! Codex-native signals — the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels
 //! in the `-o` final-message file, the process exit code, and a HEAD-diff commit
-//! check — mapped onto the same core [`Outcome`].
+//! check — mapped onto the same core [`ralphy_core::Outcome`].
 
 #![cfg_attr(
     test,
@@ -109,14 +109,14 @@ impl CodexAgent {
     }
 
     /// Set the planning-phase reasoning effort (`model_reasoning_effort`).
-    /// `None` keeps the vendor default ([`DEFAULT_CODEX_EFFORT`]).
+    /// `None` keeps the vendor default (`DEFAULT_CODEX_EFFORT`).
     pub fn with_plan_effort(mut self, effort: Option<String>) -> Self {
         self.plan_effort = effort;
         self
     }
 
     /// Set the execution-phase reasoning effort (`model_reasoning_effort`).
-    /// `None` keeps the vendor default ([`DEFAULT_CODEX_EFFORT`]).
+    /// `None` keeps the vendor default (`DEFAULT_CODEX_EFFORT`).
     pub fn with_exec_effort(mut self, effort: Option<String>) -> Self {
         self.exec_effort = effort;
         self

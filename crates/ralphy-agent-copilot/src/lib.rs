@@ -10,9 +10,9 @@
 //! ~32 KB (ADR-0041 D2).
 //!
 //! Token usage is read back from Copilot's own `session-store.db` by the minted
-//! `--session-id` ([`usage`], ADR-0041 D10). Skills are materialized into
-//! `.agents/skills` and their load receipt asserted by [`skills`] (ADR-0041 D9).
-//! The one-shot `init`/`triage`/`consolidate` flows go through [`tasks`].
+//! `--session-id` (`usage`, ADR-0041 D10). Skills are materialized into
+//! `.agents/skills` and their load receipt asserted by `skills` (ADR-0041 D9).
+//! The one-shot `init`/`triage`/`consolidate` flows go through `tasks`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

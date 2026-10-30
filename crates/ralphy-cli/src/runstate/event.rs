@@ -5,7 +5,7 @@
 //! **The convention** (ADR-0039 §1/§2): every arm matches a `ralphy_core::emit`
 //! constant, never a message literal — the emitter and the decoder read the SAME
 //! `…_MSG`, so a renamed message cannot half-land. A new [`RunEvent`] variant
-//! without an `emit` helper AND a round-trip test in [`super::roundtrip`] is an
+//! without an `emit` helper AND a round-trip test in `super::roundtrip` is an
 //! incomplete change; `roundtrip::_every_variant_has_a_roundtrip` enforces it at
 //! compile time.
 //!

@@ -70,7 +70,7 @@ mod tests {
             spellings
         );
 
-        for invalid in ["none", "minimal", "hihg"] {
+        for invalid in ["none", "minimal", "extreme"] {
             assert!(invalid.parse::<Effort>().is_err(), "accepted {invalid}");
         }
     }

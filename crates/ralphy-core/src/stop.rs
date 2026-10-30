@@ -3,7 +3,7 @@
 //!
 //! **Why a process global rather than an injected port.** The flag has to be
 //! readable at six places that share no seam: the queue loop
-//! ([`crate::runner`]), the reset wait ([`crate::runner`]'s clock), the verify
+//! (`crate::runner`), the reset wait (`crate::runner`'s clock), the verify
 //! gate ([`crate::verify`]), the resume loop inside the execute phase, the
 //! headless child pump in `ralphy-adapter-support`, and the PTY pump in
 //! `ralphy-agent-claude`. The last three sit on the far side of the ADR-0002

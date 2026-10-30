@@ -16,7 +16,7 @@
 //!   captured record), so the bare `output` field under-reports every reasoning
 //!   turn.
 //! - `tokens.input` INCLUDES the cached subset (live: `input: 14134` with
-//!   `cached: 8133`), but [`Tokens`](crate::Tokens)' four buckets are DISJOINT —
+//!   `cached: 8133`), but [`Tokens`]' four buckets are DISJOINT —
 //!   consumers SUM them. So the reported `input` is `input − cached` and
 //!   `cache_read` is `cached`, mirroring `codex.rs`. Reporting the raw `input`
 //!   beside `cache_read` would bill every cache hit twice.

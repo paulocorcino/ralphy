@@ -42,10 +42,12 @@ mod lex;
 mod complexity_exceptions;
 mod peer_reply_pin;
 mod rust_coupling;
+mod skipped_tests;
 mod tool_pins;
 mod ts_scan;
 mod type_escapes;
 mod workbench_coupling;
+mod workflows_locked;
 use ts_scan::{chained_casts, double_casts, websocket_sites};
 
 /// The served workbench modules, from the repo root. `vendor/` and

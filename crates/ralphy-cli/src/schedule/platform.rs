@@ -156,14 +156,14 @@ pub struct TimerStatus {
 /// Parse the `schtasks … /FO LIST /V` LIST format. A non-empty `TaskName:` field
 /// means the task exists; the three history fields are extracted when present.
 /// Empty/error output (task absent) yields `registered == false`.
-pub fn parse_status(fo_list_output: &str) -> TimerStatus {
+pub fn parse_status(list_output: &str) -> TimerStatus {
     let mut status = TimerStatus {
         registered: false,
         last_run: None,
         last_result: None,
         next_run: None,
     };
-    for raw in fo_list_output.lines() {
+    for raw in list_output.lines() {
         let line = raw.trim();
         if field(line, "TaskName:").is_some() {
             status.registered = true;

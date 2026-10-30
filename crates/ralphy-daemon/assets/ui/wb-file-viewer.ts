@@ -452,7 +452,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // What the toolbar says a pane IS: the path only (the tab and the sidebar
   // already name the file and the repo). A DETACHED pane keeps the full label;
   // the full form always rides the `title`. `dir` / `file` are split so the
-  // CSS ellipsises the directory first.
+  // CSS ellipsizes the directory first.
   function pathLabel(rec: ViewerRecord) {
     const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
     const full = `${rec.label} / ${rec.path}${suffix}`;

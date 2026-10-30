@@ -1,0 +1,178 @@
+//! The `--locked` check (#808): every `cargo` command that a workflow runs
+//! reads `Cargo.lock` as it is and fails when the lock is out of date. Without
+//! the flag, CI resolves new versions and tests code that nobody reviewed.
+
+use super::*;
+
+/// The text of each shell command that a `run:` step has, with the line it
+/// starts on. A `\` at the end of a line joins the next one. A comment line is
+/// not a command, and text outside a `run:` step (a pull request body, a step
+/// name) is not read.
+fn run_commands(workflow: &str) -> Vec<(usize, String)> {
+    let mut commands = Vec::new();
+    // The indent of the `run:` key whose block scalar is being read.
+    let mut block: Option<usize> = None;
+    let mut pending: Option<(usize, String)> = None;
+    for (i, line) in workflow.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if let Some(key_indent) = block {
+            if trimmed.is_empty() {
+                continue;
+            }
+            if indent > key_indent {
+                if !trimmed.starts_with('#') {
+                    join_line(&mut pending, &mut commands, i + 1, trimmed);
+                }
+                continue;
+            }
+            block = None;
+        }
+        let key = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+        let key_indent = indent + (trimmed.len() - key.len());
+        if let Some(value) = key.strip_prefix("run:") {
+            let value = value.trim();
+            if value.starts_with('|') || value.starts_with('>') {
+                block = Some(key_indent);
+            } else {
+                join_line(&mut pending, &mut commands, i + 1, value);
+            }
+        }
+    }
+    commands
+}
+
+/// Adds `text` to the command being joined, and ends the command unless the
+/// line continues on the next one.
+fn join_line(
+    pending: &mut Option<(usize, String)>,
+    commands: &mut Vec<(usize, String)>,
+    line: usize,
+    text: &str,
+) {
+    let (_, joined) = pending.get_or_insert((line, String::new()));
+    match text.strip_suffix('\\') {
+        Some(rest) => {
+            joined.push_str(rest);
+            joined.push(' ');
+        }
+        None => {
+            joined.push_str(text);
+            commands.extend(pending.take());
+        }
+    }
+}
+
+/// The cargo subcommands that read the lock file. `fmt` and `metadata` do not
+/// resolve dependencies the same way, and `cargo-nextest` is a program of its
+/// own that `cargo nextest` runs.
+const LOCKED_SUBCOMMANDS: &str = "build|test|nextest|clippy|doc|run|install|deny";
+
+/// The one command that starts at `start` in `text`. It ends at the next
+/// `&&`, `||`, `|` or `;`, so the flags of a later command are not its flags.
+/// The separator that the match began with is dropped.
+fn command_at(text: &str, start: usize) -> &str {
+    let tail = text[start..].trim_start_matches(|c: char| c.is_whitespace() || ";&|(".contains(c));
+    let end = [tail.find("&&"), tail.find('|'), tail.find(';')]
+        .into_iter()
+        .flatten()
+        .min();
+    tail[..end.unwrap_or(tail.len())].trim_end()
+}
+
+/// `(line, command)` of each cargo command in `commands` that has no
+/// `--locked`. After a lone `--`, the flags belong to the program that cargo
+/// runs, so they are not read.
+fn unlocked(commands: &[(usize, String)]) -> Vec<(usize, String)> {
+    let cargo = Regex::new(&format!(
+        r"(?:^|[\s;&|(])cargo\s+(?:\+\S+\s+)?(?:{LOCKED_SUBCOMMANDS})\b"
+    ))
+    .expect("a fixed pattern");
+    let mut found = Vec::new();
+    for (line, text) in commands {
+        for m in cargo.find_iter(text) {
+            let command = command_at(text, m.start());
+            let cargo_flags = command.split(" -- ").next().unwrap_or(command);
+            if !cargo_flags.split_whitespace().any(|t| t == "--locked") {
+                found.push((*line, command.to_string()));
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn every_cargo_command_in_a_workflow_is_locked() {
+    let root = workspace_root();
+    let dir = root.join(".github/workflows");
+    let mut files = Vec::new();
+    rust_coupling::collect_all(&dir, &mut files);
+    files.retain(|p| p.extension().is_some_and(|e| e == "yml"));
+    assert!(
+        files.len() >= 6,
+        "expected the workflows under {}, found {} .yml files",
+        dir.display(),
+        files.len()
+    );
+    let mut missing = Vec::new();
+    for path in &files {
+        let file = rust_coupling::rel_path(&root, path);
+        for (line, command) in unlocked(&run_commands(&read(path))) {
+            missing.push(format!("{file}:{line}: {command}"));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "add `--locked` to each cargo command, so that CI uses the lock file as it is:\n{}",
+        missing.join("\n")
+    );
+}
+
+#[test]
+fn the_scan_reads_commands_and_not_prose() {
+    let workflow = "\
+steps:
+  - name: cargo build in a name
+    run: cargo test --workspace --locked
+  - run: |
+      # cargo build in a comment
+      cargo nextest run \\
+        --locked --workspace
+      cargo run -q -p xtask -- changelog --locked
+      cargo fmt --all --check
+  - uses: peter-evans/create-pull-request@v8
+    with:
+      body: |
+        Generated by `cargo run -p xtask -- refresh-seed`
+";
+    let commands = run_commands(workflow);
+    assert_eq!(
+        commands.len(),
+        4,
+        "one inline command and three in the block"
+    );
+    let missing: Vec<usize> = unlocked(&commands).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(
+        missing,
+        [8],
+        "only the command whose `--locked` comes after `--` lacks it"
+    );
+}
+
+#[test]
+fn a_chained_command_is_read_one_command_at_a_time() {
+    let line = |text: &str| vec![(1, text.to_string())];
+    let missing =
+        |text: &str| -> Vec<String> { unlocked(&line(text)).into_iter().map(|(_, c)| c).collect() };
+    assert_eq!(
+        missing("cargo build && cargo clippy --locked"),
+        ["cargo build"]
+    );
+    assert_eq!(missing("cargo test --locked; cargo doc"), ["cargo doc"]);
+    assert_eq!(missing("cargo run || cargo build --locked"), ["cargo run"]);
+    assert_eq!(
+        missing("cargo run | tee out; cargo test --locked"),
+        ["cargo run"]
+    );
+    assert!(missing("cd x && cargo build --locked && cargo test --locked | tee out").is_empty());
+}

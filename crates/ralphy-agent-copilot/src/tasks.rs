@@ -162,10 +162,10 @@ pub fn draft_issues(
 ///
 /// The consolidation session's tokens are captured the same way `plan`/`execute`
 /// do — a locally minted `--session-id`, read back from `session-store.db` via
-/// [`copilot_usage`] — so the run-level `consolidate` ledger line carries real usage
+/// `copilot_usage` — so the run-level `consolidate` ledger line carries real usage
 /// (ADR-0008 D9, ADR-0041 D10, issue #276). The one-shot's own `build_copilot_init_command`
 /// mints and discards its id, so consolidate mints its own and drives
-/// [`build_copilot_command`] directly with the identical one-shot argv.
+/// `build_copilot_command` directly with the identical one-shot argv.
 pub fn consolidate_knowledge(
     ws: &Workspace,
     run_dir: &Path,

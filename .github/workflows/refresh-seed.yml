@@ -39,7 +39,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Regenerate seed from live models.dev
-        run: cargo run -p xtask -- refresh-seed
+        run: cargo run --locked -p xtask -- refresh-seed
 
       - name: Open a diffable PR when the seed changed
         # No-op safe: with no diff the action creates/updates no PR.

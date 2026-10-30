@@ -105,7 +105,7 @@ fn resolve_effort_applies_precedence_and_validates_raw_settings() {
         Some(Effort::Medium)
     );
     assert_eq!(resolve_effort(None, None, None).unwrap(), None);
-    assert!(resolve_effort(None, Some("hihg".into()), None).is_err());
+    assert!(resolve_effort(None, Some("extreme".into()), None).is_err());
 }
 
 #[test]

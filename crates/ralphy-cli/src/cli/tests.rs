@@ -37,7 +37,7 @@ fn run_effort_flags_accept_only_the_core_lexicon() {
     assert_eq!(args.plan_effort, Some(Effort::High));
     assert_eq!(args.exec_effort, Some(Effort::Max));
 
-    for invalid in ["none", "minimal", "hihg"] {
+    for invalid in ["none", "minimal", "extreme"] {
         assert!(
             Cli::try_parse_from(["ralphy", "run", "--plan-effort", invalid]).is_err(),
             "accepted invalid effort {invalid}"

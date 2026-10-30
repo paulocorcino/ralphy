@@ -110,7 +110,21 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   pin it, and `.github/scripts/fetch-oxfmt.sh` downloads the release
   binary and checks it. A new oxfmt version can format some text in
   another way, so each version raise comes with its own reformat commit,
-  which changes only the formatted files.
+  which changes only the formatted files. The job `checks`, on every push
+  and pull
+  request, runs four checks on Linux that no test makes: `actionlint` over
+  the workflows (with the runner's `shellcheck` over their shell), `cargo
+  machete` for a dependency that no source names, `typos` for spelling
+  (the words it accepts are in `_typos.toml`), and `cargo doc --workspace
+  --no-deps` with `RUSTDOCFLAGS="-D warnings"`. The three tools are release
+  binaries pinned by version and checksum in the workflow `env`
+  (`ACTIONLINT_*`, `MACHETE_*`, `TYPOS_*`), fetched by
+  `.github/scripts/fetch-actionlint.sh`, `fetch-cargo-machete.sh` and
+  `fetch-typos.sh`. To move a pin, change the version and the checksum of
+  the release asset together. Every `cargo` command in every workflow has
+  `--locked`, so CI builds the lock file as it is; the ratchet
+  `every_cargo_command_in_a_workflow_is_locked` (in `crates/xtask/tests/`)
+  fails when one does not.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

@@ -33,7 +33,7 @@ pub(crate) fn decide_issues_path(cfg: &InitConfig) -> IssuesPath {
 /// The draft decision for the task-drafting step. The prompt shows `[Y/n]`, so the
 /// recommended default (empty/yes/y) drafts a preview — nothing is published, this
 /// is a read-only agent call — and only an explicit decline skips it. Pure, mirrors
-/// [`labels_decision`].
+/// `labels_decision`.
 pub(crate) fn draft_decision(answer: &str) -> bool {
     matches!(
         answer.trim().to_ascii_lowercase().as_str(),
@@ -43,7 +43,7 @@ pub(crate) fn draft_decision(answer: &str) -> bool {
 
 /// The publish decision for the drafted preview. Default is **No** (`[y/N]`): a
 /// bulk external write is never the silent default — only an explicit `y`/`yes`
-/// proceeds. Pure, mirrors [`download_decision`].
+/// proceeds. Pure, mirrors `download_decision`.
 pub(crate) fn publish_decision(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
@@ -232,7 +232,7 @@ pub(crate) struct ChosenAgent<'a> {
 }
 
 /// Dispatch the backlog/milestone → issues draft session to the selected agent's
-/// adapter. Like [`diagnose_with_agent`], the charter is shared
+/// adapter. Like `diagnose_with_agent`, the charter is shared
 /// ([`ralphy_core::build_init_issues_prompt`]) and only the invocation differs.
 pub(crate) fn draft_with_agent(
     chosen: ChosenAgent<'_>,

@@ -101,11 +101,11 @@ pub(crate) async fn collect_within(
 /// Spawn a Query/Mutate child and COLLECT its output, returning its exit
 /// code and stdout+stderr bytes verbatim (distinct from the streaming Spawn path:
 /// a Query/Mutate answer is a single collected reply, not a live stream). Blocking;
-/// callers on the runtime use [`collect_within`]. The output is drained on its own
+/// callers on the runtime use `collect_within`. The output is drained on its own
 /// thread, which reads to EOF even after this returns (the module OUTPUT
 /// STREAMING note): a grandchild that holds the pipe delays only that thread, and
 /// this returns once the child exited and the pipe was idle for
-/// [`IDLE_AFTER_EXIT`].
+/// `IDLE_AFTER_EXIT`.
 pub fn collect(
     spawner: &dyn Spawner,
     program: &OsStr,

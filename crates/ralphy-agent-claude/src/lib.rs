@@ -8,10 +8,10 @@
 //! reclaims the session on a per-issue wall timeout.
 //!
 //! The Claude-specific responsibilities are split across sibling modules:
-//! [`auth`] (auth/limit detection), [`usage`] (token capture), [`settings`]
-//! (settings file + hooks + model resolution), [`plan`] (planning assets),
-//! [`headless`] (the `-p` loop + outcome classification), [`interactive`] (the
-//! live PTY session), and [`tasks`] (the one-shot consolidate/diagnose/draft/
+//! `auth` (auth/limit detection), `usage` (token capture), `settings`
+//! (settings file + hooks + model resolution), `plan` (planning assets),
+//! `headless` (the `-p` loop + outcome classification), `interactive` (the
+//! live PTY session), and `tasks` (the one-shot consolidate/diagnose/draft/
 //! triage sessions). This module keeps the [`ClaudeAgent`] type, its
 //! constructors, and the [`Agent`] impl that delegates into those modules.
 

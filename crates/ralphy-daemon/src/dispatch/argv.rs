@@ -235,7 +235,7 @@ pub(crate) fn validated_path(raw: &str) -> Option<String> {
 /// Compose the argv for the blob-read Query verb: `blob read --revision head
 /// --path <p> --format json` (issue #311). Two client inputs, both closed down:
 /// `revision` is a one-value enum (`head`), and `path` goes through the shared
-/// [`validated_path`] shape gate.
+/// `validated_path` shape gate.
 pub fn blob_read_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let revision = match payload.get("revision").and_then(|v| v.as_str()) {
         Some("head") => "head",
@@ -379,7 +379,7 @@ const MAX_COMMIT_MESSAGE: usize = 4096;
 /// Compose the argv for a path-carrying Mutate verb: `changes stage
 /// --path=<p>…` / `changes unstage --path=<p>…` (issue #318) / `changes discard
 /// --path=<p>…` (issue #319). Every element of
-/// `payload.paths` goes through the shared [`validated_path`] gate; an absent,
+/// `payload.paths` goes through the shared `validated_path` gate; an absent,
 /// empty, over-long, or malformed list yields [`ArgvError`] and NO argv, so a
 /// glob or a pathspec can never cross the wire.
 ///
@@ -420,7 +420,7 @@ pub fn changes_paths_argv(
 
 /// Compose the argv for the commit Mutate verb: `changes commit
 /// --message=<msg>` (issue #318). The message is the sole client input, read
-/// from `payload.message`; absent, blank, or longer than [`MAX_COMMIT_MESSAGE`]
+/// from `payload.message`; absent, blank, or longer than `MAX_COMMIT_MESSAGE`
 /// chars yields [`ArgvError`] and NO argv.
 ///
 /// The message is ONE fused token and the argv is exactly three long — a
@@ -467,7 +467,7 @@ fn well_shaped_ref(raw: &str) -> bool {
 
 /// Compose the argv for a branch Mutate verb: `branch switch -- <name>` /
 /// `branch create -- <name>` (issue #199). `<name>` is the sole client input,
-/// read from `payload.name`; an empty or ill-shaped name ([`well_shaped_ref`])
+/// read from `payload.name`; an empty or ill-shaped name (`well_shaped_ref`)
 /// yields [`ArgvError`] and NO argv. The `--` guard ends option parsing on the
 /// ralphy command line; the shape gate is what keeps the name from being an
 /// option to the `git checkout` behind it.

@@ -11,8 +11,8 @@ use crate::runner::{NEEDS_HUMAN_REVIEW_LABEL, NEEDS_SPLIT_LABEL, TRIAGE_AGENT_LA
 use super::client::gh;
 
 /// Parse a `docs/agents/triage-labels.md` table row. Scans `doc` for
-/// `|`-delimited rows, strips backticks, trims each cell, and returns cell[2]
-/// when cell[1] == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.
+/// `|`-delimited rows, strips backticks, trims each cell, and returns `cell[2]`
+/// when `cell[1]` == `canonical`. Ports `Resolve-TriageLabels`'s row parsing.
 pub fn parse_triage_mapping(doc: &str, canonical: &str) -> Option<String> {
     for line in doc.lines() {
         let line = line.trim();

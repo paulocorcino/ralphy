@@ -9,7 +9,7 @@
 //! service manager. Unlike the keepalive, it runs on every OS.
 //!
 //! An `ssh` that keeps exiting before its peer answers is replaced later each
-//! time ([`WAITS`]), so an unreachable host does not cost an `ssh` per probe
+//! time (`WAITS`), so an unreachable host does not cost an `ssh` per probe
 //! (ADR-0067 amendment 2026-10-12).
 //!
 //! The ssh is the system OpenSSH, so the operator's `~/.ssh/config` (aliases,

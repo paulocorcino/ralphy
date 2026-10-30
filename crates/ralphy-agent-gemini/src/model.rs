@@ -15,7 +15,7 @@
 /// vendor's `resolveModel()` passes unknown strings through and the constant set
 /// is mutable by server-side experiment flags, so a stale local list must never
 /// block an id the vendor started serving (ADR-0043 D8). The run-time signal is
-/// [`unknown_model_stop`]'s 404.
+/// `unknown_model_stop`'s 404.
 pub const PINNABLE_MODELS: &[&str] = &[
     "auto",
     "pro",

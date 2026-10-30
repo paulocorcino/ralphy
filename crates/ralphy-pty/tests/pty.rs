@@ -288,7 +288,7 @@ fn exe_program_passes_ampersand_and_percent_intact() {
 }
 
 #[test]
-fn output_channel_delivers_a_childs_output_and_closes_at_eof() {
+fn output_channel_delivers_the_output_of_a_child_and_closes_at_eof() {
     // About 8 KB of output in lines shorter than the terminal: more than one
     // read of the channel's buffer, and no line broken by a wrap.
     let args: Vec<String> = (0..120)

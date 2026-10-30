@@ -136,8 +136,8 @@ fn continuation(line: &str) -> Option<&str> {
 
 /// Apply verified verdicts to an issue body by flipping `- [ ] <criterion>` to
 /// `- [x] <criterion>`. Matching is verbatim *modulo inline markdown,
-/// whitespace and soft wrapping* (see [`normalize_ac`] and
-/// [`logical_checkbox_items`]) — the ledger criterion is frequently transcribed
+/// whitespace and soft wrapping* (see `normalize_ac` and
+/// `logical_checkbox_items`) — the ledger criterion is frequently transcribed
 /// without the issue line's `**bold**`/`` `code` `` markers and as one logical
 /// line where the issue hard-wraps, and an exact per-line match would silently
 /// drop those ticks. Review-only verdicts are never ticked. Already-ticked

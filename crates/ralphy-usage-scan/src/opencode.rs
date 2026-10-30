@@ -21,7 +21,7 @@ use crate::{InteractiveRecord, OpenCodeScan, Tokens};
 
 /// Scan the OpenCode SQLite store into interactive records (one per session ×
 /// model). Fully best-effort: any `rusqlite` error (missing db, lock, schema
-/// drift, corrupt file) yields an empty vec via the single [`read_opencode`]
+/// drift, corrupt file) yields an empty vec via the single `read_opencode`
 /// error funnel. `since` drops records whose `last_ts` is strictly before it
 /// (§6: an unparseable bound or record keeps the record).
 pub fn scan_opencode(input: &OpenCodeScan) -> Vec<InteractiveRecord> {

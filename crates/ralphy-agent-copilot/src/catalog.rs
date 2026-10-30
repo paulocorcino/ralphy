@@ -428,7 +428,7 @@ mod tests {
     /// FAILS, so a lane that claims to run this cannot pass by skipping.
     /// Invoked by its own `## Verify` line.
     #[test]
-    #[ignore]
+    #[ignore = "live network: runs the real copilot CLI; run manually with -- --ignored"]
     fn live_probe_fetches_the_catalog_for_free() {
         let required = std::env::var_os("RALPHY_LIVE_COPILOT").is_some();
         if ralphy_adapter_support::locate_program(COPILOT_BIN).is_none() {

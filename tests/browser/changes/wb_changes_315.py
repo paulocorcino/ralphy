@@ -454,7 +454,7 @@ def main():
             check(
                 f"at a {SQUEEZED_SIDE_W} sidebar the file name is never the part cut",
                 # Fractional, with NO tolerance upward: a name box even a
-                # fraction narrower than its text is a name Chrome ellipsises.
+                # fraction narrower than its text is a name Chrome ellipsizes.
                 squeezed is not None and squeezed["nameW"] >= squeezed["nameNat"] - 0.02,
                 f"nameW={squeezed and round(squeezed['nameW'], 3)} nameNat={squeezed and round(squeezed['nameNat'], 3)}",
             )

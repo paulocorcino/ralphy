@@ -1,19 +1,19 @@
 //! The Write byte-op path (ADR-0036 §2, Write effect class): five pure functions
-//! over a confined target — [`write`], [`create`], [`rename`], [`copy`],
+//! over a confined target — [`write()`], [`create`], [`rename`], [`copy`],
 //! [`delete`]. Like
 //! [`crate::tree`] on the read side, this module carries NO repo semantics and
 //! does NOT consult the run lock (ADR-0036 amendment: "Write does not consult the
 //! run lock" — operator-owns-the-tree). Confinement ([`crate::confine`]) is the
 //! security boundary in SPACE: every op resolves its target through
 //! [`confine::confine_write`], which confines a maybe-missing target by confining
-//! its existing parent. It is joined by one denylist ([`PROTECTED_DIRS`]) for the
+//! its existing parent. It is joined by one denylist (`PROTECTED_DIRS`) for the
 //! two directories that live INSIDE the root but are not the operator's working
 //! tree — `.git` and `.ralphy`. The denylist is enforced twice: on the spelling
-//! the client sent ([`refuse_protected`]) and on the path the filesystem
-//! RESOLVES it to ([`confine_outside_protected`]) — Windows answers `.git.`,
+//! the client sent (`refuse_protected`) and on the path the filesystem
+//! RESOLVES it to (`confine_outside_protected`) — Windows answers `.git.`,
 //! `.git ` and the 8.3 short name `GIT~1` with the real `.git`, and an in-root
 //! symlink can point at it, so a lexical compare alone is not the boundary.
-//! The denylist has exactly one carve-out, [`is_note_in_notes_dir`]: the notes
+//! The denylist has exactly one carve-out, `is_note_in_notes_dir`: the notes
 //! landing directory (ADR-0064 §5), which is the operator's documents rather
 //! than daemon state.
 
@@ -216,12 +216,12 @@ pub fn write(root: &Path, rel: &str, content: &str) -> Result<(), WriteError> {
     write_encoded(root, rel, content, encoding_rs::UTF_8, false)
 }
 
-/// [`write`] encoding `content` with `encoding` (a BOM prepended when `bom`,
+/// [`write()`] encoding `content` with `encoding` (a BOM prepended when `bom`,
 /// for the encodings that have one) — the bytes a [`crate::tree::read_with`]
 /// took come back the same. A char the encoding cannot represent refuses the
 /// whole write with [`WriteError::Unencodable`] and touches nothing. This
 /// changes WHICH bytes are written, never where: confinement and the denylist
-/// gate the path exactly as for [`write`].
+/// gate the path exactly as for [`write()`].
 pub fn write_encoded(
     root: &Path,
     rel: &str,
@@ -386,7 +386,7 @@ pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
 
 /// The run artifact the operator is allowed to throw away: `.ralphy/plan.md`.
 ///
-/// Why this is a function and not a `delete` call: [`PROTECTED_DIRS`] refuses
+/// Why this is a function and not a `delete` call: `PROTECTED_DIRS` refuses
 /// `.ralphy` on every generic byte-op, and that refusal stays — the client
 /// contributes NO path here, so the denylist is not weakened by a hole but
 /// bypassed by a target the verb itself fixes (the same shape as `runs.list`,

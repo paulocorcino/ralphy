@@ -347,7 +347,7 @@ pub fn triage_issues(
 ///
 /// The consolidation session's tokens are captured the same way `plan`/`execute`
 /// are — the `--output-format stream-json` stream carries the terminal `result.stats`,
-/// which [`crate::phase_usage`] reads off [`outcome::fold_gemini_stream`] — so the
+/// which `crate::phase_usage` reads off `outcome::fold_gemini_stream` — so the
 /// run-level `consolidate` ledger line carries real usage (ADR-0008 D9, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,

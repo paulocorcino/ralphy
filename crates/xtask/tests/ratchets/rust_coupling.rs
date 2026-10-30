@@ -244,7 +244,7 @@ fn spawn_errors(
 }
 
 /// `path` relative to `root`, with `/` separators on every platform.
-fn rel_path(root: &Path, path: &Path) -> String {
+pub(super) fn rel_path(root: &Path, path: &Path) -> String {
     let rel = path
         .strip_prefix(root)
         .unwrap_or_else(|e| panic!("{} is not under {}: {e}", path.display(), root.display()));
@@ -278,7 +278,7 @@ fn opens_inline_mod(line: &str) -> bool {
 }
 
 /// Every file under `dir`, recursively.
-fn collect_all(dir: &Path, out: &mut Vec<PathBuf>) {
+pub(super) fn collect_all(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries =
         std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
     for entry in entries {

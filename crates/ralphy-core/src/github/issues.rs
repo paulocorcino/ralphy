@@ -340,7 +340,7 @@ pub fn list_issue_meta(
 /// queue to (ADR-0021 §5's `assignee_filter` resolver). A non-`@me` string is
 /// already the wire login, so it is returned verbatim with NO `gh` call; only the
 /// literal `@me` is resolved via `gh api user --jq .login` through the shared
-/// [`gh_output`] transient-retry wrapper.
+/// `gh_output` transient-retry wrapper.
 ///
 /// Contract: at most ONE `gh` invocation per call, and only on the `@me` path.
 /// `bail!`s when the resolved login is empty (a `gh api user` that returned no

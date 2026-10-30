@@ -2,8 +2,8 @@
 //! the current head, whether the working tree is dirty, the `origin` URL, the
 //! `.git` pointer file of a linked worktree, and the repo's `user.email`. This
 //! crate is their one definition (ADR-0069 D1), and it only reads (D2): every
-//! git argv it can build is a [`Read`], and [`run`] refuses one that is not on
-//! [`READ_ONLY`]. It depends on no other Ralphy crate.
+//! git argv it can build is a `Read`, and `run` refuses one that is not on
+//! `READ_ONLY`. It depends on no other Ralphy crate.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
