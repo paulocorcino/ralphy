@@ -1,4 +1,4 @@
-//! `ralphy-pty` — shared PTY crate backed by [`portable-pty`].
+//! `ralphy-pty` — shared PTY crate backed by `portable-pty`.
 //!
 //! It opens a child process inside a pseudo-terminal (ConPTY on Windows),
 //! streams the TTY-rendered output, and feeds it input. This is the
