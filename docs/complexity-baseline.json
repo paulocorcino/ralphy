@@ -2,9 +2,6 @@
   "ceiling": 15,
   "functions": {
     "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-      "duplicateNode": [
-        15
-      ],
       "reconcileLevel": [
         12
       ],

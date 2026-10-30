@@ -24,7 +24,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
 import { destroyTree, mountTree } from "./wb-files-mount.ts";
 import { fetchTreeLevel, forgetValidatedBelow, levelShows, loadTreeLevel, pruneTreeCache, revalidateBelow, revalidateLevel } from "./wb-files-levels.ts";
-import { classify, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
+import { classify, duplicateRel, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import { treeMenu } from "./wb-files-menu.ts";
 import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-search.ts";
@@ -581,17 +581,11 @@ export function wbFiles() {
     },
 
     // Duplicate a file beside itself, NO prompt. `file.copy` refuses an
-    // existing dst, so the free-name search happens HERE: the first of `<stem>
-    // copy<ext>`, `<stem> copy 2<ext>`, … not taken.
+    // existing dst, so the free name is found HERE (`duplicateRel`).
     async duplicateNode(node: WunderbaumNode) {
       const rel = this.relPath(node);
       if (!rel) return;
       const parent = parentRel(rel);
-      const name = rel.slice(parent ? parent.length + 1 : 0);
-      const dot = name.lastIndexOf(".");
-      // A leading dot is the whole name of a dotfile, not an extension.
-      const stem = dot > 0 ? name.slice(0, dot) : name;
-      const ext = dot > 0 ? name.slice(dot) : "";
 
       // The tree's gestures speak the tree's checkout (#406); a refusal beats
       // a primary-aimed copy that silently misfires.
@@ -605,10 +599,7 @@ export function wbFiles() {
         this.$store.modals.flash?.("couldn't list the folder");
         return;
       }
-      const taken = new Set(listing.entries.map((e) => e.name));
-      let candidate = `${stem} copy${ext}`;
-      for (let i = 2; taken.has(candidate); i++) candidate = `${stem} copy ${i}${ext}`;
-      const to = parent ? `${parent}/${candidate}` : candidate;
+      const to = duplicateRel(rel, new Set(listing.entries.map((e) => e.name)));
 
       const reply = await WBDaemon.write(
         "file.copy",
