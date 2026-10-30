@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-agent-gemini/src/root.rs": {
-      "session_stems": [
-        11
-      ]
-    },
     "crates/ralphy-agent-kimi/src/usage.rs": {
       "parse_kimi_wire_usage": [
         11

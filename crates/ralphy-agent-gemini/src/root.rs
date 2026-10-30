@@ -154,25 +154,34 @@ fn session_stems(cli_dir: &Path) -> Vec<(std::time::SystemTime, String, Vec<Path
         std::collections::BTreeMap::new();
 
     for chats in chat_dirs(cli_dir) {
-        let Ok(entries) = std::fs::read_dir(&chats) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(stem) = session_stem(&path) else {
-                continue;
-            };
-            let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) else {
-                continue;
-            };
-            add_to_group(&mut groups, stem, mtime, &path);
-        }
+        group_chats_dir(&mut groups, &chats);
     }
 
     groups
         .into_iter()
         .map(|(stem, (mtime, files))| (mtime, stem, files))
         .collect()
+}
+
+/// Adds every session file of one `chats/` dir to `groups`. An unreadable dir,
+/// or a file whose mtime cannot be read, is skipped.
+fn group_chats_dir(
+    groups: &mut std::collections::BTreeMap<String, (std::time::SystemTime, Vec<PathBuf>)>,
+    chats: &Path,
+) {
+    let Ok(entries) = std::fs::read_dir(chats) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(stem) = session_stem(&path) else {
+            continue;
+        };
+        let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        add_to_group(groups, stem, mtime, &path);
+    }
 }
 
 /// `<cli_dir>/tmp/*/chats`, one per project dir. Empty when `tmp/` is missing.
