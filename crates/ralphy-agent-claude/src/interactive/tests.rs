@@ -1,4 +1,5 @@
 use super::*;
+use crate::cleanup::remove_scratch;
 
 #[test]
 fn interactive_command_maps_high_and_omits_unset() {
@@ -239,6 +240,10 @@ fn live_logged_out_interactive_session_is_detected() {
     let detected = loop {
         while let Ok(chunk) = rx.try_recv() {
             if scan_dsr_request(&mut dsr_carry, &chunk) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a closed terminal ends the wait at the deadline"
+                )]
                 let _ = session.write_all(CURSOR_POSITION_REPLY);
             }
             watch.feed(&chunk);
@@ -251,8 +256,12 @@ fn live_logged_out_interactive_session_is_detected() {
         }
         thread::sleep(Duration::from_millis(500));
     };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the child may have exited already"
+    )]
     let _ = session.kill();
-    let _ = std::fs::remove_dir_all(&base);
+    remove_scratch(&base);
     assert!(
         detected,
         "a logged-out interactive claude session must be flagged as an auth failure"

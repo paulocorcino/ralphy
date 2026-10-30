@@ -122,11 +122,8 @@ impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
     fn on_event(&mut self, event: RunEvent) {
         // Accumulate the run's token totals off the two phases that report a
         // usage breakdown, for the heartbeat's `tokens_total`.
-        match &event {
-            RunEvent::PlanWritten { usage, .. } | RunEvent::IssueClosed { usage, .. } => {
-                self.tokens.add(usage)
-            }
-            _ => {}
+        if let RunEvent::PlanWritten { usage, .. } | RunEvent::IssueClosed { usage, .. } = &event {
+            self.tokens.add(usage);
         }
         // A freshly written plan reseeds the poller baseline so its initial state
         // is not mistaken for a burst of transitions (#96).
@@ -493,7 +490,7 @@ mod tests {
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
                 .expect("reply");
-            stream.flush().ok();
+            stream.flush().expect("flush the reply");
             tx.send(request).expect("send request");
         });
 
@@ -531,7 +528,7 @@ mod tests {
         crate::delivery::run_delivery_worker(engine, queue, shutdown);
 
         let raw = rx.recv().expect("recorded request");
-        server.join().ok();
+        server.join().expect("the server thread ended");
 
         // Split head from body.
         let headers_end = find_subslice(&raw, b"\r\n\r\n").expect("headers end");

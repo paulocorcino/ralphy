@@ -3,6 +3,11 @@
 //! `fleet_console` (issue #352) shares this binary: both set the same two
 //! process-wide env values, once, through [`prepare_environment`].
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 mod fleet_console;
 mod peer_diagnosis;
 mod peer_session;
@@ -39,7 +44,7 @@ struct Daemon {
 
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("the test id parses"),
         name: name.to_string(),
         avatar: "🐙".to_string(),
     }
@@ -64,7 +69,7 @@ fn descriptor(id: &str, port: u16) -> PeerDescriptor {
 fn save_registry(path: &Path, repo: &Path) {
     let mut store = registry::RegistryStore::default();
     store.upsert(SLUG, &repo.to_string_lossy());
-    registry::save_to(&store, path).unwrap();
+    registry::save_to(&store, path).expect("the registry is saved");
 }
 
 fn prepare_environment() {
@@ -80,8 +85,13 @@ fn prepare_environment() {
 
 async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>) -> Daemon {
     prepare_environment();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (shutdown, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
@@ -93,7 +103,9 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
         auth,
     );
     let task = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     Daemon {
         port,
@@ -135,14 +147,14 @@ async fn launch(port: u16) -> Ws {
     let repo = peer_repo().replace('/', "%2F");
     tokio_tungstenite::connect_async(session_url(port, &format!("repo={repo}&agent=claude")))
         .await
-        .unwrap()
+        .expect("the websocket connects")
         .0
 }
 
 async fn launch_local(port: u16) -> Ws {
     tokio_tungstenite::connect_async(session_url(port, "repo=owner%2Fshared&agent=claude"))
         .await
-        .unwrap()
+        .expect("the websocket connects")
         .0
 }
 
@@ -170,7 +182,9 @@ async fn refused(url: &str) -> serde_json::Value {
                     assert!(payload.is_none(), "exactly one refusal frame");
                     payload = Some(cmd.payload);
                 }
-                other => panic!("a refusal carries no other frame; got {other:?}"),
+                frame @ (Frame::Terminal { .. } | Frame::Presence(_)) => {
+                    panic!("a refusal carries no other frame; got {frame:?}")
+                }
             }
         }
     })
@@ -211,7 +225,7 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> Seen {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut seen = Seen::default();
         while let Some(message) = ws.next().await {
-            match message.unwrap() {
+            match message.expect("the websocket frame arrives") {
                 Message::Binary(bytes) => match protocol::decode(&bytes) {
                     Ok(Frame::Terminal { data, .. }) => {
                         seen.first_frame
@@ -221,7 +235,9 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> Seen {
                                 .windows(CURSOR_POSITION_REQUEST.len())
                                 .any(|window| window == CURSOR_POSITION_REQUEST)
                         {
-                            ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
+                            ws.send(terminal(CURSOR_POSITION_REPLY))
+                                .await
+                                .expect("the frame is sent");
                         }
                         seen.terminal.push_str(&String::from_utf8_lossy(&data));
                         let normalized = seen.terminal.replace("\r\n", "");
@@ -242,7 +258,7 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> Seen {
                     _ => {}
                 },
                 Message::Close(_) => return seen,
-                _ => {}
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
             }
         }
         seen
@@ -265,16 +281,22 @@ async fn http_exchange(
 ) -> (u16, String, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("the test socket connects");
     let auth = bearer
         .map(|token| format!("Authorization: Bearer {token}\r\n"))
         .unwrap_or_default();
     let request = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(request.as_bytes()).await.unwrap();
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("the request is written");
     let mut bytes = Vec::new();
-    stream.read_to_end(&mut bytes).await.unwrap();
+    stream
+        .read_to_end(&mut bytes)
+        .await
+        .expect("the reply is read");
     let text = String::from_utf8_lossy(&bytes).into_owned();
     let status = text
         .split_whitespace()
@@ -301,8 +323,8 @@ async fn fixture() -> (
     Daemon,
     Daemon,
 ) {
-    let peer_store = tempfile::tempdir().unwrap();
-    let peer_repo = tempfile::tempdir().unwrap();
+    let peer_store = tempfile::tempdir().expect("the temp dir is created");
+    let peer_repo = tempfile::tempdir().expect("the temp dir is created");
     let peer_registry = peer_store.path().join("repos.toml");
     save_registry(&peer_registry, peer_repo.path());
     let peer = serve(
@@ -315,18 +337,20 @@ async fn fixture() -> (
     )
     .await;
 
-    let local_store = tempfile::tempdir().unwrap();
-    let local_repo = tempfile::tempdir().unwrap();
+    let local_store = tempfile::tempdir().expect("the temp dir is created");
+    let local_repo = tempfile::tempdir().expect("the temp dir is created");
     let local_registry = local_store.path().join("repos.toml");
     save_registry(&local_registry, local_repo.path());
-    peer::write_descriptor(local_store.path(), &descriptor(PEER_ID, peer.port)).unwrap();
+    peer::write_descriptor(local_store.path(), &descriptor(PEER_ID, peer.port))
+        .expect("the peer descriptor is written");
     let local = serve(
         identity(LOCAL_ID, "local"),
         local_registry,
         AuthState::localhost(),
     )
     .await;
-    peer::write_descriptor(peer_store.path(), &descriptor(LOCAL_ID, local.port)).unwrap();
+    peer::write_descriptor(peer_store.path(), &descriptor(LOCAL_ID, local.port))
+        .expect("the peer descriptor is written");
     (peer_store, peer_repo, local_store, local_repo, peer, local)
 }
 

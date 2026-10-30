@@ -27,7 +27,7 @@ pub(crate) fn git_output(root: &Path, args: &[&str]) -> String {
 }
 
 pub(crate) fn commit(root: &Path, file: &str, body: &str, msg: &str) {
-    std::fs::write(root.join(file), body).unwrap();
+    std::fs::write(root.join(file), body).expect("writing a file");
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "--quiet", "-m", msg]);
 }
@@ -65,7 +65,7 @@ pub(crate) fn spawn_lock_holder() -> Child {
 /// run holds it while that process lives.
 pub(crate) fn write_run_lock(repo: &Path, pid: u32) {
     let lock_dir = repo.join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
+    std::fs::create_dir_all(&lock_dir).expect("creating a directory");
     std::fs::write(
         lock_dir.join("run.lock"),
         serde_json::json!({
@@ -74,7 +74,7 @@ pub(crate) fn write_run_lock(repo: &Path, pid: u32) {
         })
         .to_string(),
     )
-    .unwrap();
+    .expect("writing a file");
 }
 
 /// Hold `repo`'s run lock with a live child. The caller passes the child to

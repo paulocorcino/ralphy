@@ -7,7 +7,7 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{ExitCode, Stdio};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -315,7 +315,7 @@ pub(crate) fn print_report(report: &DoctorReport, out: &mut impl std::io::Write)
     Ok(())
 }
 
-pub(crate) fn run(args: &DoctorArgs) -> Result<()> {
+pub(crate) fn run(args: &DoctorArgs) -> Result<ExitCode> {
     let report = evaluate(&probe(), cfg!(windows));
     let mut stdout = std::io::stdout();
     if args.json {
@@ -328,9 +328,9 @@ pub(crate) fn run(args: &DoctorArgs) -> Result<()> {
         // The report already says what is missing; an `Error:` line under it
         // would say it twice.
         stdout.flush().context("writing the report")?;
-        std::process::exit(1);
+        return Ok(ExitCode::FAILURE);
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 // --- probes -----------------------------------------------------------------
@@ -515,7 +515,12 @@ pub(crate) fn agent_program(a: &Agent) -> Option<PathBuf> {
         // Cursor installs as `cursor-agent` or `agent`, not as its selector
         // (ADR-0042 D14).
         Agent::Cursor => ralphy_agent_cursor::locate_cursor(),
-        _ => locate_program(a.cli_name()),
+        Agent::Claude
+        | Agent::Codex
+        | Agent::Copilot
+        | Agent::Gemini
+        | Agent::Kimi
+        | Agent::Opencode => locate_program(a.cli_name()),
     }
 }
 

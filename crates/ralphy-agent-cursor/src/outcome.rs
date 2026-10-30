@@ -123,7 +123,7 @@ fn collect_tool_results(v: &Value, failed: &mut Vec<String>, denied: &mut Vec<St
                 collect_tool_results(child, failed, denied);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
 

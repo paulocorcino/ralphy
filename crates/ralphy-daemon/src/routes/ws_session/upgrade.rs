@@ -14,7 +14,7 @@ use axum::response::Response;
 use super::join::{claim_for, Joined};
 use super::refuse::Refuser;
 use super::traffic::Tab;
-use super::{peer_session_query, relay_to_peer, session_ws, Opening};
+use super::{peer_session_query, relay_to_peer, session_ws, Opening, PeerDial};
 use super::{SessionHost, SessionLabels, SessionQuery};
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
 use crate::routes::read_peer_store;
@@ -57,17 +57,14 @@ use crate::{fleet, peer, registry, session};
 pub(crate) async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(query): Query<SessionQuery>,
-    sessions: Arc<session::SessionManager>,
-    registry_path: PathBuf,
     host: SessionHost,
-    shutdown: tokio::sync::watch::Receiver<bool>,
     who: SocketAudit,
 ) -> Response {
     // Every upgrade below, the peer relay included, inherits the cap.
     let ws = ws
         .max_message_size(crate::tree::MAX_COMMAND_BYTES)
         .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-    let upgrade = Upgrade::new(ws, query, sessions, registry_path, host, shutdown, who);
+    let upgrade = Upgrade::new(ws, query, host, who);
     let upgrade = match upgrade.relay_unowned().await {
         ControlFlow::Break(response) => return response,
         ControlFlow::Continue(upgrade) => upgrade,
@@ -116,10 +113,7 @@ impl Upgrade {
     fn new(
         ws: WebSocketUpgrade,
         query: SessionQuery,
-        sessions: Arc<session::SessionManager>,
-        registry_path: PathBuf,
         host: SessionHost,
-        shutdown: tokio::sync::watch::Receiver<bool>,
         who: SocketAudit,
     ) -> Upgrade {
         let SessionHost {
@@ -127,6 +121,9 @@ impl Upgrade {
             identity,
             environment,
             bound_port,
+            sessions,
+            registry_path,
+            shutdown,
         } = host;
         let tab = query.tab(who.device);
         let record = query.record().map(str::to_owned);
@@ -242,16 +239,12 @@ impl Upgrade {
             tab: self.tab,
             who: self.who,
         };
-        relay_to_peer(
-            self.ws,
+        let dial = PeerDial {
             peer,
-            &peer_query,
-            opening,
+            query: &peer_query,
             me,
-            &self.refuser,
-            self.shutdown,
-        )
-        .await
+        };
+        relay_to_peer(self.ws, dial, opening, &self.refuser, self.shutdown).await
     }
 
     /// Take the claim on the window record and join the live session that

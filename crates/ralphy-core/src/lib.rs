@@ -5,6 +5,14 @@
 //! or a model. Everything vendor-specific lives behind [`Agent`], inside an
 //! adapter. See docs/adr/0002 for the boundary this enforces.
 
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "nextest runs each test in its own process, so a test may change its environment"
+    )
+)]
+
 use std::time::Duration;
 
 /// Default per-issue wall-clock budget in minutes: resolved via
@@ -75,6 +83,8 @@ mod agent;
 mod effort;
 pub(crate) mod markdown;
 mod runner;
+#[cfg(test)]
+mod scratch;
 mod tracker;
 mod types;
 

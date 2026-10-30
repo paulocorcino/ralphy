@@ -73,7 +73,15 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
     let loop_ip: IpAddr = "127.0.0.1".parse().unwrap();
 
     // Default loopback: no gate.
-    let p = compute_policy(loop_ip, None, None, None, false, false, test_epoch()).unwrap();
+    let p = compute_policy(
+        loop_ip,
+        None,
+        None,
+        None,
+        Requirements::default(),
+        test_epoch(),
+    )
+    .unwrap();
     assert!(
         matches!(p, AuthPolicy::Localhost),
         "default loopback is open"
@@ -85,8 +93,10 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
         Some("k".into()),
         Some(seed()),
         None,
-        true,
-        false,
+        Requirements {
+            login: true,
+            token: false,
+        },
         test_epoch(),
     )
     .unwrap();
@@ -97,7 +107,18 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
 
     // Opted in but NO token to sign with → cannot gate, stays open (safe: it
     // is loopback; the enable route mints a token so this is transient).
-    let p = compute_policy(loop_ip, None, Some(seed()), None, true, false, test_epoch()).unwrap();
+    let p = compute_policy(
+        loop_ip,
+        None,
+        Some(seed()),
+        None,
+        Requirements {
+            login: true,
+            token: false,
+        },
+        test_epoch(),
+    )
+    .unwrap();
     assert!(
         matches!(p, AuthPolicy::Localhost),
         "no signing key → cannot gate loopback"
@@ -109,15 +130,22 @@ fn compute_policy_keeps_network_rules() {
     let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
     let net_ip: IpAddr = "100.64.0.1".parse().unwrap();
     // Network + no token → fail closed (the §4 invariant).
-    assert!(compute_policy(net_ip, None, None, None, false, false, test_epoch()).is_err());
+    assert!(compute_policy(
+        net_ip,
+        None,
+        None,
+        None,
+        Requirements::default(),
+        test_epoch()
+    )
+    .is_err());
     // Network + token, no seed → Bearer.
     let p = compute_policy(
         net_ip,
         Some("t".into()),
         None,
         None,
-        false,
-        false,
+        Requirements::default(),
         test_epoch(),
     )
     .unwrap();
@@ -128,8 +156,7 @@ fn compute_policy_keeps_network_rules() {
         Some("t".into()),
         Some(seed()),
         None,
-        false,
-        false,
+        Requirements::default(),
         test_epoch(),
     )
     .unwrap();
@@ -146,8 +173,10 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
         Some("k".into()),
         None,
         None,
-        false,
-        true,
+        Requirements {
+            login: false,
+            token: true,
+        },
         test_epoch(),
     )
     .unwrap();
@@ -161,8 +190,10 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
         Some("k".into()),
         Some(seed()),
         None,
-        false,
-        true,
+        Requirements {
+            login: false,
+            token: true,
+        },
         test_epoch(),
     )
     .unwrap();
@@ -171,7 +202,17 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
         "marked loopback + token + seed → Session"
     );
 
-    let Err(err) = compute_policy(loop_ip, None, None, None, false, true, test_epoch()) else {
+    let Err(err) = compute_policy(
+        loop_ip,
+        None,
+        None,
+        None,
+        Requirements {
+            login: false,
+            token: true,
+        },
+        test_epoch(),
+    ) else {
         panic!("marked loopback with no token must fail closed");
     };
     assert!(
@@ -183,8 +224,10 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
         Some(String::new()),
         None,
         None,
-        false,
-        true,
+        Requirements {
+            login: false,
+            token: true,
+        },
         test_epoch(),
     );
     assert!(empty.is_err(), "an empty token counts as no token");
@@ -194,8 +237,7 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
         Some("k".into()),
         None,
         None,
-        false,
-        false,
+        Requirements::default(),
         test_epoch(),
     )
     .unwrap();

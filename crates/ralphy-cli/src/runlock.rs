@@ -168,7 +168,9 @@ mod tests {
                 assert_eq!(info.pid, 4_000_000);
                 assert_eq!(info.started_at, stored.started_at);
             }
-            other => panic!("expected HeldAlive, got {other:?}"),
+            other @ (LockState::Free | LockState::Stale(_) | LockState::Corrupt) => {
+                panic!("expected HeldAlive, got {other:?}")
+            }
         }
     }
 

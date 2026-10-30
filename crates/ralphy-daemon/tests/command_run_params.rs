@@ -12,6 +12,11 @@
 //! process-global, so an env-setting integration test must be alone in its file
 //! (no intra-process race).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -74,7 +79,11 @@ async fn run_command_argv_reaches_the_child() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Close(_)
+                | Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 match cmd.payload.get("status").and_then(|s| s.as_str()) {
@@ -142,7 +151,11 @@ async fn run_command_argv_reaches_the_child() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Close(_)
+                | Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 match cmd.payload.get("status").and_then(|s| s.as_str()) {

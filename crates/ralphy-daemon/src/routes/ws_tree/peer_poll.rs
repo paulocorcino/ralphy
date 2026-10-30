@@ -320,7 +320,7 @@ pub(crate) fn spawn_peer_tree_poller(
 fn next_failures(failures: u32, cycle: PollCycle) -> u32 {
     match cycle {
         PollCycle::Failed | PollCycle::Unreadable => failures.saturating_add(1),
-        _ => 0,
+        PollCycle::Changed | PollCycle::Quiet | PollCycle::Restarted => 0,
     }
 }
 

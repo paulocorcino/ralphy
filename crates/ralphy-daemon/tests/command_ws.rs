@@ -5,6 +5,11 @@
 //! the child's exit frame (`status:"exited"`, `code:7`) — proving the WS →
 //! dispatch → spawn → ack/exit path. Mirrors `tests/session_ws.rs`.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -76,7 +81,11 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Close(_)
+                | Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 match cmd.payload.get("status").and_then(|s| s.as_str()) {
@@ -127,11 +136,17 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
 
 /// Serve `/ws/command` over an empty registry; returns its URL.
 async fn serve_empty() -> String {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("the temp dir is created");
     let registry_path = dir.path().join("repos.toml");
-    registry::save_to(&registry::RegistryStore::default(), &registry_path).unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    registry::save_to(&registry::RegistryStore::default(), &registry_path)
+        .expect("the registry is saved");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -145,7 +160,9 @@ async fn serve_empty() -> String {
     tokio::spawn(async move {
         // The temp dir and the shutdown sender live as long as the server.
         let _keep = (dir, tx);
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     format!("ws://127.0.0.1:{port}/ws/command")
 }
@@ -156,14 +173,14 @@ async fn frames_after(url: &str, first: Message) -> Vec<Vec<u8>> {
     let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
         .await
         .expect("connecting to /ws/command");
-    ws.send(first).await.unwrap();
+    ws.send(first).await.expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut frames = Vec::new();
         while let Some(Ok(msg)) = ws.next().await {
             match msg {
                 Message::Binary(b) => frames.push(b.to_vec()),
                 Message::Close(_) => break,
-                _ => {}
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
             }
         }
         frames

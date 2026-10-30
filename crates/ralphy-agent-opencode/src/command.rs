@@ -134,6 +134,7 @@ fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
     use std::path::PathBuf;
 
     fn argv(cmd: &Command) -> Vec<String> {
@@ -249,7 +250,7 @@ mod tests {
             None,
         ));
         assert!(cfg.get("skills").is_none(), "{cfg}");
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     /// A plan or an execute names the state plugin in the run dir under

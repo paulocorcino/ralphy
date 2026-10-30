@@ -48,7 +48,7 @@ fn stop_on_limit_opt_out_stops_as_limit() {
             "{case}: stop-on-limit never calls wait_for_reset"
         );
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -99,7 +99,7 @@ fn plan_limit_with_stop_on_limit_stops_and_reports() {
     );
     assert!(!worked[0].closed);
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn per_phase_limit_plans_resume_but_execute_stops() {
         "a limit-stopped issue is never closed"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -191,7 +191,7 @@ fn plan_limit_auto_resumes_by_replanning() {
     let closed: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
     assert_eq!(closed, vec![7], "green issue closed after the resume");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn repeated_plan_limits_hit_the_cap_and_stop() {
         other => panic!("expected Limit stop, got {other:?}"),
     }
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -265,7 +265,7 @@ fn plan_limit_deadline_beats_resume() {
     assert_eq!(*agent.plan_attempts.borrow(), 1, "planned once, then cut");
     assert!(agent.executed.borrow().is_empty(), "never executed");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn limit_no_reset_synthesizes_a_wait_and_auto_resumes() {
         "each wait carried a synthesised reset target, got {waited:?}"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -347,7 +347,7 @@ fn limit_resume_reexecutes_same_issue_only() {
     // wait_for_reset was called once, with the parsed reset string.
     assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
         }
         assert!(tracker.closes.borrow().is_empty(), "abandoned, not closed");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 
     // A commit between the two no-commit resumes resets the counter, so the cap
@@ -429,7 +429,7 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
         let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
         assert_eq!(closes, vec![31], "issue closed green");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -465,7 +465,7 @@ fn deadline_during_wait_short_circuits_with_deadline() {
         report.stop
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// A run where the first execute is `Done` and the next one (the protocol
@@ -486,7 +486,7 @@ fn assert_second_execute_limit_stops_the_run(
         &tracker,
         &ScriptedClock::never(),
     )
-    .unwrap();
+    .expect("run_queue failed");
 
     assert_eq!(
         *agent.executed.borrow(),
@@ -509,7 +509,7 @@ fn assert_second_execute_limit_stops_the_run(
         "an issue stopped on a limit stays open"
     );
 
-    fs::remove_dir_all(repo).ok();
+    remove_scratch(repo);
 }
 
 #[test]

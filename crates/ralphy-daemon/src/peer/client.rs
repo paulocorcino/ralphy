@@ -20,6 +20,7 @@ use axum::body::Bytes;
 use axum::http::{header, Request};
 use http_body_util::{BodyExt, Full};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::Error as WsError;
 
 use super::tunnel::Ensured;
 use super::PeerDescriptor;
@@ -468,9 +469,9 @@ async fn websocket(
         tokio::net::TcpStream::connect((d.address.as_str(), d.port)),
     )
     .await
-    .map_err(|_| {
+    .map_err(|elapsed| {
         SocketError::Peer(PeerStatus::Unreachable {
-            why: format!("connecting to {authority} timed out"),
+            why: format!("connecting to {authority} timed out: {elapsed}"),
         })
     })?
     .map_err(|e| {
@@ -499,13 +500,13 @@ async fn websocket(
         tokio_tungstenite::client_async(request, tokio_tungstenite::MaybeTlsStream::Plain(stream)),
     )
     .await
-    .map_err(|_| {
+    .map_err(|elapsed| {
         SocketError::Peer(PeerStatus::Unreachable {
-            why: format!("{purpose} handshake with {authority} timed out"),
+            why: format!("{purpose} handshake with {authority} timed out: {elapsed}"),
         })
     })?
     .map_err(|error| match error {
-        tokio_tungstenite::tungstenite::Error::Http(response) => SocketError::Http {
+        WsError::Http(response) => SocketError::Http {
             status: response.status().as_u16(),
             body: response
                 .body()
@@ -513,7 +514,17 @@ async fn websocket(
                 .map(|body| String::from_utf8_lossy(body).into_owned())
                 .unwrap_or_default(),
         },
-        error => SocketError::Peer(PeerStatus::Unreachable {
+        error @ (WsError::ConnectionClosed
+        | WsError::AlreadyClosed
+        | WsError::Io(_)
+        | WsError::Tls(_)
+        | WsError::Capacity(_)
+        | WsError::Protocol(_)
+        | WsError::WriteBufferFull(_)
+        | WsError::Utf8(_)
+        | WsError::AttackAttempt
+        | WsError::Url(_)
+        | WsError::HttpFormat(_)) => SocketError::Peer(PeerStatus::Unreachable {
             why: format!("opening the peer {purpose} at {authority}: {error}"),
         }),
     })?;

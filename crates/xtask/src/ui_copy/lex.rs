@@ -42,7 +42,7 @@ impl Token {
     pub(super) fn ident(&self) -> Option<&str> {
         match &self.tok {
             Tok::Ident(name) => Some(name),
-            _ => None,
+            Tok::Punct(_) | Tok::Str(_) | Tok::Tpl(_) | Tok::Other => None,
         }
     }
 }

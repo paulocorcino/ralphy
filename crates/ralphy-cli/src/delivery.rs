@@ -233,7 +233,16 @@ impl WorkerHandle {
             // blocking network call can never hold the process open.
             let (tx, rx) = mpsc::channel();
             std::thread::spawn(move || {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a panic of the worker is already reported by the panic hook; \
+                              this thread only has to say that the worker ended"
+                )]
                 let _ = join.join();
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the receiver is gone when the wait timed out"
+                )]
                 let _ = tx.send(());
             });
             if rx.recv_timeout(timeout).is_err() {

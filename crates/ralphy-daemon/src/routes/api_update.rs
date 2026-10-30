@@ -101,6 +101,11 @@ pub(crate) async fn release_update_route(
                 serve::request_stop();
                 tokio::time::sleep(EXIT_FALLBACK).await;
                 tracing::warn!("a connection held the shutdown open; exiting for the update");
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "the update handoff must end the process when a connection holds \
+                     the shutdown open"
+                )]
                 std::process::exit(0);
             });
             Json(serde_json::json!({ "restarting": true })).into_response()

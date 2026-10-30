@@ -12,6 +12,11 @@
 //! way to have something to inherit), so it must not race a sibling test that
 //! reads it. Its two tests set different variables.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -34,7 +39,9 @@ async fn read_until(
                 .windows(CURSOR_POSITION_REQUEST.len())
                 .any(|w| w == CURSOR_POSITION_REQUEST)
             {
-                let _ = session.write(CURSOR_POSITION_REPLY);
+                session
+                    .write(CURSOR_POSITION_REPLY)
+                    .expect("answer the cursor query");
             }
             acc.push_str(&String::from_utf8_lossy(&chunk));
             if acc.contains(needle) {

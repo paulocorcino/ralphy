@@ -28,7 +28,7 @@ struct Daemon {
 
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("the test id parses"),
         name: name.to_string(),
         avatar: "🐙".to_string(),
     }
@@ -56,12 +56,17 @@ fn descriptor(port: u16) -> PeerDescriptor {
 fn save_registry(path: &Path, repo: &Path) {
     let mut store = registry::RegistryStore::default();
     store.upsert(SLUG, &repo.to_string_lossy());
-    registry::save_to(&store, path).unwrap();
+    registry::save_to(&store, path).expect("the registry is saved");
 }
 
 async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>) -> Daemon {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (shutdown, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
@@ -73,7 +78,9 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
         auth,
     );
     let task = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     Daemon {
         port,
@@ -92,7 +99,7 @@ async fn launch(
 ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
     tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/session?{query}"))
         .await
-        .unwrap()
+        .expect("the websocket connects")
         .0
 }
 
@@ -106,7 +113,7 @@ async fn read_until(
     let mut open = None;
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
-            match message.unwrap() {
+            match message.expect("the websocket frame arrives") {
                 Message::Binary(bytes) => match protocol::decode(&bytes) {
                     Ok(Frame::Terminal { data, .. }) => {
                         if data
@@ -121,7 +128,7 @@ async fn read_until(
                                 .into(),
                             ))
                             .await
-                            .unwrap();
+                            .expect("the frame is sent");
                         }
                         terminal.push_str(&String::from_utf8_lossy(&data));
                         if terminal.replace("\r\n", "").contains(needle) {
@@ -139,7 +146,7 @@ async fn read_until(
                     _ => {}
                 },
                 Message::Close(_) => return true,
-                _ => {}
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
             }
         }
         true
@@ -166,24 +173,31 @@ async fn send_line(
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
 }
 
 async fn http_json(port: u16, method: &str, path: &str, bearer: Option<&str>) -> serde_json::Value {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("the test socket connects");
     let auth = bearer
         .map(|token| format!("Authorization: Bearer {token}\r\n"))
         .unwrap_or_default();
     let request =
         format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n");
-    stream.write_all(request.as_bytes()).await.unwrap();
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("the request is written");
     let mut response = Vec::new();
-    stream.read_to_end(&mut response).await.unwrap();
-    let text = String::from_utf8(response).unwrap();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .expect("the reply is read");
+    let text = String::from_utf8(response).expect("the reply is UTF-8");
     assert!(text.starts_with("HTTP/1.1 200"), "{text}");
-    serde_json::from_str(text.split_once("\r\n\r\n").unwrap().1).unwrap()
+    serde_json::from_str(text.split_once("\r\n\r\n").expect("the reply has a body").1)
+        .expect("the body is JSON")
 }
 
 #[tokio::test]

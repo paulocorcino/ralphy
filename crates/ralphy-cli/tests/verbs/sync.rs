@@ -21,7 +21,7 @@ fn configure(root: &Path) {
 
 /// A repo with one commit on `main` and no remote of its own.
 fn init_remote() -> TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     run_git(dir.path(), &["init", "--quiet", "-b", "main"]);
     configure(dir.path());
     commit(dir.path(), "a.txt", "one\n", "init");
@@ -30,7 +30,7 @@ fn init_remote() -> TempDir {
 
 /// A clone of `remote` by filesystem path.
 fn clone_of(remote: &Path) -> TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     run_git(
         dir.path(),
         &[

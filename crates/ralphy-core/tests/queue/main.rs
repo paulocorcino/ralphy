@@ -5,6 +5,11 @@
 //! label mutation, stop-at-first-non-green with later issues untouched, dry-run
 //! closing nothing, and the deadline blocking the next issue.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;

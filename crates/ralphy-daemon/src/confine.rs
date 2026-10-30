@@ -23,6 +23,14 @@
 
 use std::path::{Component, Path, PathBuf};
 
+/// `kind` for a refused or failed read of a path. A reply names only the class
+/// (`not found`), so a probe learns nothing from the answer; the log keeps the
+/// cause.
+pub(crate) fn miss<K>(kind: K, what: &str, cause: &dyn std::fmt::Debug) -> K {
+    tracing::debug!(error = ?cause, "{what} failed");
+    kind
+}
+
 /// A confinement outcome that is NOT a resolved in-root path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfineError {
@@ -66,11 +74,13 @@ pub fn confine(root: &Path, rel: &str) -> Result<PathBuf, ConfineError> {
         return Err(ConfineError::Escape);
     }
 
-    let canon_root = root.canonicalize().map_err(|_| ConfineError::NotFound)?;
+    let canon_root = root
+        .canonicalize()
+        .map_err(|e| miss(ConfineError::NotFound, "resolving the root", &e))?;
     let resolved = root
         .join(rel_path)
         .canonicalize()
-        .map_err(|_| ConfineError::NotFound)?;
+        .map_err(|e| miss(ConfineError::NotFound, "resolving the path", &e))?;
 
     // Component-wise prefix: the resolved path must begin with the canonical
     // root's components. `starts_with` on `Path` IS component-wise (not string),

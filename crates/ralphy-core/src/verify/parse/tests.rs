@@ -83,7 +83,9 @@ fn parse_bulleted_list_is_invalid() {
             );
             assert!(error.contains("`- cargo test`"), "names offender: {error}");
         }
-        other => panic!("expected Invalid, got {other:?}"),
+        other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
+            panic!("expected Invalid, got {other:?}")
+        }
     }
 }
 
@@ -98,7 +100,9 @@ fn parse_checkbox_list_is_invalid() {
                 "names offender: {error}"
             );
         }
-        other => panic!("expected Invalid, got {other:?}"),
+        other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
+            panic!("expected Invalid, got {other:?}")
+        }
     }
 }
 
@@ -153,7 +157,9 @@ fn parse_nested_escaped_quote_is_invalid() {
             );
             assert!(error.contains("sh -c"), "names offender: {error}");
         }
-        other => panic!("expected Invalid, got {other:?}"),
+        other @ (VerifySpec::None | VerifySpec::Unspecified | VerifySpec::Commands(_)) => {
+            panic!("expected Invalid, got {other:?}")
+        }
     }
 }
 

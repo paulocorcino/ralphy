@@ -239,7 +239,7 @@ pub fn consolidate_knowledge(
     let config_dir = run_dir.join(CONFIG_DIR_NAME);
     one_shot_preflight(ws.repo_root(), ws.repo_root(), &config_dir)?;
 
-    std::fs::create_dir_all(run_dir).ok();
+    std::fs::create_dir_all(run_dir).context("creating the run directory")?;
     let log_path = run_dir.join("consolidate.log");
 
     info!(?model, "consolidating knowledge with cursor");

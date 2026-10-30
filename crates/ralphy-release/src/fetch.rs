@@ -238,6 +238,10 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the rename error is the one to return; a failed cleanup would mask it"
+            )]
             let _ = std::fs::remove_file(&tmp);
             Err(e)
         }
@@ -321,7 +325,10 @@ mod tests {
     /// Bind `127.0.0.1:0` and serve `response` up to `max_accepts` times, or
     /// until the deadline — so a join never hangs when fewer clients come.
     /// Returns the port, the accept counter, and the served request heads.
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "one tuple of the port, the counters and the join handle, used by test code only"
+    )]
     fn serve_n(
         response: Vec<u8>,
         max_accepts: u32,
@@ -345,13 +352,25 @@ mod tests {
             {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "a failure shows in the read that follows"
+                        )]
                         let _ = stream.set_nonblocking(false);
                         accepts_bg.fetch_add(1, Ordering::SeqCst);
                         let head = read_request(&mut stream);
                         if let Ok(mut seen) = requests_bg.lock() {
                             seen.push(head);
                         }
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "the test client may have closed its end before the reply"
+                        )]
                         let _ = stream.write_all(&response);
+                        #[expect(
+                            clippy::let_underscore_must_use,
+                            reason = "the test client may have closed its end before the reply"
+                        )]
                         let _ = stream.flush();
                     }
                     Err(e)
@@ -376,6 +395,14 @@ mod tests {
         ))
     }
 
+    fn remove_cache(cache: &Path) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "cleanup of a test file that may not exist, and no test reads it after"
+        )]
+        let _ = std::fs::remove_file(cache);
+    }
+
     fn opts<'a>(url: &'a str, cache: &'a Path) -> RefreshOpts<'a> {
         RefreshOpts {
             url,
@@ -390,7 +417,7 @@ mod tests {
     fn a_missing_cache_is_fetched_and_written() {
         let (port, accepts, requests, handle) = serve_n(http_response(200, &fixture_body()), 1);
         let cache = temp_cache_path("write");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
 
         refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
         handle.join().expect("server thread");
@@ -428,14 +455,14 @@ mod tests {
         let releases = load(&cache);
         assert_eq!(releases.len(), 2);
         assert_eq!(releases[0].tag_name, "v0.1.0-rc.20");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
     }
 
     #[test]
     fn a_fresh_cache_is_not_refetched() {
         let (port, accepts, _requests, handle) = serve_n(http_response(200, &fixture_body()), 2);
         let cache = temp_cache_path("fresh");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
         let url = format!("http://127.0.0.1:{port}/");
 
         refresh_if_stale(&opts(&url, &cache));
@@ -447,7 +474,7 @@ mod tests {
             1,
             "the second pass must read the cache, not the network"
         );
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
     }
 
     #[test]
@@ -458,7 +485,7 @@ mod tests {
         // never refresh after its first successful fetch.
         let (port, accepts, _r, handle) = serve_n(http_response(200, &fixture_body()), 2);
         let cache = temp_cache_path("stale");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
         let url = format!("http://127.0.0.1:{port}/");
 
         let mut o = opts(&url, &cache);
@@ -472,13 +499,13 @@ mod tests {
             2,
             "a cache older than its ttl must be refetched, not served"
         );
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
     }
 
     #[test]
     fn a_cache_stamped_in_the_future_is_a_skewed_clock_not_a_stale_file() {
         let cache = temp_cache_path("skew");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
         std::fs::create_dir_all(cache.parent().expect("parent")).expect("dir");
         std::fs::write(
             &cache,
@@ -498,7 +525,7 @@ mod tests {
                     || e.kind() == std::io::ErrorKind::TimedOut => {}
             other => panic!("a future timestamp must read as fresh, got: {other:?}"),
         }
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
     }
 
     #[test]
@@ -512,11 +539,11 @@ mod tests {
         ] {
             let (port, accepts, _r, handle) = serve_n(http_response(status, "no"), 2);
             let cache = temp_cache_path(&format!("status-{status}"));
-            let _ = std::fs::remove_file(&cache);
+            remove_cache(&cache);
             refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
             drop(handle);
             assert_eq!(accepts.load(Ordering::SeqCst), want, "{why}");
-            let _ = std::fs::remove_file(&cache);
+            remove_cache(&cache);
         }
     }
 
@@ -524,7 +551,7 @@ mod tests {
     fn a_failed_fetch_leaves_the_prior_cache_alone() {
         let cache = temp_cache_path("degrade");
         let (ok_port, _a, _r, ok_handle) = serve_n(http_response(200, &fixture_body()), 1);
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
         refresh_if_stale(&opts(&format!("http://127.0.0.1:{ok_port}/"), &cache));
         ok_handle.join().expect("server thread");
         assert_eq!(load(&cache).len(), 2);
@@ -543,13 +570,13 @@ mod tests {
             2,
             "a failed refresh must not empty what we knew"
         );
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
     }
 
     #[test]
     fn a_malformed_body_does_not_poison_the_cache() {
         let cache = temp_cache_path("malformed");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
         let (port, _a, _r, handle) = serve_n(http_response(200, "{ not a list }"), 1);
         refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
         handle.join().expect("server thread");
@@ -567,7 +594,7 @@ mod tests {
         listener.set_nonblocking(true).expect("nonblocking");
         let port = listener.local_addr().expect("addr").port();
         let cache = temp_cache_path("offline");
-        let _ = std::fs::remove_file(&cache);
+        remove_cache(&cache);
 
         let url = format!("http://127.0.0.1:{port}/");
         let mut o = opts(&url, &cache);

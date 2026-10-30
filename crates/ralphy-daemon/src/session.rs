@@ -165,6 +165,10 @@ impl Session {
             if let Some(pid) = pty.process_id() {
                 ralphy_proc_util::kill_tree_by_pid(pid);
             }
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the child may already be gone; its tree was killed above"
+            )]
             let _ = pty.kill();
             // Explicit for intent; the drop at scope end closes the master.
             drop(pty);
@@ -289,7 +293,7 @@ impl Input {
     fn send(&self, bytes: &[u8]) -> Result<()> {
         self.tx
             .send(bytes.to_vec())
-            .map_err(|_| anyhow::anyhow!("the console input has closed"))
+            .context("the console input has closed")
     }
 }
 

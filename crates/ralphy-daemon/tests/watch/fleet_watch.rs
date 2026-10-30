@@ -18,7 +18,7 @@ const SLUG: &str = "owner/shared";
 
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("parse the peer id"),
         name: name.to_string(),
         avatar: "🐙".to_string(),
     }
@@ -27,7 +27,7 @@ fn identity(id: &str, name: &str) -> Identity {
 fn save_registry(path: &Path, repo: &Path) {
     let mut store = registry::RegistryStore::default();
     store.upsert(SLUG, &repo.to_string_lossy());
-    registry::save_to(&store, path).unwrap();
+    registry::save_to(&store, path).expect("save the registry");
 }
 
 async fn serve(
@@ -35,8 +35,13 @@ async fn serve(
     registry_path: PathBuf,
     auth: std::sync::Arc<AuthState>,
 ) -> (u16, tokio::task::JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     std::mem::forget(_tx);
     let app = router(
@@ -49,7 +54,9 @@ async fn serve(
         auth,
     );
     let task = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (port, task)
 }
@@ -69,7 +76,7 @@ async fn send_watch(
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("send the frame");
 }
 
 async fn next_tree_dirty(
@@ -80,7 +87,7 @@ async fn next_tree_dirty(
 ) -> serde_json::Value {
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
-            if let Message::Binary(bytes) = message.unwrap() {
+            if let Message::Binary(bytes) = message.expect("read the next frame") {
                 if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                     if cmd.verb == "tree.dirty" && cmd.payload["repo"] == repo {
                         return cmd.payload;

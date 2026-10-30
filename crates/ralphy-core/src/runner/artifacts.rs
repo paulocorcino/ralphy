@@ -132,6 +132,10 @@ pub(crate) fn write_handoffs(
             }
         }
         None => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the stale file may already be gone, and a leftover file is harmless"
+            )]
             let _ = std::fs::remove_file(&path);
         }
     }
@@ -172,6 +176,10 @@ pub(crate) fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn Issu
             }
         }
         None => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the stale file may already be gone, and a leftover file is harmless"
+            )]
             let _ = std::fs::remove_file(&path);
         }
     }

@@ -254,7 +254,11 @@ impl Agent for ScriptedAgent {
             .into());
         }
         // The most recently planned issue is the one being executed.
-        let number = *self.planned.borrow().last().unwrap();
+        let number = *self
+            .planned
+            .borrow()
+            .last()
+            .expect("no plan before execute");
         // A well-behaved executor's reaction to the ADR-0015 bounce brief:
         // tick every step and append the missing closing sections.
         if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
@@ -278,7 +282,7 @@ impl Agent for ScriptedAgent {
             // A unique path per execute so a resumed retry still produces a new
             // commit when scripted to.
             let marker = repo.join(format!("issue-{number}-{n}.txt"));
-            fs::write(&marker, "done\n").unwrap();
+            fs::write(&marker, "done\n").expect("write the scripted marker file");
             git(repo, &["add", "."]);
             git(
                 repo,

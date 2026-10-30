@@ -79,7 +79,11 @@ async fn cursor_session_protects_an_unprotected_repo_then_streams() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 // Play the terminal emulator: answer ConPTY's startup `ESC[6n` so

@@ -31,6 +31,7 @@ pub use policy::{
     compute_policy, remote_images_enabled_in, remote_images_path_in, require_login_enabled_in,
     require_login_path_in, require_token_enabled_in, require_token_path_in, set_remote_images_in,
     set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, LoginOutcome,
+    Requirements,
 };
 use throttle::LoginThrottle;
 pub use token::{
@@ -111,7 +112,7 @@ impl SessionAuth {
     pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
         match self.login_checked(code, password, cookie::SessionKind::Standard, now, None) {
             LoginOutcome::Ok { cookie, .. } => Some(cookie),
-            _ => None,
+            LoginOutcome::BadCredential | LoginOutcome::Replayed => None,
         }
     }
 
@@ -456,8 +457,10 @@ impl AuthState {
             token,
             seed,
             pw,
-            require_login,
-            require_token_enabled_in(&dir)?,
+            Requirements {
+                login: require_login,
+                token: require_token_enabled_in(&dir)?,
+            },
             self.epoch.clone(),
         )?;
         *self.policy.write().expect("auth policy lock poisoned") = next;
@@ -774,7 +777,9 @@ mod tests {
         let out = s.login_checked("287082", None, cookie::SessionKind::Standard, 59, None);
         let step = match out {
             LoginOutcome::Ok { step, .. } => step,
-            _ => panic!("first login must succeed"),
+            LoginOutcome::BadCredential | LoginOutcome::Replayed => {
+                panic!("first login must succeed")
+            }
         };
         assert_eq!(step, 1);
         // Replaying the same code with that step already consumed is rejected.
@@ -833,7 +838,7 @@ mod tests {
         let out = s.login_checked("287082", None, cookie::SessionKind::Remembered, 59, None);
         let (cookie, kind) = match out {
             LoginOutcome::Ok { cookie, kind, .. } => (cookie, kind),
-            _ => panic!("login must succeed"),
+            LoginOutcome::BadCredential | LoginOutcome::Replayed => panic!("login must succeed"),
         };
         assert_eq!(kind, cookie::SessionKind::Remembered);
         let claims = cookie::verify_claims("tok", 0, &cookie, 60).expect("verifies");

@@ -45,7 +45,7 @@ fn green_close_writes_evidence_and_adds_no_label_for_a_verified_ledger() {
         tracker.labels.borrow()
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn green_close_records_review_only_count_and_labels_the_issue() {
         [(1, "needs-human-review".to_string())]
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn ledgerless_plan_bounces_and_writes_no_evidence() {
         "no evidence-write when ledger is absent"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn green_close_posts_handoff_and_friction_comment() {
         "no citations.jsonl entry when the field is absent"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn green_close_appends_knowledge_used_citations() {
         "an honest `none` is recorded as an empty list"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
         "bundle verdict applies the needs-split label"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn infeasible_plan_without_bundle_verdict_stays_generic() {
         "generic comment does not prescribe a split: {body}"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -346,7 +346,7 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
             "carries the predecessor's handoff content"
         );
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 
     // Pass 2: an issue with no blockers must not inherit a stale handoffs.md
@@ -379,7 +379,7 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
             "stale handoffs.md removed for an issue with no closed blockers"
         );
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -419,5 +419,5 @@ fn issue_comments_are_attached_to_the_planner_issue_json() {
     assert_eq!(comments[0], "first clarification from a human");
     assert_eq!(comments[1], "second: use the staging endpoint");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

@@ -5,7 +5,7 @@
 
 /// Root is the effective uid 0: `sudo` sets it and keeps the real uid.
 #[cfg(unix)]
-#[allow(unsafe_code, reason = "FFI: libc::geteuid")]
+#[expect(unsafe_code, reason = "FFI: libc::geteuid")]
 pub fn runs_elevated() -> bool {
     // SAFETY: `geteuid` takes no arguments, cannot fail, and touches no memory.
     unsafe { libc::geteuid() == 0 }
@@ -14,7 +14,7 @@ pub fn runs_elevated() -> bool {
 /// An elevated token is what "Run as administrator" gives. A token that cannot
 /// be read counts as not elevated: the answer only chooses a warning.
 #[cfg(windows)]
-#[allow(unsafe_code, reason = "FFI: OpenProcessToken and GetTokenInformation")]
+#[expect(unsafe_code, reason = "FFI: OpenProcessToken and GetTokenInformation")]
 pub fn runs_elevated() -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::Security::{

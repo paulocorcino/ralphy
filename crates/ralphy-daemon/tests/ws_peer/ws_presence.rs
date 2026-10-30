@@ -28,11 +28,19 @@ where
     let msg = ws.next().await.expect("a message").expect("message is Ok");
     let bytes = match msg {
         Message::Binary(b) => b,
-        other => panic!("expected a binary presence frame, got {other:?}"),
+        other @ (Message::Text(_)
+        | Message::Ping(_)
+        | Message::Pong(_)
+        | Message::Close(_)
+        | Message::Frame(_)) => {
+            panic!("expected a binary presence frame, got {other:?}")
+        }
     };
     match protocol::decode(&bytes).expect("decodes to a frame") {
         Frame::Presence(p) => p,
-        other => panic!("expected a presence frame, got {other:?}"),
+        frame @ (Frame::Terminal { .. } | Frame::Command(_)) => {
+            panic!("expected a presence frame, got {frame:?}")
+        }
     }
 }
 

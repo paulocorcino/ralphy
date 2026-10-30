@@ -192,6 +192,10 @@ fn render_text_empty_queue_names_active_filter() {
 fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     let _g = USAGE_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("ralphy-issues-show-{}", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
     std::env::set_var("RALPHY_USAGE_DIR", &dir);
 
@@ -264,6 +268,10 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     );
 
     std::env::remove_var("RALPHY_USAGE_DIR");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -428,6 +436,10 @@ fn push_without_events_url_errors_naming_events_url() {
     // and drive `push_snapshot` directly (no `gh` needed).
     let _g = crate::events::config::ENV_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("ralphy-issues-push-{}", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
     std::env::set_var("RALPHY_EVENTS_DIR", &dir);
 
@@ -442,6 +454,10 @@ fn push_without_events_url_errors_naming_events_url() {
     );
 
     std::env::remove_var("RALPHY_EVENTS_DIR");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
 }
 

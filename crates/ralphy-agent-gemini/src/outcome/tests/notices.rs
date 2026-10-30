@@ -53,7 +53,9 @@ fn strict_mode_is_a_named_stop_not_a_config_error() {
                 "the enterprise stop must not be diagnosed as ralphy's own root: {reason:?}"
             );
         }
-        other => panic!("the admin stop must be a named block, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("the admin stop must be a named block, got {other:?}")
+        }
     }
     // The discriminating control: exit 52 with an UNRELATED log keeps the
     // ordinary diagnosis, so the override is scoped to the admin needle.
@@ -70,7 +72,9 @@ fn strict_mode_is_a_named_stop_not_a_config_error() {
             reason.contains(".ralphy/gemini-home"),
             "an ordinary exit 52 keeps its own sentence, got {reason:?}"
         ),
-        other => panic!("exit 52 must stay a named stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("exit 52 must stay a named stop, got {other:?}")
+        }
     }
 }
 
@@ -96,7 +100,9 @@ fn the_untrusted_stop_surfaces_the_vendors_own_sentence() {
                 assert!(reason.contains(needle), "{needle} missing from {reason:?}");
             }
         }
-        other => panic!("exit 55 must be a named stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("exit 55 must be a named stop, got {other:?}")
+        }
     }
     // The code alone is sufficient: an empty log carries no vendor sentence,
     // and the exit-class diagnosis still names the code.
@@ -105,7 +111,9 @@ fn the_untrusted_stop_surfaces_the_vendors_own_sentence() {
             assert!(reason.contains("exit 55"), "{reason:?}");
             assert!(!reason.contains("gemini said:"), "{reason:?}");
         }
-        other => panic!("exit 55 must be a named stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("exit 55 must be a named stop, got {other:?}")
+        }
     }
     // The observed code is reported, never a canonical one substring-matched
     // against it: exit 5 must not be laundered into the hard-coded 55.
@@ -136,7 +144,9 @@ fn the_demotion_notice_is_a_revocation_not_noise() {
             reason.contains("no longer autonomous"),
             "the demotion must be named, got {reason:?}"
         ),
-        other => panic!("a failed demoted run must be a named stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("a failed demoted run must be a named stop, got {other:?}")
+        }
     }
     // The invariant: a green run keeps its Done even when it was demoted —
     // without this, the routine preamble of an untrusted-but-successful run
@@ -194,20 +204,26 @@ fn an_informational_notice_never_outranks_the_exit_class() {
                 reason.to_ascii_lowercase().contains(needle),
                 "exit {code} lost its own diagnosis to a routine notice: {reason:?}"
             ),
-            other => panic!("exit {code} must stay a named stop, got {other:?}"),
+            other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+                panic!("exit {code} must stay a named stop, got {other:?}")
+            }
         }
     }
     // …and the notice is still surfaced where nothing better exists: exit 1
     // has no sentence of its own, so the control is named rather than mute.
     match classify_gemini_outcome(&fold, NOTICE, false, false, false, Some(1), None) {
         Outcome::Blocked(reason) => assert!(reason.contains("administrator"), "{reason:?}"),
-        other => panic!("a bare failure carrying a notice must be named, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("a bare failure carrying a notice must be named, got {other:?}")
+        }
     }
     // A HARD stop still outranks the exit class — that is the whole point of
     // the exit-52 override, and this proves the split is not a blanket demotion.
     match classify_gemini_outcome(&fold, ADMIN_LOG, false, false, false, Some(52), None) {
         Outcome::Blocked(reason) => assert!(reason.contains("secureModeEnabled"), "{reason:?}"),
-        other => panic!("expected the enterprise stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("expected the enterprise stop, got {other:?}")
+        }
     }
 }
 
@@ -233,7 +249,9 @@ fn a_model_404_is_named_but_yields_to_a_hard_stop() {
             assert!(reason.contains("no-such-model"), "{reason:?}");
             assert!(reason.contains("ModelNotFoundError"), "{reason:?}");
         }
-        other => panic!("a model 404 must be a named stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("a model 404 must be a named stop, got {other:?}")
+        }
     }
     // …and an exit class WITH its own sentence still outranks it: the 404 sits
     // BELOW `actionable_stop` in the chain, so exit 44 keeps "sandbox".
@@ -251,7 +269,9 @@ fn a_model_404_is_named_but_yields_to_a_hard_stop() {
             reason.to_ascii_lowercase().contains("sandbox"),
             "exit 44 must keep its own diagnosis: {reason:?}"
         ),
-        other => panic!("expected the sandbox stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("expected the sandbox stop, got {other:?}")
+        }
     }
     // A hard-stop revocation still wins — the model is not why the run died.
     let both = format!("{ADMIN_LOG}\n{NOT_FOUND}");
@@ -265,7 +285,9 @@ fn a_model_404_is_named_but_yields_to_a_hard_stop() {
         Some("no-such-model"),
     ) {
         Outcome::Blocked(reason) => assert!(reason.contains("secureModeEnabled"), "{reason:?}"),
-        other => panic!("expected the enterprise stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("expected the enterprise stop, got {other:?}")
+        }
     }
     // A GREEN run is never blocked by a 404 quoted in its own transcript.
     let green = fold_gemini_stream(
@@ -314,7 +336,9 @@ fn both_channels_feed_the_diagnosis() {
             reason.to_ascii_lowercase().contains("turn ceiling"),
             "a stderr-only failure must still be named, got {reason:?}"
         ),
-        other => panic!("expected a named stop, got {other:?}"),
+        other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+            panic!("expected a named stop, got {other:?}")
+        }
     }
 }
 

@@ -21,6 +21,16 @@ const STDERR_MARKER: &str = "quota-marker: usage limit reached";
 const DEGRADED_MARKER: &str = "Waiting for API response";
 const LEAK_MARKER: &str = "output-before-the-leak";
 
+/// Remove a scratch file a test made. It may be gone already, and a leftover
+/// file in the temp dir fails nothing.
+fn remove_scratch(file: &std::path::Path) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "cleanup of a test file that may be gone, and no test reads it after"
+    )]
+    let _ = std::fs::remove_file(file);
+}
+
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/
 /// stderr piped exactly as the adapters do before handing the command off.
 fn child_cmd(mode: &str) -> Command {
@@ -135,7 +145,7 @@ fn temp_log(tag: &str) -> std::path::PathBuf {
 #[test]
 fn run_headless_logged_captures_flags_and_persists_the_log() {
     let log_path = temp_log("clean");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = run_headless_logged(
         child_cmd("clean"),
@@ -159,13 +169,13 @@ fn run_headless_logged_captures_flags_and_persists_the_log() {
     // The persisted file equals the in-memory log.
     let on_disk = std::fs::read_to_string(&log_path).expect("log file was written");
     assert_eq!(on_disk, r.log, "the persisted log equals the returned log");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
 fn run_headless_logged_reports_timeout_and_not_clean() {
     let log_path = temp_log("sleep");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = run_headless_logged(
         child_cmd("sleep"),
@@ -180,13 +190,13 @@ fn run_headless_logged_reports_timeout_and_not_clean() {
         !r.exited_cleanly,
         "a killed child did not exit cleanly (exit == None)"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
 fn run_headless_logged_watched_early_kills_on_matching_stderr_line() {
     let log_path = temp_log("early-kill");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let started = Instant::now();
     let r = run_headless_logged_watched(
@@ -214,7 +224,7 @@ fn run_headless_logged_watched_early_kills_on_matching_stderr_line() {
         r.log.contains(STDERR_MARKER),
         "the matched stderr line is captured in the log"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
@@ -223,7 +233,7 @@ fn run_headless_logged_watched_without_a_match_times_out_normally() {
     // wall timeout exactly like the unwatched path, proving the switch only ever
     // shortens the run when it actually fires.
     let log_path = temp_log("watched-timeout");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = run_headless_logged_watched(
         child_cmd("sleep"),
@@ -236,7 +246,7 @@ fn run_headless_logged_watched_without_a_match_times_out_normally() {
 
     assert!(r.timed_out, "no match → the wall timeout still fires");
     assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 // ── idle watchdog (docs/adr/0038) ───────────────────────────────────────────
@@ -248,7 +258,7 @@ fn the_idle_watchdog_reaps_a_silent_child_long_before_the_wall_timeout() {
     // No stderr matcher can see a failure that is never printed — but the silence
     // itself is unmistakable, and it is the only signal that catches this.
     let log_path = temp_log("idle-kill");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let started = Instant::now();
     let r = HeadlessCall::new(
@@ -274,7 +284,7 @@ fn the_idle_watchdog_reaps_a_silent_child_long_before_the_wall_timeout() {
         "an idle kill still reports as a timeout so classification is unchanged"
     );
     assert!(!r.exited_cleanly, "a killed child did not exit cleanly");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
@@ -284,7 +294,7 @@ fn the_idle_watchdog_spares_a_child_that_keeps_talking() {
     // one, so it must survive — proving the watchdog measures silence, not elapsed
     // time. (That distinction is the entire reason it replaced a wall-clock cap.)
     let log_path = temp_log("idle-chatty");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = HeadlessCall::new(
         child_cmd("chatty"),
@@ -306,7 +316,7 @@ fn the_idle_watchdog_spares_a_child_that_keeps_talking() {
         r.log.contains("tick "),
         "the child's output was captured while it ran"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
@@ -317,7 +327,7 @@ fn degraded_only_child_is_idle_reaped_despite_talking() {
     // rearm the idle beacon, so the watchdog reaps it despite the constant chatter.
     // This FAILS before the degraded plumbing exists (the banners would beat).
     let log_path = temp_log("degraded-idle");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let started = Instant::now();
     let r = HeadlessCall::new(
@@ -340,7 +350,7 @@ fn degraded_only_child_is_idle_reaped_despite_talking() {
         elapsed < Duration::from_secs(30),
         "reaped promptly despite talking every 100ms (took {elapsed:?})"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
@@ -350,7 +360,7 @@ fn healthy_child_with_a_degraded_matcher_survives() {
     // the idle beacon and the child survives — proving the degraded gate only ever
     // stops *matching* lines from counting as progress.
     let log_path = temp_log("degraded-healthy");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = HeadlessCall::new(
         child_cmd("chatty"),
@@ -371,7 +381,7 @@ fn healthy_child_with_a_degraded_matcher_survives() {
         r.log.contains("tick "),
         "the child's healthy output was captured while it ran"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 // ── process-tree teardown: no descendant survives a kill ────────────────────
@@ -422,8 +432,8 @@ fn a_wall_timeout_leaves_no_surviving_descendant() {
     // must stop, which is the only observation that outlives the closed pipes.
     let log_path = temp_log("beat-wall");
     let beat = temp_heartbeat("wall");
-    let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&beat);
+    remove_scratch(&log_path);
+    remove_scratch(&beat);
 
     let r = HeadlessCall::new(
         heartbeat_cmd(&beat),
@@ -441,8 +451,8 @@ fn a_wall_timeout_leaves_no_surviving_descendant() {
     assert!(r.timed_out, "the tree outlived its 2s wall timeout");
     assert_heartbeat_grew_then_froze(&beat);
 
-    let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&beat);
+    remove_scratch(&log_path);
+    remove_scratch(&beat);
 }
 
 #[test]
@@ -453,8 +463,8 @@ fn an_idle_kill_leaves_no_surviving_descendant() {
     // is demonstrably alive still reachable by the watchdog.
     let log_path = temp_log("beat-idle");
     let beat = temp_heartbeat("idle");
-    let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&beat);
+    remove_scratch(&log_path);
+    remove_scratch(&beat);
 
     let r = HeadlessCall::new(
         heartbeat_cmd(&beat),
@@ -471,8 +481,8 @@ fn an_idle_kill_leaves_no_surviving_descendant() {
     assert!(r.idle_killed, "the idle watchdog fired, not the wall clock");
     assert_heartbeat_grew_then_froze(&beat);
 
-    let _ = std::fs::remove_file(&log_path);
-    let _ = std::fs::remove_file(&beat);
+    remove_scratch(&log_path);
+    remove_scratch(&beat);
 }
 
 #[test]
@@ -493,7 +503,7 @@ fn a_command_with_an_unpiped_stream_errors_and_leaves_no_child_running() {
     ];
     for (tag, unpipe) in cases {
         let beat = temp_heartbeat(&format!("unpiped-{tag}"));
-        let _ = std::fs::remove_file(&beat);
+        remove_scratch(&beat);
         let mut cmd = child_cmd("heartbeat");
         cmd.arg(&beat);
         unpipe(&mut cmd);
@@ -513,7 +523,7 @@ fn a_command_with_an_unpiped_stream_errors_and_leaves_no_child_running() {
             len_later, len_after_error,
             "the child spawned for the {tag} case kept running after the error"
         );
-        let _ = std::fs::remove_file(&beat);
+        remove_scratch(&beat);
     }
 }
 
@@ -522,7 +532,7 @@ fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
     // `0` is the operator's opt-out: the silent child now runs to the wall timeout
     // exactly as it did before the watchdog existed.
     let log_path = temp_log("idle-off");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = HeadlessCall::new(
         child_cmd("sleep"),
@@ -536,7 +546,7 @@ fn a_disabled_idle_watchdog_leaves_the_run_exactly_as_it_was() {
 
     assert!(r.timed_out, "the wall timeout still fires");
     assert!(!r.idle_killed, "the watchdog was off, so it did not fire");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
@@ -581,7 +591,7 @@ fn stdin_payload_over_24kb_round_trips() {
     assert!(payload.len() > 24_576, "payload is {} bytes", payload.len());
 
     let log_path = temp_log("stdin-24kb");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     let r = HeadlessCall::new(
         child_cmd("echo-stdin"),
@@ -604,5 +614,5 @@ fn stdin_payload_over_24kb_round_trips() {
         "the LAST line survived the write"
     );
 
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }

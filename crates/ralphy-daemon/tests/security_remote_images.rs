@@ -7,6 +7,11 @@
 //! SOLE env-setter in its file: `RALPHY_DAEMON_DIR` is process-global, so this
 //! env-setting test must be alone in its file (no intra-process race).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -43,12 +48,20 @@ fn app(state: &Arc<AuthState>) -> axum::Router {
 }
 
 async fn body_string(resp: axum::response::Response) -> String {
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("read the response body")
+        .to_bytes();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn get(path: &str) -> Request<Body> {
-    Request::builder().uri(path).body(Body::empty()).unwrap()
+    Request::builder()
+        .uri(path)
+        .body(Body::empty())
+        .expect("build the request")
 }
 
 fn post_form(path: &str, body: String) -> Request<Body> {
@@ -57,7 +70,7 @@ fn post_form(path: &str, body: String) -> Request<Body> {
         .uri(path)
         .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(Body::from(body))
-        .unwrap()
+        .expect("build the request")
 }
 
 /// The CSP a plain page load receives now.
@@ -65,7 +78,7 @@ async fn csp(state: &Arc<AuthState>) -> String {
     let resp = app(state).oneshot(get("/")).await.unwrap();
     resp.headers()[header::CONTENT_SECURITY_POLICY]
         .to_str()
-        .unwrap()
+        .expect("read the CSP header as text")
         .to_string()
 }
 
@@ -74,9 +87,9 @@ async fn csp(state: &Arc<AuthState>) -> String {
 fn code() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("read the system clock")
         .as_secs();
-    let mut mac = Hmac::<Sha1>::new_from_slice(SEED).unwrap();
+    let mut mac = Hmac::<Sha1>::new_from_slice(SEED).expect("key the HMAC");
     mac.update(&(now / 30).to_be_bytes());
     let hs = mac.finalize().into_bytes();
     let off = (hs[hs.len() - 1] & 0x0f) as usize;

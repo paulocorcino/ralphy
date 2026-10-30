@@ -150,13 +150,13 @@ fn remove_swept(path: &Path) {
 fn parse(raw: &str) -> Result<RunSnapshot, &'static str> {
     // `v` is read before the struct so a document a newer ralphy retyped is
     // refused as such rather than misreported as malformed.
-    let value: serde_json::Value = serde_json::from_str(raw).map_err(|_| "malformed")?;
+    let value: serde_json::Value = serde_json::from_str(raw).or(Err("malformed"))?;
     match value.get("v").and_then(|v| v.as_u64()) {
         Some(v) if v > SNAPSHOT_VERSION as u64 => return Err("unsupported version"),
         Some(_) => {}
         None => return Err("malformed"),
     }
-    serde_json::from_value(value).map_err(|_| "malformed")
+    serde_json::from_value(value).or(Err("malformed"))
 }
 
 /// The final snapshot a finished run left in `run_dir`

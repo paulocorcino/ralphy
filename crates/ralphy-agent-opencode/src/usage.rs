@@ -130,7 +130,7 @@ pub(crate) fn resolved_model_label(usage: &Usage) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use crate::cleanup::remove_scratch_file;
 
     // ── usage_from_opencode_message ──────────────────────────────────────────
 
@@ -190,7 +190,7 @@ mod tests {
             // sibling tests in the same process without needing a clock/random.
             line!()
         ));
-        let _ = fs::remove_file(&db_path);
+        remove_scratch_file(&db_path);
 
         let data = r#"{"role":"assistant","cost":0,"modelID":"k2p6","tokens":{"total":13532,"input":2168,"output":100,"reasoning":0,"cache":{"write":0,"read":11264}}}"#;
         {
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(usage.model.as_deref(), Some("k2p6"));
         assert_eq!(usage.total(), 13532);
 
-        let _ = fs::remove_file(&db_path);
+        remove_scratch_file(&db_path);
     }
 
     #[test]

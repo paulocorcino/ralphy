@@ -1,4 +1,5 @@
 use super::*;
+use crate::scratch::remove_scratch;
 use crate::Outcome;
 
 fn labeled(number: u64, labels: &[&str]) -> Issue {
@@ -290,7 +291,7 @@ impl RunClock for FakeClock {
 /// in; unique per test so parallel tests never collide.
 fn test_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ralphy-runner-ut-{}-{name}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -396,7 +397,7 @@ fn green_close_runs_through_fakes_only() {
     assert_eq!(checkouts[0], "new:afk/run-ut-green:main");
     assert_eq!(checkouts.last().unwrap(), "force:main");
 
-    let _ = fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -441,7 +442,7 @@ fn non_green_outcome_stops_the_run() {
         "no return to the original branch on a stop"
     );
 
-    let _ = fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -503,7 +504,7 @@ fn verify_gate_failure_leaves_issue_open_and_run_continues() {
     // The run finished cleanly, so the repo returned to the original branch.
     assert_eq!(repo.checkouts.borrow().last().unwrap(), "force:main");
 
-    let _ = fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -560,7 +561,7 @@ fn verify_spawn_failure_short_circuits_without_repairs() {
     // The run finished cleanly, so the repo returned to the original branch.
     assert_eq!(repo.checkouts.borrow().last().unwrap(), "force:main");
 
-    let _ = fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -611,5 +612,5 @@ fn protocol_bounce_repairs_then_closes() {
         "the protocol-bounce line carries the bounce's model, not `unknown`"
     );
 
-    let _ = fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }

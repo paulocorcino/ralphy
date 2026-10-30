@@ -182,7 +182,7 @@ fn name_uses(src: &str, name: &str) -> usize {
                     }
                 }
             }
-            _ => {}
+            lex::Tok::Ident(_) | lex::Tok::Punct(_) | lex::Tok::Str(_) | lex::Tok::Other => {}
         }
     }
     count

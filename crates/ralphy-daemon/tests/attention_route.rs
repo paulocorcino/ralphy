@@ -11,6 +11,11 @@
 //! test needs a process of its own (nextest runs each test in its own
 //! process).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 #[path = "support/golden.rs"]
 mod golden;
 

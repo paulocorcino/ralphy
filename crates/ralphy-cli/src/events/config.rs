@@ -237,6 +237,7 @@ mod tests {
 
         std::env::remove_var(TOKEN_ENV);
         std::env::remove_var(DIR_ENV);
+        #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
         std::fs::remove_dir_all(&dir).ok();
     }
 

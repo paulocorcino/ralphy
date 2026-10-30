@@ -133,6 +133,10 @@ pub(crate) mod testutil {
                 if start.elapsed() > Duration::from_secs(3) {
                     break;
                 }
+                #[expect(
+                    clippy::unused_result_ok,
+                    reason = "a failed rewrite is tried again until the time limit"
+                )]
                 std::fs::write(path, std::fs::read(path).unwrap()).ok();
             }
         }
@@ -143,6 +147,7 @@ pub(crate) mod testutil {
 #[cfg(test)]
 pub(crate) fn test_dir(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("ralphy-{tag}-{}", std::process::id()));
+    #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).expect("temp dir is writable");
     dir

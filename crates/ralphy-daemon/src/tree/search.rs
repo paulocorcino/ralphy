@@ -191,15 +191,8 @@ pub fn grep_with(
         return Ok(reply);
     };
     let clock = Clock::start(budget);
-    collect_hits(
-        grep_walks(&dir),
-        &dir,
-        &re,
-        fallback,
-        budget,
-        &clock,
-        &mut reply,
-    );
+    let matcher = Matcher { re: &re, fallback };
+    collect_hits(grep_walks(&dir), &dir, &matcher, budget, &clock, &mut reply);
     reply.hits.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(reply)
 }
@@ -242,6 +235,13 @@ fn grep_walks(dir: &Path) -> impl Iterator<Item = ignore::Walk> {
     std::iter::once(main.build()).chain(ralphy_walk)
 }
 
+/// What a grep looks for in a file: the query and the page that decodes a
+/// non-UTF-8 file.
+struct Matcher<'a> {
+    re: &'a regex::Regex,
+    fallback: &'static Encoding,
+}
+
 /// Push a hit into `reply` for each file of `walks` that contains `re`, until
 /// the clock runs out or the hit cap is reached; either one sets `truncated`.
 /// The cap is checked only for a file that is a hit, so a walk that ends
@@ -249,8 +249,7 @@ fn grep_walks(dir: &Path) -> impl Iterator<Item = ignore::Walk> {
 fn collect_hits(
     walks: impl Iterator<Item = ignore::Walk>,
     dir: &Path,
-    re: &regex::Regex,
-    fallback: &'static Encoding,
+    matcher: &Matcher<'_>,
     budget: &SearchBudget,
     clock: &Clock,
     reply: &mut SearchReply<GrepHit>,
@@ -263,7 +262,7 @@ fn collect_hits(
         if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
             continue;
         }
-        let Some(count) = count_in(entry.path(), re, fallback) else {
+        let Some(count) = count_in(entry.path(), matcher.re, matcher.fallback) else {
             continue;
         };
         if reply.hits.len() >= budget.max_hits {

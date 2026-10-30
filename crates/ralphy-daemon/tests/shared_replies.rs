@@ -29,14 +29,16 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("send the frame");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
+            let bytes = match msg.expect("read the next frame") {
                 Message::Binary(b) => b,
                 Message::Close(_) => break,
-                _ => continue,
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
+                    continue
+                }
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.id == id {

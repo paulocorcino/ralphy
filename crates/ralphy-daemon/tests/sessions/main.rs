@@ -4,6 +4,11 @@
 //! CLI at `command_test_child` through `RALPHY_EXE_OVERRIDE`, and sets no other
 //! env var, so they can share a process.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 mod console_command_ws;
 mod console_reattach;
 mod console_record;
@@ -49,7 +54,9 @@ async fn refused(url: &str) -> serde_json::Value {
                     assert!(payload.is_none(), "exactly one refusal frame");
                     payload = Some(cmd.payload);
                 }
-                other => panic!("a refusal carries no other frame; got {other:?}"),
+                frame @ (Frame::Terminal { .. } | Frame::Presence(_)) => {
+                    panic!("a refusal carries no other frame; got {frame:?}")
+                }
             }
         }
     })

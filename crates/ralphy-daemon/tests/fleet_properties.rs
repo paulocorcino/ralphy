@@ -25,7 +25,7 @@ const SLUG: &str = "owner/shared";
 
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("the test id parses"),
         name: name.to_string(),
         avatar: "🐙".to_string(),
     }
@@ -34,12 +34,17 @@ fn identity(id: &str, name: &str) -> Identity {
 fn save_registry(path: &Path, repo: &Path) {
     let mut store = registry::RegistryStore::default();
     store.upsert(SLUG, &repo.to_string_lossy());
-    registry::save_to(&store, path).unwrap();
+    registry::save_to(&store, path).expect("the registry is saved");
 }
 
 async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>) -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
@@ -52,7 +57,9 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
     );
     tokio::spawn(async move {
         let _shutdown = tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     port
 }
@@ -76,7 +83,7 @@ fn descriptor(port: u16) -> PeerDescriptor {
 async fn ask(port: u16, verb: &str, payload: Value) -> Value {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
         .await
-        .unwrap();
+        .expect("the websocket connects");
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
@@ -86,10 +93,10 @@ async fn ask(port: u16, verb: &str, payload: Value) -> Value {
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
-            if let Message::Binary(bytes) = message.unwrap() {
+            if let Message::Binary(bytes) = message.expect("the websocket frame arrives") {
                 if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
                     if reply.id == 1 {
                         return reply.payload;
@@ -107,11 +114,12 @@ async fn ask(port: u16, verb: &str, payload: Value) -> Value {
 /// (9 bytes) and `sub/` with one file of 3 bytes; the local project of the same
 /// slug holds a `note.txt` of 10 bytes and a `sub/` with one file of 7 bytes.
 async fn fleet() -> u16 {
-    let peer_store = tempfile::tempdir().unwrap();
-    let peer_repo = tempfile::tempdir().unwrap();
-    std::fs::write(peer_repo.path().join("note.txt"), "peer-side").unwrap();
-    std::fs::create_dir(peer_repo.path().join("sub")).unwrap();
-    std::fs::write(peer_repo.path().join("sub/x"), "abc").unwrap();
+    let peer_store = tempfile::tempdir().expect("the temp dir is created");
+    let peer_repo = tempfile::tempdir().expect("the temp dir is created");
+    std::fs::write(peer_repo.path().join("note.txt"), "peer-side")
+        .expect("the test file is written");
+    std::fs::create_dir(peer_repo.path().join("sub")).expect("the test directory is created");
+    std::fs::write(peer_repo.path().join("sub/x"), "abc").expect("the test file is written");
     let peer_registry = peer_store.path().join("repos.toml");
     save_registry(&peer_registry, peer_repo.path());
     let peer_port = serve(
@@ -124,14 +132,16 @@ async fn fleet() -> u16 {
     )
     .await;
 
-    let local_store = tempfile::tempdir().unwrap();
-    let local_repo = tempfile::tempdir().unwrap();
-    std::fs::write(local_repo.path().join("note.txt"), "local-side").unwrap();
-    std::fs::create_dir(local_repo.path().join("sub")).unwrap();
-    std::fs::write(local_repo.path().join("sub/x"), "abcdefg").unwrap();
+    let local_store = tempfile::tempdir().expect("the temp dir is created");
+    let local_repo = tempfile::tempdir().expect("the temp dir is created");
+    std::fs::write(local_repo.path().join("note.txt"), "local-side")
+        .expect("the test file is written");
+    std::fs::create_dir(local_repo.path().join("sub")).expect("the test directory is created");
+    std::fs::write(local_repo.path().join("sub/x"), "abcdefg").expect("the test file is written");
     let local_registry = local_store.path().join("repos.toml");
     save_registry(&local_registry, local_repo.path());
-    peer::write_descriptor(local_store.path(), &descriptor(peer_port)).unwrap();
+    peer::write_descriptor(local_store.path(), &descriptor(peer_port))
+        .expect("the peer descriptor is written");
     let port = serve(
         identity(A_ID, "local"),
         local_registry,

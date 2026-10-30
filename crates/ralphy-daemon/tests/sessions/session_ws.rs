@@ -71,7 +71,11 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             let frame = protocol::decode(&bytes);
             if let Ok(Frame::Command(cmd)) = &frame {

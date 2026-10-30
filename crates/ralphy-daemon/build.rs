@@ -13,8 +13,9 @@ mod parts;
 mod ui;
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 
-fn main() {
+fn main() -> ExitCode {
     // lib.rs embeds the tree `ui::build` writes, which Cargo does not track on
     // its own: without this line an edit to a UI asset leaves the binary
     // serving the stale embedded copy after a "successful" rebuild.
@@ -24,9 +25,10 @@ fn main() {
             .join("ui");
     if let Err(e) = ui::build(&PathBuf::from("assets/ui"), &out) {
         eprintln!("error: build the workbench tree: {e:#}");
-        std::process::exit(1);
+        return ExitCode::FAILURE;
     }
 
     let version = git_version::embedded_version();
     println!("cargo:rustc-env=RALPHY_VERSION={version}");
+    ExitCode::SUCCESS
 }

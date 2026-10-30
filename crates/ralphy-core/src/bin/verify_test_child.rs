@@ -26,15 +26,27 @@ fn main() {
             // reaches EOF, which only the pre-collect tree-kill can force while
             // the orphan below holds the pipe.
             println!("foreground-marker-before-leak");
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a test helper child has nowhere to report a failed flush"
+            )]
             let _ = std::io::Write::flush(&mut std::io::stdout());
             // Grandchild inherits our stdout (Stdio::inherit is the default), then
             // we exit 0 straight away — the orphan holds the pipe open.
             if let Ok(exe) = std::env::current_exe() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the grandchild only holds the pipe, and a failed spawn fails the test"
+                )]
                 let _ = std::process::Command::new(exe).arg("sleep").spawn();
             }
         }
         "sleep-with-grandchild" => {
             if let Ok(exe) = std::env::current_exe() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the grandchild only holds the pipe, and a failed spawn fails the test"
+                )]
                 let _ = std::process::Command::new(exe).arg("sleep").spawn();
             }
             std::thread::sleep(Duration::from_secs(60));
@@ -44,6 +56,10 @@ fn main() {
         }
         other => {
             eprintln!("unknown mode: {other:?}");
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a test helper child reports an unknown mode by its exit code"
+            )]
             std::process::exit(2);
         }
     }

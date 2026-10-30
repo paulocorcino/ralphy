@@ -174,7 +174,12 @@ fn check_agents_present_uses_the_given_locator() {
         // Stands in for `locate_cursor`, which finds the real install.
         CliAgent::Cursor => true,
         // Stands in for `locate_program`, which never finds a `cursor` binary.
-        _ => false,
+        CliAgent::Claude
+        | CliAgent::Codex
+        | CliAgent::Copilot
+        | CliAgent::Gemini
+        | CliAgent::Kimi
+        | CliAgent::OpenCode => false,
     };
     assert!(check_agents_present(CliAgent::Cursor, CliAgent::Cursor, by_binary).is_ok());
 

@@ -2,6 +2,11 @@
 //! `ssh`: it records its argv to `RALPHY_TEST_ARGV_FILE`, then lives for
 //! `RALPHY_TEST_SLEEP_MS`. Never a real SSH connection.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -28,14 +33,14 @@ struct Fixture {
 }
 
 fn setup(sleep_ms: u64) -> Fixture {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
     let argv_log = dir.path().join("argv.log");
     // The holder never kills, so a stand-in outlives its test. Run a copy: a
     // live image of `target/debug/command_test_child.exe` makes the next
     // cargo build that relinks it fail on Windows (os error 5).
     let built = Path::new(env!("CARGO_BIN_EXE_command_test_child"));
     let stand_in = dir.path().join(built.file_name().expect("a binary path"));
-    std::fs::copy(built, &stand_in).unwrap();
+    std::fs::copy(built, &stand_in).expect("copy the stand-in binary");
     std::env::set_var("RALPHY_DAEMON_SSH_OVERRIDE", &stand_in);
     std::env::set_var("RALPHY_TEST_ARGV_FILE", &argv_log);
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
@@ -174,12 +179,12 @@ fn app(id: &str, store: &Path, auth: Arc<AuthState>) -> axum::Router {
     let registry_path = store.join("repos.toml");
     let mut repos = registry::RegistryStore::default();
     repos.upsert("owner/repo", &store.to_string_lossy());
-    registry::save_to(&repos, &registry_path).unwrap();
+    registry::save_to(&repos, &registry_path).expect("save the registry");
     let (tx, rx) = tokio::sync::watch::channel(false);
     std::mem::forget(tx);
     router(
         Some(Identity {
-            id: id.parse().unwrap(),
+            id: id.parse().expect("parse the peer id"),
             name: "svrapp".to_string(),
             avatar: "🐙".to_string(),
         }),
@@ -197,17 +202,22 @@ async fn call(app: &axum::Router, method: &str, uri: &str) -> (StatusCode, serde
         .method(method)
         .uri(uri)
         .body(Body::empty())
-        .unwrap();
+        .expect("build the request");
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("read the response body")
+        .to_bytes();
     (status, serde_json::from_slice(&body).unwrap_or_default())
 }
 
 fn peer_row(fleet: &serde_json::Value, id: &str) -> serde_json::Value {
     fleet["peers"]
         .as_array()
-        .unwrap()
+        .expect("read the peers list")
         .iter()
         .find(|p| p["daemon_id"] == id)
         .cloned()
@@ -216,8 +226,8 @@ fn peer_row(fleet: &serde_json::Value, id: &str) -> serde_json::Value {
 
 /// A loopback port with nothing listening on it.
 fn closed_port() -> u16 {
-    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    l.local_addr().unwrap().port()
+    let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a local port");
+    l.local_addr().expect("read the bound address").port()
 }
 
 #[tokio::test]
@@ -294,7 +304,7 @@ async fn fleet_reports_the_two_tunnel_states() {
 /// Serve the peer daemon `id` on a loopback port. The store must outlive the
 /// server.
 async fn serve_peer(id: &str) -> (u16, tokio::task::JoinHandle<()>, tempfile::TempDir) {
-    let peer_store = tempfile::tempdir().unwrap();
+    let peer_store = tempfile::tempdir().expect("create the temp dir");
     let peer_app = app(
         id,
         peer_store.path(),
@@ -303,10 +313,17 @@ async fn serve_peer(id: &str) -> (u16, tokio::task::JoinHandle<()>, tempfile::Te
             SessionEpoch::in_memory_detached(),
         ),
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let serving = tokio::spawn(async move {
-        axum::serve(listener, peer_app).await.unwrap();
+        axum::serve(listener, peer_app)
+            .await
+            .expect("serve the test app");
     });
     (port, serving, peer_store)
 }

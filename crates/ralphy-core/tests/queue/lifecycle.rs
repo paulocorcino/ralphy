@@ -51,7 +51,7 @@ fn works_issues_in_order_and_closes_each_green() {
         "one oneline entry per counted commit"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn first_non_green_stops_run_and_leaves_later_issues_untouched() {
     // Branch handed back with the green commit on it.
     assert_eq!(current_branch(&repo), report.branch);
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn dry_run_closes_nothing_and_restores() {
         "empty branch dropped"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -159,5 +159,5 @@ fn deadline_blocks_starting_the_next_issue() {
     assert_eq!(*agent.executed.borrow(), vec![1], "#2 never executed");
     assert!(matches!(report.stop, Some(StopReason::Deadline)));
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

@@ -112,6 +112,10 @@ pub fn host_password(
 /// Compose `ralphy host …` for a host verb. Any other verb, or any value
 /// that fails its check, yields [`ArgvError`] and no argv.
 pub fn host_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "a verb this builder does not serve is refused, which fails closed"
+    )]
     let parts = match verb {
         Verb::HostAliases => vec!["aliases"],
         Verb::HostKey => vec!["key", destination(payload, "destination")?],

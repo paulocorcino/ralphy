@@ -1,4 +1,5 @@
 use super::*;
+use crate::scratch::remove_scratch;
 
 #[test]
 fn parse_triage_mapping_reads_the_mapped_column() {
@@ -391,7 +392,7 @@ fn resolve_queue_labels_appends_mapped_label_from_triage_file() {
     let result = resolve_queue_labels(&[], &dir);
     assert_eq!(result, vec!["ready-for-agent", "AFK", "afk-extended"]);
 
-    std::fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -407,5 +408,5 @@ fn resolve_queue_labels_dedupes_mapped_label() {
     // "AFK" should appear only once.
     assert_eq!(result, vec!["ready-for-agent", "AFK"]);
 
-    std::fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }

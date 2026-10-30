@@ -35,7 +35,7 @@ use regex::Regex;
 // The `ui-copy` lexer, compiled here a third time: xtask has no `[lib]`, and
 // one lexer means the ratchet and `ui-copy` drop comments and strings by the
 // same rule. The ratchets read only part of its API.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "the ratchets read only part of the lexer API")]
 #[path = "../../src/ui_copy/lex.rs"]
 mod lex;
 

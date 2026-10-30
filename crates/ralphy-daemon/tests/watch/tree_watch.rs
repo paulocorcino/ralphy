@@ -19,20 +19,25 @@ type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 /// Bind a daemon over an empty temp repo; return the `ws://…/ws/tree` URL, the
 /// repo slug, and the repo root path (so the test can create files in it).
 async fn serve_repo() -> (String, String, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path().to_path_buf();
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/tree";
     store.upsert(slug, &dir.path().to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -46,7 +51,9 @@ async fn serve_repo() -> (String, String, PathBuf) {
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
     std::mem::forget(tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/tree"),
@@ -64,7 +71,7 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
-        .unwrap();
+        .expect("send the frame");
 }
 
 /// Send a `watch`/`unwatch` for `(repo, path)` under `checkout` (ADR-0063 §2).
@@ -76,7 +83,7 @@ async fn send_verb_checkout(ws: &mut Ws, verb: &str, repo: &str, path: &str, che
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
-        .unwrap();
+        .expect("send the frame");
 }
 
 /// Wait up to 10s for a `tree.dirty` frame and return its `(repo, path,

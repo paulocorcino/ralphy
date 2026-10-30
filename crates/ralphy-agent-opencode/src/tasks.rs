@@ -196,7 +196,7 @@ pub fn consolidate_knowledge(
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
-    std::fs::create_dir_all(run_dir).ok();
+    std::fs::create_dir_all(run_dir).context("creating the run directory")?;
 
     info!(?model, "consolidating knowledge with opencode run");
     let cmd = build_opencode_command(model, None, ws.repo_root(), NO_SKILLS);

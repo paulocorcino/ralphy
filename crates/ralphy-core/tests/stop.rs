@@ -8,6 +8,11 @@
 //! a leak. Every test here takes [`StopFlagGuard`], which serializes them and
 //! restores the flag even through a panicking assertion.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,7 +30,13 @@ use ralphy_core::{
 
 static STOP_FLAG_LOCK: Mutex<()> = Mutex::new(());
 
-struct StopFlagGuard(#[allow(dead_code)] MutexGuard<'static, ()>);
+struct StopFlagGuard(
+    #[expect(
+        dead_code,
+        reason = "the guard holds the lock for its drop and is never read"
+    )]
+    MutexGuard<'static, ()>,
+);
 
 impl StopFlagGuard {
     fn acquire() -> Self {
@@ -134,7 +145,11 @@ impl Agent for StoppingAgent {
     }
 
     fn execute(&self, _plan: &Plan, ws: &Workspace) -> anyhow::Result<Execution> {
-        let number = *self.planned.borrow().last().unwrap();
+        let number = *self
+            .planned
+            .borrow()
+            .last()
+            .expect("no plan before execute");
         self.executed.borrow_mut().push(number);
         // One real commit per issue, so the run branch is non-empty and the
         // teardown has something to hand back.
@@ -236,9 +251,20 @@ fn sweep_stale(prefix: &str) {
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age > std::time::Duration::from_secs(3600));
         if old && entry.path().is_dir() {
-            fs::remove_dir_all(entry.path()).ok();
+            remove_scratch(&entry.path());
         }
     }
+}
+
+/// Remove a scratch directory at the end of a test, or before a test starts. The
+/// directory may be gone already, and a failed removal must not fail the test.
+fn remove_scratch(path: &Path) {
+    #[expect(
+        clippy::unused_result_ok,
+        reason = "a scratch directory may be gone already, and a failed cleanup must not \
+                 fail the test"
+    )]
+    fs::remove_dir_all(path).ok();
 }
 
 fn init_repo(name: &str) -> PathBuf {
@@ -248,7 +274,7 @@ fn init_repo(name: &str) -> PathBuf {
     let usage = USAGE.get_or_init(|| {
         sweep_stale("ralphy-stop-");
         let dir = std::env::temp_dir().join(format!("ralphy-stop-usage-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
+        fs::create_dir_all(&dir).expect("create the usage dir");
         std::env::set_var("RALPHY_USAGE_DIR", &dir);
         dir
     });
@@ -266,13 +292,13 @@ fn init_repo(name: &str) -> PathBuf {
     // minutes. A leftover repo under the same name made `git init` a re-init
     // and the commit below fail with "nothing to commit" (measured 6 in 25
     // runs of this binary, 2026-09-26).
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
+    remove_scratch(&dir);
+    fs::create_dir_all(&dir).expect("create the scratch repo dir");
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["config", "user.email", "t@example.com"]);
     git(&dir, &["config", "user.name", "Test"]);
-    fs::write(dir.join(".gitignore"), ".ralphy/\n").unwrap();
-    fs::write(dir.join("README.md"), "hello\n").unwrap();
+    fs::write(dir.join(".gitignore"), ".ralphy/\n").expect("write .gitignore");
+    fs::write(dir.join("README.md"), "hello\n").expect("write README.md");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "-q", "-m", "init"]);
     dir
@@ -342,7 +368,7 @@ fn a_stop_during_an_issue_halts_before_the_gates_and_names_that_issue() {
     // verified them, so the run must not vouch for the issue by closing it.
     assert_eq!(report.worked.len(), 1);
     assert!(!report.worked[0].closed, "a stopped issue stays open");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// A stop that lands while #1 is PLANNING. The reaped planner wrote no plan, so
@@ -381,7 +407,7 @@ fn a_stop_that_reaps_the_planner_ends_the_run_as_stopped() {
         report.branch,
         "a stopped run hands its branch back, as every other stop does"
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// The planner finished its plan just as the stop landed. The plan is kept on
@@ -411,7 +437,7 @@ fn a_stop_during_planning_starts_no_executor() {
         "expected a stop naming #1, got {:?}",
         report.stop
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// The other gate: a stop already standing when the loop begins is seen at the
@@ -442,7 +468,7 @@ fn a_stop_standing_before_the_first_issue_names_no_issue() {
         report.stop
     );
     assert!(report.worked.is_empty());
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// The negative control. Without it, a gate accidentally inverted into
@@ -469,7 +495,7 @@ fn no_stop_request_works_the_whole_queue() {
         "an unstopped queue must report no stop reason, got {:?}",
         report.stop
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// **The load-bearing test of docs/adr/0054.**
@@ -513,7 +539,7 @@ fn a_stop_leaves_the_run_branch_checked_out_with_uncommitted_work_intact() {
         "the uncommitted file written during the stopped issue was destroyed"
     );
     assert_eq!(fs::read_to_string(&scratch).unwrap(), "uncommitted\n");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// The verify gate is the run's OTHER long child — a real suite here is minutes.
@@ -541,7 +567,7 @@ fn a_stop_cuts_a_running_verify_gate() {
         "the gate must reap on the stop, not wait out its 120s budget (took {elapsed:?})"
     );
     assert!(!report.passed, "a gate that never finished did not pass");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// `wait_for_reset` is the one wait with no ceiling — a reset days out is
@@ -591,7 +617,7 @@ fn without_a_stop_the_verify_gate_runs_its_command_to_completion() {
         "an unstopped gate runs its command normally: {:?}",
         report.commands
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 /// A stop read after a `Limit` outcome comes BEFORE the resume decision: the
@@ -618,5 +644,5 @@ fn a_stop_while_the_outcome_is_a_limit_executes_once_and_never_resumes() {
         "expected a stop naming #1, got {:?}",
         report.stop
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

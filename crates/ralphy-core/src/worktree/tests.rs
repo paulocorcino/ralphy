@@ -4,13 +4,14 @@
 use super::*;
 use crate::changes::ChangeStatus;
 use crate::git::git;
+use crate::scratch::remove_scratch;
 use std::path::PathBuf;
 
 mod discard;
 
 fn tmp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ralphy-worktree-{}-{}", std::process::id(), name));
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -79,7 +80,7 @@ fn stage_moves_a_path_to_the_index() {
         "the path must be on the index side after staging"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -109,7 +110,7 @@ fn stage_refuses_a_path_outside_the_change_set() {
         "a refusal must leave the index untouched"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -120,7 +121,7 @@ fn stage_refuses_an_empty_list() {
     assert_eq!(stage(&dir, &[]).unwrap(), StageOutcome::NoPaths);
     assert_eq!(staged_paths(&dir), "");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -150,7 +151,7 @@ fn stage_then_unstage_round_trips() {
         "the edit itself survives — unstage touches the index, not the file"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -174,7 +175,7 @@ fn unstage_on_an_unborn_head_returns_the_file_to_untracked() {
         "a fresh repo's first file returns to untracked, not to a staged delete"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -198,7 +199,7 @@ fn unstage_refuses_a_path_outside_the_change_set() {
     );
     assert_eq!(unstage(&dir, &[]).unwrap(), UnstageOutcome::NoPaths);
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -220,7 +221,7 @@ fn a_rename_is_unstageable_by_its_original_path_too() {
         "both halves of the rename left the index"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -239,7 +240,7 @@ fn commit_with_nothing_staged_is_refused_and_creates_no_commit() {
     );
     assert_eq!(commit_count(&dir), before, "no commit was created");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -262,7 +263,7 @@ fn commit_with_an_empty_message_is_refused() {
         "the refusal left the staged index alone"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -285,7 +286,7 @@ fn commit_writes_the_staged_index() {
         "feat: a thing"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -305,7 +306,7 @@ fn a_commit_message_beginning_with_a_dash_is_recorded_verbatim() {
     );
     assert_eq!(git(&dir, &["log", "-1", "--format=%s"]).unwrap(), "-oops");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// The regression test for the group-stage abort. REPRODUCED live before the
@@ -367,7 +368,7 @@ fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
         UnstageOutcome::Unstaged { paths: 2 }
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// `--literal-pathspecs` is what keeps a filename from being read as a pattern
@@ -394,5 +395,5 @@ fn a_bracketed_filename_is_staged_literally_not_globbed() {
         UnstageOutcome::Unstaged { paths: 1 }
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }

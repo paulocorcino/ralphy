@@ -18,7 +18,7 @@ fn wide(s: &str) -> Vec<u16> {
 struct Key(HKEY);
 
 impl Drop for Key {
-    #[allow(unsafe_code, reason = "FFI: RegCloseKey")]
+    #[expect(unsafe_code, reason = "FFI: RegCloseKey")]
     fn drop(&mut self) {
         // SAFETY: `self.0` is a key that `RegOpenKeyExW` opened, closed once here.
         // A failed close leaves nothing to undo, so its result is not used.
@@ -34,7 +34,7 @@ pub(in crate::install) fn add(dir: &str) -> Result<bool> {
 
 /// Open the key, read the user `Path`, and write what `next` makes of it.
 /// `next` returns `None` when nothing changes. Returns whether it wrote.
-#[allow(unsafe_code, reason = "FFI: the registry calls for the user Path")]
+#[expect(unsafe_code, reason = "FFI: the registry calls for the user Path")]
 pub(in crate::install) fn change(next: impl FnOnce(&str) -> Option<String>) -> Result<bool> {
     let subkey = wide("Environment");
     let name = wide("Path");
@@ -65,7 +65,7 @@ pub(in crate::install) fn change(next: impl FnOnce(&str) -> Option<String>) -> R
 
 /// The type and the text of the user `Path`. A missing value is an empty
 /// `REG_EXPAND_SZ`, the type Windows itself gives it.
-#[allow(unsafe_code, reason = "FFI: RegQueryValueExW")]
+#[expect(unsafe_code, reason = "FFI: RegQueryValueExW")]
 fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
     let mut kind: REG_VALUE_TYPE = 0;
     let mut bytes: u32 = 0;
@@ -114,7 +114,7 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
     }
 }
 
-#[allow(unsafe_code, reason = "FFI: RegSetValueExW")]
+#[expect(unsafe_code, reason = "FFI: RegSetValueExW")]
 fn write(key: &Key, name: &[u16], kind: REG_VALUE_TYPE, value: &str) -> Result<()> {
     let data = wide(value);
     // SAFETY: `data` is NUL-terminated UTF-16 of `data.len() * 2` bytes.
@@ -134,7 +134,7 @@ fn write(key: &Key, name: &[u16], kind: REG_VALUE_TYPE, value: &str) -> Result<(
     Ok(())
 }
 
-#[allow(unsafe_code, reason = "FFI: SendMessageTimeoutW")]
+#[expect(unsafe_code, reason = "FFI: SendMessageTimeoutW")]
 fn broadcast() {
     let area = wide("Environment");
     let mut result: usize = 0;

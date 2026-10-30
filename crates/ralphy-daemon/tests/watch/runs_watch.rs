@@ -21,23 +21,28 @@ const RUNID: &str = "01TESTRUNIDTESTRUNIDTE";
 /// Bind a daemon over a temp repo whose `.gitignore` hides `.ralphy/`; return the
 /// `ws://…/ws/tree` URL, the repo slug, and the repo root.
 async fn serve_repo() -> (String, String, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path().to_path_buf();
     // The trap the exemption exists for: every repo ralphy touches gitignores
     // `.ralphy/`, so without the exemption no snapshot write ever nudges.
-    std::fs::write(root.join(".gitignore"), b".ralphy/\n").unwrap();
+    std::fs::write(root.join(".gitignore"), b".ralphy/\n").expect("write .gitignore");
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/tree";
     store.upsert(slug, &dir.path().to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -51,7 +56,9 @@ async fn serve_repo() -> (String, String, PathBuf) {
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
     std::mem::forget(tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/tree"),
@@ -70,7 +77,7 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
-        .unwrap();
+        .expect("send the frame");
 }
 
 /// Poll `cond` until it holds or 10s pass. Returns whether it held.

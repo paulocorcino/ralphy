@@ -204,7 +204,10 @@ pub fn render_manifest(issue: u64, entries: &[(String, AttachmentOutcome)]) -> S
 /// owned here so its `Drop` deletes the directory when this value drops — the
 /// caller keeps it alive until after the triage session returns (ADR-0025 §7).
 pub struct TriageAttachments {
-    #[allow(dead_code)] // owned solely so Drop deletes the dir at end of triage.
+    #[expect(
+        dead_code,
+        reason = "owned solely so Drop deletes the dir at end of triage"
+    )]
     dir: tempfile::TempDir,
     pub manifest: String,
     /// Local paths of every `(fetched)` image, for adapters (e.g. codex `-i`)

@@ -56,7 +56,19 @@ async fn bearer_policy_gates_the_ws_upgrade() {
             401,
             "the unauthenticated upgrade must fail with 401"
         ),
-        other => panic!("expected an HTTP 401 handshake error, got {other:?}"),
+        err @ (WsError::ConnectionClosed
+        | WsError::AlreadyClosed
+        | WsError::Io(_)
+        | WsError::Tls(_)
+        | WsError::Capacity(_)
+        | WsError::Protocol(_)
+        | WsError::WriteBufferFull(_)
+        | WsError::AttackAttempt
+        | WsError::Url(_)
+        | WsError::Utf8(_)
+        | WsError::HttpFormat(_)) => {
+            panic!("expected an HTTP 401 handshake error, got {err:?}")
+        }
     }
 
     // With the correct bearer the upgrade succeeds and the first frame is a
@@ -71,13 +83,21 @@ async fn bearer_policy_gates_the_ws_upgrade() {
     let msg = ws.next().await.expect("a message").expect("message is Ok");
     let bytes = match msg {
         Message::Binary(b) => b,
-        other => panic!("expected a binary presence frame, got {other:?}"),
+        other @ (Message::Text(_)
+        | Message::Ping(_)
+        | Message::Pong(_)
+        | Message::Close(_)
+        | Message::Frame(_)) => {
+            panic!("expected a binary presence frame, got {other:?}")
+        }
     };
     match protocol::decode(&bytes).expect("decodes to a frame") {
         Frame::Presence(p) => {
             assert_eq!(p.name, Some("anvil".into()));
             assert_eq!(p.avatar, Some("🐙".into()));
         }
-        other => panic!("expected a presence frame, got {other:?}"),
+        frame @ (Frame::Terminal { .. } | Frame::Command(_)) => {
+            panic!("expected a presence frame, got {frame:?}")
+        }
     }
 }
