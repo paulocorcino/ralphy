@@ -911,3 +911,37 @@ test("a duplicate lands beside its file under the first copy name the folder doe
   // A leading dot is the whole name of a dotfile, not an extension.
   assert.deepEqual(await duplicate("cfg/.env", [".env"]), [["file.copy", "cfg/.env", "cfg/.env copy"]]);
 });
+
+// The open tabs of the folder a nudge names read their bytes again.
+test("a nudge re-reads an image tab through the image read, and a text tab through file.read", async () => {
+  const { scope: s, shell } = loadComponent("wbFiles", { magics: { $refs: {}, $nextTick: (f) => f() } });
+  const real = { daemon: globalThis.WBDaemon, viewer: globalThis.WBViewer };
+  const reads = [];
+  const changed = [];
+  globalThis.WBDaemon = {
+    observe: async (verb, payload) => {
+      reads.push([verb, payload.path]);
+      return { status: "ok", content: "text" };
+    },
+    readImage: async (project, path) => {
+      reads.push(["image", path]);
+      return "data:image/png;base64,AA==";
+    },
+    withCheckout: (payload) => ({ ...payload }),
+  };
+  globalThis.WBViewer = { encodingOf: () => null, externalChange: (id, content) => changed.push([id, content]) };
+  shell.$store.projects.setOpen("o/r");
+  shell.$store.tabs.tabs.push(
+    { id: "i", kind: "image", project: "o/r", path: "img/a.png", checkout: null },
+    { id: "t", kind: "code", project: "o/r", path: "img/b.txt", checkout: null },
+    { id: "o", kind: "code", project: "o/r", path: "doc/c.txt", checkout: null },
+  );
+  try {
+    await s.refreshOpenViewers("img");
+  } finally {
+    globalThis.WBDaemon = real.daemon;
+    globalThis.WBViewer = real.viewer;
+  }
+  assert.deepEqual(reads, [["image", "img/a.png"], ["file.read", "img/b.txt"]]);
+  assert.deepEqual(changed, [["i", "data:image/png;base64,AA=="], ["t", "text"]]);
+});

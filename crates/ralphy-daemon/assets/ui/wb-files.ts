@@ -31,9 +31,22 @@ import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-sea
 import type { TreeSub } from "./wb-files-mount.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
+import type { CanvasTab } from "./wb-shell-types.d.ts";
 
 /** What a failed read hands back: a thrown error, or whatever a socket rejected with. */
 type Failure = { message?: string } | null | undefined;
+
+// The bytes of the open tab `t` of `project` as they are on disk now, or null
+// when the read is refused. An image tab re-reads through its OWN verb
+// (ADR-0049 §1). A text tab re-reads with ITS encoding as the hint: the
+// encoding is sticky once opened, so a nudge never silently re-detects it.
+function freshBytes(t: CanvasTab, project: string): Promise<string | null | undefined> {
+  if (t.kind === "image") return WBDaemon.readImage(project, t.path!, undefined, t.checkout);
+  const payload = WBDaemon.withCheckout({ repo: project, path: t.path }, t.checkout);
+  const enc = WBViewer.encodingOf?.(t.id)?.encoding;
+  if (enc) payload.encoding = enc;
+  return WBDaemon.observe("file.read", payload).then((reply) => (reply?.status === "ok" ? reply.content : null));
+}
 
 // A promise that settles when the reconcile of `rel` in flight finishes.
 function waitForLevel(waiters: Map<string, (() => void)[]>, rel: string) {
@@ -430,20 +443,8 @@ export function wbFiles() {
         if (t.project !== this.$store.projects.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
         if ((t.checkout ?? null) !== (this._treeCheckout ?? null)) continue;
-        // An image tab re-reads through its OWN verb (ADR-0049 §1). A text
-        // tab re-reads with ITS encoding as the hint: the encoding is sticky
-        // once opened, so a nudge never silently re-detects it.
-        const payload = WBDaemon.withCheckout({ repo: t.project, path: t.path }, t.checkout);
-        const enc = WBViewer.encodingOf?.(t.id)?.encoding;
-        if (enc) payload.encoding = enc;
-        const fresh: Promise<string | null | undefined> =
-          t.kind === "image"
-            ? WBDaemon.readImage(t.project, t.path!, undefined, t.checkout)
-            : WBDaemon.observe("file.read", payload).then((reply) =>
-                reply?.status === "ok" ? reply.content : null,
-              );
         reads.push(
-          fresh
+          freshBytes(t, t.project)
             .then((content) => {
               if (content != null) WBViewer.externalChange(t.id, content);
             })

@@ -2,9 +2,6 @@
   "ceiling": 15,
   "functions": {
     "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-      "refreshOpenViewers": [
-        12
-      ],
       "revealRel": [
         11
       ]
