@@ -1,6 +1,6 @@
 //! The Observe read path's file/tree reader (ADR-0036 §4). Three pure functions
 //! over a confined path: [`list`] returns one directory level, dropping only
-//! [`HARD_EXCLUDE`] noise; [`read`] returns a file's text or refuses a binary /
+//! `HARD_EXCLUDE` noise; [`read`] returns a file's text or refuses a binary /
 //! oversized file — text in ANY encoding the decoder can name, reported with
 //! it ([`read_with`], ADR-0036 amendment 2026-09-22); [`read_image`] returns an
 //! allowlisted image's bytes (ADR-0049). Confinement ([`crate::confine`]) is
@@ -49,7 +49,7 @@ pub struct Entry {
 }
 
 /// List the one-level children of the confined `rel` directory under `root`,
-/// with [`HARD_EXCLUDE`] noise dirs dropped and nothing else filtered — hidden
+/// with `HARD_EXCLUDE` noise dirs dropped and nothing else filtered — hidden
 /// and gitignored entries are listed, the latter marked [`Entry::ignored`].
 /// `root` is the checkout root the ignore rules are anchored to. Entries are
 /// sorted dirs-first, then by name. A confinement failure (escape/missing)
@@ -339,7 +339,7 @@ pub const MAX_COMMAND_BYTES: usize = (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 
 
 /// Read the confined `rel` file under `root` as an allowlisted image. The
 /// extension picks the candidate [`ImageType`] and the bytes must AGREE with it
-/// ([`ImageType::matches`]); a disagreement — or an extension naming no image
+/// (`ImageType::matches`); a disagreement — or an extension naming no image
 /// type at all — is [`ReadError::NotImage`]. Oversize is [`ReadError::TooLarge`]
 /// and a missing/out-of-root target is [`ReadError::NotFound`], masking an
 /// escape as a plain miss exactly like [`read`].

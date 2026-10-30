@@ -7,7 +7,7 @@
 //!
 //! A main daemon that sends claims each of its peers (`POST
 //! /api/telegram/main`, `peer::telegram_claim`). While a claim is less than
-//! [`CLAIM_HOLDS`] old the peer is [`TelegramState::ThroughMain`], whatever its
+//! `CLAIM_HOLDS` old the peer is [`TelegramState::ThroughMain`], whatever its
 //! own config says, so one request is one message.
 
 use std::path::{Path, PathBuf};

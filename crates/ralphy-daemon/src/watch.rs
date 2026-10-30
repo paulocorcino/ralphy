@@ -3,14 +3,14 @@
 //! per repo, watching only the directories a browser has actually expanded (a
 //! refcounted, lazy watch-set bounded by the screen, not the repo). Each settled
 //! event storm is mapped to the watched directory it touched and broadcast as one
-//! `tree.dirty` nudge; the `/ws/tree` handler ([`crate::lib`]) turns a nudge into
+//! `tree.dirty` nudge; the `/ws/tree` handler (`routes::ws_tree::tree_ws`) turns a nudge into
 //! a client push, and the browser re-reads the changed subtree via the existing
 //! Observe [`crate::tree::list`] path.
 //!
 //! Concurrency bridge (mirrors `session.rs`): the notify/debouncer thread forwards
 //! raw `Vec<DebouncedEvent>` batches over an `mpsc::unbounded_channel`; a tokio
 //! PUMP task maps each event path's parent to a watched rel dir, drops
-//! [`crate::tree::HARD_EXCLUDE`] noise, dedups per batch, and
+//! `crate::tree::HARD_EXCLUDE` noise, dedups per batch, and
 //! `broadcast::send`s one nudge per distinct dir. The async stack stays confined
 //! to this crate.
 //!

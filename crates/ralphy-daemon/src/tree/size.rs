@@ -1,6 +1,6 @@
 //! The size of one folder: the walk behind the `tree.size` verb (ADR-0036,
 //! amendment 2026-10-15). It counts what is on the disk, `.git`, `node_modules`
-//! and `target` included: [`super::HARD_EXCLUDE`] is a rule of the listing, not
+//! and `target` included: `super::HARD_EXCLUDE` is a rule of the listing, not
 //! of a size. A link counts as one item and is never followed, so the walk
 //! cannot leave the root. The walk stops itself at a [`SizeBudget`], because
 //! nothing upstream of an Observe read caps it, and it says `truncated`. One

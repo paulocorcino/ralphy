@@ -169,12 +169,12 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
 }
 
 /// Keep only the rows the given window contains — the SAME membership rule
-/// [`rows::classify`] applies, so the Ledger grid and the Overview's figures are
+/// `rows::classify` applies, so the Ledger grid and the Overview's figures are
 /// folded over one population rather than two that happen to agree today.
 ///
 /// It is deliberately a projection over rows already read, not a filter on the
 /// read: `usage::run_records`'s `since` drops a row with no timestamp, while
-/// [`period::in_window`] KEEPS it, and two filters that disagree about a row is
+/// `period::in_window` KEEPS it, and two filters that disagree about a row is
 /// exactly what this function exists to prevent.
 pub fn scope_to_window(
     records: &mut Vec<serde_json::Value>,
@@ -205,7 +205,7 @@ pub fn scope_to_window(
 ///
 /// A row that prices gets NO `unpriced_cause` key at all — the absence IS the
 /// "this one is fine" answer, so a client that never learns the vocabulary still
-/// reads the filter correctly. The values are [`gap::Gap::CAUSES`] verbatim plus
+/// reads the filter correctly. The values are `gap::Gap::CAUSES` verbatim plus
 /// `unmetered`, which belongs only to a row: an interactive record with
 /// `tokens: null` carries no volume for the gap to count, but it IS one of the
 /// offenders the operator clicked through to see.

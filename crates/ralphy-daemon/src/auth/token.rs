@@ -32,7 +32,7 @@ pub fn token_path_in(dir: &Path) -> PathBuf {
     dir.join("daemon-token")
 }
 
-/// The production path of `daemon-token`. Mirrors [`identity::daemon_toml_path`].
+/// The production path of `daemon-token`. Mirrors `identity::daemon_toml_path`.
 pub fn token_path() -> Result<PathBuf> {
     Ok(token_path_in(&store_dir()?))
 }

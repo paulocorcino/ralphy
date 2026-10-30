@@ -101,7 +101,7 @@ fn rel_of(root: &Path, entry: &ignore::DirEntry) -> Option<String> {
 
 /// Find the entries (files and directories) under `root` whose name contains
 /// `query`, case-insensitively. Same walk policy as [`super::list`]: hidden and
-/// gitignored entries included, only [`super::HARD_EXCLUDE`] dropped. Hits are
+/// gitignored entries included, only `super::HARD_EXCLUDE` dropped. Hits are
 /// sorted directories first, then by path.
 pub fn find(
     root: &Path,
@@ -155,7 +155,7 @@ pub fn find(
 /// case-insensitive), with the occurrence count per file. Consults
 /// `.gitignore`/`.git/info/exclude`/the global excludes — the one policy
 /// divergence from the tree, decided on purpose — but always searches
-/// `.ralphy/`, and never the [`super::HARD_EXCLUDE`] dirs. A file [`super::read`]
+/// `.ralphy/`, and never the `super::HARD_EXCLUDE` dirs. A file [`super::read`]
 /// would refuse (binary, over [`MAX_READ_BYTES`]) is skipped, never a hit.
 /// Decodes with the default fallback encoding; the verb uses [`grep_with`].
 pub fn grep(

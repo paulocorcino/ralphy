@@ -531,7 +531,7 @@ fn shell_command_args(shell: &Path, command: &str) -> Vec<OsString> {
 
 /// Build the launch spec for the free console (issue #167): the platform shell
 /// in `cwd` — bare when `command` is `None`, else running `command` through
-/// [`shell_command_args`] (the startup-command console) — unless
+/// `shell_command_args` (the startup-command console) — unless
 /// `RALPHY_DAEMON_AGENT_OVERRIDE` names a stand-in program instead (the same
 /// test seam [`spec_for`] uses; the override still receives the command argv).
 pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16, command: Option<&str>) -> SessionSpec {

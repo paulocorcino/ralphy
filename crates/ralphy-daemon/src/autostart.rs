@@ -322,7 +322,7 @@ pub fn systemd_is_enabled(output: &str) -> bool {
 /// the Windows Run value uses the same file.
 ///
 /// Values are XML-escaped rather than dropped when unsafe (the systemd arm's
-/// [`unit_safe`] rule): a plist is XML, so escaping is lossless and a path
+/// `unit_safe` rule): a plist is XML, so escaping is lossless and a path
 /// containing `&` round-trips instead of losing its pin.
 pub fn launchd_plist(spec: &AutostartSpec) -> String {
     let program = xml_escape(&spec.program.display().to_string());

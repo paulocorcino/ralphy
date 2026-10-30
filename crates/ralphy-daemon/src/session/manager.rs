@@ -244,7 +244,7 @@ impl SessionManager {
     }
 
     /// A manager whose ids continue past the last one recorded in `file`, and
-    /// record each new one there (see [`IdSeq`]).
+    /// record each new one there (see `IdSeq`).
     pub fn continuing(file: PathBuf) -> Self {
         Self {
             sessions: Mutex::new(BTreeMap::new()),
@@ -391,8 +391,8 @@ impl SessionManager {
     /// `takeover`, in which case the incumbent is evicted first.
     ///
     /// EXACTLY-ONCE REPLAY INVARIANT: the replay and `subscribe()` are taken
-    /// UNDER the `kept` lock ([`replay_and_subscribe`]), mirroring the pump,
-    /// which holds that same lock across keep+send ([`kept::publish`]). So every byte
+    /// UNDER the `kept` lock (`replay_and_subscribe`), mirroring the pump,
+    /// which holds that same lock across keep+send (`kept::publish`). So every byte
     /// lands in exactly one of {replay, live broadcast} — no gap and no
     /// duplicate at the attach seam.
     pub fn attach(

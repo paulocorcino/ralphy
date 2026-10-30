@@ -200,7 +200,7 @@ fn set_marker(path: &Path, enable: bool) -> Result<()> {
 /// case it is gated (`Session`). With `require_token` a loopback bind follows the
 /// network rule instead (ADR-0067 §5). A network bind keeps the §4 rule:
 /// `Bearer`, or `Session` once a seed is armed. Fails closed exactly where
-/// [`for_bind`] does (a network bind with no token), and on a loopback bind
+/// `for_bind` does (a network bind with no token), and on a loopback bind
 /// with `require_token` and no token.
 pub fn compute_policy(
     bind_ip: IpAddr,

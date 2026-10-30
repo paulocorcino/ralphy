@@ -37,7 +37,7 @@ fn accelerator(a: Agent) -> &'static str {
 }
 
 /// The roster, ordered by accelerator digit ascending — the order the menu
-/// renders. `id`/`label` reuse [`agent_flag`], the same string the frontend
+/// renders. `id`/`label` reuse `agent_flag`, the same string the frontend
 /// sends back on `/ws/session?agent=`.
 pub fn roster() -> Vec<AgentRow> {
     roster_with(&Agent::locate_program)
