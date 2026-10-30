@@ -79,6 +79,7 @@ import "./wb-files-upload.test.mjs";
 import "./wb-uploads-store.test.mjs";
 import "./wb-notes.test.mjs";
 import "./wb-notes-folds.test.mjs";
+import "./wb-notes-file.test.mjs";
 import "./wb-notes-links.test.mjs";
 import "./wb-project.test.mjs";
 import "./wb-properties-dialog.test.mjs";
