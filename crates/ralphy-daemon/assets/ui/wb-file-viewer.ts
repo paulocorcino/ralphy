@@ -162,10 +162,10 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     drawMermaid: (rec) => markdown.drawMermaid(rec),
   });
   const { save, showSaveError, clearSaveError, descOf, reloadFile, applyFresh, showDiskBadge, hideDiskBadge } = saver;
-  const encoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
-  const { wireEncodingMenu } = encoding;
+  const viewerEncoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
+  const { wireEncodingMenu } = viewerEncoding;
   const markdown: ViewerMarkdown = createViewerMarkdown({
-    window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor, saver, encoding, find,
+    window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor, saver, encoding: viewerEncoding, find,
   });
   const { buildMarkdown, drawMermaid, jumpTo } = markdown;
   // `isNarrow` is built below, so the slot and the read-only panes take it late.

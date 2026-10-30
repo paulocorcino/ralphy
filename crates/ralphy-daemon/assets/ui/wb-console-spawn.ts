@@ -198,9 +198,9 @@ export function createSpawn(deps: SpawnDeps) {
       detail.hidden = !view.detail;
       const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
       btn.dataset.act = view.action || "";
-      const label = peerActionLabel(view.action);
-      btn.hidden = !label;
-      if (label) btn.textContent = label;
+      const actionLabel = peerActionLabel(view.action);
+      btn.hidden = !actionLabel;
+      if (actionLabel) btn.textContent = actionLabel;
     };
 
     // The parked strip: this window watches a session another window drives.

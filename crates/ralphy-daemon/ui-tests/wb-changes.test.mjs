@@ -529,10 +529,10 @@ test("groupPaths can only name paths it was given (#318)", () => {
 
 test("commitTarget names the branch the commit lands on (#318)", () => {
   const commitTarget = load().commitTarget;
-  const tracking = commitTarget({ state: "tracking", branch: "main" });
-  assert.equal(tracking.label, "Commit to main");
-  assert.equal(tracking.branch, "main");
-  assert.equal(tracking.detached, false);
+  const landing = commitTarget({ state: "tracking", branch: "main" });
+  assert.equal(landing.label, "Commit to main");
+  assert.equal(landing.branch, "main");
+  assert.equal(landing.detached, false);
   // A branch with no upstream still has a name to land on.
   assert.equal(commitTarget({ state: "no-upstream", branch: "feat/x" }).label, "Commit to feat/x");
 });

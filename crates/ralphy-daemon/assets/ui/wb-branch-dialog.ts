@@ -20,6 +20,15 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { CheckoutRow, Project } from "./wb-shell-types.d.ts";
 
+// The sort of the branch list: the current branch first, then by name.
+function currentFirst(current: string) {
+  return (a: string, b: string) => {
+    if (a === current) return -1;
+    if (b === current) return 1;
+    return a.localeCompare(b);
+  };
+}
+
 export function wbBranchDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
@@ -117,7 +126,7 @@ export function wbBranchDialog() {
       const all = this.branchModal.branches;
       const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
       const cur = this.branchModal.current;
-      return hit.sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)));
+      return hit.sort(currentFirst(cur));
     },
 
     openCheckoutChip(p: Project, anchor: HTMLElement) {

@@ -527,7 +527,8 @@ test("a right-click on the tree opens the menu once, however often the tree was 
   const menus = [];
   state.showMenu = (x, y, node) => menus.push([x, y, node]);
   const realMar10 = globalThis.mar10;
-  globalThis.mar10 = { Wunderbaum: Object.assign(function () {}, { getNode: () => null }) };
+  function Wunderbaum() {}
+  globalThis.mar10 = { Wunderbaum: Object.assign(Wunderbaum, { getNode: () => null }) };
   const rightClick = () => listeners.forEach((fn) => fn({ clientX: 7, clientY: 9, preventDefault() {} }));
   try {
     state.mountTree();

@@ -447,6 +447,11 @@ export function createView(deps: ViewDeps) {
     e.preventDefault();
   }
 
+  function wheelPixels(e: WheelEvent, pageHeight: number) {
+    if (e.deltaMode === 1) return e.deltaY * WHEEL_LINE;
+    return e.deltaMode === 2 ? e.deltaY * pageHeight : e.deltaY;
+  }
+
   // The wheel. The VERTICAL axis is native `overflow:auto`; this adds only the
   // horizontal reach where the platform does not provide it.
   function onWheel(e: WheelEvent) {
@@ -463,13 +468,7 @@ export function createView(deps: ViewDeps) {
     if (!ws) return;
     // `deltaY` is only pixels when `deltaMode` says so: Firefox reports LINE
     // (±3 per notch) and does not convert shift-wheel itself.
-    const px =
-      e.deltaMode === 1
-        ? e.deltaY * WHEEL_LINE
-        : e.deltaMode === 2
-          ? e.deltaY * ws.clientHeight
-          : e.deltaY;
-    ws.scrollLeft += px;
+    ws.scrollLeft += wheelPixels(e, ws.clientHeight);
     e.preventDefault();
   }
 

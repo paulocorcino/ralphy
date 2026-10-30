@@ -281,9 +281,15 @@ export function noCredential(input: HTMLInputElement) {
 // a read never rewrites the file for no reason. One field, a closed set — a
 // YAML parser here would be a dependency for `color: sage`.
 
+// The length of the `---` line that opens a front matter, or 0 when there is none.
+function openingLength(text: string) {
+  if (text.startsWith("---\n")) return 4;
+  return text.startsWith("---\r\n") ? 5 : 0;
+}
+
 export function splitFrontMatter(markdown: string | null | undefined) {
   const text = String(markdown || "");
-  const open = text.startsWith("---\n") ? 4 : text.startsWith("---\r\n") ? 5 : 0;
+  const open = openingLength(text);
   if (!open) return null;
   const rest = text.slice(open);
   let offset = 0;

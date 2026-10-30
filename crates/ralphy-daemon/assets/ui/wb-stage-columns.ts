@@ -148,12 +148,12 @@ export function createStageColumns(deps: StageColumnsDeps) {
     win.style.setProperty("--row-count", String(p.rows ?? 1));
   }
 
-  // Paint one console of `list` and bring its maximize in step. Answers the
+  // Paint one console of `grid` and bring its maximize in step. Answers the
   // window when it is shown (a column, or the maximized console), else null.
-  function syncSlot(p: Painted, list: Painted[], persist: boolean): ConsoleWin | null {
+  function syncSlot(p: Painted, grid: Painted[], persist: boolean): ConsoleWin | null {
     const win = findWindow(p.id);
     if (!win) return null;
-    const c = columnClasses(list, p.id);
+    const c = columnClasses(grid, p.id);
     if (c.column) paintColumnSlot(win, p);
     // The class is set FIRST: `restoreRect` must already read a column's
     // inline rect.
@@ -181,19 +181,19 @@ export function createStageColumns(deps: StageColumnsDeps) {
     }
   }
 
-  // A window that was a column and is not in `list` any more.
-  function clearStaleColumns(list: Painted[]) {
+  // A window that was a column and is not in `grid` any more.
+  function clearStaleColumns(grid: Painted[]) {
     for (const win of wins) {
-      if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
+      if (win.classList.contains("column") && !columnClasses(grid, win._deskId).column) {
         clearColumn(win);
       }
     }
   }
 
   // The old first console, when the paint no longer shows it as a column.
-  function unmaxGone(list: Painted[], unmax: string | null | undefined, persist: boolean) {
+  function unmaxGone(grid: Painted[], unmax: string | null | undefined, persist: boolean) {
     const gone = unmax ? findWindow(unmax) : null;
-    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
+    if (gone && !columnClasses(grid, gone._deskId).column) setMax(gone, false, persist);
   }
 
   // Raised in reading order only on an open or a restore: a repaint on every
@@ -212,13 +212,13 @@ export function createStageColumns(deps: StageColumnsDeps) {
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
   function applyColumns(painted: Painted[] | null | undefined, opts?: { unmax?: string | null; raise?: boolean; persist?: boolean }) {
-    const list = painted || [];
+    const grid = painted || [];
     const persist = !!opts?.persist;
-    clearStaleColumns(list);
-    unmaxGone(list, opts?.unmax, persist);
+    clearStaleColumns(grid);
+    unmaxGone(grid, opts?.unmax, persist);
     const shown = [];
-    for (const p of list) {
-      const win = syncSlot(p, list, persist);
+    for (const p of grid) {
+      const win = syncSlot(p, grid, persist);
       if (win) shown.push(win);
     }
     syncMaxLock();

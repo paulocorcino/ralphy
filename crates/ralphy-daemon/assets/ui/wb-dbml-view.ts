@@ -158,7 +158,7 @@ function cardHead(ctx: Ctx, table: DbmlTable) {
   return head;
 }
 
-function card(ctx: Ctx, table: DbmlTable) {
+function buildCard(ctx: Ctx, table: DbmlTable) {
   const { doc } = ctx;
   const box = el(doc, "div", "dbml-card");
   box.dataset.table = table.name;
@@ -307,7 +307,7 @@ function groupSection(ctx: Ctx, group: { label: string; tables: DbmlTable[] }) {
   const head = el(doc, "div", "dbml-group-head");
   head.append(el(doc, "h2", "", group.label), pickAll);
   const grid = el(doc, "div", "dbml-grid");
-  for (const table of group.tables) grid.append(card(ctx, table));
+  for (const table of group.tables) grid.append(buildCard(ctx, table));
   section.append(head, grid);
   return section;
 }

@@ -233,11 +233,11 @@ function failedState(s: State, ev: Extract<Progress, { event: "failed" }>): Stat
     message: sentence(ev.message),
     keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
   };
-  const next: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
+  const after: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
   // Sign-in failed: back to the fields, where the password is typed.
-  if (ev.kind === "auth_refused") next.step = "connection";
-  if (ev.kind === "password_refused") Object.assign(next, { step: "connection", password: "" });
-  return next;
+  if (ev.kind === "auth_refused") after.step = "connection";
+  if (ev.kind === "password_refused") Object.assign(after, { step: "connection", password: "" });
+  return after;
 }
 
 // One progress event of the CLI's `--json` mode.

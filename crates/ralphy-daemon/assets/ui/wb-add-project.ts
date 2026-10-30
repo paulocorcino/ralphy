@@ -433,8 +433,14 @@ function nextReply(state: State, ev: Extract<Step, { type: "reply" }>) {
 function nextMove(state: State, ev: Extract<Step, { type: "move" }>) {
   const n = entries(state).length;
   if (!n) return state;
-  const at = state.active < 0 ? (ev.by > 0 ? 0 : n - 1) : (state.active + ev.by + n) % n;
+  const edge = ev.by > 0 ? 0 : n - 1;
+  const at = state.active < 0 ? edge : (state.active + ev.by + n) % n;
   return Object.assign({}, state, { active: at });
+}
+
+// The folder the typed text names: the text itself when it ends with a separator.
+function typedFolder(text: string) {
+  return endsWithSep(text) ? text : parentText(text);
 }
 
 // A row was picked: `..` goes up, a folder goes down one level.
@@ -450,7 +456,7 @@ function nextPick(state: State, ev: Extract<Step, { type: "pick" }>) {
   // pick made before the next listing arrives must not add its name to
   // the folder the previous pick already chose.
   const dir = state.listing && state.listing.dir;
-  const base = dir ? withSep(dir.path, sep) : endsWithSep(state.text) ? state.text : parentText(state.text);
+  const base = dir ? withSep(dir.path, sep) : typedFolder(state.text);
   const text = dir && dir.path === "" ? ev.name : base + ev.name;
   return Object.assign({}, state, { text: withSep(text, sep), needStart: false, chosen: true, active: -1, error: "" });
 }

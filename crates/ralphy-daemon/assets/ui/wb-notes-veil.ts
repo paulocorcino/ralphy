@@ -21,6 +21,11 @@ export type NoteVeilDeps = {
   flush: (el: NoteCard) => Promise<unknown>;
 };
 
+// The title of the eye of a marked note: it hides the note again when it is shown.
+function markedTitle(shown: boolean) {
+  return shown ? "Hide this note again" : "Show this note";
+}
+
 export function createNoteVeil(deps: NoteVeilDeps) {
   const { document, recordOf, loadInto, syncFromEditor, markDirty, flush } = deps;
 
@@ -59,7 +64,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     const shown = marked && !!el._noteRevealed;
     const hides = !marked || shown;
     btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
-    btn.title = !marked ? "Hide this note" : shown ? "Hide this note again" : "Show this note";
+    btn.title = !marked ? "Hide this note" : markedTitle(shown);
     el.classList.toggle("veiled", veiledNow(el));
   }
 

@@ -197,6 +197,10 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     openMenu = { anchor, el: menu, away, key };
     return menu;
   }
+  function checkoutGlyph(row: CheckoutRow) {
+    if (row.current) return "bi bi-check2";
+    return row.primary ? "bi bi-house-door" : "bi bi-folder2";
+  }
   // The menu's row for one tree: its glyph, name, branch, agent state and
   // dirty flag, and a trash action when `onRemove` is given.
   function checkoutItem(row: CheckoutRow, onPick: CheckoutMenuOptions["onPick"], onRemove: CheckoutMenuOptions["onRemove"]) {
@@ -204,7 +208,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     item.type = "button";
     item.className = "session-checkout-item" + (row.current ? " current" : "");
     const glyph = document.createElement("i");
-    glyph.className = row.current ? "bi bi-check2" : row.primary ? "bi bi-house-door" : "bi bi-folder2";
+    glyph.className = checkoutGlyph(row);
     const name = document.createElement("span");
     name.className = "session-checkout-name";
     name.textContent = row.name;

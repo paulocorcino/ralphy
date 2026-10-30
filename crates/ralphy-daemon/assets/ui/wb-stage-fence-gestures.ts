@@ -116,11 +116,11 @@ export function createFenceGestures(deps: FenceGestureDeps) {
       const all = fenceWindows(st)
         .map((w): Carried => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
         .concat(
-          [...st.querySelectorAll<NoteCard>(".note-card")].map((el): Carried => ({
-            el,
-            id: "n:" + el.dataset.noteId,
+          [...st.querySelectorAll<NoteCard>(".note-card")].map((card): Carried => ({
+            el: card,
+            id: "n:" + card.dataset.noteId,
             kind: "note",
-            rect: restoreRect(el),
+            rect: restoreRect(card),
           })),
         );
       // The FULL fence list, not a singleton: the fold's `break` decides an

@@ -116,7 +116,7 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       // "reload failed".
       if (rec.kind === "image") {
         WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
-          .then((url) => (!url ? fail() : rec.refused !== null ? reopenRefused(rec, { content: url }) : applyFresh(rec, url)))
+          .then((url) => settleImage(rec, url, fail))
           .catch(() => fail());
         return;
       }
@@ -131,6 +131,13 @@ export function createViewerSave(deps: ViewerSaveDeps) {
         })
         .catch(() => fail());
     }
+  }
+
+  // The fresh bytes of an image: the reload failed when there are none.
+  function settleImage(rec: ViewerRecord, url: string | null | undefined, fail: () => void) {
+    if (!url) return fail();
+    if (rec.refused !== null) return reopenRefused(rec, { content: url });
+    return applyFresh(rec, url);
   }
 
   // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is

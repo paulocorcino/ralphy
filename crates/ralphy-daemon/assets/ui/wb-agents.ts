@@ -17,6 +17,11 @@ function shownReason(reason: string | null | undefined): string {
   return !reason || reason === "not installed here" ? NOT_INSTALLED : reason;
 }
 
+function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | null | undefined) {
+  if (needsRepo) return NEEDS_REPO;
+  return unavailable ? shownReason(reason) : "";
+}
+
 function rowFor(
   kind: string,
   label: string,
@@ -44,7 +49,7 @@ function rowFor(
     disabled,
     needsRepo,
     unavailable,
-    title: needsRepo ? NEEDS_REPO : unavailable ? shownReason(reason) : "",
+    title: rowTitle(needsRepo, unavailable, reason),
     tryAnyway: unavailable && !needsRepo,
     // How many of this row's consoles are already open in this repo. A
     // READOUT only: the menu is "New console", so every row's click launches

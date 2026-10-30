@@ -109,13 +109,18 @@ test("the limit is read as the daemon reads it", () => {
   assert.equal(conflictFor({ exists: true }, "skip"), null);
 });
 
+function dirOfNode(node) {
+  if (!node) return "";
+  return node.folder ? node.rel : node.rel.split("/").slice(0, -1).join("/");
+}
+
 // The tree's side of a drop: `createDir` of wb-files.ts, and the stores it reads.
 function tree({ checkout = "" } = {}) {
   const flashed = [];
   const opened = [];
   globalThis.window = { dispatchEvent: (e) => (opened.push(e.detail), true) };
   const t = {
-    createDir: (node) => (node ? (node.folder ? node.rel : node.rel.split("/").slice(0, -1).join("/")) : ""),
+    createDir: dirOfNode,
     $store: {
       modals: { flash: (m) => flashed.push(m) },
       projects: { openSlug: "o/r" },

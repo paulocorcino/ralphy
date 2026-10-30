@@ -150,8 +150,12 @@ function addNeighbour(n: number, self: number, g: IssueGraph, acc: Set<number>, 
   else if (g.openNums.has(n)) stack.push(n); // transparent: keep walking
   else {
     const ch = g.childrenOf.get(n); // closed bundle → its children stand in
-    if (ch) for (const c of ch) if (c !== self) acc.add(c);
+    if (ch) addChildren(ch, self, acc);
   }
+}
+
+function addChildren(children: Iterable<number>, self: number, acc: Set<number>) {
+  for (const c of children) if (c !== self) acc.add(c);
 }
 
 // Kahn, smallest ready number first (ascending tie-break); a cycle's
