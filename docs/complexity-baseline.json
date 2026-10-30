@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/tree.rs": {
-      "svg_root_element": [
-        15
-      ]
-    },
     "crates/ralphy-daemon/src/tree/search.rs": {
       "find": [
         12
