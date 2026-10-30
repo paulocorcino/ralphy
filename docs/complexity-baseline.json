@@ -71,11 +71,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-runs-store.ts": {
-      "hydrateRuns": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-spend.ts": {
       "state": [
         13
