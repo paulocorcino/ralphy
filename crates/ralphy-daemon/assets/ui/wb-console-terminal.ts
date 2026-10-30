@@ -491,17 +491,7 @@ export function createTerminal(deps: TerminalDeps) {
             giveUp();
             return;
           case "park-as-watcher":
-            // Park ONCE, immediately. A watch socket that itself drops falls
-            // back to the backoff, so a refused watch cannot busy-loop.
-            if (!watching) {
-              watching = true;
-              // The watcher repaints from the snapshot, under its banner.
-              shown = null;
-              if (typeof opts.onPark === "function") opts.onPark(announced);
-              connect({ id: currentSessionId, repo: currentRepo, watch: true });
-            } else {
-              scheduleReconnect();
-            }
+            parkAsWatcher();
             return;
           default:
             if (retryDelay === 0) {
@@ -512,6 +502,19 @@ export function createTerminal(deps: TerminalDeps) {
             scheduleReconnect();
         }
       };
+      // Park ONCE, immediately. A watch socket that itself drops falls back
+      // to the backoff, so a refused watch cannot busy-loop.
+      function parkAsWatcher() {
+        if (watching) {
+          scheduleReconnect();
+          return;
+        }
+        watching = true;
+        // The watcher repaints from the snapshot, under its banner.
+        shown = null;
+        if (typeof opts.onPark === "function") opts.onPark(announced);
+        connect({ id: currentSessionId, repo: currentRepo, watch: true });
+      }
       // After the frames that wait behind a replay decode: a `session-end`
       // among them names the reason this close is read with.
       ws.onclose = () => frames.whenIdle(closed);
