@@ -1,6 +1,6 @@
 # The page holds one socket to its daemon, and reads over HTTP
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: responsiveness, recoverability
 
@@ -144,11 +144,87 @@ until it reloads (ADR-0070 D6).
 
 - D1: `crates/ralphy-daemon/tests/command_http.rs` (the route answers a command with one reply, refuses a Spawn verb, and caps the body); `websocket_sites_match_the_baseline` in `crates/xtask/tests/ratchets/`, a ratchet on the `new WebSocket(` sites in `crates/ralphy-daemon/assets/ui/` (3 on 2026-10-16), which goes to 1 when D3 ships; `crates/ralphy-daemon/ui-tests/wb-daemon.test.mjs` (`observe`, `write` and `readImage` send their command over HTTP and open no socket).
 - D2: `crates/ralphy-daemon/ui-tests/wb-api.test.mjs` and `wb-daemon.test.mjs` (a read or a command with no answer settles with `ReadDeadline` at its deadline, and a late reply changes nothing), and the decode deadline test in `wb-console-frames.test.mjs`.
-- D3: not checked by code; the same ratchet as D1.
-- D4: not checked by code: a resume over a real dropped link needs a
-  browser check (`tests/browser/console/`).
-- D5: not checked by code. Planned: a daemon test where one channel floods and
-  another channel's frame still arrives within one frame.
+- D3: the same ratchet as D1, at 1; and the browser check
+  `tests/browser/wb_one_socket_740.py` (one page, one socket, with consoles,
+  a subscription and a spawned command open).
+- D4: the browser check `wb_one_socket_740.py` (a dropped link, one socket,
+  one open per awake console); a resume over a real dropped link also needs
+  a check in `tests/browser/console/`.
+- D5: the daemon test `a_flooding_channel_delays_another_by_one_piece` (the
+  fair writer), and the integration test
+  `one_flooding_console_delays_another_channel_by_one_piece`.
 - D6: not checked by code: manual, reviewed in the PR.
 - D7: not checked by code: manual, reviewed in the PR.
 - D8: not checked by code: manual, reviewed in the PR.
+
+## Amendment (2026-10-30): the channel wire
+
+This amendment fixes the wire that D3 to D6 need. It changes no rule of D1
+to D8. In this section, "channel" means a **socket channel** (CONTEXT.md),
+not the release channel. Phase A of the work adds the frame and the writer
+without a change of behavior. Phase B moves the tree, runs and changes
+subscriptions and the spawned command onto the socket. Phase C moves the
+consoles.
+
+**The channel frame (D3).** A new binary tag, `0x04`:
+
+    [0x04][channel: u32 BE][flags: u8][piece]
+
+Bit 0 of `flags` is MORE: another piece of the same inner frame follows on
+this channel. The other bits are 0, and the daemon refuses a frame with any
+other bit set. The pieces of one channel, joined in order, are one inner
+frame in today's codec: `0x01` terminal (with its u64 session), `0x02`
+command JSON or `0x03` presence. A piece is at most `MAX_PIECE` = 16 KiB, in
+both directions. A joined inner frame above `MAX_COMMAND_BYTES` closes that
+channel. Rejected: the u64 slot of `0x01` with a `channel` field in the JSON.
+It cannot cut a JSON frame or a gzip frame, and it changes what an existing
+field means.
+
+**Channel 0 is the socket itself (D3).** Bare `0x02` and `0x03` frames, with
+no `0x04` tag, are exactly what `/ws` sends and takes today: presence,
+`presence.report` and every push. A page that never sends `0x04` sees
+today's `/ws`. Two verbs control the other channels, both on channel 0. The
+page sends `channel.open {channel, kind, ...}` and `channel.close {channel}`.
+The daemon sends `channel.closed {channel, reason}` when it ends a channel
+itself. The page picks each id: a u32 of 1 or more, never reused on one
+socket. A duplicate id or an unknown id gets `channel.closed` with the reason
+`"refused"`. Rejected: ids that the daemon picks. They add one round trip
+before a console can resume.
+
+**Kinds (D3).** The set is closed: the Rust enum
+`ChannelKind { Console, Tree, Runs, Changes, Spawn }` and the TypeScript
+union `"console" | "tree" | "runs" | "changes" | "spawn"`.
+
+- `console` takes today's `SessionQuery` fields in the open payload (`repo`,
+  `agent`, `id`, `takeover`, `watch`, `console`, `checkout`, `command`,
+  `holder`, `name`, `record`, `gzip`, `attempt`, `since`, `net`, `net_rtt`,
+  `net_down`). It then carries today's session frames on its channel.
+- `tree` and `runs` carry today's `/ws/tree` verbs and pushes.
+- `changes` carries today's `changes.dirty`.
+- `spawn` takes one `Command {id, verb, payload}`, streams today's
+  `SpawnStatus` frames, and then closes.
+
+**Fair sending (D5).** Each channel has one bounded queue. One writer task
+sends one piece from each non-empty channel in turn, channel 0 included. A
+reader task reads the socket on its own, so console input never waits behind
+output. Rejected: awaiting `socket.send` inside each `select!`, as today's
+loops do. A slow link then holds the input and every other channel.
+
+**Liveness (D3).** The socket has one WebSocket ping: every 20 s, and 45 s
+with nothing received ends the socket, as `/ws/session` does today. A console
+channel has no ping of its own. The local daemon answers the pings of a peer
+on the daemon-to-daemon socket itself, and no longer forwards them to the
+browser.
+
+**The resume message is the open (D4).** After a resume, the page opens one
+socket and sends one `channel.open {kind: "console", id, since, ...}` for each
+awake console (ADR-0079 D8). A daemon that no longer has the bytes sends the
+snapshot, as today. Each subscription sends its watches again and reads its
+fact once (#484).
+
+**Compliance of this amendment.** Each row above is checked as D3 to D6 say in
+Compliance: the unit test `a_flooding_channel_delays_another_by_one_piece`
+(fair sending), the integration test
+`one_flooding_console_delays_another_channel_by_one_piece` (phase B), the
+ratchet `websocket_sites_match_the_baseline` at 1, and the browser check
+`wb_one_socket_740.py`.

@@ -259,6 +259,12 @@ belongs to the daemon, not to the browser connection. (ADR-0051)
 _Avoid_: remote shell (only the free-console kind), terminal (the widget, not
 the session), remote session, spectator mode.
 
+**Socket channel**:
+A numbered stream inside the one WebSocket a page holds to its **daemon**: a
+console, a subscription (tree, runs or changes) or a spawned command. Channel
+0 is the socket itself. Not the release **Channel**. (ADR-0082)
+_Avoid_: connection, pipe, sub-socket.
+
 **Free console**:
 A **workbench session** that runs a shell, or one command line the operator
 typed, instead of an agent CLI.
