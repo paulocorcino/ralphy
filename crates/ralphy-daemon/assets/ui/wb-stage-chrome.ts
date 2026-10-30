@@ -20,7 +20,15 @@ import { inTab } from "./wb-console-place.ts";
 import { required } from "./wb-dom-need.ts";
 import { createWindowGestures } from "./wb-stage-window-gestures.ts";
 import type { Gestures } from "./wb-stage-stack.ts";
-import type { ConsoleWin, DeskFence, DeskRecord, DeskWindowFields, Point, Presentation, Rect } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskFence,
+  DeskRecord,
+  DeskWindowFields,
+  Point,
+  Presentation,
+  Rect,
+} from "./wb-types.d.ts";
 
 const { fullscreenOffered } = WBConsoleInput;
 const { spawnRectIn, freeSpawnRect, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
@@ -37,7 +45,11 @@ export type { Gestures };
 
 // What `buildChrome` seeds a window from: a desk record, or a partial of one
 // that carries at least `kind`.
-export type ChromeRecord = Partial<DeskRecord> | import("./wb-types.d.ts").SpawnCarry | null | undefined;
+export type ChromeRecord =
+  | Partial<DeskRecord>
+  | import("./wb-types.d.ts").SpawnCarry
+  | null
+  | undefined;
 
 // What the chrome reads from the console, and nothing else.
 export type ChromeDeps = {
@@ -134,7 +146,12 @@ export function createChrome(deps: ChromeDeps) {
   let cascade = 0;
 
   // Who the window is.
-  function identityFields(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined) {
+  function identityFields(
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk: ChromeRecord,
+    kind: string | null | undefined,
+  ) {
     return {
       _deskId: desk?.id || newDeskId(),
       _deskRepo: repo || "~",
@@ -160,10 +177,19 @@ export function createChrome(deps: ChromeDeps) {
   // The element of a new window, with every field it will carry written HERE,
   // by the module that declares them (wb-window-state.ts): a field nothing
   // seeds reads as its declared default, not `undefined`.
-  function seedWindow(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined, consoleName: string) {
+  function seedWindow(
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk: ChromeRecord,
+    kind: string | null | undefined,
+    consoleName: string,
+  ) {
     const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
-    initWindow(win, { ...identityFields(label, repo, desk, kind), ...carriedFields(desk, consoleName) });
+    initWindow(win, {
+      ...identityFields(label, repo, desk, kind),
+      ...carriedFields(desk, consoleName),
+    });
     return win;
   }
 
@@ -240,7 +266,12 @@ export function createChrome(deps: ChromeDeps) {
   }
 
   // The titlebar: the state dot and title, and the buttons.
-  function buildTitlebar(win: ConsoleWin, label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord) {
+  function buildTitlebar(
+    win: ConsoleWin,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk: ChromeRecord,
+  ) {
     const titlebar = document.createElement("div");
     titlebar.className = "session-titlebar";
     // The agent's state as a dot before the label (ADR-0059). Hidden until a
@@ -333,7 +364,11 @@ export function createChrome(deps: ChromeDeps) {
       // Fullscreen hides the maximize control; a double-click must not toggle
       // it unseen underneath.
       // Nor may a double-click on the name, which renames (ADR-0066 §3).
-      if ((e.target as HTMLElement).closest("button, .session-name, .session-name-input") || isFull(win)) return;
+      if (
+        (e.target as HTMLElement).closest("button, .session-name, .session-name-input") ||
+        isFull(win)
+      )
+        return;
       // A finger's double tap is `wireTitleTouch`'s.
       if (win._lastPointerType !== "mouse") return;
       maxOrRestore();
@@ -341,7 +376,10 @@ export function createChrome(deps: ChromeDeps) {
     wireTitleTouch(win, titlebar, maxOrRestore);
     colBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      sendDocument(document, "workbench:column-open", { id: win._deskId, rect: colBtn.getBoundingClientRect() });
+      sendDocument(document, "workbench:column-open", {
+        id: win._deskId,
+        rect: colBtn.getBoundingClientRect(),
+      });
     });
     lockBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -357,10 +395,16 @@ export function createChrome(deps: ChromeDeps) {
   // rect (from a desk record, else cascaded), titlebar, body, eight resize
   // handles. `desk` is a record (or a partial carrying at least `kind`);
   // everything the record needs later is hung off the element.
-  function buildChrome(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined) {
+  function buildChrome(
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk: ChromeRecord,
+    kind: string | null | undefined,
+  ) {
     // The console name (ADR-0066 §2): a carried record keeps its own; a new
     // console takes the lowest free number of its prefix.
-    const consoleName = desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
+    const consoleName =
+      desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
     const win = seedWindow(label, repo, desk, kind, consoleName);
     const rect = desk?.rect;
     const spawnMoved = placeWindow(win, rect);

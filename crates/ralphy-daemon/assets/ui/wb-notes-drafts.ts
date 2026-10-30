@@ -26,7 +26,8 @@ export type NoteDraftsDeps = {
 };
 
 export function createNoteDrafts(deps: NoteDraftsDeps) {
-  const { window, cardEl, recordOf, patch, syncFromEditor, markDirty, mountEditor, paintPath } = deps;
+  const { window, cardEl, recordOf, patch, syncFromEditor, markDirty, mountEditor, paintPath } =
+    deps;
 
   // The text of a note that has NO FILE yet, for the detach snapshot. The
   // popup must open immediately (`window.open` in the same click), and the first save
@@ -51,7 +52,11 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
   // the popup chose before its write: that write may have landed with no
   // report after it.
   const drafts = new Map<string, Home>();
-  function adoptDraft(id: string | null | undefined, draft: string | null | undefined, claim: string | null | undefined) {
+  function adoptDraft(
+    id: string | null | undefined,
+    draft: string | null | undefined,
+    claim: string | null | undefined,
+  ) {
     if (id && typeof draft === "string") drafts.set(id, { draft, claim: claim || null });
   }
 

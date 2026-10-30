@@ -12,7 +12,10 @@ export type NoteMapDeps = {
   /** The card of a note, by id. */
   cardEl: (id: string | null | undefined) => NoteCard | null;
   /** True for a card whose fence is detached, so it is in the popup. */
-  isAway: (record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) => boolean;
+  isAway: (
+    record: Pick<NoteSource, "rect"> | null | undefined,
+    fences: DeskFence[] | null | undefined,
+  ) => boolean;
   /** The id of the card on top, or null. */
   onTopNow: () => string | null;
 };

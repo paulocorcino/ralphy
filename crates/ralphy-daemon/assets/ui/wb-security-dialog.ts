@@ -188,7 +188,8 @@ export function securityDialog() {
         const wait = r.headers?.get?.("Retry-After") || "a few";
         this.securityForm.stepUpError = `Too many attempts — wait ${wait} s and try again.`;
       } else if (r.status === 401) {
-        this.securityForm.stepUpError = "Code rejected. Enter the current code from your authenticator app.";
+        this.securityForm.stepUpError =
+          "Code rejected. Enter the current code from your authenticator app.";
       } else {
         this.securityForm.stepUpError = `The daemon refused (${r.status}).`;
       }
@@ -229,7 +230,8 @@ export function securityDialog() {
           this.securityForm.confirmCode = "";
           this.securityForm.totpError = "";
         } else {
-          this.securityForm.totpError = "Wrong code. Enter the current code from your authenticator app.";
+          this.securityForm.totpError =
+            "Wrong code. Enter the current code from your authenticator app.";
         }
       } catch {
         this.securityForm.totpError = "Cannot reach the daemon. Try again.";
@@ -291,7 +293,8 @@ export function securityDialog() {
     // present: an absent field is a 400, never a clear.
     passwordBody(pw: string) {
       const p = new URLSearchParams({ password: pw });
-      if (this.$store.connection.security.passwordSet) p.set("current", this.securityForm.passwordCurrent);
+      if (this.$store.connection.security.passwordSet)
+        p.set("current", this.securityForm.passwordCurrent);
       return p.toString();
     },
     async savePassword() {
@@ -367,7 +370,8 @@ export function securityDialog() {
       } catch {
         return;
       }
-      if (this.$store.connection.security.policy === "session") void this.$store.connection.logOff();
+      if (this.$store.connection.security.policy === "session")
+        void this.$store.connection.logOff();
     },
 
     async toggleRequireLogin(ev?: CheckboxChange) {

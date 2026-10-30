@@ -4,7 +4,24 @@
 // typed deps; the text of each function is the one it had in `wb-notes.ts`.
 import { WBFail } from "./wb-fail.ts";
 import { removeNote } from "./wb-desk-folds.ts";
-import { ADD_TITLE, DEFAULT_DIR, EMPTY_TITLE_HINT, REMOVE_TITLE, SAVE_AFTER_MS, applyLook, bodyOf, noteSlug, savedLabel, stampName, styleOf, titleFieldOf, titleOf, veiledOf, withHeader, withVeil } from "./wb-notes-folds.ts";
+import {
+  ADD_TITLE,
+  DEFAULT_DIR,
+  EMPTY_TITLE_HINT,
+  REMOVE_TITLE,
+  SAVE_AFTER_MS,
+  applyLook,
+  bodyOf,
+  noteSlug,
+  savedLabel,
+  stampName,
+  styleOf,
+  titleFieldOf,
+  titleOf,
+  veiledOf,
+  withHeader,
+  withVeil,
+} from "./wb-notes-folds.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { CardHost, DeskNote, NoteCard, NoteEditor, NoteSource } from "./wb-types.d.ts";
 
@@ -46,7 +63,17 @@ export type NoteEditorDeps = {
 };
 
 export function createNoteEditor(deps: NoteEditorDeps) {
-  const { window, document, consoleHost, recordOf, patch, render, paintIndex, veilPanel, paintVeil } = deps;
+  const {
+    window,
+    document,
+    consoleHost,
+    recordOf,
+    patch,
+    render,
+    paintIndex,
+    veilPanel,
+    paintVeil,
+  } = deps;
 
   // The editor answers the BODY — it never sees the front matter — so every
   // value that comes back out of it is dressed in the card's look before it
@@ -147,7 +174,11 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         return editor;
       })
       .catch((err: unknown) => {
-        paintState(el, "Could not start the editor: " + String(err instanceof Error && err.message ? err.message : err));
+        paintState(
+          el,
+          "Could not start the editor: " +
+            String(err instanceof Error && err.message ? err.message : err),
+        );
         return null;
       });
   }
@@ -171,7 +202,13 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         return mountEditor(el, reply.markdown || "");
       })
       .catch((err: unknown) => {
-        paintMissing(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer."));
+        paintMissing(
+          el,
+          WBFail.cause(
+            { message: err instanceof Error ? err.message : undefined },
+            "The daemon did not answer.",
+          ),
+        );
         return null;
       });
   }
@@ -390,7 +427,13 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         .catch((err: unknown) => {
           el._noteInFlight = false;
           el.classList.add("danger");
-          paintState(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer."));
+          paintState(
+            el,
+            WBFail.cause(
+              { message: err instanceof Error ? err.message : undefined },
+              "The daemon did not answer.",
+            ),
+          );
         });
     });
   }
@@ -434,7 +477,13 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         // A dropped socket mid-probe must not leave the card unable to ever
         // name itself: clear the memo and say why.
         el._noteNaming = null;
-        paintState(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer."));
+        paintState(
+          el,
+          WBFail.cause(
+            { message: err instanceof Error ? err.message : undefined },
+            "The daemon did not answer.",
+          ),
+        );
         return null;
       });
     return el._noteNaming;
@@ -444,7 +493,12 @@ export function createNoteEditor(deps: NoteEditorDeps) {
   // `note.read`: a write would overwrite, and overwriting a note nobody asked
   // to touch is the one thing this must not do.
   const NAME_TRIES = 20;
-  function firstFreeName(record: NoteSource, dir: string, base: string, n = 1): Promise<string | null> {
+  function firstFreeName(
+    record: NoteSource,
+    dir: string,
+    base: string,
+    n = 1,
+  ): Promise<string | null> {
     if (n > NAME_TRIES) return Promise.resolve(null);
     const path = `${dir ? dir + "/" : ""}${base}${n === 1 ? "" : "-" + n}.note`;
     return window.WBDaemon.observe(
@@ -469,5 +523,14 @@ export function createNoteEditor(deps: NoteEditorDeps) {
     if (dir) dir.hidden = !!path;
   }
 
-  return { mountEditor, loadInto, paintTitle, paintState, syncFromEditor, markDirty, flush, paintPath };
+  return {
+    mountEditor,
+    loadInto,
+    paintTitle,
+    paintState,
+    syncFromEditor,
+    markDirty,
+    flush,
+    paintPath,
+  };
 }

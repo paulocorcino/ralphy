@@ -214,7 +214,8 @@ export function terminalGpu(term: XtermTerminal, switched: () => void) {
     webgl = null;
     gpuCanvases = [];
     addon.dispose();
-    for (const c of canvases) c.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+    for (const c of canvases)
+      c.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
     switched();
   }
   return { useGpu, dropGpu };

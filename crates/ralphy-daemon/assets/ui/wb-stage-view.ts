@@ -351,7 +351,6 @@ export function createView(deps: ViewDeps) {
   // `deltaMode: DOM_DELTA_LINE` (Firefox) instead of pixels.
   const WHEEL_LINE = 16;
 
-
   // The auto-pan loop of a drag: while the pointer presses against a viewport
   // edge, the plane scrolls under it each frame, and `place(pointer)` in the tick
   // keeps the drop correct in stage coordinates. The gesture calls `follow`

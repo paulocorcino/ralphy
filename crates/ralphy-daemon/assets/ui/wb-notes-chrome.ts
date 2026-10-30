@@ -2,7 +2,14 @@
 // the file menu, the body, the foot and the resize edges, and the title as a
 // rename (ADR-0064 §4). `createNotes` builds it with the card's closure names
 // as typed deps; the text of each part is the one it had in `wb-notes.ts`.
-import { DEFAULT_DIR, NOTE_MIN, noCredential, titleOf, veiledOf, withTitle } from "./wb-notes-folds.ts";
+import {
+  DEFAULT_DIR,
+  NOTE_MIN,
+  noCredential,
+  titleOf,
+  veiledOf,
+  withTitle,
+} from "./wb-notes-folds.ts";
 import type { CardHost, DeskNote, NoteCard, NoteSource, Point } from "./wb-types.d.ts";
 
 /** What `createNotes` hands the card's chrome: the card's closure names. */
@@ -46,9 +53,19 @@ export type NoteChromeDeps = {
 
 export function createNoteChrome(deps: NoteChromeDeps) {
   const { document, consoleHost, recordOf, patch, render, persistCards, closeCard } = deps;
-  const { veiledNow, toggleReveal, setMarked, mountEditor, syncFromEditor, markDirty, paintTitle } = deps;
+  const { veiledNow, toggleReveal, setMarked, mountEditor, syncFromEditor, markDirty, paintTitle } =
+    deps;
   const { togglePalette, closePalette, toggleMenu, toggleIndex, closeMenu, markdownHelp } = deps;
-  const { pointElsewhere, renameNote, deleteNote, commitRename, endRename, onTop, putBack, floatGesture } = deps;
+  const {
+    pointElsewhere,
+    renameNote,
+    deleteNote,
+    commitRename,
+    endRename,
+    onTop,
+    putBack,
+    floatGesture,
+  } = deps;
 
   const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 

@@ -71,7 +71,8 @@ function repoRelative(dir: string, src: string) {
 export function linkTarget(dir: string, href: string | null) {
   if (!href) return null;
   if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" as const };
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/"))
+    return { kind: "external" as const };
   const path = repoRelative(dir, href);
   if (!path) return null;
   const hash = href.indexOf("#");
@@ -89,7 +90,11 @@ export type ViewerMarkdownDeps = {
   detachBtnHtml: (rec: ViewerRecord) => string;
   detachClick: (rec: BytesRecord) => void;
   /** Mount a code editor in `container`: the pane's Edit mode. */
-  mountEditor: (rec: BytesRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) => unknown;
+  mountEditor: (
+    rec: BytesRecord,
+    container: HTMLElement,
+    opts: { path?: string; wordWrap?: string },
+  ) => unknown;
   saver: Pick<ViewerSave, "save" | "reloadFile" | "applyFresh" | "hideDiskBadge">;
   encoding: Pick<ViewerEncoding, "wireEncodingMenu">;
   find: Pick<ViewerFind, "mdSearch" | "mdSearchStep" | "mdSearchClose">;
@@ -98,7 +103,16 @@ export type ViewerMarkdownDeps = {
 export type ViewerMarkdown = ReturnType<typeof createViewerMarkdown>;
 
 export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
-  const { window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor } = deps;
+  const {
+    window,
+    document,
+    viewers,
+    setPathLabel,
+    setCaption,
+    detachBtnHtml,
+    detachClick,
+    mountEditor,
+  } = deps;
   const { save, reloadFile, applyFresh, hideDiskBadge } = deps.saver;
   const { wireEncodingMenu } = deps.encoding;
   const { mdSearch, mdSearchStep, mdSearchClose } = deps.find;
@@ -153,7 +167,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     need(el, ".md-outline").addEventListener("click", (ev) => {
       if ((ev.target as Element).closest(".outline-item")) split.classList.remove("toc-open");
     });
-    need(el, ".md-scroll").addEventListener("pointerdown", () => split.classList.remove("toc-open"));
+    need(el, ".md-scroll").addEventListener("pointerdown", () =>
+      split.classList.remove("toc-open"),
+    );
     need(el, '[data-act="save"]').onclick = () => save(rec);
     need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
     need(el, '[data-act="disk"]').onclick = () => {
@@ -235,7 +251,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       note.className = "md-img-blocked";
       const icon = document.createElement("i");
       icon.className = "bi bi-image";
-      const { text, reason } = remoteImageNotice(img.getAttribute("src") || "", img.getAttribute("alt") || "");
+      const { text, reason } = remoteImageNotice(
+        img.getAttribute("src") || "",
+        img.getAttribute("alt") || "",
+      );
       note.title = reason;
       note.append(icon, text);
       img.replaceWith(note);
@@ -283,7 +302,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       // A malformed escape still names SOMETHING; match it as written.
     }
     want = want.toLowerCase();
-    const heads = rec.el?.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6") ?? [];
+    const heads =
+      rec.el?.querySelectorAll(
+        ".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6",
+      ) ?? [];
     for (const h of heads) {
       if (slugOf(h.textContent) === want) {
         h.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -302,7 +324,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
         .then((svg) => (holder.innerHTML = svg))
         .catch((err: unknown) => {
           holder.classList.add("mermaid-error");
-          holder.textContent = "Mermaid error: " + String(err instanceof Error && err.message ? err.message : err);
+          holder.textContent =
+            "Mermaid error: " + String(err instanceof Error && err.message ? err.message : err);
         });
     });
   }

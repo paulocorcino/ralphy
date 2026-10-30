@@ -104,7 +104,11 @@ export function wbChanges() {
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesReadError[slug] = "";
-        this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
+        this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], {
+          ok: true,
+          value: true,
+          at: Date.now(),
+        });
         this._reportCurrent(slug);
       } catch {
         if (seq === this._changesSeq) {
@@ -120,7 +124,9 @@ export function wbChanges() {
       this.changesRead[slug] = read;
       this._reportCurrent(slug);
       if (read.goodAt) {
-        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms));
+        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) =>
+          this.$store.connection.fmtClock(ms),
+        );
         return;
       }
       this.$store.checkouts.changeCountRead(slug, null);
@@ -147,11 +153,16 @@ export function wbChanges() {
         }
         const sync = WBChanges.foldSync(reply);
         this.syncByProject[slug] = sync;
-        this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
+        this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], {
+          ok: true,
+          value: true,
+          at: Date.now(),
+        });
         this._reportCurrent(slug);
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
-        if (!this.$store.checkouts.checkoutOf(slug)) primaryReadMovesRow(this.$store.projects, slug, sync);
+        if (!this.$store.checkouts.checkoutOf(slug))
+          primaryReadMovesRow(this.$store.projects, slug, sync);
       } catch {
         if (seq === this._syncSeq) {
           this.syncFailed(slug, "the daemon did not answer");
@@ -166,10 +177,16 @@ export function wbChanges() {
       this._reportCurrent(slug);
       const prev = this.syncByProject[slug];
       if (read.goodAt && prev && prev.state !== "unknown") {
-        this.syncByProject[slug] = { ...prev, note: WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms)) };
+        this.syncByProject[slug] = {
+          ...prev,
+          note: WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms)),
+        };
         return;
       }
-      this.syncByProject[slug] = { ...WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
+      this.syncByProject[slug] = {
+        ...WBChanges.foldSync(null),
+        note: `Could not read the branch: ${reason}`,
+      };
     },
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
@@ -184,9 +201,7 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not fetch: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not fetch: the daemon gave no reason."));
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
@@ -210,9 +225,7 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not pull: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not pull: the daemon gave no reason."));
         } else {
           moved = true;
         }
@@ -239,9 +252,7 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not push: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not push: the daemon gave no reason."));
         }
       } catch {
         this._changesRefused("Could not push: the daemon did not answer.");
@@ -256,15 +267,18 @@ export function wbChanges() {
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
       if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame) => {
-        if (this.$store.connection.tabHidden()) return;
-        // Optional-chained: a frame without wb-changes.ts must not throw
-        // inside `onmessage`.
-        if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
-          void this.loadChanges(this.$store.projects.openSlug);
-          void this.loadSync(this.$store.projects.openSlug);
-        }
-      });
+      this._changesSub = window.WBDaemon.subscribeChanges(
+        this.$store.projects.openSlug,
+        (frame) => {
+          if (this.$store.connection.tabHidden()) return;
+          // Optional-chained: a frame without wb-changes.ts must not throw
+          // inside `onmessage`.
+          if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
+            void this.loadChanges(this.$store.projects.openSlug);
+            void this.loadSync(this.$store.projects.openSlug);
+          }
+        },
+      );
     },
     destroyChangesSub() {
       try {
@@ -296,7 +310,8 @@ export function wbChanges() {
       void this.loadSync(ref);
       // Under a selection the chip reads the worktree's branch from the
       // listing, not `p.branch`.
-      if (this.$store.checkouts.checkoutOf(ref)) void this.$store.checkouts.ensureWorktreeListing(ref, true);
+      if (this.$store.checkouts.checkoutOf(ref))
+        void this.$store.checkouts.ensureWorktreeListing(ref, true);
     },
 
     // --- the rows and the commit box -----------------------------------------
@@ -327,7 +342,11 @@ export function wbChanges() {
     syncBusyTitle(verb: string) {
       if (!this.syncBusy) return "";
       if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
-      return ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[verb] || "";
+      return (
+        ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[
+          verb
+        ] || ""
+      );
     },
     groupNote(group: string) {
       return WBChanges.groupDiscardNote(group);
@@ -365,12 +384,13 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.stage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, paths },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not stage: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not stage: the daemon gave no reason."));
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
@@ -386,7 +406,10 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.unstage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, paths },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -418,7 +441,10 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.discard",
-          window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, paths: [entry.path] },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -441,7 +467,10 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.commit",
-          window.WBDaemon.withCheckout({ repo: slug, message }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, message },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -468,12 +497,17 @@ export function wbChanges() {
     // The write lock (the Alpine store `connection`) hears whether the change
     // set and the branch shown for `slug` are current.
     _reportCurrent(slug: string) {
-      this.$store.connection.changesCurrent(slug, !(this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false));
+      this.$store.connection.changesCurrent(
+        slug,
+        !(this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false),
+      );
     },
 
     init() {
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
-      window.addEventListener("workbench:project-changed", (e) => this.gitFollowProject(e.detail.slug));
+      window.addEventListener("workbench:project-changed", (e) =>
+        this.gitFollowProject(e.detail.slug),
+      );
       // The open checkout's HEAD moved (the files' `/ws/tree` socket says so).
       window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
       // The page asks for a read of one project's change set and branch: the
@@ -492,7 +526,9 @@ export function wbChanges() {
       // Opening the Changes view is a read trigger.
       window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
       // A resume of the page's sockets (`resumeSockets`).
-      window.addEventListener("workbench:sockets-resume", (e) => this._changesSub?.resume?.(e.detail.stale));
+      window.addEventListener("workbench:sockets-resume", (e) =>
+        this._changesSub?.resume?.(e.detail.stale),
+      );
       // Registered once; the tick asks whether the panel is open.
       this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
     },

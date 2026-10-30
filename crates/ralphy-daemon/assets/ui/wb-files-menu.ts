@@ -36,7 +36,12 @@ export function treeMenu(tree: MenuTree, node: WunderbaumNode | null): MenuItem[
     { label: "New folder…", icon: "bi-folder-plus", run: () => tree.emitCreate(node, "folder") },
     uploadRow(tree, node),
     node && { sep: true as const },
-    node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", tree.nodeDetail(node)) },
+    node && {
+      label: "Delete",
+      icon: "bi-trash",
+      danger: true,
+      run: () => window.WB.emit("delete", tree.nodeDetail(node)),
+    },
   ].filter(Boolean);
 }
 

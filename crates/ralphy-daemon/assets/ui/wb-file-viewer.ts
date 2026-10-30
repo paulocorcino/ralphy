@@ -32,7 +32,12 @@ import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import { isRendered } from "./wb-viewer-render.ts";
-import { createViewerEncoding, encodingBtnHtml, encodingLabel, refreshEncodingPill } from "./wb-viewer-encoding.ts";
+import {
+  createViewerEncoding,
+  encodingBtnHtml,
+  encodingLabel,
+  refreshEncodingPill,
+} from "./wb-viewer-encoding.ts";
 import { createViewerFind } from "./wb-viewer-find.ts";
 import { createViewerMarkdown, linkTarget, remoteImageNotice } from "./wb-viewer-markdown.ts";
 import { createViewerSave } from "./wb-viewer-save.ts";
@@ -158,28 +163,73 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   const find = createViewerFind({ document, alive });
   const { findInEditor, findInMarkdown } = find;
   const saver = createViewerSave({
-    window, messages, reopenRefused,
+    window,
+    messages,
+    reopenRefused,
     renderMarkdown: (rec) => markdown.renderMarkdown(rec),
     drawMermaid: (rec) => markdown.drawMermaid(rec),
   });
-  const { save, showSaveError, clearSaveError, descOf, reloadFile, applyFresh, showDiskBadge, hideDiskBadge } = saver;
+  const {
+    save,
+    showSaveError,
+    clearSaveError,
+    descOf,
+    reloadFile,
+    applyFresh,
+    showDiskBadge,
+    hideDiskBadge,
+  } = saver;
   const viewerEncoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
   const { wireEncodingMenu } = viewerEncoding;
   const markdown: ViewerMarkdown = createViewerMarkdown({
-    window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor, saver, encoding: viewerEncoding, find,
+    window,
+    document,
+    viewers,
+    setPathLabel,
+    setCaption,
+    detachBtnHtml,
+    detachClick,
+    mountEditor,
+    saver,
+    encoding: viewerEncoding,
+    find,
   });
   const { buildMarkdown, drawMermaid, jumpTo } = markdown;
   // `isNarrow` is built below, so the slot and the read-only panes take it late.
   const { refresh, show, mirrors, mirrored, closeMirror } = createViewerSlot({
-    window, document, viewers, map, alive, findInEditor, drawMermaid, setPathLabel, setCaption,
-    isNarrow: (el) => isNarrow(el), watchNarrow, bindSave,
+    window,
+    document,
+    viewers,
+    map,
+    alive,
+    findInEditor,
+    drawMermaid,
+    setPathLabel,
+    setCaption,
+    isNarrow: (el) => isNarrow(el),
+    watchNarrow,
+    bindSave,
   });
   const { buildDiff, buildImage, buildRefused } = createViewerReadOnly({
-    window, document, viewers, messages, alive, setPathLabel, setCaption, detachBtnHtml, detachClick, reloadFile,
-    isNarrow: (el) => isNarrow(el), watchNarrow,
+    window,
+    document,
+    viewers,
+    messages,
+    alive,
+    setPathLabel,
+    setCaption,
+    detachBtnHtml,
+    detachClick,
+    reloadFile,
+    isNarrow: (el) => isNarrow(el),
+    watchNarrow,
   });
 
-  function mountEditor(rec: BytesRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) {
+  function mountEditor(
+    rec: BytesRecord,
+    container: HTMLElement,
+    opts: { path?: string; wordWrap?: string },
+  ) {
     const path = (opts && opts.path) || rec.path;
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
@@ -249,8 +299,12 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // it is Monaco's own `automaticLayout` business. The observer is the pane's,
   // not the editor's: `disposeEditor` ends it with the editor it feeds.
   const NARROW_PX = 560;
-  const isNarrow = (el: HTMLElement | undefined) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
-  function watchNarrow(rec: { el?: HTMLElement; ro?: ResizeObserver }, ed: MonacoEditor | MonacoDiffEditor) {
+  const isNarrow = (el: HTMLElement | undefined) =>
+    !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
+  function watchNarrow(
+    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    ed: MonacoEditor | MonacoDiffEditor,
+  ) {
     if (!rec.el || typeof ResizeObserver !== "function") return;
     let narrow = isNarrow(rec.el);
     rec.ro = new ResizeObserver(() => {
@@ -307,7 +361,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     }
   }
 
-
   // --- a source-code editor tab ------------------------------------------
   function buildCode(rec: BytesRecord) {
     const el = document.createElement("div");
@@ -335,7 +388,10 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     const saveBtn = need(el, '[data-act="save"]');
     need(el, '[data-act="find"]').onclick = () => {
       (rec.ed as MonacoEditor | undefined)?.focus();
-      (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run().catch((err: unknown) => console.error("[workbench] monaco find failed", err));
+      (rec.ed as MonacoEditor | undefined)
+        ?.getAction("actions.find")
+        ?.run()
+        .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
@@ -358,7 +414,18 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   function reopenRefused(rec: RefusedRecord, bytes: ReopenBytes) {
     const { id, project, label, path, kind, checkout, detached } = rec;
     API.close(id);
-    API.open({ id, project, label, path, ftype: kind, checkout, detached, content: bytes.content, encoding: bytes.encoding, bom: bytes.bom });
+    API.open({
+      id,
+      project,
+      label,
+      path,
+      ftype: kind,
+      checkout,
+      detached,
+      content: bytes.content,
+      encoding: bytes.encoding,
+      bom: bytes.bom,
+    });
     if (rec.visible) refresh();
     window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
@@ -422,7 +489,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     sendDocument(document, evt, descOf(rec));
   }
 
-
   // --- public API ---------------------------------------------------------
   let uidSeq = 0;
   const API = {
@@ -445,9 +511,19 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       if (map.has(id)) return;
       const shown = label || (WBFleet ? WBFleet.refSlug(project) : project);
       const pane: PaneRecord = {
-        id, project, label: shown, path, kind: ftype, original, uid: ++uidSeq,
-        editing: false, visible: false, detached: !!detached, checkout: checkout || null,
-        encoding: encoding || "UTF-8", bom: !!bom,
+        id,
+        project,
+        label: shown,
+        path,
+        kind: ftype,
+        original,
+        uid: ++uidSeq,
+        editing: false,
+        visible: false,
+        detached: !!detached,
+        checkout: checkout || null,
+        encoding: encoding || "UTF-8",
+        bom: !!bom,
       };
       if (spec.refused !== undefined) {
         const refused: RefusedRecord = { ...pane, refused: spec.refused };

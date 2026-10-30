@@ -30,7 +30,14 @@ import { consoleTab, consoleTabId, freshTabId, isConsoleTabId } from "./wb-conso
 import { WBColumns } from "./wb-columns.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { StoredTab } from "./wb-client-view.ts";
-import type { CanvasTab, ChangeEntry, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
+import type {
+  CanvasTab,
+  ChangeEntry,
+  MenuItem,
+  Slot,
+  TabBody,
+  TabOpen,
+} from "./wb-shell-types.d.ts";
 
 /** The detached file windows, as `wire` (app.ts) keeps them. */
 export type DetachedFiles = { watch: (win: Window, desc: FileDescriptor) => void };
@@ -45,7 +52,11 @@ export type TabsStoreDeps = {
 
 // A file tab of the open project at `from` or under it. A diff tab keeps its
 // path: it shows a version, not the file.
-function movedBy(t: CanvasTab, from: string, openSlug: string | null): t is CanvasTab & { path: string; project: string } {
+function movedBy(
+  t: CanvasTab,
+  from: string,
+  openSlug: string | null,
+): t is CanvasTab & { path: string; project: string } {
   if (t.kind === "diff" || t.project !== openSlug) return false;
   return t.path === from || !!t.path?.startsWith(`${from}/`);
 }
@@ -166,8 +177,11 @@ export function tabsStore(deps: TabsStoreDeps) {
       for (const t of window.WBView.read()?.consoleTabs || []) {
         const id = t.id ?? consoleTabId(t.deskId);
         const seen = new Set(this.consoleDeskIds());
-        const grid = t.grid.map((col) => col.filter((x) => !seen.has(x))).filter((col) => col.length);
-        if (grid.length && !this.tabs.some((x) => x.id === id)) this.tabs.push(consoleTab(id, t.deskId, t.title, grid));
+        const grid = t.grid
+          .map((col) => col.filter((x) => !seen.has(x)))
+          .filter((col) => col.length);
+        if (grid.length && !this.tabs.some((x) => x.id === id))
+          this.tabs.push(consoleTab(id, t.deskId, t.title, grid));
       }
     },
     // A console that left the page leaves its tab's grid, and a tab with no
@@ -179,7 +193,8 @@ export function tabsStore(deps: TabsStoreDeps) {
         const grid = tab.grid || [];
         const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter(here)));
         if (JSON.stringify(kept) !== JSON.stringify(grid)) this.setTabGrid(tab.id, kept);
-        else if (tab.deskId && WBColumns.flat(grid).includes(tab.deskId)) this.renameConsoleTab(tab, rows.get(tab.deskId));
+        else if (tab.deskId && WBColumns.flat(grid).includes(tab.deskId))
+          this.renameConsoleTab(tab, rows.get(tab.deskId));
       }
       this.placeConsoleTabs();
     },
@@ -195,7 +210,15 @@ export function tabsStore(deps: TabsStoreDeps) {
 
     // --- canvas tabs ------------------------------------------------------
     // The SAME terminal glyph as the New-console button and its menu rows.
-    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as CanvasTab[],
+    tabs: [
+      {
+        id: "consoles",
+        kind: "consoles",
+        title: "Consoles",
+        icon: "bi bi-terminal",
+        closable: false,
+      },
+    ] as CanvasTab[],
     active: "consoles",
     // The secondary pane (ADR-0037 §3c): `{ kind: "pin", id }` shows that tab
     // beside whichever is active, `{ kind: "mirror" }` shows the active code
@@ -233,7 +256,12 @@ export function tabsStore(deps: TabsStoreDeps) {
     },
 
     // `file.read`, resolving to what the pane opens with (wb-tabs-store-open.ts).
-    fetchContent(project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody> {
+    fetchContent(
+      project: string,
+      path: string,
+      ftype: string,
+      checkout: string | null | undefined,
+    ): Promise<TabBody> {
       return fetchContent(this, project, path, ftype, checkout);
     },
 
@@ -276,7 +304,8 @@ export function tabsStore(deps: TabsStoreDeps) {
     // the pinned slot and the last tab on the left.
     renameTabId(oldId: string, newId: string) {
       if (this.active === oldId) this.showTab(newId);
-      if (this.slot?.kind === "pin" && this.slot.id === oldId) this.slot = { kind: "pin", id: newId };
+      if (this.slot?.kind === "pin" && this.slot.id === oldId)
+        this.slot = { kind: "pin", id: newId };
       if (this.lastLeft === oldId) this.lastLeft = newId;
     },
 
@@ -344,7 +373,12 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (r.left && r.left !== this.slot?.id) this.lastLeft = r.left;
       WBViewer.setActive(
         r.left,
-        r.right && { id: r.right, mirror: r.mirror, focus: r.focus === "right", ratio: this.splitRatio },
+        r.right && {
+          id: r.right,
+          mirror: r.mirror,
+          focus: r.focus === "right",
+          ratio: this.splitRatio,
+        },
       );
     },
 
@@ -417,13 +451,23 @@ export function tabsStore(deps: TabsStoreDeps) {
           // The pin (#406) survives a reload.
           checkout: t.checkout ?? null,
         }));
-      const consoleTabs = this.consoleTabs().map((t) => ({ id: t.id, deskId: t.deskId || "", title: t.title, grid: t.grid || [] }));
+      const consoleTabs = this.consoleTabs().map((t) => ({
+        id: t.id,
+        deskId: t.deskId || "",
+        title: t.title,
+        grid: t.grid || [],
+      }));
       // A stored `active` naming a tab this store does not carry would leave
       // the canvas blank: degrade to Consoles.
       const alive =
         this.active === "consoles" ||
         consoleTabs.some((t) => t.id === this.active) ||
-        files.some((f) => f.project !== undefined && f.path !== undefined && fileTabId(f.project, f.path, f.checkout) === this.active);
+        files.some(
+          (f) =>
+            f.project !== undefined &&
+            f.path !== undefined &&
+            fileTabId(f.project, f.path, f.checkout) === this.active,
+        );
       window.WBView?.patch({
         tabs: files,
         consoleTabs,
@@ -473,7 +517,10 @@ export function tabsStore(deps: TabsStoreDeps) {
     showTabMenu(x: number, y: number, t: CanvasTab) {
       if (!t?.closable) return;
       // A console tab shows the stage, which has no pane to put beside another.
-      if (t.kind === "console") this.renderMenu(x, y, [{ label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) }]);
+      if (t.kind === "console")
+        this.renderMenu(x, y, [
+          { label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) },
+        ]);
       else this.showSlotMenu(x, y, t);
     },
     showSlotMenu(x: number, y: number, t: CanvasTab) {

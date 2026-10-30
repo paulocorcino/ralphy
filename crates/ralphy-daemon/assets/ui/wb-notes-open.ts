@@ -6,7 +6,15 @@ import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
 import { spawnRect } from "./wb-notes-folds.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Stack } from "./wb-stage-stack.ts";
-import type { CardHost, DeskFence, DeskNote, NoteCard, NoteSource, Offset, Size } from "./wb-types.d.ts";
+import type {
+  CardHost,
+  DeskFence,
+  DeskNote,
+  NoteCard,
+  NoteSource,
+  Offset,
+  Size,
+} from "./wb-types.d.ts";
 
 /** Where a new card lands, and which file it opens (`create`, `openFromExplorer`). */
 export type NewNote = {
@@ -42,11 +50,26 @@ export type NoteOpenDeps = {
 };
 
 export function createNoteOpen(deps: NoteOpenDeps) {
-  const { window, consoleHost, messages, stack, cardEl, recordOf, deskNotes, deskFences, render, syncFromEditor, flush } = deps;
+  const {
+    window,
+    consoleHost,
+    messages,
+    stack,
+    cardEl,
+    recordOf,
+    deskNotes,
+    deskFences,
+    render,
+    syncFromEditor,
+    flush,
+  } = deps;
 
   // One rule for both ways a card is born: the cap refuses, it does not evict
   // (see `saveNotes`); the new record lands at the end of the desk's list.
-  function addCard(fields: { repo: string; checkout: string | null; path: string }, { viewport, offset }: NewNote) {
+  function addCard(
+    fields: { repo: string; checkout: string | null; path: string },
+    { viewport, offset }: NewNote,
+  ) {
     const records = deskNotes();
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -131,7 +154,13 @@ export function createNoteOpen(deps: NoteOpenDeps) {
   // on the plane (identity is `(repo, checkout, path)`), else put one there.
   // The read happens in `loadInto`, so a file that is not a note lands as the
   // missing/refused state on a card the operator can close — never silently.
-  function openFromExplorer({ repo, checkout, path, viewport, offset }: NewNote & { path?: string | null }) {
+  function openFromExplorer({
+    repo,
+    checkout,
+    path,
+    viewport,
+    offset,
+  }: NewNote & { path?: string | null }) {
     if (!repo || !path) return null;
     const tree = checkout ?? null;
     const already = (consoleHost?.notes?.() || []).find(

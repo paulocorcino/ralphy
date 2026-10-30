@@ -36,7 +36,12 @@ export async function reportStall(kind: StallKind, what: string, waitedMs: numbe
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), STALL_SEND_DEADLINE_MS);
   try {
-    const body = JSON.stringify({ kind, what, waited_ms: Math.round(waitedMs), holder: WBSessionRoute.tabHolder() });
+    const body = JSON.stringify({
+      kind,
+      what,
+      waited_ms: Math.round(waitedMs),
+      holder: WBSessionRoute.tabHolder(),
+    });
     await globalThis.fetch("/api/device/stall", {
       method: "POST",
       headers: { "content-type": "application/json" },

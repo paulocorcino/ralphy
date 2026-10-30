@@ -177,7 +177,8 @@ export const WBSessionRoute = (function () {
   function reattachQuery(opts: ReattachUrlOpts) {
     let value = "id=" + encodeURIComponent(opts.id);
     if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
-    if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) value += "&since=" + opts.since;
+    if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0)
+      value += "&since=" + opts.since;
     if (opts.takeover) value += "&takeover=1";
     // A watcher claims nothing, so it names no holder.
     if (opts.watch) return value + "&watch=1";
@@ -194,10 +195,7 @@ export const WBSessionRoute = (function () {
 
   function launchQuery(opts: LaunchUrlOpts) {
     let value =
-      "repo=" +
-      encodeURIComponent(opts.repo) +
-      "&agent=" +
-      encodeURIComponent(opts.agent);
+      "repo=" + encodeURIComponent(opts.repo) + "&agent=" + encodeURIComponent(opts.agent);
     // A worktree NAME, sent only on a new agent launch — a reattach's record
     // owns it (ADR-0063 §3).
     if (opts.checkout) value += "&checkout=" + encodeURIComponent(opts.checkout);
@@ -213,16 +211,21 @@ export const WBSessionRoute = (function () {
     if (!link) return "";
     let value = "";
     const { effectiveType, rtt, downlink } = link;
-    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType)) value += "&net=" + effectiveType;
-    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) value += "&net_rtt=" + rtt;
-    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0) value += "&net_down=" + downlink;
+    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType))
+      value += "&net=" + effectiveType;
+    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0)
+      value += "&net_rtt=" + rtt;
+    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0)
+      value += "&net_down=" + downlink;
     return value;
   }
 
   // The network this browser reports now, read at each connect.
   function tabLink(): LinkFacts | undefined {
     try {
-      return (globalThis.navigator as Navigator & { connection?: LinkFacts }).connection ?? undefined;
+      return (
+        (globalThis.navigator as Navigator & { connection?: LinkFacts }).connection ?? undefined
+      );
     } catch {
       return undefined;
     }
@@ -246,11 +249,37 @@ export const WBSessionRoute = (function () {
   ): SessionUrlOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null)
-      return { id: req.id, since, repo, takeover: req.takeover, watch: req.watch, holder: holderId, gzip, attempt };
+      return {
+        id: req.id,
+        since,
+        repo,
+        takeover: req.takeover,
+        watch: req.watch,
+        holder: holderId,
+        gzip,
+        attempt,
+      };
     if (req.console)
-      return { console: true, repo, command: req.command, record: req.record, holder: holderId, gzip, attempt };
+      return {
+        console: true,
+        repo,
+        command: req.command,
+        record: req.record,
+        holder: holderId,
+        gzip,
+        attempt,
+      };
     const { agent, checkout, name, record } = req;
-    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder: holderId, gzip, attempt };
+    return {
+      repo: req.repo ?? "",
+      agent: agent ?? "",
+      checkout,
+      name,
+      record,
+      holder: holderId,
+      gzip,
+      attempt,
+    };
   }
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
@@ -262,7 +291,8 @@ export const WBSessionRoute = (function () {
   // The attempt rides only with a holder: it orders the claims of one holder.
   function holderParam(h: string | undefined, attempt?: number) {
     if (typeof h !== "string" || !HOLDER_RE.test(h)) return "";
-    const n = Number.isSafeInteger(attempt) && attempt != null && attempt >= 0 ? "&attempt=" + attempt : "";
+    const n =
+      Number.isSafeInteger(attempt) && attempt != null && attempt >= 0 ? "&attempt=" + attempt : "";
     return "&holder=" + h + n;
   }
 

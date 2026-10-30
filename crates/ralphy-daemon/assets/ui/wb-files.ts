@@ -23,7 +23,14 @@ import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { reconcileLevel, reconcileOnce } from "./wb-files-reconcile.ts";
 import { destroyTree, mountTree } from "./wb-files-mount.ts";
-import { fetchTreeLevel, forgetValidatedBelow, loadTreeLevel, pruneTreeCache, revalidateBelow, revalidateLevel } from "./wb-files-levels.ts";
+import {
+  fetchTreeLevel,
+  forgetValidatedBelow,
+  loadTreeLevel,
+  pruneTreeCache,
+  revalidateBelow,
+  revalidateLevel,
+} from "./wb-files-levels.ts";
 import { classify, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import { treeMenu } from "./wb-files-menu.ts";
@@ -49,12 +56,18 @@ function freshBytes(t: CanvasTab, project: string): Promise<string | null | unde
   const payload = WBDaemon.withCheckout({ repo: project, path }, t.checkout);
   const enc = WBViewer.encodingOf?.(t.id)?.encoding;
   if (enc) payload.encoding = enc;
-  return WBDaemon.observe("file.read", payload).then((reply) => (reply?.status === "ok" ? reply.content : null));
+  return WBDaemon.observe("file.read", payload).then((reply) =>
+    reply?.status === "ok" ? reply.content : null,
+  );
 }
 
 // Expand every ancestor folder of `rel`, shallow-first. A revealed FILE has
 // nothing to expand. False when an ancestor is not mounted: nothing to reveal.
-async function expandAncestors(tree: WunderbaumTree, rel: string, relPath: (n: WunderbaumNode) => string) {
+async function expandAncestors(
+  tree: WunderbaumTree,
+  rel: string,
+  relPath: (n: WunderbaumNode) => string,
+) {
   const parts = rel.split("/");
   for (let i = 1; i < parts.length; i++) {
     const prefix = parts.slice(0, i).join("/");
@@ -154,7 +167,7 @@ export function wbFiles() {
     // every row alone. Cleared by `treeFresh`.
     treeWentStale(err: unknown) {
       if (!this.useDaemonTree()) return;
-      this.treeStale = `${WBFail.failed({ message: err instanceof Error ? err.message : undefined },"Could not refresh the file list: the daemon gave no reason.")} The list shown is the last one read.`;
+      this.treeStale = `${WBFail.failed({ message: err instanceof Error ? err.message : undefined }, "Could not refresh the file list: the daemon gave no reason.")} The list shown is the last one read.`;
     },
 
     // A read landed: whatever the tree is showing is confirmed again.
@@ -187,7 +200,12 @@ export function wbFiles() {
     // back reads again the levels the tree shows.
     filesFollowFleet() {
       const down = !!this.openPeerDown();
-      if (!down && this._filesPeerDown && this._filesPeerDown === this.$store.projects.openSlug && this._tree) {
+      if (
+        !down &&
+        this._filesPeerDown &&
+        this._filesPeerDown === this.$store.projects.openSlug &&
+        this._tree
+      ) {
         this.treeFresh();
         void this.revalidateLevel("");
         this.rawTree()?.root.visit((n: WunderbaumNode) => {
@@ -428,7 +446,11 @@ export function wbFiles() {
 
     // The folder node whose rel path is `rel`, or `null` if none is mounted.
     findFolderByRel(rel: string) {
-      return this.rawTree()?.findFirst((n: WunderbaumNode) => this.isFolder(n) && this.relPath(n) === rel) || null;
+      return (
+        this.rawTree()?.findFirst(
+          (n: WunderbaumNode) => this.isFolder(n) && this.relPath(n) === rel,
+        ) || null
+      );
     },
 
     // The tree, its socket and every state that describes it go (wb-files-mount.ts).
@@ -526,7 +548,9 @@ export function wbFiles() {
     // insecure non-loopback origin, so the call is optional-chained.
     copyPath(node: WunderbaumNode, full = false) {
       const rel = this.relPath(node);
-      const root = full ? this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root : "";
+      const root = full
+        ? this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root
+        : "";
       const path = root ? fullPath(root, rel) : rel;
       navigator.clipboard?.writeText(path).catch(() => {});
       window.WB.emit("copy-path", { ...this.nodeDetail(node), path });
@@ -562,7 +586,9 @@ export function wbFiles() {
         return;
       }
       if (WBFail.isError(reply)) {
-        this.$store.modals.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
+        this.$store.modals.flash?.(
+          WBFail.failed(reply, "Could not move: the daemon gave no reason."),
+        );
         return;
       }
       try {
@@ -578,7 +604,11 @@ export function wbFiles() {
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
     emitCreate(node: WunderbaumNode | null, kind: "file" | "folder") {
-      window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind });
+      window.WB.emit("create", {
+        project: this.$store.projects.openSlug,
+        path: this.createDir(node),
+        kind,
+      });
     },
 
     // The directory a create addressed at `node` lands in: the folder itself,
@@ -615,12 +645,17 @@ export function wbFiles() {
       window.addEventListener("workbench:peer-woken", (e) => this.filesFollowWake(e.detail.daemon));
       window.addEventListener("workbench:checkout-changed", () => this.filesFollowCheckout());
       // `resumeSockets`: the shell's heartbeat verdict, for this socket too.
-      window.addEventListener("workbench:sockets-resume", (e) => this._treeSub?.resume?.(e.detail.stale));
+      window.addEventListener("workbench:sockets-resume", (e) =>
+        this._treeSub?.resume?.(e.detail.stale),
+      );
       // The tab became visible, or a login: the socket sends what it missed.
       window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay?.());
       // `/` and Ctrl/Cmd+Shift+F (`wire()` in app.ts).
       window.addEventListener("workbench:file-search-open", () => this.openFileSearch());
-      window.addEventListener("workbench:move-confirmed", (e) => void this.performMove(e.detail.from, e.detail.to));
+      window.addEventListener(
+        "workbench:move-confirmed",
+        (e) => void this.performMove(e.detail.from, e.detail.to),
+      );
       // A create or a delete of the write seam (`wire()` in app.ts): re-list the
       // level, THEN reveal, so `setActive()` is the last write. `revealRel`
       // expands the ancestors: a nudge for a COLLAPSED dir is dropped, so a

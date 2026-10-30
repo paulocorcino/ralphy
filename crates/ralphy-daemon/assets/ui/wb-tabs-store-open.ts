@@ -21,7 +21,12 @@ type OpenTabs = {
   syncViewer(): void;
   openNote(path: string, project?: string | null, checkout?: string | null): void;
   openTab(open: TabOpen): void;
-  fetchContent(project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody>;
+  fetchContent(
+    project: string,
+    path: string,
+    ftype: string,
+    checkout: string | null | undefined,
+  ): Promise<TabBody>;
 };
 
 // `file.read`, resolving to what the pane opens with: `{content, encoding,
@@ -30,10 +35,18 @@ type OpenTabs = {
 // large`, …) — the tab KEEPS its place and says so — or `null` when there
 // is nothing to hold a tab open for (`not found`, a transport drop): the
 // tab closes. `checkout` is the tab's PINNED checkout (#406).
-export function fetchContent(store: OpenTabs, project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody> {
+export function fetchContent(
+  store: OpenTabs,
+  project: string,
+  path: string,
+  ftype: string,
+  checkout: string | null | undefined,
+): Promise<TabBody> {
   const refuse = (reason: string) => {
     window.WB.emit("open-refused", { project, path, reason });
-    window.Alpine.store("modals").flash?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
+    window.Alpine.store("modals").flash?.(
+      WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."),
+    );
     if (reason === "not found" || reason === "transport") {
       store.closeTab(fileTabId(project, path, checkout));
       return null;
@@ -94,8 +107,12 @@ export function openLink(store: OpenTabs, { project, path, fragment, checkout, a
 // a Save from a tab showing worktree bytes must never land on the primary.
 // `encoding`/`bom` come back with a re-attached popup's bytes, so the
 // reattached pane saves the way the detached one would have.
-export function openTab(store: OpenTabs, { project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen) {
-  const ck = checkout !== undefined ? checkout : window.Alpine.store("checkouts").checkoutOf(project);
+export function openTab(
+  store: OpenTabs,
+  { project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen,
+) {
+  const ck =
+    checkout !== undefined ? checkout : window.Alpine.store("checkouts").checkoutOf(project);
   const id = fileTabId(project, path, ck);
   if (store.tabs.some((t) => t.id === id)) {
     store.activate(id);
@@ -103,7 +120,16 @@ export function openTab(store: OpenTabs, { project, path, title, ftype, content,
     if (find) WBViewer.find(id, find);
     return;
   }
-  store.tabs.push({ id, kind: ftype, title, path, project, icon: tabIcon(ftype), closable: true, checkout: ck });
+  store.tabs.push({
+    id,
+    kind: ftype,
+    title,
+    path,
+    project,
+    icon: tabIcon(ftype),
+    closable: true,
+    checkout: ck,
+  });
   store.showTab(id);
   store.persistView();
   void window.Alpine.nextTick(() => {

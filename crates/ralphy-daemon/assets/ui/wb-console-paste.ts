@@ -38,7 +38,17 @@ export type PasteDeps = {
 };
 
 export function wirePaste(deps: PasteDeps) {
-  const { term, body, window, opts, writeClipboard, readClipboard, watchingNow, replayingNow, currentRepoNow } = deps;
+  const {
+    term,
+    body,
+    window,
+    opts,
+    writeClipboard,
+    readClipboard,
+    watchingNow,
+    replayingNow,
+    currentRepoNow,
+  } = deps;
 
   // A pasted IMAGE is not text (ADR-0055): xterm forwards only `text/plain`.
   // The bytes become a clipboard drop (`image.write`) and the drop's PATH is
@@ -71,7 +81,10 @@ export function wirePaste(deps: PasteDeps) {
     const reader = new FileReader();
     reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
     reader.onload = () => {
-      const base64 = (typeof reader.result === "string" ? reader.result : "").replace(/^data:[^,]*,/, "");
+      const base64 = (typeof reader.result === "string" ? reader.result : "").replace(
+        /^data:[^,]*,/,
+        "",
+      );
       daemon
         .write("image.write", { repo: currentRepoNow(), base64 })
         .then((reply) => {
@@ -96,7 +109,13 @@ export function wirePaste(deps: PasteDeps) {
     const items: DataTransferItem[] = Array.from(e.clipboardData?.items ?? []);
     const image = items.find((i) => i.type.startsWith("image/"));
     const file = image ? image.getAsFile() : null;
-    if (dropImage(items.map((i) => i.type), file)) e.preventDefault();
+    if (
+      dropImage(
+        items.map((i) => i.type),
+        file,
+      )
+    )
+      e.preventDefault();
   });
 
   // OSC 52 — "put this on the clipboard". xterm's core does not implement
@@ -114,7 +133,8 @@ export function wirePaste(deps: PasteDeps) {
     // NEVER return the clipboard promise: `OscHandler.end` PAUSES the parser
     // on a promise, and a rejected write (unfocused document) would stall
     // the terminal.
-    const replaying = replayingNow(), watching = watchingNow();
+    const replaying = replayingNow(),
+      watching = watchingNow();
     if (replaying || watching) return true;
     const semi = data.indexOf(";");
     if (semi < 0) return true;

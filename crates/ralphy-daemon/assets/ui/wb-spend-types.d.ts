@@ -28,7 +28,15 @@ type Tokens = {
   total?: number;
   label?: string;
   meter?: string;
-  parts?: { key: string; glyph?: string; name?: string; tokens: number; label?: string; share?: number; share_label?: string }[];
+  parts?: {
+    key: string;
+    glyph?: string;
+    name?: string;
+    tokens: number;
+    label?: string;
+    share?: number;
+    share_label?: string;
+  }[];
 };
 /** The `unpriced` part of the summary (`Unpriced`). */
 type Unpriced = {

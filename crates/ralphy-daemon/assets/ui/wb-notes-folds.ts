@@ -10,7 +10,15 @@
    `wb-notes.ts` keeps every name of `NOTE_FOLDS` in its returned object.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
-import type { DeskFence, NoteCard, NoteLook, NoteSource, Offset, Rect, Size } from "./wb-types.d.ts";
+import type {
+  DeskFence,
+  NoteCard,
+  NoteLook,
+  NoteSource,
+  Offset,
+  Rect,
+  Size,
+} from "./wb-types.d.ts";
 
 /** What `noteDormancyDecision` reads: the card's facts and the clock. */
 export type DormancyFacts = {
@@ -374,8 +382,15 @@ export function styleOf(markdown: string | null | undefined) {
 // the same single `color:` line it always did. `title` leads because it is
 // the document's name; `fill`/`ink` trail because they are refinements of
 // the colour above them.
-export function withHeader(body: string, title: string | null | undefined, style: Partial<NoteLook> | null | undefined, veiled?: boolean) {
-  const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
+export function withHeader(
+  body: string,
+  title: string | null | undefined,
+  style: Partial<NoteLook> | null | undefined,
+  veiled?: boolean,
+) {
+  const name = String(title || "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
   const lines: string[] = [];
   if (name) lines.push(`title: ${titleYaml(name)}`);
   lines.push(`color: ${toneOf(style?.tone)}`, ...refinementLines(style));
@@ -426,7 +441,9 @@ export function withVeil(markdown: string | null | undefined, veiled: boolean) {
 // the name stops being shown twice. It happens on a retitle and nowhere else
 // — opening a note rewrites nothing.
 export function withTitle(markdown: string | null | undefined, title: string | null | undefined) {
-  const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
+  const name = String(title || "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
   const body = bodyOf(markdown);
   const legacy = legacyTitleOf(body);
   return withHeader(legacy ? legacy.rest : body, name, styleOf(markdown), veiledOf(markdown));
@@ -435,7 +452,10 @@ export function withTitle(markdown: string | null | undefined, title: string | n
 // Is this card read-only? Its own `locked`, or the lock of the fence that
 // holds it — the same derivation a console's lock uses (ADR-0051 §6), which
 // is why the fence's lock is NOT copied onto the record.
-export function lockedBy(record: Pick<NoteSource, "locked" | "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
+export function lockedBy(
+  record: Pick<NoteSource, "locked" | "rect"> | null | undefined,
+  fences: DeskFence[] | null | undefined,
+) {
   if (record?.locked) return "self";
   const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
   return held?.locked ? "fence" : null;
@@ -450,7 +470,12 @@ export function lockedBy(record: Pick<NoteSource, "locked" | "rect"> | null | un
 // it appeared. A plane where every slot is fenced falls back to the first:
 // somewhere visible beats nowhere.
 export const SPAWN_SLOTS = 6;
-export function spawnRect(viewport: Partial<Size> | null | undefined, offset: Partial<Offset> | null | undefined, taken: number | null | undefined, fences: DeskFence[] | null | undefined) {
+export function spawnRect(
+  viewport: Partial<Size> | null | undefined,
+  offset: Partial<Offset> | null | undefined,
+  taken: number | null | undefined,
+  fences: DeskFence[] | null | undefined,
+) {
   const at = (n: number): Rect => {
     const step = 24 * (n % SPAWN_SLOTS);
     return {
@@ -489,7 +514,15 @@ export function spawnRect(viewport: Partial<Size> | null | undefined, offset: Pa
 // the containing-block chain of the observer's root (`#workspace`), and the
 // observer reports it as not intersecting while it floats in plain view
 // (measured 2026-09-27: it fell asleep one sweep after the timeout).
-export function noteDormancyDecision({ visible, onTop, dirty, inFlight, asleep, elapsed, after }: DormancyFacts) {
+export function noteDormancyDecision({
+  visible,
+  onTop,
+  dirty,
+  inFlight,
+  asleep,
+  elapsed,
+  after,
+}: DormancyFacts) {
   if (visible || onTop) return asleep ? "wake" : "stay";
   if (dirty || inFlight) return asleep ? "wake" : "stay";
   if (asleep) return "stay";
@@ -508,13 +541,20 @@ export const ON_TOP_FLOOR = { width: 420, height: 320 };
 export const ON_TOP_BAND_BELOW = 840;
 export const ON_TOP_MARGIN = 12;
 export const ON_TOP_TOP = 44;
-export function onTopRect(rect: Partial<Size> | null | undefined, viewport: Partial<Size> | null | undefined): FloatBox {
+export function onTopRect(
+  rect: Partial<Size> | null | undefined,
+  viewport: Partial<Size> | null | undefined,
+): FloatBox {
   const vw = viewport?.width || 0;
   const vh = viewport?.height || 0;
   if (vw < ON_TOP_BAND_BELOW) return { band: true };
   const width = Math.round(Math.min(Math.max(rect?.width || 0, ON_TOP_FLOOR.width), vw * 0.5));
   const height = Math.round(
-    Math.min(Math.max(rect?.height || 0, ON_TOP_FLOOR.height), vh * 0.8, vh - ON_TOP_TOP - ON_TOP_MARGIN),
+    Math.min(
+      Math.max(rect?.height || 0, ON_TOP_FLOOR.height),
+      vh * 0.8,
+      vh - ON_TOP_TOP - ON_TOP_MARGIN,
+    ),
   );
   return { band: false, left: vw - width - ON_TOP_MARGIN, top: ON_TOP_TOP, width, height };
 }
@@ -551,7 +591,9 @@ export function isSafeScheme(href: string | null) {
 // link in a note there would fall into the `!target` branch and silently do
 // nothing. A repo-relative link still cannot be opened from a popup that has
 // no explorer — that one stays inert, and says so by doing nothing.
-export function popupLinkTarget(href: string | null): { kind: "fragment"; fragment: string } | { kind: "external" } | null {
+export function popupLinkTarget(
+  href: string | null,
+): { kind: "fragment"; fragment: string } | { kind: "external" } | null {
   if (!href) return null;
   if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };

@@ -77,7 +77,9 @@ export function createTitle(deps: TitleDeps) {
   // Every console name in use: the desk mirror's and the stage's windows',
   // except `exceptId` (the console being renamed).
   function takenNames(exceptId: string | null) {
-    const names = desk().filter((r) => r.id !== exceptId).map((r) => r.consoleName);
+    const names = desk()
+      .filter((r) => r.id !== exceptId)
+      .map((r) => r.consoleName);
     for (const w of pageWindows()) {
       if (w._deskId !== exceptId) names.push(w._deskConsoleName);
     }
@@ -91,7 +93,10 @@ export function createTitle(deps: TitleDeps) {
     _label: string | null | undefined,
     repo: string | null | undefined,
     prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
-    owner: { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null } | null | undefined,
+    owner:
+      | { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null }
+      | null
+      | undefined,
   ) {
     const { daemonId, environment } = sessionPlace(prior, owner);
     // The vendor's own session name (`--name`; Claude only). On the TOOLTIP, not
@@ -131,7 +136,6 @@ export function createTitle(deps: TitleDeps) {
     setWin,
     renderTitle,
   });
-
 
   // The title: `<console name> (<label>)`, then ` · <checkout>`, then
   // ` · <repo slug>` (ADR-0066 §4).
@@ -335,7 +339,6 @@ export function createTitle(deps: TitleDeps) {
     if (!ok) return;
     endLiveThen(win, () => win._relaunchIn?.(undefined));
   }
-
 
   return {
     consolePrefix,

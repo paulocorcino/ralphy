@@ -98,7 +98,13 @@ export function createWindowGestures(deps: WindowGestureDeps) {
       focusWin(win);
       // No drag while maximized (double-click still restores) or fullscreen —
       // the top layer ignores the move while the drag REWRITES the inline rect.
-      if (win.classList.contains("maximized") || win.classList.contains("column") || inTab(win) || isFull(win)) return;
+      if (
+        win.classList.contains("maximized") ||
+        win.classList.contains("column") ||
+        inTab(win) ||
+        isFull(win)
+      )
+        return;
       // Locked in place — by its own record or by the fence holding it.
       if (heldFast()) return;
       gestures.begin(win);
@@ -207,7 +213,9 @@ export function createWindowGestures(deps: WindowGestureDeps) {
       const pointerId = e.pointerId;
       const pressed = { x: e.clientX, y: e.clientY };
       const threshold = dragThreshold(e.pointerType);
-      const span = canRename() ? (e.target as HTMLElement).closest<HTMLElement>(".session-name") : null;
+      const span = canRename()
+        ? (e.target as HTMLElement).closest<HTMLElement>(".session-name")
+        : null;
       let moved = false;
       let held = false;
       let timer: ReturnType<typeof setTimeout> | null = span
@@ -283,7 +291,13 @@ export function createWindowGestures(deps: WindowGestureDeps) {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
-      if (win.classList.contains("maximized") || win.classList.contains("column") || inTab(win) || isFull(win)) return;
+      if (
+        win.classList.contains("maximized") ||
+        win.classList.contains("column") ||
+        inTab(win) ||
+        isFull(win)
+      )
+        return;
       if (heldFast()) return; // the JS guard is the truth; the CSS only hides the bands
       gestures.begin(win);
       const rect = {

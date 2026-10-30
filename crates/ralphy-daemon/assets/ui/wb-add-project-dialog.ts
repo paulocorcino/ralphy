@@ -112,7 +112,16 @@ export function addProjectDialog() {
         this._addProjectSlow = setTimeout(() => this.addProjectStep({ type: "slow", seq }), 300);
         window.WBDaemon.observe("dir.list", payload)
           .then((reply) => this.addProjectStep({ type: "reply", seq, reply }))
-          .catch((e: unknown) => this.addProjectStep({ type: "reply", seq, reply: { status: "error", message: e instanceof Error && e.message ? e.message : String(e) } }));
+          .catch((e: unknown) =>
+            this.addProjectStep({
+              type: "reply",
+              seq,
+              reply: {
+                status: "error",
+                message: e instanceof Error && e.message ? e.message : String(e),
+              },
+            }),
+          );
       }, delay);
     },
     async addProjectSubmit() {
@@ -139,10 +148,12 @@ export function addProjectDialog() {
       if (payload.daemon) await this.$store.projects.loadFleet();
       // A stated exception to returning focus to the opener: the new project
       // is selected, shown and focused, so work on it can start at once.
-      if (stillOpen) this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);
+      if (stillOpen)
+        this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);
     },
     selectAddedProject(ref: string | undefined) {
-      if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) return;
+      if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref))
+        return;
       if (this.$store.projects.openSlug !== ref) this.toggle(ref as string);
       void this.$nextTick(() => {
         const head = document.querySelector<HTMLElement>("li.project.open .project-head");

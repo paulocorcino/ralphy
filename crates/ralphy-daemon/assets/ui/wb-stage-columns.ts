@@ -120,7 +120,9 @@ export function createStageColumns(deps: StageColumnsDeps) {
     if (btn.getAttribute("aria-label") === label) return;
     btn.title = label;
     btn.setAttribute("aria-label", label);
-    btn.innerHTML = narrow ? '<i class="bi bi-arrow-down-up"></i>' : '<i class="bi bi-arrows-expand-vertical"></i>';
+    btn.innerHTML = narrow
+      ? '<i class="bi bi-arrow-down-up"></i>'
+      : '<i class="bi bi-arrows-expand-vertical"></i>';
   }
 
   function clearColumn(win: ConsoleWin) {
@@ -175,7 +177,8 @@ export function createStageColumns(deps: StageColumnsDeps) {
     for (const win of wins) {
       const btn = win._colBtn;
       if (!btn) continue;
-      const held = win.classList.contains("maximized") || win.classList.contains("column") || inTab(win);
+      const held =
+        win.classList.contains("maximized") || win.classList.contains("column") || inTab(win);
       btn.hidden = !(OPTS.autoBoot !== false && held);
       paintColumnButton(btn, narrow);
     }
@@ -211,7 +214,10 @@ export function createStageColumns(deps: StageColumnsDeps) {
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
-  function applyColumns(painted: Painted[] | null | undefined, opts?: { unmax?: string | null; raise?: boolean; persist?: boolean }) {
+  function applyColumns(
+    painted: Painted[] | null | undefined,
+    opts?: { unmax?: string | null; raise?: boolean; persist?: boolean },
+  ) {
     const grid = painted || [];
     const persist = !!opts?.persist;
     clearStaleColumns(grid);

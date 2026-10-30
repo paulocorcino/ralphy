@@ -34,7 +34,10 @@ export type ViewerSlotDeps = {
   setPathLabel: (el: HTMLElement, rec: ViewerRecord) => void;
   setCaption: (btn: HTMLElement, icon: string, caption: string) => void;
   isNarrow: (el: HTMLElement | undefined) => boolean;
-  watchNarrow: (rec: { el?: HTMLElement; ro?: ResizeObserver }, ed: MonacoEditor | MonacoDiffEditor) => void;
+  watchNarrow: (
+    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    ed: MonacoEditor | MonacoDiffEditor,
+  ) => void;
   bindSave: (ed: MonacoEditor, rec: ViewerRecord) => MonacoDisposable;
 };
 
@@ -193,8 +196,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         document.removeEventListener("pointercancel", onUp);
-        if (ratio != null)
-          sendDocument(document, "workbench:split-ratio", { ratio });
+        if (ratio != null) sendDocument(document, "workbench:split-ratio", { ratio });
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);

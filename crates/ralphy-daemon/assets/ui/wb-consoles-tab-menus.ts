@@ -66,8 +66,12 @@ export function wbConsoleMenus() {
     // pick. The full ref rides the head's title.
     consoleMenuRepoName() {
       if (!this.$store.projects.openSlug) return "";
-      const row = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === this.$store.projects.openSlug);
-      const name = row ? WBProject.projectName(row) : WBFleet.refSlug(this.$store.projects.openSlug);
+      const row = this.$store.projects.projects.find(
+        (p) => this.$store.projects.repoRef(p) === this.$store.projects.openSlug,
+      );
+      const name = row
+        ? WBProject.projectName(row)
+        : WBFleet.refSlug(this.$store.projects.openSlug);
       return name.split("/").pop() || name;
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
@@ -92,7 +96,11 @@ export function wbConsoleMenus() {
     // ends with it (the console row's "Run…" field)
     newPlainConsole(command: string | null | undefined) {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
-      WBConsole.open({ repo: this.$store.projects.openSlug, plain: true, command: command || undefined });
+      WBConsole.open({
+        repo: this.$store.projects.openSlug,
+        plain: true,
+        command: command || undefined,
+      });
     },
     openConsoleRun() {
       this.consoleRunOpen = true;
@@ -188,7 +196,8 @@ export function wbConsoleMenus() {
       return this.noteItems.length >= 32;
     },
     noteCapReason() {
-      if (!this.$store.projects.openSlug) return "Open a project first. A note is saved in its checkout.";
+      if (!this.$store.projects.openSlug)
+        return "Open a project first. A note is saved in its checkout.";
       if (this.noteAtCap()) return "Maximum of 32 notes. Close one to add another.";
       return "Write a note on the stage";
     },

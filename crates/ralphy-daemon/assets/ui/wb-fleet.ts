@@ -82,7 +82,10 @@ function isPeerRef(ref: string | null | undefined) {
 //
 // Order: local first, then peers by environment then name — stable, so the
 // sidebar does not reshuffle between polls.
-function fleetGroups(repos: readonly Project[] | null | undefined, peers: readonly FleetPeer[] | null | undefined) {
+function fleetGroups(
+  repos: readonly Project[] | null | undefined,
+  peers: readonly FleetPeer[] | null | undefined,
+) {
   const rows = repos || [];
   const peerList = peers || [];
 

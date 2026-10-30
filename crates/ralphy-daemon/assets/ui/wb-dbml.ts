@@ -28,7 +28,12 @@ export type DbmlRef = { from: DbmlEndpoint; to: DbmlEndpoint; kind: DbmlRefKind 
 
 export type DbmlGroup = { name: string; tables: string[] };
 
-export type DbmlSchema = { tables: DbmlTable[]; refs: DbmlRef[]; groups: DbmlGroup[]; skipped: number };
+export type DbmlSchema = {
+  tables: DbmlTable[];
+  refs: DbmlRef[];
+  groups: DbmlGroup[];
+  skipped: number;
+};
 
 // ---- the text, as lines ---------------------------------------------------------
 
@@ -212,7 +217,13 @@ function splitSettings(s: string): string[] {
   return parts.map((p) => p.trim()).filter((p) => p !== "");
 }
 
-type Settings = { pk: boolean; notNull: boolean; unique: boolean; note: string | null; ref: string | null };
+type Settings = {
+  pk: boolean;
+  notNull: boolean;
+  unique: boolean;
+  note: string | null;
+  ref: string | null;
+};
 
 // The settings the reader shows. `increment`, `default: …` and the others are
 // not shown, so they are dropped here.
@@ -341,7 +352,8 @@ function openTopBlock(st: State, header: string): Block {
 function openBlock(st: State, header: string) {
   const top = st.stack[st.stack.length - 1];
   if (!top) st.stack.push(openTopBlock(st, header));
-  else if (top.kind === "table" && /^note$/i.test(header)) st.stack.push({ kind: "tablenote", table: top.table });
+  else if (top.kind === "table" && /^note$/i.test(header))
+    st.stack.push({ kind: "tablenote", table: top.table });
   else st.stack.push(SKIP);
 }
 
@@ -491,9 +503,13 @@ export function colKey(table: string, column: string) {
  * its own name or by any of its column names, and each column by its name.
  * An empty term matches every table and no column.
  */
-export function matchSchema(schema: DbmlSchema, term: string): { tables: Set<string>; columns: Set<string> } {
+export function matchSchema(
+  schema: DbmlSchema,
+  term: string,
+): { tables: Set<string>; columns: Set<string> } {
   const needle = term.toLowerCase();
-  if (needle === "") return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
+  if (needle === "")
+    return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
   const tables = new Set<string>();
   const columns = new Set<string>();
   for (const table of schema.tables) {
@@ -526,11 +542,14 @@ function sameName(c: DbmlColumn, column: string, bare: string | null) {
  */
 export function sameColumns(schema: DbmlSchema, table: string, column: string): Set<string> {
   const self = colKey(table, column);
-  const clicked = schema.tables.find((t) => t.name === table)?.columns.find((c) => c.name === column);
+  const clicked = schema.tables
+    .find((t) => t.name === table)
+    ?.columns.find((c) => c.name === column);
   const bare = clicked && !clicked.pk ? withoutPrefix(column) : null;
   const same = new Set<string>();
   for (const t of schema.tables) {
-    for (const c of t.columns.filter((x) => sameName(x, column, bare))) same.add(colKey(t.name, c.name));
+    for (const c of t.columns.filter((x) => sameName(x, column, bare)))
+      same.add(colKey(t.name, c.name));
   }
   same.delete(self);
   return same;
@@ -577,7 +596,9 @@ function mermaidWord(raw: string) {
 function entityLines(id: string, table: DbmlTable) {
   const label = table.name.replace(/"/g, "'");
   if (table.columns.length === 0) return [`  ${id}["${label}"]`];
-  const rows = table.columns.map((c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`);
+  const rows = table.columns.map(
+    (c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`,
+  );
   return [`  ${id}["${label}"] {`, ...rows, "  }"];
 }
 
@@ -602,7 +623,8 @@ export function toMermaidEr(schema: DbmlSchema, names: string[]): string {
   for (const ref of schema.refs) {
     const from = ids.get(ref.from.table);
     const to = ids.get(ref.to.table);
-    if (from && to) lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
+    if (from && to)
+      lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
   }
   return lines.join("\n");
 }

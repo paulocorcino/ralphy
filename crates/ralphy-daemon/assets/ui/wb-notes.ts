@@ -16,7 +16,16 @@
 // stub document), and no browser store of its own — `wb-client-view.ts` holds the one
 // there is (#339).
 import { WBGeometry } from "./wb-geometry.ts";
-import { DEFAULT_FILL, DEFAULT_INK, DEFAULT_TONE, NEW_NOTE_STYLE, NOTE_DEFAULT, applyLook, lockedBy, NOTE_FOLDS } from "./wb-notes-folds.ts";
+import {
+  DEFAULT_FILL,
+  DEFAULT_INK,
+  DEFAULT_TONE,
+  NEW_NOTE_STYLE,
+  NOTE_DEFAULT,
+  applyLook,
+  lockedBy,
+  NOTE_FOLDS,
+} from "./wb-notes-folds.ts";
 import { createNoteChrome } from "./wb-notes-chrome.ts";
 import { createNoteDormancy } from "./wb-notes-dormancy.ts";
 import { createNoteDrafts } from "./wb-notes-drafts.ts";
@@ -86,9 +95,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // `saveNotes` sends only the fields that differ (ADR-0050 amendment
   // 2026-10-04, changes, not the desk).
   function patch(id: string | null | undefined, fields: Partial<DeskNote>) {
-    const next = (consoleHost?.notes?.() || []).map((n) =>
-      n.id === id ? { ...n, ...fields } : n,
-    );
+    const next = (consoleHost?.notes?.() || []).map((n) => (n.id === id ? { ...n, ...fields } : n));
     consoleHost?.saveNotes(next);
   }
 
@@ -237,27 +244,63 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   // ---- the editor (in `wb-notes-editor.ts`) ------------------------------------
 
-  const { mountEditor, loadInto, paintTitle, paintState, syncFromEditor, markDirty, flush, paintPath } =
-    createNoteEditor({ window, document, consoleHost, recordOf, patch, render, paintIndex: (el) => paintIndex(el), veilPanel, paintVeil, fragment: () => fragment });
+  const {
+    mountEditor,
+    loadInto,
+    paintTitle,
+    paintState,
+    syncFromEditor,
+    markDirty,
+    flush,
+    paintPath,
+  } = createNoteEditor({
+    window,
+    document,
+    consoleHost,
+    recordOf,
+    patch,
+    render,
+    paintIndex: (el) => paintIndex(el),
+    veilPanel,
+    paintVeil,
+    fragment: () => fragment,
+  });
 
   // ---- the palette (in `wb-notes-palette.ts`) ----------------------------------
 
   // The palette and the menus close each other, so the palette reaches the
   // menus' `closeMenu` through an arrow.
   const { togglePalette, closePalette, buildPalette } = createNotePalette({
-    document, veiledNow, closeMenu: () => closeMenu(), syncFromEditor, markDirty,
+    document,
+    veiledNow,
+    closeMenu: () => closeMenu(),
+    syncFromEditor,
+    markDirty,
   });
 
   // ---- the menus and the cheat sheet (in `wb-notes-menus.ts`) ------------------
 
-  const { toggleMenu, toggleIndex, paintIndex, closeMenu, markdownHelp, MARKDOWN_HELP } = createNoteMenus({
-    window, document, recordOf, syncFromEditor, closePalette,
-  });
+  const { toggleMenu, toggleIndex, paintIndex, closeMenu, markdownHelp, MARKDOWN_HELP } =
+    createNoteMenus({
+      window,
+      document,
+      recordOf,
+      syncFromEditor,
+      closePalette,
+    });
 
   // ---- the file acts (in `wb-notes-file.ts`) -----------------------------------
 
   const { pointElsewhere, renameNote, endRename, commitRename, deleteNote } = createNoteFile({
-    window, consoleHost, messages, recordOf, patch, render, paintPath, paintState, loadInto,
+    window,
+    consoleHost,
+    messages,
+    recordOf,
+    patch,
+    render,
+    paintPath,
+    paintState,
+    loadInto,
   });
 
   // ---- dormancy (in `wb-notes-dormancy.ts`) ------------------------------------
@@ -265,13 +308,28 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // A card on top is never put to sleep, and `onTopNow` is built after this, so
   // it reaches the dormancy through an arrow.
   const { trackDormancy, untrackDormancy, wakeCard } = createNoteDormancy({
-    window, document, recordOf, loadInto, onTopNow: () => onTopNow(), veiledNow,
+    window,
+    document,
+    recordOf,
+    loadInto,
+    onTopNow: () => onTopNow(),
+    veiledNow,
   });
 
   // ---- creating, opening and closing a card (in `wb-notes-open.ts`) ----------
 
   const { create, closeCard, openFromExplorer } = createNoteOpen({
-    window, consoleHost, messages, stack, cardEl, recordOf, deskNotes, deskFences, render, syncFromEditor, flush,
+    window,
+    consoleHost,
+    messages,
+    stack,
+    cardEl,
+    recordOf,
+    deskNotes,
+    deskFences,
+    render,
+    syncFromEditor,
+    flush,
   });
 
   // ---- the card's chrome and the title (in `wb-notes-chrome.ts`) ---------------
@@ -279,10 +337,34 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // A card on top is built after the chrome, so its names reach the chrome
   // through arrows.
   const { buildCardParts } = createNoteChrome({
-    document, consoleHost, recordOf, patch, render, persistCards, closeCard, veiledNow, toggleReveal, setMarked,
-    mountEditor, syncFromEditor, markDirty, paintTitle, togglePalette, closePalette, toggleMenu, toggleIndex,
-    closeMenu, markdownHelp, pointElsewhere, renameNote, deleteNote, commitRename, endRename,
-    onTop: (el) => onTop(el), putBack: () => putBack(), floatGesture: (el, dir) => floatGesture(el, dir),
+    document,
+    consoleHost,
+    recordOf,
+    patch,
+    render,
+    persistCards,
+    closeCard,
+    veiledNow,
+    toggleReveal,
+    setMarked,
+    mountEditor,
+    syncFromEditor,
+    markDirty,
+    paintTitle,
+    togglePalette,
+    closePalette,
+    toggleMenu,
+    toggleIndex,
+    closeMenu,
+    markdownHelp,
+    pointElsewhere,
+    renameNote,
+    deleteNote,
+    commitRename,
+    endRename,
+    onTop: (el) => onTop(el),
+    putBack: () => putBack(),
+    floatGesture: (el, dir) => floatGesture(el, dir),
   });
 
   // ---- keys ----------------------------------------------------------
@@ -304,7 +386,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       // Two stages: out of the editor, then off the card. Held at the card so
       // an Escape meant for this edit never also reaches the plane.
       ev.stopPropagation();
-      const inEditor = el.querySelector<HTMLElement>(".note-body")?.contains(document.activeElement);
+      const inEditor = el
+        .querySelector<HTMLElement>(".note-body")
+        ?.contains(document.activeElement);
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (!inEditor) el.classList.remove("focused");
     });
@@ -339,7 +423,10 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // Derived, never stored: the record stays in the desk (the popup is a view,
   // not an owner), so a reload works this out again from the fence registry
   // instead of restoring a set that died with the document.
-  function isAway(record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
+  function isAway(
+    record: Pick<NoteSource, "rect"> | null | undefined,
+    fences: DeskFence[] | null | undefined,
+  ) {
     const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
     return !!held && !!consoleHost?.isDetached?.(held.id);
   }
@@ -374,7 +461,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
   function cardNodes(st: HTMLElement): CardNodes {
     const nodes: CardNodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId as string, el);
+    for (const el of st.querySelectorAll<NoteCard>(".note-card"))
+      nodes.set(el.dataset.noteId as string, el);
     return nodes;
   }
 
@@ -434,19 +522,44 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // ---- a draft that crosses a detach (in `wb-notes-drafts.ts`) ----------------
 
   const { draftOf, drafts, adoptDraft, mountHome, mountDraft } = createNoteDrafts({
-    window, cardEl, recordOf, patch, syncFromEditor, markDirty, mountEditor, paintPath,
+    window,
+    cardEl,
+    recordOf,
+    patch,
+    syncFromEditor,
+    markDirty,
+    mountEditor,
+    paintPath,
   });
 
   // ---- a card on top (in `wb-notes-on-top.ts`) ---------------------------------
 
   const { onTop, keepOnTop, putBack, onTopNow, paintShadow, floatGesture } = createNoteOnTop({
-    window, document, consoleHost, stack, stage, cardEl, recordOf, isAway, wakeCard, fragment: () => fragment,
+    window,
+    document,
+    consoleHost,
+    stack,
+    stage,
+    cardEl,
+    recordOf,
+    isAway,
+    wakeCard,
+    fragment: () => fragment,
   });
 
   // ---- the cards on the stage (in `wb-notes-stage.ts`) -------------------------
 
   const { mountCard, dropCard } = createNoteStage({
-    buildCard, drafts, mountHome, loadInto, trackDormancy, onTopNow, putBack, flush, tearDownCard, isFragment: () => fragment,
+    buildCard,
+    drafts,
+    mountHome,
+    loadInto,
+    trackDormancy,
+    onTopNow,
+    putBack,
+    flush,
+    tearDownCard,
+    isFragment: () => fragment,
   });
 
   // ---- the map (in `wb-notes-map.ts`) ------------------------------------------

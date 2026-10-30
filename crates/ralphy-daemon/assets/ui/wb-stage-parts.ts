@@ -28,12 +28,25 @@ export type StagePartsDeps = Pick<
   StageWindowDeps,
   "document" | "workspace" | "stage" | "focusWin" | "setWin" | "refreshCover"
 > &
-  Pick<StageColumnsDeps, "OPTS" | "wins" | "pageWindows" | "popups" | "focusWin" | "list" | "tearDownMember"> &
+  Pick<
+    StageColumnsDeps,
+    "OPTS" | "wins" | "pageWindows" | "popups" | "focusWin" | "list" | "tearDownMember"
+  > &
   Pick<
     FenceListDeps,
-    "window" | "document" | "OPTS" | "popups" | "tabsPane" | "newFenceId" | "saveFences" | "buildFence"
+    | "window"
+    | "document"
+    | "OPTS"
+    | "popups"
+    | "tabsPane"
+    | "newFenceId"
+    | "saveFences"
+    | "buildFence"
   > &
-  Pick<ViewDeps, "window" | "document" | "pageWindows" | "viewStore" | "focusWin" | "isDeskSettled" | "wins"> &
+  Pick<
+    ViewDeps,
+    "window" | "document" | "pageWindows" | "viewStore" | "focusWin" | "isDeskSettled" | "wins"
+  > &
   Pick<
     ChromeDeps,
     | "OPTS"
@@ -96,7 +109,23 @@ export function createStageParts(deps: StagePartsDeps) {
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
   });
-  const { restoreRect, setMax, toggleMax, paintMaxButton, isFull, isLocked, applyLock, paintLockGlyph, toggleLock, toggleFull, syncFullState, syncMaxLock, syncMaxPin, applyExtent, resetExtentEdge } = stageWindow;
+  const {
+    restoreRect,
+    setMax,
+    toggleMax,
+    paintMaxButton,
+    isFull,
+    isLocked,
+    applyLock,
+    paintLockGlyph,
+    toggleLock,
+    toggleFull,
+    syncFullState,
+    syncMaxLock,
+    syncMaxPin,
+    applyExtent,
+    resetExtentEdge,
+  } = stageWindow;
   // ---- the column paint: `wb-stage-columns.ts` (ADR-0051 §5) -------------
   // Built before the fence list, which takes `columnMeasure`.
   const columns = createStageColumns({
@@ -144,7 +173,19 @@ export function createStageParts(deps: StagePartsDeps) {
     jumpToFence: (id: string) => jumpToFence(id),
     buildFence: (f: DeskFence) => buildFence(f),
   });
-  const { fenceLocked, heldByFence, fenceEl, refreshFenceChrome, paintFenceColumns, readFenceRects, readWindowRects, fenceList, focusedFenceId, focusFence, clearFenceFocus } = fenceFloor;
+  const {
+    fenceLocked,
+    heldByFence,
+    fenceEl,
+    refreshFenceChrome,
+    paintFenceColumns,
+    readFenceRects,
+    readWindowRects,
+    fenceList,
+    focusedFenceId,
+    focusFence,
+    clearFenceFocus,
+  } = fenceFloor;
 
   // ---- the view: `wb-stage-view.ts` --------------------------------------------
   // Built before the terminal, which takes `cancelSlide`.

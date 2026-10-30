@@ -8,10 +8,23 @@
 import { WBFail } from "./wb-fail.ts";
 
 /** A peer of `/api/fleet`, as far as this dialog reads it. */
-type Peer = { daemon_id: string; name: string; environment?: string; state?: string; diagnosis?: string };
+type Peer = {
+  daemon_id: string;
+  name: string;
+  environment?: string;
+  state?: string;
+  diagnosis?: string;
+};
 
 /** What the folder the text names would do when it is added. */
-type Target = { action: string; label: string; help: string; path: string; init: boolean; create?: boolean };
+type Target = {
+  action: string;
+  label: string;
+  help: string;
+  path: string;
+  init: boolean;
+  create?: boolean;
+};
 
 /** The newest `dir.list` reply, as the daemon sent it. */
 type Listing = DaemonReplies["dir.list"];
@@ -195,7 +208,9 @@ function upText(state: State) {
 // above, then the listed folders.
 function entries(state: State) {
   const rows = listed(state);
-  return upText(state) === null ? rows : ([{ name: "..", up: true, repo: false, added: false }] as Row[]).concat(rows);
+  return upText(state) === null
+    ? rows
+    : ([{ name: "..", up: true, repo: false, added: false }] as Row[]).concat(rows);
 }
 
 function sameName(a: string, b: string, sep: string) {
@@ -217,7 +232,13 @@ function target(state: State): Target {
   const none = { action: "none", label: "Add project", help: "", path: "", init: false };
   if (!answersText(state)) return none;
   if (state.failure === "this folder does not exist") {
-    return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
+    return {
+      action: "missing",
+      label: "This folder does not exist",
+      help: "",
+      path: "",
+      init: false,
+    };
   }
   const dir = state.listing?.dir;
   if (!dir || dir.path === "") return none;
@@ -247,7 +268,13 @@ function entryTarget(state: State, dir: ListedDir, text: string, sep: string): T
   // inside a repo, where a new repository would sit in another one.
   if (!entry && !dir.root && name.trim()) return createTarget(dir, name, sep);
   if (!entry) {
-    return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
+    return {
+      action: "missing",
+      label: "This folder does not exist",
+      help: "",
+      path: "",
+      init: false,
+    };
   }
   return listedTarget(dir, entry, sep);
 }
@@ -255,7 +282,13 @@ function entryTarget(state: State, dir: ListedDir, text: string, sep: string): T
 // A folder the daemon listed in the folder `dir`.
 function listedTarget(dir: ListedDir, entry: Row, sep: string): Target {
   if (entry.error) {
-    return { action: "unreadable", label: "Cannot read this folder", help: "", path: "", init: false };
+    return {
+      action: "unreadable",
+      label: "Cannot read this folder",
+      help: "",
+      path: "",
+      init: false,
+    };
   }
   const added = entry.added || (!entry.repo && !!dir.root && !!dir.added);
   const inside = !entry.repo && dir.root ? dir.root : null;
@@ -267,7 +300,13 @@ function createTarget(dir: ListedDir, name: string, sep: string): Target {
   // Windows drops a final space or dot, so the folder would get
   // another name than the one shown.
   if (/[ .]$/.test(name)) {
-    return { action: "missing", label: "A folder name cannot end with a space or a dot", help: "", path: "", init: false };
+    return {
+      action: "missing",
+      label: "A folder name cannot end with a space or a dot",
+      help: "",
+      path: "",
+      init: false,
+    };
   }
   const path = withSep(dir.path, sep) + name;
   return {
@@ -307,7 +346,8 @@ function finalTarget(path: string, repo: boolean, added: boolean, inside: string
 // The main button: its label, and whether it can be clicked.
 function primary(state: State) {
   const t = target(state);
-  const clickable = t.action === "add" || t.action === "root" || t.action === "init" || t.action === "create";
+  const clickable =
+    t.action === "add" || t.action === "root" || t.action === "init" || t.action === "create";
   return { label: state.adding ? "Adding…" : t.label, disabled: !clickable || state.adding };
 }
 
@@ -351,19 +391,24 @@ function addPayload(state: State) {
 }
 
 function reset(state: State, patch: Partial<State>) {
-  return Object.assign({}, state, {
-    text: "",
-    needStart: true,
-    chosen: false,
-    listing: null,
-    listedText: null,
-    sentText: null,
-    failure: "",
-    loading: false,
-    active: -1,
-    wslMissing: "",
-    error: "",
-  }, patch);
+  return Object.assign(
+    {},
+    state,
+    {
+      text: "",
+      needStart: true,
+      chosen: false,
+      listing: null,
+      listedText: null,
+      sentText: null,
+      failure: "",
+      loading: false,
+      active: -1,
+      wslMissing: "",
+      error: "",
+    },
+    patch,
+  );
 }
 
 // The operator typed: a pasted WSL path moves to that peer, else the text is
@@ -372,7 +417,12 @@ function nextText(state: State, ev: Extract<Step, { type: "text" }>) {
   if (state.adding) return state;
   const wsl = mapWsl(ev.text, ev.peers);
   if (wsl && wsl.missing) {
-    return Object.assign({}, state, { text: ev.text, wslMissing: wsl.missing, active: -1, error: "" });
+    return Object.assign({}, state, {
+      text: ev.text,
+      wslMissing: wsl.missing,
+      active: -1,
+      error: "",
+    });
   }
   if (wsl) {
     return Object.assign({}, state, {
@@ -451,7 +501,13 @@ function nextPick(state: State, ev: Extract<Step, { type: "pick" }>) {
   if (ev.up) {
     const up = upText(state);
     if (up === null) return state;
-    return Object.assign({}, state, { text: up, needStart: false, chosen: true, active: -1, error: "" });
+    return Object.assign({}, state, {
+      text: up,
+      needStart: false,
+      chosen: true,
+      active: -1,
+      error: "",
+    });
   }
   // The rows on screen belong to the listed folder, not to the text: a
   // pick made before the next listing arrives must not add its name to
@@ -459,7 +515,13 @@ function nextPick(state: State, ev: Extract<Step, { type: "pick" }>) {
   const dir = state.listing && state.listing.dir;
   const base = dir ? withSep(dir.path, sep) : typedFolder(state.text);
   const text = dir && dir.path === "" ? ev.name : base + ev.name;
-  return Object.assign({}, state, { text: withSep(text, sep), needStart: false, chosen: true, active: -1, error: "" });
+  return Object.assign({}, state, {
+    text: withSep(text, sep),
+    needStart: false,
+    chosen: true,
+    active: -1,
+    error: "",
+  });
 }
 
 function next(state: State, ev: Step) {
@@ -474,7 +536,10 @@ function next(state: State, ev: Step) {
     case "text":
       return nextText(state, ev);
     case "sent":
-      return Object.assign({}, state, { seq: ev.seq, sentText: state.needStart ? null : state.text });
+      return Object.assign({}, state, {
+        seq: ev.seq,
+        sentText: state.needStart ? null : state.text,
+      });
     case "slow":
       // A reply that came first means there is nothing to wait for.
       if (ev.seq !== state.seq || state.answered === ev.seq) return state;
@@ -490,7 +555,10 @@ function next(state: State, ev: Step) {
     case "added":
       return Object.assign({}, state, { adding: false, open: false });
     case "addFailed":
-      return Object.assign({}, state, { adding: false, error: ev.message || "The project was not added." });
+      return Object.assign({}, state, {
+        adding: false,
+        error: ev.message || "The project was not added.",
+      });
     default:
       return state;
   }

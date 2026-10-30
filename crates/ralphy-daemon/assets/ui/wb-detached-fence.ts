@@ -128,11 +128,15 @@ export function wireDetachedFence(window: Window, document: Document) {
     WBConsole.applyColumns(WBColumns.painted(g, cap), { unmax: null, raise: false, ...opts });
   };
   function openColumns() {
-    const all = WBColumns.fromRects(consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })));
+    const all = WBColumns.fromRects(
+      consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })),
+    );
     const ids = WBColumns.flat(all);
     const first = ids[0];
     if (first === undefined) return;
-    const old = WBColumns.flat(grid)[0] ?? stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
+    const old =
+      WBColumns.flat(grid)[0] ??
+      stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
     grid = ids.length >= 2 ? all : [];
     paintGrid(all, { unmax: old && !ids.includes(old) ? old : null, raise: true });
     WBConsole.focusColumn(first);
@@ -150,7 +154,11 @@ export function wireDetachedFence(window: Window, document: Document) {
     if (!head) return;
     const byId = new Map(consoles().map((w) => [w._deskId, w]));
     const headWin = byId.get(head);
-    if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
+    if (
+      headWin &&
+      !headWin.classList.contains("maximized") &&
+      !headWin.classList.contains("column")
+    ) {
       return restoreColumn(head);
     }
     const kept = WBColumns.keep(grid, new Set(byId.keys()));
@@ -165,7 +173,9 @@ export function wireDetachedFence(window: Window, document: Document) {
   // Each press keeps the next note of this window on top; the card's
   // own Put back takes it off. One card on top at a time.
   function nextNoteOnTop() {
-    const ids: (string | null | undefined)[] = [...stageEl().querySelectorAll<HTMLElement>(".note-card")].map((el) => el.dataset.noteId);
+    const ids: (string | null | undefined)[] = [
+      ...stageEl().querySelectorAll<HTMLElement>(".note-card"),
+    ].map((el) => el.dataset.noteId);
     const now = window.WBNotes?.onTopNow();
     if (!ids.length || (now && ids.length === 1)) return;
     window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);
@@ -365,10 +375,18 @@ export function wireDetachedFence(window: Window, document: Document) {
       if (heardHere(m)) {
         // The answer is the same, and it is what re-adopts this window after
         // the opener's reload.
-        peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+        peer = WBConsole.peerFold(
+          peer,
+          { type: "beat", at: Date.now() },
+          LINK.PEER_WINDOW_MS,
+        ).state;
         say("popup-here");
       } else if (m.type === "origin-beat") {
-        peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+        peer = WBConsole.peerFold(
+          peer,
+          { type: "beat", at: Date.now() },
+          LINK.PEER_WINDOW_MS,
+        ).state;
       } else if (m.type === "origin-focus" && forThisFence(m)) {
         window.focus();
       } else if (m.type === "origin-close" && forThisFence(m)) {

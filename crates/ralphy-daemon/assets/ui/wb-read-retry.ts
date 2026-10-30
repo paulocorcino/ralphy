@@ -16,7 +16,10 @@ const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 // Run `read` up to `ATTEMPTS` times, waiting `RETRY_DELAY_MS` between the
 // tries. A `Refused` error, or the last try failing, rejects with that error.
-export async function patiently<T>(read: () => Promise<T>, wait: (ms: number) => Promise<void> = pause): Promise<T> {
+export async function patiently<T>(
+  read: () => Promise<T>,
+  wait: (ms: number) => Promise<void> = pause,
+): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await read();

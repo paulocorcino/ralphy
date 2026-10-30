@@ -189,9 +189,7 @@ export const WBGeometry = (function () {
   // never compared with itself — a move must not refuse its own start rect.
   function fenceFits(fences: readonly Placed[], candidate: Placed) {
     const rect = candidate?.rect || {};
-    return !(fences || []).some(
-      (f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
-    );
+    return !(fences || []).some((f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}));
   }
 
   // The move delta a fence and the members it carries may actually take: the
@@ -325,7 +323,6 @@ export const WBGeometry = (function () {
     );
   }
 
-
   // Ease-out cubic on a 0..1 clock: fast off the mark, settling into the target.
   function slideEase(t: number) {
     const x = Math.min(1, Math.max(0, t));
@@ -372,7 +369,9 @@ export const WBGeometry = (function () {
   }
 
   // The offset a client kept, or null when either value is not a finite number.
-  function storedOffset(stored: { left?: unknown; top?: unknown } | null | undefined): Offset | null {
+  function storedOffset(
+    stored: { left?: unknown; top?: unknown } | null | undefined,
+  ): Offset | null {
     const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const left = num(stored?.left);
     const top = num(stored?.top);
@@ -384,7 +383,12 @@ export const WBGeometry = (function () {
     const v = sizeOrZero(viewport);
     return (rects || []).some((rect) => {
       const r = rectOrZero(rect);
-      return r.left < at.left + v.width && r.left + r.width > at.left && r.top < at.top + v.height && r.top + r.height > at.top;
+      return (
+        r.left < at.left + v.width &&
+        r.left + r.width > at.left &&
+        r.top < at.top + v.height &&
+        r.top + r.height > at.top
+      );
     });
   }
 
@@ -405,7 +409,12 @@ export const WBGeometry = (function () {
   // point. Each edge contributes a pressure in `[0, band]` and the axis takes
   // their DIFFERENCE — deliberately, so a viewport narrower than two bands
   // cancels instead of oscillating between its own two edges.
-  function panNudge(pointer: Point, viewport: ClientBox, band?: number | null, step?: number | null) {
+  function panNudge(
+    pointer: Point,
+    viewport: ClientBox,
+    band?: number | null,
+    step?: number | null,
+  ) {
     const b = band == null ? PAN_BAND : band;
     const s = step == null ? PAN_STEP : step;
     const press = (v: number) => Math.max(0, Math.min(v, b));
@@ -471,7 +480,11 @@ export const WBGeometry = (function () {
   // title bar a locked fence holds (the `fenceHolds` fold); when every slot is
   // held, the box moves right of the fence that holds it until one is free.
   // `moved` says the box left the viewport's cascade, so the caller reveals it.
-  function freeSpawnRect(view: Partial<Rect> | null | undefined, index: number, fences: readonly DeskFence[]) {
+  function freeSpawnRect(
+    view: Partial<Rect> | null | undefined,
+    index: number,
+    fences: readonly DeskFence[],
+  ) {
     const v = view || {};
     const { width, height } = spawnSize(v);
     const at = (k: number) => ({

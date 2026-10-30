@@ -94,7 +94,11 @@ const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
 export function dragThreshold(pointerType: string) {
   return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
 }
-export function dragBegins(start: Point | null | undefined, pointer: Point | null | undefined, threshold: number) {
+export function dragBegins(
+  start: Point | null | undefined,
+  pointer: Point | null | undefined,
+  threshold: number,
+) {
   const dx = (pointer?.x || 0) - (start?.x || 0);
   const dy = (pointer?.y || 0) - (start?.y || 0);
   return Math.hypot(dx, dy) >= threshold;
@@ -232,24 +236,29 @@ export function pasteOffered(clipboard: Clipboard | undefined) {
 // key was pressed on, and only while it is still attached. Otherwise the paste
 // is dropped. A refused read is dropped too. Not pure like the folds above: it
 // acts on `t`, and it reads `win._term` when the read settles.
-type PasteTerm = { pasteImage(image: Blob): unknown; term: { paste(text: string): void; focus(): void } };
+type PasteTerm = {
+  pasteImage(image: Blob): unknown;
+  term: { paste(text: string): void; focus(): void };
+};
 export function pasteAfterRead<T extends PasteTerm>(
   win: { _term: T | null },
   t: T,
   read: Promise<{ image?: Blob; text?: string }>,
 ) {
   const attached = () => win._term === t;
-  return read
-    .then(({ image, text }) => {
-      if (!attached()) return;
-      if (image) t.pasteImage(image);
-      else if (text) t.term.paste(text);
-    })
-    // The key bar shows nothing for a refused or failed read.
-    .catch(() => {})
-    .finally(() => {
-      if (attached()) t.term.focus();
-    });
+  return (
+    read
+      .then(({ image, text }) => {
+        if (!attached()) return;
+        if (image) t.pasteImage(image);
+        else if (text) t.term.paste(text);
+      })
+      // The key bar shows nothing for a refused or failed read.
+      .catch(() => {})
+      .finally(() => {
+        if (attached()) t.term.focus();
+      })
+  );
 }
 
 // THE RIGHT BUTTON is copy or paste, and the browser menu never opens over a
@@ -305,7 +314,13 @@ export function phoneBleed(maxed: boolean, viewportWidth: number) {
 // takes buffer-absolute rows, hence `viewportY`. Clamped to the screen so a
 // finger that slid off the bottom selects to the last row; a zero/NaN cell
 // height answers the top row, not NaN.
-export function selectionRow(clientY: number, screenTop: number, cellHeight: number, rows: number, viewportY: number) {
+export function selectionRow(
+  clientY: number,
+  screenTop: number,
+  cellHeight: number,
+  rows: number,
+  viewportY: number,
+) {
   const base = Number.isFinite(viewportY) ? viewportY : 0;
   if (!Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(clientY)) return base;
   const last = Math.max(0, (Number.isFinite(rows) ? rows : 1) - 1);
@@ -355,9 +370,7 @@ export const IMAGE_PASTE_MAX = 4 * 1024 * 1024;
 // What `pasteDecision` reads of a paste.
 type PasteInput = { types: readonly string[] | null | undefined; size: number; watching: boolean };
 export function pasteDecision({ types, size, watching }: PasteInput) {
-  const hasImage = (types || []).some(
-    (t) => typeof t === "string" && t.startsWith("image/"),
-  );
+  const hasImage = (types || []).some((t) => typeof t === "string" && t.startsWith("image/"));
   if (!hasImage) return "passthrough";
   if (watching) return "watched";
   if (!(size >= 0) || size > IMAGE_PASTE_MAX) return "too-large";

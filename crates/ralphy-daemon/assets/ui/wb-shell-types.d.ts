@@ -61,7 +61,10 @@ export type ShellLate = {
 };
 
 /** The repo's ready plan on the board: its text and `WBRun.planSummary` of it. */
-export type ReadyPlan = { md: string; summary: ReturnType<typeof import("./wb-runs.ts").WBRun.planSummary> };
+export type ReadyPlan = {
+  md: string;
+  summary: ReturnType<typeof import("./wb-runs.ts").WBRun.planSummary>;
+};
 
 /** The run pill of a board card (`WBKanban.runningFor`), or `null`. */
 export type RunPill = ReturnType<typeof import("./wb-kanban.ts").WBKanban.runningFor>;
@@ -122,7 +125,10 @@ export type TabOpen = {
 
 /** What a file tab opens with: the bytes, or why the daemon served none.
  * `null`: there is nothing to show, and the tab is closed. */
-export type TabBody = { content: string; encoding?: string; bom?: boolean } | { refused: string } | null;
+export type TabBody =
+  | { content: string; encoding?: string; bom?: boolean }
+  | { refused: string }
+  | null;
 
 /** A diff tab's two sides (`WBChanges.diffTarget`). */
 export type DiffTarget = ReturnType<typeof import("./wb-changes.ts").WBChanges.diffTarget>;
@@ -130,7 +136,15 @@ export type DiffTarget = ReturnType<typeof import("./wb-changes.ts").WBChanges.d
 /** A row of the context menu: a separator, or an action. */
 export type MenuItem =
   | { sep: true }
-  | { sep?: false; label: string; icon: string; run: () => void; danger?: boolean; disabled?: boolean; title?: string };
+  | {
+      sep?: false;
+      label: string;
+      icon: string;
+      run: () => void;
+      danger?: boolean;
+      disabled?: boolean;
+      title?: string;
+    };
 
 /** A `file.write` payload: the pane's text, its encoding and its byte order mark. */
 export type SavePayload = CommandPayload & { encoding?: string; bom?: boolean };

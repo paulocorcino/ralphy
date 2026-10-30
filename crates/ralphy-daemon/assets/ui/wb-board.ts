@@ -150,8 +150,7 @@ export function wbBoard() {
       if (!held || this.$store.connection.writeLocked()) return;
       const ok = await this.$store.modals.askConfirm({
         title: "Discard this plan?",
-        message:
-          `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
+        message: `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
         confirmLabel: "Discard",
         danger: true,
       });
@@ -267,7 +266,9 @@ export function wbBoard() {
     kanbanColumns() {
       const all = this.projectIssues();
       const K = window.WBKanban;
-      const shown = all.filter((i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
+      const shown = all.filter(
+        (i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel),
+      );
       const bucket: Record<ReturnType<typeof K.columnOf>, BoardIssue[]> = {
         backlog: [],
         agent: [],
@@ -318,7 +319,10 @@ export function wbBoard() {
     },
     labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) || window.WBKanban.labelColor(l);
+      return (
+        this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) ||
+        window.WBKanban.labelColor(l)
+      );
     },
     labelInk(l: string) {
       return window.WBKanban.labelInk(l);
@@ -366,7 +370,9 @@ export function wbBoard() {
       // on every refresh, and two projects routinely carry the same number.
       const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
       const stale = () =>
-        gen !== this._issueDetailGen || this.$store.projects.openSlug !== slug || this.kanbanSel !== number;
+        gen !== this._issueDetailGen ||
+        this.$store.projects.openSlug !== slug ||
+        this.kanbanSel !== number;
       const fail = (msg: string) => {
         if (stale()) return;
         this.issueError = msg;
@@ -402,7 +408,9 @@ export function wbBoard() {
     // The GitHub URL of an issue on the OPEN project, from its `remoteUrl`
     // (#204); `null` with no GitHub remote. Only the lookup stays here.
     githubUrl(number: number) {
-      const p = this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === this.$store.projects.openSlug);
+      const p = this.$store.projects.projects.find(
+        (x) => this.$store.projects.repoRef(x) === this.$store.projects.openSlug,
+      );
       return WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
@@ -412,7 +420,12 @@ export function wbBoard() {
       const all = this.projectIssues();
       return iss.blockedBy.map((n) => {
         const b = all.find((x) => x.number === n);
-        return { number: n, open: b ? b.state === "open" : false, known: !!b, title: b?.title || "" };
+        return {
+          number: n,
+          open: b ? b.state === "open" : false,
+          known: !!b,
+          title: b?.title || "",
+        };
       });
     },
 
@@ -432,7 +445,9 @@ export function wbBoard() {
       this.labelMenuOpen = !this.labelMenuOpen;
       if (!this.labelMenuOpen) return;
       void this.$nextTick(() =>
-        document.querySelector(".kd-label-menu")?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+        document
+          .querySelector(".kd-label-menu")
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
       );
     },
     hasLabel(iss: BoardIssue | null, label: string) {
@@ -448,7 +463,11 @@ export function wbBoard() {
       const prev = [...(iss.labels || [])];
       const slug = this.$store.projects.openSlug;
       if (!slug) return;
-      this.$store.board.issueLabelsSet(slug, iss.number, has ? prev.filter((l) => l !== label) : [...prev, label]);
+      this.$store.board.issueLabelsSet(
+        slug,
+        iss.number,
+        has ? prev.filter((l) => l !== label) : [...prev, label],
+      );
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
       void (async () => {
@@ -461,7 +480,9 @@ export function wbBoard() {
           });
           if (WBFail.isError(reply)) {
             this.$store.board.issueLabelsSet(slug, iss.number, prev);
-            this.$store.modals.flash(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
+            this.$store.modals.flash(
+              WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."),
+            );
             return; // a refused write changed nothing to re-read
           }
           // Re-fold so the column reflects the server, not the optimistic
@@ -505,7 +526,9 @@ export function wbBoard() {
       window.addEventListener("workbench:project-changed", () => this.boardFollowProject());
       // A refresh trigger of the page (#301): the runs socket, a reopened
       // socket, the tab becoming visible, a login. The predicate decides.
-      window.addEventListener("workbench:board-refresh", (e) => this.maybeRefreshBoard(e.detail.trigger));
+      window.addEventListener("workbench:board-refresh", (e) =>
+        this.maybeRefreshBoard(e.detail.trigger),
+      );
       // The board opened (`toggleKanban`): lazy-load the tracker for the open
       // project.
       window.addEventListener("workbench:board-opened", () => {
@@ -526,7 +549,9 @@ export function wbBoard() {
 function boardFold(slug: string, timeoutMs: number) {
   return Promise.race([
     window.WBDaemon.observe("board.list", { repo: slug }),
-    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("board fold timed out")), timeoutMs)),
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("board fold timed out")), timeoutMs),
+    ),
   ]);
 }
 
@@ -556,6 +581,7 @@ function rowBlockers(row: BoardRow) {
 
 // The issue of an `issue.show` reply, or null when the reply carries none.
 function shownIssue(reply: ReplyOf<"issue.show">) {
-  if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") return null;
+  if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object")
+    return null;
   return reply.issue;
 }

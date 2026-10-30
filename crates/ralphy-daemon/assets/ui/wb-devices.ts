@@ -74,7 +74,11 @@ const BROWSER_NAMES: Record<string, string> = {
   webview: "an app's browser view",
   in_app: "a social app's browser",
 };
-const FORM_NAMES: Record<string, string> = { phone: "phone", tablet: "tablet", desktop: "computer" };
+const FORM_NAMES: Record<string, string> = {
+  phone: "phone",
+  tablet: "tablet",
+  desktop: "computer",
+};
 const CHANGED_NAMES: Record<string, string> = {
   os: "system",
   browser: "browser",
@@ -114,7 +118,8 @@ function withVersion(name: string, version: string | null) {
 export function deviceName(d: Device) {
   const parts = [];
   if (d.os) parts.push(withVersion(OS_NAMES[d.os] || "Other system", d.os_version));
-  if (d.browser) parts.push(withVersion(BROWSER_NAMES[d.browser] || "Other browser", d.browser_version));
+  if (d.browser)
+    parts.push(withVersion(BROWSER_NAMES[d.browser] || "Other browser", d.browser_version));
   if (d.form) parts.push(FORM_NAMES[d.form] || d.form);
   return parts.length ? parts.join(" · ") : "A device that sent no facts yet";
 }
@@ -124,7 +129,13 @@ export function rows(reply: { devices?: Device[] }, formatAt: (at: string) => st
     device: d.device,
     this: d.this === true,
     name: deviceName(d),
-    detail: [d.model, d.gpu, d.ip, `last seen ${formatAt(d.last_seen)}`, d.events === 1 ? "1 event" : `${d.events} events`]
+    detail: [
+      d.model,
+      d.gpu,
+      d.ip,
+      `last seen ${formatAt(d.last_seen)}`,
+      d.events === 1 ? "1 event" : `${d.events} events`,
+    ]
       .filter(Boolean)
       .join(" · "),
   }));

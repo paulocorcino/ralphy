@@ -56,8 +56,7 @@ function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
     const row = ENCODINGS[i];
     if (!row) continue;
     const [, name, bom] = row;
-    const current =
-      String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
+    const current = String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
     item.classList.toggle("current", current);
   }
 }
@@ -132,7 +131,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       readWith(rec, name)
         .then((reply) => {
           if (!reply || reply.status !== "ok") {
-            showSaveError(rec, WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
+            showSaveError(
+              rec,
+              WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`),
+            );
             return;
           }
           rec.encoding = reply.encoding || name;
@@ -141,7 +143,9 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
           if (rec.refused !== null) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
         })
-        .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
+        .catch(() =>
+          showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`),
+        );
     };
     if (!rec.dirty) return go();
     // The design-system dialog where there is a shell; `window.confirm` only

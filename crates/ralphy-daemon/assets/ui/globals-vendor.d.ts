@@ -15,10 +15,14 @@ interface XtermTerminal {
   unicode: { activeVersion: string };
   modes: { mouseTrackingMode: string; applicationCursorKeysMode: boolean };
   buffer: { active: { type: string; viewportY: number; baseY: number } };
-  parser: { registerOscHandler(ident: number, handler: (data: string) => boolean): XtermDisposable };
+  parser: {
+    registerOscHandler(ident: number, handler: (data: string) => boolean): XtermDisposable;
+  };
   /** xterm's private core: only the scrollbar's visibility is read through it
    *  (`showScrollbarWhileNeeded`, wb-console-terminal.ts). */
-  _core?: { _viewport?: { _scrollableElement?: { updateOptions(options: { vertical: number }): void } } };
+  _core?: {
+    _viewport?: { _scrollableElement?: { updateOptions(options: { vertical: number }): void } };
+  };
   open(parent: HTMLElement): void;
   loadAddon(addon: XtermAddon): void;
   write(data: string | Uint8Array, callback?: () => void): void;
@@ -119,7 +123,13 @@ interface WunderbaumNode {
 }
 
 /** One row a tree level is loaded from. */
-type WunderbaumSource = { title: string; folder?: boolean; lazy?: boolean; icon?: string; classes?: string };
+type WunderbaumSource = {
+  title: string;
+  folder?: boolean;
+  lazy?: boolean;
+  icon?: string;
+  classes?: string;
+};
 
 /** What every Wunderbaum event handler gets. */
 interface WunderbaumEvent {
@@ -197,10 +207,16 @@ interface WunderbaumDndEvent extends WunderbaumEvent {
 declare var marked: { parse(markdown: string): string };
 /** The vendored DOMPurify (`vendor/dompurify.min.js`). */
 declare var DOMPurify: {
-  sanitize(dirty: string, config?: { USE_PROFILES?: { svg?: boolean; svgFilters?: boolean; html?: boolean } }): string;
+  sanitize(
+    dirty: string,
+    config?: { USE_PROFILES?: { svg?: boolean; svgFilters?: boolean; html?: boolean } },
+  ): string;
 };
 /** The vendored xterm.js and its addons (`vendor/xterm*.js`). */
-declare var Terminal: new (options: { convertEol: boolean; theme: { [color: string]: string } }) => XtermTerminal;
+declare var Terminal: new (options: {
+  convertEol: boolean;
+  theme: { [color: string]: string };
+}) => XtermTerminal;
 declare var FitAddon: { FitAddon: new () => XtermFitAddon };
 declare var WebglAddon: { WebglAddon: new () => XtermWebglAddon };
 declare var WebLinksAddon: { WebLinksAddon: new () => XtermAddon };
@@ -218,4 +234,8 @@ declare var mar10: {
 declare function qrcode(
   typeNumber: number,
   errorCorrection: string,
-): { addData(data: string): void; make(): void; createImgTag(cellSize: number, margin: number): string };
+): {
+  addData(data: string): void;
+  make(): void;
+  createImgTag(cellSize: number, margin: number): string;
+};

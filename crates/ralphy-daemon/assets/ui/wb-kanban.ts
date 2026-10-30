@@ -45,7 +45,6 @@
 import { WBRun } from "./wb-runs.ts";
 import type { Run } from "./wb-runs.ts";
 
-
 /** One issue of a `board.list` reply (the CLI's board fold). */
 export type BoardRow = {
   number: number;
@@ -286,7 +285,14 @@ export const WBKanban = {
       if (!iss) continue;
       const st = WBRun.issueState(r, iss);
       if (st === "planning" || st === "executing" || st === "sleep") {
-        return { runid: r.runid, face: r.face, agent: r.agent, state: st, glyph: WBRun.GLYPH[st], phase: r.phase };
+        return {
+          runid: r.runid,
+          face: r.face,
+          agent: r.agent,
+          state: st,
+          glyph: WBRun.GLYPH[st],
+          phase: r.phase,
+        };
       }
     }
     return null;
@@ -314,7 +320,13 @@ export const WBKanban = {
     boardOpen,
     docVisible,
     focused = true,
-  }: { trigger: string; sinceMs: number; boardOpen: boolean; docVisible: boolean; focused?: boolean }) {
+  }: {
+    trigger: string;
+    sinceMs: number;
+    boardOpen: boolean;
+    docVisible: boolean;
+    focused?: boolean;
+  }) {
     if (!boardOpen || !docVisible) return false;
     switch (trigger) {
       case "manual":

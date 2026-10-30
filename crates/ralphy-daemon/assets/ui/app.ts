@@ -183,14 +183,17 @@ export function shell() {
           slug: p.slug,
         });
         // `unknown repo` means already gone: the state this click asks for.
-        const gone =
-          !WBFail.isError(reply) || WBFail.message(reply, "") === "unknown repo";
+        const gone = !WBFail.isError(reply) || WBFail.message(reply, "") === "unknown repo";
         if (!gone) {
-          this.$store.modals.flash(WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
+          this.$store.modals.flash(
+            WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."),
+          );
           return;
         }
         // Identity is `repoRef`, not the slug: a peer can list the same slug.
-        this.$store.projects.setProjects(this.$store.projects.projects.filter((x) => this.$store.projects.repoRef(x) !== ref));
+        this.$store.projects.setProjects(
+          this.$store.projects.projects.filter((x) => this.$store.projects.repoRef(x) !== ref),
+        );
         if (this.$store.projects.openSlug === ref) {
           this.$store.projects.setOpen(null);
           this.projectChanged(ref);
@@ -207,11 +210,13 @@ export function shell() {
     dotTitle(state: string, detail?: string) {
       if (state === "silent") return agentStateTitle(state, detail);
       return (
-        ({
-          live: "A console is open",
-          waiting: "An agent is waiting for you",
-          offline: "The folder cannot be reached",
-        } as Record<string, string>)[state] || "No console is open"
+        (
+          {
+            live: "A console is open",
+            waiting: "An agent is waiting for you",
+            offline: "The folder cannot be reached",
+          } as Record<string, string>
+        )[state] || "No console is open"
       );
     },
     dotClass(state: string) {
@@ -269,7 +274,7 @@ export function shell() {
           this.$store.projects.rowOpen(p) ||
           p.slug.toLowerCase().includes(q) ||
           p.branch.toLowerCase().includes(q) ||
-          this.repoLabel(p).toLowerCase().includes(q)
+          this.repoLabel(p).toLowerCase().includes(q),
       );
     },
 

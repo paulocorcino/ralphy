@@ -15,10 +15,34 @@ const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "s
 
 // Neither renderable source nor image: refused.
 const BINARY_EXT = new Set([
-  "pdf", "zip", "gz",
-  "tar", "rar", "7z", "exe", "dll", "so", "dylib", "bin", "class", "jar", "wasm",
-  "mp3", "wav", "flac", "ogg", "mp4", "mov", "avi", "mkv", "webm", "woff",
-  "woff2", "ttf", "eot", "otf",
+  "pdf",
+  "zip",
+  "gz",
+  "tar",
+  "rar",
+  "7z",
+  "exe",
+  "dll",
+  "so",
+  "dylib",
+  "bin",
+  "class",
+  "jar",
+  "wasm",
+  "mp3",
+  "wav",
+  "flac",
+  "ogg",
+  "mp4",
+  "mov",
+  "avi",
+  "mkv",
+  "webm",
+  "woff",
+  "woff2",
+  "ttf",
+  "eot",
+  "otf",
 ]);
 
 function extOf(name: string) {

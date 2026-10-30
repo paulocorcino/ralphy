@@ -48,7 +48,8 @@ type LevelView = { expandedRels: string[]; activeRel: string | null; scrollTop: 
 export function liveNode(files: ReconcileFiles, node: WunderbaumNode, rel: string) {
   if (node.tree) return node;
   const raw = files.rawTree();
-  const live = rel === "" ? raw?.root : raw?.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
+  const live =
+    rel === "" ? raw?.root : raw?.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
   if (!live || live.isLoading?.()) return undefined;
   return live;
 }
@@ -116,7 +117,11 @@ function releaseWaiters(waiters: Map<string, (() => void)[]>, rel: string) {
 }
 
 // The reentrancy guard of a level's reconcile (`reconcileLevel` of wb-files.ts).
-export async function reconcileLevel(files: PassFiles, node: WunderbaumNode, rel: string): Promise<void> {
+export async function reconcileLevel(
+  files: PassFiles,
+  node: WunderbaumNode,
+  rel: string,
+): Promise<void> {
   // Reentrancy guard: overlapping removeChildren()+load() passes double
   // the children. A pass in flight for `rel` re-runs once when it finishes.
   files._reconciling ||= new Set();
@@ -182,5 +187,4 @@ export async function reconcileOnce(files: PassFiles, nodeAtCall: WunderbaumNode
   if (hasGitignore) files.forgetValidatedBelow(rel);
   await reexpand(files, view.expandedRels);
   await restoreView(files, seq, view);
-
 }

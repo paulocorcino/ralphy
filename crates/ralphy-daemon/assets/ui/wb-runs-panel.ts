@@ -138,7 +138,8 @@ export function wbRuns() {
       // Per-issue: tier routing gives two issues of one run different models.
       const seg = WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;
-      if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
+      if (iss.blockedBy?.length)
+        t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
       return t;
     },
     // Run → board (#301): a trail node opens that issue's detail. The Runs
@@ -146,7 +147,11 @@ export function wbRuns() {
     // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE the issue opens
     // (wb-board.ts).
     focusIssue(number: number) {
-      window.WB.emit("run-issue-focus", { project: this.$store.projects.openSlug, runid: this.$store.runs.currentRun()?.runid, issue: number });
+      window.WB.emit("run-issue-focus", {
+        project: this.$store.projects.openSlug,
+        runid: this.$store.runs.currentRun()?.runid,
+        issue: number,
+      });
       if (this.runsOpen) this.toggleRuns();
       this.trailFocus = null;
       if (!this.kanbanOpen) this.toggleKanban();
@@ -192,8 +197,7 @@ export function wbRuns() {
       // not `window.confirm` (blocks the page, ignores the theme).
       const ok = await this.$store.modals.askConfirm({
         title: "Stop this run?",
-        message:
-          "Stops the current issue. Commits already made are kept.",
+        message: "Stops the current issue. Commits already made are kept.",
         confirmLabel: "Stop",
         danger: true,
       });
@@ -276,7 +280,9 @@ export function wbRuns() {
       const wanted = this.planIssueWanted(run);
       if (this.planProseIsCurrent(run)) {
         // The prose IS this issue's, but may be the last good copy, not live.
-        return run.planReadFailed ? "Could not read the plan. Showing the last version loaded." : "";
+        return run.planReadFailed
+          ? "Could not read the plan. Showing the last version loaded."
+          : "";
       }
       const theirs = this.planProseIssue(run);
       if (theirs != null) {
@@ -386,12 +392,19 @@ export function wbRuns() {
       // The run pill of a board card (#301).
       window.addEventListener("workbench:run-open", (e) => this.openRunFor(e.detail.issue));
       // "Open the run" in the attention list.
-      window.addEventListener("workbench:run-select", (e) => this.openRun(e.detail.repo, e.detail.runid));
+      window.addEventListener("workbench:run-select", (e) =>
+        this.openRun(e.detail.repo, e.detail.runid),
+      );
       // A raw output chunk (`window.WBRuns.output`), capped so the DOM never
       // grows unbounded.
-      window.addEventListener("workbench:run-output", (e) => (this.rawFeed = (this.rawFeed + e.detail.text).slice(-8000)));
+      window.addEventListener(
+        "workbench:run-output",
+        (e) => (this.rawFeed = (this.rawFeed + e.detail.text).slice(-8000)),
+      );
       // A terminal verb frame (wb-daemon.ts).
-      window.addEventListener("workbench:run-verb-failed", (e) => this.runVerbFailed(e.detail.message));
+      window.addEventListener("workbench:run-verb-failed", (e) =>
+        this.runVerbFailed(e.detail.message),
+      );
     },
   });
 }

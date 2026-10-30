@@ -40,7 +40,11 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
     return;
   }
   // Pinned to the selection at open (#407): both sides read `t.checkout`.
-  const t = WBChanges.diffTarget(entry, project, window.Alpine.store("checkouts").checkoutOf(project));
+  const t = WBChanges.diffTarget(
+    entry,
+    project,
+    window.Alpine.store("checkouts").checkoutOf(project),
+  );
   if (store.tabs.some((x) => x.id === t.id)) {
     store.activate(t.id);
     return;
@@ -63,7 +67,9 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
     const refuse = (reason: string) => {
       if (refused) return null;
       refused = true;
-      window.Alpine.store("modals").flash?.(WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
+      window.Alpine.store("modals").flash?.(
+        WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."),
+      );
       store.closeTab(t.id);
       return null;
     };
@@ -107,7 +113,13 @@ function openChangedBinary(store: DiffTabs, project: string, entry: ChangeEntry,
     return;
   }
   const title = path.split("/").pop() ?? path;
-  store.openTab({ project, path, title, ftype, checkout: window.Alpine.store("checkouts").checkoutOf(project) });
+  store.openTab({
+    project,
+    path,
+    title,
+    ftype,
+    checkout: window.Alpine.store("checkouts").checkoutOf(project),
+  });
 }
 
 // The diff's HEAD side; an added/untracked path diffs against emptiness.

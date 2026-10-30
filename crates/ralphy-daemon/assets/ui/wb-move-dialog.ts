@@ -62,14 +62,20 @@ export function wbMoveDialog() {
       // Same checkout as the tree the row came from (#406).
       const listing = await WBDaemon.observe(
         "tree.list",
-        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: dir }, this.$store.checkouts.checkoutOf(this.$store.projects.openSlug)),
+        WBDaemon.withCheckout(
+          { repo: this.$store.projects.openSlug, path: dir },
+          this.$store.checkouts.checkoutOf(this.$store.projects.openSlug),
+        ),
       ).catch(() => null);
       if (seq !== this._movePickSeq) return;
       this.movePick.busy = false;
       // A refused listing is a REASON, not an empty folder.
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
         this.movePick.entries = [];
-        this.movePick.error = WBFail.failed(listing, "Could not list the folder: the daemon gave no reason.");
+        this.movePick.error = WBFail.failed(
+          listing,
+          "Could not list the folder: the daemon gave no reason.",
+        );
         return;
       }
       const from = this.movePick.from;

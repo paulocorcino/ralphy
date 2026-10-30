@@ -64,7 +64,14 @@ export type Item = {
   max?: number;
 };
 /** One nav section of the Settings dialog. */
-export type Section = { id: string; title: string; icon: string; scope: Scope; blurb: string; items: Item[] };
+export type Section = {
+  id: string;
+  title: string;
+  icon: string;
+  scope: Scope;
+  blurb: string;
+  items: Item[];
+};
 
 export const WB_SETTINGS: Section[] = [
   {
@@ -105,7 +112,8 @@ export const WB_SETTINGS: Section[] = [
     title: "Daemon",
     icon: "bi-hdd-network",
     scope: "daemon",
-    blurb: "The background service that hosts this UI. Shared by every project. Set the password and two-factor in the account menu, under “Security settings”.",
+    blurb:
+      "The background service that hosts this UI. Shared by every project. Set the password and two-factor in the account menu, under “Security settings”.",
     items: [
       {
         key: "daemon.bind",
@@ -197,8 +205,7 @@ export const WB_SETTINGS: Section[] = [
     title: "Devices",
     icon: "bi-phone",
     scope: "daemon",
-    blurb:
-      "The browsers that connected to this daemon, from where, and what each one changed.",
+    blurb: "The browsers that connected to this daemon, from where, and what each one changed.",
     items: [],
   },
   {

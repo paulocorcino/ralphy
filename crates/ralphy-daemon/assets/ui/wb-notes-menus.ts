@@ -32,7 +32,12 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   // other opened.
   let openMenu: HTMLElement | null = null;
   let openMenuTrigger = "";
-  function openDrop(el: NoteCard, popSelector: string, triggerSelector: string, fill: (pop: HTMLElement) => boolean | void) {
+  function openDrop(
+    el: NoteCard,
+    popSelector: string,
+    triggerSelector: string,
+    fill: (pop: HTMLElement) => boolean | void,
+  ) {
     const pop = el.querySelector<HTMLElement>(popSelector);
     if (!pop) return;
     const wasOpen = !pop.hidden;
@@ -130,7 +135,11 @@ export function createNoteMenus(deps: NoteMenusDeps) {
     document.removeEventListener("pointerdown", closeOnOutside, true);
   }
   function closeOnOutside(ev: PointerEvent) {
-    if (openMenu && !openMenu.contains(ev.target as Node | null) && !(ev.target as Element | null)?.closest?.(openMenuTrigger)) {
+    if (
+      openMenu &&
+      !openMenu.contains(ev.target as Node | null) &&
+      !(ev.target as Element | null)?.closest?.(openMenuTrigger)
+    ) {
       closeMenu();
     }
   }

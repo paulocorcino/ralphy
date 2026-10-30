@@ -4,10 +4,20 @@
 // `globals-vendor.d.ts`.
 
 /** A value JSON can carry. */
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue | undefined };
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue | undefined };
 
 /** The `payload` of a `/ws/command` command: the verb's arguments. */
-type CommandPayload = { repo?: string | null; checkout?: string; [field: string]: JsonValue | undefined };
+type CommandPayload = {
+  repo?: string | null;
+  checkout?: string;
+  [field: string]: JsonValue | undefined;
+};
 
 // `filter(Boolean)` keeps only the truthy items, but the lib's own type for it
 // keeps the falsy members in the item type.
@@ -51,7 +61,12 @@ interface DaemonReplies {
     modified?: number;
     readonly?: boolean;
     ignored?: boolean;
-    type?: { class: "text" | "image" | "binary" | "too_large"; encoding?: string; bom?: boolean; image?: string };
+    type?: {
+      class: "text" | "image" | "binary" | "too_large";
+      encoding?: string;
+      bom?: boolean;
+      image?: string;
+    };
   };
   /** One folder. With `truncated` the numbers are a lower bound. A second walk
    * while one runs answers `reason: "busy"`. */
@@ -74,19 +89,31 @@ interface DaemonReplies {
   "image.write": DaemonReply & { path?: string };
   /** One part of an upload: `received` while the file is not complete, `path`
    * and `result` on the last part, `expected` with `reason: "offset"`. */
-  "file.upload": DaemonReply & { received?: number; expected?: number; path?: string; result?: string };
+  "file.upload": DaemonReply & {
+    received?: number;
+    expected?: number;
+    path?: string;
+    result?: string;
+  };
   "runs.list": DaemonReply & {
     runs?: import("./wb-runs.ts").RunSnapshot[];
     unreadable?: { runid: string; reason: string }[];
   };
-  "branch.list": DaemonReply & { branches?: { current?: string; branches?: string[]; worktrees?: Record<string, string> } };
+  "branch.list": DaemonReply & {
+    branches?: { current?: string; branches?: string[]; worktrees?: Record<string, string> };
+  };
   "worktree.list": DaemonReply & { checkouts?: import("./wb-project.ts").Listing };
   "changes.list": DaemonReply & { changes?: { changes?: import("./wb-changes.ts").ChangeRow[] } };
   "sync.status": DaemonReply & { sync?: { sync?: import("./wb-changes.ts").SyncBody } };
   /** `blob.status`: `present`, `absent` or `refused`. */
-  "blob.read": DaemonReply & { blob?: { status?: string; content?: string | null; reason?: string | null } };
+  "blob.read": DaemonReply & {
+    blob?: { status?: string; content?: string | null; reason?: string | null };
+  };
   "board.list": DaemonReply & {
-    board?: { issues?: import("./wb-kanban.ts").BoardRow[]; labels?: import("./wb-kanban.ts").BoardLabel[] };
+    board?: {
+      issues?: import("./wb-kanban.ts").BoardRow[];
+      labels?: import("./wb-kanban.ts").BoardLabel[];
+    };
   };
   "issue.show": DaemonReply & { issue?: import("./wb-kanban.ts").IssueDetail };
   /** The repo's resolved settings. */
@@ -128,7 +155,13 @@ type HostedSession = {
  * `source: "silent"`, a `reason`, and no `state`. A console launched with no
  * state source on purpose has `source: "none"` and a `reason`.
  */
-type AgentStateBlock = { state?: string; source?: "silent" | "none"; reason?: string; since: string; detail?: string };
+type AgentStateBlock = {
+  state?: string;
+  source?: "silent" | "none";
+  reason?: string;
+  since: string;
+  detail?: string;
+};
 
 /** The reply to `verb`. */
 type ReplyOf<V extends string> = V extends keyof DaemonReplies ? DaemonReplies[V] : DaemonReply;
@@ -144,7 +177,13 @@ type PushFrame = { verb: string; payload?: PushPayload };
 
 /** What a push names: the repo, and the dir or the reason for a tree push, or
  * the `tab` that wrote the desk. */
-type PushPayload = { repo?: string; path?: string; checkout?: string | null; reason?: string; tab?: string };
+type PushPayload = {
+  repo?: string;
+  path?: string;
+  checkout?: string | null;
+  reason?: string;
+  tab?: string;
+};
 
 /** The `/ws` heartbeat: who the daemon is and how long it has been up. */
 type Presence = { name: string | null; avatar: string | null; uptime_secs: number; build?: string };
@@ -158,7 +197,11 @@ interface Window {
     data(name: string, factory: () => object): void;
     directive(
       name: string,
-      handler: (el: HTMLElement, directive: AlpineDirective, utilities: AlpineDirectiveUtilities) => void,
+      handler: (
+        el: HTMLElement,
+        directive: AlpineDirective,
+        utilities: AlpineDirectiveUtilities,
+      ) => void,
     ): void;
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
     store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
@@ -196,7 +239,12 @@ interface Window {
 }
 
 /** The fields of a file-tree gesture on one node (`wb-files.ts`). */
-type WorkbenchNodeDetail = { project: string | null; path: string; title: string; isFolder: boolean };
+type WorkbenchNodeDetail = {
+  project: string | null;
+  path: string;
+  title: string;
+  isFolder: boolean;
+};
 
 /** Every gesture `WB.emit` sends, and the detail its senders give. `null`: the
  * gesture has no detail. `wb-events.ts` lists the same names at run time, for
@@ -211,10 +259,21 @@ interface WorkbenchActions {
   "run-issue-focus": { project: string | null; runid: string | undefined; issue: number };
   /** The daemon refuses a missing `agent` or `branchMode`. A `null`
    * `planAgent` means the agent also plans. */
-  "run-start": { project: string | null; agent: string; planAgent: string | null; branchMode: string; command: string };
+  "run-start": {
+    project: string | null;
+    agent: string;
+    planAgent: string | null;
+    branchMode: string;
+    command: string;
+  };
   /** A run verb with no parameter (triage, push). */
   command: { project: string | null; verb: string };
-  "issue-label-change": { project: string | null; number: number; label: string; op: "add" | "remove" };
+  "issue-label-change": {
+    project: string | null;
+    number: number;
+    label: string;
+    op: "add" | "remove";
+  };
   login: null;
   logoff: null;
   "open-refused": { project: string | null; path: string; reason: string };
@@ -268,9 +327,11 @@ type WorkbenchEmitArgs<K extends WorkbenchActionName> = [WorkbenchActions[K]] ex
  * sender gave, and when it was sent (`at`). A gesture a popup sent carries the
  * popup in `fromWindow`. */
 type WorkbenchAction = {
-  [K in WorkbenchActionName]: { action: K; at: string; fromWindow?: Window } & (WorkbenchActions[K] extends null
-    ? unknown
-    : WorkbenchActions[K]);
+  [K in WorkbenchActionName]: {
+    action: K;
+    at: string;
+    fromWindow?: Window;
+  } & (WorkbenchActions[K] extends null ? unknown : WorkbenchActions[K]);
 }[WorkbenchActionName];
 
 /** A file a pane can reopen anywhere, a tab or a detached popup, with its
@@ -345,11 +406,18 @@ interface WindowEventMap {
   /** Open the branch dialog for this project (wb-branch-dialog.ts). */
   "workbench:branch-open": CustomEvent<{ project: import("./wb-project.ts").Project }>;
   /** Open the checkout menu of this project under `anchor` (wb-branch-dialog.ts). */
-  "workbench:checkout-menu": CustomEvent<{ project: import("./wb-project.ts").Project; anchor: HTMLElement }>;
+  "workbench:checkout-menu": CustomEvent<{
+    project: import("./wb-project.ts").Project;
+    anchor: HTMLElement;
+  }>;
   "workbench:panels-reread": CustomEvent<null>;
   /** The daemon said whether this browser may read (`authed`), whether the
    * login asks for a password, and its policy (the Alpine store `connection`). */
-  "workbench:auth-read": CustomEvent<{ authed: boolean; password: boolean; policy: "localhost" | "bearer" | "session" }>;
+  "workbench:auth-read": CustomEvent<{
+    authed: boolean;
+    password: boolean;
+    policy: "localhost" | "bearer" | "session";
+  }>;
   /** Read the project list again; `git` reads the change set and the branch too. */
   "workbench:repos-reread": CustomEvent<{ git: boolean }>;
   /** Read the live sessions again. */
@@ -408,7 +476,9 @@ interface DocumentEventMap {
   /** A console's title bar asks for the columns list, under `rect`. */
   "workbench:column-open": CustomEvent<{ id: string; rect: DOMRect }>;
   /** A fence asks to open its consoles as columns. */
-  "workbench:fence-columns": CustomEvent<{ items: { id: string; rect: import("./wb-types.d.ts").Rect }[] }>;
+  "workbench:fence-columns": CustomEvent<{
+    items: { id: string; rect: import("./wb-types.d.ts").Rect }[];
+  }>;
   /** These consoles leave the columns. */
   "workbench:columns-leave": CustomEvent<{ ids: string[] }>;
   /** The shadow of a console in its own tab asks for that tab. */

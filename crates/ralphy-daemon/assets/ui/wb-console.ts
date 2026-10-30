@@ -47,7 +47,12 @@ import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleOpts, ConsoleWin, DeskChange, DeskFence } from "./wb-types.d.ts";
 
-export function createConsole(window: Window, document: Document, location: Pick<Location, "protocol" | "host" | "origin">, opts: ConsoleOpts) {
+export function createConsole(
+  window: Window,
+  document: Document,
+  location: Pick<Location, "protocol" | "host" | "origin">,
+  opts: ConsoleOpts,
+) {
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
   // Defensive about the DOM ITSELF, not just about the element: the ui-tests
@@ -60,13 +65,16 @@ export function createConsole(window: Window, document: Document, location: Pick
   // console tabs (ADR-0037 §3d). A lookup by console uses this; a rule about
   // the stage's layout reads the stage only.
   const tabsPane = () =>
-    typeof document?.getElementById === "function" ? document.getElementById("console-tabs-pane") : null;
+    typeof document?.getElementById === "function"
+      ? document.getElementById("console-tabs-pane")
+      : null;
   const pageWindows = () =>
-    [stage(), tabsPane()].flatMap((el) => (el ? [...el.querySelectorAll<ConsoleWin>(".session-window")] : []));
+    [stage(), tabsPane()].flatMap((el) =>
+      el ? [...el.querySelectorAll<ConsoleWin>(".session-window")] : [],
+    );
   // Scheme-match the session socket to the page (see wb-daemon.ts WS_ORIGIN):
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
-  const WS_ORIGIN =
-    (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
+  const WS_ORIGIN = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
   // Injection point, read once per instance. `main.ts` passes only the door
   // for operator messages (every other default below is the shell's
   // behaviour); `detached-fence-main.ts` overrides all five,
@@ -105,7 +113,16 @@ export function createConsole(window: Window, document: Document, location: Pick
     refreshFenceChrome: () => refreshFenceChrome(),
     consolePrefix: (repo: string | null | undefined) => consolePrefix(repo),
   });
-  const { createRecord, setWin, forgetRecord, saveFences, saveNotes, nameUnnamed, loadDesk, atDeskCap } = records;
+  const {
+    createRecord,
+    setWin,
+    forgetRecord,
+    saveFences,
+    saveNotes,
+    nameUnnamed,
+    loadDesk,
+    atDeskCap,
+  } = records;
 
   // ---- the feeds: `wb-console-feeds.ts` ----------------------------------------
   // Built before the title, which takes the project names and the session list.
@@ -115,7 +132,19 @@ export function createConsole(window: Window, document: Document, location: Pick
     pageWindows,
     renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
   });
-  const { newDeskId, newFenceId, readSessions, projectNameOf, projectTitleOf, peerGroups, list, lastSessions, wakePeerNow, readFleetNow, staleProbeNow } = feeds;
+  const {
+    newDeskId,
+    newFenceId,
+    readSessions,
+    projectNameOf,
+    projectTitleOf,
+    peerGroups,
+    list,
+    lastSessions,
+    wakePeerNow,
+    readFleetNow,
+    staleProbeNow,
+  } = feeds;
 
   // ---- the title: `wb-console-title.ts` ----------------------------------------
   // Built before the chrome, which takes six of its functions.
@@ -132,7 +161,17 @@ export function createConsole(window: Window, document: Document, location: Pick
     projectTitleOf,
     setWin,
   });
-  const { consolePrefix, takenNames, sessionPresentation, ensureListing, renderTitle, canRename, startRename, closeCheckoutMenu, restartWin } = title;
+  const {
+    consolePrefix,
+    takenNames,
+    sessionPresentation,
+    ensureListing,
+    renderTitle,
+    canRename,
+    startRename,
+    closeCheckoutMenu,
+    restartWin,
+  } = title;
 
   // ---- the popup registry: `wb-desk-popups.ts` ---------------------------------
   // The one owner of the detached fences: everything else reads and changes
@@ -204,8 +243,15 @@ export function createConsole(window: Window, document: Document, location: Pick
     startRename,
     takenNames,
   });
-  const { fillsViewport, restoreRect, isFull, applyLock, paintMaxButton, raiseMaximized, applyExtent } =
-    stageWindow;
+  const {
+    fillsViewport,
+    restoreRect,
+    isFull,
+    applyLock,
+    paintMaxButton,
+    raiseMaximized,
+    applyExtent,
+  } = stageWindow;
   const { dropClosedElsewhere } = columns;
   const { refreshFenceChrome, renderNotes, renderFences, showDetachGlyph } = fenceFloor;
   const { applyLanding, flushPendingOffset, cancelSlide, autoPan, wireStage } = view;
@@ -355,7 +401,19 @@ export function createConsole(window: Window, document: Document, location: Pick
     flushPendingOffset,
     wireStage,
   });
-  const { emitDesk, scheduleDeskFlush, isDeskSettled, refreshView, recordLeft, reloadDesk, whenDeskLoaded, currentDesk, currentFences, currentNotes, currentCheckouts } = desk;
+  const {
+    emitDesk,
+    scheduleDeskFlush,
+    isDeskSettled,
+    refreshView,
+    recordLeft,
+    reloadDesk,
+    whenDeskLoaded,
+    currentDesk,
+    currentFences,
+    currentNotes,
+    currentCheckouts,
+  } = desk;
 
   dormancy.listen();
 

@@ -36,7 +36,10 @@ export const WBConsoleName = (function () {
   }
 
   // `<prefix> #<n>` with the lowest `n` that no name of that exact form uses.
-  function defaultName(prefix: string, names: Iterable<string | null | undefined> | null | undefined) {
+  function defaultName(
+    prefix: string,
+    names: Iterable<string | null | undefined> | null | undefined,
+  ) {
     const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`);
     const used = new Set<number>();
     for (const name of names || []) {
@@ -55,7 +58,9 @@ export const WBConsoleName = (function () {
     prefix: string,
     names: Iterable<string | null | undefined> | null | undefined,
   ) {
-    const cut = Array.from(String(raw ?? "").trim()).slice(0, NAME_MAX).join("");
+    const cut = Array.from(String(raw ?? "").trim())
+      .slice(0, NAME_MAX)
+      .join("");
     const trimmed = cut.trim();
     return trimmed || defaultName(prefix, names);
   }
@@ -85,7 +90,10 @@ export const WBConsoleName = (function () {
 
   // Give every unnamed record a default name, in desk order. Returns new
   // records and never mutates the input, so running it twice changes nothing.
-  function nameDesk<R extends NamedRecord>(records: R[], prefixOfRepo: (repo: R["repo"]) => string): R[] {
+  function nameDesk<R extends NamedRecord>(
+    records: R[],
+    prefixOfRepo: (repo: R["repo"]) => string,
+  ): R[] {
     const names = records.map((r) => r.consoleName).filter(Boolean);
     return records.map((r) => {
       if (r.consoleName) return r;
