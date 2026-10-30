@@ -150,6 +150,15 @@ export function createViewerSave(deps: ViewerSaveDeps) {
     // the pending `create()`, and setValue fires the change event, so the dirty
     // flag is cleared *after* the update, not before.
     rec.content = fresh;
+    paintFresh(rec, fresh);
+    rec.dirty = false;
+    rec.saveBtn?.classList.remove("dirty");
+    hideDiskBadge(rec);
+    window.WB.emit("reload", { project: rec.project, path: rec.path });
+  }
+
+  // Show the fresh bytes in the pane of their kind.
+  function paintFresh(rec: BytesRecord, fresh: string) {
     if (rec.kind === "image") {
       // A fresh `data:` URL repaints the pane; the `onload` handler re-reads the
       // intrinsic size, which an overwritten image may well have changed.
@@ -164,10 +173,6 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
     }
-    rec.dirty = false;
-    rec.saveBtn?.classList.remove("dirty");
-    hideDiskBadge(rec);
-    window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
   // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY

@@ -97,11 +97,6 @@
         15
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-viewer-save.ts": {
-      "applyFresh": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-wire.ts": {
       "(anonymous)": [
         15,
