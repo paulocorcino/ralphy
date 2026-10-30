@@ -619,7 +619,7 @@ second daemon
     /// risk) and checks where the detached child ends up.
     #[cfg(windows)]
     #[test]
-    #[allow(unsafe_code, reason = "FFI: the job object calls of the test")]
+    #[expect(unsafe_code, reason = "FFI: the job object calls of the test")]
     fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::Foundation::{CloseHandle, FALSE};
@@ -676,9 +676,17 @@ second daemon
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-restart-{}-{tag}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
+    }
+
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    fn remove_scratch(dir: &Path) {
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn ours() -> PathBuf {
@@ -842,7 +850,7 @@ second daemon
             |_| unreachable!("nothing to kill")
         )
         .expect("no file is not an error"));
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -862,7 +870,7 @@ second daemon
             None,
             "a ghost must not survive to confuse the next restart"
         );
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -886,7 +894,7 @@ second daemon
             None,
             "and the worthless record is dropped"
         );
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -915,7 +923,7 @@ second daemon
         )
         .expect_err("a platform that cannot say must refuse too");
         assert!(err.to_string().contains("stop it yourself"), "{err}");
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -936,7 +944,7 @@ second daemon
         .expect_err("a wedged daemon must be reported, not silently doubled");
         assert!(err.to_string().contains("did not exit"), "{err}");
         assert_eq!(killed.load(std::sync::atomic::Ordering::SeqCst), 1);
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -958,6 +966,6 @@ second daemon
         assert!(stopped);
         assert_eq!(killed.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(ralphy_daemon::pidfile::read_in(&dir), None);
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 }

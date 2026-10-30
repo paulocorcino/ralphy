@@ -160,7 +160,11 @@ fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
 fn retry_after_field(event: &serde_json::Value) -> Option<String> {
     let s = match event.get("retryAfter")? {
         serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
+        other @ (serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Array(_)
+        | serde_json::Value::Object(_)) => other.to_string(),
     };
     (!s.is_empty() && s != "null").then_some(s)
 }

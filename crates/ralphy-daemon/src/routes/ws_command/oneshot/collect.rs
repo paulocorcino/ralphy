@@ -9,6 +9,10 @@ use crate::{dispatch, protocol, session};
 type Argv = Result<Vec<String>, dispatch::ArgvError>;
 
 /// The argv of a Query verb and the reply field its output is parsed into.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the effect class sends only Query verbs here and `Verb` has over 60 variants"
+)]
 fn query_argv(verb: dispatch::Verb, payload: &serde_json::Value) -> (Argv, &'static str) {
     match verb {
         dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, payload), "config"),
@@ -24,6 +28,10 @@ fn query_argv(verb: dispatch::Verb, payload: &serde_json::Value) -> (Argv, &'sta
 }
 
 /// The argv of a Mutate verb.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the effect class sends only Mutate verbs here and `Verb` has over 60 variants"
+)]
 fn mutate_argv(verb: dispatch::Verb, payload: &serde_json::Value) -> Argv {
     match verb {
         dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {

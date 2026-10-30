@@ -117,11 +117,12 @@ pub fn read(repo: &Path, rev: Revision, path: &str) -> Result<Blob> {
 mod tests {
     use super::*;
     use crate::git::git;
+    use crate::scratch::remove_scratch;
     use std::path::PathBuf;
 
     fn init_repo(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-blob-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&dir, &["init", "-q", "-b", "main"]).unwrap();
         git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
@@ -147,7 +148,7 @@ mod tests {
             Blob::Text("hello\nworld\n".to_string())
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -161,7 +162,7 @@ mod tests {
         assert!(got.is_ok(), "absence must be an Ok outcome: {got:?}");
         assert_eq!(got.unwrap(), Blob::Absent);
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -184,7 +185,7 @@ mod tests {
             );
         }
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -198,7 +199,7 @@ mod tests {
         // `cat-file blob` and relayed git's raw fatal (with host paths) as an Err.
         assert_eq!(read(&dir, Revision::Head, "src").unwrap(), Blob::Absent);
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -216,6 +217,6 @@ mod tests {
             Blob::TooLarge
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 }

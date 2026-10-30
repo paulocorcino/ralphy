@@ -108,7 +108,10 @@ impl TriageItem {
             TriageVerdict::Escalate if !has_comment => {
                 Some(format!("#{}: escalate needs a comment body", self.number))
             }
-            _ => None,
+            TriageVerdict::Promote
+            | TriageVerdict::Consolidate
+            | TriageVerdict::Bounce
+            | TriageVerdict::Escalate => None,
         }
     }
 }

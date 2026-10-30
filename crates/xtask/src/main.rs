@@ -24,6 +24,7 @@ mod vendor_lock;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -73,9 +74,9 @@ struct Cost {
     cache_write: Option<f64>,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
+    let outcome = match args.first().map(String::as_str) {
         Some("refresh-seed") => refresh_seed_cmd(&args[1..]),
         Some("changelog") => release_cmds::changelog_cmd(&args[1..]),
         Some("bump") => release_cmds::bump_cmd(&args[1..]),
@@ -101,9 +102,11 @@ fn main() -> Result<()> {
                  oversized [--base <rev>]\n  \
                  complexity --check [--base <rev>]"
             );
-            std::process::exit(2);
+            return Ok(ExitCode::from(2));
         }
-    }
+    };
+    outcome?;
+    Ok(ExitCode::SUCCESS)
 }
 
 fn refresh_seed_cmd(args: &[String]) -> Result<()> {

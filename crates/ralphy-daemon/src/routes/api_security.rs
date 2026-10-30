@@ -153,7 +153,7 @@ pub(crate) async fn session_state_route(
                 let cookie_header = headers.get(header::COOKIE).and_then(|v| v.to_str().ok());
                 s.cookie_valid(cookie_header, now_unix())
             }
-            _ => false,
+            auth::AuthPolicy::Localhost | auth::AuthPolicy::Bearer(_) => false,
         };
     let password = matches!(&auth, auth::AuthPolicy::Session(s) if s.password.is_some());
     Json(SessionState {

@@ -2,6 +2,11 @@
 //! no `repo`, refused on a bad value before anything spawns, and never answered
 //! for a peer. The spawned exe is `command_test_child`, which echoes its argv.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
@@ -55,14 +60,16 @@ async fn replies_with(
     let mut request = url.into_client_request().expect("a websocket request");
     for (name, value) in headers {
         request.headers_mut().insert(
-            header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
-            value.parse().unwrap(),
+            header::HeaderName::from_bytes(name.as_bytes()).expect("the header name is valid"),
+            value.parse().expect("the header value is valid"),
         );
     }
     let (mut ws, _) = tokio_tungstenite::connect_async(request)
         .await
         .expect("connecting to /ws/command");
-    ws.send(command(1, verb, payload)).await.unwrap();
+    ws.send(command(1, verb, payload))
+        .await
+        .expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut frames = Vec::new();
         while let Some(msg) = ws.next().await {

@@ -10,6 +10,11 @@
 //! phase must run with the re-key knob UNSET, and a sibling test could not be
 //! ordered against that.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::Path;
 use std::time::Instant;
 
@@ -52,12 +57,20 @@ async fn repos(app: &axum::Router) -> String {
             Request::builder()
                 .uri("/api/repos")
                 .body(Body::empty())
-                .unwrap(),
+                .expect("build the request"),
         )
         .await
         .unwrap();
     assert_eq!(res.status(), 200);
-    String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap()
+    String::from_utf8(
+        res.into_body()
+            .collect()
+            .await
+            .expect("read the response body")
+            .to_bytes()
+            .to_vec(),
+    )
+    .expect("read the body as UTF-8")
 }
 
 #[tokio::test]

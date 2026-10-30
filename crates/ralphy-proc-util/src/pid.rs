@@ -12,7 +12,7 @@
 
 /// Production liveness predicate.
 #[cfg(unix)]
-#[allow(unsafe_code, reason = "FFI: libc::kill with signal 0")]
+#[expect(unsafe_code, reason = "FFI: libc::kill with signal 0")]
 pub fn pid_is_alive(pid: u32) -> bool {
     // Signal 0 probes without sending: 0 = alive, EPERM = alive but not ours.
     // SAFETY: kill(2) takes plain integers and touches no memory.
@@ -25,7 +25,7 @@ pub fn pid_is_alive(pid: u32) -> bool {
 /// [`crate::kill_tree_by_pid`] signals the process group, and a process that
 /// does not lead its own group is not reached by that.
 #[cfg(unix)]
-#[allow(unsafe_code, reason = "FFI: libc::kill on one pid")]
+#[expect(unsafe_code, reason = "FFI: libc::kill on one pid")]
 pub fn kill_pid(pid: u32) {
     // `kill(0, ...)` and `kill(-1, ...)` would reach a group or every process.
     if pid > 1 {
@@ -36,7 +36,7 @@ pub fn kill_pid(pid: u32) {
 
 /// Production liveness predicate.
 #[cfg(windows)]
-#[allow(unsafe_code, reason = "FFI: OpenProcess and GetExitCodeProcess")]
+#[expect(unsafe_code, reason = "FFI: OpenProcess and GetExitCodeProcess")]
 pub fn pid_is_alive(pid: u32) -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
@@ -77,7 +77,7 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
 
 /// The executable a live pid is running, when the platform will say.
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code, reason = "FFI: libc::proc_pidpath")]
+#[expect(unsafe_code, reason = "FFI: libc::proc_pidpath")]
 pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     use std::os::unix::ffi::OsStrExt;
 
@@ -106,7 +106,7 @@ pub fn exe_of_pid(_pid: u32) -> Option<std::path::PathBuf> {
 
 /// The executable a live pid is running, when the platform will say.
 #[cfg(windows)]
-#[allow(
+#[expect(
     unsafe_code,
     reason = "FFI: OpenProcess and QueryFullProcessImageNameW"
 )]

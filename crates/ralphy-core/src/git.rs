@@ -371,6 +371,7 @@ pub fn is_clean_ignoring_ralphy(repo: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch;
 
     #[test]
     fn project_slug_from_remote_and_path_fallback() {
@@ -402,7 +403,7 @@ mod tests {
 
     fn init_repo(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-git-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&dir, &["init", "-q", "-b", "main"]).unwrap();
         git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
@@ -469,7 +470,7 @@ mod tests {
             "{}-clone",
             origin.file_name().unwrap().to_string_lossy()
         ));
-        let _ = std::fs::remove_dir_all(&clone);
+        remove_scratch(&clone);
         git(
             &origin,
             &[
@@ -494,8 +495,8 @@ mod tests {
             git(&clone, &["config", "--get", "branch.afk/run-t.merge"]).is_err(),
             "the run branch must have no upstream"
         );
-        let _ = std::fs::remove_dir_all(&clone);
-        let _ = std::fs::remove_dir_all(&origin);
+        remove_scratch(&clone);
+        remove_scratch(&origin);
     }
 
     #[test]
@@ -518,7 +519,7 @@ mod tests {
         let subject = git(&dir, &["log", "-1", "--format=%s"]).unwrap();
         assert_eq!(subject, "chore: snapshot before ralphy init");
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -537,6 +538,6 @@ mod tests {
             "must list the default branch, got: {branches:?}"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 }

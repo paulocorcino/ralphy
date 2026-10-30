@@ -364,11 +364,19 @@ After it succeeds, stop.";
         let mut err = child.stderr.take().expect("piped stderr");
         let ho = thread::spawn(move || {
             let mut s = String::new();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a read error leaves the partial output, which the test prints"
+            )]
             let _ = out.read_to_string(&mut s);
             s
         });
         let he = thread::spawn(move || {
             let mut s = String::new();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a read error leaves the partial output, which the test prints"
+            )]
             let _ = err.read_to_string(&mut s);
             s
         });
@@ -379,6 +387,10 @@ After it succeeds, stop.";
             }
             if start.elapsed() > Duration::from_secs(180) {
                 ralphy_proc_util::kill_tree_by_pid(pid);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the process tree was killed, and a failed wait only delays the reap"
+                )]
                 let _ = child.wait();
                 break;
             }

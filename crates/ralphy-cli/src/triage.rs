@@ -121,6 +121,14 @@ pub struct TriageLabels {
     pub promote_marker: String,
 }
 
+/// The model and the effort the operator chose for one triage session
+/// (`None` = the adapter's default).
+#[derive(Clone, Copy)]
+struct ModelAndEffort<'a> {
+    model: Option<&'a str>,
+    effort: Option<&'a str>,
+}
+
 /// Dispatch the triage session to the selected agent's adapter. The charter is
 /// shared ([`ralphy_core::build_triage_prompt`]); only the invocation differs.
 fn triage_with_agent(
@@ -128,10 +136,10 @@ fn triage_with_agent(
     repo: &Path,
     out_path: &Path,
     req: &TriageRequest,
-    model: Option<&str>,
-    effort: Option<&str>,
+    chosen: ModelAndEffort<'_>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
+    let ModelAndEffort { model, effort } = chosen;
     match agent {
         Agent::Claude => ralphy_agent_claude::triage_issues(
             repo,
@@ -398,8 +406,10 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         &repo,
         &out_path,
         &req,
-        args.model.as_deref(),
-        Some(&args.effort),
+        ModelAndEffort {
+            model: args.model.as_deref(),
+            effort: Some(&args.effort),
+        },
         Duration::from_secs(args.max_minutes * 60),
     )?;
     let threads = std::mem::take(&mut attachments.threads);
@@ -478,7 +488,9 @@ fn triage_labels(repo: &Path) -> TriageLabels {
 /// `yes`, whatever the case.
 fn ask_yes(prompt: &str) -> Result<bool> {
     print!("{prompt}");
-    std::io::stdout().flush().ok();
+    std::io::stdout()
+        .flush()
+        .context("writing the question to stdout")?;
     let mut answer = String::new();
     std::io::stdin()
         .read_line(&mut answer)

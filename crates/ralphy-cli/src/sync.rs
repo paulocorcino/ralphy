@@ -126,7 +126,10 @@ fn sync_pull(args: SyncArgs) -> anyhow::Result<()> {
     match ralphy_core::sync::pull(&repo_root)? {
         PullOutcome::UpToDate => println!("Already up to date."),
         PullOutcome::FastForwarded { commits } => println!("Fast-forwarded {commits} commits."),
-        refused => anyhow::bail!(
+        refused @ (PullOutcome::NoUpstream
+        | PullOutcome::DetachedHead
+        | PullOutcome::Diverged { .. }
+        | PullOutcome::WorkingTreeBlocked) => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))
         ),
@@ -154,7 +157,10 @@ fn sync_push(args: SyncArgs) -> anyhow::Result<()> {
             let tail = if set_upstream { " (upstream set)" } else { "" };
             println!("Pushed {branch} to {remote}{tail}.");
         }
-        refused => anyhow::bail!(
+        refused @ (PushOutcome::NoRemote
+        | PushOutcome::DetachedHead
+        | PushOutcome::Rejected { .. }
+        | PushOutcome::AuthFailed { .. }) => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))
         ),

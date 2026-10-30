@@ -12,7 +12,7 @@ use super::support::{git_output, ralphy, run_git, LockRow};
 /// `git init` a fresh temp repo with a born HEAD (an empty initial commit),
 /// so branch creation/switch has a commit-ish to work from.
 fn init_repo() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     let root = dir.path();
     run_git(root, &["init", "--quiet"]);
     run_git(root, &["config", "user.email", "test@example.com"]);

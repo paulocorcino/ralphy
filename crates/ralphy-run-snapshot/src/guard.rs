@@ -66,9 +66,17 @@ impl Drop for SnapshotGuard {
         }
         // Never panic in Drop, and this crate carries no logger; a file left
         // behind is the orphan the reader's dead-pid sweep deletes.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a drop cannot return the error, and the file may be gone already"
+        )]
         let _ = std::fs::remove_file(&self.path);
         // The sentinel is already inert once this run is gone (the next run has
         // a different runid), so this is hygiene rather than correctness.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a drop cannot return the error, and the file may be gone already"
+        )]
         let _ = std::fs::remove_file(&self.stop);
     }
 }

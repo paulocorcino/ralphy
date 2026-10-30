@@ -122,7 +122,10 @@ pub fn no_window(cmd: &mut Command) {
 /// duplicates of the handles it is given, `Stdio::inherit()` included, so later
 /// spawns are not affected. A no-op off Windows: there `Command` passes only
 /// fds 0, 1 and 2, and every other fd is close-on-exec.
-#[allow(unsafe_code, reason = "FFI: GetStdHandle and SetHandleInformation")]
+#[cfg_attr(
+    windows,
+    expect(unsafe_code, reason = "FFI: GetStdHandle and SetHandleInformation")
+)]
 pub fn keep_std_handles_from_children() {
     #[cfg(windows)]
     {
@@ -163,7 +166,15 @@ pub fn keep_std_handles_from_children() {
 /// Best-effort on every arm; always reaps the direct child so no zombie lingers.
 pub fn kill_tree(child: &mut Child) {
     kill_tree_by_pid(child.id());
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the child may have exited already, and the tree kill above is the one that counts"
+    )]
     let _ = child.kill(); // direct child / fallback
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the child may have been reaped already; this call only prevents a zombie"
+    )]
     let _ = child.wait(); // reap so no zombie lingers
 }
 
@@ -180,7 +191,10 @@ pub fn kill_tree(child: &mut Child) {
 /// when the root PID is no longer running — exactly the exit-leaking-grandchild
 /// shape (#156) — which is why the walk is native. Best-effort, and does not
 /// reap — the caller owns reaping its handle.
-#[allow(unsafe_code, reason = "FFI: libc::kill on the process group")]
+#[cfg_attr(
+    unix,
+    expect(unsafe_code, reason = "FFI: libc::kill on the process group")
+)]
 pub fn kill_tree_by_pid(pid: u32) {
     #[cfg(windows)]
     kill_tree_windows(pid);
@@ -213,7 +227,7 @@ pub fn kill_tree_by_pid(pid: u32) {
 /// parent pid can be a reused number; [`tree_to_kill`] holds the rules that keep
 /// such a process out of the walk.
 #[cfg(windows)]
-#[allow(
+#[expect(
     unsafe_code,
     reason = "FFI: Toolhelp32 snapshot walk and TerminateProcess"
 )]
@@ -322,7 +336,7 @@ fn created_before_parent(parent_created: Option<u64>, child_created: Option<u64>
 /// When `pid` was created, in 100 ns units since 1601 (a `FILETIME`), or `None`
 /// when the process cannot be opened.
 #[cfg(windows)]
-#[allow(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
+#[expect(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
 fn process_created(pid: u32) -> Option<u64> {
     use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
     use windows_sys::Win32::System::Threading::{

@@ -7,6 +7,11 @@
 //! SOLE env-setter in its file: `RALPHY_DAEMON_DIR` is process-global, so this
 //! env-setting test must be alone in its file (no intra-process race).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -35,12 +40,20 @@ fn fresh_router() -> axum::Router {
 }
 
 async fn body_string(resp: axum::response::Response) -> String {
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("read the response body")
+        .to_bytes();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
 fn get(path: &str) -> Request<Body> {
-    Request::builder().uri(path).body(Body::empty()).unwrap()
+    Request::builder()
+        .uri(path)
+        .body(Body::empty())
+        .expect("build the request")
 }
 
 fn post_form(path: &str, body: &'static str) -> Request<Body> {
@@ -49,7 +62,7 @@ fn post_form(path: &str, body: &'static str) -> Request<Body> {
         .uri(path)
         .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(Body::from(body))
-        .unwrap()
+        .expect("build the request")
 }
 
 #[tokio::test]

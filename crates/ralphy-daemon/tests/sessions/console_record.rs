@@ -19,10 +19,15 @@ async fn daemon(dir: &std::path::Path) -> u16 {
     let registry_path = dir.join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/record-repo", &dir.to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     super::point_launcher_at_test_child();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     // The sender lives as long as the test process: a dropped sender reads as
     // a shutdown to every bridge.
@@ -37,7 +42,9 @@ async fn daemon(dir: &std::path::Path) -> u16 {
         ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     port
 }
@@ -82,14 +89,20 @@ async fn sessions(port: u16) -> Vec<serde_json::Value> {
 async fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("send the request");
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.unwrap();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .expect("read the response");
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text
         .split_whitespace()

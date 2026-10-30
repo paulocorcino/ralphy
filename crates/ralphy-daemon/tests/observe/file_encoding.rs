@@ -31,27 +31,32 @@ const SJIS: &[u8] = b"\x93\xFA\x96\x7B";
 /// Bind a daemon over a temp repo seeded with one file per encoding; return the
 /// `ws://…/ws/command` URL, the repo slug, and the leaked repo root.
 async fn serve_repo() -> (String, String, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("cp1252.md"), CP1252).unwrap();
-    std::fs::write(dir.path().join("utf16.txt"), UTF16LE_BOM).unwrap();
-    std::fs::write(dir.path().join("bare16.txt"), UTF16LE_BARE).unwrap();
-    std::fs::write(dir.path().join("bom8.txt"), UTF8_BOM).unwrap();
-    std::fs::write(dir.path().join("sjis.txt"), SJIS).unwrap();
-    std::fs::write(dir.path().join("plain.txt"), "caf\u{e9}").unwrap();
-    std::fs::write(dir.path().join("bin.dat"), [0x00, 0x01, 0x02]).unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
+    std::fs::write(dir.path().join("cp1252.md"), CP1252).expect("write cp1252.md");
+    std::fs::write(dir.path().join("utf16.txt"), UTF16LE_BOM).expect("write utf16.txt");
+    std::fs::write(dir.path().join("bare16.txt"), UTF16LE_BARE).expect("write bare16.txt");
+    std::fs::write(dir.path().join("bom8.txt"), UTF8_BOM).expect("write bom8.txt");
+    std::fs::write(dir.path().join("sjis.txt"), SJIS).expect("write sjis.txt");
+    std::fs::write(dir.path().join("plain.txt"), "caf\u{e9}").expect("write plain.txt");
+    std::fs::write(dir.path().join("bin.dat"), [0x00, 0x01, 0x02]).expect("write bin.dat");
     let root = dir.path().to_path_buf();
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/encoding";
     store.upsert(slug, &dir.path().to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -64,7 +69,9 @@ async fn serve_repo() -> (String, String, PathBuf) {
     );
     std::mem::forget(_tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/command"),
@@ -87,7 +94,7 @@ async fn ask(url: &str, id: u64, verb: &str, payload: serde_json::Value) -> serd
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("send the frame");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut replies = Vec::new();

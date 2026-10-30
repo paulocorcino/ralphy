@@ -430,6 +430,10 @@ fn tool_call(payload: &Value) -> (&str, &Value) {
 /// and exit 0 (allow) or exit 2 (deny). With `cost_gate`, an allowed Bash call
 /// also passes the verification-cost gate. Never returns — always calls
 /// `std::process::exit`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the hook guard reports its decision by its exit code, so it must exit"
+)]
 pub fn run_guard_hook(cost_gate: bool) -> ! {
     use std::io::Read;
 

@@ -220,7 +220,15 @@ fn drain<R: Read + Send + 'static>(
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buf = Vec::new();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a read error ends the output, and the bytes read so far are still sent"
+        )]
         let _ = pipe.read_to_end(&mut buf);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver is gone once the collect grace has passed"
+        )]
         let _ = tx.send(buf);
     })
 }
@@ -342,6 +350,10 @@ fn recv_and_join(
 ) -> String {
     match rx.recv_timeout(OUTPUT_COLLECT_GRACE) {
         Ok(buf) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the drain thread does not panic, and its bytes arrived over the channel"
+            )]
             let _ = handle.join();
             String::from_utf8_lossy(&buf).into_owned()
         }

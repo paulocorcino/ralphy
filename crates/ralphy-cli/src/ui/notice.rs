@@ -48,7 +48,34 @@ impl EdgeNoticeState {
                 });
             }
             RunEvent::RunSkipped { reason } => self.notice = Some(reason.clone()),
-            _ => {}
+            // jscpd:ignore-start
+            // The same variants are listed in `run/snapshot_engine.rs`, but the two
+            // folds ignore them for different reasons and change with different events.
+            RunEvent::IssueStarted { .. }
+            | RunEvent::Planning { .. }
+            | RunEvent::PlanWritten { .. }
+            | RunEvent::Executing { .. }
+            | RunEvent::IssueClosed { .. }
+            | RunEvent::NonGreen { .. }
+            | RunEvent::Skipped { .. }
+            | RunEvent::HumanBlocked { .. }
+            | RunEvent::NeedsSplit { .. }
+            | RunEvent::Notice { .. }
+            | RunEvent::DeadlinePassed { .. }
+            | RunEvent::RunStopped { .. }
+            | RunEvent::SleepStarted { .. }
+            | RunEvent::SleepEnded
+            | RunEvent::ApiDegraded
+            | RunEvent::ApiRecovered
+            | RunEvent::IdleReaped { .. }
+            | RunEvent::HooksUnprovenAllowed { .. }
+            | RunEvent::AgentState { .. }
+            | RunEvent::KnowledgeConsolidating { .. }
+            | RunEvent::KnowledgeConsolidated { .. }
+            | RunEvent::RunStarted { .. }
+            | RunEvent::RunFinished { .. }
+            | RunEvent::PlanOpened { .. }
+            | RunEvent::PlanClosed { .. } => {} // jscpd:ignore-end
         }
     }
 }

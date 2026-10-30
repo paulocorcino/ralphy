@@ -27,12 +27,13 @@ pub(crate) fn materialize_kimi_skills(ws: &Workspace) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
     use std::fs;
 
     #[test]
     fn materialize_kimi_skills_extracts_reviewer() {
         let base = std::env::temp_dir().join(format!("ralphy-kimi-skills-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -51,6 +52,6 @@ mod tests {
             ".ralphy/.gitignore must be written"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 }

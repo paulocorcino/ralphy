@@ -25,6 +25,10 @@ pub fn write_atomic(repo_root: &Path, snap: &RunSnapshot) -> std::io::Result<()>
             // The rename error is what the caller must see; a failure to clean
             // the temp file would only mask it, and the next write overwrites
             // that name (it carries this pid).
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the rename error is the one to return; a failed cleanup would mask it"
+            )]
             let _ = std::fs::remove_file(&tmp);
             Err(e)
         }

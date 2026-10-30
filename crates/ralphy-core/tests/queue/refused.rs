@@ -35,7 +35,7 @@ fn assert_untouched(refusal: Refusal, name: &str) {
         "the empty run branch is gone"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]

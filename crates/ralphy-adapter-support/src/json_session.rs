@@ -18,6 +18,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 
 use crate::headless::{run_headless_held, PromptHeld};
+use crate::scaffold::{ensure_dir, remove_stale_file};
 use crate::{run_headless, PromptGate};
 
 /// The vendor-specific inputs to [`run_json_session`]: the built command, the
@@ -170,12 +171,12 @@ pub fn run_init_session<T>(
     validate: impl Fn(&str) -> Result<T>,
 ) -> Result<T> {
     if let Some(parent) = session.out_path.parent() {
-        fs::create_dir_all(parent).ok();
+        ensure_dir(parent);
     }
     if let Some(parent) = session.log_path.parent() {
-        fs::create_dir_all(parent).ok();
+        ensure_dir(parent);
     }
-    let _ = fs::remove_file(session.out_path);
+    remove_stale_file(session.out_path);
     run_json_session(session, is_auth_error, validate)
 }
 
@@ -225,6 +226,10 @@ fn text_session(
     .map_err(|e| with_spawn_context(e, spawn_err))?;
     let mut log = r.stdout;
     log.push_str(&r.stderr);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the log is a diagnostic copy; the caller gets the text in the return value"
+    )]
     let _ = fs::write(log_path, &log);
 
     if auth_error(&log) {

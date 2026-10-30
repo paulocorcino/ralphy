@@ -75,7 +75,11 @@ pub(crate) fn sleep_label(reset: &str, opts: RenderOpts) -> String {
 /// Render the live active-issue line: phase icon · `#n` title · model · `elapsed`
 /// (or `elapsed / budget`). Pure over its inputs; the emoji/ASCII and colour
 /// choice come from `opts`. The non-colour path emits no ANSI byte.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the phase, the issue, the model and effort, the clock, the budget, the render \
+              options and the width are separate facts of one line, set by tests too"
+)]
 pub(crate) fn render_active_line(
     phase: Phase,
     number: u64,

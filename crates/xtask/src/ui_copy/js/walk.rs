@@ -82,7 +82,7 @@ impl<'a> Walk<'a> {
             Tok::Punct(")" | "]" | "}") => {
                 self.stack.pop();
             }
-            _ => {}
+            Tok::Ident(_) | Tok::Punct(_) | Tok::Str(_) | Tok::Tpl(_) | Tok::Other => {}
         }
     }
 

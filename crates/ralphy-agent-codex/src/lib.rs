@@ -10,6 +10,14 @@
 //! in the `-o` final-message file, the process exit code, and a HEAD-diff commit
 //! check — mapped onto the same core [`Outcome`].
 
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "nextest runs each test in its own process, so a test may change its environment"
+    )
+)]
+
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -23,6 +31,7 @@ use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Workspace
 use tracing::info;
 
 mod auth;
+mod cleanup;
 mod command;
 mod forge_rules;
 mod outcome;
@@ -37,6 +46,7 @@ pub const ACCEPTS_IMAGES: bool = true;
 use auth::{
     is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
 };
+use cleanup::remove_stale_file;
 use command::{
     build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
     CODEX_MODEL_SOL, DEFAULT_CODEX_EFFORT,
@@ -189,7 +199,7 @@ impl Agent for CodexAgent {
         let run = || {
             materialize_codex_skills(ws)?;
             install_forge_rules(ws.repo_root())?;
-            let _ = fs::remove_file(&out_path);
+            remove_stale_file(&out_path);
             let before = snapshot();
             let effort = self.resolved_plan_effort();
             // Each status hook runs this ralphy program (ADR-0085 D2).
@@ -288,7 +298,7 @@ impl Agent for CodexAgent {
         let run = || {
             materialize_codex_skills(ws)?;
             install_forge_rules(ws.repo_root())?;
-            let _ = fs::remove_file(&out_path);
+            remove_stale_file(&out_path);
             let before = snapshot();
             // Each status hook runs this ralphy program (ADR-0085 D2).
             let exe = ralphy_proc_util::exe::running_exe()?;

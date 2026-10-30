@@ -5,6 +5,11 @@
 //! incumbent (its stream ends), and the taker drives the child. Proves the
 //! explicit, race-free takeover the policy promises.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -73,9 +78,13 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();
         while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
+            let bytes = match msg.expect("read the next frame") {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if answer_cursor
@@ -83,7 +92,9 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
                         .windows(CURSOR_POSITION_REQUEST.len())
                         .any(|w| w == CURSOR_POSITION_REQUEST)
                 {
-                    ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
+                    ws.send(terminal(CURSOR_POSITION_REPLY))
+                        .await
+                        .expect("send the frame");
                 }
                 acc.push_str(&String::from_utf8_lossy(&data));
                 if acc.contains(needle) {
@@ -118,10 +129,15 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender
     let registry_path = dir.join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/workbench", &dir.to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -133,7 +149,9 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender
         ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (port, tx)
 }
@@ -142,13 +160,19 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender
 async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("send the request");
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.unwrap();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .expect("read the response");
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text
         .split_whitespace()

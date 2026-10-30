@@ -222,7 +222,10 @@ impl PeerReject {
                 theirs,
                 ..
             } if rejected_id == daemon_id => Some((environment, *theirs)),
-            _ => None,
+            PeerReject::Malformed { .. }
+            | PeerReject::IncompatibleVersion { .. }
+            | PeerReject::DuplicateIdentity { .. }
+            | PeerReject::Unreadable { .. } => None,
         }
     }
 }

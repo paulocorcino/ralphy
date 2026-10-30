@@ -18,7 +18,7 @@ fn discard_restores_a_tracked_file_from_head() {
         "the committed content is back on disk"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn discard_deletes_an_untracked_file() {
     );
     assert!(!dir.join("loose.txt").exists(), "the file is gone");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn discard_deletes_an_untracked_directory() {
     );
     assert!(!dir.join("newdir").exists(), "the directory is gone");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn discard_leaves_every_other_path_alone() {
         "an untracked bystander is not cleaned"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// The negative control for "a staged change is never silently thrown away".
@@ -132,7 +132,7 @@ fn discard_keeps_a_staged_change() {
     );
     assert_eq!(staged_paths(&dir), "both.txt", "the path is still staged");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn discard_refuses_a_path_outside_the_change_set() {
     assert!(dir.join("a.txt").exists(), "and cleaned nothing either");
     assert_eq!(staged_paths(&dir), "");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn discard_refuses_an_empty_list() {
         "steady\n"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// REPRODUCED live before the fix: `git --literal-pathspecs restore --worktree
@@ -234,7 +234,7 @@ fn discard_refuses_a_conflicted_path() {
         "the refusal ran no git write"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// The cross-path invariant the doc comment sells, as an ORACLE: a list whose
@@ -274,7 +274,7 @@ fn discard_refuses_a_mixed_batch_before_either_write() {
         "the DELETE half never ran — the unrecoverable act is what this pins"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// A rename's ORIGINAL path names no working-tree content, so it is not
@@ -296,7 +296,7 @@ fn discard_refuses_a_renames_original_path() {
     );
     assert!(dir.join("renamed.txt").exists(), "nothing was written");
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// A path removed from the WORKING TREE only (`rm f.txt`, no `git rm`) is the
@@ -326,7 +326,7 @@ fn discard_restores_a_worktree_deletion() {
         "the file is back"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// REPRODUCED live before the fix: `git --literal-pathspecs restore --worktree
@@ -361,7 +361,7 @@ fn discard_refuses_a_staged_deletion() {
         "a refusal leaves the staged deletion exactly as it was"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// A batch of one tracked edit and one untracked file runs both writes and counts
@@ -390,5 +390,5 @@ fn discard_runs_both_writes_for_a_mixed_batch() {
         "the untracked file is gone"
     );
 
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }

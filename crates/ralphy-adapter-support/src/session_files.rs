@@ -69,6 +69,7 @@ pub fn list_session_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch_dir;
 
     #[test]
     fn session_files_appeared_returns_new_not_grown() {
@@ -88,7 +89,7 @@ mod tests {
     #[test]
     fn list_session_files_flat_matches_extension() {
         let dir = std::env::temp_dir().join("ralphy-sf-flat-test");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("one.jsonl"), "").unwrap();
         fs::write(dir.join("two.jsonl"), "").unwrap();
@@ -101,13 +102,13 @@ mod tests {
         got.sort();
         assert_eq!(got, vec![dir.join("one.jsonl"), dir.join("two.jsonl")]);
 
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
     fn list_session_files_recursive_with_prefix() {
         let dir = std::env::temp_dir().join("ralphy-sf-rec-test");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
         let day = dir.join("2026").join("07").join("02");
         fs::create_dir_all(&day).unwrap();
         fs::write(day.join("rollout-abc.jsonl"), "").unwrap();
@@ -121,13 +122,13 @@ mod tests {
             vec![day.join("rollout-abc.jsonl"), dir.join("rollout-top.jsonl")]
         );
 
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
     fn list_session_files_missing_dir_is_empty() {
         let dir = std::env::temp_dir().join("ralphy-sf-does-not-exist-xyz");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
         assert!(list_session_files(&dir, "jsonl", false, None).is_empty());
     }
 }

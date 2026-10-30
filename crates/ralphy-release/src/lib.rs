@@ -9,6 +9,13 @@
 //! of what has been published — and it answers it from a TTL disk cache that a
 //! failed fetch never disturbs. Nothing is sent: the fetch is an unauthenticated
 //! `GET` with no query beyond the page size, no identifier and no body.
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "nextest runs each test in its own process, so a test may change its environment"
+    )
+)]
 
 pub mod fetch;
 pub mod version;

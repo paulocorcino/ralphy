@@ -17,8 +17,10 @@ fn checks_of(fake: &mut FakeHost) -> Vec<HostCheck> {
     check(
         fake,
         &local(store.path()),
-        "svrapp",
-        None,
+        Destination {
+            dest: "svrapp",
+            key_file: None,
+        },
         None,
         no_keygen,
         &mut Report::text(Vec::new()),

@@ -339,7 +339,10 @@ pub const RUN_STARTED_MSG: &str = "run started";
 /// The run began working a queue (ADR-0019 boundary event). `queue_labels` is
 /// the comma-joined label list; `deadline_hours` is `0.0` for "no deadline" (the
 /// sentinel the decoder folds back to `None`).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field of the run-started event"
+)]
 pub fn run_started(
     repo: &str,
     queue_labels: &str,
@@ -372,7 +375,10 @@ pub const RUN_FINISHED_MSG: &str = "run finished";
 /// from — the CloudEvents envelope prefers it over the console's folded state,
 /// which a dropped event can starve. `""` means a legacy/no-work emission with no
 /// rollup; the envelope then falls back to the fold.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field of the run-finished event"
+)]
 pub fn run_finished(
     outcome: &str,
     issues_done: u64,

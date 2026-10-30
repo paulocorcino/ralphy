@@ -5,6 +5,14 @@
 //! axum) confined here, runs reached only by spawning `ralphy` processes (never
 //! by importing the core).
 
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "nextest runs each test in its own process, so a test may change its environment"
+    )
+)]
+
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -156,6 +164,10 @@ pub struct StorePaths {
 /// fallback. `GET /api/identity` returns the loaded identity as JSON, or 404
 /// when the daemon is un-baptized, so the static page can render "avatar name"
 /// at runtime (the embedded HTML bakes in no identity).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the identity, the paths, the start time, the shutdown signal and the auth state"
+)]
 pub fn router(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,

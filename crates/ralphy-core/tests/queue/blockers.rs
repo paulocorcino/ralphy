@@ -48,7 +48,7 @@ fn open_blocker_skips_then_closed_blocker_runs() {
 
         assert!(report.stop.is_none(), "no stop — later issues continue");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 
     // Pass 2: same queue but #2 IS in the closed set.
@@ -86,7 +86,7 @@ fn open_blocker_skips_then_closed_blocker_runs() {
 
         assert!(report.stop.is_none());
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -128,7 +128,7 @@ fn closed_blocker_with_open_children_still_blocks() {
         );
         assert!(report.stop.is_none(), "a skip never stops the run");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 
     // Same shape but the children are all closed (none open): the closed
@@ -160,7 +160,7 @@ fn closed_blocker_with_open_children_still_blocks() {
         assert!(r4.blocked_by.is_empty(), "no open children → unblocked");
         assert!(r4.closed, "#4 closed green");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -201,7 +201,7 @@ fn split_children_never_block_the_issue_on_itself() {
             "self dropped, sibling still blocks"
         );
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 
     // #4 is the ONLY open child of the closed #3: nothing else is pending, so the
@@ -233,7 +233,7 @@ fn split_children_never_block_the_issue_on_itself() {
         assert!(r4.blocked_by.is_empty(), "an issue never blocks itself");
         assert!(r4.closed, "#4 closed green");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -263,7 +263,7 @@ fn self_ref_in_blocked_by_is_ignored() {
     assert!(r5.blocked_by.is_empty(), "self-ref dropped");
     assert!(r5.closed, "#5 ran and closed green");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn human_gate_blocker_is_classified_and_run_continues() {
         "a human gate never stops the whole run"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -355,7 +355,7 @@ fn ordinary_open_blocker_is_not_a_human_gate() {
         "an agent-work blocker is not a human gate"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -403,5 +403,5 @@ fn blocked_by_in_consolidated_comment_gates_issue() {
     );
     assert!(agent.planned.borrow().is_empty(), "#5 never planned");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

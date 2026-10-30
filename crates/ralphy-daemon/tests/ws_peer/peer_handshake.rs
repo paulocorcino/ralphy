@@ -63,8 +63,13 @@ fn descriptor(port: u16, token: &str) -> PeerDescriptor {
 /// and return a descriptor pointing at it that announces `announced_token`.
 /// Announcing a token OTHER than the policy's is how a rotation is reproduced.
 async fn spawn_daemon(policy: AuthPolicy, announced_token: &str) -> PeerDescriptor {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = ralphy_daemon::router(
         Some(anvil()),
@@ -76,6 +81,10 @@ async fn spawn_daemon(policy: AuthPolicy, announced_token: &str) -> PeerDescript
         AuthState::fixed(policy, SessionEpoch::in_memory_detached()),
     );
     tokio::spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the server runs until the test ends, so its error has no reader"
+        )]
         let _ = axum::serve(listener, app).await;
     });
     descriptor(port, announced_token)
@@ -147,6 +156,10 @@ async fn a_hello_from_another_daemon_is_refused_and_names_both_ids() {
         }),
     );
     tokio::spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the server runs until the test ends, so its error has no reader"
+        )]
         let _ = axum::serve(listener, app).await;
     });
 
@@ -190,6 +203,10 @@ async fn a_hello_with_no_daemon_id_is_still_reachable() {
         get(|| async { Json(serde_json::json!({"protocol_version": PEER_PROTOCOL_VERSION})) }),
     );
     tokio::spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the server runs until the test ends, so its error has no reader"
+        )]
         let _ = axum::serve(listener, app).await;
     });
     let d = descriptor(port, "tok");
@@ -207,6 +224,10 @@ async fn a_version_mismatch_is_a_legible_rejection() {
         get(|| async { Json(serde_json::json!({"protocol_version": 1})) }),
     );
     tokio::spawn(async move {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the server runs until the test ends, so its error has no reader"
+        )]
         let _ = axum::serve(listener, app).await;
     });
 

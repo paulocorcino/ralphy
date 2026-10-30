@@ -348,7 +348,10 @@ fn rekey(change: Change, aliases: &BTreeMap<String, String>) -> Change {
             repo: canonical(repo, aliases),
             if_name,
         },
-        other => other,
+        other @ (Change::CreateFence(_)
+        | Change::SetWindow { .. }
+        | Change::SetFence { .. }
+        | Change::Remove { .. }) => other,
     }
 }
 

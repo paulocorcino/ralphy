@@ -2,6 +2,11 @@
 //! the audit log, and a take-over writes a `console_takeover` line; a plain
 //! reattach writes none (ADR-0074, amendment 2026-10-05).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -27,8 +32,13 @@ async fn serve(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender<bool>)
     store.upsert("owner/workbench", &dir.to_string_lossy());
     registry::save_to(&store, &registry_path).expect("writing the registry");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -40,7 +50,9 @@ async fn serve(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender<bool>)
         AuthState::localhost(),
     );
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     (port, tx)
 }
@@ -48,14 +60,20 @@ async fn serve(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender<bool>)
 async fn http(port: u16, method: &str, path: &str, cookie: &str) -> String {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("the test socket connects");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nCookie: {cookie}\r\n\
          Content-Length: 0\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("the request is written");
     let mut reply = String::new();
-    stream.read_to_string(&mut reply).await.unwrap();
+    stream
+        .read_to_string(&mut reply)
+        .await
+        .expect("the reply is read");
     reply
 }
 
@@ -71,17 +89,18 @@ async fn device_cookie(port: u16) -> String {
         .unwrap_or_else(|| panic!("a device cookie in {reply}"))
         .split(';')
         .next()
-        .unwrap()
+        .expect("the reply sets a device cookie")
         .to_string()
 }
 
 async fn open(port: u16, query: &str, cookie: &str) -> Result<Ws, u16> {
     let mut request = format!("ws://127.0.0.1:{port}/ws/session?{query}")
         .into_client_request()
-        .unwrap();
-    request
-        .headers_mut()
-        .insert("cookie", cookie.parse().unwrap());
+        .expect("the websocket request is valid");
+    request.headers_mut().insert(
+        "cookie",
+        cookie.parse().expect("the cookie is a valid header value"),
+    );
     match tokio_tungstenite::connect_async(request).await {
         Ok((ws, _)) => Ok(ws),
         Err(tungstenite::Error::Http(resp)) => Err(resp.status().as_u16()),
@@ -92,7 +111,9 @@ async fn open(port: u16, query: &str, cookie: &str) -> Result<Ws, u16> {
 /// Close the socket and wait for the daemon to answer the close, so the
 /// writer slot is free before the next attach.
 async fn close(mut ws: Ws) {
-    ws.send(Message::Close(None)).await.unwrap();
+    ws.send(Message::Close(None))
+        .await
+        .expect("the frame is sent");
     let _drained = tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(Ok(_)) = ws.next().await {}
     })
@@ -117,7 +138,7 @@ async fn launched_id(port: u16, cookie: &str) -> u64 {
 fn console_lines(dir: &std::path::Path) -> Vec<serde_json::Value> {
     let log = std::fs::read_to_string(dir.join("daemon-audit.jsonl")).unwrap_or_default();
     log.lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("the line is JSON"))
         .filter(|line| {
             line["event"]
                 .as_str()

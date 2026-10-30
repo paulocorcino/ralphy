@@ -76,6 +76,7 @@ pub(crate) fn staged_plan_env(staged: bool) -> Option<(&'static str, &'static st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
 
     fn issue_with_labels(labels: &[&str]) -> Issue {
         Issue {
@@ -93,7 +94,7 @@ mod tests {
     #[test]
     fn plan_charter_file_carries_selected_prompt() {
         let base = std::env::temp_dir().join(format!("ralphy-plan-charter-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
         fs::create_dir_all(ws.ralphy_dir()).unwrap();
@@ -114,7 +115,7 @@ mod tests {
             "the per-call rewrite must replace a stale staged charter"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     #[test]
@@ -134,7 +135,7 @@ mod tests {
         // provisions them into .ralphy/plugin so claude finds them via
         // --plugin-dir without depending on globally-installed skills.
         let base = std::env::temp_dir().join(format!("ralphy-plugin-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -162,7 +163,7 @@ mod tests {
         materialize_plugin(&ws).expect("re-materialize");
         assert!(dir.join("skills/reviewer/SKILL.md").is_file());
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     #[test]

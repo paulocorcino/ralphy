@@ -42,7 +42,10 @@
 
 // The `ui-copy` lexer, the same file compiled a second time so that `ui_copy`
 // keeps its modules private: one lexer, one rule, no second copy of the text.
-#[allow(clippy::duplicate_mod)]
+#[expect(
+    clippy::duplicate_mod,
+    reason = "the same lexer file is compiled a second time, by design"
+)]
 #[path = "ui_copy/lex.rs"]
 mod lex;
 
@@ -377,7 +380,7 @@ fn member_end(toks: &[Token], name_at: usize, close: usize) -> usize {
         (in_type, angle) = type_args(toks, j, in_type, angle);
         j = match &toks[j].tok {
             Tok::Punct("(" | "[" | "{") => close_of(toks, j) + 1,
-            _ => j + 1,
+            Tok::Ident(_) | Tok::Punct(_) | Tok::Str(_) | Tok::Tpl(_) | Tok::Other => j + 1,
         };
     }
     j
@@ -435,7 +438,7 @@ fn close_of(toks: &[Token], open: usize) -> usize {
                     return k;
                 }
             }
-            _ => {}
+            Tok::Ident(_) | Tok::Punct(_) | Tok::Str(_) | Tok::Tpl(_) | Tok::Other => {}
         }
     }
     toks.len()
@@ -543,7 +546,7 @@ fn assigns(toks: &[Token], i: usize) -> bool {
         Tok::Punct("||" | "&&" | "??" | "%" | "&" | "|" | "^") => toks
             .get(i + 1)
             .is_some_and(|n| n.is("=") && n.start == t.end),
-        _ => false,
+        Tok::Ident(_) | Tok::Punct(_) | Tok::Str(_) | Tok::Tpl(_) | Tok::Other => false,
     }
 }
 

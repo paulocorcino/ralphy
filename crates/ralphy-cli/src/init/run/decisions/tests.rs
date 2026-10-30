@@ -87,7 +87,9 @@ fn commit_decision_maps_clean_dirty_yes_and_refusal() {
     assert_eq!(commit_decision(false, ""), CommitDecision::Commit);
     match commit_decision(false, "no") {
         CommitDecision::Abort(msg) => assert!(!msg.is_empty()),
-        other => panic!("expected Abort, got {other:?}"),
+        other @ (CommitDecision::NothingToCommit | CommitDecision::Commit) => {
+            panic!("expected Abort, got {other:?}")
+        }
     }
 }
 

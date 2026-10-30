@@ -29,7 +29,7 @@ fn current_mode_commits_on_current_branch() {
     // The repo is left on the same branch — nothing is checked out or deleted.
     assert_eq!(current_branch(&repo), "main");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn undo_tag_marks_pre_run_head_in_current_mode() {
     // The work itself is untouched — commits still on the live branch.
     assert!(report.commits > 0);
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn undo_tag_marks_the_base_in_new_mode() {
         "tag marks the base the run branch was cut from"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn undo_tag_dropped_when_the_run_adds_no_commits() {
         "empty run's tag deleted"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn current_mode_refuses_detached_head() {
         "nothing planned on abort"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn dirty_tree_aborts_before_branch_work() {
         "nothing planned on abort"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn aborts_when_base_is_missing() {
         "nothing planned on abort"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -235,7 +235,7 @@ fn gitignore_gets_ralphy_on_first_run() {
         ".ralphy/ added to .gitignore on first run: {body}"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -276,5 +276,5 @@ fn new_mode_does_not_leak_ralphy_when_base_lacks_ignore() {
         ".ralphy/ must be ignored on the run branch: {gi:?}"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

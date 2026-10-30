@@ -1,5 +1,6 @@
 use super::*;
 use crate::git::git;
+use crate::scratch::remove_scratch;
 use std::path::PathBuf;
 
 fn entry(path: &str) -> Entry {
@@ -61,7 +62,7 @@ fn select_workbench_keeps_only_single_segment_children() {
 fn tmp(name: &str) -> PathBuf {
     let dir =
         std::env::temp_dir().join(format!("ralphy-checkouts-{}-{}", std::process::id(), name));
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -94,7 +95,7 @@ fn add_worktree(root: &Path, name: &str, path: &str) {
 fn list_reports_only_the_workbench_worktrees() {
     let root = tmp("list");
     let elsewhere = tmp("list-elsewhere");
-    let _ = std::fs::remove_dir_all(&elsewhere);
+    remove_scratch(&elsewhere);
     git(&root, &["init", "-q", "-b", "main"]).unwrap();
     configure(&root);
     commit_file(&root, "README.md", "hello\n", "init");
@@ -141,8 +142,8 @@ fn list_reports_only_the_workbench_worktrees() {
     // From inside a worktree git lists the same trees, main tree first.
     assert_eq!(list(&wt_a_path).unwrap(), listing);
 
-    let _ = std::fs::remove_dir_all(&root);
-    let _ = std::fs::remove_dir_all(&elsewhere);
+    remove_scratch(&root);
+    remove_scratch(&elsewhere);
 }
 
 /// ONE fixture for carry-over: `.env` (ignored file) and `.vscode/`
@@ -294,7 +295,7 @@ node_modules/
         .join("pkg")
         .join("added.js")
         .exists());
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 /// ONE fixture: `wt-c` from the default base, `wt-d` from an explicit
@@ -378,7 +379,7 @@ fn add_creates_a_worktree_and_refuses_each_bad_input() {
     assert_eq!(listing.worktrees[0].base, "main");
     assert_eq!(listing.worktrees[1].base, "taken");
 
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 fn branch_exists(root: &Path, name: &str) -> bool {
@@ -471,7 +472,10 @@ fn remove_applies_the_gates_in_order() {
             assert_eq!(name, "wt-keep");
             assert!(why.contains("not on main"), "why: {why}");
         }
-        other => panic!("expected BranchKept, got {other:?}"),
+        other @ (RemoveError::NotFound { .. }
+        | RemoveError::Locked { .. }
+        | RemoveError::Dirty { .. }
+        | RemoveError::RemoveFailed { .. }) => panic!("expected BranchKept, got {other:?}"),
     }
     assert!(text.contains("branch 'wt-keep' kept"), "{text}");
     assert!(!wt_keep.exists(), "the directory is gone");
@@ -499,5 +503,5 @@ fn remove_applies_the_gates_in_order() {
     // (7) nothing left to list.
     assert!(list(&root).unwrap().worktrees.is_empty());
 
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }

@@ -239,7 +239,9 @@ pub(crate) fn ask_yes_no(question: &str, default_yes: bool) -> Result<String> {
         print!("\n  > {question} {hint} ");
     }
 
-    std::io::stdout().flush().ok();
+    std::io::stdout()
+        .flush()
+        .context("writing the question to stdout")?;
     let mut line = String::new();
     std::io::stdin()
         .read_line(&mut line)
@@ -259,9 +261,8 @@ pub(crate) fn with_spinner<T>(message: &str, f: impl FnOnce() -> T) -> T {
     }
 
     let pb = indicatif::ProgressBar::new_spinner();
-    // `unwrap` is safe: the template is a compile-time constant that always parses.
     let style = indicatif::ProgressStyle::with_template("  {spinner:.cyan} {msg}")
-        .unwrap()
+        .expect("the template is a compile-time constant that always parses")
         .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " "]);
     pb.set_style(style);
     pb.set_message(message.to_string());
@@ -301,7 +302,9 @@ pub(crate) fn run_qa(report: &DiagnosisReport) -> Result<InitConfig> {
             "{}",
             render_question(&questions[i], i + 1, total, color, width)
         );
-        std::io::stdout().flush().ok();
+        std::io::stdout()
+            .flush()
+            .context("writing the question to stdout")?;
         let mut line = String::new();
         std::io::stdin()
             .read_line(&mut line)

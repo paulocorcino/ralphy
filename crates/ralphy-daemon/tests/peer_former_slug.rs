@@ -33,11 +33,16 @@ async fn poll(registry_path: std::path::PathBuf, repo: &str) -> serde_json::Valu
                 .header(header::HOST, "127.0.0.1:1")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
-                .unwrap(),
+                .expect("build the request"),
         )
         .await
         .expect("the router must answer");
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("read the response body")
+        .to_bytes();
     serde_json::from_slice(&bytes)
         .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&bytes)))
 }

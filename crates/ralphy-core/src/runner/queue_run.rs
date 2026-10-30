@@ -74,10 +74,12 @@ fn non_green_stop(number: u64, outcome: Outcome, deadline_cut: bool) -> StopReas
     }
     match outcome {
         Outcome::Limit(reset) => StopReason::Limit { number, reset },
-        other => StopReason::NonGreen {
-            number,
-            outcome: other,
-        },
+        other @ (Outcome::Done | Outcome::Blocked(_) | Outcome::Timeout | Outcome::Stuck) => {
+            StopReason::NonGreen {
+                number,
+                outcome: other,
+            }
+        }
     }
 }
 

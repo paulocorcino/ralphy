@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::warn;
 
 use crate::{
@@ -22,9 +22,7 @@ mod queue_run;
 mod types;
 
 pub(crate) use branch::prepare_branch;
-#[allow(unused_imports)]
 pub use branch::BranchMode;
-#[allow(unused_imports)]
 pub use clock::{synthetic_reset, RunClock, WaitOutcome, WallClock};
 pub(crate) use comments::no_gate_comment;
 pub(crate) use phases::{
@@ -118,6 +116,10 @@ pub fn run_queue(
 
 /// [`run_queue`] with every collaborator injectable — the seam the in-crate
 /// unit tests drive with fakes (no on-disk git repo, no usage file).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the queue config, the queue and the five collaborators the unit tests replace"
+)]
 fn run_queue_with(
     cfg: &QueueConfig,
     queue: &[Issue],
@@ -132,7 +134,8 @@ fn run_queue_with(
     // Write the build-environment brief once (no-op if it already exists) so the
     // planner and executor see the machine their `## Verify`/smoke commands run
     // on, before the first plan pass reads it.
-    let _ = std::fs::create_dir_all(ws.ralphy_dir());
+    std::fs::create_dir_all(ws.ralphy_dir())
+        .with_context(|| format!("creating {}", ws.ralphy_dir().display()))?;
     crate::environment::ensure_brief(&ws);
 
     let (orig, branch, compare_ref) = prepare_branch(

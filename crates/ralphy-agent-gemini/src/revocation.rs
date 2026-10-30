@@ -161,7 +161,7 @@ impl Revocation {
             // `FatalConfigError`.
             Revocation::AutonomyDisabled => Some(52),
             Revocation::UntrustedWorkspace => Some(55),
-            _ => None,
+            Revocation::EnforcedAuth | Revocation::AdminToolServers | Revocation::Demoted => None,
         }
     }
 

@@ -125,7 +125,10 @@ pub(crate) fn emit_run_finished_no_work(run_start: std::time::Instant) {
 /// Consumes `report` (its branch/commits/undo fields move into the panel).
 // A composition-root assembler: it gathers the many read-time inputs of the footer
 // (report, summary, both USD sources) into one PanelData.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the separate read-time inputs of the footer"
+)]
 pub(crate) fn render_final_panel(
     presenter: &ui::PresenterHandle,
     report: ralphy_core::QueueReport,

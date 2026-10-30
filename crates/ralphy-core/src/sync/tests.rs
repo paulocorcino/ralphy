@@ -4,13 +4,14 @@
 
 use super::*;
 use crate::git::git;
+use crate::scratch::remove_scratch;
 use std::path::PathBuf;
 
 mod push;
 
 fn tmp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ralphy-sync-{}-{}", std::process::id(), name));
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -81,8 +82,8 @@ fn tracking_reports_branch_upstream_and_counts() {
         })
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -101,7 +102,7 @@ fn no_upstream_is_its_own_state() {
         "no upstream must be absent, never a zeroed Tracking: {st:?}"
     );
 
-    let _ = std::fs::remove_dir_all(&repo);
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -118,8 +119,8 @@ fn detached_head_is_a_state_not_an_error() {
     );
     assert!(st.tracking.is_none(), "detached tracks nothing: {st:?}");
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 /// The one input that trips an inverted `--left-right` reading: a swapped parse
@@ -140,8 +141,8 @@ fn behind_only_reads_one_behind_zero_ahead() {
         })
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -159,8 +160,8 @@ fn ahead_only_reads_one_ahead_zero_behind() {
         })
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -180,8 +181,8 @@ fn diverged_reads_one_each_way() {
         })
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -203,8 +204,8 @@ fn status_makes_no_network_call() {
         "status must not fetch: FETCH_HEAD appeared"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -242,8 +243,8 @@ fn last_fetch_is_the_fetch_head_mtime() {
         "a second fetch must advance the stamp: {stamp} -> {again}"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 /// The absence of `FETCH_HEAD` proves "did not fetch", not "made no network
@@ -271,8 +272,8 @@ fn status_consults_no_remote_at_all() {
     let after = status(&clone).expect("status must answer with the remote gone");
     assert_eq!(after, before, "the read is local-only: {after:?}");
 
-    let _ = std::fs::remove_dir_all(&gone);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&gone);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -293,8 +294,8 @@ fn a_single_non_origin_remote_is_the_one_to_fetch() {
     );
     assert!(fetch_head(&clone).exists());
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -312,8 +313,8 @@ fn fetch_updates_the_remote_tracking_ref() {
     assert!(fetch_head(&clone).exists(), "a fetch writes FETCH_HEAD");
     assert_eq!(status(&clone).unwrap().tracking.unwrap().behind, 1);
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -332,7 +333,7 @@ fn fetch_without_a_remote_refuses_and_touches_no_ref() {
         "a refused fetch writes nothing"
     );
 
-    let _ = std::fs::remove_dir_all(&repo);
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -356,8 +357,8 @@ fn pull_fast_forwards_when_behind() {
         "the fast-forward landed on disk"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -386,8 +387,8 @@ fn a_diverged_branch_refuses_and_starts_no_merge() {
         merge_head.display()
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -408,7 +409,7 @@ fn pull_without_upstream_refuses_with_its_own_reason() {
         "each refusal reads as its own problem"
     );
 
-    let _ = std::fs::remove_dir_all(&repo);
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -425,8 +426,8 @@ fn pull_on_a_detached_head_refuses() {
     assert!(outcome.reason().unwrap().contains("detached"));
     assert_eq!(head_sha(&clone), before);
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -444,8 +445,8 @@ fn pull_up_to_date_and_ahead_only_are_both_up_to_date() {
         "ahead-only has nothing to absorb"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -471,6 +472,6 @@ fn pull_with_a_conflicting_local_edit_is_blocked() {
         "the local edit survives"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }

@@ -10,6 +10,11 @@
 //! boot path also stripped `RALPHY_DAEMON_TOKEN` from the process env.
 //! Own file (single test) so no intra-process env race with the other suites.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use ralphy_daemon::auth;
 use ralphy_daemon::dispatch;
 
@@ -37,6 +42,10 @@ fn spawned_child_does_not_inherit_the_token() {
         Some("01DAEMONID0000000000000000"),
     )
     .expect("dispatching the helper child");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the test checks the env dump, not the exit status of the child"
+    )]
     let _ = child.wait();
 
     let contents = std::fs::read_to_string(&dump).expect("the child must write its env dump");

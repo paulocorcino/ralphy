@@ -138,7 +138,7 @@ fn rewrite_imports(name: &str, code: String) -> Result<String> {
         ModuleItem::ModuleDecl(ModuleDecl::Import(d)) => Some(&*d.src),
         ModuleItem::ModuleDecl(ModuleDecl::ExportAll(d)) => Some(&*d.src),
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(d)) => d.src.as_deref(),
-        _ => None,
+        ModuleItem::ModuleDecl(_) | ModuleItem::Stmt(_) => None,
     });
     for src in sources {
         let (lo, hi) = span_of(src, base);

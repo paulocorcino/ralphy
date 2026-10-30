@@ -172,12 +172,13 @@ fn ordinary_status(record: &str) -> ChangeStatus {
 mod tests {
     use super::*;
     use crate::git::git;
+    use crate::scratch::remove_scratch;
     use std::path::PathBuf;
 
     fn init_repo(name: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("ralphy-changes-{}-{}", std::process::id(), name));
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         git(&dir, &["init", "-q", "-b", "main"]).unwrap();
         git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
@@ -230,7 +231,7 @@ mod tests {
             "exactly one entry per changed path: {list:?}"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -250,7 +251,7 @@ mod tests {
         assert!(paths.contains(&"café.txt"), "non-ASCII path: {paths:?}");
         assert_eq!(list.len(), 2, "exactly the two seeded paths: {list:?}");
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -262,7 +263,7 @@ mod tests {
 
         assert_eq!(changes(&dir).unwrap(), vec![]);
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -283,7 +284,7 @@ mod tests {
         assert_eq!(list.len(), 1, "only the tracked edit: {list:?}");
         assert_eq!(list[0].path, "README.md");
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -302,7 +303,7 @@ mod tests {
         assert!(!changes(&dir).unwrap().is_empty());
         assert!(ralphy_git_read::dirty(&dir).unwrap());
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -333,7 +334,7 @@ mod tests {
             "a repo dirty under a NESTED .ralphy/ is not clean"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     /// The regression guard for the index split (#315): the derived `status`
@@ -402,7 +403,7 @@ mod tests {
             "the rename arm's literal status must equal its first non-`.` side"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -431,7 +432,7 @@ mod tests {
             "one entry per path, not one per side: {list:?}"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -465,7 +466,7 @@ mod tests {
             Some("old.txt")
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -505,7 +506,7 @@ mod tests {
         assert_eq!(untracked.index_status, None);
         assert_eq!(untracked.worktree_status, Some(ChangeStatus::Untracked));
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -544,7 +545,7 @@ mod tests {
             "an unmerged path reads as Conflicted"
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -576,7 +577,7 @@ mod tests {
                 "the two definitions must agree on {}",
                 dir.display()
             );
-            let _ = std::fs::remove_dir_all(dir);
+            remove_scratch(dir);
         }
     }
 }

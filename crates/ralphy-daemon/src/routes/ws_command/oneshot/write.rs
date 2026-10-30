@@ -88,6 +88,10 @@ async fn file_upload(cmd: &protocol::Command, repo_path: &Path) -> serde_json::V
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the effect class sends only Write verbs here and `Verb` has over 60 variants"
+)]
 fn file_verb(verb: dispatch::Verb, cmd: &protocol::Command, repo_path: &Path) -> serde_json::Value {
     let rel = cmd
         .payload

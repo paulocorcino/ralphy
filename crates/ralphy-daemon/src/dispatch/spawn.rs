@@ -47,6 +47,10 @@ pub(crate) enum Collected {
 /// `deadline`. INVARIANT on every path: nothing kills the child, and the slot is
 /// released only inside the blocking task, when the child has exited — a
 /// deadline does not free it, because the child still runs.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the spawner, the command, the cwd, the daemon id, the slots and the deadline"
+)]
 pub(crate) async fn collect_within(
     spawner: Arc<dyn Spawner>,
     program: OsString,

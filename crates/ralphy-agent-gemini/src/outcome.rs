@@ -231,7 +231,12 @@ impl ExitClass {
                 "gemini exited on its internal relaunch sentinel (exit 199) — the \
                  CLI's self re-exec did not complete",
             ),
-            _ => None,
+            ExitClass::Success
+            | ExitClass::Generic
+            | ExitClass::Auth
+            | ExitClass::Cancelled
+            | ExitClass::Limit
+            | ExitClass::Other => None,
         }
     }
 }
@@ -269,6 +274,10 @@ pub(crate) fn classify_exit(code: Option<i32>) -> ExitClass {
 /// actionable diagnosis (a model-not-found error, the auth sentence, a provider
 /// throttle) goes to **stderr** while stdout carries only records, so a
 /// classifier reading stdout alone is blind to exactly the failures it must name.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the stream fold, the log and the exit facts of one run, read by many callers"
+)]
 pub(crate) fn classify_gemini_outcome(
     fold: &GeminiFold,
     log: &str,

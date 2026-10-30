@@ -21,11 +21,11 @@ fn configure(root: &Path) {
 
 /// A repo with one commit on `main`, plus an untracked `b.txt` to act on.
 fn init_repo() -> TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     run_git(dir.path(), &["init", "--quiet", "-b", "main"]);
     configure(dir.path());
     commit(dir.path(), "a.txt", "one\n", "init");
-    std::fs::write(dir.path().join("b.txt"), "loose\n").unwrap();
+    std::fs::write(dir.path().join("b.txt"), "loose\n").expect("writing a file");
     dir
 }
 
@@ -243,7 +243,7 @@ pub(super) fn lock_rows() -> Vec<LockRow> {
         "mangled
 ",
     )
-    .unwrap();
+    .expect("writing a file");
 
     vec![
         lock_row("changes stage", stage, "--path=b.txt"),
@@ -270,7 +270,7 @@ fn lock_row(verb: &'static str, repo: TempDir, flag: &str) -> LockRow {
         args,
         state: Box::new(move || {
             let (index, head) = git_state(&state_root);
-            let a_txt = std::fs::read(state_root.join("a.txt")).unwrap();
+            let a_txt = std::fs::read(state_root.join("a.txt")).expect("reading a file");
             format!("index={index:?} head={head} a.txt={a_txt:?}")
         }),
     }

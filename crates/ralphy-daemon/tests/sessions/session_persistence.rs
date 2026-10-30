@@ -39,9 +39,13 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();
         while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
+            let bytes = match msg.expect("read the next frame") {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if answer_cursor
@@ -49,7 +53,9 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
                         .windows(CURSOR_POSITION_REQUEST.len())
                         .any(|w| w == CURSOR_POSITION_REQUEST)
                 {
-                    ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
+                    ws.send(terminal(CURSOR_POSITION_REPLY))
+                        .await
+                        .expect("send the frame");
                 }
                 acc.push_str(&String::from_utf8_lossy(&data));
                 if acc.contains(needle) {
@@ -70,13 +76,19 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
 async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("send the request");
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.unwrap();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .expect("read the response");
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text
         .split_whitespace()
