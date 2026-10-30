@@ -7,7 +7,7 @@
    timer or `window`, except where a card is painted (`applyLook`, `noCredential`)
    or the fence geometry is asked (`lockedBy`, `spawnRect`).
 
-   `wb-notes.ts` imports these and keeps every name in its returned object.
+   `wb-notes.ts` keeps every name of `NOTE_FOLDS` in its returned object.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
 import type { DeskFence, NoteCard, NoteLook, NoteSource, Offset, Rect, Size } from "./wb-types.d.ts";
@@ -564,3 +564,49 @@ export function baseName(path: string) {
 export function dirName(path: string) {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
+
+// The folds and constants `WBNotes` hands out: browser checks, the markup
+// and the torn-off pages read them there by name.
+export const NOTE_FOLDS = {
+  titleOf,
+  anchorsOf,
+  savedLabel,
+  noteSlug,
+  stampName,
+  toneOf,
+  bodyOf,
+  colorOf,
+  styleOf,
+  withStyle,
+  withTitle,
+  titleFieldOf,
+  veiledOf,
+  withVeil,
+  fillOf,
+  inkOf,
+  fontOf,
+  sizeOf,
+  lockedBy,
+  spawnRect,
+  noteDormancyDecision,
+  onTopRect,
+  onTopClamp,
+  ON_TOP_FLOOR,
+  ON_TOP_BAND_BELOW,
+  ON_TOP_TOP,
+  TONES,
+  FILLS,
+  INKS,
+  FONTS,
+  SIZES,
+  DEFAULT_TONE,
+  DEFAULT_FILL,
+  DEFAULT_INK,
+  DEFAULT_FONT,
+  DEFAULT_SIZE,
+  DEFAULT_DIR,
+  NEW_NOTE_STYLE,
+  NOTE_MIN,
+  NOTE_DEFAULT,
+  SAVE_AFTER_MS,
+};

@@ -18,7 +18,7 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
-import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, TONES, anchorsOf, applyLook, bodyOf, colorOf, fillOf, fontOf, inkOf, lockedBy, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
+import { DEFAULT_FILL, DEFAULT_INK, DEFAULT_TONE, NEW_NOTE_STYLE, NOTE_DEFAULT, applyLook, lockedBy, spawnRect, NOTE_FOLDS } from "./wb-notes-folds.ts";
 import { createNoteChrome } from "./wb-notes-chrome.ts";
 import { createNoteDormancy } from "./wb-notes-dormancy.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
@@ -654,49 +654,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   }
 
   return {
-    // folds
-    titleOf,
-    anchorsOf,
-    savedLabel,
-    noteSlug,
-    stampName,
-    toneOf,
-    bodyOf,
-    colorOf,
-    styleOf,
-    withStyle,
-    withTitle,
-    titleFieldOf,
-    veiledOf,
-    withVeil,
-    fillOf,
-    inkOf,
-    fontOf,
-    sizeOf,
-    lockedBy,
-    spawnRect,
-    noteDormancyDecision,
-    onTopRect,
-    onTopClamp,
-    ON_TOP_FLOOR,
-    ON_TOP_BAND_BELOW,
-    ON_TOP_TOP,
-    TONES,
-    FILLS,
-    INKS,
-    FONTS,
-    SIZES,
-    DEFAULT_TONE,
-    DEFAULT_FILL,
-    DEFAULT_INK,
-    DEFAULT_FONT,
-    DEFAULT_SIZE,
-    DEFAULT_DIR,
-    NEW_NOTE_STYLE,
+    ...NOTE_FOLDS,
     MARKDOWN_HELP,
-    NOTE_MIN,
-    NOTE_DEFAULT,
-    SAVE_AFTER_MS,
     // the card
     render,
     create,
