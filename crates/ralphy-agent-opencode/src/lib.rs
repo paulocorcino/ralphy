@@ -1,14 +1,14 @@
 //! The OpenCode CLI adapter: drives `opencode run` behind the core [`Agent`]
 //! contract. Everything OpenCode-specific — the binary, the model/variant flags,
 //! the headless invocation, the line-delimited-JSON event stream, and the
-//! signal→[`Outcome`] mapping — is confined here. See docs/adr/0005.
+//! signal→[`ralphy_core::Outcome`] mapping — is confined here. See docs/adr/0005.
 //!
 //! Like the Codex adapter (and unlike Claude's live PTY session), OpenCode needs
 //! no interactive session: `plan` and `execute` both run headless `opencode run`
 //! with the prompt piped on stdin, and completion is detected from the
 //! `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the JSON
 //! `text` parts, a JSON `error` event, the process exit code, and a HEAD-diff
-//! commit check — mapped onto the same core [`Outcome`].
+//! commit check — mapped onto the same core [`ralphy_core::Outcome`].
 //!
 //! Skills materialization (ADR-0005 D7) is implemented here: before every `plan`
 //! and `execute` call the embedded skills tree is extracted to `<repo>/.ralphy/skills`
