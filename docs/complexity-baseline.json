@@ -294,14 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-usage-scan/src/cursor.rs": {
-      "scan_chats": [
-        15
-      ],
-      "scan_transcripts": [
-        13
-      ]
-    },
     "crates/ralphy-usage-scan/src/gemini.rs": {
       "fold_session": [
         12
