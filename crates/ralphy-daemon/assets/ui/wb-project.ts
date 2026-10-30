@@ -257,11 +257,17 @@ function chipDirty(p: Project, checkout: string | null | undefined, listing: Lis
 // hooks, a shell console, a peer on an older build.
 const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1 };
 function agentStateOf(sessions: HostedSession[] | null | undefined) {
-  let best = null;
+  let best: string | null = null;
+  let bestRank = 0;
   for (const s of sessions || []) {
     const state = agentDotOf(s?.agent_state).state;
     if (!state || !(state in STATE_RANK)) continue;
-    if (!best || STATE_RANK[state] > STATE_RANK[best]) best = state;
+    const rank = STATE_RANK[state];
+    if (rank === undefined) continue;
+    if (best === null || rank > bestRank) {
+      best = state;
+      bestRank = rank;
+    }
   }
   return best;
 }

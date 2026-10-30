@@ -205,7 +205,7 @@ export function securityDialog() {
         this.securityForm.totpError = "";
         this.securityForm.confirmCode = "";
         this.securityForm.otpauthUri = uri;
-        this.securityForm.secret = (uri.split("secret=")[1] || "").split("&")[0];
+        this.securityForm.secret = (uri.split("secret=")[1] || "").split("&")[0] ?? "";
         this.securityForm.qrHtml = wbQr(uri);
       } catch {}
     },

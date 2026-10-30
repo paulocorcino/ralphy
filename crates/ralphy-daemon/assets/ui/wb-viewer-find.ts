@@ -114,9 +114,10 @@ export function createViewerFind(deps: ViewerFindDeps) {
 
   function mdSearchStep(rec: ViewerRecord, dir: number) {
     if (!rec.hits || !rec.hits.length) return;
-    if (rec.hitIdx! >= 0) rec.hits[rec.hitIdx!].classList.remove("current");
+    if (rec.hitIdx! >= 0) rec.hits[rec.hitIdx!]?.classList.remove("current");
     rec.hitIdx = (rec.hitIdx! + dir + rec.hits.length) % rec.hits.length;
     const mk = rec.hits[rec.hitIdx];
+    if (!mk) return;
     mk.classList.add("current");
     mk.scrollIntoView({ block: "center", behavior: "smooth" });
     rec.el!.querySelector(".md-find-count")!.textContent = `${rec.hitIdx + 1}/${rec.hits.length}`;

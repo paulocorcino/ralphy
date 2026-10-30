@@ -132,13 +132,13 @@ export function titleOf(markdown: string | null | undefined, fallback?: string) 
 export function legacyTitleOf(body: string | null | undefined) {
   const lines = String(body || "").split("\n");
   let at = 0;
-  while (at < lines.length && lines[at].trim() === "") at += 1;
-  const m = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "");
-  if (!m) return null;
+  while (at < lines.length && lines[at]?.trim() === "") at += 1;
+  const name = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "")?.[1];
+  if (name === undefined) return null;
   // The blank line that separated the heading from the text goes with it.
   let after = at + 1;
   if ((lines[after] ?? "").trim() === "") after += 1;
-  return { name: m[1], rest: lines.slice(after).join("\n") };
+  return { name, rest: lines.slice(after).join("\n") };
 }
 
 // When this note was last written, for the footer (ADR-0064 §7 as amended).
@@ -174,8 +174,8 @@ export function anchorsOf(markdown: string | null | undefined) {
     // A `##` inside a code fence is source, not a heading.
     if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
     if (fenced) continue;
-    const m = /^##\s+(.+?)\s*$/.exec(line);
-    if (m) out.push({ text: m[1], index: out.length });
+    const text = /^##\s+(.+?)\s*$/.exec(line)?.[1];
+    if (text !== undefined) out.push({ text, index: out.length });
   }
   return out;
 }
@@ -315,8 +315,8 @@ export function fieldOf(markdown: string | null | undefined, key: string, set: s
   if (!split) return null;
   const re = new RegExp("^\\s*" + key + ":\\s*(\\S+)\\s*$");
   for (const line of split.inner.split("\n")) {
-    const m = re.exec(line.replace(/\r$/, ""));
-    if (m) return set.includes(m[1]) ? m[1] : null;
+    const value = re.exec(line.replace(/\r$/, ""))?.[1];
+    if (value !== undefined) return set.includes(value) ? value : null;
   }
   return null;
 }
@@ -343,9 +343,8 @@ export function titleFieldOf(markdown: string | null | undefined) {
   const split = splitFrontMatter(markdown);
   if (!split) return null;
   for (const line of split.inner.split("\n")) {
-    const m = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""));
-    if (!m) continue;
-    const raw = m[1];
+    const raw = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""))?.[1];
+    if (raw === undefined) continue;
     if (!raw.startsWith('"')) return raw;
     return raw
       .slice(1, raw.endsWith('"') && raw.length > 1 ? -1 : undefined)
@@ -541,11 +540,11 @@ export function onTopClamp(box: Rect, viewport: Partial<Size> | null | undefined
 // that includes `javascript:`, `data:` and `vbscript:` — is inert.
 export const SAFE_SCHEMES = ["http:", "https:", "mailto:"];
 export function isSafeScheme(href: string | null) {
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(href || ""));
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(href || ""))?.[1];
   // No scheme means a `/`-rooted path, which the browser resolves on this
   // origin: an ordinary navigation, not a foreign one.
-  if (!scheme) return true;
-  return SAFE_SCHEMES.includes(scheme[1].toLowerCase() + ":");
+  if (scheme === undefined) return true;
+  return SAFE_SCHEMES.includes(scheme.toLowerCase() + ":");
 }
 
 // The detached-fence popup loads no `wb-file-viewer.ts`, so without this every

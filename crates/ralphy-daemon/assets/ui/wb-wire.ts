@@ -27,7 +27,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // by accident of global scope.
   window.getShell = function getShell() {
     const root = document.querySelector<HTMLElement & { _x_dataStack?: Shell[] }>("[x-data]");
-    return root && root._x_dataStack ? root._x_dataStack[0] : null;
+    return root?._x_dataStack?.[0] ?? null;
   };
 
   // A viewer asked to detach → open the popup and close the tab.

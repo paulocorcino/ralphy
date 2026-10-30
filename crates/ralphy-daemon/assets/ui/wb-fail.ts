@@ -74,10 +74,10 @@ function oneLine(text: string) {
   let lines = text.replace(/\r/g, "").split("\n");
   const trace = lines.findIndex((l) => /^\s*Stack backtrace:/.test(l));
   if (trace >= 0) lines = lines.slice(0, trace);
-  const at = lines.findIndex((l) => l.startsWith("Error: "));
-  if (at < 0) return lines.map((l) => l.trim()).filter(Boolean).join(" ");
-  const pieces = [lines[at].slice("Error: ".length).trim()];
-  for (const l of lines.slice(at + 1)) {
+  const errorLine = lines.find((l) => l.startsWith("Error: "));
+  if (errorLine === undefined) return lines.map((l) => l.trim()).filter(Boolean).join(" ");
+  const pieces = [errorLine.slice("Error: ".length).trim()];
+  for (const l of lines.slice(lines.indexOf(errorLine) + 1)) {
     const t = l.trim().replace(/^\d+: /, "");
     if (t && t !== "Caused by:") pieces.push(t);
   }
@@ -91,7 +91,8 @@ type Parts = { sentence: string } | { cause: string; rest: string[] };
 function parts(reply: Reply): Parts | null {
   const raw = String((reply && (reply.message || reply.reason)) || "").trim();
   if (!raw) return null;
-  if (Object.hasOwn(CAUSE, raw)) return { cause: CAUSE[raw], rest: [] };
+  const known = Object.hasOwn(CAUSE, raw) ? CAUSE[raw] : undefined;
+  if (known !== undefined) return { cause: known, rest: [] };
   if (isSentence(raw) && !raw.startsWith("Error: ")) return { sentence: raw };
   const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /, "");
   const [head, ...rest] = text.split(" — ").map(bare).filter(Boolean);
@@ -106,7 +107,7 @@ function failed(reply: Reply, fallback: string) {
   const p = parts(reply);
   if (!p) return fallback;
   if ("sentence" in p) return p.sentence;
-  const act = bare(fallback.split(": ")[0]);
+  const act = bare(fallback.split(": ")[0] ?? "");
   return `${act}: ${p.cause}.${tail(p.rest)}`;
 }
 

@@ -482,7 +482,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
-        this.activate(next.id);
+        if (next) this.activate(next.id);
       } else {
         // A background close can still be the slot's pane: repaint.
         void window.Alpine.nextTick(() => this.syncViewer());

@@ -162,7 +162,7 @@ export const WBGeometry = (function () {
       const c = titleBarPoint(w?.rect);
       for (const f of list) {
         if (rectHolds(f.rect, c)) {
-          out[f.id].push(w.id);
+          out[f.id]?.push(w.id);
           break;
         }
       }

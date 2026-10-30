@@ -150,6 +150,7 @@ export function levelShows(files: LevelFiles, node: WunderbaumNode, specs: Wunde
   return specs.every((spec, i) => {
     const row = rows[i];
     return (
+      row !== undefined &&
       row.title === spec.title &&
       files.isFolder(row) === !!spec.folder &&
       !!row.hasClass?.("wb-ignored") === (spec.classes === "wb-ignored")

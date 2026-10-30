@@ -39,7 +39,7 @@ export function remoteImageNotice(src: string, alt: string) {
 // for anything that climbs OUT of the repo — the daemon would refuse it
 // anyway, and not asking is the honest way to spell "not ours".
 function repoRelative(dir: string, src: string) {
-  let clean = src.split(/[?#]/)[0];
+  let clean = src.split(/[?#]/)[0] ?? "";
   try {
     clean = decodeURIComponent(clean);
   } catch {
