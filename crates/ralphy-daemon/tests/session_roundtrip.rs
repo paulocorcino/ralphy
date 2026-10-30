@@ -19,7 +19,7 @@ fn through_codec(data: Vec<u8>) -> Vec<u8> {
     let framed = protocol::encode(&Frame::Terminal { session: 1, data });
     match protocol::decode(&framed).expect("terminal frame decodes") {
         Frame::Terminal { data, .. } => data,
-        frame @ (Frame::Command(_) | Frame::Presence(_)) => {
+        frame @ (Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. }) => {
             panic!("expected a terminal frame, got {frame:?}")
         }
     }

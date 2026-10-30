@@ -497,7 +497,9 @@ mod tests {
                 Some(Ok(Wire::Binary(bytes))) => match protocol::decode(&bytes).unwrap() {
                     Frame::Command(c) => commands.push(c),
                     Frame::Presence(_) => beats += 1,
-                    other => panic!("an unexpected frame: {other:?}"),
+                    other @ (Frame::Terminal { .. } | Frame::Channel { .. }) => {
+                        panic!("an unexpected frame: {other:?}")
+                    }
                 },
                 None | Some(Ok(Wire::Close(_))) | Some(Err(_)) => return (commands, beats, true),
                 Some(Ok(_)) => {}

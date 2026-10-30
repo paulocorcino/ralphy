@@ -38,7 +38,7 @@ where
     };
     match protocol::decode(&bytes).expect("decodes to a frame") {
         Frame::Presence(p) => p,
-        frame @ (Frame::Terminal { .. } | Frame::Command(_)) => {
+        frame @ (Frame::Terminal { .. } | Frame::Command(_) | Frame::Channel { .. }) => {
             panic!("expected a presence frame, got {frame:?}")
         }
     }
