@@ -39,6 +39,10 @@ pub(super) fn file_scores(src: &str) -> Result<Vec<Found>> {
     Ok(out)
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn items(list: &[Item], out: &mut Vec<Found>) {
     for item in list.iter().filter(|item| !is_test(item_attrs(item))) {
         match item {
@@ -52,6 +56,10 @@ fn items(list: &[Item], out: &mut Vec<Found>) {
 }
 
 /// The attributes of the items that can hold a function.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn item_attrs(item: &Item) -> &[syn::Attribute] {
     match item {
         Item::Fn(f) => &f.attrs,
@@ -62,6 +70,10 @@ fn item_attrs(item: &Item) -> &[syn::Attribute] {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn impl_fns(block: &syn::ItemImpl, out: &mut Vec<Found>) {
     let fns = block.items.iter().filter_map(|item| match item {
         syn::ImplItem::Fn(f) if !is_test(&f.attrs) => Some(f),
@@ -73,6 +85,10 @@ fn impl_fns(block: &syn::ItemImpl, out: &mut Vec<Found>) {
 }
 
 /// The trait methods that have a default body.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn trait_fns(t: &syn::ItemTrait, out: &mut Vec<Found>) {
     let fns = t.items.iter().filter_map(|item| match item {
         syn::TraitItem::Fn(f) if !is_test(&f.attrs) => f.default.as_ref().map(|body| (f, body)),
@@ -124,6 +140,10 @@ impl Score {
         self.nesting -= 1;
     }
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+    )]
     fn visit_if(&mut self, e: &syn::ExprIf) {
         self.visit_expr(&e.cond);
         self.nested(|s| s.visit_block(&e.then_branch));
@@ -209,6 +229,10 @@ fn select_arm(input: ParseStream, exprs: &mut Vec<Expr>) -> syn::Result<()> {
 
 /// The operators and the non-logical operands of a tree of `&&` and `||`,
 /// left to right. Parentheses do not end a run.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn flatten<'a>(e: &'a Expr, ops: &mut Vec<bool>, leaves: &mut Vec<&'a Expr>) {
     match e {
         Expr::Binary(b) if logical(&b.op).is_some() => {
@@ -224,6 +248,10 @@ fn flatten<'a>(e: &'a Expr, ops: &mut Vec<bool>, leaves: &mut Vec<&'a Expr>) {
 }
 
 /// `Some(true)` for `&&`, `Some(false)` for `||`.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn logical(op: &BinOp) -> Option<bool> {
     match op {
         BinOp::And(_) => Some(true),
@@ -233,6 +261,10 @@ fn logical(op: &BinOp) -> Option<bool> {
 }
 
 impl<'ast> Visit<'ast> for Score {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+    )]
     fn visit_expr(&mut self, e: &'ast Expr) {
         match e {
             Expr::If(i) => {
@@ -335,6 +367,10 @@ fn walk(file: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     declared(&parsed.items, file, dir, out)
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "syn marks this enum non_exhaustive, so a match needs a catch-all"
+)]
 fn declared(items: &[Item], file: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let mods = items.iter().filter_map(|item| match item {
         Item::Mod(m) if !is_test(&m.attrs) => Some(m),

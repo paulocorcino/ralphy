@@ -219,7 +219,7 @@ impl Scan<'_> {
             match &one.tok {
                 Tok::Str(s) => return vec![Part::Lit(s)],
                 Tok::Tpl(pieces) => return template_parts(pieces),
-                _ => {}
+                Tok::Ident(_) | Tok::Punct(_) | Tok::Other => {}
             }
         }
         vec![Part::Hole(self.source(start, k))]
@@ -294,6 +294,10 @@ impl Scan<'_> {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the token range, the sink kind and the two rendering flags of one emit"
+    )]
     pub(super) fn emit(
         &self,
         a: usize,

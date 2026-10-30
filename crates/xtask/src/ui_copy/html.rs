@@ -85,6 +85,10 @@ fn text_run(
 /// Open the element whose start tag is at `i`: read the tag and, for a
 /// `<script>` or `<style>`, its body. Returns the index after them and whether
 /// text after the tag goes on with the sentence (see `start_tag`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the scan position and state of one tag, passed on to the tag readers"
+)]
 fn open_element(
     cs: &[char],
     i: usize,
@@ -215,6 +219,10 @@ fn book_attributes(
 
 /// Read the body of a `<script>` or `<style>` that opened at `i`, and return
 /// the index after its end tag. Only a script with no `src` is copy.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the scan position and state of one tag, passed on to the tag readers"
+)]
 fn raw_text_body(
     cs: &[char],
     i: usize,

@@ -4,9 +4,19 @@ fn fragment(kind: &str, prose: &str) -> String {
     format!("---\nkind: {kind}\n---\n{prose}\n")
 }
 
+/// Removes a scratch directory of a test. It may not exist, and a failed
+/// cleanup leaves only a temporary directory behind.
+fn remove_scratch(path: &Path) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the directory may not exist, and a failed cleanup must not fail the test"
+    )]
+    let _ = std::fs::remove_dir_all(path);
+}
+
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("xtask-changelog-{}-{tag}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     std::fs::create_dir_all(dir.join("changelog.d")).expect("scratch dir");
     dir
 }
@@ -64,7 +74,7 @@ fn a_release_writes_the_record_the_notes_and_the_flag() {
         !root.join("changelog.d/389.md").exists(),
         "a folded fragment is consumed, or it lands in the next release too"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -99,7 +109,7 @@ fn a_second_release_keeps_the_first_one() {
         changelog.find("rc.21").expect("rc.21") < changelog.find("rc.20").expect("rc.20"),
         "newest first"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -144,7 +154,7 @@ fn notes_reads_a_past_release_without_touching_the_pending_fragments() {
         root.join("changelog.d/2.md").exists(),
         "--notes must never consume a fragment"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -172,7 +182,7 @@ fn notes_meet_a_v_prefixed_tag_and_an_unprefixed_fold() {
     assert!(std::fs::read_to_string(out.join("notes.md"))
         .expect("notes")
         .contains("A fix."));
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -206,7 +216,7 @@ fn an_unrecorded_version_publishes_the_exact_pointer_and_is_not_announced() {
         "no",
         "an unrecorded release is never announced"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -243,7 +253,7 @@ fn refolding_a_version_is_refused_because_its_fragments_are_gone() {
     changelog_cmd(&forced).expect("--force is allowed to replace");
     let history = load_history(&root.join("changelog.json")).expect("history");
     assert!(history.releases[0].entries.is_empty());
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -272,7 +282,7 @@ version = \"0.1.0-rc19\"
         before,
         "nothing is written until the version is known good"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -303,7 +313,7 @@ version = \"0.1.0-rc19\"
         !text.contains("\"v0.1.0"),
         "the v must not reach the manifest: {text}"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -320,7 +330,7 @@ fn a_fix_only_release_is_not_announceable() {
     let announce =
         std::fs::read_to_string(root.join("target/changelog/announce")).expect("announce");
     assert_eq!(announce.trim(), "no");
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -338,7 +348,7 @@ fn check_refuses_a_malformed_fragment_and_writes_nothing() {
         "{err:?}"
     );
     assert!(!root.join("CHANGELOG.md").exists());
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -350,7 +360,7 @@ fn pending_reads_the_fragments_without_consuming_them() {
     assert!(report.contains("- A feature. (#7)"), "{report}");
     assert!(report.contains("announce: true"), "{report}");
     assert!(root.join("changelog.d/7.md").exists());
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -365,7 +375,7 @@ fn a_release_with_no_fragments_still_cuts() {
     .expect("an internal-only release is still a release");
     let notes = std::fs::read_to_string(root.join("target/changelog/notes.md")).expect("notes");
     assert!(notes.contains("No user-visible changes"));
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
 
 #[test]
@@ -415,5 +425,5 @@ fn bump_moves_the_crates_and_skips_the_unpublished_tool() {
         tool.contains("version = \"0.1.0-rc19\""),
         "the out-of-band tool does not ride the release train: {tool}"
     );
-    let _ = std::fs::remove_dir_all(&root);
+    remove_scratch(&root);
 }
