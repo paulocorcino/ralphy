@@ -1,14 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-columns.ts": {
-      "fromStored": [
-        11
-      ],
-      "listFold": [
-        14
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-checkout.ts": {
       "askWorktree": [
         12

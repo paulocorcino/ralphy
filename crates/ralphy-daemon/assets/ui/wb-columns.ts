@@ -301,6 +301,16 @@ export const WBColumns = (function () {
   // grid is ignored (ADR-0051 §8); then ids no longer on the desk drop.
   function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined): Grid {
     if (!Array.isArray(stored)) return [];
+    const cols = storedColumns(stored);
+    const records = desk || [];
+    if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
+    const next = keep(cols, new Set(records.map((r) => r.id)));
+    return flat(next).length >= 2 ? next : [];
+  }
+
+  // The columns of a stored grid: each id once, the first time it appears,
+  // and no empty column. An id that is not a string drops.
+  function storedColumns(stored: unknown[]): Grid {
     const seen = new Set<string>();
     const cols: Grid = [];
     for (const item of stored) {
@@ -313,10 +323,7 @@ export const WBColumns = (function () {
       }
       if (col.length) cols.push(col);
     }
-    const records = desk || [];
-    if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
-    const next = keep(cols, new Set(records.map((r) => r.id)));
-    return flat(next).length >= 2 ? next : [];
+    return cols;
   }
 
   // The stored direction, "right" when there is none.
@@ -407,11 +414,23 @@ export const WBColumns = (function () {
       const row = r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
       (into || loose).push(row);
     }
+    addDetached(byFence, detached);
+    return listGroups(loose, fences, byFence);
+  }
+
+  // The members of each detached fence join its rows, after its live ones.
+  // A fence that is not listed takes none.
+  function addDetached(byFence: Map<string | undefined, ColumnRow[]>, detached: ListFoldInput["detached"]) {
     for (const [fenceId, members] of Object.entries(detached || {})) {
       const into = byFence.get(fenceId);
       if (!into) continue;
       for (const m of members) into.push(detachedRow(m));
     }
+  }
+
+  // The groups of the list: the loose consoles first, then each fence with a
+  // row, in the order of `fences`.
+  function listGroups(loose: ColumnRow[], fences: ListFoldInput["fences"], byFence: Map<string | undefined, ColumnRow[]>) {
     const group = (fence: ColumnFence | null, rows: ColumnRow[]): ColumnGroup => ({ fence, rows });
     const groups: ColumnGroup[] = [];
     if (loose.length) groups.push(group(null, loose));
