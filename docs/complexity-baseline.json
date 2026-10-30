@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/watch.rs": {
-      "watch": [
-        14
-      ]
-    },
     "crates/ralphy-pricing/src/lib.rs": {
       "parse_pricing_toml": [
         14

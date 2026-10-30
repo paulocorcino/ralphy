@@ -206,40 +206,39 @@ impl WatcherManager {
         }
         // Every failure below leaves the registry as it was: no raised count,
         // and no empty repo watcher.
-        let rx = {
-            let rw = repos.get_mut(repo).expect("just inserted");
-            if rw.watches.get(&rel).copied().unwrap_or(0) == 0 {
-                let target = rw.target(&rel);
-                if let Err(e) = rw.debouncer.watch(&target, RecursiveMode::NonRecursive) {
-                    if rw.watches.is_empty() {
-                        repos.remove(repo);
-                    }
-                    return Err(e).with_context(|| format!("watching {}", target.display()));
-                }
-                lock(&rw.watch_set).insert(rel.clone());
-            }
-            *rw.watches.entry(rel.clone()).or_insert(0) += 1;
-            rw.tx.subscribe()
-        };
-        let total: usize = repos.values().map(|r| r.watches.len()).sum();
-        if total > self.max_watches {
-            #[cfg(test)]
-            let degraded = if self
-                .fail_next_degrade
-                .swap(false, std::sync::atomic::Ordering::SeqCst)
-            {
-                Err(anyhow::anyhow!("an injected degrade failure"))
-            } else {
-                repos.get_mut(repo).expect("present").degrade_to_poll()
-            };
-            #[cfg(not(test))]
-            let degraded = repos.get_mut(repo).expect("present").degrade_to_poll();
-            if let Err(e) = degraded {
-                release(&mut repos, repo, &rel);
-                return Err(e).context("degrading to polling");
-            }
-        }
+        let rx = hold(&mut repos, repo, &rel)?;
+        self.degrade_past_cap(&mut repos, repo, &rel)?;
         Ok(rx)
+    }
+
+    /// Past `max_watches` watched dirs in total, move `repo` to polling. A
+    /// failed move releases the hold `watch` just took on `rel`.
+    fn degrade_past_cap(
+        &self,
+        repos: &mut BTreeMap<String, RepoWatcher>,
+        repo: &str,
+        rel: &str,
+    ) -> Result<()> {
+        let total: usize = repos.values().map(|r| r.watches.len()).sum();
+        if total <= self.max_watches {
+            return Ok(());
+        }
+        #[cfg(test)]
+        let degraded = if self
+            .fail_next_degrade
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            Err(anyhow::anyhow!("an injected degrade failure"))
+        } else {
+            repos.get_mut(repo).expect("present").degrade_to_poll()
+        };
+        #[cfg(not(test))]
+        let degraded = repos.get_mut(repo).expect("present").degrade_to_poll();
+        if let Err(e) = degraded {
+            release(repos, repo, rel);
+            return Err(e).context("degrading to polling");
+        }
+        Ok(())
     }
 
     /// Release one subscriber's hold on `repo`'s `rel` dir. On the last release the
@@ -268,6 +267,25 @@ impl WatcherManager {
     fn mode(&self, repo: &str) -> Option<WatchMode> {
         lock(&self.repos).get(repo).map(|r| r.mode)
     }
+}
+
+/// Take one hold on `repo`'s normalized `rel` dir, under the caller's lock,
+/// and subscribe to the repo's nudges. The first hold on a dir adds its OS
+/// watch; when that fails, a repo watcher left with no dir goes.
+fn hold(repos: &mut BTreeMap<String, RepoWatcher>, repo: &str, rel: &str) -> Result<DirtyRx> {
+    let rw = repos.get_mut(repo).expect("just inserted");
+    if rw.watches.get(rel).copied().unwrap_or(0) == 0 {
+        let target = rw.target(rel);
+        if let Err(e) = rw.debouncer.watch(&target, RecursiveMode::NonRecursive) {
+            if rw.watches.is_empty() {
+                repos.remove(repo);
+            }
+            return Err(e).with_context(|| format!("watching {}", target.display()));
+        }
+        lock(&rw.watch_set).insert(rel.to_string());
+    }
+    *rw.watches.entry(rel.to_string()).or_insert(0) += 1;
+    Ok(rw.tx.subscribe())
 }
 
 /// Lock `mutex` even after a thread panicked while it held it. Each change under
