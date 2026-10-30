@@ -17,7 +17,7 @@ use crate::degraded::{DegradedAction, DegradedWatch};
 use crate::idle::{IdleWatch, ProgressBeat};
 
 mod lines;
-use lines::{spawn_reader, DegradedSwitch, KillSwitch, LinePredicate};
+use lines::{spawn_reader, DegradedSwitch, KillSwitch, LinePredicate, LineWatch};
 
 /// The raw result of driving one headless child to completion or timeout.
 ///
@@ -154,20 +154,24 @@ fn drive_headless(
     let out_handle = spawn_reader(
         stdout,
         tx_out,
-        log.clone(),
-        None,
-        beat.clone(),
-        degraded.clone(),
-        false,
+        LineWatch {
+            log: log.clone(),
+            switch: None,
+            beat: beat.clone(),
+            degraded: degraded.clone(),
+            on_stderr: false,
+        },
     );
     let err_handle = spawn_reader(
         stderr,
         tx_err,
-        log,
-        switch.clone(),
-        beat.clone(),
-        degraded.clone(),
-        true,
+        LineWatch {
+            log,
+            switch: switch.clone(),
+            beat: beat.clone(),
+            degraded: degraded.clone(),
+            on_stderr: true,
+        },
     );
 
     if let Err(e) = release_prompt(gate, stdin, prompt, &mut child) {
@@ -601,6 +605,10 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
     // byte-identical to the returned `log` the detectors scan (and deterministic for
     // tests). A mid-run crash leaves the interleaved partial, which is fine for
     // forensics — the canonical rewrite only matters once the run completed.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the file is a diagnostic copy; the caller gets the same text in the return value"
+    )]
     let _ = fs::write(log_path, &log);
     let exit = r.exit;
     let exited_cleanly = exit.map(|s| s.success()).unwrap_or(false);
@@ -629,6 +637,10 @@ fn recv_and_join(
 ) -> Vec<u8> {
     match rx.recv_timeout(grace) {
         Ok(buf) => {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the reader already sent its bytes; a panic in it leaves nothing to keep"
+            )]
             let _ = handle.join();
             buf
         }

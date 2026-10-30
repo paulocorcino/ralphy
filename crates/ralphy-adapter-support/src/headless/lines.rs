@@ -111,7 +111,15 @@ impl LineWatch {
     fn tee_line(&self, line: &[u8]) {
         if let Some(f) = &self.log {
             if let Ok(mut f) = f.lock() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the streamed log is a live copy; the reader keeps the bytes in memory"
+                )]
                 let _ = f.write_all(line);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the streamed log is a live copy; the reader keeps the bytes in memory"
+                )]
                 let _ = f.flush();
             }
         }
@@ -136,19 +144,8 @@ impl LineWatch {
 pub(super) fn spawn_reader<R: Read + Send + 'static>(
     reader: R,
     tx: mpsc::Sender<Vec<u8>>,
-    log: Option<Arc<Mutex<fs::File>>>,
-    switch: Option<Arc<KillSwitch>>,
-    beat: Option<Arc<ProgressBeat>>,
-    degraded: Option<Arc<DegradedSwitch>>,
-    on_stderr: bool,
+    watch: LineWatch,
 ) -> thread::JoinHandle<()> {
-    let watch = LineWatch {
-        log,
-        switch,
-        beat,
-        degraded,
-        on_stderr,
-    };
     thread::spawn(move || {
         let mut br = BufReader::new(reader);
         let mut all = Vec::new();
@@ -162,6 +159,10 @@ pub(super) fn spawn_reader<R: Read + Send + 'static>(
             all.extend_from_slice(&line);
             watch.on_line(&line);
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver is gone once the run gave up on this stream"
+        )]
         let _ = tx.send(all);
     })
 }

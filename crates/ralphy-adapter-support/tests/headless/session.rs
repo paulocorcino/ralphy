@@ -12,7 +12,7 @@ use super::*;
 fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
     // Clean child: no auth match, no timeout → returns the combined log.
     let log_path = temp_log("text-clean");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
     let log = run_text_session(
         TextSession {
             cmd: child_cmd("clean"),
@@ -28,11 +28,11 @@ fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
     .expect("a clean child with no auth match returns the log");
     assert!(log.contains(CLEAN_STDOUT) && log.contains(CLEAN_STDERR));
     assert!(log_path.is_file(), "the log file was written");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     // Auth detector fires on the stdout marker → Err carries auth_msg + log path.
     let log_path = temp_log("text-auth");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
     let err = run_text_session(
         TextSession {
             cmd: child_cmd("clean"),
@@ -55,11 +55,11 @@ fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
         msg.contains(&log_path.display().to_string()),
         "err names the log path: {msg}"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     // Sleep child (no auth match) → timeout bail with timeout_msg.
     let log_path = temp_log("text-timeout");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
     let err = run_text_session(
         TextSession {
             cmd: child_cmd("sleep"),
@@ -77,7 +77,7 @@ fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
         format!("{err}").contains("TIMED OUT"),
         "err names the timeout message: {err}"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 #[test]
@@ -87,7 +87,7 @@ fn run_init_session_clears_a_stale_artifact_before_the_run() {
     // bails with `missing_msg` (proving the file was cleared, not read back).
     let log_path = temp_log("init-log");
     let out_path = temp_log("init-out");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
     std::fs::write(&out_path, "stale contents from a prior run").unwrap();
 
     let err = run_init_session(
@@ -115,7 +115,7 @@ fn run_init_session_clears_a_stale_artifact_before_the_run() {
         !out_path.exists(),
         "the stale artifact was removed before the run"
     );
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }
 
 const HELD_PROMPT: &str = "the held prompt";
@@ -155,7 +155,7 @@ fn a_held_prompt_reaches_the_child_after_the_first_hook_event() {
     let out = temp_log("held-ok-out");
     let status = temp_log("held-ok-status");
     for p in [&out, &status] {
-        let _ = std::fs::remove_file(p);
+        remove_scratch(p);
     }
 
     let run = HeadlessCall::new(
@@ -175,7 +175,7 @@ fn a_held_prompt_reaches_the_child_after_the_first_hook_event() {
     assert!(run.exited_cleanly, "the child read the prompt and exited 0");
     assert_eq!(std::fs::read_to_string(&out).unwrap(), HELD_PROMPT);
     for p in [&log, &out, &status] {
-        let _ = std::fs::remove_file(p);
+        remove_scratch(p);
     }
 }
 
@@ -185,7 +185,7 @@ fn a_closed_gate_returns_its_error_and_sends_no_prompt() {
     let out = temp_log("held-closed-out");
     let status = temp_log("held-closed-status");
     for p in [&out, &status] {
-        let _ = std::fs::remove_file(p);
+        remove_scratch(p);
     }
 
     let started = Instant::now();
@@ -220,7 +220,7 @@ fn a_closed_gate_returns_its_error_and_sends_no_prompt() {
         "the call returned promptly (took {elapsed:?})"
     );
     for p in [&log, &out, &status] {
-        let _ = std::fs::remove_file(p);
+        remove_scratch(p);
     }
 }
 
@@ -319,7 +319,7 @@ fn a_refused_prompt_gets_no_spawn_context() {
         format!("{err:#}").starts_with(SPAWN_ERR),
         "a spawn failure: {err:#}"
     );
-    let _ = std::fs::remove_file(&log);
+    remove_scratch(&log);
 }
 
 #[test]
@@ -344,5 +344,5 @@ fn the_wall_deadline_is_read_before_the_idle_window_on_one_tick() {
         "both clocks had expired, and the wall clock owns the tick"
     );
     assert!(run.exit_code.is_none(), "a killed child has no exit code");
-    let _ = std::fs::remove_file(&log);
+    remove_scratch(&log);
 }

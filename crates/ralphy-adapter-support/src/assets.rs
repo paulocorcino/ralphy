@@ -34,9 +34,17 @@ pub fn materialize_assets(
             .unwrap_or("asset"),
         std::process::id()
     ));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a leftover is usually absent; create_dir_all below reports a real failure"
+    )]
     let _ = fs::remove_dir_all(&staging); // clear any leftover from a crashed run
     fs::create_dir_all(&staging).context("creating the asset staging directory")?;
     if let Err(e) = asset.extract(&staging) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the extract error is the one to return; a failed cleanup would mask it"
+        )]
         let _ = fs::remove_dir_all(&staging);
         return Err(e).context("extracting the embedded asset tree");
     }
@@ -95,6 +103,7 @@ fn is_transient_lock(_e: &io::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch_dir;
     use include_dir::include_dir;
 
     static FIXTURE: include_dir::Dir<'_> =
@@ -103,7 +112,7 @@ mod tests {
     #[test]
     fn materialize_assets_clears_extracts_and_writes_gitignore() {
         let tmp = std::env::temp_dir().join(format!("ralphy-mat-assets-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&tmp);
+        remove_scratch_dir(&tmp);
 
         // Destination with a pre-existing stale file.
         let dest = tmp.join("dest");
@@ -137,7 +146,7 @@ mod tests {
         let gi_contents = fs::read_to_string(&gi_path).unwrap();
         assert_eq!(gi_contents, "*\n", ".gitignore must ignore everything");
 
-        let _ = fs::remove_dir_all(&tmp);
+        remove_scratch_dir(&tmp);
     }
 
     #[test]
