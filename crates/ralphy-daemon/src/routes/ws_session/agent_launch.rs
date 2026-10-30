@@ -165,16 +165,29 @@ impl Upgrade {
         // slug is a `path-<hash>` key, and the operator reads this name.
         let project = registry::project_name(&repo, &path);
         let root = PathBuf::from(&path);
-        let spec = session::spec_with_status(
-            agent,
-            &root,
-            cwd,
-            &project,
-            self.query.name(),
-            24,
-            80,
-            status,
-        );
+        let console = self.query.name().map(str::to_string);
+        // Off the worker: a Claude spec waits on `claude --version`, up to the
+        // read limit, and a tokio worker must not wait on a child process.
+        let built = tokio::task::spawn_blocking(move || {
+            session::spec_with_status(
+                agent,
+                &root,
+                cwd,
+                &project,
+                console.as_deref(),
+                24,
+                80,
+                status,
+            )
+        })
+        .await;
+        let spec = match built {
+            Ok(spec) => spec,
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to build a workbench session");
+                return self.refuse(StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session");
+            }
+        };
         // Lifted before the spec moves into the spawn: the bridge announces the name
         // in `session-open`, which is how the shell learns it without deriving the
         // format a second time.
