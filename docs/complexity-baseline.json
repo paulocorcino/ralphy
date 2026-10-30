@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/spend/activity.rs": {
-      "fold": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/src/spend/deliveries.rs": {
       "fold": [
         11
