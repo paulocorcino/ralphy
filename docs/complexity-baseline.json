@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/triage.rs": {
-      "apply_triage": [
-        15
-      ]
-    },
     "crates/ralphy-cli/src/ui/presenter.rs": {
       "run": [
         13
