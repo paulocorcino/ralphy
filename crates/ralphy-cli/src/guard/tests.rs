@@ -436,3 +436,14 @@ fn the_cost_gate_ignores_a_call_that_is_not_bash() {
     let (_root, payload) = costly_project("Write");
     assert_eq!(cost_gate_reason(&payload), None);
 }
+
+/// The tokeniser splits on runs of whitespace, keeps a quoted run as one
+/// token with its quotes removed, keeps the other quote kind inside a quoted
+/// run, and returns the last token when no whitespace follows it.
+#[test]
+fn shell_tokens_split_on_whitespace_outside_quotes() {
+    assert_eq!(
+        shell_tokens("rm  -rf\t'a b' \"it's here\" tail"),
+        vec!["rm", "-rf", "a b", "it's here", "tail"]
+    );
+}
