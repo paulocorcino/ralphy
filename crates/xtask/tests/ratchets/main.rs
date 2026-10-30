@@ -37,6 +37,7 @@ mod lex;
 
 mod peer_reply_pin;
 mod rust_coupling;
+mod skipped_tests;
 mod ts_scan;
 mod type_escapes;
 mod workbench_coupling;
