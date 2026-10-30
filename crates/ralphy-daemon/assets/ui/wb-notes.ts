@@ -15,12 +15,12 @@
 // read, no `fetch`, no timer at load (the ui-tests evaluate this file under a
 // stub document), and no browser store of its own — `wb-client-view.ts` holds the one
 // there is (#339).
-import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
 import { DEFAULT_FILL, DEFAULT_INK, DEFAULT_TONE, NEW_NOTE_STYLE, NOTE_DEFAULT, applyLook, lockedBy, spawnRect, NOTE_FOLDS } from "./wb-notes-folds.ts";
 import { createNoteChrome } from "./wb-notes-chrome.ts";
 import { createNoteDormancy } from "./wb-notes-dormancy.ts";
+import { createNoteDrafts } from "./wb-notes-drafts.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
 import { createNoteFile } from "./wb-notes-file.ts";
 import { installLinks } from "./wb-notes-links.ts";
@@ -31,10 +31,9 @@ import { createNoteMap } from "./wb-notes-map.ts";
 import { createNotePalette } from "./wb-notes-palette.ts";
 import { createNoteStage } from "./wb-notes-stage.ts";
 import type { CrepeLean } from "./wb-notes-editor.ts";
-import type { Home } from "./wb-notes-stage.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Gestures, Stack } from "./wb-stage-stack.ts";
-import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteSource, Offset, Size } from "./wb-types.d.ts";
+import type { CardHost, DeskFence, DeskNote, NoteCard, NoteSource, Offset, Size } from "./wb-types.d.ts";
 
 type NotesWindow = Window & {
   CrepeLean?: CrepeLean;
@@ -517,80 +516,11 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     return el;
   }
 
-  // ---- a draft that crosses a detach (ADR-0064 §8, amended for #475) -----------
+  // ---- a draft that crosses a detach (in `wb-notes-drafts.ts`) ----------------
 
-  // The text of a note that has NO FILE yet, for the detach snapshot. The
-  // popup must open immediately (`window.open` in the same click), and the first save
-  // is asynchronous, so the text travels in the snapshot instead of on
-  // disk. The card is marked handed off: from here the popup's card is the
-  // only writer, and `writeNow` refuses to name the note on this side.
-  // `claim` is a name this card already chose, so a write already sent and
-  // the popup's own write go to the same file.
-  function draftOf(id: string | null | undefined) {
-    const el = cardEl(id);
-    const record = recordOf(id);
-    if (!el || !record || record.path) return null;
-    syncFromEditor(el);
-    if (!el._noteDirty) return null;
-    el._noteHandedOff = true;
-    return { draft: el._noteMarkdown, claim: el._noteClaim || null };
-  }
-
-  // Drafts that came home with a re-attach, for a popup closed before its
-  // first save. `render` builds the card from one of them in place of a read,
-  // once, and only while the record still has no path. `claim` is the name
-  // the popup chose before its write: that write may have landed with no
-  // report after it.
-  const drafts = new Map<string, Home>();
-  function adoptDraft(id: string | null | undefined, draft: string | null | undefined, claim: string | null | undefined) {
-    if (id && typeof draft === "string") drafts.set(id, { draft, claim: claim || null });
-  }
-
-  // A card built from a draft that came home. When the popup had chosen a
-  // name, the file under that name is the newer text if it exists: it is
-  // read, and the name is recorded. Otherwise the draft is mounted and
-  // written under that name, so a re-attach never makes a second file.
-  function mountHome(el: NoteCard, record: NoteSource, home: Home) {
-    const claim = home.claim;
-    if (!claim) return mountDraft(el, home.draft);
-    el._noteClaim = claim;
-    paintPath(el, claim);
-    return window.WBDaemon.observe(
-      "note.read",
-      window.WBDaemon.withCheckout({ repo: record.repo, path: claim }, record.checkout),
-    )
-      .then((reply): Promise<NoteEditor | null | void> | null => {
-        if (el._noteGone) return null;
-        if (!WBFail.isError(reply)) {
-          el._noteClaim = null;
-          patch(record.id, { path: claim });
-          el._noteSavedAt = Number(reply.modified) || null;
-          return mountEditor(el, reply.markdown || "");
-        }
-        // "not a note" is someone else's file under that name: step past it.
-        if (WBFail.message(reply, "") !== "not found") {
-          el._noteClaim = null;
-          paintPath(el, "");
-        }
-        return mountDraft(el, home.draft);
-      })
-      .catch(() => mountDraft(el, home.draft));
-  }
-
-  // An editor over unsaved text: dirty from the start, so the ordinary
-  // autosave names the note and writes it (ADR-0064 §7). Dirty BEFORE the
-  // editor mounts, so a detach in that gap still carries the draft. A veiled
-  // draft mounts no editor and `mountEditor` cuts the document down to its
-  // header; the whole draft is put back, because the header alone is what
-  // the autosave would write.
-  function mountDraft(el: NoteCard, draft: string) {
-    el._noteDirty = true;
-    return mountEditor(el, draft).then(() => {
-      if (el._noteGone) return;
-      if (!el._noteEditor) el._noteMarkdown = draft;
-      markDirty(el);
-    });
-  }
+  const { draftOf, drafts, adoptDraft, mountHome, mountDraft } = createNoteDrafts({
+    window, cardEl, recordOf, patch, syncFromEditor, markDirty, mountEditor, paintPath,
+  });
 
   // ---- a card on top (in `wb-notes-on-top.ts`) ---------------------------------
 
