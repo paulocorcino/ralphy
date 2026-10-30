@@ -276,7 +276,7 @@ pub struct AuthState {
 impl AuthState {
     /// Boot the auth state for a bind (the composition-root path). Reads the
     /// on-disk seed/password/require-login flag and computes the initial policy;
-    /// fails closed exactly where [`for_bind`] does.
+    /// fails closed exactly where `for_bind` does.
     pub fn boot(
         bound_addr: SocketAddr,
         token: Option<String>,
@@ -350,7 +350,7 @@ impl AuthState {
     /// treats as the operator. A browser cannot suppress the header on the paths
     /// that matter, so this is not a browser-reachable hole.
     ///
-    /// The accepted set follows the BIND ([`allowed_host_set`]), not a hardcoded
+    /// The accepted set follows the BIND (`allowed_host_set`), not a hardcoded
     /// loopback list: §4 makes a network bind the remote-access path, and pinning
     /// this to loopback refused the operator's own browser over Tailscale.
     /// The port this daemon's listener actually bound. The peer probe compares a
