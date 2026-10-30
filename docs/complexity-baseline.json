@@ -23,20 +23,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-geometry.ts": {
-      "bringIntoView": [
-        13
-      ],
-      "clampOffset": [
-        13
-      ],
-      "freeSpawnRect": [
-        15
-      ],
-      "viewLanding": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
       "addCard": [
         12
