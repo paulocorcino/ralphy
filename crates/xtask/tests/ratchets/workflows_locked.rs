@@ -68,6 +68,18 @@ fn join_line(
 /// own that `cargo nextest` runs.
 const LOCKED_SUBCOMMANDS: &str = "build|test|nextest|clippy|doc|run|install|deny";
 
+/// The one command that starts at `start` in `text`. It ends at the next
+/// `&&`, `||`, `|` or `;`, so the flags of a later command are not its flags.
+/// The separator that the match began with is dropped.
+fn command_at(text: &str, start: usize) -> &str {
+    let tail = text[start..].trim_start_matches(|c: char| c.is_whitespace() || ";&|(".contains(c));
+    let end = [tail.find("&&"), tail.find('|'), tail.find(';')]
+        .into_iter()
+        .flatten()
+        .min();
+    tail[..end.unwrap_or(tail.len())].trim_end()
+}
+
 /// `(line, command)` of each cargo command in `commands` that has no
 /// `--locked`. After a lone `--`, the flags belong to the program that cargo
 /// runs, so they are not read.
@@ -79,10 +91,10 @@ fn unlocked(commands: &[(usize, String)]) -> Vec<(usize, String)> {
     let mut found = Vec::new();
     for (line, text) in commands {
         for m in cargo.find_iter(text) {
-            let tail = &text[m.start()..];
-            let cargo_flags = tail.split(" -- ").next().unwrap_or(tail);
+            let command = command_at(text, m.start());
+            let cargo_flags = command.split(" -- ").next().unwrap_or(command);
             if !cargo_flags.split_whitespace().any(|t| t == "--locked") {
-                found.push((*line, tail.trim().to_string()));
+                found.push((*line, command.to_string()));
             }
         }
     }
@@ -145,4 +157,22 @@ steps:
         [8],
         "only the command whose `--locked` comes after `--` lacks it"
     );
+}
+
+#[test]
+fn a_chained_command_is_read_one_command_at_a_time() {
+    let line = |text: &str| vec![(1, text.to_string())];
+    let missing =
+        |text: &str| -> Vec<String> { unlocked(&line(text)).into_iter().map(|(_, c)| c).collect() };
+    assert_eq!(
+        missing("cargo build && cargo clippy --locked"),
+        ["cargo build"]
+    );
+    assert_eq!(missing("cargo test --locked; cargo doc"), ["cargo doc"]);
+    assert_eq!(missing("cargo run || cargo build --locked"), ["cargo run"]);
+    assert_eq!(
+        missing("cargo run | tee out; cargo test --locked"),
+        ["cargo run"]
+    );
+    assert!(missing("cd x && cargo build --locked && cargo test --locked | tee out").is_empty());
 }

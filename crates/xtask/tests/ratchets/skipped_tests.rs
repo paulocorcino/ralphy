@@ -1,6 +1,7 @@
 //! The skipped-tests ratchet (#808): a Rust test that is ignored says why, the
 //! number of ignored tests only goes down, and no workbench test is narrowed
-//! with `.only(` or left out with `.skip(` or `.todo(`.
+//! with `.only(` or left out with `.skip(` or `.todo(`, as a call or as an
+//! option of the test.
 
 use super::*;
 
@@ -87,17 +88,81 @@ fn ignored_tests_do_not_grow() {
     );
 }
 
-/// How many `.only(`, `.skip(` and `.todo(` calls `src` has. The lexer drops
+/// How many `.only(`, `.skip(` and `.todo(` calls `src` has, and how many
+/// `test`, `it`, `describe` or `suite` calls have an options object that sets
+/// `only`, `skip` or `todo` to a value other than `false`. The lexer drops
 /// comments and strings, so a sentence that names one is not counted.
 fn narrowed_tests(src: &str) -> usize {
     let toks = lex::lex(src, 1);
-    (0..toks.len().saturating_sub(2))
+    let methods = (0..toks.len().saturating_sub(2))
         .filter(|&i| {
             toks[i].is(".")
                 && matches!(toks[i + 1].ident(), Some("only" | "skip" | "todo"))
                 && toks[i + 2].is("(")
         })
-        .count()
+        .count();
+    let options = (0..toks.len().saturating_sub(1))
+        .filter(|&i| {
+            matches!(toks[i].ident(), Some("test" | "it" | "describe" | "suite"))
+                && toks[i + 1].is("(")
+                && options_narrow(&toks, i + 1)
+        })
+        .count();
+    methods + options
+}
+
+fn opens(t: &lex::Token) -> bool {
+    t.is("(") || t.is("[") || t.is("{")
+}
+
+fn closes(t: &lex::Token) -> bool {
+    t.is(")") || t.is("]") || t.is("}")
+}
+
+/// Whether the call whose `(` is `toks[open]` has an object argument, other
+/// than a function body, that sets `only`, `skip` or `todo`.
+fn options_narrow(toks: &[lex::Token], open: usize) -> bool {
+    let mut depth = 0usize;
+    for (j, t) in toks.iter().enumerate().skip(open) {
+        if closes(t) {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
+        } else if opens(t) {
+            let argument = depth == 1 && (toks[j - 1].is(",") || toks[j - 1].is("("));
+            if argument && t.is("{") && sets_a_skip_key(toks, j) {
+                return true;
+            }
+            depth += 1;
+        }
+    }
+    false
+}
+
+/// Whether the object literal that opens at `toks[open]` has a key `only`,
+/// `skip` or `todo` of its own, whose value is not `false`, `null` or
+/// `undefined`.
+fn sets_a_skip_key(toks: &[lex::Token], open: usize) -> bool {
+    let mut depth = 0usize;
+    for (j, t) in toks.iter().enumerate().skip(open) {
+        if closes(t) {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
+        } else if opens(t) {
+            depth += 1;
+        } else if depth == 1 && matches!(t.ident(), Some("only" | "skip" | "todo")) {
+            let key = toks[j - 1].is("{") || toks[j - 1].is(",");
+            let value = toks.get(j + 2).filter(|_| toks[j + 1].is(":"));
+            let falsy = |v: &lex::Token| matches!(v.ident(), Some("false" | "null" | "undefined"));
+            if key && value.is_some_and(|v| !falsy(v)) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[test]
@@ -123,7 +188,8 @@ fn no_ui_test_is_only_or_skipped() {
         .collect();
     assert!(
         narrowed.is_empty(),
-        "a test with `.only(`, `.skip(` or `.todo(` hides the others; run it or delete it:\n{}",
+        "a test with `.only(`, `.skip(` or `.todo(`, or with `only`, `skip` or `todo` set in its \
+         options, hides the others; run it or delete it:\n{}",
         narrowed.join("\n")
     );
 }
@@ -138,4 +204,27 @@ fn the_scans_read_code_and_not_comments() {
     );
     let src = "// test.skip(x)\ntest.only('a.skip(b)', () => {});\nit.todo(1);\nconst skip = 1;\n";
     assert_eq!(narrowed_tests(src), 2);
+}
+
+#[test]
+fn the_options_form_of_only_skip_and_todo_is_narrowing_too() {
+    let narrowing = [
+        "test('a', { skip: true }, () => {});",
+        "it(\"b\", { only: 'why', timeout: 1 }, fn);",
+        "describe('c', { todo: true }, () => {});",
+        "t.test('d', { concurrency: 2, skip: reason }, fn);",
+    ];
+    for src in narrowing {
+        assert_eq!(narrowed_tests(src), 1, "{src}");
+    }
+    let plain = [
+        "test('a', { skip: false }, () => {});",
+        "test('a', { timeout: 1 }, () => { g({ skip: PART }); });",
+        "test('a', () => { f({ skip: true }); });",
+        "test('a', { timeout: { skip: true } }, fn);",
+        "const page = assembledPage('index.html', { skip: PART });",
+    ];
+    for src in plain {
+        assert_eq!(narrowed_tests(src), 0, "{src}");
+    }
 }
