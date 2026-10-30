@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-pty/src/bin/demo.rs": {
-      "main": [
-        13
-      ]
-    },
     "crates/ralphy-usage-scan/src/copilot.rs": {
       "read_copilot": [
         12
