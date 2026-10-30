@@ -37,7 +37,7 @@ function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["win
   }
   // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
   // terminal too. Only where the console menus' document listener exists
-  // (wb-consoles-tab.ts, on the page with a shell): a
+  // (wb-consoles-tab-menus.ts, on the page with a shell): a
   // detached popup has none, so its terminal keeps the key.
   return /^(?:Digit\d|KeyR)$/.test(e.code) && typeof win.getShell === "function";
 }

@@ -278,6 +278,10 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-tabs.ts"),
     ),
     (
+        "wb-consoles-tab-menus.ts",
+        include_str!("../../assets/ui/wb-consoles-tab-menus.ts"),
+    ),
+    (
         "wb-consoles-tab.ts",
         include_str!("../../assets/ui/wb-consoles-tab.ts"),
     ),

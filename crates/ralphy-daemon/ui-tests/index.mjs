@@ -50,6 +50,7 @@ import "./wb-stage-view.test.mjs";
 import "./wb-stage-window.test.mjs";
 import "./wb-console.test.mjs";
 import "./wb-consoles-tab.test.mjs";
+import "./wb-consoles-tab-menus.test.mjs";
 import "./wb-console-tabs.test.mjs";
 import "./wb-daemon.test.mjs";
 import "./wb-read-retry.test.mjs";

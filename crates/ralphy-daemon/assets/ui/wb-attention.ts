@@ -12,7 +12,7 @@
 
    The count is shown on the rail and in the tab title. A row has one action:
    a console's row has "Go to the console", which shows the console the way
-   the Go-to picker does (`revealWindow` in wb-consoles-tab.ts); a run's row
+   the Go-to picker does (`revealWindow` in wb-consoles-tab-menus.ts); a run's row
    has "Open the run", which shows the run in the Runs panel
    (`workbench:run-select`, heard by wb-runs-panel.ts). The store
    `connection` also sends `workbench:attention-reread` on an
