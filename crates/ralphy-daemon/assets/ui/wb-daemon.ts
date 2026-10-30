@@ -334,11 +334,16 @@ export function createDaemon(window: Window, document: Document, location: Locat
         if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
         const p = f.payload || {};
         if ((p.checkout || null) !== (checkout || null)) return;
-        if (f.verb === "tree.failed") onFailed?.(p.reason || "");
-        else if (f.verb === "head.dirty") onHead?.();
-        else onDirty(p.path || "");
+        treePush(f.verb, p);
       },
     });
+    // A push of this checkout's tree: a dir it could not watch, a moved HEAD,
+    // or a changed dir.
+    function treePush(verb: string, p: PushPayload) {
+      if (verb === "tree.failed") onFailed?.(p.reason || "");
+      else if (verb === "head.dirty") onHead?.();
+      else onDirty(p.path || "");
+    }
     return {
       watch: (path: string) => {
         const rel = path || "";

@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-daemon.ts": {
-      "onMessage": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-desk-detach.ts": {
       "(anonymous)": [
         12,
