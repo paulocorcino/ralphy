@@ -174,7 +174,7 @@ fn read_session_effort(db: &Path, session_id: &str) -> rusqlite::Result<Option<S
 
 /// Scan the Copilot SQLite store into interactive records (one per session ×
 /// model). Fully best-effort: any error (missing db, corrupt file, schema drift)
-/// yields an empty vec via the single [`read_copilot`] error funnel. `since` drops
+/// yields an empty vec via the single `read_copilot` error funnel. `since` drops
 /// records whose `last_ts` is strictly before it (§6: an unparseable bound or
 /// record keeps the record).
 pub fn scan_copilot(input: &CopilotScan) -> Vec<InteractiveRecord> {
