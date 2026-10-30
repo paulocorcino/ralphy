@@ -28,11 +28,20 @@
 //! prints an `Error: ` line and exits 1; with `prepare-root.noop` present it
 //! exits 0 and writes nothing else; otherwise it writes the policy document
 //! the daemon looks for and exits 0.
+//!
+//! Called with `--version` as its only argument, it stands in for
+//! `claude --version`: it writes the same env dump to
+//! `RALPHY_TEST_VERSION_DUMP` (when set), sleeps `RALPHY_TEST_VERSION_SLEEP_MS`
+//! (when set), prints `2.1.200 (Claude Code)` and exits 0. Its own dump path
+//! keeps it apart from the hook child, which writes `RALPHY_TEST_ENV_DUMP`.
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args == ["gemini", "prepare-root"] {
         prepare_root();
+    }
+    if args == ["--version"] {
+        claude_version();
     }
     if let Ok(ms) = std::env::var("RALPHY_TEST_GRANDCHILD_MS") {
         let exe = std::env::current_exe().expect("locating this test child");
@@ -48,18 +57,7 @@ fn main() {
             .expect("starting the grandchild");
     }
     if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
-        let token = std::env::var("RALPHY_DAEMON_TOKEN").unwrap_or_else(|_| "ABSENT".into());
-        let daemon_id = std::env::var("RALPHY_DAEMON_ID").unwrap_or_else(|_| "ABSENT".into());
-        let telegram = std::env::var("RALPHY_TELEGRAM_TOKEN").unwrap_or_else(|_| "ABSENT".into());
-        let events = std::env::var("RALPHY_EVENTS_TOKEN").unwrap_or_else(|_| "ABSENT".into());
-        std::fs::write(
-            &dump_path,
-            format!(
-                "RALPHY_DAEMON_TOKEN={token}\nRALPHY_DAEMON_ID={daemon_id}\n\
-                 RALPHY_TELEGRAM_TOKEN={telegram}\nRALPHY_EVENTS_TOKEN={events}"
-            ),
-        )
-        .expect("writing the env dump");
+        write_env_dump(&dump_path);
     }
     let code = std::env::var("RALPHY_TEST_EXIT_CODE")
         .ok()
@@ -159,5 +157,41 @@ fn prepare_root() {
         std::fs::create_dir_all(&dir).expect("creating the owned root");
         std::fs::write(dir.join("ralphy-policy.toml"), "# policy\n").expect("writing the policy");
     }
+    std::process::exit(0);
+}
+
+/// Write this child's view of the daemon's secrets and of its daemon id to
+/// `dump_path`, one `NAME=value` per line, `ABSENT` for an unset variable.
+fn write_env_dump(dump_path: &str) {
+    let token = std::env::var("RALPHY_DAEMON_TOKEN").unwrap_or_else(|_| "ABSENT".into());
+    let daemon_id = std::env::var("RALPHY_DAEMON_ID").unwrap_or_else(|_| "ABSENT".into());
+    let telegram = std::env::var("RALPHY_TELEGRAM_TOKEN").unwrap_or_else(|_| "ABSENT".into());
+    let events = std::env::var("RALPHY_EVENTS_TOKEN").unwrap_or_else(|_| "ABSENT".into());
+    std::fs::write(
+        dump_path,
+        format!(
+            "RALPHY_DAEMON_TOKEN={token}\nRALPHY_DAEMON_ID={daemon_id}\n\
+             RALPHY_TELEGRAM_TOKEN={telegram}\nRALPHY_EVENTS_TOKEN={events}"
+        ),
+    )
+    .expect("writing the env dump");
+}
+
+/// The `claude --version` stand-in described in the module docs. Never returns.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test helper child reports to its test by its exit code"
+)]
+fn claude_version() {
+    if let Ok(dump_path) = std::env::var("RALPHY_TEST_VERSION_DUMP") {
+        write_env_dump(&dump_path);
+    }
+    if let Some(ms) = std::env::var("RALPHY_TEST_VERSION_SLEEP_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+    println!("2.1.200 (Claude Code)");
     std::process::exit(0);
 }

@@ -126,6 +126,10 @@ pub fn bind_addr(ip: IpAddr, port: u16) -> SocketAddr {
 /// tokio runtime is created and dropped inside, so callers (the sync CLI)
 /// never see async types.
 pub fn run(config: DaemonConfig) -> Result<()> {
+    // Before the runtime: no thread of the daemon exists yet, so the write to
+    // the environment races nothing, and every child started later, by this
+    // crate or a library, inherits none of the secrets (ADR-0072 D7).
+    let env_token = child_env::take_boot_secrets();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -134,6 +138,7 @@ pub fn run(config: DaemonConfig) -> Result<()> {
         bind_addr(config.bind, config.port),
         config.allowed_hosts,
         config.peer_stores,
+        env_token,
     ))
 }
 
