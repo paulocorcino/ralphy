@@ -39,6 +39,38 @@ fn complexity_exceptions_do_not_grow() {
     );
 }
 
+/// The lint config without its whole-line `//` comments, parsed.
+fn oxlint_config() -> serde_json::Value {
+    let text = read(&workspace_root().join(".oxlintrc.json"));
+    let json: String = text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    serde_json::from_str(&json).unwrap_or_else(|e| panic!("parsing .oxlintrc.json: {e}"))
+}
+
+/// The TypeScript limit lives only in `.oxlintrc.json`: the same 10 as the
+/// Rust limit, with test code out of the measure (ADR-0081 D3).
+#[test]
+fn the_typescript_limit_is_ten() {
+    let config = oxlint_config();
+    let want = serde_json::json!(["error", { "max": 10, "variant": "modified" }]);
+    assert_eq!(
+        config["rules"]["complexity"], want,
+        "the limit in .oxlintrc.json"
+    );
+    let off: Vec<&serde_json::Value> = config["overrides"]
+        .as_array()
+        .expect("overrides is a list")
+        .iter()
+        .filter(|o| o["rules"].get("complexity").is_some())
+        .collect();
+    assert_eq!(off.len(), 1, "one override sets the complexity rule");
+    assert_eq!(off[0]["files"], serde_json::json!(["**/ui-tests/**"]));
+    assert_eq!(off[0]["rules"]["complexity"], "off");
+}
+
 /// Every file under `dir`, but not the vendored libraries or build output.
 fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries =

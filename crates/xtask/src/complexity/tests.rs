@@ -29,8 +29,11 @@ fn a_rust_function_over_ten_fails_the_check() {
 fn a_marked_function_over_ten_passes_the_check() {
     // The marker is above the doc comment and the attributes of `kept`.
     let kept = "// complexity-exception: one table of cases\n/// The cases.\n#[inline]\n";
+    // `other` has a doc comment and an attribute, and no marker: another
+    // attribute must not count as the marker.
+    let other = "/// Not an exception.\n#[inline]\n";
     let src = format!(
-        "{kept}{}{}",
+        "{kept}{}{other}{}",
         function_of("kept", 11),
         function_of("other", 11)
     );
@@ -40,6 +43,17 @@ fn a_marked_function_over_ten_passes_the_check() {
         function_of("m", 11)
     );
     assert!(errors_of(&method).is_empty());
+}
+
+#[test]
+fn a_scan_that_scored_nothing_fails_the_check() {
+    let error = ensure_scored(Vec::new()).expect_err("an empty scan is an error");
+    assert_eq!(error.to_string(), "no Rust production function was scored");
+    let one = vec![score("a.rs", "one", 1)];
+    assert_eq!(
+        ensure_scored(one.clone()).expect("a scan with a score"),
+        one
+    );
 }
 
 #[test]

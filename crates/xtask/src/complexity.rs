@@ -93,6 +93,15 @@ fn rust_scores(root: &Path) -> Result<Vec<Score>> {
             scores.extend(file_check(&path, &text).with_context(|| format!("parsing {path}"))?);
         }
     }
+    ensure_scored(scores)
+}
+
+/// `scores`, unless it is empty: a scan that read no function would pass
+/// every function, so an empty one is an error.
+fn ensure_scored(scores: Vec<Score>) -> Result<Vec<Score>> {
+    if scores.is_empty() {
+        bail!("no Rust production function was scored");
+    }
     Ok(scores)
 }
 
