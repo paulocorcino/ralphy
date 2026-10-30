@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/issues/render.rs": {
-      "render_board_json": [
-        12
-      ]
-    },
     "crates/ralphy-cli/src/telegram/notifier.rs": {
       "on_event": [
         12
