@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use super::checks::{
     classify_describe, parse_facts, CheckId, CheckStatus, HostCheck, HostFacts, RalphyOnHost,
 };
-use super::pair::{connect, Local, Session};
+use super::pair::{connect, Destination, Local, Session};
 use super::report::Report;
 use super::shell::{installed_folder, HostOp, HostOs, InstalledOp};
 use super::ssh::HostShell;
@@ -256,12 +256,12 @@ fn printed_hash(stdout: &str) -> Option<String> {
 pub(crate) fn install(
     shell: &mut impl HostShell,
     local: &Local<'_>,
-    dest: &str,
-    key_file: Option<&Path>,
+    destination: Destination<'_>,
     keygen: impl FnOnce(&Path) -> Result<()>,
     fetch: &mut impl Fetch,
     out: &mut Report<impl Write>,
 ) -> Result<()> {
+    let Destination { dest, key_file } = destination;
     let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {

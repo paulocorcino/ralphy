@@ -618,7 +618,13 @@ impl RunState {
 /// A convenience over repeated [`RunState::apply`], used by the fold tests and
 /// available to the future ADR-0006 presenter; the live worker applies events one
 /// at a time, so this is unused by the binary itself.
-#[allow(dead_code)]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the binary applies events one at a time; tests use the fold"
+    )
+)]
 pub fn fold(
     title: impl Into<String>,
     total: usize,

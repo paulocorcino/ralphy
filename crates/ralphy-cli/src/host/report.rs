@@ -82,7 +82,7 @@ impl<W: Write> Report<W> {
             let command = match &c.status {
                 CheckStatus::Copy(cmd) => Some(cmd.clone()),
                 CheckStatus::Fix(op) => Some(render(Some(os), op)?),
-                _ => None,
+                CheckStatus::Pass | CheckStatus::Warn | CheckStatus::Pending => None,
             };
             self.event(json!({
                 "event": "check",

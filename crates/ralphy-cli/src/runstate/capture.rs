@@ -80,6 +80,10 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
 fn install() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a default set elsewhere is a harmless no-op: the capture records nothing"
+        )]
         let _ = tracing::subscriber::set_global_default(
             tracing_subscriber::registry().with(CaptureLayer),
         );

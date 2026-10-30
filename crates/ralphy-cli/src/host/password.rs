@@ -133,7 +133,7 @@ pub(crate) fn serve<T>(
     });
     let unhandled = answers
         .into_inner()
-        .map_err(|_| anyhow::anyhow!("the password socket thread panicked"))?
+        .map_err(|e| anyhow::anyhow!("the password socket thread panicked: {e}"))?
         .unhandled;
     Ok((result?, unhandled))
 }
@@ -208,7 +208,7 @@ fn answer(
     let prompt = String::from_utf8_lossy(prompt);
     let send = answers
         .lock()
-        .map_err(|_| anyhow::anyhow!("the password answers are poisoned"))?
+        .map_err(|e| anyhow::anyhow!("the password answers are poisoned: {e}"))?
         .decide(prompt.trim());
     if send {
         stream.write_all(password.expose().as_bytes())?;

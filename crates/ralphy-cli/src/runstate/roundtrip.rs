@@ -58,7 +58,6 @@ fn decode(ev: &Captured) -> Option<RunEvent> {
 /// [`RunEvent`] variant maps to the round-trip test that proves it. No wildcard
 /// arm — a variant added without one fails to compile until someone lists it,
 /// which is the ADR-0039 §2 convention made mechanical.
-#[allow(dead_code)]
 fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
     match e {
         RunEvent::QueueBuilt { .. } => "roundtrip_queue_built",

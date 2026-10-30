@@ -116,8 +116,10 @@ fn check_applies_nothing() {
     let checks = check(
         &mut fake,
         &local(store.path()),
-        "svrapp",
-        None,
+        Destination {
+            dest: "svrapp",
+            key_file: None,
+        },
         None,
         no_keygen,
         &mut printed,
@@ -149,8 +151,10 @@ fn check_creates_the_peer_key_and_hands_over_its_line() {
     let err = check(
         &mut fake,
         &local(store.path()),
-        "svrapp",
-        None,
+        Destination {
+            dest: "svrapp",
+            key_file: None,
+        },
         None,
         fake_keygen,
         &mut Report::text(Vec::new()),

@@ -82,7 +82,11 @@ fn no_keygen(_: &Path) -> Result<()> {
 
 fn run(fake: &mut FakeHost, local: &Local<'_>, fetch: &mut Fixed) -> (Result<()>, String) {
     let mut printed = Report::text(Vec::new());
-    let result = install(fake, local, "svrapp", None, no_keygen, fetch, &mut printed);
+    let svrapp = pair::Destination {
+        dest: "svrapp",
+        key_file: None,
+    };
+    let result = install(fake, local, svrapp, no_keygen, fetch, &mut printed);
     let printed = String::from_utf8(printed.into_inner()).expect("utf-8");
     (result, printed)
 }
@@ -304,8 +308,10 @@ fn check_announces_what_install_would_send() {
     pair::check(
         &mut fake,
         &local(store.path(), "v0.1.0-rc.30", "windows-x64"),
-        "svrapp",
-        None,
+        pair::Destination {
+            dest: "svrapp",
+            key_file: None,
+        },
         None,
         no_keygen,
         &mut printed,

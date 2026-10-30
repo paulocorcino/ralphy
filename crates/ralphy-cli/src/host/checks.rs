@@ -292,7 +292,17 @@ impl HostCheck {
         match self.id {
             CheckId::Ralphy => self.status != CheckStatus::Pass,
             CheckId::Name => !matches!(self.status, CheckStatus::Pass | CheckStatus::Fix(_)),
-            _ => false,
+            CheckId::Autostart
+            | CheckId::Linger
+            | CheckId::SignIn
+            | CheckId::Sleep
+            | CheckId::RequireToken
+            | CheckId::User
+            | CheckId::Git
+            | CheckId::Gh
+            | CheckId::Python
+            | CheckId::Agent
+            | CheckId::Hooks => false,
         }
     }
 }

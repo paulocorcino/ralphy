@@ -42,6 +42,14 @@ pub(crate) struct Local<'a> {
     pub latest: Option<String>,
 }
 
+/// Where a host flow connects: the destination to pass to `ssh`, and the key
+/// to use (`None` = the operator's SSH config or agent).
+#[derive(Clone, Copy)]
+pub(crate) struct Destination<'a> {
+    pub dest: &'a str,
+    pub key_file: Option<&'a Path>,
+}
+
 /// A signed-in session: the key to use (`None` = the operator's SSH config or
 /// agent) and the host's OS.
 pub(super) struct Session<'s, S: HostShell> {
@@ -96,13 +104,15 @@ fn survey<S: HostShell>(
     let ralphy = classify_describe(&described)?;
     let host_id = match &ralphy {
         RalphyOnHost::Described(d) => d.daemon_id.clone(),
-        _ => None,
+        RalphyOnHost::Missing | RalphyOnHost::Old { .. } => None,
     };
     let names = fleet_names(local, host_id.as_deref());
     let mut checks = evaluate(&facts, &ralphy, &names, s.dest, wanted_name);
     let doctor = match ralphy {
         RalphyOnHost::Missing => None,
-        _ => parse_doctor(&s.run(&HostOp::Doctor, b"")?),
+        RalphyOnHost::Old { .. } | RalphyOnHost::Described(_) => {
+            parse_doctor(&s.run(&HostOp::Doctor, b"")?)
+        }
     };
     with_doctor(&mut checks, doctor.as_ref(), s.os);
     let offer = offer_for(&mut checks, &facts, &ralphy, local);
@@ -138,7 +148,10 @@ pub(crate) type Probe<'a> = &'a dyn Fn(&TunnelSpec, Option<&str>) -> Result<Stri
 /// write the local descriptor with its tunnel section. Writing the descriptor
 /// is the last side effect, so a failure anywhere before it leaves the local
 /// store as it was.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each input of the add flow is a separate thing that the tests replace"
+)]
 pub(crate) fn add(
     shell: &mut impl HostShell,
     local: &Local<'_>,
@@ -337,12 +350,12 @@ fn port_fallback(
 pub(crate) fn check(
     shell: &mut impl HostShell,
     local: &Local<'_>,
-    dest: &str,
-    key_file: Option<&Path>,
+    destination: Destination<'_>,
     wanted_name: Option<&str>,
     keygen: impl FnOnce(&Path) -> Result<()>,
     out: &mut Report<impl Write>,
 ) -> Result<Vec<HostCheck>> {
+    let Destination { dest, key_file } = destination;
     let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {

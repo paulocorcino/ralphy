@@ -159,7 +159,15 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
 fn status_wire(status: &IssueStatus) -> &'static str {
     status.status_wire().unwrap_or(match status {
         IssueStatus::Executing => "executing",
-        _ => "planning",
+        IssueStatus::Planning
+        | IssueStatus::Planned
+        | IssueStatus::Done
+        | IssueStatus::Skipped
+        | IssueStatus::Blocked
+        | IssueStatus::Infeasible
+        | IssueStatus::NeedsSplit
+        | IssueStatus::NonGreen
+        | IssueStatus::Hitl => "planning",
     })
 }
 

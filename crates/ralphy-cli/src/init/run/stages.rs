@@ -15,7 +15,7 @@ use super::{diagnose_with_agent, diagnosis_cwd};
 use crate::init::gate::{evaluate_gate, findings_from, Agent, EnvFindings};
 use crate::init::issues::{
     decide_issues_path, draft_decision, draft_with_agent, format_draft_summary, load_issues_draft,
-    publish_decision, publish_draft, resolve_triage_label, IssuesPath,
+    publish_decision, publish_draft, resolve_triage_label, ChosenAgent, IssuesPath,
 };
 use crate::init::render::{
     ask_yes_no, print_bullet, print_captured_config, print_gate_report, print_note, print_ok,
@@ -382,7 +382,9 @@ pub(super) fn issues_stage(
             state.save(ws)
         }
 
-        path => draft_and_publish(repo, ws, state, cfg, path, agent, model),
+        path @ (IssuesPath::Milestone | IssuesPath::LooseBacklog) => {
+            draft_and_publish(repo, ws, state, cfg, path, ChosenAgent { agent, model })
+        }
     }
 }
 
@@ -452,8 +454,7 @@ fn draft_and_publish(
     state: &mut InitState,
     cfg: &InitConfig,
     path: IssuesPath,
-    agent: Agent,
-    model: Option<&str>,
+    chosen: ChosenAgent<'_>,
 ) -> Result<()> {
     let (mode, source_docs) = match path {
         IssuesPath::Milestone => (IssuesMode::Milestone, cfg.milestone_docs.clone()),
@@ -484,11 +485,10 @@ fn draft_and_publish(
     };
     let draft = with_spinner("Drafting tasks…", || {
         draft_with_agent(
-            agent,
+            chosen,
             repo,
             &draft_path,
             &req,
-            model,
             Some("medium"),
             Duration::from_secs(600),
         )

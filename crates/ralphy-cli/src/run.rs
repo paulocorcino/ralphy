@@ -36,6 +36,26 @@ use wiring::{
 pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Anchors the `run.finished` `duration_s` (ADR-0019) — the run's wall-clock.
     let run_start = std::time::Instant::now();
+
+    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
+    // quota (matching the ps1 oracle behaviour).
+    //
+    // Why `""` and not `remove_var`: setting to the empty string deliberately
+    // mirrors the PowerShell oracle, which assigns `""` rather than unsetting.
+    // Claude's handling of an absent key vs. an empty key is not verified, so we
+    // keep the same sentinel value to stay on the tested path.
+    //
+    // Edition-2024 migration note: in Rust edition 2024, `std::env::set_var` (and
+    // `remove_var`) become `unsafe` functions. When the crate migrates to edition
+    // 2024, this call must be wrapped in an `unsafe` block with a comment
+    // reiterating the single-threaded argument of the `expect` below.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this is the first statement of the run on the main thread, so no \
+                  other thread exists to read the environment while it changes"
+    )]
+    std::env::set_var("ANTHROPIC_API_KEY", "");
+
     let repo_root = git::resolve_toplevel(&args.repo)?;
     crate::daemon::register_repo(&repo_root);
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
@@ -46,6 +66,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let runid = events::emitter::new_runid();
     let ws = Workspace::new(&repo_root);
     let run_dir = ws.run_dir(&stamp);
+    #[expect(
+        clippy::unused_result_ok,
+        reason = "the run goes on without a log file, and creating that file fails \
+                  the same way"
+    )]
     std::fs::create_dir_all(&run_dir).ok();
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
@@ -72,6 +97,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     info!(repo = %repo_root.display(), %stamp, dry_run = args.dry_run, "ralphy run");
 
+    #[expect(
+        clippy::unused_result_ok,
+        reason = "every write into this folder reports its own error"
+    )]
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
 
     // Resolved above the lock check because the `--if-idle` deferral needs it for its
@@ -326,24 +355,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         }),
     );
 
-    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
-    // quota (matching the ps1 oracle behaviour).
-    //
-    // Why `""` and not `remove_var`: setting to the empty string deliberately
-    // mirrors the PowerShell oracle, which assigns `""` rather than unsetting.
-    // Claude's handling of an absent key vs. an empty key is not verified, so we
-    // keep the same sentinel value to stay on the tested path.
-    //
-    // Single-threaded safety: `set_var` is safe to call here because this point
-    // in `main` is reached before any threads are spawned; no concurrent reader
-    // can observe a torn environment state.
-    //
-    // Edition-2024 migration note: in Rust edition 2024, `std::env::set_var` (and
-    // `remove_var`) become `unsafe` functions. When the crate migrates to edition
-    // 2024, this call must be wrapped in an `unsafe` block with a comment
-    // reiterating the single-threaded safety argument above.
-    std::env::set_var("ANTHROPIC_API_KEY", "");
-
     // The run's global wall-clock deadline (if any), shared by the agent — which
     // clamps each issue's budget to it — and the queue's between-issue clock.
     let run_deadline = args
@@ -575,7 +586,10 @@ fn repo_relative_plan_path(repo_root: &std::path::Path, ws: &Workspace) -> Strin
 /// and emits the legacy/unmarked shape rather than aborting the run. The caller
 /// positions this after the header/info-line prints and before the notifier worker
 /// start, so the buffered-ring drain order is unchanged.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the separate facts of the queue that the event reports"
+)]
 fn emit_queue_built(
     queue: &[ralphy_core::Issue],
     forced_issues: &[u64],

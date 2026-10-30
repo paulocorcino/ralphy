@@ -1,6 +1,13 @@
 //! Ralphy's command-line entry point and composition root: parse flags, resolve
 //! the repo, build the queue, build the Claude adapter, and hand off to the core
 //! queue lifecycle.
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "nextest runs each test in its own process, so a test may change its environment"
+    )
+)]
 
 use std::path::PathBuf;
 
