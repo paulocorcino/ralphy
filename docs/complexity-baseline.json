@@ -56,11 +56,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-spend.ts": {
-      "state": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
       "repathTabs": [
         14

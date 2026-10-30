@@ -406,6 +406,11 @@ function state({
   }
   if (error) return { kind: ERROR, project, periods, message: error };
   if (loading || !doc) return { kind: LOADING, project, periods };
+  return readyState(project, doc, issues);
+}
+
+// The pane of a document the daemon returned for the open project.
+function readyState(project: string, doc: SpendDoc, issues: TitledIssue[] | null | undefined) {
   const unpriced = doc.unpriced || {};
   const tokens = doc.tokens || {};
   return {
