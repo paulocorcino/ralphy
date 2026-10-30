@@ -26,8 +26,8 @@
 //! (This rationale is recorded here so a future architecture review does not
 //! re-flag the shared crate as an ADR-0002 violation.)
 //!
-//! The public surface speaks only `std` types ([`Command`], [`Duration`],
-//! [`ExitStatus`], [`String`]) — no `portable-pty`, no vendor names. Building the
+//! The public surface speaks only `std` types ([`std::process::Command`],
+//! [`std::time::Duration`], [`std::process::ExitStatus`], [`String`]) — no `portable-pty`, no vendor names. Building the
 //! `Command` (binary, flags, env scrub) stays in each adapter, as does slicing the
 //! returned [`HeadlessOutput`] into the adapter's own local return shape.
 

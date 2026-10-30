@@ -43,7 +43,7 @@ pub enum DegradedAction {
 
 /// A single "time in degraded" clock. The clock starts when the degraded signal
 /// is first observed, resets the moment a healthy sample arrives, and gates the
-/// degraded event on continuous presence ≥ [`API_DEGRADED_PING`]. Uses an
+/// degraded event on continuous presence ≥ `API_DEGRADED_PING`. Uses an
 /// injected `now` so the state machine unit-tests without real sleeping (mold of
 /// `ApiWatch`).
 pub struct DegradedWatch {
@@ -53,7 +53,7 @@ pub struct DegradedWatch {
 }
 
 impl DegradedWatch {
-    /// A fresh watch with the production ping ([`API_DEGRADED_PING`]).
+    /// A fresh watch with the production ping (`API_DEGRADED_PING`).
     pub fn new() -> Self {
         Self {
             ping: API_DEGRADED_PING,
