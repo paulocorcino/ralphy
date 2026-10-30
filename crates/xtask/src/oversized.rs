@@ -274,11 +274,17 @@ fn code_lines(text: &str) -> usize {
             in_block = !rest.contains("*/");
             continue;
         }
-        if !trimmed.is_empty() && !trimmed.starts_with("//") {
+        if is_code(trimmed) {
             count += 1;
         }
     }
     count
+}
+
+/// A trimmed line outside a block comment holds code when it is not blank
+/// and not a line comment.
+fn is_code(trimmed: &str) -> bool {
+    !trimmed.is_empty() && !trimmed.starts_with("//")
 }
 
 /// `mod x {` or `pub(crate) mod x {`. A `mod x;` declaration is not the cut:

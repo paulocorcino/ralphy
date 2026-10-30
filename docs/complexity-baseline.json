@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/oversized.rs": {
-      "code_lines": [
-        11
-      ]
-    },
     "crates/xtask/src/release_cmds.rs": {
       "bump_cmd": [
         15
