@@ -10,6 +10,7 @@ use std::time::Instant;
 use axum::extract::ws::{Message, WebSocket};
 use axum::Router;
 
+use crate::mux::{ChannelSender, WriterClosed};
 use crate::protocol::{Command, Frame};
 use crate::StorePaths;
 use crate::{audit, auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
@@ -322,6 +323,15 @@ pub(crate) fn encode_query_value(value: &str) -> String {
     encoded
 }
 
+/// The wire bytes of one `Frame::Command`.
+fn command_bytes(id: u64, verb: &str, payload: serde_json::Value) -> Vec<u8> {
+    protocol::encode(&Frame::Command(Command {
+        id,
+        verb: verb.to_string(),
+        payload,
+    }))
+}
+
 /// Send a structured command reply frame over the socket, ignoring a send error
 /// (the client may already be gone).
 pub(crate) async fn send_command(
@@ -330,18 +340,24 @@ pub(crate) async fn send_command(
     verb: &str,
     payload: serde_json::Value,
 ) {
-    let frame = Frame::Command(Command {
-        id,
-        verb: verb.to_string(),
-        payload,
-    });
     #[expect(
         clippy::let_underscore_must_use,
         reason = "the client may already be gone"
     )]
     let _ = socket
-        .send(Message::Binary(protocol::encode(&frame).into()))
+        .send(Message::Binary(command_bytes(id, verb, payload).into()))
         .await;
+}
+
+/// Queue one command frame on a channel of the socket's writer. Fails when
+/// the writer has ended: the socket is closed.
+pub(crate) async fn send_command_on(
+    out: &ChannelSender,
+    id: u64,
+    verb: &str,
+    payload: serde_json::Value,
+) -> Result<(), WriterClosed> {
+    out.send(command_bytes(id, verb, payload)).await
 }
 
 /// Run one blocking filesystem read off the tokio runtime, the same rule

@@ -5,17 +5,17 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use axum::extract::ws::WebSocket;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
 use super::frame::{dirty_push, failed_payload, parse_request, Alias, Request, Verb};
 use super::{
-    close_peer_tree_poller, spawn_nudge_forwarder, spawn_peer_tree_poller, PeerTreePoller,
-    PeerWatchSet, TreeHost,
+    close_peer_tree_poller, push_command, spawn_nudge_forwarder, spawn_peer_tree_poller,
+    PeerTreePoller, PeerWatchSet, TreeHost,
 };
+use crate::mux::ChannelSender;
 use crate::protocol::{self, Frame};
-use crate::routes::{read_peer_store, send_command};
+use crate::routes::read_peer_store;
 use crate::{checkout, fleet, peer, registry, watch};
 
 type Key = (String, String);
@@ -29,6 +29,8 @@ pub(super) struct TreeConn {
     /// that repo's broadcast into it, so the connection's loop watches ONE
     /// receiver regardless of how many repos/dirs it holds.
     nudge_tx: UnboundedSender<(String, String)>,
+    /// Channel 0 of the socket's writer: where this connection's pushes go.
+    out: ChannelSender,
     /// Keyed by repo so it is torn down when this connection releases the
     /// repo's LAST dir — and re-spawned (on the fresh broadcast the manager
     /// rebuilds) if the same repo is watched again.
@@ -48,7 +50,11 @@ pub(super) struct TreeConn {
 }
 
 impl TreeConn {
-    pub(super) fn new(host: TreeHost, nudge_tx: UnboundedSender<(String, String)>) -> Self {
+    pub(super) fn new(
+        host: TreeHost,
+        nudge_tx: UnboundedSender<(String, String)>,
+        out: ChannelSender,
+    ) -> Self {
         let TreeHost {
             watchers,
             registry_path,
@@ -61,6 +67,7 @@ impl TreeConn {
             peers_dir,
             daemon_id,
             nudge_tx,
+            out,
             forwarders: BTreeMap::new(),
             peer_pollers: BTreeMap::new(),
             watched: Vec::new(),
@@ -68,7 +75,7 @@ impl TreeConn {
         }
     }
 
-    pub(super) async fn on_frame(&mut self, socket: &mut WebSocket, bytes: &[u8]) {
+    pub(super) async fn on_frame(&mut self, bytes: &[u8]) {
         let Ok(Frame::Command(cmd)) = protocol::decode(bytes) else {
             return;
         };
@@ -76,14 +83,14 @@ impl TreeConn {
             return;
         };
         match req.verb {
-            Verb::Watch | Verb::RunsWatch | Verb::HeadWatch => self.watch(socket, &req).await,
+            Verb::Watch | Verb::RunsWatch | Verb::HeadWatch => self.watch(&req).await,
             Verb::Unwatch | Verb::RunsUnwatch => self.unwatch(&req),
         }
     }
 
     /// A repo's broadcast carries every watched dir; push only the ones THIS
     /// connection subscribed to.
-    pub(super) async fn push_nudge(&self, socket: &mut WebSocket, nudge: Option<(String, String)>) {
+    pub(super) async fn push_nudge(&self, nudge: Option<(String, String)>) {
         let Some((repo, rel)) = nudge else {
             return;
         };
@@ -92,7 +99,7 @@ impl TreeConn {
         }
         let alias = self.aliases.get(&(repo.clone(), rel.clone()));
         let (verb, payload) = dirty_push(&repo, &rel, alias);
-        send_command(socket, 0, verb, payload).await;
+        push_command(&self.out, verb, payload).await;
     }
 
     /// TEARDOWN: release every held dir (the last release tears the watcher
@@ -126,14 +133,14 @@ impl TreeConn {
         }
     }
 
-    async fn watch(&mut self, socket: &mut WebSocket, req: &Request) {
+    async fn watch(&mut self, req: &Request) {
         if req.repo_ref.is_empty() {
             return;
         }
         let (descriptors, _) = read_peer_store(self.peers_dir.clone()).await;
         let local_id = self.daemon_id.clone().unwrap_or_default();
         match fleet::route(&req.repo_ref, &local_id, &descriptors) {
-            fleet::Route::Local { slug } => self.watch_local(socket, slug, req).await,
+            fleet::Route::Local { slug } => self.watch_local(slug, req).await,
             fleet::Route::UnknownDaemon { .. } => {}
             // Local only: a peer on an older build would hold the gitdir without
             // the `HEAD`-only filter, and its `index` writes would loop against
@@ -162,7 +169,7 @@ impl TreeConn {
         self.watched.push(key);
     }
 
-    async fn watch_local(&mut self, socket: &mut WebSocket, repo: &str, req: &Request) {
+    async fn watch_local(&mut self, repo: &str, req: &Request) {
         let Some(root) = registry_root(&self.registry_path, repo) else {
             return;
         };
@@ -175,18 +182,11 @@ impl TreeConn {
             vec![req.rel.clone()]
         };
         for rel in rels {
-            self.watch_dir(socket, &root, repo, rel, req).await;
+            self.watch_dir(&root, repo, rel, req).await;
         }
     }
 
-    async fn watch_dir(
-        &mut self,
-        socket: &mut WebSocket,
-        root: &Path,
-        repo: &str,
-        rel: String,
-        req: &Request,
-    ) {
+    async fn watch_dir(&mut self, root: &Path, repo: &str, rel: String, req: &Request) {
         // Idempotent per connection: a repeat watch must NOT take a second
         // manager refcount this teardown would never release.
         let key = (repo.to_string(), rel.clone());
@@ -208,7 +208,7 @@ impl TreeConn {
             Err(e) => {
                 let reason = format!("{e:#}");
                 tracing::warn!(error = %reason, "tree watch failed");
-                report_failure(socket, repo, &rel, req, &reason).await;
+                report_failure(&self.out, repo, &rel, req, &reason).await;
             }
         }
     }
@@ -304,16 +304,10 @@ fn ensure_runstate_dir(root: &Path) {
 // The tree shows it no longer updates by itself (ADR-0070 D3). Paths are pushed
 // like `tree.dirty`; the runs list has no line to show it, so it stays a log
 // line.
-async fn report_failure(
-    socket: &mut WebSocket,
-    repo: &str,
-    rel: &str,
-    req: &Request,
-    reason: &str,
-) {
+async fn report_failure(out: &ChannelSender, repo: &str, rel: &str, req: &Request, reason: &str) {
     if req.verb.runs() {
         return;
     }
     let payload = failed_payload(repo, rel, req.alias.as_ref(), req.verb.head(), reason);
-    send_command(socket, 0, "tree.failed", payload).await;
+    push_command(out, "tree.failed", payload).await;
 }

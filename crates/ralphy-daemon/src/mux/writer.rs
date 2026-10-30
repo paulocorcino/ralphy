@@ -34,6 +34,10 @@ pub(crate) enum Mode {
     /// Each inner frame is one Binary message, as the old routes send it.
     Plain,
     /// Each inner frame of a channel above 0 is cut into channel frames.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "no route starts a writer in this mode yet")
+    )]
     Channels,
 }
 

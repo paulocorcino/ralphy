@@ -8,5 +8,4 @@
 // channel; the writer sends one piece per non-empty channel in turn.
 mod writer;
 
-#[expect(unused_imports, reason = "no socket loop sends through the writer yet")]
 pub(crate) use writer::{ChannelSender, Mode, Writer, WriterClosed};

@@ -41,12 +41,6 @@ pub mod epoch;
 pub mod fleet;
 pub mod fswrite;
 pub mod identity;
-// The socket loops move their sends to the writer in the stages of #740 that
-// follow; until then only its tests use it.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "no socket loop sends through the writer yet")
-)]
 mod mux;
 pub mod note;
 pub mod owner_only;

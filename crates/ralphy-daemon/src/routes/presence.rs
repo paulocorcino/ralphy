@@ -6,10 +6,12 @@ use std::time::{Duration, Instant};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::routing::get;
 use axum::Router;
+use futures_util::StreamExt;
 use tokio::sync::broadcast;
 
-use super::RouterShared;
-use crate::protocol::{Command, Frame, Presence};
+use super::{send_command_on, RouterShared};
+use crate::mux::{ChannelSender, Mode, Writer};
+use crate::protocol::{Frame, Presence};
 use crate::{identity, presence_board, protocol};
 
 /// A change to a shown fact the daemon owns, relayed on every open `/ws` as a
@@ -163,16 +165,8 @@ async fn stamp_stores(registry_path: &Path, peers_dir: &Path) -> Option<(String,
     }
 }
 
-async fn send_push(socket: &mut WebSocket, verb: &str, payload: serde_json::Value) -> bool {
-    let frame = Frame::Command(Command {
-        id: 0,
-        verb: verb.to_string(),
-        payload,
-    });
-    socket
-        .send(Message::Binary(protocol::encode(&frame).into()))
-        .await
-        .is_ok()
+async fn send_push(out: &ChannelSender, verb: &str, payload: serde_json::Value) -> bool {
+    send_command_on(out, 0, verb, payload).await.is_ok()
 }
 
 /// Build the presence heartbeat for the loaded identity and the daemon's
@@ -202,7 +196,7 @@ pub(crate) fn build_presence(identity: Option<&identity::Identity>, uptime: Dura
 /// loop ends. A frame that is not a report is ignored, and the socket stays
 /// open.
 pub(crate) async fn ws_presence_loop(
-    mut socket: WebSocket,
+    socket: WebSocket,
     identity: Option<identity::Identity>,
     start: Instant,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
@@ -210,22 +204,26 @@ pub(crate) async fn ws_presence_loop(
     board: presence_board::Shared,
 ) {
     let page = PageEntry::open(board);
+    let (sink, mut from_page) = socket.split();
+    // Channel 0 is the socket itself: its frames leave whole and bare.
+    let writer = Writer::start(sink, Mode::Plain);
+    let out = writer.channel(0);
     let mut tick = tokio::time::interval(Duration::from_secs(2));
     let mut sessions_open = true;
     let mut pushes_open = true;
     loop {
         let stop = tokio::select! {
             changed = sessions.recv(), if sessions_open => {
-                on_sessions(&mut socket, changed).await.stops(&mut sessions_open)
+                on_sessions(&out, changed).await.stops(&mut sessions_open)
             }
             pushed = pushes.recv(), if pushes_open => {
-                on_push(&mut socket, pushed).await.stops(&mut pushes_open)
+                on_push(&out, pushed).await.stops(&mut pushes_open)
             }
             // Ok = the daemon signalled shutdown; Err = the sender was dropped
             // (its runtime is going away). Either way, stop serving this socket.
             _ = shutdown.changed() => true,
-            _ = tick.tick() => !send_presence(&mut socket, identity.as_ref(), start).await,
-            incoming = socket.recv() => {
+            _ = tick.tick() => !send_presence(&out, identity.as_ref(), start).await,
+            incoming = from_page.next() => {
                 page.take(&incoming);
                 ends_the_loop(&incoming)
             }
@@ -321,50 +319,44 @@ impl Next {
 
 /// The sessions arm: a change, or a lag, is one `sessions.dirty`.
 async fn on_sessions(
-    socket: &mut WebSocket,
+    out: &ChannelSender,
     changed: Result<(), broadcast::error::RecvError>,
 ) -> Next {
     match changed {
         Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
-            Next::sent(send_push(socket, "sessions.dirty", serde_json::json!({})).await)
+            Next::sent(send_push(out, "sessions.dirty", serde_json::json!({})).await)
         }
         Err(broadcast::error::RecvError::Closed) => Next::CloseArm,
     }
 }
 
 /// The pushes arm: a push is sent as its verb; a lag sends every verb once.
-async fn on_push(
-    socket: &mut WebSocket,
-    pushed: Result<Push, broadcast::error::RecvError>,
-) -> Next {
+async fn on_push(out: &ChannelSender, pushed: Result<Push, broadcast::error::RecvError>) -> Next {
     match pushed {
-        Ok(p) => Next::sent(send_push(socket, p.verb(), p.payload()).await),
-        Err(broadcast::error::RecvError::Lagged(_)) => Next::sent(send_every_push(socket).await),
+        Ok(p) => Next::sent(send_push(out, p.verb(), p.payload()).await),
+        Err(broadcast::error::RecvError::Lagged(_)) => Next::sent(send_every_push(out).await),
         Err(broadcast::error::RecvError::Closed) => Next::CloseArm,
     }
 }
 
 /// `sessions.dirty` and every [`Push`] once; no send after the first one that
 /// fails. `false` when a send failed.
-async fn send_every_push(socket: &mut WebSocket) -> bool {
-    let mut sent = send_push(socket, "sessions.dirty", serde_json::json!({})).await;
+async fn send_every_push(out: &ChannelSender) -> bool {
+    let mut sent = send_push(out, "sessions.dirty", serde_json::json!({})).await;
     for p in Push::all() {
-        sent = sent && send_push(socket, p.verb(), p.payload()).await;
+        sent = sent && send_push(out, p.verb(), p.payload()).await;
     }
     sent
 }
 
 /// Send one presence heartbeat. `false` when the send failed.
 async fn send_presence(
-    socket: &mut WebSocket,
+    out: &ChannelSender,
     identity: Option<&identity::Identity>,
     start: Instant,
 ) -> bool {
     let frame = build_presence(identity, start.elapsed());
-    socket
-        .send(Message::Binary(protocol::encode(&frame).into()))
-        .await
-        .is_ok()
+    out.send(protocol::encode(&frame)).await.is_ok()
 }
 
 /// Whether a message from the client ends the loop. None (stream closed), a
@@ -408,6 +400,7 @@ pub(crate) fn presence_routes(s: &RouterShared) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::Command;
 
     #[test]
     fn a_stamp_changes_when_the_store_changes() {
