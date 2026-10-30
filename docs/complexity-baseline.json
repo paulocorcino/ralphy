@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-agent-copilot/src/catalog.rs": {
-      "fetch_catalog": [
-        11
-      ]
-    },
     "crates/ralphy-agent-copilot/src/outcome.rs": {
       "copilot_final_text": [
         13
