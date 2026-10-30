@@ -275,6 +275,50 @@ test("tiling a detached fence changes no console", (t) => {
   );
 });
 
+test("a detach past the cap of detached fences is refused, says so, and opens nothing", (t) => {
+  const emitted = withWB(t);
+  const opened = [];
+  const { deps, calls } = fakeDeps({
+    window: { addEventListener() {}, removeEventListener() {}, open: () => opened.push(1) },
+  });
+  const full = ["a", "b", "c", "d"];
+  for (const id of full) deps.popups.put(id, deps.popups.newPopupEntry());
+  deps.popups.commitDetached(full);
+  createFences(deps).detachFence("f");
+  assert.deepEqual(opened, []);
+  assert.equal(deps.popups.isDetached("f"), false);
+  assert.deepEqual(calls, [["fenceNotice", "f", "Maximum of 4 detached fences"]]);
+  assert.deepEqual(emitted, [{ type: "fence-detach-refused", detail: { fence: "f", reason: "cap" } }]);
+});
+
+test("tiling skips a maximized, a column and a locked console, and places the others in the fence", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const make = (id, cls, locked = false) => {
+    const w = fakeElement();
+    w._deskId = id;
+    if (cls) w.classList.add(cls);
+    w._deskLocked = locked;
+    return w;
+  };
+  const wins = [make("max", "maximized"), make("col", "column"), make("lock", null, true), make("a"), make("b")];
+  const fence = fakeElement();
+  const { deps, calls } = fakeDeps({}, { fenceEl: () => fence });
+  deps.stage().querySelectorAll = (sel) => (sel === ".session-window" ? wins : []);
+  createFences(deps).arrangeFence("f");
+  const placed = calls.filter(([name]) => name === "setWin").map(([, w, fields]) => [w._deskId, fields.rect]);
+  assert.deepEqual(
+    placed.map(([id]) => id),
+    ["a", "b"],
+  );
+  for (const [id, rect] of placed) {
+    const w = wins.find((x) => x._deskId === id);
+    assert.equal(w.style.left, rect.left + "px");
+    assert.equal(w.style.height, rect.height + "px");
+    assert.equal(w.classList.contains("tiling"), true);
+    assert.ok(rect.top >= RECT.top + 28, "a tile sits below the fence's head");
+  }
+});
+
 // A fence already detached, with a popup entry `more` describes.
 function detachedFence(more) {
   const { deps, calls } = fakeDeps();
