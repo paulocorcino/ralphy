@@ -149,7 +149,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
         confirmLabel: "Reopen",
         danger: true,
       }) ?? Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
-    ask.then((ok) => ok && go());
+    void ask.then((ok) => ok && go());
   }
 
   // Save with: the text as it is, written under `name` — the conversion the

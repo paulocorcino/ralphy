@@ -33,8 +33,8 @@ import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { CanvasTab } from "./wb-shell-types.d.ts";
 
-/** What a failed read hands back: a thrown error, or whatever a socket rejected with. */
-type Failure = { message?: string } | null | undefined;
+// Where a Promise nobody awaits reports its failure: the console, tagged.
+const logFailure = (what: string) => (err: unknown) => console.error(`[workbench] ${what}`, err);
 
 // The bytes of the open tab `t` of `project` as they are on disk now, or null
 // when the read is refused. An image tab re-reads through its OWN verb
@@ -99,7 +99,7 @@ export function wbFiles() {
     // On `workbench:project-changed`: after the paint, the tree of the open
     // project is mounted.
     filesFollowProject() {
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         this.destroyTree();
         if (this.$store.projects.openSlug) this.mountTree();
       });
@@ -157,9 +157,9 @@ export function wbFiles() {
 
     // The tree shows a listing it could not confirm: record the reason, leave
     // every row alone. Cleared by `treeFresh`.
-    treeWentStale(err: Failure) {
+    treeWentStale(err: unknown) {
       if (!this.useDaemonTree()) return;
-      this.treeStale = `${WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.")} The list shown is the last one read.`;
+      this.treeStale = `${WBFail.failed({ message: err instanceof Error ? err.message : undefined },"Could not refresh the file list: the daemon gave no reason.")} The list shown is the last one read.`;
     },
 
     // A read landed: whatever the tree is showing is confirmed again.
@@ -184,8 +184,8 @@ export function wbFiles() {
     peerDownAct() {
       const g = this.openPeerDown();
       if (!g) return;
-      if (WBFleet.wakeable(g)) this.$store.projects.wakePeer(g.daemon);
-      else this.$store.projects.readFleetNow();
+      if (WBFleet.wakeable(g)) void this.$store.projects.wakePeer(g.daemon);
+      else void this.$store.projects.readFleetNow();
     },
 
     // After each good fleet read: the read that calls the open project's peer
@@ -194,9 +194,9 @@ export function wbFiles() {
       const down = !!this.openPeerDown();
       if (!down && this._filesPeerDown && this._filesPeerDown === this.$store.projects.openSlug && this._tree) {
         this.treeFresh();
-        this.revalidateLevel("");
+        void this.revalidateLevel("");
         this.rawTree()!.root.visit((n: WunderbaumNode) => {
-          if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
+          if (this.isFolder(n) && n.expanded) void this.revalidateLevel(this.relPath(n));
         });
       }
       this._filesPeerDown = down ? this.$store.projects.openSlug : null;
@@ -246,14 +246,14 @@ export function wbFiles() {
     // loaded, and Wunderbaum's filter hides every other row. The decisions
     // are `WBFileSearch`'s.
     toggleFileSearch() {
-      if (this.fileSearch.open) this.closeFileSearch();
+      if (this.fileSearch.open) void this.closeFileSearch();
       else this.openFileSearch();
     },
 
     openFileSearch() {
       if (!this.$store.projects.openSlug) return;
       this.fileSearch.open = true;
-      this.$nextTick(() => this.$refs.fileSearch?.focus?.());
+      void this.$nextTick(() => this.$refs.fileSearch?.focus?.());
     },
 
     // Escape, or the lupe again: field, query and filter all go.
@@ -285,7 +285,7 @@ export function wbFiles() {
       clearTimeout(this._fileSearchTimer);
       if (!WBFileSearch.worthSearching(this.fileSearch.query)) {
         this.fileSearch.seq++;
-        this.clearFileSearch();
+        void this.clearFileSearch();
         return;
       }
       this._fileSearchTimer = setTimeout(() => this.fileSearchNow(), WBFileSearch.DEBOUNCE_MS);
@@ -323,7 +323,7 @@ export function wbFiles() {
 
     // Take the filter off and fold back what the search opened.
     async clearFileSearch() {
-      return clearSearch(this);
+      return clearSearch(this).catch(logFailure("the file search did not clear"));
     },
 
     // The search's memory of a tree that no longer exists (see `destroyTree`).
@@ -358,7 +358,7 @@ export function wbFiles() {
       // reconcile failure leaves every row in place (`_reconcileOnce` resolves
       // the listing BEFORE touching the tree) and must still refresh viewers.
       return this.reconcileLevel(node, rel)
-        .catch((err) => this.treeWentStale(err))
+        .catch((err: unknown) => this.treeWentStale(err))
         .then(() => this.refreshOpenViewers(rel));
     },
 
@@ -661,11 +661,15 @@ export function wbFiles() {
         this.$store.modals.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
         return;
       }
-      await this.onTreeDirty(parentRel(from));
-      await this.onTreeDirty(parentRel(to));
-      this.$store.tabs.repathTabs(from, to);
-      // LAST, so its `setActive()` is the final write.
-      await this.revealRel(to);
+      try {
+        await this.onTreeDirty(parentRel(from));
+        await this.onTreeDirty(parentRel(to));
+        this.$store.tabs.repathTabs(from, to);
+        // LAST, so its `setActive()` is the final write.
+        await this.revealRel(to);
+      } catch (err) {
+        logFailure("the move did not finish")(err);
+      }
     },
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
@@ -712,14 +716,15 @@ export function wbFiles() {
       window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay?.());
       // `/` and Ctrl/Cmd+Shift+F (`wire()` in app.ts).
       window.addEventListener("workbench:file-search-open", () => this.openFileSearch());
-      window.addEventListener("workbench:move-confirmed", (e) => this.performMove(e.detail.from, e.detail.to));
+      window.addEventListener("workbench:move-confirmed", (e) => void this.performMove(e.detail.from, e.detail.to));
       // A create or a delete of the write seam (`wire()` in app.ts): re-list the
       // level, THEN reveal, so `setActive()` is the last write. `revealRel`
       // expands the ancestors: a nudge for a COLLAPSED dir is dropped, so a
       // nudge alone would leave a new entry invisible.
-      window.addEventListener("workbench:tree-dirty", async (e) => {
-        await this.onTreeDirty(e.detail.rel);
-        if (e.detail.reveal) await this.revealRel(e.detail.reveal);
+      window.addEventListener("workbench:tree-dirty", (e) => {
+        Promise.resolve(this.onTreeDirty(e.detail.rel))
+          .then(() => (e.detail.reveal ? this.revealRel(e.detail.reveal) : null))
+          .catch(logFailure("the tree did not refresh"));
       });
     },
   });

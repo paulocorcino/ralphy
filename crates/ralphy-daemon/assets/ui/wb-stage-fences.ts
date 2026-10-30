@@ -144,6 +144,30 @@ export function createFences(deps: FenceDeps) {
     setWin,
   });
 
+  async function tileOnConfirm(f: DeskFence) {
+    // A detached fence has nothing here to tile; `arrangeFence` says so, so
+    // the question is not put to the operator.
+    if (popups.isDetached(f.id)) return arrangeFence(f.id);
+    const ok = await askConfirm({
+      title: "Tile this fence?",
+      message: `Rearranges the consoles in ${f.name || "this fence"}. Sessions keep running.`,
+      confirmLabel: "Tile",
+    });
+    if (ok) arrangeFence(f.id);
+  }
+
+  async function removeOnConfirm(f: DeskFence) {
+    // A DETACHED fence refuses removal and says why; no question first.
+    if (popups.isDetached(f.id)) return removeFence(f.id);
+    const ok = await askConfirm({
+      title: "Remove this fence?",
+      message: `Removes ${f.name || "this fence"}. Consoles stay where they are.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (ok) removeFence(f.id);
+  }
+
   // A fence is a stage child BELOW every window (`z-index: 1` against `Z_BASE`)
   // with `pointer-events: none`, so "never intercepts a window drag, resize or
   // focus click" holds by construction and `onFloorDown`'s `e.target !== st`
@@ -247,33 +271,13 @@ export function createFences(deps: FenceDeps) {
     tile.type = "button";
     tile.title = "Tile this fence's consoles";
     tile.textContent = "⊞";
-    tile.addEventListener("click", async () => {
-      // A detached fence has nothing here to tile; `arrangeFence` says so, so
-      // the question is not put to the operator.
-      if (popups.isDetached(f.id)) return arrangeFence(f.id);
-      const ok = await askConfirm({
-        title: "Tile this fence?",
-        message: `Rearranges the consoles in ${f.name || "this fence"}. Sessions keep running.`,
-        confirmLabel: "Tile",
-      });
-      if (ok) arrangeFence(f.id);
-    });
+    tile.addEventListener("click", () => void tileOnConfirm(f));
     const drop = document.createElement("button");
     drop.className = "fence-drop";
     drop.type = "button";
     drop.title = "Remove this fence";
     drop.textContent = "×";
-    drop.addEventListener("click", async () => {
-      // A DETACHED fence refuses removal and says why; no question first.
-      if (popups.isDetached(f.id)) return removeFence(f.id);
-      const ok = await askConfirm({
-        title: "Remove this fence?",
-        message: `Removes ${f.name || "this fence"}. Consoles stay where they are.`,
-        confirmLabel: "Remove",
-        danger: true,
-      });
-      if (ok) removeFence(f.id);
-    });
+    drop.addEventListener("click", () => void removeOnConfirm(f));
     const detach = document.createElement("button");
     detach.className = "fence-detach";
     detach.type = "button";

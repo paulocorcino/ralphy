@@ -183,7 +183,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .catch((err) => {
+      .catch((err: unknown) => {
         // The AMD loader did not boot — degrade to read-only bytes rather
         // than leave an empty pane (#308).
         // Only a BOOT failure lands here; a throw from create()/wiring below
@@ -231,7 +231,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
         // restores the slot while the bytes are still in flight): paint now.
         if (mirrors(rec.id)) refresh();
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
@@ -334,7 +334,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     const saveBtn = el.querySelector<HTMLElement>('[data-act="save"]')!;
     el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
       (rec.ed as MonacoEditor | undefined)?.focus();
-      (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run();
+      (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run().catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
@@ -348,7 +348,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     rec.el = el;
     rec.saveBtn = saveBtn;
     rec.mirrorBtn = mirrorBtn;
-    mountEditor(rec, el.querySelector<HTMLElement>(".viewer-body")!, {});
+    void mountEditor(rec, el.querySelector<HTMLElement>(".viewer-body")!, {});
   }
 
   // A pane that opened refused now has bytes: rebuild it as the pane its

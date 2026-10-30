@@ -42,10 +42,10 @@ export function wbLogin() {
     // socket self-reconnects.
     rehydrateAfterAuth() {
       this.$store.projects.clearReposError();
-      this.$store.projects.loadRepos();
-      this.$store.connection.loadIdentity();
+      void this.$store.projects.loadRepos();
+      void this.$store.connection.loadIdentity();
       // `/api/agents` is gated too.
-      this.$store.projects.loadAgents();
+      void this.$store.projects.loadAgents();
       // `/api/desk` and `file.read` are gated too: the shell reads the desk
       // and restores the open tabs (app.ts).
       sendWindow(window, "workbench:logged-in");
@@ -53,7 +53,7 @@ export function wbLogin() {
       // `loadRepos` above covers the sessions, the change set and the branch.
       sendWindow(window, "workbench:board-refresh", { trigger: "login" });
       // Not only with the Runs panel open: the runs lock the writes.
-      this.$store.runs.hydrateRuns();
+      void this.$store.runs.hydrateRuns();
       this.$store.connection.rereadOpenPanels();
     },
 

@@ -216,7 +216,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       // once when there is nothing to write, so the last character typed
       // before the pointer left the body is carried even though the editor's
       // change listener has not fired yet.
-      flush(el);
+      void flush(el);
     });
     stage()?.append(el);
     // In the WINDOW tier from the moment it exists. A card built by a restore
@@ -299,7 +299,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
         // is the wrong answer to this key.
         ev.preventDefault();
         ev.stopPropagation();
-        flush(el);
+        void flush(el);
         return;
       }
       if (ev.key !== "Escape") return;
@@ -399,7 +399,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     // silently do nothing at exactly the moment the operator is trying to
     // tidy up.
     const written = el && el._noteDirty ? flush(el).catch(() => {}) : Promise.resolve();
-    written.then(() => {
+    void written.then(() => {
       // Read the record AFTER the flush: closing a never-saved note performs
       // its first save, and the path the undo must restore is the one that
       // save just chose — the pre-flush snapshot aims at nothing.
@@ -507,9 +507,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
         el._noteClaim = record.claim;
         paintPath(el, record.claim);
       }
-      mountDraft(el, record.draft);
+      void mountDraft(el, record.draft);
     } else {
-      loadInto(el, record);
+      void loadInto(el, record);
     }
     paint(el, record, []);
     if (el._noteClaim) paintPath(el, el._noteClaim);
@@ -634,7 +634,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
       // `flush` re-reads the editor itself, so an unannounced last keystroke
       // is carried here too.
-      flush(el);
+      void flush(el);
     }
   }
 

@@ -240,12 +240,12 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // Alpine calls this once, when `main.ts` registers the store, before
     // the shell. `main.ts` builds `WBConsole` first.
     init() {
-      this.loadRepos();
-      this.loadAgents();
+      void this.loadRepos();
+      void this.loadAgents();
       // A push, a reopened socket or the tab coming back (the store
       // `connection`) asks to read these facts again.
-      window.addEventListener("workbench:repos-reread", (e) => this.loadRepos({ git: e.detail.git }));
-      window.addEventListener("workbench:sessions-reread", () => this.refreshLive());
+      window.addEventListener("workbench:repos-reread", (e) => void this.loadRepos({ git: e.detail.git }));
+      window.addEventListener("workbench:sessions-reread", () => void this.refreshLive());
       // A peer pushes neither its reachability nor its sessions, so they are
       // read every 30 s while a peer is listed and the tab is visible
       // (ADR-0070 D2 event 6). `loadRepos` reads the fleet and the sessions.
@@ -255,7 +255,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // A peer reads no git fact: the change set and the branch have their own
     // triggers.
     peerTick() {
-      if (!window.Alpine.store("connection").tabHidden() && this.fleetPeers.length) this.loadRepos({ git: false });
+      if (!window.Alpine.store("connection").tabHidden() && this.fleetPeers.length) void this.loadRepos({ git: false });
     },
     PEER_READ_MS: 30000,
     _peerTick: null as Timer,
@@ -332,7 +332,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
           // per-peer timeout, and holding `reposLoading` open for that would make
           // a peer's absence stall the LOCAL sidebar's spinner and live dots.
           // Federation is additive in latency too.
-          this.loadFleet();
+          void this.loadFleet();
         } else {
           this.reposFailed(`the daemon answered ${r.status}`);
         }
@@ -342,7 +342,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         this.reposLoading = false;
         // The sessions are read with the projects, whatever the projects read
         // answered: the live dots and the console menu come from them.
-        this.refreshLive();
+        void this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
         if (git && this.openSlug) sendWindow(window, "workbench:changes-read", { ref: this.openSlug });
       }
@@ -498,7 +498,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       const daemon = WBFleet.refDaemon(ref);
       if (!daemon) return;
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
-      if (WBFleet.wakeable(group)) this.wakePeer(daemon);
+      if (WBFleet.wakeable(group)) void this.wakePeer(daemon);
     },
 
     peerWakeable(g: Group) {
@@ -611,7 +611,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     shareFleet() {
       window.WBConsole?.ingestFleet?.(WBFleet.fleetGroups(this.projects, this.fleetPeers), {
         wake: (daemonId) => this.wakePeer(daemonId),
-        read: () => this.readFleetNow(),
+        read: () => void this.readFleetNow(),
       });
     },
     clearReposError() {

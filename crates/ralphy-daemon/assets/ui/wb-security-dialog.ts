@@ -64,7 +64,7 @@ async function afterRequireLogin(dialog: LoginDialog, want: boolean) {
     // daemon invalidated sessions, so drop to the login screen.
     dialog.$store.connection.securityChanged({ policy: "session" });
     dialog.closeSecurity();
-    dialog.$store.connection.logOff();
+    void dialog.$store.connection.logOff();
   } else {
     // Gate lifted — re-sync authed/policy from the server.
     await dialog.$store.connection.probeSession();
@@ -154,7 +154,7 @@ export function securityDialog() {
       this.cancelStepUp();
       this.securityForm.stepUpError = "";
       this.stepUp = { open: true, code: "", label };
-      this.$nextTick?.(() => document.querySelector<HTMLElement>(".step-up input")?.focus());
+      void this.$nextTick?.(() => document.querySelector<HTMLElement>(".step-up input")?.focus());
       return new Promise<string | null>((resolve) => {
         this._stepUpResolve = resolve;
       });
@@ -367,7 +367,7 @@ export function securityDialog() {
       } catch {
         return;
       }
-      if (this.$store.connection.security.policy === "session") this.$store.connection.logOff();
+      if (this.$store.connection.security.policy === "session") void this.$store.connection.logOff();
     },
 
     async toggleRequireLogin(ev?: CheckboxChange) {

@@ -367,7 +367,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     // handed back to it — a remount is the whole of `CrepeLean`'s surface for
     // "here is different text", and a retitle is rare enough to afford one.
     // The FILE keeps its name: `⋯ → Rename file…` is the other verb.
-    mountEditor(el, el._noteMarkdown).then(() => markDirty(el));
+    void mountEditor(el, el._noteMarkdown).then(() => markDirty(el));
     paintTitle(el);
   }
 

@@ -70,7 +70,7 @@ export function hostsDialog() {
             if (reply?.status === "ok") this.addHostStep({ type: "aliases", aliases: reply.aliases });
           })
           // Without the list the operator types the address.
-          .catch((e) => console.warn("host aliases:", e));
+          .catch((e: unknown) => console.warn("host aliases:", e));
       },
       closeAddHost() {
         this.addHostStep({ type: "close" });
@@ -260,7 +260,7 @@ export function hostsDialog() {
             this.addHostStep({ type: "exit", verb, code: st.code });
             const next = afterHostVerb(verb, st.code, this.addHost);
             // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
-            if (next === "reload") this.$store.projects.loadRepos();
+            if (next === "reload") void this.$store.projects.loadRepos();
             else if (next === "check") this.addHostCheckAgain();
             else if (next === "install") {
               this.addHostStep({ type: "auto-tried" });
@@ -277,7 +277,7 @@ export function hostsDialog() {
         if (this.removeHost.busy) return;
         this.removeHost = { open: true, daemon: h.daemon_id, name: h.name, rotate: false, busy: false, lines: [], failure: null };
         // The list scrolls: the last row's question opens below the visible part.
-        this.$nextTick(() =>
+        void this.$nextTick(() =>
           document
             .querySelector('.host-item[data-host="' + CSS.escape(h.daemon_id) + '"]')
             ?.scrollIntoView({ block: "nearest" }),
@@ -305,7 +305,7 @@ export function hostsDialog() {
               if (st.code === 0) {
                 this.$store.projects.hostRemoved(this.removeHost.daemon);
                 this.removeHost.open = false;
-                this.$store.projects.loadRepos();
+                void this.$store.projects.loadRepos();
               }
             } else if (st.status === "error") {
               s = WBHosts.next(s, {

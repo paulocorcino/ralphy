@@ -172,11 +172,11 @@ export function runsStore(_deps: RunsStoreDeps) {
     // follows the tree's open/close path, and the selection falls back to the
     // first run of the project now open.
     runsFollowProject() {
-      window.Alpine.nextTick(() => {
+      void window.Alpine.nextTick(() => {
         this.destroyRunsSub();
         this.mountRunsSub();
         this.currentRunId = this.projectRuns()[0]?.runid || null;
-        if (window.Alpine.store("projects").openSlug) this.hydrateRuns();
+        if (window.Alpine.store("projects").openSlug) void this.hydrateRuns();
       });
     },
   };

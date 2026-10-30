@@ -25,7 +25,7 @@ type LevelFiles = {
   treeMem(): void;
   treeKey(rel: string): string;
   treeFresh(): void;
-  treeWentStale(err: { message?: string } | null | undefined): void;
+  treeWentStale(err: unknown): void;
   useDaemonTree(): boolean;
   findFolderByRel(rel: string): WunderbaumNode | null;
   fetchTreeLevel(rel: string): Promise<WunderbaumSource[]>;
@@ -137,7 +137,7 @@ export function revalidateLevel(files: LevelFiles, rel: string) {
       if (node) return files.reconcileLevel(node, rel);
     })
     // A dropped read leaves the cached level on screen, but says so.
-    .catch((err) => files.treeWentStale(err));
+    .catch((err: unknown) => files.treeWentStale(err));
 }
 
 // Whether the rows under `node` already show `specs` (from `treeNodes`):
@@ -162,6 +162,6 @@ export function levelShows(files: LevelFiles, node: WunderbaumNode, specs: Wunde
 export function revalidateBelow(files: LevelFiles, node: WunderbaumNode, rel: string) {
   files.forgetValidatedBelow(rel);
   node.visit((n: WunderbaumNode) => {
-    if (files.isFolder(n) && n.expanded) files.revalidateLevel(files.relPath(n));
+    if (files.isFolder(n) && n.expanded) void files.revalidateLevel(files.relPath(n));
   });
 }

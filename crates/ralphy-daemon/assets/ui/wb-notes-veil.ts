@@ -73,11 +73,11 @@ export function createNoteVeil(deps: NoteVeilDeps) {
       // Away first, THEN the teardown: `loadInto` reads the file again, and
       // the card must not be left holding a body it is no longer showing.
       el._noteRevealed = false;
-      loadInto(el, record);
+      void loadInto(el, record);
       return;
     }
     el._noteRevealed = true;
-    loadInto(el, record);
+    void loadInto(el, record);
   }
 
   // Mark the note as one that opens veiled, or stop. A DOCUMENT write, so it
@@ -96,7 +96,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
       const record = recordOf(el.dataset.noteId);
       if (!record) return;
       el._noteRevealed = true;
-      loadInto(el, record).then(() => setMarked(el, false));
+      void loadInto(el, record).then(() => setMarked(el, false));
       return;
     }
     // Through the editor first: a character typed a frame ago is not in
@@ -108,9 +108,9 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     paintVeil(el);
     // The write lands first; only then does the body go, or the flush would
     // find an editor that had already been taken away from under it.
-    flush(el).then(() => {
+    void flush(el).then(() => {
       const record = recordOf(el.dataset.noteId);
-      if (record) loadInto(el, record);
+      if (record) void loadInto(el, record);
     });
   }
 

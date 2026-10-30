@@ -126,7 +126,7 @@ export function createNoteFile(deps: NoteFileDeps) {
         paintPath(el, to);
         paintState(el, "Renamed");
       })
-      .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
+      .catch((err: unknown) => paintState(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer.")));
   }
 
   // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
@@ -134,7 +134,7 @@ export function createNoteFile(deps: NoteFileDeps) {
   function deleteNote(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
     if (!record?.path || record.checkout) return;
-    messages?.askConfirm({
+    void messages?.askConfirm({
       title: "Delete this note's file?",
       message: `${record.path} is deleted from the checkout. This cannot be undone.`,
       confirmLabel: "Delete",
@@ -153,7 +153,7 @@ export function createNoteFile(deps: NoteFileDeps) {
           consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
           render();
         })
-        .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
+        .catch((err: unknown) => paintState(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer.")));
     });
   }
 

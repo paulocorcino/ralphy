@@ -71,7 +71,7 @@ export function releaseDialogs() {
       this.whatsNewOpen = true;
       this.$store.release.markReleaseSeen();
       // The warning counts the consoles open now, not at the last poll.
-      this.$store.projects.refreshLive();
+      void this.$store.projects.refreshLive();
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;
@@ -129,7 +129,7 @@ export function releaseDialogs() {
         return;
       }
       this.relUpdate = { ...u, phase: "restarting", code: "" };
-      this.awaitNewBuild(this.$store.release.release.current);
+      void this.awaitNewBuild(this.$store.release.release.current);
     },
     // The line under the question when the daemon refused or the update failed.
     updateRefusal(result: { ok: boolean; status?: number; retryAfter?: string | null; message?: string }) {

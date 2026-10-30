@@ -298,9 +298,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       // `drawDiagram` returns the SVG already sanitized.
       drawDiagram(window, holder.id + "-svg", holder.dataset.src!)
         .then((svg) => (holder.innerHTML = svg))
-        .catch((err) => {
+        .catch((err: unknown) => {
           holder.classList.add("mermaid-error");
-          holder.textContent = "Mermaid error: " + (err?.message || err);
+          holder.textContent = "Mermaid error: " + String(err instanceof Error && err.message ? err.message : err);
         });
     });
   }

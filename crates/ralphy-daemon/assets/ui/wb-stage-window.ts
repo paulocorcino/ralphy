@@ -198,7 +198,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     focusWin(win);
     // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
     // move the top layer without a round trip through the exit.
-    win.requestFullscreen().catch((err) => {
+    win.requestFullscreen().catch((err: unknown) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
       console.warn("fullscreen refused", err);

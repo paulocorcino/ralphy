@@ -237,13 +237,13 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
           return send({ ...rest, encoding: "utf-8" });
         });
       };
-      send(payload);
+      void send(payload);
     }
 
     // A console's switcher cut a worktree: re-read the listing, flash what the
     // add had to say.
     function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
-      window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
+      void window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
       if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
     }
 
@@ -298,9 +298,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       }
     }
 
-    document.addEventListener("workbench:action", async (e) => {
+    async function runAction(d: WorkbenchAction) {
       if (!daemonBacked()) return;
-      const d = e.detail;
       const aim = actionTarget(d);
       if (!aim) return;
       switch (d.action) {
@@ -324,6 +323,10 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         default:
           break;
       }
+    }
+
+    document.addEventListener("workbench:action", (e) => {
+      runAction(e.detail).catch(() => flash("Could not finish that action."));
     });
   })();
 

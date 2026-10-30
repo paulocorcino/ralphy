@@ -151,7 +151,7 @@ export function wbUploadDialog() {
       const requests = this.uploadRequests();
       this.upload.open = false;
       pending = [];
-      this.$store.uploads.add(requests);
+      this.$store.uploads.add(requests).catch(() => this.$store.modals.flash("Could not send the files."));
     },
   });
 }

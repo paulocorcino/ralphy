@@ -77,18 +77,18 @@ export function wbSpend() {
     setSpendPeriod(key: string) {
       if (this.spendPeriod === key) return;
       this.spendPeriod = key;
-      this.loadSpend();
+      void this.loadSpend();
       // The Ledger is scoped to the SAME window: a period change invalidates
       // its rows too.
       this.ledger.slug = null;
-      if (this.spendPane === "ledger") this.loadLedger();
+      if (this.spendPane === "ledger") void this.loadLedger();
     },
     openSpend() {
       // Bootstrap's cash-stack: the strip renders `t.icon` as a class.
       sendWindow(window, "workbench:tab-open", {
         tab: { id: "spend", kind: "spend", title: "Spend", icon: "bi bi-cash-stack", closable: true },
       });
-      this.loadSpend();
+      void this.loadSpend();
     },
     async loadSpend() {
       const slug = this.$store.projects.openSlug;
@@ -118,8 +118,8 @@ export function wbSpend() {
       // unpriced filter goes with it: it answered the PREVIOUS project's gap.
       this.ledger.slug = null;
       this.spendLedgerUnpricedOnly = false;
-      this.loadSpend();
-      if (this.spendPane === "ledger") this.loadLedger();
+      void this.loadSpend();
+      if (this.spendPane === "ledger") void this.loadLedger();
     },
 
     // --- the Ledger pane (#360) --------------------------------------------
@@ -164,7 +164,7 @@ export function wbSpend() {
     // with the project's history.
     setSpendPane(key: string) {
       this.spendPane = key;
-      if (key === "ledger") this.loadLedger();
+      if (key === "ledger") void this.loadLedger();
     },
     // The Overview's unpriced figure drills into the offending rows (#355).
     showUnpricedLedger() {
@@ -210,7 +210,7 @@ export function wbSpend() {
       // The panels whose facts have no push: read again on visible and after
       // login while they are open (fact index: usage 3, 4).
       window.addEventListener("workbench:panels-reread", () => {
-        if (this.$store.tabs.tabs.some((t) => t.id === "spend")) this.loadSpend();
+        if (this.$store.tabs.tabs.some((t) => t.id === "spend")) void this.loadSpend();
       });
     },
   });

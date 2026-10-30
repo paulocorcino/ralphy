@@ -46,7 +46,7 @@ export function wbMoveDialog() {
         error: "",
       };
       this._movePickSeq = (this._movePickSeq || 0) + 1;
-      this.movePickLoad(parentRel(from));
+      void this.movePickLoad(parentRel(from));
     },
 
     async movePickLoad(dir: string) {
@@ -82,12 +82,12 @@ export function wbMoveDialog() {
     },
 
     movePickInto(name: string) {
-      this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
+      void this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
     },
 
     movePickUp() {
       if (!this.movePick.dir) return;
-      this.movePickLoad(parentRel(this.movePick.dir));
+      void this.movePickLoad(parentRel(this.movePick.dir));
     },
 
     movePickCancel() {

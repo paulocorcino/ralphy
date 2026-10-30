@@ -70,8 +70,8 @@ export function wbPropertiesDialog() {
         isFolder: detail.isFolder || detail.path === "",
         statPending: true,
       };
-      this.propsLoadStat(seq);
-      if (this.props.isFolder) this.propsLoadSize(seq);
+      void this.propsLoadStat(seq);
+      if (this.props.isFolder) void this.propsLoadSize(seq);
     },
 
     // The daemon that hosts the open project, in the checkout the tree shows
@@ -107,7 +107,7 @@ export function wbPropertiesDialog() {
     },
 
     propsRetrySize() {
-      this.propsLoadSize(this._propsSeq);
+      void this.propsLoadSize(this._propsSeq);
     },
 
     propsClose() {

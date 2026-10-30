@@ -57,7 +57,7 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
   });
   store.showTab(t.id);
   window.WB.emit("open-diff", { project, path: t.workingPath, checkout: t.checkout });
-  window.Alpine.nextTick(() => {
+  void window.Alpine.nextTick(() => {
     // Latched: a path refused on BOTH sides would flash twice.
     let refused = false;
     const refuse = (reason: string) => {

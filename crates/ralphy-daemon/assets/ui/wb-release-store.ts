@@ -50,8 +50,8 @@ export function releaseStore(_deps: ReleaseStoreDeps) {
       // Read at load and again on every return to the tab (below): the daemon
       // polls releases on its own six-hour clock, and a tab left open for days
       // would otherwise never show what that poll found.
-      this.loadRelease();
-      window.addEventListener("workbench:release-reread", () => this.loadRelease());
+      void this.loadRelease();
+      window.addEventListener("workbench:release-reread", () => void this.loadRelease());
     },
 
     get releaseHasNews() {
