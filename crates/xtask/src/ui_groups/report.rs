@@ -18,17 +18,38 @@ pub(super) struct Stats {
 pub(super) fn stats(shell: &Shell, bindings: &[Binding]) -> BTreeMap<Group, Stats> {
     let mut by: BTreeMap<Group, Stats> =
         Group::ALL.iter().map(|&g| (g, Stats::default())).collect();
-    let index: BTreeMap<&str, usize> = shell
+    let index = member_index(shell);
+    count_members(shell, &mut by);
+    count_outside_accesses(shell, &index, &mut by);
+    count_bindings(shell, &index, bindings, &mut by);
+    by
+}
+
+/// The position of each member of `shell()`, by name.
+fn member_index(shell: &Shell) -> BTreeMap<&str, usize> {
+    shell
         .members
         .iter()
         .enumerate()
         .map(|(n, m)| (m.name.as_str(), n))
-        .collect();
+        .collect()
+}
+
+/// The members of each group and the lines they span.
+fn count_members(shell: &Shell, by: &mut BTreeMap<Group, Stats>) {
     for (n, m) in shell.members.iter().enumerate() {
         let s = by.entry(shell.group(n)).or_default();
         s.members.push(n);
         s.lines += m.last + 1 - m.from;
     }
+}
+
+/// The members of each group that code of another group reads or writes.
+fn count_outside_accesses(
+    shell: &Shell,
+    index: &BTreeMap<&str, usize>,
+    by: &mut BTreeMap<Group, Stats>,
+) {
     for a in &shell.accesses {
         let Some(&target) = index.get(a.name.as_str()) else {
             continue;
@@ -45,8 +66,18 @@ pub(super) fn stats(shell: &Shell, bindings: &[Binding]) -> BTreeMap<Group, Stat
         };
         list.entry(a.name.clone()).or_default().insert(from);
     }
+}
+
+/// The bindings that name a member of each group, and those that name no
+/// other group.
+fn count_bindings(
+    shell: &Shell,
+    index: &BTreeMap<&str, usize>,
+    bindings: &[Binding],
+    by: &mut BTreeMap<Group, Stats>,
+) {
     for b in bindings {
-        let groups = binding_groups(shell, &index, b);
+        let groups = binding_groups(shell, index, b);
         for &g in &groups {
             let s = by.entry(g).or_default();
             s.bindings += 1;
@@ -55,7 +86,6 @@ pub(super) fn stats(shell: &Shell, bindings: &[Binding]) -> BTreeMap<Group, Stat
             }
         }
     }
-    by
 }
 
 fn binding_groups(shell: &Shell, index: &BTreeMap<&str, usize>, b: &Binding) -> BTreeSet<Group> {
@@ -68,13 +98,24 @@ fn binding_groups(shell: &Shell, index: &BTreeMap<&str, usize>, b: &Binding) -> 
 
 pub(super) fn render(shell: &Shell, bindings: &[Binding], verbose: bool) -> String {
     let by = stats(shell, bindings);
-    let index: BTreeMap<&str, usize> = shell
-        .members
-        .iter()
-        .enumerate()
-        .map(|(n, m)| (m.name.as_str(), n))
-        .collect();
-    let named = bindings.iter().filter(|b| !b.names.is_empty()).count();
+    let mut o = String::new();
+    render_summary(&mut o, shell, bindings, &by);
+    render_sections(&mut o, shell);
+    for (g, s) in &by {
+        render_group(&mut o, shell, *g, s, verbose);
+    }
+    o
+}
+
+fn line(o: &mut String, text: String) {
+    o.push_str(&text);
+    o.push('\n');
+}
+
+/// The number of bindings that mix groups, and the bindings that mix two
+/// feature groups.
+fn mixed_bindings<'b>(shell: &Shell, bindings: &'b [Binding]) -> (usize, Vec<&'b Binding>) {
+    let index = member_index(shell);
     let mut mixed = 0;
     let mut mixed_features = Vec::new();
     for b in bindings {
@@ -86,103 +127,151 @@ pub(super) fn render(shell: &Shell, bindings: &[Binding], verbose: bool) -> Stri
             mixed_features.push(b);
         }
     }
+    (mixed, mixed_features)
+}
 
-    let mut o = String::new();
-    let mut line = |text: String| {
-        o.push_str(&text);
-        o.push('\n');
-    };
-    line(format!(
-        "ui-groups — the members of shell() in {APP}, by the section heading they sit under\n"
-    ));
-    line(format!(
-        "{} members in {} sections; {HTML}: {} bindings in shell() scope, {named} name a member\n",
-        shell.members.len(),
-        shell.sections.len(),
-        bindings.len()
-    ));
-    line(format!(
-        "{:<26}{:>8}{:>7}{:>16}{:>19}{:>10}{:>11}",
-        "group", "members", "lines", "read outside", "written outside", "bindings", "only this"
-    ));
-    for (g, s) in &by {
-        line(format!(
+/// The head of the report: the counts, one row per group, and the bindings
+/// that mix two feature groups.
+fn render_summary(
+    o: &mut String,
+    shell: &Shell,
+    bindings: &[Binding],
+    by: &BTreeMap<Group, Stats>,
+) {
+    let named = bindings.iter().filter(|b| !b.names.is_empty()).count();
+    let (mixed, mixed_features) = mixed_bindings(shell, bindings);
+    line(
+        o,
+        format!(
+            "ui-groups — the members of shell() in {APP}, by the section heading they sit under\n"
+        ),
+    );
+    line(
+        o,
+        format!(
+            "{} members in {} sections; {HTML}: {} bindings in shell() scope, {named} name a member\n",
+            shell.members.len(),
+            shell.sections.len(),
+            bindings.len()
+        ),
+    );
+    line(
+        o,
+        format!(
             "{:<26}{:>8}{:>7}{:>16}{:>19}{:>10}{:>11}",
-            g.label(),
-            s.members.len(),
-            s.lines,
-            s.read_outside.len(),
-            s.written_outside.len(),
-            s.bindings,
-            s.only_this
-        ));
+            "group", "members", "lines", "read outside", "written outside", "bindings", "only this"
+        ),
+    );
+    for (g, s) in by {
+        line(
+            o,
+            format!(
+                "{:<26}{:>8}{:>7}{:>16}{:>19}{:>10}{:>11}",
+                g.label(),
+                s.members.len(),
+                s.lines,
+                s.read_outside.len(),
+                s.written_outside.len(),
+                s.bindings,
+                s.only_this
+            ),
+        );
     }
-    line(format!(
-        "\nbindings that mix groups: {mixed}; that mix two feature groups: {}",
-        mixed_features.len()
-    ));
+    line(
+        o,
+        format!(
+            "\nbindings that mix groups: {mixed}; that mix two feature groups: {}",
+            mixed_features.len()
+        ),
+    );
     for b in &mixed_features {
         let names: Vec<&str> = b.names.iter().map(String::as_str).collect();
-        line(format!("  index.html:{} [{}]", b.line, names.join(", ")));
+        line(o, format!("  index.html:{} [{}]", b.line, names.join(", ")));
     }
+}
 
-    line("\nsections:".to_string());
+/// Each section heading with its group and its number of members.
+fn render_sections(o: &mut String, shell: &Shell) {
+    line(o, "\nsections:".to_string());
     for (k, s) in shell.sections.iter().enumerate() {
         let count = shell.members.iter().filter(|m| m.section == k).count();
-        line(format!(
-            "  {:>5}  {:<9} {:>4} members  {}",
-            s.line,
-            s.group.short(),
-            count,
-            s.name
-        ));
+        line(
+            o,
+            format!(
+                "  {:>5}  {:<9} {:>4} members  {}",
+                s.line,
+                s.group.short(),
+                count,
+                s.name
+            ),
+        );
     }
+}
 
-    let named_list = |list: &BTreeMap<String, BTreeSet<Group>>| -> String {
-        list.iter()
-            .map(|(n, gs)| {
-                let gs: Vec<&str> = gs.iter().map(|g| g.short()).collect();
-                format!("{n} [{}]", gs.join(", "))
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    for (g, s) in &by {
-        line(format!(
+/// Each name of `list` with the groups it is shared with.
+fn named_list(list: &BTreeMap<String, BTreeSet<Group>>) -> String {
+    list.iter()
+        .map(|(n, gs)| {
+            let gs: Vec<&str> = gs.iter().map(|g| g.short()).collect();
+            format!("{n} [{}]", gs.join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The part of one group: its members and what other groups read and write
+/// of it; with `verbose`, one line per member.
+fn render_group(o: &mut String, shell: &Shell, g: Group, s: &Stats, verbose: bool) {
+    line(
+        o,
+        format!(
             "\n## {} ({} members, {} lines)",
             g.label(),
             s.members.len(),
             s.lines
-        ));
-        let names: Vec<&str> = s
-            .members
-            .iter()
-            .map(|&n| shell.members[n].name.as_str())
-            .collect();
-        line(format!("members: {}", names.join(", ")));
-        line(format!(
+        ),
+    );
+    let names: Vec<&str> = s
+        .members
+        .iter()
+        .map(|&n| shell.members[n].name.as_str())
+        .collect();
+    line(o, format!("members: {}", names.join(", ")));
+    line(
+        o,
+        format!(
             "read from outside ({}): {}",
             s.read_outside.len(),
             named_list(&s.read_outside)
-        ));
-        line(format!(
+        ),
+    );
+    line(
+        o,
+        format!(
             "written from outside ({}): {}",
             s.written_outside.len(),
             named_list(&s.written_outside)
-        ));
-        if verbose {
-            for &n in &s.members {
-                let m = &shell.members[n];
-                line(format!(
-                    "  {:>5}-{:<5} {:<7} {:<32} {}",
-                    m.first,
-                    m.last,
-                    format!("{:?}", m.kind).to_lowercase(),
-                    m.name,
-                    shell.sections[m.section].name
-                ));
-            }
-        }
+        ),
+    );
+    if verbose {
+        render_member_lines(o, shell, s);
     }
-    o
+}
+
+/// One line per member of a group: its lines, kind, name and section.
+fn render_member_lines(o: &mut String, shell: &Shell, s: &Stats) {
+    for &n in &s.members {
+        let m = &shell.members[n];
+        line(
+            o,
+            format!(
+                "  {:>5}-{:<5} {:<7} {:<32} {}",
+                m.first,
+                m.last,
+                format!("{:?}", m.kind).to_lowercase(),
+                m.name,
+                shell.sections[m.section].name
+            ),
+        );
+    }
 }
