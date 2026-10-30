@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-pricing/src/lib.rs": {
-      "parse_pricing_toml": [
-        14
-      ]
-    },
     "crates/ralphy-proc-util/src/cursor.rs": {
       "locate_cursor_with": [
         13
