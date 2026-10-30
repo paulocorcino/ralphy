@@ -2284,7 +2284,6 @@ dependencies = [
  "notify",
  "notify-debouncer-full",
  "pbkdf2",
- "qrcode",
  "ralphy-git-read",
  "ralphy-pricing",
  "ralphy-proc-util",
