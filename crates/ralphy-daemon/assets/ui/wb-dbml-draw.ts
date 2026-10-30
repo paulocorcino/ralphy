@@ -69,10 +69,12 @@ export function initMermaid(win: MermaidWindow) {
  */
 export function drawDiagram(win: MermaidWindow, id: string, source: string): Promise<string> {
   initMermaid(win);
+  const mermaid = win.mermaid;
+  if (!mermaid) throw new Error("mermaid is not loaded");
   // The source is read raw (DOMPurify escaped it in the markdown pass), so
   // the SVG Mermaid returns has never met the sanitizer: it is sanitized
   // here, before it reaches the page.
-  return win.mermaid!
+  return mermaid
     .render(id, source)
     .then(({ svg }) => DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } }));
 }

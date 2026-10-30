@@ -263,7 +263,8 @@ export function createDetach(deps: DetachDeps) {
   function heardFrom(m: DetachMessage) {
     if (!fromThisTab(m)) return false;
     if (m.type === "popup-here" || m.type === "popup-ping") return true;
-    return popupMatches(popups.entry(m.fenceId!), m);
+    if (m.fenceId == null) return false;
+    return popupMatches(popups.entry(m.fenceId), m);
   }
 
   // A name report sent while this tab was reloading reached nobody. The
@@ -338,9 +339,9 @@ export function createDetach(deps: DetachDeps) {
   // The origin's half of the lifecycle channel.
   link.onMessage((m) => {
     if (!heardFrom(m)) return;
-    // A message with no fence id changes nothing: no entry answers to it, so
-    // each branch below returns first.
-    const id = m.fenceId!;
+    // A message with no fence id changes nothing: no entry answers to it.
+    const id = m.fenceId;
+    if (id == null) return;
     if (m.type === "popup-here") {
       onPopupHere(id, m);
     } else if (m.type === "popup-members") {
@@ -369,10 +370,9 @@ export function createDetach(deps: DetachDeps) {
   function recordNoteName(id: string, m: NoteReport) {
     const entry = popups.entry(id);
     const record = notes().find((n) => n.id === m.noteId);
-    if (!isDetached(id) || !noteNameOk(entry, record, m)) return;
+    if (!entry || !isDetached(id) || !noteNameOk(entry, record, m)) return;
     saveNotes(notes().map((n) => (n.id === m.noteId ? { ...n, path: m.path } : n)));
-    // `noteNameOk` is false for an entry that does not exist.
-    entry!.members = entry!.members.map((x) => {
+    entry.members = entry.members.map((x) => {
       if (x.kind !== "note" || x.id !== m.noteId) return x;
       const { draft, claim, ...rest } = x;
       return { ...rest, path: m.path };
@@ -386,8 +386,8 @@ export function createDetach(deps: DetachDeps) {
   function recordNoteClaim(id: string, m: NoteReport) {
     const entry = popups.entry(id);
     const record = notes().find((n) => n.id === m.noteId);
-    if (!isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
-    entry!.members = entry!.members.map((x) =>
+    if (!entry || !isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
+    entry.members = entry.members.map((x) =>
       x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
     );
   }
@@ -482,7 +482,7 @@ export function createDetach(deps: DetachDeps) {
       // The snapshot keeps no session id, so a member relaunched in the
       // popup comes home as a placeholder. `_revive` attaches it to the
       // session that runs now and never launches one.
-      void spawnPlaceholder(member)._revive!();
+      void spawnPlaceholder(member)._revive?.();
     }
   }
 
@@ -556,7 +556,8 @@ export function createDetach(deps: DetachDeps) {
   // The popup of the fence `owner` is ready: its rescue stops, and it is
   // handed the fence and its members.
   function greetPopup(owner: string, source: Window) {
-    const entry = popups.entry(owner)!;
+    const entry = popups.entry(owner);
+    if (!entry) return;
     entry.greeted = true;
     if (entry.rescue) {
       clearTimeout(entry.rescue);

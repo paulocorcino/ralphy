@@ -6,6 +6,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import { NOTE_DEFAULT, NOTE_MIN, onTopClamp, onTopRect, titleOf } from "./wb-notes-folds.ts";
 import type { FloatBox } from "./wb-notes-folds.ts";
 import { dragThreshold, dragBegins } from "./wb-console-input.ts";
+import { need } from "./wb-dom-need.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { CardHost, DeskFence, NoteCard, NoteSource } from "./wb-types.d.ts";
 
@@ -96,7 +97,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     }
     for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = el.style[side];
     sh.style.setProperty("--note-tone", getComputedStyle(el).getPropertyValue("--note-tone"));
-    sh.firstChild!.textContent = titleOf(el._noteMarkdown, "Untitled note");
+    need(sh, ".note-shadow-title").textContent = titleOf(el._noteMarkdown, "Untitled note");
   }
 
   // Float the card in front of the windows (decisions 1–4). One card at a
@@ -107,11 +108,11 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   function keepOnTop(id: string | null | undefined) {
     const el = cardEl(id);
     const record = floatableRecord(id, el);
-    if (!record || !el) return false;
+    if (!record || !el || !id) return false;
     if (onTopId === id) return true;
     putBack();
     wakeCard(el);
-    onTopId = id!;
+    onTopId = id;
     el.classList.add("on-top");
     placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
     paintShadow(el);

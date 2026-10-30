@@ -13,6 +13,7 @@ import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
+import { need } from "./wb-dom-need.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
@@ -133,6 +134,17 @@ export function createSpawn(deps: SpawnDeps) {
     markRelaunch,
   } = deps;
 
+  // The state `sleepWindow` leaves. `_visible` is false until the observer
+  // reports: a window not yet reported reads as visible, and any
+  // `applyDormancy` before the report would wake it.
+  function markDormant(win: ConsoleWin, termOpts: TerminalOpts) {
+    win._dormantSession = termOpts.id ?? null;
+    win._dormantWatch = termOpts.watch;
+    win._dormant = true;
+    win._visible = false;
+    win.classList.add("dormant");
+  }
+
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
@@ -192,11 +204,11 @@ export function createSpawn(deps: SpawnDeps) {
         win.insertBefore(strip, body);
       }
       const view = peerOfflineView(group, null, win._deskEnvironment);
-      strip.querySelector(".session-peer-down-text")!.textContent = view.text;
-      const detail = strip.querySelector<HTMLElement>(".session-detail")!;
-      detail.querySelector("p")!.textContent = view.detail || "";
+      need(strip, ".session-peer-down-text").textContent = view.text;
+      const detail = need(strip, ".session-detail");
+      need(detail, "p").textContent = view.detail || "";
       detail.hidden = !view.detail;
-      const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
+      const btn = need(strip, ".session-reconnect");
       btn.dataset.act = view.action || "";
       const actionLabel = peerActionLabel(view.action);
       btn.hidden = !actionLabel;
@@ -338,14 +350,7 @@ export function createSpawn(deps: SpawnDeps) {
     // it is read at each call. A dormant window has none, and its wake asks.
     win._peerRefresh = () => win._term?.peerRefresh();
     if (birthDecision({ id: termOpts.id, observed: !!budget.dormancyWatch() }) === "dormant") {
-      // The state `sleepWindow` leaves. `_visible` is false until the observer
-      // reports: a window not yet reported reads as visible, and any
-      // `applyDormancy` before the report would wake it.
-      win._dormantSession = termOpts.id!;
-      win._dormantWatch = termOpts.watch;
-      win._dormant = true;
-      win._visible = false;
-      win.classList.add("dormant");
+      markDormant(win, termOpts);
     } else {
       // On the window, not in a local: after a sleep/wake cycle a captured
       // local would name a disposed terminal.

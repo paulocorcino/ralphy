@@ -17,6 +17,7 @@
    (ADR-0075 D7). The detached-fence popup has its own document, so it builds
    its own.
    --------------------------------------------------------------------------- */
+import { required } from "./wb-dom-need.ts";
 import type { ConsoleWin, Stacked } from "./wb-types.d.ts";
 
 // The console's work on a focus change. A page with no console sets none.
@@ -63,7 +64,7 @@ export function createStack(document: Document) {
     if (z > Z_CEIL) {
       // Renormalize: re-stack the existing windows by their current z, resetting
       // the counter so focus never pushes a console over the overlay/tabbar tier.
-      const ordered = [...workspace()!.querySelectorAll<Stacked>(".session-window, .note-card")].sort(
+      const ordered = [...required(workspace(), "the workspace").querySelectorAll<Stacked>(".session-window, .note-card")].sort(
         (a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0),
       );
       z = Z_BASE;

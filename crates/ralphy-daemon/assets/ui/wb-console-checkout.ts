@@ -313,8 +313,9 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     win._deskCheckout = checkout;
     setWin(win, { checkout: checkout ?? null });
     endLiveThen(win, () => {
-      // Both callers checked that `_relaunchIn` is a function.
-      win._relaunchIn!(checkout);
+      const relaunchIn = win._relaunchIn;
+      if (typeof relaunchIn !== "function") return;
+      relaunchIn(checkout);
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
     });
   }

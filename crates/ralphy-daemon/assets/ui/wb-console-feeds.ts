@@ -78,7 +78,7 @@ export function createFeeds(deps: FeedsDeps) {
   function projectNameOf(ref: string | null | undefined) {
     const known = projectNames.get(ref);
     if (known) return known.name;
-    return WBFleet ? WBFleet.refSlug(ref) : ref!;
+    return WBFleet.refSlug(ref);
   }
   function projectTitleOf(ref: string | null | undefined) {
     if (ref === "~") return ref;

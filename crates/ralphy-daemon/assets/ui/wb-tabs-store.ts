@@ -274,7 +274,7 @@ export function tabsStore(deps: TabsStoreDeps) {
     // The viewer serves text and images and refuses anything else, so what is
     // honest here is the refusal, named — not a pane that would show nothing.
     openLink({ project, path, fragment, checkout, as }: OpenRequest) {
-      const title = path.split("/").pop()!;
+      const title = path.split("/").pop() ?? path;
       if (as === "bytes") {
         window.WB.emit("open-refused", { project, path, reason: "not a note" });
         window.Alpine.store("modals").flash?.(`${path} is not a note.`);
@@ -292,7 +292,8 @@ export function tabsStore(deps: TabsStoreDeps) {
         window.Alpine.store("modals").flash?.("Cannot open binary files.");
         return;
       }
-      this.openTab({ project: project!, path, title, ftype, fragment, checkout });
+      if (project === null) return;
+      this.openTab({ project, path, title, ftype, fragment, checkout });
     },
 
     // `content`: a re-attached popup passes its (possibly edited) bytes back.
@@ -515,7 +516,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       const alive =
         this.active === "consoles" ||
         consoleTabs.some((t) => t.id === this.active) ||
-        files.some((f) => fileTabId(f.project!, f.path!, f.checkout) === this.active);
+        files.some((f) => f.project !== undefined && f.path !== undefined && fileTabId(f.project, f.path, f.checkout) === this.active);
       window.WBView?.patch({
         tabs: files,
         consoleTabs,

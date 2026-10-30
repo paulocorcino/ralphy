@@ -374,7 +374,7 @@ export function scrubClipboard(text: string) {
   let out = "";
   for (const ch of text.replace(/\r\n/g, "\n")) {
     // A `for…of` over a string yields non-empty code points.
-    const c = ch.codePointAt(0)!;
+    const c = ch.codePointAt(0) ?? 0;
     // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.
     if (c === 9 || c === 10 || (c >= 32 && c !== 127 && !(c >= 0x80 && c <= 0x9f))) out += ch;
   }

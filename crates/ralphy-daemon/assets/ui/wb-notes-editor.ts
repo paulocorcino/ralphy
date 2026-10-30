@@ -184,12 +184,12 @@ export function createNoteEditor(deps: NoteEditorDeps) {
     // else's file under our extension (ADR-0064 §11). The card goes and
     // the shell says so; keeping it would put an editor over bytes and
     // the first autosave would overwrite them.
-    if (reason === "not a note") {
+    if (reason === "not a note" && record.path) {
       consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
       render();
       sendDocument(document, "workbench:open-request", {
-        project: record.repo!,
-        path: record.path!,
+        project: record.repo ?? null,
+        path: record.path,
         checkout: record.checkout ?? null,
         as: "bytes",
       });

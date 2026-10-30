@@ -16,6 +16,7 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { sendWindow } from "./wb-events.ts";
+import { required } from "./wb-dom-need.ts";
 
 export function wbLogin() {
   // It reads no `shell()` member.
@@ -62,7 +63,7 @@ export function wbLogin() {
     // box is spread. `login.code` is the joined string.
 
     _otpBoxes(el: HTMLElement) {
-      return el.closest(".login-otp")!.querySelectorAll("input");
+      return required(el.closest(".login-otp"), "the code boxes").querySelectorAll("input");
     },
 
     _otpFocusAt(boxes: NodeListOf<HTMLInputElement>, at: number) {

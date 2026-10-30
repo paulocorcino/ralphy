@@ -384,7 +384,7 @@ export function createDesk(deps: DeskDeps) {
         const sessions = read?.sessions;
         // Not known: the next desk this page takes asks again. A list that
         // did not hear from this window's peer does not know either.
-        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read!.unheard)) return;
+        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read?.unheard)) return;
         const live = sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);

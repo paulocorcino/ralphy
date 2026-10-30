@@ -244,9 +244,8 @@ export function createDaemon(window: Window, document: Document, location: Locat
       // Send on the current socket if it is open; `false` means the frame was
       // not sent, and the caller's `onOpen` is what re-sends its state.
       sendIfOpen: (frame: Uint8Array<ArrayBuffer>) => {
-        if (!live) return false;
-        // `live` is set only on the open socket, so `ws` is that socket.
-        ws!.send(frame);
+        if (!live || !ws) return false;
+        ws.send(frame);
         return true;
       },
       resume: (stale: boolean) => {

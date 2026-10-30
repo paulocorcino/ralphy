@@ -63,6 +63,11 @@ export function wirePaste(deps: PasteDeps) {
       term.write("\r\n[paste refused — daemon not connected]\r\n");
       return true;
     }
+    // "drop" means the size was read from a file, so `file` is set here.
+    if (!file) {
+      term.write("\r\n[paste refused — unreadable]\r\n");
+      return true;
+    }
     const reader = new FileReader();
     reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
     reader.onload = () => {
@@ -84,8 +89,7 @@ export function wirePaste(deps: PasteDeps) {
           term.write(`\r\n[paste refused — ${why}]\r\n`);
         });
     };
-    // `file` is set: a missing one has size -1, and `pasteDecision` refuses it.
-    reader.readAsDataURL(file!);
+    reader.readAsDataURL(file);
     return true;
   };
   term.textarea.addEventListener("paste", (e: ClipboardEvent) => {

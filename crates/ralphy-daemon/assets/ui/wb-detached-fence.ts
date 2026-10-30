@@ -13,6 +13,7 @@ import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
 import type { ConsoleWin, Rect } from "./wb-types.d.ts";
 import { windowTitle } from "./wb-window-title.ts";
+import { required } from "./wb-dom-need.ts";
 
 /** The opener's answer to "ready": the fence, its members, and the ids of
  * the tab and of this window. */
@@ -73,7 +74,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // window from an earlier popup of the same fence.
   let PID: string | null = null;
   let MEMBERS: PopupMember[] = [];
-  const stageEl = () => document.getElementById("stage")!;
+  const stageEl = () => required(document.getElementById("stage"), "the stage");
   const empty = (why: string) => {
     stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };

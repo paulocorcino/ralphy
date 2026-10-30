@@ -10,6 +10,7 @@
 import * as WBConsoleInput from "./wb-console-input.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ScrollWatch } from "./wb-console-probe.ts";
+import { required } from "./wb-dom-need.ts";
 
 const { touchScrollLines, touchScrollTarget, touchGesture, touchCentroid, flingStep, selectionRow, FLING_MIN } =
   WBConsoleInput;
@@ -169,7 +170,8 @@ export function wireTouch(deps: TouchDeps) {
         // The operator's hand outranks a jump in flight (as `onFloorDown`).
         cancelSlide();
         const c = touchCentroid(e.touches);
-        pan = { x: c.x, y: c.y, left: ws!.scrollLeft, top: ws!.scrollTop };
+        const plane = required(ws, "the workspace");
+        pan = { x: c.x, y: c.y, left: plane.scrollLeft, top: plane.scrollTop };
         stage()?.classList.add("panning");
         return;
       }

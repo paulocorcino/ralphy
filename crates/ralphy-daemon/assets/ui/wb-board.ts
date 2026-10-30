@@ -383,8 +383,8 @@ export function wbBoard() {
           fail("Could not load the issue.");
           return;
         }
-        if (stale()) return;
-        if (!this.$store.board.issueDetailRead(slug!, number, detail)) return;
+        if (stale() || !slug) return;
+        if (!this.$store.board.issueDetailRead(slug, number, detail)) return;
         // Success owns the banner too: this one may land second.
         this.issueError = null;
       } catch {
@@ -447,7 +447,8 @@ export function wbBoard() {
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];
       const slug = this.$store.projects.openSlug;
-      this.$store.board.issueLabelsSet(slug!, iss.number, has ? prev.filter((l) => l !== label) : [...prev, label]);
+      if (!slug) return;
+      this.$store.board.issueLabelsSet(slug, iss.number, has ? prev.filter((l) => l !== label) : [...prev, label]);
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
       void (async () => {
@@ -459,7 +460,7 @@ export function wbBoard() {
             op,
           });
           if (WBFail.isError(reply)) {
-            this.$store.board.issueLabelsSet(slug!, iss.number, prev);
+            this.$store.board.issueLabelsSet(slug, iss.number, prev);
             this.$store.modals.flash(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
             return; // a refused write changed nothing to re-read
           }
