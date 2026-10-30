@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-usage-scan/src/copilot.rs": {
-      "read_copilot": [
-        12
-      ]
-    },
     "crates/ralphy-usage-scan/src/cursor.rs": {
       "scan_chats": [
         15

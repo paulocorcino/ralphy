@@ -190,6 +190,19 @@ struct ModelAgg {
     last_ts: Option<chrono::DateTime<chrono::FixedOffset>>,
 }
 
+impl ModelAgg {
+    /// Widens the first and last time with one row's `created_at`. The column
+    /// is TEXT, RFC3339-with-`Z` (verified live); a value that does not parse
+    /// leaves both times as they are.
+    fn widen(&mut self, created_at: Option<&str>) {
+        let Some(ts) = created_at.and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) else {
+            return;
+        };
+        self.first_ts = Some(self.first_ts.map_or(ts, |cur| cur.min(ts)));
+        self.last_ts = Some(self.last_ts.map_or(ts, |cur| cur.max(ts)));
+    }
+}
+
 /// The fallible core of [`scan_copilot`], separated so every error funnels through
 /// one `unwrap_or_default`. Reads the private copy, joins the usage rows to their
 /// `sessions.cwd`, and aggregates per session × model. Falls back to a cwd-less
@@ -271,14 +284,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         agg.tokens.output += output_tokens.unwrap_or(0).max(0) as u64;
         agg.tokens.cache_read += cache_read.unwrap_or(0).max(0) as u64;
         agg.tokens.cache_creation += cache_write.unwrap_or(0).max(0) as u64;
-        // `created_at` is TEXT, RFC3339-with-`Z` (verified live).
-        if let Some(ts) = created_at
-            .as_deref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-        {
-            agg.first_ts = Some(agg.first_ts.map_or(ts, |cur| cur.min(ts)));
-            agg.last_ts = Some(agg.last_ts.map_or(ts, |cur| cur.max(ts)));
-        }
+        agg.widen(created_at.as_deref());
     }
 
     let mut records: Vec<InteractiveRecord> = groups
@@ -302,14 +308,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         })
         .collect();
 
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
-        }
-    }
+    crate::since::retain_since(&mut records, input.since);
     Ok(records)
 }
 
