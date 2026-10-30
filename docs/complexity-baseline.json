@@ -294,17 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/ui_copy/js/scan.rs": {
-      "alternatives": [
-        11
-      ],
-      "emit": [
-        11
-      ],
-      "expr_end": [
-        11
-      ]
-    },
     "crates/xtask/src/ui_groups/html.rs": {
       "read_tag": [
         13

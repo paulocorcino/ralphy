@@ -97,11 +97,17 @@ impl Scan<'_> {
                     return k;
                 }
                 depth -= 1;
-            } else if depth == 0 && (t.is(";") || (stop_on_comma && t.is(","))) {
+            } else if depth == 0 && Self::ends_expr(t, stop_on_comma) {
                 return k;
             }
         }
         self.toks.len()
+    }
+
+    /// A token that ends an expression at its own bracket depth: a `;`, or a
+    /// `,` when the expression is an object value.
+    fn ends_expr(t: &Token, stop_on_comma: bool) -> bool {
+        t.is(";") || (stop_on_comma && t.is(","))
     }
 
     fn source(&self, a: usize, b: usize) -> String {
@@ -150,6 +156,13 @@ impl Scan<'_> {
             })
     }
 
+    /// The `?` and its `:` of the first top-level ternary in `a..b`. `None`
+    /// when the first top-level `?` has no `:`.
+    fn ternary(&self, a: usize, b: usize) -> Option<(usize, usize)> {
+        let &q = self.top_level(a, b, |t| t.is("?")).first()?;
+        Some((q, self.ternary_colon(q, b)?))
+    }
+
     /// The alternatives an expression can show. The condition of a ternary is
     /// not shown, and neither is the left side of `&&`.
     fn alternatives(&self, a: usize, b: usize, out: &mut Vec<(usize, usize)>) {
@@ -160,12 +173,10 @@ impl Scan<'_> {
         if self.toks[a].is("(") && self.close_of(a) == b - 1 {
             return self.alternatives(a + 1, b - 1, out);
         }
-        if let Some(&q) = self.top_level(a, b, |t| t.is("?")).first() {
-            if let Some(colon) = self.ternary_colon(q, b) {
-                self.alternatives(q + 1, colon, out);
-                self.alternatives(colon + 1, b, out);
-                return;
-            }
+        if let Some((q, colon)) = self.ternary(a, b) {
+            self.alternatives(q + 1, colon, out);
+            self.alternatives(colon + 1, b, out);
+            return;
         }
         let ors = self.top_level(a, b, |t| t.is("||") || t.is("??"));
         if !ors.is_empty() {
@@ -301,23 +312,34 @@ impl Scan<'_> {
                     continue;
                 }
             }
-            let Some((text, concatenated, fragments)) = self.render(x, y, strip_html) else {
-                continue;
-            };
-            if needs_space && !text.contains(' ') {
-                continue;
-            }
-            out.push(Found {
-                text,
-                line: self.toks[x].line,
-                kind,
-                concatenated,
-                area: None,
-                fragments,
-                anchor: None,
-                continues: false,
-            });
+            out.extend(self.text_found(x, y, kind, strip_html, needs_space));
         }
+    }
+
+    /// The row of the alternative `x..y` read as text. `None` when it says
+    /// nothing, or has no space when `needs_space` asks for one.
+    fn text_found(
+        &self,
+        x: usize,
+        y: usize,
+        kind: Kind,
+        strip_html: bool,
+        needs_space: bool,
+    ) -> Option<Found> {
+        let (text, concatenated, fragments) = self.render(x, y, strip_html)?;
+        if needs_space && !text.contains(' ') {
+            return None;
+        }
+        Some(Found {
+            text,
+            line: self.toks[x].line,
+            kind,
+            concatenated,
+            area: None,
+            fragments,
+            anchor: None,
+            continues: false,
+        })
     }
 }
 
