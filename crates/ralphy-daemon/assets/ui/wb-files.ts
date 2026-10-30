@@ -21,9 +21,9 @@ import { component } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
-import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
+import { reconcileLevel, reconcileOnce } from "./wb-files-reconcile.ts";
 import { destroyTree, mountTree } from "./wb-files-mount.ts";
-import { fetchTreeLevel, forgetValidatedBelow, levelShows, loadTreeLevel, pruneTreeCache, revalidateBelow, revalidateLevel } from "./wb-files-levels.ts";
+import { fetchTreeLevel, forgetValidatedBelow, loadTreeLevel, pruneTreeCache, revalidateBelow, revalidateLevel } from "./wb-files-levels.ts";
 import { classify, duplicateRel, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import { treeMenu } from "./wb-files-menu.ts";
@@ -62,22 +62,6 @@ async function expandAncestors(tree: WunderbaumTree, rel: string, relPath: (n: W
     if (!f.expanded) await f.setExpanded(true);
   }
   return true;
-}
-
-// A promise that settles when the reconcile of `rel` in flight finishes.
-function waitForLevel(waiters: Map<string, (() => void)[]>, rel: string) {
-  return new Promise<void>((resolve) => {
-    const list = waiters.get(rel) ?? [];
-    list.push(resolve);
-    waiters.set(rel, list);
-  });
-}
-
-// Settle the callers waiting on `rel`. Drained by SPLICE: waiters arriving
-// during a nested re-run land on THIS list and are drained here once.
-function releaseWaiters(waiters: Map<string, (() => void)[]>, rel: string) {
-  const list = waiters.get(rel);
-  if (list?.length) for (const r of list.splice(0)) r();
 }
 
 export function wbFiles() {
@@ -381,70 +365,11 @@ export function wbFiles() {
     _reconcilePending: null as Set<string> | null,
     _reconcileWaiters: null as Map<string, (() => void)[]> | null,
     async reconcileLevel(node: WunderbaumNode, rel: string): Promise<void> {
-      // Reentrancy guard: overlapping removeChildren()+load() passes double
-      // the children. A pass in flight for `rel` re-runs once when it finishes.
-      this._reconciling ||= new Set();
-      this._reconcilePending ||= new Set();
-      this._reconcileWaiters ||= new Map();
-      // A COALESCED caller still gets a promise that settles when the level
-      // does; otherwise a reveal awaiting it runs against children the pending
-      // pass is about to tear down.
-      if (this._reconciling.has(rel)) {
-        this._reconcilePending.add(rel);
-        return waitForLevel(this._reconcileWaiters, rel);
-      }
-      this._reconciling.add(rel);
-      // The drain is in an OUTER `finally`: `WBDaemon.observe` REJECTS on a
-      // socket drop, and every coalesced awaiter would otherwise hang forever.
-      try {
-        try {
-          await this._reconcileOnce(node, rel);
-        } finally {
-          this._reconciling.delete(rel);
-        }
-        if (this._reconcilePending.delete(rel)) {
-          const again = rel === "" ? this.rawTree()?.root : this.findFolderByRel(rel);
-          if (again) await this.reconcileLevel(again, rel);
-        }
-      } finally {
-        // A pass that threw never consumed its pending flag.
-        this._reconcilePending.delete(rel);
-        releaseWaiters(this._reconcileWaiters, rel);
-      }
+      return reconcileLevel(this, node, rel);
     },
 
     async _reconcileOnce(nodeAtCall: WunderbaumNode, rel: string) {
-      // The selection restored is a SNAPSHOT; a reveal landing mid-pass must
-      // not be undone by it. `_revealSeq` dates the snapshot.
-      const seq = this._revealSeq || 0;
-
-      // Resolve the fresh level BEFORE touching the tree: `node.load` given a
-      // PROMISE appends (Wunderbaum quirk); a resolved ARRAY after
-      // `removeChildren()` replaces cleanly. FRESH, never the cache.
-      const source = await this.fetchTreeLevel(rel);
-      const node = liveNode(this, nodeAtCall, rel);
-      if (!node) return;
-      const hasGitignore = source.some((n) => !n.folder && n.title === ".gitignore");
-      // A write to a file already listed nudges its directory too. When the
-      // rows on screen already match the fresh listing, the teardown would
-      // change nothing but the operator's scroll position.
-      if (levelShows(this, node, source)) {
-        if (hasGitignore) this.revalidateBelow(node, rel);
-        return;
-      }
-      const view = snapshotLevel(this, node);
-      node.removeChildren();
-      await node.load(source);
-      // `load` leaves the reloaded node collapsed, and the NEXT nudge would
-      // hit the `!expanded` drop guard.
-      if (rel !== "" && !node.expanded) await node.setExpanded(true);
-      // A level with a `.gitignore` may have changed the ignore marks of every
-      // level below it, but the re-expansion below paints those from the
-      // cache. Forgetting that they were validated makes `loadTreeLevel`
-      // re-read each one in the background.
-      if (hasGitignore) this.forgetValidatedBelow(rel);
-      await reexpand(this, view.expandedRels);
-      await restoreView(this, seq, view);
+      return reconcileOnce(this, nodeAtCall, rel);
     },
 
     // Re-read the expanded levels below an unchanged `rel` (wb-files-levels.ts).
