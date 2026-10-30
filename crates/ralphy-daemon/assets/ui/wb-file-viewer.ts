@@ -208,36 +208,43 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       const { on, display, gridColumn } = paneLayout(rec.id, id, split, slot?.id);
       Object.assign(rec.el!.style, { display, gridColumn });
       rec.visible = on;
-      if (on) {
-        setTimeout(() => {
-          rec.ed?.layout();
-          // A find asked for while the pane was off screen (see findInEditor).
-          if (rec.pendingFind && rec.ed) {
-            const term: string = rec.pendingFind;
-            rec.pendingFind = null;
-            findInEditor(rec, term);
-          }
-        }, 0);
-        if (isRendered(rec.kind)) drawMermaid(rec);
-      }
+      if (on) showPane(rec);
     }
     if (!viewers) return;
     viewers.classList.toggle("split", split);
-    if (!split) {
-      // Nothing on screen (Consoles, Spend): the mirror is HIDDEN like every
-      // other pane, keeping its own scroll and cursor for the return — that
-      // independence is what the second editor is for. Any other single
-      // paint is a slot that was closed or moved: the mirror goes.
-      if (id === null && mirror && alive(mirror.rec)) mirror.el.style.display = "none";
-      else closeMirror();
-      return;
-    }
-    ensureDivider();
-    viewers.style.setProperty("--wb-split", ratioPct(slot!.ratio));
-    if (slot!.mirror) ensureMirror(slotRec!);
+    if (split) paintSplit(viewers, slot!, slotRec!);
+    else paintSingle(id);
+  }
+
+  function showPane(rec: ViewerRecord) {
+    setTimeout(() => {
+      rec.ed?.layout();
+      // A find asked for while the pane was off screen (see findInEditor).
+      if (rec.pendingFind && rec.ed) {
+        const term: string = rec.pendingFind;
+        rec.pendingFind = null;
+        findInEditor(rec, term);
+      }
+    }, 0);
+    if (isRendered(rec.kind)) drawMermaid(rec);
+  }
+
+  // Nothing on screen (Consoles, Spend): the mirror is HIDDEN like every
+  // other pane, keeping its own scroll and cursor for the return — that
+  // independence is what the second editor is for. Any other single
+  // paint is a slot that was closed or moved: the mirror goes.
+  function paintSingle(id: string | null) {
+    if (id === null && mirror && alive(mirror.rec)) mirror.el.style.display = "none";
     else closeMirror();
-    if (slot!.focus) {
-      const target = focusTarget(slot!, mirror, slotRec!.ed as MonacoEditor | undefined);
+  }
+
+  function paintSplit(box: HTMLElement, slot: ViewerSlot, slotRec: ViewerRecord) {
+    ensureDivider();
+    box.style.setProperty("--wb-split", ratioPct(slot.ratio));
+    if (slot.mirror) ensureMirror(slotRec);
+    else closeMirror();
+    if (slot.focus) {
+      const target = focusTarget(slot, mirror, slotRec.ed as MonacoEditor | undefined);
       setTimeout(() => target?.focus(), 0);
     }
   }
@@ -444,20 +451,24 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     rec.saveKey?.dispose();
     rec.saveKey = undefined;
     if (!rec.ed) return;
+    disposeEditorAndModels(rec, rec.ed);
+    rec.ed = undefined;
+  }
+
+  function disposeEditorAndModels(rec: ViewerRecord, ed: NonNullable<ViewerRecord["ed"]>) {
     if (rec.kind === "diff") {
       // A diff editor holds TWO models and BOTH must be disposed on EVERY
       // path — disposing the editor does NOT (the leak is only visible in
       // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
       // goes first: a model disposed while attached raises a page error (#407).
-      const m = (rec.ed as MonacoDiffEditor).getModel();
-      rec.ed.dispose();
+      const m = (ed as MonacoDiffEditor).getModel();
+      ed.dispose();
       m?.original?.dispose();
       m?.modified?.dispose();
     } else {
-      (rec.ed as MonacoEditor).getModel()?.dispose();
-      rec.ed.dispose();
+      (ed as MonacoEditor).getModel()?.dispose();
+      ed.dispose();
     }
-    rec.ed = undefined;
   }
 
   // --- a diff tab (read-only, two-sided) ----------------------------------
