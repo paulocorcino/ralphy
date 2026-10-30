@@ -28,6 +28,7 @@ import { sendDocument, sendWindow } from "./wb-events.ts";
 import { consoleTab, consoleTabId, freshTabId, isConsoleTabId } from "./wb-console-tabs.ts";
 import { WBColumns } from "./wb-columns.ts";
 import type { Messages } from "./wb-messages.ts";
+import type { StoredTab } from "./wb-client-view.ts";
 import type { CanvasTab, ChangeEntry, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
 
 /** The detached file windows, as `wire` (app.ts) keeps them. */
@@ -46,6 +47,16 @@ export type TabsStoreDeps = {
 function movedBy(t: CanvasTab, from: string, openSlug: string | null): t is CanvasTab & { path: string; project: string } {
   if (t.kind === "diff" || t.project !== openSlug) return false;
   return t.path === from || !!t.path?.startsWith(`${from}/`);
+}
+
+// The stored file tabs that can open again: each needs a project and a path.
+function storedFileTabs(tabs: StoredTab[] | undefined) {
+  return (tabs || []).filter((t) => !!t && !!t.project && !!t.path);
+}
+
+// The stored active tab while this store carries it, else Consoles.
+function restoredActive(want: string | null | undefined, tabs: CanvasTab[]) {
+  return want && tabs.some((t) => t.id === want) ? want : "consoles";
 }
 
 // `deps` is the shape every store takes; the tabs tell the operator through
@@ -526,8 +537,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (!stored) return;
       this._restoring = true;
       try {
-        for (const t of stored.tabs || []) {
-          if (!t || !t.project || !t.path) continue;
+        for (const t of storedFileTabs(stored.tabs)) {
           this.openTab({
             project: t.project,
             path: t.path,
@@ -540,8 +550,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         // paints single until they do) and before the activation that paints.
         this.slot = WBSplit.fromStored(stored.split, this.tabs);
         this.splitRatio = stored.split?.ratio ?? null;
-        const want = stored.active;
-        this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
+        this.activate(restoredActive(stored.active, this.tabs));
       } finally {
         // The reads are async: hold the suppressor so a refusal landing later
         // cannot rewrite the store. A LATER close persists normally.

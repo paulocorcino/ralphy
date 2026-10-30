@@ -275,6 +275,31 @@ test("the slot and its ratio persist per client and come back after the tabs do"
   }
 });
 
+test("a restore skips a stored tab with no project or path, and a stored active tab it does not carry falls back to Consoles", async () => {
+  const seed = {
+    tabs: [
+      { project: "o/r", path: "a.js", title: "a.js", kind: "code", checkout: null },
+      { project: "o/r", title: "no path", kind: "code" },
+      { path: "b.js", title: "no project", kind: "code" },
+      null,
+    ],
+    active: "file:o/r:gone.js",
+    split: null,
+  };
+  const sh = slotShell(1280, seed);
+  try {
+    sh.window.Alpine.nextTick = () => {};
+    sh.state.$store.tabs.restoreView();
+    assert.deepEqual(
+      sh.state.$store.tabs.tabs.filter((t) => t.id.startsWith("file:")).map((t) => t.id),
+      [A],
+    );
+    assert.equal(sh.state.$store.tabs.active, "consoles");
+  } finally {
+    await sh.restore();
+  }
+});
+
 test("under the width floor the shell paints single and keeps the slot for a wider canvas", async () => {
   const sh = slotShell(800);
   try {

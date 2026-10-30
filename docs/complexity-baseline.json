@@ -1,10 +1,4 @@
 {
   "ceiling": 15,
-  "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
-      "restoreView": [
-        15
-      ]
-    }
-  }
+  "functions": {}
 }
