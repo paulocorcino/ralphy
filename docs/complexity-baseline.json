@@ -112,11 +112,6 @@
         13
       ]
     },
-    "crates/ralphy-core/src/verify/parse.rs": {
-      "has_escaped_quote": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
       "sepOf": [
         11
