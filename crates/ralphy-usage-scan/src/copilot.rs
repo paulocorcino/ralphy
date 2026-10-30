@@ -52,6 +52,10 @@ struct StoreCopy {
 
 impl Drop for StoreCopy {
     fn drop(&mut self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a drop cannot return the error, and the temp directory may be gone already"
+        )]
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -72,6 +76,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     ));
     // A process killed before `Drop` ran leaves a directory this pid+seq can name
     // again; a stale `-wal` there would be replayed over the fresh `.db` snapshot.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the directory is usually absent, and create_dir_all below reports a real failure"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
     let name = db
@@ -88,6 +96,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     for suffix in ["-wal", "-shm"] {
         let side = db.with_file_name(format!("{name}{suffix}"));
         if side.exists() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a sidecar is best-effort; the snapshot of the .db alone is still read"
+            )]
             let _ = std::fs::copy(&side, copy.dir.join(format!("{name}{suffix}")));
         }
     }
