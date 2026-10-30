@@ -24,9 +24,10 @@ import { WBFleet } from "./wb-fleet.ts";
 import { reconcileLevel, reconcileOnce } from "./wb-files-reconcile.ts";
 import { destroyTree, mountTree } from "./wb-files-mount.ts";
 import { fetchTreeLevel, forgetValidatedBelow, loadTreeLevel, pruneTreeCache, revalidateBelow, revalidateLevel } from "./wb-files-levels.ts";
-import { classify, duplicateRel, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
+import { classify, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import { treeMenu } from "./wb-files-menu.ts";
+import { duplicateNode } from "./wb-files-duplicate.ts";
 import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-search.ts";
 import type { TreeSub } from "./wb-files-mount.ts";
 import type { TreeMemory } from "./wb-files-levels.ts";
@@ -531,41 +532,9 @@ export function wbFiles() {
       window.WB.emit("copy-path", { ...this.nodeDetail(node), path });
     },
 
-    // Duplicate a file beside itself, NO prompt. `file.copy` refuses an
-    // existing dst, so the free name is found HERE (`duplicateRel`).
+    // Duplicate a file beside itself, NO prompt (wb-files-duplicate.ts).
     async duplicateNode(node: WunderbaumNode) {
-      const rel = this.relPath(node);
-      if (!rel) return;
-      const parent = parentRel(rel);
-
-      // The tree's gestures speak the tree's checkout (#406); a refusal beats
-      // a primary-aimed copy that silently misfires.
-      const checkout = this.$store.checkouts.checkoutOf(this.$store.projects.openSlug);
-      const listing = await WBDaemon.observe(
-        "tree.list",
-        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: parent }, checkout),
-      ).catch(() => null);
-      // A refused listing must NOT degrade to an empty `taken` set.
-      if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
-        this.$store.modals.flash?.("couldn't list the folder");
-        return;
-      }
-      const to = duplicateRel(rel, new Set(listing.entries.map((e) => e.name)));
-
-      const reply = await WBDaemon.write(
-        "file.copy",
-        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: rel, to }, checkout),
-      ).catch(() => null);
-      if (!reply || WBFail.isError(reply)) {
-        this.$store.modals.flash?.(
-          reply
-            ? WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
-            : "Could not duplicate the file: the daemon did not answer.",
-        );
-        return;
-      }
-      await this.onTreeDirty(parent);
-      await this.revealRel(to);
+      return duplicateNode(this, node);
     },
 
     // The destination is PICKED, never typed: the move dialog
