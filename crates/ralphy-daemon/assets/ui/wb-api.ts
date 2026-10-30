@@ -21,7 +21,7 @@
    --------------------------------------------------------------------------- */
 import type { FleetPeer } from "./wb-fleet.ts";
 import type { Desk, DeskReply } from "./wb-types.d.ts";
-import type { MissingUsage, SpendDoc, SpendRecord } from "./wb-spend.ts";
+import type { MissingUsage, SpendDoc, SpendRecord } from "./wb-spend-types.d.ts";
 import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
