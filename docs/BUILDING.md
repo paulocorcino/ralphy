@@ -86,7 +86,8 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   label. The job `oversized`, also on pull requests only, runs
   `cargo run -p xtask -- oversized --base` against the base branch. It fails
   when a source file over its limit (500 lines of code in Rust,
-  TypeScript and HTML) is larger than on the base branch (ADR-0022 §7). The job
+  TypeScript and HTML) is larger than on the base branch (ADR-0022 §7), or
+  when a Rust file has more lines over 100 characters than there (§8). The job
   `duplication`, on pull requests only, runs jscpd (a release binary pinned
   by version and checksum) with the settings in `.jscpd.json`. It fails when
   the pull request adds a clone that the base branch does not have. An edit

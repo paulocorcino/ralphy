@@ -141,7 +141,11 @@ ubiquitous language, and each crate is roughly one bounded context.
   limit may not grow: 500 lines of code in Rust, TypeScript and HTML,
   test code included, comment and blank lines not counted. A new file over the
   limit fails, and so does a file that grows past it or an old large file
-  that grows; an old large file may shrink. The local form:
+  that grows; an old large file may shrink. A line of Rust may have 100
+  characters, comments and strings included: a change may not add a wide
+  line, and an old one may stay. Wrap the comment, continue the string with
+  `\` or `concat!`, or move the test data to `tests/fixtures/`. The local
+  form of both checks:
 
   ```sh
   cargo run -q -p xtask -- oversized --base main

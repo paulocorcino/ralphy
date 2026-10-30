@@ -162,6 +162,33 @@ not grow. Measured on `86f5b3b1` with `cargo run -p xtask -- oversized`:
 eight workbench modules are over the new limit, from `wb-files.ts` (687
 lines of code) to `wb-dbml.ts` (516).
 
+### 8. The width of a line of Rust is a gate (amendment, 2026-10-30)
+
+The limit of §7 counts lines, so code joined onto one long line passes it,
+and a file of 500 lines can still be very large. `cargo fmt` in the gate
+wraps Rust code at 100 characters, the default `max_width` of rustfmt. It
+does not wrap a string literal or a comment: the options that would
+(`error_on_line_overflow`, `format_strings`, `wrap_comments`) exist only
+in nightly rustfmt, and the gate runs stable.
+
+1. **The limit.** A line of a `.rs` file under `crates/` may have 100
+   characters, the same number as rustfmt's `max_width`. Characters are
+   counted, not bytes, so an accented letter counts once. Every line
+   counts: code, comments, string literals and test code.
+2. **The base branch is the baseline, as in §7.3.** A pull request fails
+   when a file has more lines over 100 characters than on the base branch.
+   An old wide line may stay or go; a new one fails.
+3. **How a change fits.** Wrap the comment. Continue a long string on the
+   next line with `\` or `concat!`. Move long test data, such as captured
+   output of a tool, to `tests/fixtures/`.
+4. **Rust only, for now.** The workbench TypeScript gets a formatter
+   (issue #806). HTML is not measured.
+
+`cargo run -p xtask -- oversized`, which holds §7, holds this rule too,
+in the same CI job. Measured on `9fd3c9c1`: 591 lines of Rust are wider
+than 100 characters, in 247 files. Almost all of them are string literals
+or comments.
+
 ## Consequences
 
 - The series is N small, reviewable, behaviour-preserving PRs that a human
@@ -180,6 +207,8 @@ lines of code) to `wb-dbml.ts` (516).
   `oversized` job in `.github/workflows/ci.yml` runs on each pull request
   against its base branch. With no argument, the command lists the files
   over their limit. Its rules are tested in `crates/xtask/src/oversized.rs`.
+- §8: checked by the same command and CI job as §7, and tested in the same
+  file.
 
 - §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
   (`crates/ralphy-cli/src/events/mod.rs`).

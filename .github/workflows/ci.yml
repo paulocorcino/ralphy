@@ -398,7 +398,9 @@ jobs:
     # Fails when a source file over its limit (500 lines of code in Rust,
     # TypeScript and HTML; comments and blank lines do not count) is larger than on
     # the base branch: a new file, a file that grows past the limit, or an old
-    # large file that grows. An old large file may shrink (ADR-0022 §7).
+    # large file that grows. An old large file may shrink (ADR-0022 §7). Fails
+    # too when a Rust file has more lines over 100 characters than on the base
+    # branch (ADR-0022 §8).
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
