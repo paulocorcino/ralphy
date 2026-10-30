@@ -18,8 +18,13 @@ type Ws =
 /// Serve a router rooted at `dir` (its `desk.toml` and `peers/` are siblings
 /// of `repos.toml`) and connect a `/ws` presence socket to it.
 async fn serve(dir: &Path) -> (u16, Ws) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -32,7 +37,9 @@ async fn serve(dir: &Path) -> (u16, Ws) {
     );
     tokio::spawn(async move {
         let _hold = tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     let (ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
         .await
@@ -64,7 +71,7 @@ async fn next_push(ws: &mut Ws, verb: &str, within: Duration) -> Option<Command>
 async fn request(port: u16, method: &str, path: &str, body: &str) -> String {
     let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     sock.write_all(
         format!(
             "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -73,9 +80,11 @@ async fn request(port: u16, method: &str, path: &str, body: &str) -> String {
         .as_bytes(),
     )
     .await
-    .unwrap();
+    .expect("send the request");
     let mut raw = String::new();
-    sock.read_to_string(&mut raw).await.unwrap();
+    sock.read_to_string(&mut raw)
+        .await
+        .expect("read the response");
     raw
 }
 

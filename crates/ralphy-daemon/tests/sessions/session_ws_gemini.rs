@@ -38,14 +38,16 @@ fn terminal(data: &[u8]) -> Message {
 async fn http_get(port: u16, path: &str) -> String {
     let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     sock.write_all(
         format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").as_bytes(),
     )
     .await
-    .unwrap();
+    .expect("send the request");
     let mut raw = String::new();
-    sock.read_to_string(&mut raw).await.unwrap();
+    sock.read_to_string(&mut raw)
+        .await
+        .expect("read the response");
     raw.split_once("\r\n\r\n")
         .map(|(_, body)| body.to_string())
         .unwrap_or(raw)
@@ -60,8 +62,10 @@ async fn assert_launches_contained(url: &str, home: &Path, policy: &Path) {
     let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
         .await
         .expect("a repo with an owned root must upgrade");
-    ws.send(terminal(b"env GEMINI_CLI_HOME\r")).await.unwrap();
-    ws.send(terminal(b"argv\r")).await.unwrap();
+    ws.send(terminal(b"env GEMINI_CLI_HOME\r"))
+        .await
+        .expect("send the frame");
+    ws.send(terminal(b"argv\r")).await.expect("send the frame");
 
     // The PTY wraps and reflows, so every comparison runs on a separator-
     // normalized, whitespace-stripped view.
@@ -77,9 +81,13 @@ async fn assert_launches_contained(url: &str, home: &Path, policy: &Path) {
     let got = tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();
         while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
+            let bytes = match msg.expect("read the next frame") {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 // Play the terminal emulator: answer ConPTY's startup `ESC[6n` so
@@ -88,7 +96,9 @@ async fn assert_launches_contained(url: &str, home: &Path, policy: &Path) {
                     .windows(CURSOR_POSITION_REQUEST.len())
                     .any(|w| w == CURSOR_POSITION_REQUEST)
                 {
-                    ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
+                    ws.send(terminal(CURSOR_POSITION_REPLY))
+                        .await
+                        .expect("send the frame");
                 }
                 acc.push_str(&String::from_utf8_lossy(&data));
                 // Wait for the COMPLETE value of each, not merely the marker: the
@@ -114,7 +124,7 @@ async fn assert_launches_contained(url: &str, home: &Path, policy: &Path) {
         flat.contains(&want_argv),
         "the workbench child must carry --policy pointing at the owned root's document; wanted {want_argv}, got:\n{got}"
     );
-    ws.send(terminal(b"quit\r")).await.unwrap();
+    ws.send(terminal(b"quit\r")).await.expect("send the frame");
 }
 
 #[tokio::test]

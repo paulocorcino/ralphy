@@ -33,13 +33,19 @@ fn terminal(data: &[u8]) -> Message {
 async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("send the request");
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.unwrap();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .expect("read the response");
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text
         .split_whitespace()
@@ -97,7 +103,11 @@ async fn console_ws_runs_the_startup_command_and_labels_the_session_with_it() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if data

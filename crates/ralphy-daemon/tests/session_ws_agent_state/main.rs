@@ -16,6 +16,11 @@
 //! The environment and the start check are process-global, so each test
 //! needs a process of its own (nextest runs each test in its own process).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -40,14 +45,16 @@ fn terminal(data: &[u8]) -> Message {
 async fn http_get(port: u16, path: &str) -> String {
     let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     sock.write_all(
         format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").as_bytes(),
     )
     .await
-    .unwrap();
+    .expect("send the request");
     let mut raw = String::new();
-    sock.read_to_string(&mut raw).await.unwrap();
+    sock.read_to_string(&mut raw)
+        .await
+        .expect("read the response");
     raw.split_once("\r\n\r\n")
         .map(|(_, body)| body.to_string())
         .unwrap_or(raw)
@@ -88,11 +95,11 @@ fn flatten(s: &str) -> String {
 /// as every agent. Returns the port and the store.
 async fn start_daemon(dir: &std::path::Path) -> (u16, std::path::PathBuf) {
     let store = dir.join("store");
-    std::fs::create_dir_all(&store).unwrap();
+    std::fs::create_dir_all(&store).expect("create the test directory");
     let registry_path = dir.join("repos.toml");
     let mut reg = registry::RegistryStore::default();
     reg.upsert("owner/statelab", &dir.to_string_lossy());
-    registry::save_to(&reg, &registry_path).unwrap();
+    registry::save_to(&reg, &registry_path).expect("save the registry");
 
     std::env::set_var("RALPHY_DAEMON_DIR", &store);
     std::env::set_var(
@@ -100,8 +107,13 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, std::path::PathBuf) {
         env!("CARGO_BIN_EXE_session_test_child"),
     );
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -115,7 +127,9 @@ async fn start_daemon(dir: &std::path::Path) -> (u16, std::path::PathBuf) {
     tokio::spawn(async move {
         // The shutdown sender lives as long as the server.
         let _keep = _tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (port, store)
 }
@@ -158,7 +172,11 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if data
@@ -225,7 +243,10 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
             .unwrap();
         writeln!(
             f,
-            r#"{{"event":"PreToolUse","tool_name":"AskUserQuestion","question":"which port?","ts":"2026-09-15T10:00:00-03:00"}}"#
+            concat!(
+                r#"{{"event":"PreToolUse","tool_name":"AskUserQuestion","#,
+                r#""question":"which port?","ts":"2026-09-15T10:00:00-03:00"}}"#
+            )
         )
         .unwrap();
     }
@@ -300,7 +321,11 @@ async fn a_codex_console_is_launched_with_the_status_hooks() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if data
@@ -353,7 +378,10 @@ async fn a_codex_console_is_launched_with_the_status_hooks() {
             .unwrap();
         writeln!(
             f,
-            r#"{{"event":"PermissionRequest","session_id":"s1","tool_name":"Bash","ts":"2026-10-28T10:00:00-03:00"}}"#
+            concat!(
+                r#"{{"event":"PermissionRequest","session_id":"s1","tool_name":"Bash","#,
+                r#""ts":"2026-10-28T10:00:00-03:00"}}"#
+            )
         )
         .unwrap();
     }
@@ -418,7 +446,11 @@ async fn an_opencode_console_is_launched_with_the_state_plugin() {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.unwrap() {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if data
@@ -469,7 +501,10 @@ async fn an_opencode_console_is_launched_with_the_state_plugin() {
         .unwrap();
         writeln!(
             f,
-            r#"{{"event":"permission.asked","session_id":"ses_1","tool_name":"bash","tool_use_id":"per_1","ts":"2026-10-28T13:00:01.000Z"}}"#
+            concat!(
+                r#"{{"event":"permission.asked","session_id":"ses_1","tool_name":"bash","#,
+                r#""tool_use_id":"per_1","ts":"2026-10-28T13:00:01.000Z"}}"#
+            )
         )
         .unwrap();
     }

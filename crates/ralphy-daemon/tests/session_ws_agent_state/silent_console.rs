@@ -16,17 +16,21 @@ async fn silent_console(
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 ) {
     let bin = dir.join("bin");
-    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(&bin).expect("create the test directory");
     let claude = bin.join(format!("claude{}", std::env::consts::EXE_SUFFIX));
-    std::fs::copy(env!("CARGO_BIN_EXE_session_test_child"), &claude).unwrap();
+    std::fs::copy(env!("CARGO_BIN_EXE_session_test_child"), &claude)
+        .expect("copy the stand-in binary");
     let path = std::env::var_os("PATH").unwrap_or_default();
     let mut dirs = vec![bin];
     dirs.extend(std::env::split_paths(&path));
-    std::env::set_var("PATH", std::env::join_paths(dirs).unwrap());
+    std::env::set_var(
+        "PATH",
+        std::env::join_paths(dirs).expect("join the PATH entries"),
+    );
     std::env::set_var("RALPHY_EXE_OVERRIDE", dir.join("no-such-ralphy"));
     tokio::task::spawn_blocking(ralphy_daemon::agent_state::run_start_check)
         .await
-        .unwrap();
+        .expect("join the start check task");
     let cause = ralphy_daemon::agent_state::start_check_failure()
         .expect("the hook program is missing, so the start check fails");
     assert!(cause.contains("no-such-ralphy"), "{cause}");

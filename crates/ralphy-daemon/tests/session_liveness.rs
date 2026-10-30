@@ -9,6 +9,11 @@
 //! `RALPHY_DAEMON_WS_PING_MS`, read once per process, and the other session
 //! tests must keep the production period.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -47,7 +52,11 @@ async fn read_until(ws: &mut Ws, needle: &str) -> String {
         while let Some(msg) = ws.next().await {
             let bytes = match msg.expect("reading the session stream") {
                 Message::Binary(b) => b,
-                _ => continue,
+                Message::Text(_)
+                | Message::Ping(_)
+                | Message::Pong(_)
+                | Message::Close(_)
+                | Message::Frame(_) => continue,
             };
             if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
                 if data

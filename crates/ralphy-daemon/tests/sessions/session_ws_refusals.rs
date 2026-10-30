@@ -11,8 +11,13 @@ use tokio_tungstenite::tungstenite;
 /// A live loopback daemon whose registry is `repos.toml` in `dir`.
 async fn serve(dir: &Path) -> u16 {
     super::point_launcher_at_test_child();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -25,20 +30,25 @@ async fn serve(dir: &Path) -> u16 {
     );
     tokio::spawn(async move {
         let _keep_open = tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     port
 }
 
 async fn refusal(port: u16, query: &str) -> String {
     let payload = super::refused(&format!("ws://127.0.0.1:{port}/ws/session?{query}")).await;
-    payload["message"].as_str().unwrap().to_string()
+    payload["message"]
+        .as_str()
+        .expect("read the message field")
+        .to_string()
 }
 
 fn register(dir: &Path, slug: &str) {
     let mut store = registry::RegistryStore::default();
     store.upsert(slug, &dir.to_string_lossy());
-    registry::save_to(&store, &dir.join("repos.toml")).unwrap();
+    registry::save_to(&store, &dir.join("repos.toml")).expect("save the registry");
 }
 
 #[tokio::test]

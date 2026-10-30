@@ -6,6 +6,11 @@
 //! SOLE env-setter in its file: `RALPHY_DAEMON_DIR` is process-global, so this
 //! env-setting test must be alone in its file (no intra-process race).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,7 +68,12 @@ async fn get(
         .await
         .expect("the router must answer");
     let status = resp.status();
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("read the response body")
+        .to_bytes();
     let json = serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
     (status, json)
 }
