@@ -8,4 +8,4 @@
 // channel; the writer sends one piece per non-empty channel in turn.
 mod writer;
 
-pub(crate) use writer::{ChannelSender, Mode, Writer, WriterClosed};
+pub(crate) use writer::{ChannelSender, Mode, Out, Permit, Writer, WriterClosed};

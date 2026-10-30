@@ -7,6 +7,8 @@ use axum::extract::ws::WebSocketUpgrade;
 use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite;
 
+mod input;
+
 /// A console whose child has exited: the eviction is signalled and the
 /// attachment's output stream is the test's own, holding `chunks`, so the
 /// client receives exactly these and nothing the shell prints.

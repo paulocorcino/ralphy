@@ -11,8 +11,9 @@
 //!
 //! A dropped [`ChannelSender`] closes its queue: the frames already in it
 //! are still sent, then the queue is freed. The task ends when the socket
-//! fails, or when every [`Writer`] handle is dropped and no queue is left.
-//! Every sender then reports [`WriterClosed`].
+//! fails, when it has sent a Close, when [`Writer::abort`] stops it, or when
+//! every [`Writer`] handle is dropped and no queue is left. Every sender
+//! then reports [`WriterClosed`].
 
 use std::collections::VecDeque;
 use std::task::{Context, Poll};
@@ -22,6 +23,7 @@ use futures_util::stream::SplitSink;
 use futures_util::SinkExt;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::{SendError, TryRecvError};
+use tokio::task::AbortHandle;
 
 use crate::protocol;
 
@@ -41,6 +43,19 @@ pub(crate) enum Mode {
     Channels,
 }
 
+/// One item of a channel's queue.
+#[derive(Debug)]
+pub(crate) enum Out {
+    /// An inner frame; [`Mode::Channels`] cuts it into pieces.
+    Frame(Vec<u8>),
+    /// A WebSocket Ping with this payload, sent whole.
+    Ping(Vec<u8>),
+    /// A WebSocket Pong with this payload, sent whole.
+    Pong(Vec<u8>),
+    /// A WebSocket Close. The writer sends nothing after it and ends.
+    Close,
+}
+
 /// The socket's writer has ended: the socket is closed or failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WriterClosed;
@@ -57,13 +72,18 @@ impl std::error::Error for WriterClosed {}
 #[derive(Debug, Clone)]
 pub(crate) struct Writer {
     opens: mpsc::UnboundedSender<Queue>,
+    task: AbortHandle,
 }
 
 /// Sends the inner frames of one channel to the writer.
 #[derive(Debug, Clone)]
 pub(crate) struct ChannelSender {
-    frames: mpsc::Sender<Vec<u8>>,
+    frames: mpsc::Sender<Out>,
 }
+
+/// Room for one item in a channel's queue, held until it is used.
+#[derive(Debug)]
+pub(crate) struct Permit(mpsc::OwnedPermit<Out>);
 
 impl Writer {
     /// Start the writer task on `sink`.
@@ -75,13 +95,19 @@ impl Writer {
             opened: Some(opened),
             queues: Vec::new(),
         };
-        tokio::spawn(task.run());
-        Writer { opens }
+        let task = tokio::spawn(task.run()).abort_handle();
+        Writer { opens, task }
     }
 
     /// Open the queue of `channel`. The caller opens each id once.
     pub(crate) fn channel(&self, channel: u32) -> ChannelSender {
-        let (frames, rx) = mpsc::channel(QUEUE_FRAMES);
+        self.channel_with_depth(channel, QUEUE_FRAMES)
+    }
+
+    /// Open the queue of `channel`, holding at most `depth` items (at least
+    /// 1) before its sender waits. The caller opens each id once.
+    pub(crate) fn channel_with_depth(&self, channel: u32, depth: usize) -> ChannelSender {
+        let (frames, rx) = mpsc::channel(depth.max(1));
         let queue = Queue {
             channel,
             frames: rx,
@@ -95,16 +121,54 @@ impl Writer {
         }
         ChannelSender { frames }
     }
+
+    /// Wait until the writer task has ended.
+    pub(crate) async fn ended(&self) {
+        // The task holds the receiver of `opens` while any handle lives, and
+        // drops it when it ends.
+        self.opens.closed().await;
+    }
+
+    /// Stop the writer task now. The items still queued are not sent, and
+    /// the sink half of the socket is dropped.
+    pub(crate) fn abort(&self) {
+        self.task.abort();
+    }
 }
 
 impl ChannelSender {
     /// Queue one inner frame; waits while the channel's queue is full.
     pub(crate) async fn send(&self, inner: Vec<u8>) -> Result<(), WriterClosed> {
-        // The error carries only the frame back; the writer has ended.
+        self.put(Out::Frame(inner)).await
+    }
+
+    /// Queue one item; waits while the channel's queue is full.
+    pub(crate) async fn put(&self, out: Out) -> Result<(), WriterClosed> {
+        // The error carries only the item back; the writer has ended.
         self.frames
-            .send(inner)
+            .send(out)
             .await
-            .map_err(|_unsent: SendError<Vec<u8>>| WriterClosed)
+            .map_err(|_unsent: SendError<Out>| WriterClosed)
+    }
+
+    /// Wait for room for one item. Cancel safe: a wait that is dropped
+    /// takes no room.
+    pub(crate) async fn reserve(&self) -> Result<Permit, WriterClosed> {
+        // An owned permit borrows nothing, so the caller may change its own
+        // state while it holds one.
+        self.frames
+            .clone()
+            .reserve_owned()
+            .await
+            .map(Permit)
+            .map_err(|_closed: SendError<()>| WriterClosed)
+    }
+}
+
+impl Permit {
+    /// Queue `out` in the room this permit holds.
+    pub(crate) fn put(self, out: Out) {
+        self.0.send(out);
     }
 }
 
@@ -112,9 +176,9 @@ impl ChannelSender {
 #[derive(Debug)]
 struct Queue {
     channel: u32,
-    frames: mpsc::Receiver<Vec<u8>>,
-    /// The wire messages of the inner frame being sent, in order.
-    pieces: VecDeque<Vec<u8>>,
+    frames: mpsc::Receiver<Out>,
+    /// The wire messages of the item being sent, in order.
+    pieces: VecDeque<Message>,
     /// Every sender of this channel is dropped.
     closed: bool,
 }
@@ -147,19 +211,38 @@ impl Queue {
         }
     }
 
-    fn load(&mut self, inner: Vec<u8>, mode: Mode) {
-        self.pieces = match mode {
+    fn load(&mut self, out: Out, mode: Mode) {
+        self.pieces = match out {
+            Out::Frame(inner) => self.frame_messages(inner, mode),
+            Out::Ping(payload) => VecDeque::from([Message::Ping(payload.into())]),
+            Out::Pong(payload) => VecDeque::from([Message::Pong(payload.into())]),
+            Out::Close => VecDeque::from([Message::Close(None)]),
+        };
+    }
+
+    fn frame_messages(&self, inner: Vec<u8>, mode: Mode) -> VecDeque<Message> {
+        match mode {
             Mode::Channels if self.channel != 0 => protocol::cut(self.channel, &inner)
                 .iter()
-                .map(protocol::encode)
+                .map(|piece| Message::Binary(protocol::encode(piece).into()))
                 .collect(),
-            Mode::Plain | Mode::Channels => VecDeque::from([inner]),
-        };
+            Mode::Plain | Mode::Channels => VecDeque::from([Message::Binary(inner.into())]),
+        }
     }
 
     fn finished(&self) -> bool {
         self.closed && self.pieces.is_empty()
     }
+}
+
+/// What one turn of the writer did.
+enum Turn {
+    /// Every queue was empty.
+    Idle,
+    /// At least one message was sent.
+    Sent,
+    /// A Close was sent: the writer ends.
+    Closed,
 }
 
 struct Task {
@@ -175,9 +258,10 @@ impl Task {
         loop {
             self.take_opened();
             match self.turn().await {
-                Ok(true) => {}
-                Ok(false) if self.opened.is_none() && self.queues.is_empty() => return,
-                Ok(false) => std::future::poll_fn(|cx| self.poll_wake(cx)).await,
+                Ok(Turn::Sent) => {}
+                Ok(Turn::Closed) => return,
+                Ok(Turn::Idle) if self.opened.is_none() && self.queues.is_empty() => return,
+                Ok(Turn::Idle) => std::future::poll_fn(|cx| self.poll_wake(cx)).await,
                 Err(error) => {
                     tracing::debug!(%error, "socket writer stopped: the socket failed");
                     return;
@@ -202,19 +286,22 @@ impl Task {
         }
     }
 
-    /// Send at most one wire message per channel. Returns whether anything
-    /// was sent; a finished queue is freed.
-    async fn turn(&mut self) -> Result<bool, axum::Error> {
-        let mut sent = false;
+    /// Send at most one wire message per channel; a finished queue is freed.
+    async fn turn(&mut self) -> Result<Turn, axum::Error> {
+        let mut turn = Turn::Idle;
         for queue in &mut self.queues {
             queue.refill(self.mode);
-            if let Some(piece) = queue.pieces.pop_front() {
-                self.sink.send(Message::Binary(piece.into())).await?;
-                sent = true;
+            if let Some(message) = queue.pieces.pop_front() {
+                let close = matches!(message, Message::Close(_));
+                self.sink.send(message).await?;
+                if close {
+                    return Ok(Turn::Closed);
+                }
+                turn = Turn::Sent;
             }
         }
         self.queues.retain(|queue| !queue.finished());
-        Ok(sent)
+        Ok(turn)
     }
 
     /// Ready when a queue got a frame or closed, or a queue was opened, or
