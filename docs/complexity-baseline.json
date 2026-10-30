@@ -15,17 +15,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-projects-store.ts": {
-      "(anonymous)": [
-        11
-      ],
-      "loadFleet": [
-        11
-      ],
-      "wakePeer": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
       "repathTabs": [
         14
