@@ -219,8 +219,20 @@ mod tests {
         let handle = std::thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
                 let mut sink = [0u8; 1024];
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the test client may have closed the connection"
+                )]
                 let _ = std::io::Read::read(&mut stream, &mut sink);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the test client may have closed the connection"
+                )]
                 let _ = stream.write_all(&response);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the test client may have closed the connection"
+                )]
                 let _ = stream.flush();
             }
         });
@@ -242,6 +254,10 @@ Connection: close
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-apply-{}-{tag}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
@@ -320,6 +336,10 @@ Connection: close
             let found =
                 unpack_binary(&buf, "ralphy-v1-x.zip", &dir.join("out"), wanted).expect("unpack");
             assert_eq!(std::fs::read(&found).expect("read"), b"wanted", "{target}");
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the scratch directory may be gone"
+            )]
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
@@ -406,6 +426,10 @@ Connection: close
             let binary = std::fs::read(&found).expect("read");
             verify(&binary, FIXTURE_BINARY_SHA256)
                 .unwrap_or_else(|e| panic!("{name} unpacked a changed binary: {e}"));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the scratch directory may be gone"
+            )]
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
@@ -427,6 +451,10 @@ Connection: close
         let err = unpack(&buf, "ralphy-v1-x.zip", &dir.join("out"))
             .expect_err("an archive with no binary must refuse");
         assert!(err.to_string().contains("carries no"), "{err}");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -446,6 +474,10 @@ Connection: close
         }
         let found = unpack(&buf, "ralphy-v1-x.zip", &dir.join("out")).expect("unpack");
         assert_eq!(std::fs::read(&found).expect("read"), b"new binary");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -476,6 +508,10 @@ Connection: close
 
         let found = unpack(&gz, "ralphy-v1-x.tar.gz", &dir.join("out")).expect("unpack");
         assert_eq!(std::fs::read(&found).expect("read"), b"new binary");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -510,6 +546,10 @@ Connection: close
     fn an_unknown_archive_format_is_refused() {
         let dir = scratch("format");
         assert!(unpack(b"whatever", "ralphy-v1-x.7z", &dir).is_err());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -530,6 +570,10 @@ Connection: close
 
         let target = host_target().expect("a published host");
         let cache = std::env::temp_dir().join(format!("ralphy-live-{}.json", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch file may be gone"
+        )]
         let _ = std::fs::remove_file(&cache);
         let mut opts = RefreshOpts::new(&cache);
         opts.force = true;
@@ -562,7 +606,15 @@ Connection: close
             archive.name,
             bytes.len()
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch file may be gone"
+        )]
         let _ = std::fs::remove_file(&cache);
     }
 }

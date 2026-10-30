@@ -18,7 +18,24 @@ import type { UploadsStore } from "./wb-uploads-store.ts";
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
-  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; board: BoardStore; checkouts: CheckoutsStore; release: ReleaseStore; modals: ModalsStore; tabs: TabsStore; uploads: UploadsStore };
+  $store: {
+    projects: ProjectsStore;
+    connection: ConnectionStore;
+    runs: RunsStore;
+    board: BoardStore;
+    checkouts: CheckoutsStore;
+    release: ReleaseStore;
+    modals: ModalsStore;
+    tabs: TabsStore;
+    uploads: UploadsStore;
+  };
+}
+
+/** An empty map from a string key to a `V`, for a component's data. A cast
+ * (`{} as Record<string, V>`) there is flagged as unneeded by the type-aware
+ * lint, because the data object is its own contextual type. */
+export function emptyRecord<V>(): Record<string, V> {
+  return {};
 }
 
 export function component<U extends keyof Shell, T extends object>(

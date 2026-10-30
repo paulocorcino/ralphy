@@ -146,29 +146,42 @@ impl Renderer {
         loop {
             match rx.recv_timeout(Duration::from_secs(1)) {
                 Ok(PresenterMsg::Event(event)) => self.apply(event),
-                Ok(PresenterMsg::Flush(ack)) => {
-                    // Drain everything already queued so no scroll line is lost before
-                    // the region is cleared; a superseded flush just gets acked too.
-                    while let Ok(msg) = rx.try_recv() {
-                        match msg {
-                            PresenterMsg::Event(event) => self.apply(event),
-                            PresenterMsg::Flush(prev) => {
-                                let _ = prev.send(());
-                            }
-                        }
-                    }
-                    let _ = ack.send(());
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Advance the elapsed clock between events (ADR-0006 D4). No-op off
-                    // a colour TTY or when no active bar exists.
-                    if self.opts.color {
-                        let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
-                        repaint_active_bar(&s, self.opts);
-                    }
-                }
+                Ok(PresenterMsg::Flush(ack)) => self.flush(&rx, ack),
+                Err(mpsc::RecvTimeoutError::Timeout) => self.tick(),
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+        }
+    }
+
+    /// Answer a [`PresenterMsg::Flush`]: drain everything already queued so no
+    /// scroll line is lost before the region is cleared, then ack. A superseded
+    /// flush just gets acked too.
+    fn flush(&self, rx: &Receiver<PresenterMsg>, ack: SyncSender<()>) {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                PresenterMsg::Event(event) => self.apply(event),
+                PresenterMsg::Flush(prev) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the caller waiting for the answer may have stopped waiting"
+                    )]
+                    let _ = prev.send(());
+                }
+            }
+        }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the caller waiting for the answer may have stopped waiting"
+        )]
+        let _ = ack.send(());
+    }
+
+    /// The idle tick: advance the elapsed clock between events (ADR-0006 D4).
+    /// No-op off a colour TTY or when no active bar exists.
+    fn tick(&self) {
+        if self.opts.color {
+            let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            repaint_active_bar(&s, self.opts);
         }
     }
 
@@ -190,6 +203,10 @@ impl Renderer {
         let line = render_line(&event, &ts, &extra, self.opts);
         if let Some(line) = line {
             if self.opts.color {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the console is the only place to report a failed write to it"
+                )]
                 let _ = self.multi.println(line);
             } else {
                 eprintln!("{line}");
@@ -306,7 +323,19 @@ impl Renderer {
                 self.refresh_active_bar(s);
                 LineExtra::default()
             }
-            _ => LineExtra::default(),
+            RunEvent::Notice { .. }
+            | RunEvent::DeadlinePassed { .. }
+            | RunEvent::RunStopped { .. }
+            | RunEvent::IdleReaped { .. }
+            | RunEvent::HooksUnprovenAllowed { .. }
+            | RunEvent::AgentState { .. }
+            | RunEvent::KnowledgeConsolidating { .. }
+            | RunEvent::KnowledgeConsolidated { .. }
+            | RunEvent::RunStarted { .. }
+            | RunEvent::RunFinished { .. }
+            | RunEvent::RunSkipped { .. }
+            | RunEvent::PlanOpened { .. }
+            | RunEvent::PlanClosed { .. } => LineExtra::default(),
         }
     }
 
@@ -478,6 +507,10 @@ impl PresenterHandle {
     pub fn print_header(&self, seed: &str) {
         let header = crate::runstate::ralphy_header(seed);
         if self.color {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the console is the only place to report a failed write to it"
+            )]
             let _ = self
                 .multi
                 .println(Style::new().cyan().bold().apply_to(&header).to_string());
@@ -495,6 +528,10 @@ impl PresenterHandle {
         };
         let line = render_info_line(project, branch, url, opts);
         if self.color {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the console is the only place to report a failed write to it"
+            )]
             let _ = self.multi.println(line);
         } else {
             println!("{line}");
@@ -554,6 +591,10 @@ impl PresenterHandle {
         if let Some(bar) = s.queue_bar.take() {
             bar.finish_and_clear();
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the console is the only place to report a failed write to it"
+        )]
         let _ = self.multi.clear();
     }
 
@@ -594,6 +635,10 @@ impl<S: Subscriber> Layer<S> for Presenter {
         // thread that emitted this log line. A closed channel (render thread gone at
         // shutdown) drops the line rather than erroring.
         if let Ok(tx) = self.tx.lock() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the render thread is gone at shutdown, and the line is dropped"
+            )]
             let _ = tx.send(PresenterMsg::Event(run_event));
         }
     }

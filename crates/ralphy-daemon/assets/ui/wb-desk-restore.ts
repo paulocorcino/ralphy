@@ -105,7 +105,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   function retryDeskLoad() {
     if (currentDeskFailure()) return;
     setTimeout(() => {
-      reloadDesk().then(() => {
+      void reloadDesk().then(() => {
         if (isDeskLoaded()) restoreDesk();
         else retryDeskLoad();
       });
@@ -154,17 +154,28 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   ) {
     if (verdict.action === "attach") {
       const { session } = verdict;
-      spawnWindow({ id: session.id, repo: session.repo }, session.agent || "console", session.repo, verdict.record);
+      spawnWindow(
+        { id: session.id, repo: session.repo },
+        session.agent || "console",
+        session.repo,
+        verdict.record,
+      );
     } else if (verdict.action === "relaunch") {
       relaunch(verdict.record, unheard, pending);
     } else if (verdict.action === "placeholder") {
-      spawnPlaceholder(verdict.record, null, null, { unheard: unheardRef(verdict.record.repo, unheard) });
+      spawnPlaceholder(verdict.record, null, null, {
+        unheard: unheardRef(verdict.record.repo, unheard),
+      });
     } else if (!(verdict.id && onPlane.has(verdict.id))) {
       adopt(verdict.session, verdict.id);
     }
   }
 
-  function relaunch(record: DeskRecord, unheard: ReadonlySet<string>, pending: Promise<ConsoleWin>[]) {
+  function relaunch(
+    record: DeskRecord,
+    unheard: ReadonlySet<string>,
+    pending: Promise<ConsoleWin>[],
+  ) {
     if (unheardRef(record.repo, unheard)) {
       // The list did not hear from its peer: the console may still run
       // there, and a launch on a peer without the record join would be
@@ -214,6 +225,13 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     applyLanding();
   }
 
+  // The restore relaunches agent consoles that no longer run. Read at restore
+  // time, not module load. `canLaunch === false` (the popup) refuses too: it
+  // must never author a session.
+  function relaunchesAgents() {
+    return OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true;
+  }
+
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — no relaunch, no phantom placeholders.
@@ -236,16 +254,15 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
         for (const verdict of reconcileDesk({
           layout: loadDesk(),
           sessions,
-          // Read at restore time, not module load. `canLaunch === false` (the
-          // popup) refuses too: it must never author a session.
-          relaunchAgents: OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true,
+          relaunchAgents: relaunchesAgents(),
         })) {
           // `adopt` carries NO record, so every read below is guarded — a
           // throw here is swallowed by the catch below and nothing renders.
           const { record } = verdict;
           if (record && onPlane.has(record.id)) continue;
           if (record && away.has(record.id)) {
-            seedAway(record, away.get(record.id)!);
+            const fenceId = away.get(record.id);
+            if (fenceId !== undefined) seedAway(record, fenceId);
             continue;
           }
           dispatchVerdict(verdict, unheard, onPlane, pending);
@@ -313,12 +330,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     if (m.kind === "note") {
       window.WBNotes?.mountDetached(record as NoteSource);
     } else if (m.session != null) {
-      spawnWindow(
-        { id: m.session, repo: m.repo },
-        m.agent || "console",
-        m.repo,
-        record,
-      );
+      spawnWindow({ id: m.session, repo: m.repo }, m.agent || "console", m.repo, record);
     } else {
       spawnPlaceholder(record);
     }

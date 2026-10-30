@@ -26,6 +26,7 @@ use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 
 mod api_watch;
 mod auth;
+mod cleanup;
 mod headless;
 mod interactive;
 mod plan;
@@ -40,6 +41,7 @@ mod usage;
 pub const ACCEPTS_IMAGES: bool = true;
 
 use auth::{is_claude_auth_error, is_limit_text, parse_reset_hhmm, CLAUDE_AUTH_ERROR_MSG};
+use cleanup::remove_stale_file;
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};
 use settings::{recommended_model, ExecConfig};
@@ -117,7 +119,10 @@ impl ClaudeAgent {
 
     /// Set the execution-side configuration (the composition root supplies it
     /// from the CLI flags).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "public builder called by the composition root with one value per setting"
+    )]
     pub fn with_exec_config(
         mut self,
         exec_model: Option<String>,
@@ -190,8 +195,8 @@ impl Agent for ClaudeAgent {
     }
 
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan> {
-        fs::create_dir_all(ws.ralphy_dir()).ok();
-        fs::create_dir_all(&self.run_dir).ok();
+        fs::create_dir_all(ws.ralphy_dir()).context("creating the .ralphy directory")?;
+        fs::create_dir_all(&self.run_dir).context("creating the run directory")?;
 
         let plan_path = ws.plan_path();
         // Resume: a finalized plan for this issue is kept as-is and execution
@@ -208,7 +213,7 @@ impl Agent for ClaudeAgent {
             });
         }
         // Plan fresh every run; never reuse a stale artifact.
-        let _ = fs::remove_file(&plan_path);
+        remove_stale_file(&plan_path);
 
         // The plan session gets the agent-state hooks and no guard (ADR-0059
         // §4): a planner stuck at a question was invisible until the watchdog.

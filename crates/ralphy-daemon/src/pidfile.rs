@@ -126,8 +126,16 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-pidfile-{}-{tag}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
         dir
+    }
+
+    fn remove_scratch(dir: &Path) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
+        )]
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -140,7 +148,7 @@ mod tests {
         clear_own_in(&dir, 3307);
         assert_eq!(read_in(&dir), None);
         clear_own_in(&dir, 3307);
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -162,7 +170,7 @@ mod tests {
             args,
             "a restart must bring back the same daemon, not the default one"
         );
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -179,7 +187,7 @@ mod tests {
         ];
         write_in(&dir, 7, Path::new("/bin/ralphy"), &args).expect("write");
         assert_eq!(read_args_in(&dir), args);
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -200,7 +208,7 @@ mod tests {
                 "7999".to_string()
             ]
         );
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -215,7 +223,7 @@ mod tests {
             read_args_in(&dir).is_empty(),
             "and its remaining lines are not an invocation to replay"
         );
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -225,6 +233,6 @@ mod tests {
         clear_in(&dir);
         clear_in(&dir);
         assert_eq!(read_in(&dir), None);
-        let _ = std::fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
     }
 }

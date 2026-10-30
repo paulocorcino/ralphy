@@ -21,7 +21,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand};
 use ralphy_agent_claude::ClaudeSettings;
 use ralphy_agent_copilot::CopilotSettings;
@@ -298,8 +298,8 @@ fn set_core_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
     match key {
         "verify.command" => s.verify.command = Some(value.to_owned()),
         "verify.require_verify_gate" => {
-            let b = value.parse::<bool>().map_err(|_| {
-                anyhow!("verify.require_verify_gate must be 'true' or 'false', got '{value}'")
+            let b = value.parse::<bool>().with_context(|| {
+                format!("verify.require_verify_gate must be 'true' or 'false', got '{value}'")
             })?;
             s.verify.require_verify_gate = Some(b);
         }
@@ -314,15 +314,15 @@ fn set_core_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             s.files.upload_max_mb = Some(n);
         }
         "runs.keep" => {
-            let n = value.parse::<u64>().map_err(|_| {
-                anyhow!("runs.keep must be a non-negative integer (0 keeps every run folder), got '{value}'")
+            let n = value.parse::<u64>().with_context(|| {
+                format!("runs.keep must be a non-negative integer (0 keeps every run folder), got '{value}'")
             })?;
             s.runs.keep = Some(n);
         }
         "queue.assignee" => s.queue.assignee = Some(value.to_owned()),
         "queue.trust_all_comments" => {
-            let b = value.parse::<bool>().map_err(|_| {
-                anyhow!("queue.trust_all_comments must be 'true' or 'false', got '{value}'")
+            let b = value.parse::<bool>().with_context(|| {
+                format!("queue.trust_all_comments must be 'true' or 'false', got '{value}'")
             })?;
             s.queue.trust_all_comments = Some(b);
         }
@@ -333,9 +333,9 @@ fn set_core_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             s.branch_mode = Some(value.to_owned());
         }
         "remote_control" => {
-            let b = value
-                .parse::<bool>()
-                .map_err(|_| anyhow!("remote_control must be 'true' or 'false', got '{value}'"))?;
+            let b = value.parse::<bool>().with_context(|| {
+                format!("remote_control must be 'true' or 'false', got '{value}'")
+            })?;
             s.remote_control = Some(b);
         }
         _ => set_agent_key(s, key, value)?,
@@ -354,21 +354,21 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             with_claude(s, |c| c.default_exec_model = Some(value.to_owned()))?
         }
         "claude.max_minutes_per_issue" => {
-            let n = value.parse::<u64>().map_err(|_| {
-                anyhow!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
+            let n = value.parse::<u64>().with_context(|| {
+                format!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
             })?;
             with_claude(s, |c| c.max_minutes_per_issue = Some(n))?;
         }
         "claude.console_name" => {
             let b = value
                 .parse::<bool>()
-                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_claude(s, |c| c.console_name = b)?
         }
         "claude.console_classic_screen" => {
             let b = value
                 .parse::<bool>()
-                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_claude(s, |c| c.console_classic_screen = b)?
         }
         // The escape of the hook proof (ADR-0072 D6): local-only, the daemon
@@ -376,7 +376,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
         "claude.run_without_guard_proof_i_understand_the_risk" => {
             let b = value
                 .parse::<bool>()
-                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_claude(s, |c| c.run_without_guard_proof_i_understand_the_risk = b)?
         }
         "copilot.plan_model" => with_copilot(s, |c| c.plan_model = Some(value.to_owned()))?,
@@ -387,7 +387,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => {
             let b = value
                 .parse::<bool>()
-                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_copilot(s, |c| c.allow_builtin_mcp_servers_i_understand_the_risk = b)?
         }
         "gemini.plan_model" | "gemini.exec_model" => set_gemini_model(s, key, value)?,
@@ -397,7 +397,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
         "cursor.allow_codebase_indexing_i_understand_the_risk" => {
             let b = value
                 .parse::<bool>()
-                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+                .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_cursor(s, |c| c.allow_codebase_indexing_i_understand_the_risk = b)?
         }
         _ => unreachable!(),
@@ -546,5 +546,7 @@ fn cleartext_remote_host(url: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod set_tests;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

@@ -11,6 +11,11 @@
 //! `RALPHY_EXE_OVERRIDE` (= `command_test_child`, `RALPHY_TEST_EXIT_CODE=1`)
 //! and `RALPHY_DAEMON_AGENT_OVERRIDE` (= `session_test_child`).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -43,13 +48,15 @@ async fn command_reply(
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
+            let bytes = match msg.expect("the websocket frame arrives") {
                 Message::Binary(b) => b,
                 Message::Close(_) => break,
-                _ => continue,
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
+                    continue
+                }
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.id == id {
@@ -81,14 +88,16 @@ async fn read_until(ws: &mut Ws, needle: &str) -> Option<serde_json::Value> {
     let mut open = None;
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
-            match message.unwrap() {
+            match message.expect("the websocket frame arrives") {
                 Message::Binary(bytes) => match protocol::decode(&bytes) {
                     Ok(Frame::Terminal { data, .. }) => {
                         if data
                             .windows(CURSOR_POSITION_REQUEST.len())
                             .any(|window| window == CURSOR_POSITION_REQUEST)
                         {
-                            ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
+                            ws.send(terminal(CURSOR_POSITION_REPLY))
+                                .await
+                                .expect("the frame is sent");
                         }
                         terminal_text.push_str(&String::from_utf8_lossy(&data));
                         if terminal_text.replace("\r\n", "").contains(needle) {
@@ -101,7 +110,7 @@ async fn read_until(ws: &mut Ws, needle: &str) -> Option<serde_json::Value> {
                     _ => {}
                 },
                 Message::Close(_) => return true,
-                _ => {}
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
             }
         }
         true
@@ -118,13 +127,19 @@ async fn read_until(ws: &mut Ws, needle: &str) -> Option<serde_json::Value> {
 async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("the test socket connects");
     let req = format!(
         "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(req.as_bytes()).await.unwrap();
+    stream
+        .write_all(req.as_bytes())
+        .await
+        .expect("the request is written");
     let mut buf = Vec::new();
-    stream.read_to_end(&mut buf).await.unwrap();
+    stream
+        .read_to_end(&mut buf)
+        .await
+        .expect("the reply is read");
     let text = String::from_utf8_lossy(&buf).into_owned();
     let status = text
         .split_whitespace()

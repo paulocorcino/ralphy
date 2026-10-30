@@ -17,6 +17,41 @@ import { apiFetch } from "./wb-api.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { LedgerMissing, LedgerRecord, SpendDoc } from "./wb-shell-types.d.ts";
 
+/** One read of the ledger: the rows, or why there are none. */
+type LedgerRead = {
+  records: LedgerRecord[];
+  interactive: LedgerRecord[];
+  missing: LedgerMissing[];
+  daemonId: string | null;
+  error: string;
+};
+
+// `GET /api/usage` for one project and period. A failed read is an error,
+// never an empty ledger.
+async function readLedger(project: string, period: string): Promise<LedgerRead> {
+  const failed = {
+    records: [],
+    interactive: [],
+    missing: [],
+    daemonId: null,
+    error: "Could not load the ledger: the daemon did not answer.",
+  };
+  try {
+    const r = await apiFetch("GET /api/usage", { query: { project, period } });
+    if (!r.ok) return failed;
+    const data = await r.json();
+    return {
+      records: Array.isArray(data.records) ? data.records : [],
+      interactive: Array.isArray(data.interactive) ? data.interactive : [],
+      missing: Array.isArray(data.missing) ? data.missing : [],
+      daemonId: data.daemon_id || null,
+      error: "",
+    };
+  } catch {
+    return failed;
+  }
+}
+
 export function wbSpend() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
@@ -48,18 +83,24 @@ export function wbSpend() {
     setSpendPeriod(key: string) {
       if (this.spendPeriod === key) return;
       this.spendPeriod = key;
-      this.loadSpend();
+      void this.loadSpend();
       // The Ledger is scoped to the SAME window: a period change invalidates
       // its rows too.
       this.ledger.slug = null;
-      if (this.spendPane === "ledger") this.loadLedger();
+      if (this.spendPane === "ledger") void this.loadLedger();
     },
     openSpend() {
       // Bootstrap's cash-stack: the strip renders `t.icon` as a class.
       sendWindow(window, "workbench:tab-open", {
-        tab: { id: "spend", kind: "spend", title: "Spend", icon: "bi bi-cash-stack", closable: true },
+        tab: {
+          id: "spend",
+          kind: "spend",
+          title: "Spend",
+          icon: "bi bi-cash-stack",
+          closable: true,
+        },
       });
-      this.loadSpend();
+      void this.loadSpend();
     },
     async loadSpend() {
       const slug = this.$store.projects.openSlug;
@@ -72,7 +113,9 @@ export function wbSpend() {
       let doc: SpendDoc = null;
       let error = "";
       try {
-        const r = await apiFetch("GET /api/spend", { query: { project: slug, period: this.spendPeriod || "all" } });
+        const r = await apiFetch("GET /api/spend", {
+          query: { project: slug, period: this.spendPeriod || "all" },
+        });
         if (r.ok) doc = await r.json();
         else error = "Could not load spend: the daemon did not answer.";
       } catch {
@@ -89,8 +132,8 @@ export function wbSpend() {
       // unpriced filter goes with it: it answered the PREVIOUS project's gap.
       this.ledger.slug = null;
       this.spendLedgerUnpricedOnly = false;
-      this.loadSpend();
-      if (this.spendPane === "ledger") this.loadLedger();
+      void this.loadSpend();
+      if (this.spendPane === "ledger") void this.loadLedger();
     },
 
     // --- the Ledger pane (#360) --------------------------------------------
@@ -135,7 +178,7 @@ export function wbSpend() {
     // with the project's history.
     setSpendPane(key: string) {
       this.spendPane = key;
-      if (key === "ledger") this.loadLedger();
+      if (key === "ledger") void this.loadLedger();
     },
     // The Overview's unpriced figure drills into the offending rows (#355).
     showUnpricedLedger() {
@@ -152,23 +195,10 @@ export function wbSpend() {
       if (this.ledger.loading) return;
       if (this.ledger.slug === want) return;
       this.ledger = { ...this.ledger, loading: true, error: "" };
-      let records: LedgerRecord[] = [];
-      let interactive: LedgerRecord[] = [];
-      let missing: LedgerMissing[] = [];
-      let daemonId: string | null = null;
-      let error = "";
-      try {
-        const r = await apiFetch("GET /api/usage", { query: { project: want, period: this.spendPeriod || "all" } });
-        if (r.ok) {
-          const data = await r.json();
-          records = Array.isArray(data.records) ? data.records : [];
-          interactive = Array.isArray(data.interactive) ? data.interactive : [];
-          missing = Array.isArray(data.missing) ? data.missing : [];
-          daemonId = data.daemon_id || null;
-        } else error = "Could not load the ledger: the daemon did not answer.";
-      } catch {
-        error = "Could not load the ledger: the daemon did not answer.";
-      }
+      const { records, interactive, missing, daemonId, error } = await readLedger(
+        want,
+        this.spendPeriod || "all",
+      );
       // The operator switched projects while this was in flight.
       if ((this.$store.projects.openSlug || "") !== want) {
         this.ledger = { ...this.ledger, loading: false };
@@ -197,7 +227,7 @@ export function wbSpend() {
       // The panels whose facts have no push: read again on visible and after
       // login while they are open (fact index: usage 3, 4).
       window.addEventListener("workbench:panels-reread", () => {
-        if (this.$store.tabs.tabs.some((t) => t.id === "spend")) this.loadSpend();
+        if (this.$store.tabs.tabs.some((t) => t.id === "spend")) void this.loadSpend();
       });
     },
   });

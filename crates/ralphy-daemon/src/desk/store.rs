@@ -15,6 +15,10 @@ use super::DeskStore;
 /// can hold a file that is fine for a moment. [`is_parse_error`] tells a
 /// layout that cannot be parsed from a file that cannot be read.
 pub fn load_from(path: &Path) -> Result<DeskStore> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "ErrorKind is non_exhaustive, so a match needs a catch-all"
+    )]
     let read = std::fs::read_to_string(path).or_else(|e| match e.kind() {
         std::io::ErrorKind::NotFound => Err(e),
         _ => std::fs::read_to_string(path),

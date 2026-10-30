@@ -33,6 +33,7 @@ pub fn ensure_ralphy_ignored(repo_root: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch;
 
     fn tmp(name: &str) -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU32, Ordering};
@@ -53,7 +54,7 @@ mod tests {
         assert!(ensure_ralphy_ignored(&dir).unwrap());
         let body = fs::read_to_string(dir.join(".gitignore")).unwrap();
         assert!(body.contains(".ralphy/"));
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -61,6 +62,6 @@ mod tests {
         let dir = tmp("present");
         fs::write(dir.join(".gitignore"), "target/\n.ralphy/\n").unwrap();
         assert!(!ensure_ralphy_ignored(&dir).unwrap());
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 }

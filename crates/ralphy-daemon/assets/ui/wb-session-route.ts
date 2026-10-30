@@ -6,40 +6,39 @@
 // `since`: on a reattach, the count of the session's output bytes the
 // terminal shows.
 // `link`: the network the browser reports, for the daemon's traffic log.
-type SessionUrlOpts = { link?: LinkFacts } & (
-  | {
-      id: number;
-      since?: number;
-      repo?: string;
-      takeover?: boolean;
-      watch?: boolean;
-      holder?: string;
-      gzip?: boolean;
-      attempt?: number;
-    }
-  | {
-      id?: null;
-      console: true;
-      repo?: string;
-      command?: string;
-      record?: string;
-      holder?: string;
-      gzip?: boolean;
-      attempt?: number;
-    }
-  | {
-      id?: null;
-      console?: false;
-      repo: string;
-      agent: string;
-      checkout?: string | null;
-      name?: string | null;
-      record?: string;
-      holder?: string;
-      gzip?: boolean;
-      attempt?: number;
-    }
-);
+type SessionUrlOpts = { link?: LinkFacts } & (ReattachUrlOpts | ConsoleUrlOpts | LaunchUrlOpts);
+type ReattachUrlOpts = {
+  id: number;
+  since?: number;
+  repo?: string;
+  takeover?: boolean;
+  watch?: boolean;
+  holder?: string;
+  gzip?: boolean;
+  attempt?: number;
+};
+type ConsoleUrlOpts = {
+  id?: null;
+  console: true;
+  repo?: string;
+  command?: string;
+  record?: string;
+  holder?: string;
+  gzip?: boolean;
+  attempt?: number;
+};
+type LaunchUrlOpts = {
+  id?: null;
+  console?: false;
+  repo: string;
+  agent: string;
+  checkout?: string | null;
+  name?: string | null;
+  record?: string;
+  holder?: string;
+  gzip?: boolean;
+  attempt?: number;
+};
 
 // The members of `navigator.connection` the daemon's traffic log records.
 // Safari has no `navigator.connection`, and then nothing is sent.
@@ -164,38 +163,46 @@ export const WBSessionRoute = (function () {
 
   function url(origin: string, opts: SessionUrlOpts) {
     // First, so the rest of the query reads as it did before the key.
-    let value = origin + "/ws/session?" + (opts.gzip ? "gzip=1&" : "");
-    if (opts.id != null) {
-      value += "id=" + encodeURIComponent(opts.id);
-      if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
-      if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) value += "&since=" + opts.since;
-      if (opts.takeover) value += "&takeover=1";
-      // A watcher claims nothing, so it names no holder.
-      if (opts.watch) value += "&watch=1";
-      else value += holderParam(opts.holder, opts.attempt);
-    } else if (opts.console) {
-      value += "console=1";
-      if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
-      // The startup command (the shell runs it and the session ends with it).
-      if (opts.command) value += "&command=" + encodeURIComponent(opts.command);
-      value += recordParam(opts.record);
-      value += holderParam(opts.holder, opts.attempt);
-    } else {
-      value +=
-        "repo=" +
-        encodeURIComponent(opts.repo) +
-        "&agent=" +
-        encodeURIComponent(opts.agent);
-      // A worktree NAME, sent only on a new agent launch — a reattach's record
-      // owns it (ADR-0063 §3).
-      if (opts.checkout) value += "&checkout=" + encodeURIComponent(opts.checkout);
-      // The console name: the daemon folds it into Claude's session name.
-      if (typeof opts.name === "string" && opts.name)
-        value += "&name=" + encodeURIComponent(opts.name);
-      value += recordParam(opts.record);
-      value += holderParam(opts.holder, opts.attempt);
-    }
-    return value + linkParam(opts.link);
+    const value = origin + "/ws/session?" + (opts.gzip ? "gzip=1&" : "");
+    return value + kindQuery(opts) + linkParam(opts.link);
+  }
+
+  // The part of the query that each kind of connect reads.
+  function kindQuery(opts: SessionUrlOpts) {
+    if (opts.id != null) return reattachQuery(opts);
+    if (opts.console) return consoleQuery(opts);
+    return launchQuery(opts);
+  }
+
+  function reattachQuery(opts: ReattachUrlOpts) {
+    let value = "id=" + encodeURIComponent(opts.id);
+    if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
+    if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0)
+      value += "&since=" + opts.since;
+    if (opts.takeover) value += "&takeover=1";
+    // A watcher claims nothing, so it names no holder.
+    if (opts.watch) return value + "&watch=1";
+    return value + holderParam(opts.holder, opts.attempt);
+  }
+
+  function consoleQuery(opts: ConsoleUrlOpts) {
+    let value = "console=1";
+    if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
+    // The startup command (the shell runs it and the session ends with it).
+    if (opts.command) value += "&command=" + encodeURIComponent(opts.command);
+    return value + recordParam(opts.record) + holderParam(opts.holder, opts.attempt);
+  }
+
+  function launchQuery(opts: LaunchUrlOpts) {
+    let value =
+      "repo=" + encodeURIComponent(opts.repo) + "&agent=" + encodeURIComponent(opts.agent);
+    // A worktree NAME, sent only on a new agent launch — a reattach's record
+    // owns it (ADR-0063 §3).
+    if (opts.checkout) value += "&checkout=" + encodeURIComponent(opts.checkout);
+    // The console name: the daemon folds it into Claude's session name.
+    if (typeof opts.name === "string" && opts.name)
+      value += "&name=" + encodeURIComponent(opts.name);
+    return value + recordParam(opts.record) + holderParam(opts.holder, opts.attempt);
   }
 
   // Only the values the daemon reads; any other value is not sent.
@@ -204,16 +211,21 @@ export const WBSessionRoute = (function () {
     if (!link) return "";
     let value = "";
     const { effectiveType, rtt, downlink } = link;
-    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType)) value += "&net=" + effectiveType;
-    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) value += "&net_rtt=" + rtt;
-    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0) value += "&net_down=" + downlink;
+    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType))
+      value += "&net=" + effectiveType;
+    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0)
+      value += "&net_rtt=" + rtt;
+    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0)
+      value += "&net_down=" + downlink;
     return value;
   }
 
   // The network this browser reports now, read at each connect.
   function tabLink(): LinkFacts | undefined {
     try {
-      return (globalThis.navigator as Navigator & { connection?: LinkFacts }).connection ?? undefined;
+      return (
+        (globalThis.navigator as Navigator & { connection?: LinkFacts }).connection ?? undefined
+      );
     } catch {
       return undefined;
     }
@@ -230,17 +242,44 @@ export const WBSessionRoute = (function () {
   // `since` is sent only on a reattach: a launch opens a new terminal.
   function requestOpts(
     req: SessionRequest,
-    holder: string,
+    holderId: string,
     gzip = false,
     attempt?: number,
     since?: number,
   ): SessionUrlOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null)
-      return { id: req.id, since, repo, takeover: req.takeover, watch: req.watch, holder, gzip, attempt };
-    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder, gzip, attempt };
+      return {
+        id: req.id,
+        since,
+        repo,
+        takeover: req.takeover,
+        watch: req.watch,
+        holder: holderId,
+        gzip,
+        attempt,
+      };
+    if (req.console)
+      return {
+        console: true,
+        repo,
+        command: req.command,
+        record: req.record,
+        holder: holderId,
+        gzip,
+        attempt,
+      };
     const { agent, checkout, name, record } = req;
-    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder, gzip, attempt };
+    return {
+      repo: req.repo ?? "",
+      agent: agent ?? "",
+      checkout,
+      name,
+      record,
+      holder: holderId,
+      gzip,
+      attempt,
+    };
   }
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
@@ -252,7 +291,8 @@ export const WBSessionRoute = (function () {
   // The attempt rides only with a holder: it orders the claims of one holder.
   function holderParam(h: string | undefined, attempt?: number) {
     if (typeof h !== "string" || !HOLDER_RE.test(h)) return "";
-    const n = Number.isSafeInteger(attempt) && attempt != null && attempt >= 0 ? "&attempt=" + attempt : "";
+    const n =
+      Number.isSafeInteger(attempt) && attempt != null && attempt >= 0 ? "&attempt=" + attempt : "";
     return "&holder=" + h + n;
   }
 
@@ -265,11 +305,21 @@ export const WBSessionRoute = (function () {
   }
 
   function announcement(current: SessionOwner, payload: SessionOpen | null | undefined) {
-    const announcedId = payload?.session_id ?? payload?.session;
     return {
-      sessionId: announcedId == null ? current.sessionId : Number(announcedId),
+      sessionId: announcedSessionId(current, payload),
       daemonId: payload?.daemon_id ?? current.daemonId,
       environment: payload?.environment ?? current.environment,
+      ...announcedPlace(current, payload),
+    };
+  }
+
+  function announcedSessionId(current: SessionOwner, payload: SessionOpen | null | undefined) {
+    const announcedId = payload?.session_id ?? payload?.session;
+    return announcedId == null ? current.sessionId : Number(announcedId);
+  }
+
+  function announcedPlace(current: SessionOwner, payload: SessionOpen | null | undefined) {
+    return {
       // The name the hosting vendor knows this child by, when it takes one. A
       // payload that omits it KEEPS the prior — the same rule the two fields
       // above follow, so a re-announcement can never blank a live name.

@@ -280,24 +280,22 @@ fn shell_tokens(segment: &str) -> Vec<String> {
     let mut cur = String::new();
     let mut quote: Option<char> = None;
     for c in segment.chars() {
-        match quote {
-            Some(q) if c == q => quote = None,
-            Some(_) => cur.push(c),
-            None => match c {
-                '\'' | '"' => quote = Some(c),
-                c if c.is_whitespace() => {
-                    if !cur.is_empty() {
-                        out.push(std::mem::take(&mut cur));
-                    }
-                }
-                _ => cur.push(c),
-            },
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (None, '\'' | '"') => quote = Some(c),
+            (None, c) if c.is_whitespace() => end_token(&mut out, &mut cur),
+            (_, c) => cur.push(c),
         }
     }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
+    end_token(&mut out, &mut cur);
     out
+}
+
+/// Close the token being read: move `cur` into `out` unless it is empty.
+fn end_token(out: &mut Vec<String>, cur: &mut String) {
+    if !cur.is_empty() {
+        out.push(std::mem::take(cur));
+    }
 }
 
 /// Deny-list for file-write tools.
@@ -432,6 +430,10 @@ fn tool_call(payload: &Value) -> (&str, &Value) {
 /// and exit 0 (allow) or exit 2 (deny). With `cost_gate`, an allowed Bash call
 /// also passes the verification-cost gate. Never returns — always calls
 /// `std::process::exit`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the hook guard reports its decision by its exit code, so it must exit"
+)]
 pub fn run_guard_hook(cost_gate: bool) -> ! {
     use std::io::Read;
 

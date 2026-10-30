@@ -17,12 +17,22 @@
    draw button shows the tables as a Mermaid diagram in the zoom view.
    --------------------------------------------------------------------------- */
 
-import { colKey, DRAW_LIMIT, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMermaidEr } from "./wb-dbml.ts";
+import {
+  colKey,
+  DRAW_LIMIT,
+  matchSchema,
+  parseDbml,
+  refsOf,
+  sameColumns,
+  shownColumns,
+  toMermaidEr,
+} from "./wb-dbml.ts";
+import { groupTables } from "./wb-dbml-groups.ts";
 import type { DbmlColumn, DbmlEndpoint, DbmlRef, DbmlSchema, DbmlTable } from "./wb-dbml.ts";
 // The two modules import each other; both use the other only inside a function
 // that runs after both have loaded.
-import { drawDiagram, slugOf } from "./wb-viewer-render.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { openZoom } from "./wb-zoom-overlay.ts";
 
 type Ctx = {
@@ -86,7 +96,8 @@ function columnRow(ctx: Ctx, column: DbmlColumn, out: DbmlRef[]) {
   name.title = column.note ? `${column.name}: ${column.note}` : column.name;
   if (column.pk) name.append(el(doc, "i", "bi bi-key"), " ");
   name.append(column.name);
-  for (const ref of out) if (ref.from.column === column.name) name.append(refNode(ctx, ref.to, "→ "));
+  for (const ref of out)
+    if (ref.from.column === column.name) name.append(refNode(ctx, ref.to, "→ "));
   const type = el(doc, "td", "dbml-col-type");
   type.append(el(doc, "span", "dbml-type", column.type));
   for (const tag of tagsOf(column)) type.append(el(doc, "span", "dbml-tag", tag));
@@ -107,16 +118,21 @@ function setOpen(card: HTMLElement, open: boolean) {
   const shown = new Set(shownColumns(table, open));
   const rows = card.querySelectorAll<HTMLElement>("tr.dbml-col");
   table.columns.forEach((column, i) => {
-    rows[i].hidden = !shown.has(column);
+    const row = rows[i];
+    if (row) row.hidden = !shown.has(column);
   });
   card.classList.toggle("dbml-open", open);
   const more = card.querySelector("button.dbml-more");
   const rest = table.columns.length - shown.size;
-  if (more) more.textContent = open ? "Show fewer columns" : `Show ${rest} more ${rest === 1 ? "column" : "columns"}`;
+  if (more)
+    more.textContent = open
+      ? "Show fewer columns"
+      : `Show ${rest} more ${rest === 1 ? "column" : "columns"}`;
 }
 
 function clearMarks(article: Element) {
-  for (const row of article.querySelectorAll(".dbml-origin, .dbml-same")) row.classList.remove("dbml-origin", "dbml-same");
+  for (const row of article.querySelectorAll(".dbml-origin, .dbml-same"))
+    row.classList.remove("dbml-origin", "dbml-same");
 }
 
 // A click on a column name marks the columns with the same name, and opens
@@ -129,7 +145,9 @@ function toggleMark(ctx: Ctx, row: HTMLElement) {
   row.classList.add("dbml-origin");
   const same = sameColumns(ctx.schema, table, row.dataset.col ?? "");
   for (const card of ctx.article.querySelectorAll<HTMLElement>(".dbml-card")) {
-    const rows = [...card.querySelectorAll<HTMLElement>("tr.dbml-col")].filter((r) => same.has(colKey(card.dataset.table ?? "", r.dataset.col ?? "")));
+    const rows = [...card.querySelectorAll<HTMLElement>("tr.dbml-col")].filter((r) =>
+      same.has(colKey(card.dataset.table ?? "", r.dataset.col ?? "")),
+    );
     for (const r of rows) r.classList.add("dbml-same");
     if (rows.length > 0) setOpen(card, true);
   }
@@ -157,7 +175,7 @@ function cardHead(ctx: Ctx, table: DbmlTable) {
   return head;
 }
 
-function card(ctx: Ctx, table: DbmlTable) {
+function buildCard(ctx: Ctx, table: DbmlTable) {
   const { doc } = ctx;
   const box = el(doc, "div", "dbml-card");
   box.dataset.table = table.name;
@@ -191,7 +209,14 @@ function summaryBar(ctx: Ctx, text: string) {
   expand.addEventListener("click", () => setAll(ctx, true));
   const collapse = button(doc, "dbml-btn", "Collapse all");
   collapse.addEventListener("click", () => setAll(ctx, false));
-  bar.append(el(doc, "div", "dbml-summary", text), ctx.status, ctx.draw, ctx.clear, expand, collapse);
+  bar.append(
+    el(doc, "div", "dbml-summary", text),
+    ctx.status,
+    ctx.draw,
+    ctx.clear,
+    expand,
+    collapse,
+  );
   return bar;
 }
 
@@ -211,7 +236,9 @@ function selected(ctx: Ctx) {
 function refreshDraw(ctx: Ctx) {
   const n = selected(ctx).length;
   const over = n > DRAW_LIMIT;
-  ctx.draw.textContent = over ? `Select ${DRAW_LIMIT} tables or fewer` : `Draw ${plural(n, "table", "tables")}`;
+  ctx.draw.textContent = over
+    ? `Select ${DRAW_LIMIT} tables or fewer`
+    : `Draw ${plural(n, "table", "tables")}`;
   ctx.draw.disabled = ctx.busy || over || n === 0;
   ctx.clear.disabled = n === 0;
 }
@@ -222,13 +249,17 @@ function onPick(ctx: Ctx) {
 }
 
 function clearSelection(ctx: Ctx) {
-  for (const box of ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick")) box.checked = false;
+  for (const box of ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick"))
+    box.checked = false;
   onPick(ctx);
 }
 
 // Select the cards of a group that Find has not hidden.
 function selectGroup(ctx: Ctx, section: Element) {
-  for (const box of section.querySelectorAll<HTMLInputElement>(".dbml-card:not([hidden]) input.dbml-pick")) box.checked = true;
+  for (const box of section.querySelectorAll<HTMLInputElement>(
+    ".dbml-card:not([hidden]) input.dbml-pick",
+  ))
+    box.checked = true;
   onPick(ctx);
 }
 
@@ -247,7 +278,10 @@ async function drawInZoom(ctx: Ctx, win: MermaidWindow, names: string[]) {
   refreshDraw(ctx);
   let svg: SVGSVGElement | null = null;
   try {
-    svg = svgOf(ctx.doc, await drawDiagram(win, `dbml-draw-${drawCount++}`, toMermaidEr(ctx.schema, names)));
+    svg = svgOf(
+      ctx.doc,
+      await drawDiagram(win, `dbml-draw-${drawCount++}`, toMermaidEr(ctx.schema, names)),
+    );
   } catch {
     // Mermaid rejected the source; the status text below tells the person.
   }
@@ -289,7 +323,8 @@ export function renderDbmlGrid(doc: Document, article: Element, text: string): v
   const ctx = newCtx(doc, article, schema);
   const groups = groupTables(schema);
   let summary = `${plural(schema.tables.length, "table", "tables")} in ${plural(groups.length, "group", "groups")}.`;
-  if (schema.skipped > 0) summary += ` ${plural(schema.skipped, "line was", "lines were")} not understood.`;
+  if (schema.skipped > 0)
+    summary += ` ${plural(schema.skipped, "line was", "lines were")} not understood.`;
   article.append(summaryBar(ctx, summary));
   for (const group of groups) article.append(groupSection(ctx, group));
 }
@@ -306,7 +341,7 @@ function groupSection(ctx: Ctx, group: { label: string; tables: DbmlTable[] }) {
   const head = el(doc, "div", "dbml-group-head");
   head.append(el(doc, "h2", "", group.label), pickAll);
   const grid = el(doc, "div", "dbml-grid");
-  for (const table of group.tables) grid.append(card(ctx, table));
+  for (const table of group.tables) grid.append(buildCard(ctx, table));
   section.append(head, grid);
   return section;
 }

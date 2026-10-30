@@ -181,6 +181,10 @@ pub fn archive_notes(ws: &Workspace, notes: &[PathBuf]) -> Result<usize> {
         let dest = raw.join(name);
         // `rename` fails on a pre-existing destination on some platforms;
         // remove first so the move is an overwrite either way.
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the destination may not exist, and a real failure surfaces in the rename"
+        )]
         let _ = fs::remove_file(&dest);
         fs::rename(note, &dest)
             .with_context(|| format!("archiving {} into raw/", note.display()))?;
@@ -191,11 +195,12 @@ pub fn archive_notes(ws: &Workspace, notes: &[PathBuf]) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch;
 
     fn temp_ws(tag: &str) -> Workspace {
         let base =
             std::env::temp_dir().join(format!("ralphy-knowledge-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         Workspace::new(&base)
     }
@@ -225,14 +230,14 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["issue-3.md", "issue-16.md", "issue-21.md"]);
 
-        let _ = fs::remove_dir_all(ws.repo_root());
+        remove_scratch(ws.repo_root());
     }
 
     #[test]
     fn loose_notes_empty_without_knowledge_dir() {
         let ws = temp_ws("empty");
         assert!(loose_notes(&ws).is_empty());
-        let _ = fs::remove_dir_all(ws.repo_root());
+        remove_scratch(ws.repo_root());
     }
 
     #[test]
@@ -253,7 +258,7 @@ mod tests {
             "fresh note"
         );
 
-        let _ = fs::remove_dir_all(ws.repo_root());
+        remove_scratch(ws.repo_root());
     }
 
     /// A minimal file with the exact shape `prompt.consolidate.md` mandates,
@@ -385,7 +390,7 @@ mod tests {
             .collect();
         assert_eq!(entries, vec![first, second]);
 
-        let _ = fs::remove_dir_all(ws.repo_root());
+        remove_scratch(ws.repo_root());
     }
 
     #[test]
@@ -420,6 +425,6 @@ mod tests {
         let ws = temp_ws("noop");
         assert_eq!(archive_notes(&ws, &[]).unwrap(), 0);
         assert!(!ws.knowledge_raw_dir().exists());
-        let _ = fs::remove_dir_all(ws.repo_root());
+        remove_scratch(ws.repo_root());
     }
 }

@@ -223,18 +223,26 @@ pub(crate) fn publish_draft(
     )
 }
 
+/// The agent the operator chose for init, and the model to run it with
+/// (`None` = the agent's default).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ChosenAgent<'a> {
+    pub agent: Agent,
+    pub model: Option<&'a str>,
+}
+
 /// Dispatch the backlog/milestone → issues draft session to the selected agent's
 /// adapter. Like `diagnose_with_agent`, the charter is shared
 /// ([`ralphy_core::build_init_issues_prompt`]) and only the invocation differs.
 pub(crate) fn draft_with_agent(
-    agent: Agent,
+    chosen: ChosenAgent<'_>,
     repo: &Path,
     out_path: &Path,
     req: &DraftRequest,
-    model: Option<&str>,
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
+    let ChosenAgent { agent, model } = chosen;
     match agent {
         Agent::Claude => ralphy_agent_claude::draft_issues(
             repo,

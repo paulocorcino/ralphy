@@ -16,13 +16,21 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { sendWindow } from "./wb-events.ts";
+import { required } from "./wb-dom-need.ts";
 
 export function wbLogin() {
   // It reads no `shell()` member.
   return component([], {
     // `remember` is "keep me signed in" (ADR-0032 amendment 2026-09-16):
     // opt-in, reset on every log-off.
-    login: { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: false },
+    login: {
+      code: "",
+      digits: ["", "", "", "", "", ""],
+      password: "",
+      remember: false,
+      error: "",
+      passwordRequired: false,
+    },
 
     init() {
       // The daemon said whether the login asks for a password (the store
@@ -33,7 +41,14 @@ export function wbLogin() {
       // Localhost/Bearer have no login gate to drop to (#205).
       window.addEventListener("workbench:log-off", () => {
         if (this.$store.connection.security.policy === "session") {
-          this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
+          this.login = {
+            code: "",
+            digits: ["", "", "", "", "", ""],
+            password: "",
+            remember: false,
+            error: "",
+            passwordRequired: this.login.passwordRequired,
+          };
         }
       });
     },
@@ -42,10 +57,10 @@ export function wbLogin() {
     // socket self-reconnects.
     rehydrateAfterAuth() {
       this.$store.projects.clearReposError();
-      this.$store.projects.loadRepos();
-      this.$store.connection.loadIdentity();
+      void this.$store.projects.loadRepos();
+      void this.$store.connection.loadIdentity();
       // `/api/agents` is gated too.
-      this.$store.projects.loadAgents();
+      void this.$store.projects.loadAgents();
       // `/api/desk` and `file.read` are gated too: the shell reads the desk
       // and restores the open tabs (app.ts).
       sendWindow(window, "workbench:logged-in");
@@ -53,7 +68,7 @@ export function wbLogin() {
       // `loadRepos` above covers the sessions, the change set and the branch.
       sendWindow(window, "workbench:board-refresh", { trigger: "login" });
       // Not only with the Runs panel open: the runs lock the writes.
-      this.$store.runs.hydrateRuns();
+      void this.$store.runs.hydrateRuns();
       this.$store.connection.rereadOpenPanels();
     },
 
@@ -62,7 +77,11 @@ export function wbLogin() {
     // box is spread. `login.code` is the joined string.
 
     _otpBoxes(el: HTMLElement) {
-      return el.closest(".login-otp")!.querySelectorAll("input");
+      return required(el.closest(".login-otp"), "the code boxes").querySelectorAll("input");
+    },
+
+    _otpFocusAt(boxes: NodeListOf<HTMLInputElement>, at: number) {
+      boxes[at]?.focus();
     },
 
     _otpSync() {
@@ -84,7 +103,7 @@ export function wbLogin() {
       this._otpSync();
       const boxes = this._otpBoxes(el);
       if (chars.length >= 6) this._otpAdvancePastLast(el);
-      else boxes[chars.length].focus();
+      else boxes[chars.length]?.focus();
     },
 
     otpInput(i: number, e: Event & { target: HTMLInputElement }) {
@@ -97,7 +116,7 @@ export function wbLogin() {
       this.login.digits[i] = v;
       this._otpSync();
       if (!v) return;
-      if (i < 5) this._otpBoxes(e.target)[i + 1].focus();
+      if (i < 5) this._otpBoxes(e.target)[i + 1]?.focus();
       else this._otpAdvancePastLast(e.target);
     },
 
@@ -107,13 +126,13 @@ export function wbLogin() {
         e.preventDefault();
         this.login.digits[i - 1] = "";
         this._otpSync();
-        boxes[i - 1].focus();
+        this._otpFocusAt(boxes, i - 1);
       } else if (e.key === "ArrowLeft" && i > 0) {
         e.preventDefault();
-        boxes[i - 1].focus();
+        this._otpFocusAt(boxes, i - 1);
       } else if (e.key === "ArrowRight" && i < 5) {
         e.preventDefault();
-        boxes[i + 1].focus();
+        this._otpFocusAt(boxes, i + 1);
       }
     },
 

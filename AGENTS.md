@@ -107,8 +107,16 @@ ubiquitous language, and each crate is roughly one bounded context.
   node --test crates/ralphy-daemon/ui-tests
   npx -y -p typescript@7.0.2 tsc --noEmit -p crates/ralphy-daemon/assets/ui
   npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
+  npx -y -p oxlint@1.85.0 -p oxlint-tsgolint@7.0.2005 oxlint --type-aware --deny-warnings crates/ralphy-daemon/assets/ui/*.ts
+  npx -y oxfmt@0.75.0 --check crates/ralphy-daemon/assets/ui/*.ts
   cargo run -q -p xtask -- ui-copy --check
   ```
+
+  The type-aware run (the rules that read the types) and the format check
+  take the modules by name. Run them in a POSIX shell such as Git Bash:
+  PowerShell passes `*.ts` to the tool as it is, and the tool finds no file.
+  When the format check fails, the same command without `--check` writes
+  the format (settings in `.oxfmtrc.json`).
 
   New workbench code is a `.ts` module, never a new `.js` file
   ([ADR-0075](./docs/adr/0075-the-workbench-script-is-written-in-typescript.md)).
@@ -179,18 +187,21 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **Function complexity is measured by tools too.** A production function
   may score 10: cognitive complexity in Rust, oxlint's `complexity` in
   TypeScript. A closure and every `#[cfg]` branch count toward the function
-  around them. A function over 10 fails unless
-  `docs/complexity-baseline.json` lists it, and a listed function may only
-  go down. The local form:
+  around them. Test code is not measured. A function over 10 fails, with
+  no list of old ones: the xtask checks Rust, and the oxlint command above
+  checks TypeScript. The local form for Rust:
 
   ```sh
   cargo run -q -p xtask -- complexity --check --base main
   ```
 
-  It also lists the functions at 7 to 10 in the files you changed: give a
-  new branch in one of them its own function. When the check fails, split
-  the function as a file is split above. When a function goes down, record
-  it with `complexity --bless` in the same change
+  It also lists the Rust functions at 7 to 10 in the files you changed:
+  give a new branch in one of them its own function. When the check fails,
+  split the function as a file is split above. An exception is a line
+  right above the function, with a reason: `// complexity-exception:
+  <reason>` in Rust, `// oxlint-disable-next-line complexity -- <reason>`
+  in TypeScript. The ratchet `complexity_exceptions_do_not_grow` counts
+  them, and the count may only go down
   ([ADR-0081](./docs/adr/0081-function-complexity-is-a-gate.md)).
 - **Comments state what the code cannot show:** an invariant, a measured fact
   (with the tool and version), a limit, or the ADR/issue that decided it. A

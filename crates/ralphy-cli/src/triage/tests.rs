@@ -53,7 +53,9 @@ fn presence_gate_warns_and_proceeds_when_held_alive() {
             w,
             "a run is already active in this repo — proceeding anyway (pid 4000000)"
         ),
-        other => panic!("expected Proceed with a warning, got {other:?}"),
+        other @ (PresenceGate::Proceed { warn: None } | PresenceGate::Defer(_)) => {
+            panic!("expected Proceed with a warning, got {other:?}")
+        }
     }
 }
 
@@ -69,7 +71,9 @@ fn presence_gate_takes_over_stale_lock() {
         PresenceGate::Proceed { warn: Some(w) } => {
             assert_eq!(w, "ignoring stale run.lock (pid 4000001 not running)")
         }
-        other => panic!("expected Proceed with a warning, got {other:?}"),
+        other @ (PresenceGate::Proceed { warn: None } | PresenceGate::Defer(_)) => {
+            panic!("expected Proceed with a warning, got {other:?}")
+        }
     }
 }
 
@@ -78,7 +82,9 @@ fn presence_gate_proceeds_when_free() {
     let path = tmp_lock("free");
     match presence_gate(&path, false, |_| true) {
         PresenceGate::Proceed { warn: None } => {}
-        other => panic!("expected Proceed with no warning, got {other:?}"),
+        other @ (PresenceGate::Proceed { warn: Some(_) } | PresenceGate::Defer(_)) => {
+            panic!("expected Proceed with no warning, got {other:?}")
+        }
     }
 }
 

@@ -1,5 +1,8 @@
 const pascal = (name: string) =>
-  name.replace(/(\w)(\w*)(_|-|\s*)/g, (_: string, first: string, rest: string) => first.toUpperCase() + rest.toLowerCase());
+  name.replace(
+    /(\w)(\w*)(_|-|\s*)/g,
+    (_: string, first: string, rest: string) => first.toUpperCase() + rest.toLowerCase(),
+  );
 
 // `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
 // element (lucide's `createIcons` replaces it), so it is still the node Alpine
@@ -8,7 +11,11 @@ const pascal = (name: string) =>
 // output matches `createIcons` (lucide 0.460.0): the icon's default attributes
 // where the markup set none, `data-lucide` (the stylesheets select on it), and
 // the `lucide lucide-<name>` classes.
-export function iconDirective(el: HTMLElement, { expression }: AlpineDirective, { evaluateLater, effect }: AlpineDirectiveUtilities) {
+export function iconDirective(
+  el: HTMLElement,
+  { expression }: AlpineDirective,
+  { evaluateLater, effect }: AlpineDirectiveUtilities,
+) {
   const read = evaluateLater(expression);
   const authored = new Set(el.getAttributeNames());
   let drawn: string | null = null;

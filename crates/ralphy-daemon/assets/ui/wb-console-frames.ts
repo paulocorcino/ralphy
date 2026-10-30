@@ -87,7 +87,9 @@ function isCount(n: unknown): n is number {
 
 // The decoded bytes of a gzip stream; rejects on a stream that is not gzip.
 async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const stream = new Blob([new Uint8Array(bytes)])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
@@ -127,12 +129,12 @@ export function frameQueue(
     waiting = [];
     // The first of the decode and the timer ends the wait; the other is dropped.
     let ended = false;
-    const end = (event: SocketEvent) => {
+    const end = (settled: SocketEvent) => {
       if (ended) return;
       ended = true;
       clearTimeout(timer);
       try {
-        apply(event);
+        apply(settled);
       } finally {
         drain();
       }

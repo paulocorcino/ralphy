@@ -196,6 +196,10 @@ fn keep(name: &str, hidden: bool, prefix: &str) -> bool {
 
 fn list_folder(folder: &str, prefix: &str, registry: &RegistryStore) -> Result<Listing, Refusal> {
     let dir = Path::new(folder);
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "ErrorKind is non_exhaustive, so a match needs a catch-all"
+    )]
     let read = std::fs::read_dir(dir).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => Refusal::NotFound,
         _ => Refusal::Unreadable,
@@ -338,7 +342,7 @@ fn start_folder(registry: &RegistryStore, home: Option<&Path>) -> Option<String>
 
 /// The drive letters, as entries named `C:`. Windows only.
 #[cfg(windows)]
-#[allow(
+#[expect(
     unsafe_code,
     reason = "FFI: GetLogicalDrives reads the drive bitmask and touches no drive"
 )]

@@ -45,7 +45,6 @@
 import { WBRun } from "./wb-runs.ts";
 import type { Run } from "./wb-runs.ts";
 
-
 /** One issue of a `board.list` reply (the CLI's board fold). */
 export type BoardRow = {
   number: number;
@@ -150,8 +149,12 @@ function addNeighbour(n: number, self: number, g: IssueGraph, acc: Set<number>, 
   else if (g.openNums.has(n)) stack.push(n); // transparent: keep walking
   else {
     const ch = g.childrenOf.get(n); // closed bundle → its children stand in
-    if (ch) for (const c of ch) if (c !== self) acc.add(c);
+    if (ch) addChildren(ch, self, acc);
   }
+}
+
+function addChildren(children: Iterable<number>, self: number, acc: Set<number>) {
+  for (const c of children) if (c !== self) acc.add(c);
 }
 
 // Kahn, smallest ready number first (ascending tie-break); a cycle's
@@ -282,7 +285,14 @@ export const WBKanban = {
       if (!iss) continue;
       const st = WBRun.issueState(r, iss);
       if (st === "planning" || st === "executing" || st === "sleep") {
-        return { runid: r.runid, face: r.face, agent: r.agent, state: st, glyph: WBRun.GLYPH[st], phase: r.phase };
+        return {
+          runid: r.runid,
+          face: r.face,
+          agent: r.agent,
+          state: st,
+          glyph: WBRun.GLYPH[st],
+          phase: r.phase,
+        };
       }
     }
     return null;
@@ -310,7 +320,13 @@ export const WBKanban = {
     boardOpen,
     docVisible,
     focused = true,
-  }: { trigger: string; sinceMs: number; boardOpen: boolean; docVisible: boolean; focused?: boolean }) {
+  }: {
+    trigger: string;
+    sinceMs: number;
+    boardOpen: boolean;
+    docVisible: boolean;
+    focused?: boolean;
+  }) {
     if (!boardOpen || !docVisible) return false;
     switch (trigger) {
       case "manual":

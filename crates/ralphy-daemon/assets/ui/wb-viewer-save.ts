@@ -108,7 +108,10 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
       // the best answer the pane has — and the reason lands in the pane.
       const fail = (reply?: DaemonReply) => {
-        showSaveError(rec, WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
+        showSaveError(
+          rec,
+          WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."),
+        );
         messages.flash("Could not reload the file.");
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
@@ -116,7 +119,7 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       // "reload failed".
       if (rec.kind === "image") {
         WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
-          .then((url) => (!url ? fail() : rec.refused !== null ? reopenRefused(rec, { content: url }) : applyFresh(rec, url)))
+          .then((url) => settleImage(rec, url, fail))
           .catch(() => fail());
         return;
       }
@@ -131,6 +134,13 @@ export function createViewerSave(deps: ViewerSaveDeps) {
         })
         .catch(() => fail());
     }
+  }
+
+  // The fresh bytes of an image: the reload failed when there are none.
+  function settleImage(rec: ViewerRecord, url: string | null | undefined, fail: () => void) {
+    if (!url) return fail();
+    if (rec.refused !== null) return reopenRefused(rec, { content: url });
+    return applyFresh(rec, url);
   }
 
   // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
@@ -150,6 +160,15 @@ export function createViewerSave(deps: ViewerSaveDeps) {
     // the pending `create()`, and setValue fires the change event, so the dirty
     // flag is cleared *after* the update, not before.
     rec.content = fresh;
+    paintFresh(rec, fresh);
+    rec.dirty = false;
+    rec.saveBtn?.classList.remove("dirty");
+    hideDiskBadge(rec);
+    window.WB.emit("reload", { project: rec.project, path: rec.path });
+  }
+
+  // Show the fresh bytes in the pane of their kind.
+  function paintFresh(rec: BytesRecord, fresh: string) {
     if (rec.kind === "image") {
       // A fresh `data:` URL repaints the pane; the `onload` handler re-reads the
       // intrinsic size, which an overwritten image may well have changed.
@@ -164,10 +183,6 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
     }
-    rec.dirty = false;
-    rec.saveBtn?.classList.remove("dirty");
-    hideDiskBadge(rec);
-    window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
   // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
@@ -182,5 +197,15 @@ export function createViewerSave(deps: ViewerSaveDeps) {
     if (b) b.style.display = "none";
   }
 
-  return { save, showSaveError, clearSaveError, descOf, reloadFile, readWith, applyFresh, showDiskBadge, hideDiskBadge };
+  return {
+    save,
+    showSaveError,
+    clearSaveError,
+    descOf,
+    reloadFile,
+    readWith,
+    applyFresh,
+    showDiskBadge,
+    hideDiskBadge,
+  };
 }

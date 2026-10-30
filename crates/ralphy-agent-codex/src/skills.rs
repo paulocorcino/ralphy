@@ -43,6 +43,15 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// A scratch directory may not exist, and a failed cleanup must not fail a test.
+    fn remove_scratch(path: &std::path::Path) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the directory may not exist, and a failed cleanup is harmless"
+        )]
+        let _ = fs::remove_dir_all(path);
+    }
+
     /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter
     /// must keep CALLING it rather than growing a second copy. Fragments are
     /// spliced with `concat!` so the assertion cannot match itself.
@@ -62,7 +71,7 @@ mod tests {
     #[test]
     fn materialize_codex_skills_extracts_required_skills() {
         let base = std::env::temp_dir().join(format!("ralphy-codex-skills-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -123,7 +132,7 @@ mod tests {
             "re-materialize must not duplicate ignore entries: {gi2:?}"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     #[test]
@@ -133,7 +142,7 @@ mod tests {
         // overwrite their `.agents/.gitignore`. Only ralphy's own subdirs are touched.
         let base =
             std::env::temp_dir().join(format!("ralphy-codex-userskill-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -168,7 +177,7 @@ mod tests {
             "gitignore: {gi:?}"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     #[test]

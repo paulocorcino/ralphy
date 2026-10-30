@@ -59,6 +59,15 @@
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
 
+#![expect(
+    clippy::let_underscore_must_use,
+    reason = "a test helper child: the parent may close its pipes, and no one reads its errors"
+)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "a test helper child: the parent test reads the exit code, so the child exits at once"
+)]
+
 use std::io::Write;
 use std::time::Duration;
 

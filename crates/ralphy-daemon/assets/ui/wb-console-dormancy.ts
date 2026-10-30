@@ -18,7 +18,7 @@ import { inTab } from "./wb-console-place.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
 
 const { keyboardInset } = WBConsoleInput;
@@ -184,7 +184,8 @@ export function createDormancy(deps: DormancyDeps) {
   // window of the stage, and none covers it (ADR-0037 §3d).
   function isCovered(win: ConsoleWin) {
     if (inTab(win) || fillsViewport(win)) return false;
-    for (const other of wins) if (other !== win && !inTab(other) && fillsViewport(other)) return true;
+    for (const other of wins)
+      if (other !== win && !inTab(other) && fillsViewport(other)) return true;
     return false;
   }
 
@@ -248,7 +249,7 @@ export function createDormancy(deps: DormancyDeps) {
       hiddenAt = 0;
       notePage(false);
       resumeAll(isStale(hiddenMs));
-      revivePlaceholders();
+      void revivePlaceholders();
     });
     // A page that closes, or that iOS freezes, may fire only this one.
     window.addEventListener("pagehide", () => notePage(true));
@@ -256,7 +257,7 @@ export function createDormancy(deps: DormancyDeps) {
     // so the restore this would catch cannot happen here.
     window.addEventListener("online", () => {
       resumeAll(true);
-      revivePlaceholders();
+      void revivePlaceholders();
       // Desk changes kept while the link was down go now.
       if (sync.hasPending()) scheduleDeskFlush(0);
     });

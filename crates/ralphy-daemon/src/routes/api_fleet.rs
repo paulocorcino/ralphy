@@ -168,7 +168,13 @@ async fn probe_one(d: peer::PeerDescriptor, probe_id: String, bound_port: u16) -
     // contributes no rows but is still listed (marked, never removed).
     let store = match status {
         peer::client::PeerStatus::Reachable => read_peer_repos(&d).await,
-        _ => None,
+        peer::client::PeerStatus::Unauthorized { .. }
+        | peer::client::PeerStatus::VersionMismatch { .. }
+        | peer::client::PeerStatus::Asleep { .. }
+        | peer::client::PeerStatus::Unreachable { .. }
+        | peer::client::PeerStatus::Refused { .. }
+        | peer::client::PeerStatus::TunnelClosed { .. }
+        | peer::client::PeerStatus::TunnelSilent { .. } => None,
     };
     (status, live_environment, store)
 }

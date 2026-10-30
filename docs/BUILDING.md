@@ -93,13 +93,25 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   the pull request adds a clone that the base branch does not have. An edit
   inside a clone that already exists also makes it new, because jscpd
   fingerprints the text of the clone. The job `complexity`, on every push
-  and pull request, runs `cargo run -p xtask -- complexity --check` with
-  the pinned oxlint binary. It fails when a production
-  function scores over 10 and `docs/complexity-baseline.json` does not list
-  it, or when a listed function scores higher or lower than its entry
-  (ADR-0081). The oxlint version and checksum are in the workflow `env`,
-  shared by `ui-tests` and `complexity` through
-  `.github/scripts/fetch-oxlint.sh`. The job `checks`, on every push and pull
+  and pull request, runs `cargo run -p xtask -- complexity --check`. It
+  fails when a Rust production function scores over 10 and has no
+  `// complexity-exception: <reason>` line above it (ADR-0081). The
+  TypeScript limit is oxlint's `complexity` rule in `.oxlintrc.json`, which
+  the `ui-tests` job runs. The oxlint version and checksum are in the
+  workflow `env`, read by `.github/scripts/fetch-oxlint.sh`. The same job
+  runs oxlint a second time with `--type-aware`, over the modules
+  `crates/ralphy-daemon/assets/ui/*.ts` by name: those rules read the types
+  through tsgolint. `TSGOLINT_VERSION` and `TSGOLINT_SHA256` in the workflow
+  `env` pin it; `.github/scripts/fetch-tsgolint.sh` downloads the npm
+  tarball of `@oxlint-tsgolint/linux-x64`, checks it, and oxlint finds the
+  binary through `OXLINT_TSGOLINT_PATH`. The job then runs `oxfmt --check`
+  over the same modules, with the settings in `.oxfmtrc.json` (width 100,
+  LF line ends). `OXFMT_VERSION` and `OXFMT_SHA256` in the workflow `env`
+  pin it, and `.github/scripts/fetch-oxfmt.sh` downloads the release
+  binary and checks it. A new oxfmt version can format some text in
+  another way, so each version raise comes with its own reformat commit,
+  which changes only the formatted files. The job `checks`, on every push
+  and pull
   request, runs four checks on Linux that no test makes: `actionlint` over
   the workflows (with the runner's `shellcheck` over their shell), `cargo
   machete` for a dependency that no source names, `typos` for spelling

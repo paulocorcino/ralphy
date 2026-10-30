@@ -59,8 +59,8 @@ function isLocal(row: Row) {
 }
 
 function groupKey(row: Row) {
-  // Not local, so `daemon` names the peer.
-  return isLocal(row) ? "local" : row.daemon!;
+  // A row that is not local has `daemon` set: it names the peer.
+  return row.daemon || "local";
 }
 
 function repoRef(row: Row) {
@@ -82,15 +82,20 @@ function isPeerRef(ref: string | null | undefined) {
 //
 // Order: local first, then peers by environment then name — stable, so the
 // sidebar does not reshuffle between polls.
-function fleetGroups(repos: readonly Project[] | null | undefined, peers: readonly FleetPeer[] | null | undefined) {
+function fleetGroups(
+  repos: readonly Project[] | null | undefined,
+  peers: readonly FleetPeer[] | null | undefined,
+) {
   const rows = repos || [];
   const peerList = peers || [];
 
   const groups = new Map<string, Group>();
   const ensure = (key: string, seed: GroupSeed) => {
-    if (!groups.has(key)) groups.set(key, Object.assign({ key: key, rows: [] as Project[] }, seed));
-    // Set just above when it was missing.
-    return groups.get(key)!;
+    const known = groups.get(key);
+    if (known) return known;
+    const made: Group = Object.assign({ key: key, rows: [] as Project[] }, seed);
+    groups.set(key, made);
+    return made;
   };
 
   for (const row of rows) ensure(groupKey(row), rowSeed(row)).rows.push(row);

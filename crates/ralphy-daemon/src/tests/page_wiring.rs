@@ -80,8 +80,9 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
 #[test]
 fn the_explorer_can_create_at_every_target_including_the_repo_root() {
     let js = include_str!("../../assets/ui/wb-files.ts");
+    let mount = include_str!("../../assets/ui/wb-files-mount.ts");
     assert!(
-        js.contains("this.showMenu(ev.clientX, ev.clientY, node || null)"),
+        mount.contains("files.showMenu(ev.clientX, ev.clientY, node || null)"),
         "the tree's contextmenu handler must open the menu for a NULL node \
          (empty space = the repo root), not return early"
     );

@@ -68,9 +68,9 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         "the flag path the shortcuts ask is the one the panel gives to scrim()"
     );
 
-    assert!(module.contains("apiFetch('GET /api/release'"));
+    assert!(module.contains("apiFetch(\"GET /api/release\""));
     assert!(
-        module.contains("view.severity !== 'none'"),
+        module.contains("view.severity !== \"none\""),
         "loudness is the daemon's answer, not a browser-side derivation"
     );
 
@@ -109,6 +109,10 @@ async fn api_release_watch_turns_the_watch_off_and_on() {
     // `set_watch_disabled_in(dir, !enable)`, and a sign flip would turn the
     // watch OFF when the operator asks to check again, silently.
     let dir = std::env::temp_dir().join(format!("ralphy-watch-route-{}", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch");
     let registry = dir.join("repos.toml");
@@ -161,6 +165,10 @@ async fn api_release_watch_turns_the_watch_off_and_on() {
     // Idempotent both ways, like the require-login toggle it is modelled on.
     assert_eq!(post("true").await.status(), StatusCode::OK);
     assert!(!release::watch_disabled_in(&dir));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
 }
 

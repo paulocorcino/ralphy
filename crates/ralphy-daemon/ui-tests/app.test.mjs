@@ -352,6 +352,7 @@ test("a create through the write seam asks the files to re-list the folder and r
   window.Alpine.store("modals").flash = () => {};
   try {
     for (const fn of listeners) await fn({ detail: { action: "create", project: "o/r", path: "src", kind: "file" } });
+    await new Promise((r) => setImmediate(r));
   } finally {
     globalThis.WBDaemon = realDaemon;
   }
@@ -471,6 +472,7 @@ function writeSeam(reply) {
     globalThis.WBDaemon = window.WBDaemon;
     try {
       for (const fn of listeners) await fn({ detail });
+      await new Promise((r) => setImmediate(r));
     } finally {
       globalThis.WBDaemon = realDaemon;
     }

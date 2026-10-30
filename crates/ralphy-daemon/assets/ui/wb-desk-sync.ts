@@ -9,7 +9,18 @@
 // `applyChange` is the daemon's `desk::apply` rule, in JavaScript. One table
 // of cases, `ui-tests/fixtures/api-desk--apply-cases.json`, runs on both
 // sides, so the two cannot drift apart.
-import type { Desk, DeskChange, DeskRecord, DeskFence, DeskNote, DeskRecordType, DeskWindowFields, DeskFenceFields, DeskNoteFields, Rect } from "./wb-types.d.ts";
+import type {
+  Desk,
+  DeskChange,
+  DeskRecord,
+  DeskFence,
+  DeskNote,
+  DeskRecordType,
+  DeskWindowFields,
+  DeskFenceFields,
+  DeskNoteFields,
+  Rect,
+} from "./wb-types.d.ts";
 
 // The desk this page draws: the served desk's four collections, each present.
 type DeskView = Required<Pick<Desk, "windows" | "fences" | "notes" | "checkouts">>;
@@ -30,7 +41,6 @@ type CreateChange = Extract<DeskChange, { op: "create" }>;
 type SetChange = Extract<DeskChange, { op: "set" }>;
 
 export const WBDeskSync = (function () {
-
   // The record types; each lives in the collection named by its plural.
   const TYPES = new Set(["window", "fence", "note"]);
 
@@ -41,7 +51,7 @@ export const WBDeskSync = (function () {
   // A served desk as the four collections, each a fresh array: a page never
   // mutates what the daemon sent.
   function deskOf(payload: ServedDesk): DeskView {
-    const list = <T,>(v: T[] | undefined) => (Array.isArray(v) ? v.slice() : []);
+    const list = <T>(v: T[] | undefined) => (Array.isArray(v) ? v.slice() : []);
     const map = payload?.checkouts;
     return {
       windows: list(payload?.windows),
@@ -171,25 +181,31 @@ export const WBDeskSync = (function () {
     const list: AnyRecord[] = desk[key];
     const id = op === "create" ? change.record?.id : change.id;
     const at = list.findIndex((r) => r.id === id);
-    let next;
-    if (op === "create") {
-      next = createIn(list, at, change);
-    } else if (op === "set") {
-      next = setIn(list, at, change);
-    } else if (op === "remove") {
-      next = at < 0 ? null : list.filter((r) => r.id !== id);
-    } else {
-      return unchanged;
-    }
+    const next = changedList(list, at, id, change);
     if (!next) return unchanged;
     return { desk: { ...desk, [key]: next }, changed: true };
+  }
+
+  // The list after a change of the record `id` at index `at` (-1: none has
+  // the id), or null when nothing changed or the op changes no record.
+  function changedList(
+    list: AnyRecord[],
+    at: number,
+    id: string | undefined,
+    change: DeskChange,
+  ): AnyRecord[] | null {
+    if (change.op === "create") return createIn(list, at, change);
+    if (change.op === "set") return setIn(list, at, change);
+    if (change.op === "remove") return at < 0 ? null : list.filter((r) => r.id !== id);
+    return null;
   }
 
   // A checkout selects a tree for one project; a checkout-clear clears the
   // name it saw go.
   function applyCheckout(desk: DeskView, change: CheckoutChange) {
     const held = desk.checkouts[change.repo];
-    if (change.op === "checkout" ? held === change.name : held !== change.ifName) return { desk, changed: false };
+    if (change.op === "checkout" ? held === change.name : held !== change.ifName)
+      return { desk, changed: false };
     const checkouts = { ...desk.checkouts };
     if (change.op === "checkout") checkouts[change.repo] = change.name;
     else delete checkouts[change.repo];
@@ -202,7 +218,9 @@ export const WBDeskSync = (function () {
     if (at < 0) return list.concat([{ ...change.record }]);
     // A page that adopted a running console: only its session is news.
     if (change.type !== "window") return null;
-    const rec = { ...list[at] };
+    const base = list[at];
+    if (!base) return null;
+    const rec = { ...base };
     const r = change.record;
     const did = setFields("window", rec, {
       session: { sessionId: r.sessionId, daemonId: r.daemonId, environment: r.environment },
@@ -217,8 +235,9 @@ export const WBDeskSync = (function () {
   // changed.
   function setIn(list: AnyRecord[], at: number, change: SetChange): AnyRecord[] | null {
     // Deleted elsewhere: a change must not bring it back.
-    if (at < 0) return null;
-    const rec = { ...list[at] };
+    const base = list[at];
+    if (!base) return null;
+    const rec = { ...base };
     if (!setFields(change.type, rec, change.fields || {})) return null;
     const next = list.slice();
     next[at] = rec;

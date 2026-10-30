@@ -37,6 +37,19 @@ function saveClientSetting(settings: Record<string, unknown>, key: string, value
   }
 }
 
+// The project's resolved values over the dialog's fields: a key the schema
+// does not offer, and a null, leave the field as it is.
+function copyProjectConfig(
+  settings: Record<string, unknown>,
+  cfg: { [key: string]: JsonValue | undefined },
+) {
+  for (const k in cfg) {
+    // Never round-trip the MASKED secret: a save would persist the mask.
+    if (k === "events.token") continue;
+    if (cfg[k] !== null && k in settings) settings[k] = cfg[k];
+  }
+}
+
 // The run-lock-aware config Mutates; an empty/"unset" value clears the
 // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
 async function writeProjectSetting(
@@ -53,7 +66,9 @@ async function writeProjectSetting(
       value: String(value),
     });
     if (WBFail.isError(reply)) {
-      dialog.$store.modals.flash(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
+      dialog.$store.modals.flash(
+        WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."),
+      );
     }
   } catch {
     // No daemon reachable — leave the optimistic setting in place.
@@ -85,7 +100,8 @@ export function settingsDialog() {
       this.settings["consoles.relaunch_on_load"] = view?.relaunch === true;
       this.settings["consoles.key_bar"] = view?.keys ?? "unset";
       // The size the consoles show now: the key bar's A−/A+ write the same field.
-      this.settings["consoles.font_size"] = window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
+      this.settings["consoles.font_size"] =
+        window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
       this.readSettings();
     },
     // The open repo's resolved config (`config.get`), merged over the schema
@@ -102,13 +118,7 @@ export function settingsDialog() {
                 "Could not read the settings: the daemon gave no reason.",
               );
             }
-            if (cfg && typeof cfg === "object") {
-              for (const k in cfg) {
-                // Never round-trip the MASKED secret: a save would persist the mask.
-                if (k === "events.token") continue;
-                if (cfg[k] !== null && k in this.settings) this.settings[k] = cfg[k];
-              }
-            }
+            if (cfg && typeof cfg === "object") copyProjectConfig(this.settings, cfg);
           })
           .catch(() => {
             this.settingsError = "Could not read the settings: the daemon did not answer";
@@ -127,7 +137,7 @@ export function settingsDialog() {
     deskHistory: { loaded: false, rows: [] as DeskRow[], error: "" },
     showSettingsSection(id: string) {
       this.settingsSection = id;
-      if (id === "desk-history") this.loadDeskHistory();
+      if (id === "desk-history") void this.loadDeskHistory();
     },
     async loadDeskHistory() {
       this.deskHistory.error = "";
@@ -229,7 +239,9 @@ export function settingsDialog() {
         return;
       }
       if (this.$store.projects.openSlug && this.settingsError) {
-        this.$store.modals.flash("Could not change the setting: the settings were not read. Open the settings again.");
+        this.$store.modals.flash(
+          "Could not change the setting: the settings were not read. Open the settings again.",
+        );
         return;
       }
       if (this.$store.projects.openSlug) {

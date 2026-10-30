@@ -151,6 +151,10 @@ impl KeptOutput {
 pub(super) fn publish(kept: &Mutex<KeptOutput>, tx: &broadcast::Sender<Vec<u8>>, chunk: Vec<u8>) {
     let mut kept = kept.lock().expect("kept output mutex");
     kept.push(&chunk);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a send with no receiver is a no-op: the kept bytes serve the next attach"
+    )]
     let _ = tx.send(chunk);
     drop(kept);
 }

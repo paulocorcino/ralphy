@@ -106,7 +106,9 @@ fn models_array(obj: &Value) -> Result<Vec<Value>> {
     let parsed: Value = serde_json::from_str(raw).context("parsing the nested `models` array")?;
     match parsed {
         Value::Array(v) => Ok(v),
-        _ => Err(anyhow!("`models` is not a JSON array")),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            Err(anyhow!("`models` is not a JSON array"))
+        }
     }
 }
 
@@ -260,24 +262,7 @@ pub fn fetch_catalog() -> Result<CopilotCatalog> {
     }
     // The exit status is never inspected: it is 0 on some hosts and 1 on others
     // for the very same intended failure.
-    let mut log = String::new();
-    if let Ok(entries) = std::fs::read_dir(dir.path()) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            // A fresh dir yields one `process-<epoch>-<pid>.log`, but the name is
-            // the vendor's to choose — match the extension case-insensitively.
-            if path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("log"))
-            {
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    log.push_str(&text);
-                    log.push('\n');
-                }
-            }
-        }
-    }
+    let mut log = read_probe_logs(dir.path());
     // Both streams carry the same markers under `--log-level all`, and the
     // rejection notice lands on stderr even when no log file was written.
     log.push_str(&out.stdout);
@@ -286,6 +271,32 @@ pub fn fetch_catalog() -> Result<CopilotCatalog> {
     let catalog = parse_catalog(&log, &session_id);
     drop(dir);
     catalog
+}
+
+/// Every `*.log` file the probe wrote into `dir`, each followed by a newline.
+/// A file that cannot be read is skipped.
+fn read_probe_logs(dir: &std::path::Path) -> String {
+    let mut log = String::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return log;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // A fresh dir yields one `process-<epoch>-<pid>.log`, but the name is
+        // the vendor's to choose — match the extension case-insensitively.
+        let is_log = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("log"));
+        if !is_log {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            log.push_str(&text);
+            log.push('\n');
+        }
+    }
+    log
 }
 
 #[cfg(test)]

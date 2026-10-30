@@ -10,7 +10,7 @@
 --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
-import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal-types.d.ts";
 
 const { pasteOffered, rightClickAction, pasteDecision, scrubClipboard } = WBConsoleInput;
 
@@ -38,7 +38,17 @@ export type PasteDeps = {
 };
 
 export function wirePaste(deps: PasteDeps) {
-  const { term, body, window, opts, writeClipboard, readClipboard, watchingNow, replayingNow, currentRepoNow } = deps;
+  const {
+    term,
+    body,
+    window,
+    opts,
+    writeClipboard,
+    readClipboard,
+    watchingNow,
+    replayingNow,
+    currentRepoNow,
+  } = deps;
 
   // A pasted IMAGE is not text (ADR-0055): xterm forwards only `text/plain`.
   // The bytes become a clipboard drop (`image.write`) and the drop's PATH is
@@ -63,10 +73,18 @@ export function wirePaste(deps: PasteDeps) {
       term.write("\r\n[paste refused — daemon not connected]\r\n");
       return true;
     }
+    // "drop" means the size was read from a file, so `file` is set here.
+    if (!file) {
+      term.write("\r\n[paste refused — unreadable]\r\n");
+      return true;
+    }
     const reader = new FileReader();
     reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
     reader.onload = () => {
-      const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
+      const base64 = (typeof reader.result === "string" ? reader.result : "").replace(
+        /^data:[^,]*,/,
+        "",
+      );
       daemon
         .write("image.write", { repo: currentRepoNow(), base64 })
         .then((reply) => {
@@ -79,20 +97,25 @@ export function wirePaste(deps: PasteDeps) {
           term.focus();
         })
         // The socket closed with no reply: say what the browser saw.
-        .catch((err: { message?: string } | null | undefined) => {
-          const why = (err && err.message) || "connection unavailable";
+        .catch((err: unknown) => {
+          const why = (err instanceof Error && err.message) || "connection unavailable";
           term.write(`\r\n[paste refused — ${why}]\r\n`);
         });
     };
-    // `file` is set: a missing one has size -1, and `pasteDecision` refuses it.
-    reader.readAsDataURL(file!);
+    reader.readAsDataURL(file);
     return true;
   };
   term.textarea.addEventListener("paste", (e: ClipboardEvent) => {
     const items: DataTransferItem[] = Array.from(e.clipboardData?.items ?? []);
     const image = items.find((i) => i.type.startsWith("image/"));
     const file = image ? image.getAsFile() : null;
-    if (dropImage(items.map((i) => i.type), file)) e.preventDefault();
+    if (
+      dropImage(
+        items.map((i) => i.type),
+        file,
+      )
+    )
+      e.preventDefault();
   });
 
   // OSC 52 — "put this on the clipboard". xterm's core does not implement
@@ -110,7 +133,8 @@ export function wirePaste(deps: PasteDeps) {
     // NEVER return the clipboard promise: `OscHandler.end` PAUSES the parser
     // on a promise, and a rejected write (unfocused document) would stall
     // the terminal.
-    const replaying = replayingNow(), watching = watchingNow();
+    const replaying = replayingNow(),
+      watching = watchingNow();
     if (replaying || watching) return true;
     const semi = data.indexOf(";");
     if (semi < 0) return true;

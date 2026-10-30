@@ -44,6 +44,20 @@ type UploadAsk = {
   error: string;
 };
 
+// A function, not a cast on the literal: the type-aware lint flags that cast.
+function closedUpload(): UploadAsk {
+  return {
+    open: false,
+    repo: "",
+    folder: "",
+    rows: [],
+    limitMb: DEFAULT_MAX_MB,
+    choice: "keep_both",
+    busy: false,
+    error: "",
+  };
+}
+
 // The files of the open dialog. Outside the component: Alpine's Proxy would
 // wrap each `File`, and a `File` read through a Proxy throws.
 let pending: (Blob & { name: string })[] = [];
@@ -71,16 +85,7 @@ export function conflictFor(row: UploadRow, choice: ExistingChoice): OnConflict 
 export function wbUploadDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
-    upload: {
-      open: false,
-      repo: "",
-      folder: "",
-      rows: [],
-      limitMb: DEFAULT_MAX_MB,
-      choice: "keep_both",
-      busy: false,
-      error: "",
-    } as UploadAsk,
+    upload: closedUpload(),
 
     // On `workbench:upload-open`.
     async openUpload(ask: UploadOpen) {
@@ -99,13 +104,19 @@ export function wbUploadDialog() {
         WBDaemon.observe("config.get", { repo: ask.repo }).catch(() => null),
         WBDaemon.observe("tree.list", { repo: ask.repo, path: ask.folder }).catch(() => null),
       ]);
-      if (!this.upload.open || this.upload.repo !== ask.repo || this.upload.folder !== ask.folder) return;
+      if (!this.upload.open || this.upload.repo !== ask.repo || this.upload.folder !== ask.folder)
+        return;
       this.upload.busy = false;
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
-        this.upload.error = WBFail.failed(listing, "Could not list the folder: the daemon gave no reason.");
+        this.upload.error = WBFail.failed(
+          listing,
+          "Could not list the folder: the daemon gave no reason.",
+        );
         return;
       }
-      const limit = limitMb(config && !WBFail.isError(config) ? config.config?.["files.upload_max_mb"] : undefined);
+      const limit = limitMb(
+        config && !WBFail.isError(config) ? config.config?.["files.upload_max_mb"] : undefined,
+      );
       // NTFS and APFS match names without case, so a name that differs only
       // in case is asked about too.
       const names = new Set(listing.entries.map((e) => e.name.toLowerCase()));
@@ -133,7 +144,9 @@ export function wbUploadDialog() {
       return pending.flatMap((file, i) => {
         const row = this.upload.rows[i];
         const onConflict = row && !row.tooBig ? conflictFor(row, this.upload.choice) : null;
-        return onConflict ? [{ file, repo: this.upload.repo, folder: this.upload.folder, onConflict }] : [];
+        return onConflict
+          ? [{ file, repo: this.upload.repo, folder: this.upload.folder, onConflict }]
+          : [];
       });
     },
 
@@ -151,7 +164,9 @@ export function wbUploadDialog() {
       const requests = this.uploadRequests();
       this.upload.open = false;
       pending = [];
-      this.$store.uploads.add(requests);
+      this.$store.uploads
+        .add(requests)
+        .catch(() => this.$store.modals.flash("Could not send the files."));
     },
   });
 }
@@ -170,7 +185,12 @@ function carriesFiles(event: DragEvent): boolean {
 /** Open the dialog for the files dropped or picked for `folder` ("" is the
  * project root). A folder in the drop, a worktree and a folder inside `.git`
  * or `.ralphy` are refused with a message. */
-export function askUpload(tree: DropTree, folder: string, files: ArrayLike<Blob & { name: string }>, items?: DataTransferItemList) {
+export function askUpload(
+  tree: DropTree,
+  folder: string,
+  files: ArrayLike<Blob & { name: string }>,
+  items?: DataTransferItemList,
+) {
   const flash = (msg: string) => tree.$store.modals.flash(msg);
   const dropped = items ? Array.from(items) : [];
   if (dropped.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {

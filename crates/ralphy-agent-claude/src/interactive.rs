@@ -18,16 +18,20 @@ use tracing::info;
 
 use crate::api_watch::{ApiWatch, ApiWatchAction};
 use crate::auth::{is_claude_auth_error, transcript_limit, CLAUDE_AUTH_ERROR_MSG};
+use crate::cleanup::remove_stale_file;
 use crate::headless::classify_outcome;
 use crate::plan::materialize_plugin;
-use crate::usage::{dirs_home, latest_transcript_text, latest_transcript_text_since};
+use crate::usage::{latest_transcript_text, latest_transcript_text_since};
 use crate::ClaudeAgent;
 
+mod first_run;
 mod proof;
+use first_run::ensure_interactive_session_ready;
 use proof::{status_len, ProofWait};
 #[cfg(test)]
 use {
     crate::EXEC_CHARTER,
+    first_run::{with_onboarding_completed, with_workspace_trusted},
     proof::{charter_keys, GateAction, ProofGate},
 };
 
@@ -95,8 +99,8 @@ impl ClaudeAgent {
             return self.execute_headless(plan, ws);
         }
 
-        std::fs::create_dir_all(&self.run_dir).ok();
-        std::fs::create_dir_all(ws.ralphy_dir()).ok();
+        std::fs::create_dir_all(&self.run_dir).context("creating the run directory")?;
+        std::fs::create_dir_all(ws.ralphy_dir()).context("creating the .ralphy directory")?;
 
         // The live session reads the charter from disk (the headless copy keeps
         // the binary self-contained).
@@ -127,7 +131,7 @@ impl ClaudeAgent {
         // 2026-07-24).
         let exec_effort = self.resolve_exec_effort(plan);
         let flag_file = self.run_dir.join("status.flag");
-        let _ = std::fs::remove_file(&flag_file);
+        remove_stale_file(&flag_file);
         // The agent-state tail (ADR-0059 §3): the hooks append, the watcher
         // thread folds and emits transitions for as long as the child runs.
         let status = crate::status::Watcher::start(&self.run_dir)?;
@@ -186,7 +190,7 @@ impl ClaudeAgent {
         // `return`/`?` between `spawn` and `kill`.
         let mut respawned = false;
         let outcome = loop {
-            let _ = std::fs::remove_file(&flag_file);
+            remove_stale_file(&flag_file);
             // One gate per child: it reads only the lines written after its spawn.
             let mut proof = ProofWait::new(
                 status.path().to_path_buf(),
@@ -207,6 +211,10 @@ impl ClaudeAgent {
             );
             // Reclaim: kill the tree and drop the session (closes the ConPTY).
             // Unconditional so the child never outlives us on error paths.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the child may have exited already, and the tree is reclaimed"
+            )]
             let _ = session.kill();
             match respawn_step(end?, &mut respawned) {
                 RespawnStep::Done(o) => break o,
@@ -363,11 +371,19 @@ impl<'a> SessionPump<'a> {
     fn drain(&mut self, session: &mut PtySession) {
         while let Ok(chunk) = self.rx.try_recv() {
             if scan_dsr_request(&mut self.dsr_carry, &chunk) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a closed terminal ends the session on the next poll"
+                )]
                 let _ = session.write_all(CURSOR_POSITION_REPLY);
             }
             self.login_watch.feed(&chunk);
             self.api_watch.feed(&chunk);
             if let Some(f) = self.log.as_mut() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the transcript log is a copy for the operator, not the run"
+                )]
                 let _ = f.write_all(&chunk);
             }
         }
@@ -438,7 +454,11 @@ fn classify_exit(
     let stopped = matches!(exit, SessionExit::Stopped);
     let limit_transcript = match exit {
         SessionExit::Limit(t) => Some(t),
-        _ => None,
+        SessionExit::Flag
+        | SessionExit::Stopped
+        | SessionExit::TimedOut
+        | SessionExit::ChildExited
+        | SessionExit::Respawn => None,
     };
 
     let flag = std::fs::read_to_string(flag_file).ok();
@@ -604,66 +624,6 @@ impl LoginTuiWatch {
     fn detected(&self) -> bool {
         !self.disarmed && is_login_tui_output(&self.buf)
     }
-}
-
-/// Pre-clear the first-run gates that block an *interactive* Claude session for
-/// `repo_root`: the workspace-trust dialog AND the theme/onboarding wizard. The
-/// headless `-p` planning path is exempt from both, but a live session stalls on
-/// either forever waiting for a keypress — so an autonomous orchestrator must
-/// grant up front what the operator would otherwise click. (Observed in the wild:
-/// on a profile with `hasCompletedOnboarding=false`, every live exec hung at
-/// "Choose the text style…" and silently burned the whole budget.) Best-effort:
-/// reads `~/.claude.json`, sets the flags, and writes it back, preserving
-/// everything else. A failure here just means the live session may stall
-/// (surfaced as a Timeout), never a crash.
-fn ensure_interactive_session_ready(repo_root: &Path) {
-    let Some(home) = dirs_home() else {
-        return;
-    };
-    let cfg_path = home.join(".claude.json");
-    let root = std::fs::read_to_string(&cfg_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    // Claude keys projects by the cwd it is launched with; we launch it at
-    // `repo_root`, whose display form uses forward slashes on every platform.
-    let key = repo_root.to_string_lossy().replace('\\', "/");
-    let updated = with_onboarding_completed(with_workspace_trusted(root, &key));
-    if let Ok(s) = serde_json::to_string_pretty(&updated) {
-        let _ = std::fs::write(&cfg_path, s);
-    }
-}
-
-/// Set `projects[key].hasTrustDialogAccepted = true` on a parsed `~/.claude.json`,
-/// creating the `projects` map and the per-project entry as needed and leaving
-/// all other content untouched. Pure, so it unit-tests without the filesystem.
-fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> serde_json::Value {
-    use serde_json::{json, Value};
-    if let Some(obj) = root.as_object_mut() {
-        let projects = obj.entry("projects").or_insert_with(|| json!({}));
-        if let Some(projects) = projects.as_object_mut() {
-            let entry = projects.entry(key.to_string()).or_insert_with(|| json!({}));
-            if let Some(entry) = entry.as_object_mut() {
-                entry.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
-            }
-        }
-    }
-    root
-}
-
-/// Mark Claude Code's first-run onboarding wizard complete on a parsed
-/// `~/.claude.json`, so an interactive session boots straight into the prompt
-/// instead of the "Let's get started" / theme picker. Sets the top-level
-/// `hasCompletedOnboarding` flag and seeds a `theme` only when one is absent (so
-/// a user's chosen theme is never overwritten). Leaves all other content intact.
-/// Pure, so it unit-tests without the filesystem.
-fn with_onboarding_completed(mut root: serde_json::Value) -> serde_json::Value {
-    use serde_json::{json, Value};
-    if let Some(obj) = root.as_object_mut() {
-        obj.insert("hasCompletedOnboarding".into(), Value::Bool(true));
-        obj.entry("theme").or_insert_with(|| json!("dark"));
-    }
-    root
 }
 
 /// Resolve the `claude` executable to an absolute path, mirroring the ps1

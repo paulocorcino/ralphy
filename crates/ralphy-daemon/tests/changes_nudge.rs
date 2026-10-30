@@ -11,6 +11,11 @@
 //! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE`/`RALPHY_TEST_*` are
 //! process-global. Both tests set the SAME values, so they may run in parallel.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -46,8 +51,13 @@ fn run_command(slug: &str) -> Message {
 /// — the caller must HOLD that sender: dropping it makes `shutdown.changed()`
 /// resolve `Err` at once, which every handler reads as shutdown and closes on.
 async fn serve(registry_path: std::path::PathBuf) -> (u16, tokio::sync::watch::Sender<bool>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -59,7 +69,9 @@ async fn serve(registry_path: std::path::PathBuf) -> (u16, tokio::sync::watch::S
         ralphy_daemon::auth::AuthState::localhost(),
     );
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     (port, tx)
 }

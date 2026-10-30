@@ -72,7 +72,11 @@ export type FoldRecord = Pick<DeskRecord, "id" | "sessionId" | "checkout"> & {
   agent?: string | null;
   kind?: string | null;
 };
-export function reconcileDesk<S extends LiveSession, R extends FoldRecord = DeskRecord>({ layout, sessions, relaunchAgents = false }: ReconcileInput<S, R>) {
+export function reconcileDesk<S extends LiveSession, R extends FoldRecord = DeskRecord>({
+  layout,
+  sessions,
+  relaunchAgents = false,
+}: ReconcileInput<S, R>) {
   const live = sessions || [];
   const used = new Set<number>();
   const out: DeskVerdict<S, R>[] = [];
@@ -92,9 +96,10 @@ export function reconcileDesk<S extends LiveSession, R extends FoldRecord = Desk
           s.kind === record.kind,
       );
     }
-    if (i >= 0) {
+    const session = live[i];
+    if (session) {
       used.add(i);
-      out.push({ record, session: live[i], action: "attach" });
+      out.push({ record, session, action: "attach" });
     } else {
       // A shell is free and idempotent, so it comes back by itself; an agent
       // console waits for a click — loading a page must never spawn a vendor
@@ -127,16 +132,17 @@ export function reconcileDesk<S extends LiveSession, R extends FoldRecord = Desk
       return;
     }
     // Widened to write: a `relaunch` or `placeholder` verdict becomes `attach`.
-    const waiting: { session: S | null; action: DeskVerdict<S, R>["action"] } | undefined = out.find(
-      ({ record, action }) =>
-        action !== "attach" &&
-        // An `adopt` entry pushed for an earlier session has no record.
-        record != null &&
-        record.repo === s.repo &&
-        record.agent === s.agent &&
-        record.kind === s.kind &&
-        (record.checkout ?? null) === (s.checkout ?? null),
-    );
+    const waiting: { session: S | null; action: DeskVerdict<S, R>["action"] } | undefined =
+      out.find(
+        ({ record, action }) =>
+          action !== "attach" &&
+          // An `adopt` entry pushed for an earlier session has no record.
+          record != null &&
+          record.repo === s.repo &&
+          record.agent === s.agent &&
+          record.kind === s.kind &&
+          (record.checkout ?? null) === (s.checkout ?? null),
+      );
     if (waiting) {
       waiting.session = s;
       waiting.action = "attach";
@@ -166,8 +172,7 @@ export function placeholderSession<S extends LiveSession>({
 }) {
   const shown = (s: S) =>
     held.some(
-      (h) =>
-        h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
+      (h) => h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
     );
   const verdict = reconcileDesk({
     layout,
@@ -196,11 +201,14 @@ export function columnClasses(
 // The repos a fence's members belong to, for the fence's chrome. Deduped,
 // sorted (DOM order is not stable), `"~"` rendered as `home` like `list()`.
 export function fenceRepos(members: readonly ({ repo?: string } | undefined)[]) {
-  const names = new Set<string | null | undefined>((members || []).map((m) => (m?.repo === "~" ? "home" : m?.repo)));
-  names.delete(undefined);
-  names.delete(null);
-  names.delete("");
-  return [...names].sort().join(" · ");
+  const names = new Set<string>();
+  for (const m of members || []) {
+    const repo = m?.repo === "~" ? "home" : m?.repo;
+    if (repo) names.add(repo);
+  }
+  // The members of a `Set` are distinct, so there is no tie; `<` compares UTF-16
+  // code units, as the sort without a compare function does.
+  return [...names].sort((a, b) => (a < b ? -1 : 1)).join(" · ");
 }
 
 // One fence readout for BOTH the fence's chrome and the toolbar list (#343):
@@ -286,8 +294,8 @@ export function fenceCycle(
   if (!order.length) return null;
   const d = step < 0 ? -1 : 1;
   const at = order.findIndex((f) => f.id === currentId);
-  if (at < 0) return (d > 0 ? order[0] : order[order.length - 1]).id;
-  return order[(at + d + order.length) % order.length].id;
+  if (at < 0) return order.at(d > 0 ? 0 : -1)?.id ?? null;
+  return order[(at + d + order.length) % order.length]?.id ?? null;
 }
 
 // How many fences may be detached at once: a popup is a real OS window with
@@ -338,8 +346,12 @@ export function noteNameOk(
 ) {
   const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
   if (!held || !record || record.id !== msg.noteId || record.path) return false;
-  const path = msg.path;
-  // Relative to the repo: no parent step, no root, no drive letter.
+  return isNotePath(msg.path);
+}
+
+// A path that names a note relative to the repo: no parent step, no root, no
+// drive letter.
+function isNotePath(path: unknown) {
   return (
     typeof path === "string" &&
     path.endsWith(".note") &&

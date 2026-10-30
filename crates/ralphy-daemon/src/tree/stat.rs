@@ -82,9 +82,12 @@ pub struct Stat {
 /// out-of-root path is [`ReadError::NotFound`], as for every Observe read.
 /// `fallback` is the repo's single-byte page ([`crate::textcodec::fallback_for`]).
 pub fn stat(root: &Path, rel: &str, fallback: &'static Encoding) -> Result<Stat, ReadError> {
-    let base = confine::confine(root, "").map_err(|_| ReadError::NotFound)?;
-    let path = confine::confine(root, rel).map_err(|_| ReadError::NotFound)?;
-    let meta = std::fs::metadata(&path).map_err(|_| ReadError::NotFound)?;
+    let base = confine::confine(root, "")
+        .map_err(|e| confine::miss(ReadError::NotFound, "confining the root", &e))?;
+    let path = confine::confine(root, rel)
+        .map_err(|e| confine::miss(ReadError::NotFound, "confining the path", &e))?;
+    let meta = std::fs::metadata(&path)
+        .map_err(|e| confine::miss(ReadError::NotFound, "reading the file facts", &e))?;
     let is_dir = meta.is_dir();
     let parts = ignored::components_below(&base, &path);
     let file_type = if is_dir {

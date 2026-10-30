@@ -20,6 +20,10 @@ fn payload_str<'a>(cmd: &'a protocol::Command, key: &str) -> &'a str {
 /// one place every Observe verb takes its `path`: it becomes a rel PREFIX under
 /// the same registered root (`checkout::from_payload`), so confinement never
 /// learns a second root. `runs.list` ignores it (runs are primary-tree state).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the effect class sends only Observe verbs here and `Verb` has over 60 variants"
+)]
 pub(super) async fn observe(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
@@ -159,7 +163,12 @@ async fn file_stat(
     let repo_root = repo_path.to_path_buf();
     let settings_root = repo_path.to_path_buf();
     let read = blocking_read(move || {
-        let root = properties_root(repo_root, walk_rel).map_err(|_| tree::ReadError::NotFound)?;
+        // A path outside the root answers like a missing one: no reply says which.
+        let root = properties_root(repo_root, walk_rel).map_err(|error| match error {
+            confine::ConfineError::Escape | confine::ConfineError::NotFound => {
+                tree::ReadError::NotFound
+            }
+        })?;
         // The primary's settings, not the checkout's, as for the searches.
         tree::stat(&root, &path, textcodec::fallback_for(&settings_root))
     })
@@ -181,7 +190,12 @@ async fn tree_size(
     let (walk_rel, path) = properties_target(checkout, asked);
     let repo_root = repo_path.to_path_buf();
     let sized = blocking_read(move || {
-        let root = properties_root(repo_root, walk_rel).map_err(|_| tree::SizeError::NotFound)?;
+        // A path outside the root answers like a missing one: no reply says which.
+        let root = properties_root(repo_root, walk_rel).map_err(|error| match error {
+            confine::ConfineError::Escape | confine::ConfineError::NotFound => {
+                tree::SizeError::NotFound
+            }
+        })?;
         tree::size(&root, &path, tree::SizeBudget::default(), &tree::size::SLOT)
     })
     .await;

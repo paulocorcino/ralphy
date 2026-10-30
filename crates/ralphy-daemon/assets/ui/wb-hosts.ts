@@ -11,10 +11,21 @@ import { isRecord } from "./wb-api.ts";
 export type Alias = { alias: string; hostname?: string; user?: string; port?: number | string };
 
 /** One check of `host check`, as the dialog keeps it. */
-export type Check = { id: string; label: string; status: string; text: string; command: string | null };
+export type Check = {
+  id: string;
+  label: string;
+  status: string;
+  text: string;
+  command: string | null;
+};
 
 /** What `ralphy host install` would send. */
-export type Install = { version: string; target: string; source: "release" | "this-computer"; folder: string };
+export type Install = {
+  version: string;
+  target: string;
+  source: "release" | "this-computer";
+  folder: string;
+};
 
 export type Failure = { kind: string; message: string; keyLine?: string | null };
 
@@ -25,7 +36,12 @@ export type HostKey = { fingerprint: string; [field: string]: unknown };
 export type KeyReply = { state?: string; keys?: HostKey[]; reason?: string };
 
 /** A paired host, as the list passes it to Edit. */
-export type PeerHost = { daemon_id?: string; name?: string; destination?: string; identity_file?: string };
+export type PeerHost = {
+  daemon_id?: string;
+  name?: string;
+  destination?: string;
+  identity_file?: string;
+};
 
 export type State = {
   open: boolean;
@@ -60,7 +76,14 @@ export type State = {
 /** One JSON line of the CLI's `--json` mode. */
 export type Progress =
   | { event: "connected"; os?: string }
-  | { event: "check"; id: string; label?: string; status: string; text?: string; command?: string | null }
+  | {
+      event: "check";
+      id: string;
+      label?: string;
+      status: string;
+      text?: string;
+      command?: string | null;
+    }
   | { event: "fixed"; id: string }
   | { event: "install"; version?: string; target?: string; source?: string; folder?: string }
   | { event: "note"; text?: string }
@@ -87,7 +110,11 @@ export type Action =
   | { type: "exit"; verb: string; code: number | null | undefined }
   | { type: "help-tab"; tab: string };
 
-export type HelpTab = { id: string; name: string; steps: { text: string | null; command: string | null }[] };
+export type HelpTab = {
+  id: string;
+  name: string;
+  steps: { text: string | null; command: string | null }[];
+};
 
 export function initial(): State {
   return {
@@ -145,7 +172,11 @@ export function destination(s: State): string {
 // The form fields `destination` was built from, to fill the form when a
 // host is edited. A destination without `@` is an address or an SSH config
 // alias; either way it goes back into the Host field unchanged.
-export function fields(dest: unknown): { user: string; address: string; port: string } {
+export function fields(dest: string | null | undefined): {
+  user: string;
+  address: string;
+  port: string;
+} {
   let d = String(dest || "").trim();
   let port = "";
   if (d.indexOf("ssh://") === 0) {
@@ -167,7 +198,10 @@ function fresh(s: State, tab: State["tab"]): State {
 
 // Split raw output into JSON-line events. `buf` carries a partial last line
 // to the next chunk; a line that is not an event object is dropped.
-export function feed(buf: unknown, chunk: unknown): { rest: string; events: Progress[] } {
+export function feed(
+  buf: string | null | undefined,
+  chunk: string | null | undefined,
+): { rest: string; events: Progress[] } {
   const parts = (String(buf || "") + String(chunk || "")).split("\n");
   // `split` always returns at least one part.
   const rest = parts.pop() ?? "";
@@ -192,7 +226,7 @@ export function feed(buf: unknown, chunk: unknown): { rest: string; events: Prog
 
 // The CLI's errors are chained, so they start lowercase; shown alone they
 // start a sentence.
-function sentence(text: unknown): string {
+function sentence(text: string | null | undefined): string {
   const t = String(text || "");
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
@@ -233,11 +267,11 @@ function failedState(s: State, ev: Extract<Progress, { event: "failed" }>): Stat
     message: sentence(ev.message),
     keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
   };
-  const next: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
+  const after: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
   // Sign-in failed: back to the fields, where the password is typed.
-  if (ev.kind === "auth_refused") next.step = "connection";
-  if (ev.kind === "password_refused") Object.assign(next, { step: "connection", password: "" });
-  return next;
+  if (ev.kind === "auth_refused") after.step = "connection";
+  if (ev.kind === "password_refused") Object.assign(after, { step: "connection", password: "" });
+  return after;
 }
 
 // One progress event of the CLI's `--json` mode.
@@ -305,7 +339,12 @@ function keyState(s: State, key: KeyReply): State {
       failure: { kind: "unreachable", message: sentence(key.reason) },
     });
   }
-  return Object.assign({}, s, { step: "checks" as const, failure: null, help: false, autoTried: false });
+  return Object.assign({}, s, {
+    step: "checks" as const,
+    failure: null,
+    help: false,
+    autoTried: false,
+  });
 }
 
 // A `host.*` command ended with `ev.code`.
@@ -314,7 +353,9 @@ function exitState(s: State, ev: Extract<Action, { type: "exit" }>): State {
     if (ev.verb !== "host.add") return Object.assign({}, s, { busy: false });
     // An edit goes back to the list it started from; a new host gets
     // a last step that says it was added.
-    return s.editing ? fresh(s, "hosts") : Object.assign({}, s, { step: "done" as const, busy: false });
+    return s.editing
+      ? fresh(s, "hosts")
+      : Object.assign({}, s, { step: "done" as const, busy: false });
   }
   const failure = s.failure || {
     kind: "other",
@@ -421,9 +462,7 @@ export function view(s: State) {
   }
   const passed = s.checks.filter((c) => c.status === "pass");
   const fixes = s.checks.filter((c) => c.status === "fix");
-  const advice = found
-    ? []
-    : s.checks.filter((c) => c.status === "warn" || c.status === "copy");
+  const advice = found ? [] : s.checks.filter((c) => c.status === "warn" || c.status === "copy");
   return {
     blocker: blocker,
     passed: passed.map((c) => Object.assign({}, c, { text: sentence(c.text) })),
@@ -479,7 +518,17 @@ export function installText(s: State): string {
   const i = s.install;
   if (!i) return "";
   const from = i.source === "release" ? "downloaded from its release" : "from this computer";
-  return "Ralphy " + i.version + " for " + i.target + ", " + from + ", into " + i.folder + " on the host.";
+  return (
+    "Ralphy " +
+    i.version +
+    " for " +
+    i.target +
+    ", " +
+    from +
+    ", into " +
+    i.folder +
+    " on the host."
+  );
 }
 
 // How to turn on the SSH server, per system, when the connection failed

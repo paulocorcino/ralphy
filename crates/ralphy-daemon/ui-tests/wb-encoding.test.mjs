@@ -7,6 +7,8 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { loadComponent, loadShell } from "./harness.mjs";
+import { createViewer } from "../assets/ui/wb-file-viewer.ts";
+import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 // app.ts names its siblings bare (`WBDaemon`, `WBViewer`), which the browser
 // resolves through `window` and Node through `globalThis`: mirror the fakes
@@ -50,7 +52,7 @@ function shellWith(reply) {
     externalChange() {},
     encodingOf: (id) => viewer.encodings?.[id] ?? null,
     saveDone: (id) => (viewer.lastAck = { id, ok: true }),
-    saveFailed: (id, reason, reply) => (viewer.lastAck = { id, ok: false, reason, reply }),
+    saveFailed: (id, reason, answer) => (viewer.lastAck = { id, ok: false, reason, reply: answer }),
     jumpTo() {},
     find() {},
   };
@@ -189,8 +191,6 @@ test("a refusal the operator declines to repair leaves the pane unsaved", async 
 // The record behind a pane is the fold: what it carries into a save and a
 // detach descriptor, and what a refusal does to it. The DOM here is a fake
 // that accepts any structure and answers each selector with one node of its own.
-import { createViewer } from "../assets/ui/wb-file-viewer.ts";
-import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };
 
@@ -285,6 +285,15 @@ test("the dirty mark waits for the daemon's ack and comes back on a refusal", ()
   viewer.externalChange("t3", "disk 2");
   assert.equal(content(), "disk 2", "the ack clears the dirty mark");
   viewer.saveFailed("nope", "refused"); // an unknown id is a no-op
+});
+
+test("a nudge on a clean image pane repaints the image with the fresh bytes", () => {
+  const { viewer, mount } = loadViewer();
+  viewer.open({ id: "i2", project: "o/r", path: "a.png", ftype: "image", content: "data:image/png;base64,AA==" });
+  const img = mount.children[0].querySelector(".img-canvas");
+  viewer.externalChange("i2", "data:image/png;base64,BB==");
+  assert.equal(img.src, "data:image/png;base64,BB==");
+  assert.equal(viewer.descOf("i2").content, "data:image/png;base64,BB==");
 });
 
 test("a refused open builds a pane that saves nothing and ignores nudges", () => {

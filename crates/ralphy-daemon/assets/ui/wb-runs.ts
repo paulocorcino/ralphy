@@ -104,6 +104,12 @@ export type PlanStep = { text: string; status: string };
 type PlanVerdict = { infeasible: boolean; needsSplit: boolean };
 
 /** The run agent's state of a snapshot, or null when it has none. */
+// The status of a plan step from the mark inside its `[ ]`.
+function stepStatus(mark: string) {
+  if (mark === " ") return "open";
+  return mark === "!" ? "noticed" : "checked";
+}
+
 function agentOf(doc: RunSnapshot): Run["agentState"] {
   return doc.phase?.agent || null;
 }
@@ -122,7 +128,9 @@ function phaseFields(doc: RunSnapshot): Pick<Run, "phase" | "active" | "since" |
 }
 
 /** The plan of the run: its path, the text (read later) and the steps. */
-function planFields(doc: RunSnapshot): Pick<Run, "planPath" | "planMd" | "steps" | "planIssue" | "planReadFailed"> {
+function planFields(
+  doc: RunSnapshot,
+): Pick<Run, "planPath" | "planMd" | "steps" | "planIssue" | "planReadFailed"> {
   return {
     planPath: doc.plan_path || "",
     planMd: "",
@@ -209,10 +217,10 @@ export const WBRun = {
   parseSteps(md: string | null | undefined) {
     const out: { text: string; status: string }[] = [];
     (md || "").split(/\r?\n/).forEach((ln) => {
-      const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
-      if (!m) return;
-      const status = m[1] === " " ? "open" : m[1] === "!" ? "noticed" : "checked";
-      out.push({ text: m[2].replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
+      const [, mark, text] = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/) ?? [];
+      if (mark === undefined || text === undefined) return;
+      const status = stepStatus(mark);
+      out.push({ text: text.replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
     });
     return out;
   },
@@ -220,7 +228,16 @@ export const WBRun = {
   // terminal per-issue statuses — these won't change further. MUST mirror
   // IssueStatus::is_terminal (crates/ralphy-cli/src/runstate/state.rs); every
   // name here is a `status_wire` string the run snapshot ships verbatim.
-  TERMINAL: new Set(["planned", "done", "skipped", "blocked", "infeasible", "needs_split", "non_green", "hitl"]),
+  TERMINAL: new Set([
+    "planned",
+    "done",
+    "skipped",
+    "blocked",
+    "infeasible",
+    "needs_split",
+    "non_green",
+    "hitl",
+  ]),
 
   // The visual state of one issue *within its run*: a terminal status as-is; the
   // active issue reflects the live phase (planning/executing, or sleep when the
@@ -281,7 +298,11 @@ export const WBRun = {
   // vendor there is a true statement; inventing a model would not be.
   runTitle(run: Run) {
     if (!run) return "";
-    return this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) || run.agent || "";
+    return (
+      this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) ||
+      run.agent ||
+      ""
+    );
   },
   // The line under it: the vendor is not lost when the title takes the model,
   // it MOVES here, in front of the phase it is driving.
@@ -315,7 +336,9 @@ export const WBRun = {
     const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));
     const budget = run.phase === "executing" ? this.activeIssue(run)?.budgetMin : null;
     // A run with no budget shows the clock alone.
-    return budget != null && budget > 0 ? `${elapsed} / ${this.fmtClock(budget * 60 * 1000)}` : elapsed;
+    return budget != null && budget > 0
+      ? `${elapsed} / ${this.fmtClock(budget * 60 * 1000)}`
+      : elapsed;
   },
 
   // --- plan.md section slicing ------------------------------------------
@@ -323,8 +346,8 @@ export const WBRun = {
   headings(md: string | null | undefined) {
     const out: string[] = [];
     (md || "").split("\n").forEach((ln) => {
-      const m = ln.match(/^##\s+(.+?)\s*$/);
-      if (m) out.push(m[1]);
+      const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
+      if (heading !== undefined) out.push(heading);
     });
     return out;
   },
@@ -368,9 +391,9 @@ export const WBRun = {
     // `/\r?\n/` for the same reason as `parseSteps`: a CRLF plan.md would
     // otherwise return a body with a carriage return on every line.
     for (const ln of md.split(/\r?\n/)) {
-      const m = ln.match(/^##\s+(.+?)\s*$/);
-      if (m) {
-        const isTarget = m[1].trim().toLowerCase() === want;
+      const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
+      if (heading !== undefined) {
+        const isTarget = heading.trim().toLowerCase() === want;
         if (inSec && !isTarget) break;
         inSec = isTarget;
         continue; // drop the heading line; the panel chrome shows it
@@ -397,7 +420,12 @@ export const WBRun = {
   FEASIBLE_HEAD: /^##\s+Feasible\b.*$/im,
   // The `## Feasible` heading verbatim ("Feasible: no"), for the modal's banner.
   feasibleHeading(md: string | null | undefined) {
-    return (md || "").match(this.FEASIBLE_HEAD)?.[0].replace(/^##\s+/, "").trim() || "";
+    return (
+      (md || "")
+        .match(this.FEASIBLE_HEAD)?.[0]
+        .replace(/^##\s+/, "")
+        .trim() || ""
+    );
   },
   // The planner's stated reason: the prose under that heading.
   feasibleReason(md: string | null | undefined) {
@@ -459,7 +487,10 @@ export const WBRun = {
     const eta = h > 0 ? `~${h}h ${m}m` : `~${m}m`;
     const at =
       sleep.reset ||
-      new Date((sleep.target_epoch || 0) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      new Date((sleep.target_epoch || 0) * 1000).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     return `waiting for reset ~${at} · resumes in ${eta}`;
   },
 
@@ -475,7 +506,7 @@ export const WBRun = {
   face(runid: string) {
     let h = 0;
     for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return this.FACES[h % this.FACES.length];
+    return this.FACES[h % this.FACES.length] ?? "";
   },
 
   // One `runs.list` document → the panel's run shape. `planMd` starts empty:
@@ -528,9 +559,7 @@ export const WBRun = {
   // otherwise hand back Object's constructor instead of a string.
   verbLockTitle(verb: string, reason: string | null | undefined) {
     if (reason) return reason;
-    return Object.hasOwn(this.VERB_TITLE, verb)
-      ? this.VERB_TITLE[verb]
-      : `${verb} on this project`;
+    return Object.hasOwn(this.VERB_TITLE, verb) ? this.VERB_TITLE[verb] : `${verb} on this project`;
   },
   // The panel's rendering of a terminal verb frame. Empty for a clean exit —
   // this is the whole guard against a success raising a refusal banner, so it

@@ -7,6 +7,7 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
+import type { FilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
 import type { SavePayload, WireDeps } from "./wb-shell-types.d.ts";
 
@@ -26,14 +27,18 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // by accident of global scope.
   window.getShell = function getShell() {
     const root = document.querySelector<HTMLElement & { _x_dataStack?: Shell[] }>("[x-data]");
-    return root && root._x_dataStack ? root._x_dataStack[0] : null;
+    return root?._x_dataStack?.[0] ?? null;
   };
 
   // A viewer asked to detach → open the popup and close the tab.
-  document.addEventListener("workbench:detach-request", (e) => window.Alpine.store("tabs").detachFile(e.detail));
+  document.addEventListener("workbench:detach-request", (e) =>
+    window.Alpine.store("tabs").detachFile(e.detail),
+  );
 
   // A rendered markdown link asked for a repo file → open (or focus) its tab.
-  document.addEventListener("workbench:open-request", (e) => window.Alpine.store("tabs").openLink(e.detail));
+  document.addEventListener("workbench:open-request", (e) =>
+    window.Alpine.store("tabs").openLink(e.detail),
+  );
 
   // The divider between the two panes was dragged: the ratio is view state.
   document.addEventListener("workbench:split-ratio", (e) => {
@@ -105,7 +110,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     window.Alpine.store("tabs").openTab({
       project: desc.project,
       path: desc.path,
-      title: desc.path.split("/").pop()!,
+      title: desc.path.split("/").pop() ?? desc.path,
       ftype: desc.ftype,
       content: desc.content,
       checkout: desc.checkout ?? null,
@@ -130,9 +135,17 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     if (!detachedWindows.has(e.source as Window)) return;
     const m: unknown = e.data;
     if (!isFilePopupMessage(m)) return;
+    popupMessage(m, e);
+  });
+
+  // One message of a detached file window this page opened.
+  function popupMessage(m: FilePopupMessage, e: MessageEvent) {
     if (m.type === "wb-detach-ready") {
       // The popup booted and is asking for its file.
-      (e.source as Window).postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) }, window.location.origin);
+      (e.source as Window).postMessage(
+        { type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) },
+        window.location.origin,
+      );
     } else if (m.type === "wb-emit") {
       // `fromWindow` lets a save's answer reach the pane that sent it.
       forwardAction(window.WB, m.action, m.detail, e.source as Window);
@@ -150,7 +163,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       // unload) never gets here: the guard above drops a window no longer held.
       reattachFile(e.source as Window, m.desc);
     }
-  });
+  }
 
   // --- Write byte-ops (#197): the workspace-mutating seam actions go to the
   // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
@@ -161,14 +174,19 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
       WBDaemon.write(verb, payload)
         .then((reply) => {
-          if (WBFail.isError(reply)) flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+          if (WBFail.isError(reply))
+            flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           else if (okMsg) flash(okMsg);
         })
         .catch(() => flash("Could not rename: the daemon did not answer."));
     };
 
     // Where a write is aimed: the project, and the checkout it carries.
-    type Aim = { repo: string; checkout: string | null; aimed: (payload: CommandPayload) => CommandPayload };
+    type Aim = {
+      repo: string;
+      checkout: string | null;
+      aimed: (payload: CommandPayload) => CommandPayload;
+    };
     type ActionOf<A extends WorkbenchAction["action"]> = Extract<WorkbenchAction, { action: A }>;
 
     // The aim of an action, or null where it has no project. Every Write carries
@@ -180,7 +198,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       const repo = d.project;
       if (!repo) return null;
       const checkout =
-        "checkout" in d && d.checkout !== undefined ? d.checkout : window.Alpine.store("checkouts").checkoutOf(repo);
+        "checkout" in d && d.checkout !== undefined
+          ? d.checkout
+          : window.Alpine.store("checkouts").checkoutOf(repo);
       return { repo, checkout, aimed: (payload) => WBDaemon.withCheckout(payload, checkout) };
     }
 
@@ -231,13 +251,13 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
           return send({ ...rest, encoding: "utf-8" });
         });
       };
-      send(payload);
+      void send(payload);
     }
 
     // A console's switcher cut a worktree: re-read the listing, flash what the
     // add had to say.
     function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
-      window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
+      void window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
       if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
     }
 
@@ -262,11 +282,20 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       const name = await askEntryName(!!c, folder, d.path);
       if (!name) return;
       const path = d.path ? `${d.path}/${name}` : name;
-      const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
+      const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(
+        () => null,
+      );
       if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-      if (WBFail.isError(reply)) return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
+      if (WBFail.isError(reply))
+        return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
       flash(`${name} created.`);
-      if (!folder && c) window.Alpine.store("tabs").openTab({ project: repo, path, title: name, ftype: classify(name) });
+      if (!folder && c)
+        window.Alpine.store("tabs").openTab({
+          project: repo,
+          path,
+          title: name,
+          ftype: classify(name),
+        });
       // The files re-list the level, then reveal the new entry (wb-files.ts).
       sendWindow(window, "workbench:tree-dirty", { rel: d.path || "", reveal: path });
     }
@@ -277,10 +306,17 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       const message = d.isFolder
         ? `Delete folder “${name}” and its contents? This cannot be undone.`
         : `Delete “${name}”? This cannot be undone.`;
-      const ask = messages.askInShell({ title: "Delete", message, confirmLabel: "Delete", danger: true });
+      const ask = messages.askInShell({
+        title: "Delete",
+        message,
+        confirmLabel: "Delete",
+        danger: true,
+      });
       const ok = ask ? await ask : window.confirm(message);
       if (!ok) return;
-      const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
+      const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(
+        () => null,
+      );
       if (!reply) return flash("Could not delete: the daemon did not answer.");
       if (!WBFail.isError(reply)) return flash(`${name} deleted.`);
       const reason = WBFail.message(reply, "the daemon gave no reason");
@@ -292,9 +328,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       }
     }
 
-    document.addEventListener("workbench:action", async (e) => {
+    async function runAction(d: WorkbenchAction) {
       if (!daemonBacked()) return;
-      const d = e.detail;
       const aim = actionTarget(d);
       if (!aim) return;
       switch (d.action) {
@@ -315,15 +350,50 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         case "delete":
           await actDelete(d, aim);
           break;
-        default:
+        case "branch-create":
+        case "branch-switch":
+        case "command":
+        case "console-close":
+        case "console-open":
+        case "console-restart":
+        case "console-switch-checkout":
+        case "copy-path":
+        case "detach":
+        case "detach-blocked":
+        case "fence-detach":
+        case "fence-detach-blocked":
+        case "fence-detach-refused":
+        case "fence-focus":
+        case "fence-reattach":
+        case "fence-remove-refused":
+        case "issue-label-change":
+        case "kanban-toggle":
+        case "login":
+        case "logoff":
+        case "open":
+        case "open-diff":
+        case "open-refused":
+        case "reload":
+        case "run-issue-focus":
+        case "run-start":
+        case "setting-change":
+          // The other gestures change nothing on the daemon's tree.
           break;
       }
+    }
+
+    document.addEventListener("workbench:action", (e) => {
+      runAction(e.detail).catch(() => flash("Could not finish that action."));
     });
   })();
 
   // Dismiss the context menu on any outside interaction.
-  document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"));
-  document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"), true);
+  const hideContextMenu = () => {
+    const menu = document.getElementById("ctxmenu");
+    if (menu) menu.style.display = "none";
+  };
+  document.addEventListener("click", hideContextMenu);
+  document.addEventListener("scroll", hideContextMenu, true);
 
   // `/` → the search on screen: FILES while a project is open, projects
   // otherwise.
@@ -341,13 +411,31 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
     if (e.key !== "F" && e.key !== "f") return;
-    const c = window.getShell();
-    if (!c || !window.Alpine.store("connection").authed || !window.Alpine.store("projects").openSlug) return;
-    const modals = window.Alpine.store("modals");
-    if (modals.modalOpen(WBSettingsDialog.openFlag) || modals.modalOpen(WBSecurityDialog.openFlag) || modals.modalOpen("runOpen") || modals.modalOpen("branchOpen") || modals.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
+    if (!filesSearchOffered() || dialogOverFiles()) return;
     e.preventDefault();
     sendWindow(window, "workbench:file-search-open");
   });
+
+  // The FILES search needs the shell, a login and an open project.
+  function filesSearchOffered() {
+    return (
+      !!window.getShell() &&
+      window.Alpine.store("connection").authed &&
+      !!window.Alpine.store("projects").openSlug
+    );
+  }
+
+  // A dialog that the FILES search must not open over.
+  function dialogOverFiles() {
+    const modals = window.Alpine.store("modals");
+    return [
+      WBSettingsDialog.openFlag,
+      WBSecurityDialog.openFlag,
+      "runOpen",
+      "branchOpen",
+      WBReleaseDialogs.whatsNewFlag,
+    ].some((flag) => modals.modalOpen(flag));
+  }
 
   window.WBRuns = {
     // A raw output chunk: the Runs panel (wb-runs-panel.ts) appends it.

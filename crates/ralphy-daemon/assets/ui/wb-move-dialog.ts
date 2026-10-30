@@ -25,13 +25,18 @@ type MovePick = {
   error: string;
 };
 
+// A function, not a cast on the literal: the type-aware lint flags that cast.
+function closedMovePick(): MovePick {
+  return { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" };
+}
+
 export function wbMoveDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).
-    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as MovePick,
+    movePick: closedMovePick(),
     _movePickSeq: 0,
     // The destination is PICKED, never typed: the picker browses real
     // directories through `tree.list`. On `workbench:move-open`, which the
@@ -46,7 +51,7 @@ export function wbMoveDialog() {
         error: "",
       };
       this._movePickSeq = (this._movePickSeq || 0) + 1;
-      this.movePickLoad(parentRel(from));
+      void this.movePickLoad(parentRel(from));
     },
 
     async movePickLoad(dir: string) {
@@ -57,14 +62,20 @@ export function wbMoveDialog() {
       // Same checkout as the tree the row came from (#406).
       const listing = await WBDaemon.observe(
         "tree.list",
-        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: dir }, this.$store.checkouts.checkoutOf(this.$store.projects.openSlug)),
+        WBDaemon.withCheckout(
+          { repo: this.$store.projects.openSlug, path: dir },
+          this.$store.checkouts.checkoutOf(this.$store.projects.openSlug),
+        ),
       ).catch(() => null);
       if (seq !== this._movePickSeq) return;
       this.movePick.busy = false;
       // A refused listing is a REASON, not an empty folder.
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
         this.movePick.entries = [];
-        this.movePick.error = WBFail.failed(listing, "Could not list the folder: the daemon gave no reason.");
+        this.movePick.error = WBFail.failed(
+          listing,
+          "Could not list the folder: the daemon gave no reason.",
+        );
         return;
       }
       const from = this.movePick.from;
@@ -82,12 +93,12 @@ export function wbMoveDialog() {
     },
 
     movePickInto(name: string) {
-      this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
+      void this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
     },
 
     movePickUp() {
       if (!this.movePick.dir) return;
-      this.movePickLoad(parentRel(this.movePick.dir));
+      void this.movePickLoad(parentRel(this.movePick.dir));
     },
 
     movePickCancel() {

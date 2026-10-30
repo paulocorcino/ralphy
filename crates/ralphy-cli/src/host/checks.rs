@@ -64,56 +64,72 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
         gh: None,
     };
     for (name, lines) in sections(probe_stdout) {
-        let first = lines.first().copied();
-        match name {
-            "uid" => facts.uid = first.and_then(|l| l.parse().ok()),
-            "user" => facts.user = first.map(str::to_string),
-            "host" => facts.host = first.map(str::to_string),
-            "arch" => facts.arch = first.map(str::to_string),
-            "linger" => {
-                facts.linger = lines.iter().find_map(|l| match *l {
-                    "Linger=yes" => Some(true),
-                    "Linger=no" => Some(false),
-                    _ => None,
-                })
-            }
-            "filevault" => {
-                facts.filevault = lines.iter().find_map(|l| match *l {
-                    "true" => Some(true),
-                    "false" => Some(false),
-                    _ => None,
-                })
-            }
-            "autologin" => {
-                facts.autologin = Some(lines.iter().any(|l| !l.contains("does not exist")))
-            }
-            "pmset" => {
-                facts.sleeps = lines.iter().find_map(|l| {
-                    let minutes = l.strip_prefix("sleep ")?.split_whitespace().next()?;
-                    minutes.parse::<u32>().ok().map(|m| m > 0)
-                })
-            }
-            // A section with no version line: the command is not installed.
-            "git" => facts.git = Some(lines.iter().any(|l| l.starts_with("git version"))),
-            "gh" => facts.gh = Some(lines.iter().any(|l| l.starts_with("gh version"))),
-            "groups" => facts.windows_admin = lines.iter().any(|l| l.contains("S-1-5-32-544")),
-            "autologon" => {
-                facts.autologin = Some(
-                    lines
-                        .iter()
-                        .any(|l| l.contains("REG_SZ") && l.ends_with('1')),
-                )
-            }
-            "standby" => {
-                facts.sleeps = lines.iter().find_map(|l| {
-                    let hex = l.strip_prefix("Current AC Power Setting Index: 0x")?;
-                    u32::from_str_radix(hex.trim(), 16).ok().map(|v| v != 0)
-                })
-            }
-            _ => {}
-        }
+        read_section(&mut facts, name, &lines);
     }
     facts
+}
+
+/// Read one `--- <name>` section of the probe into `facts`. An unknown
+/// section is skipped.
+fn read_section(facts: &mut HostFacts, name: &str, lines: &[&str]) {
+    let first = lines.first().copied();
+    match name {
+        "uid" => facts.uid = first.and_then(|l| l.parse().ok()),
+        "user" => facts.user = first.map(str::to_string),
+        "host" => facts.host = first.map(str::to_string),
+        "arch" => facts.arch = first.map(str::to_string),
+        "linger" => facts.linger = linger_flag(lines),
+        "filevault" => facts.filevault = filevault_flag(lines),
+        "autologin" => facts.autologin = Some(lines.iter().any(|l| !l.contains("does not exist"))),
+        "pmset" => facts.sleeps = pmset_sleeps(lines),
+        // A section with no version line: the command is not installed.
+        "git" => facts.git = Some(lines.iter().any(|l| l.starts_with("git version"))),
+        "gh" => facts.gh = Some(lines.iter().any(|l| l.starts_with("gh version"))),
+        "groups" => facts.windows_admin = lines.iter().any(|l| l.contains("S-1-5-32-544")),
+        "autologon" => {
+            facts.autologin = Some(
+                lines
+                    .iter()
+                    .any(|l| l.contains("REG_SZ") && l.ends_with('1')),
+            )
+        }
+        "standby" => facts.sleeps = standby_sleeps(lines),
+        _ => {}
+    }
+}
+
+/// The `Linger=` line of `loginctl show-user`.
+fn linger_flag(lines: &[&str]) -> Option<bool> {
+    lines.iter().find_map(|l| match *l {
+        "Linger=yes" => Some(true),
+        "Linger=no" => Some(false),
+        _ => None,
+    })
+}
+
+/// The `true`/`false` line of `fdesetup isactive`.
+fn filevault_flag(lines: &[&str]) -> Option<bool> {
+    lines.iter().find_map(|l| match *l {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    })
+}
+
+/// Whether the macOS `pmset -g` `sleep` minutes are above 0.
+fn pmset_sleeps(lines: &[&str]) -> Option<bool> {
+    lines.iter().find_map(|l| {
+        let minutes = l.strip_prefix("sleep ")?.split_whitespace().next()?;
+        minutes.parse::<u32>().ok().map(|m| m > 0)
+    })
+}
+
+/// Whether the Windows AC standby timeout of `powercfg /q` is not 0.
+fn standby_sleeps(lines: &[&str]) -> Option<bool> {
+    lines.iter().find_map(|l| {
+        let hex = l.strip_prefix("Current AC Power Setting Index: 0x")?;
+        u32::from_str_radix(hex.trim(), 16).ok().map(|v| v != 0)
+    })
 }
 
 /// What `ralphy daemon describe` said about Ralphy on the host.
@@ -276,7 +292,17 @@ impl HostCheck {
         match self.id {
             CheckId::Ralphy => self.status != CheckStatus::Pass,
             CheckId::Name => !matches!(self.status, CheckStatus::Pass | CheckStatus::Fix(_)),
-            _ => false,
+            CheckId::Autostart
+            | CheckId::Linger
+            | CheckId::SignIn
+            | CheckId::Sleep
+            | CheckId::RequireToken
+            | CheckId::User
+            | CheckId::Git
+            | CheckId::Gh
+            | CheckId::Python
+            | CheckId::Agent
+            | CheckId::Hooks => false,
         }
     }
 }

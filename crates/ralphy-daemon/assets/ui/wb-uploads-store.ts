@@ -48,7 +48,12 @@ export type UploadItem = {
 };
 
 /** What `add` takes for one file. */
-export type UploadRequest = { file: Blob & { name: string }; repo: string; folder: string; onConflict: OnConflict };
+export type UploadRequest = {
+  file: Blob & { name: string };
+  repo: string;
+  folder: string;
+  onConflict: OnConflict;
+};
 
 /** The reply of one part. */
 type PartReply = {
@@ -86,7 +91,8 @@ export function toBase64(bytes: Uint8Array): string {
 /** The sentence for a part the daemon refused. */
 export function refusalText(reply: PartReply | null): string {
   if (!reply) return "The upload stopped: the daemon did not answer. Try again.";
-  if (reply.message === "unknown verb") return "This host runs an older daemon. Update Ralphy on it to upload files.";
+  if (reply.message === "unknown verb")
+    return "This host runs an older daemon. Update Ralphy on it to upload files.";
   switch (reply.reason) {
     case "too large":
       return "The file is larger than the upload limit of this project.";
@@ -94,6 +100,7 @@ export function refusalText(reply: PartReply | null): string {
       return "A file with this name exists now.";
     case "refused":
       return "Ralphy cannot write a file there.";
+    case undefined:
     default:
       return `The daemon refused the upload: ${reply.reason || reply.message || "no reason given"}.`;
   }
@@ -124,14 +131,20 @@ async function partOf(item: UploadItem, file: Blob): Promise<CommandPayload> {
 /** The offset to send again from after an `offset` refusal, or `null` when
  * the reply is not one, or names the same offset as the last one. */
 function resendFrom(reply: PartReply | null, seen: { expected: number }): number | null {
-  if (reply?.reason !== "offset" || typeof reply.expected !== "number" || reply.expected === seen.expected) return null;
+  if (
+    reply?.reason !== "offset" ||
+    typeof reply.expected !== "number" ||
+    reply.expected === seen.expected
+  )
+    return null;
   seen.expected = reply.expected;
   return reply.expected;
 }
 
 export function uploadsStore(deps: UploadsStoreDeps) {
   const { messages } = deps;
-  const send = deps.send || ((payload: CommandPayload) => window.WBDaemon.write("file.upload", payload));
+  const send =
+    deps.send || ((payload: CommandPayload) => window.WBDaemon.write("file.upload", payload));
   // The `File` of each item, by key: kept out of `items`, which Alpine wraps.
   const files = new Map<number, Blob & { name: string }>();
   let nextKey = 1;
@@ -244,7 +257,8 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     // Move an item on by the reply to its part: done, the next offset, or
     // stopped with a reason.
     applyReply(item: UploadItem, reply: PartReply | null, seen: { expected: number }) {
-      if (reply?.status === "ok" && typeof reply.path === "string") return this.finished(item, reply.path);
+      if (reply?.status === "ok" && typeof reply.path === "string")
+        return this.finished(item, reply.path);
       if (reply?.status === "ok" && typeof reply.received === "number") {
         item.sent = reply.received;
         return undefined;

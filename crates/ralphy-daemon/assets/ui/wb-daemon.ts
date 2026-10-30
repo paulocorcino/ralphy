@@ -23,7 +23,7 @@ import type { PresenceReport } from "./wb-presence.ts";
 type SocketHandlers = {
   /** `reopened` is false on the first open only. */
   onOpen?: (ws: WebSocket, reopened: boolean) => void;
-  onMessage: (ev: MessageEvent) => void;
+  onMessage: (ev: MessageEvent<ArrayBuffer>) => void;
 };
 
 /** What the presence socket's owner hears besides the heartbeat. */
@@ -38,7 +38,12 @@ export type DaemonDeps = {
   messages: Messages;
 };
 
-export function createDaemon(window: Window, document: Document, location: Location, deps: DaemonDeps) {
+export function createDaemon(
+  window: Window,
+  document: Document,
+  location: Location,
+  deps: DaemonDeps,
+) {
   const { messages } = deps;
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
@@ -49,8 +54,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // is served over TLS (a dev-tunnel/reverse-proxy reaching a loopback daemon),
   // else `ws://` for a plain-http localhost bind. Hardcoding `ws://` would trip
   // the browser's mixed-content block on an https origin and kill every socket.
-  const WS_ORIGIN =
-    (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
+  const WS_ORIGIN = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
 
   // Which `workbench:action`s reach the daemon, and as which verb. The generic
   // `command` action carries its verb in the event detail (triage/push).
@@ -87,7 +91,15 @@ export function createDaemon(window: Window, document: Document, location: Locat
     } catch {}
   }
 
-  function encodeCommand({ id, verb, payload }: { id: number; verb: string; payload: CommandPayload }) {
+  function encodeCommand({
+    id,
+    verb,
+    payload,
+  }: {
+    id: number;
+    verb: string;
+    payload: CommandPayload;
+  }) {
     const body = new TextEncoder().encode(JSON.stringify({ id, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
@@ -102,7 +114,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
     const ws = new WebSocket(WS_ORIGIN + "/ws/command");
     ws.binaryType = "arraybuffer";
     ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
-    ws.onmessage = (ev) => {
+    ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
       const a = new Uint8Array(ev.data);
       if (a[0] !== TAG_COMMAND) return;
       let frame: { payload: SpawnStatus };
@@ -122,7 +134,10 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // §2): a worktree NAME the daemon resolves under the repo's own root. Added
   // ONLY for a real name — with no selection the payload is byte-identical to
   // the pre-#406 one, so an older daemon never sees a key it does not know.
-  function withCheckout(payload: CommandPayload, checkout: string | null | undefined): CommandPayload {
+  function withCheckout(
+    payload: CommandPayload,
+    checkout: string | null | undefined,
+  ): CommandPayload {
     const out = { ...payload };
     if (checkout) out.checkout = String(checkout);
     return out;
@@ -244,9 +259,8 @@ export function createDaemon(window: Window, document: Document, location: Locat
       // Send on the current socket if it is open; `false` means the frame was
       // not sent, and the caller's `onOpen` is what re-sends its state.
       sendIfOpen: (frame: Uint8Array<ArrayBuffer>) => {
-        if (!live) return false;
-        // `live` is set only on the open socket, so `ws` is that socket.
-        ws!.send(frame);
+        if (!live || !ws) return false;
+        ws.send(frame);
         return true;
       },
       resume: (stale: boolean) => {
@@ -275,7 +289,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
   }
 
   // Decode a `[0x02][JSON]` command frame, or `null` for anything else.
-  function commandFrame(ev: MessageEvent): PushFrame | null {
+  function commandFrame(ev: MessageEvent<ArrayBuffer>): PushFrame | null {
     const a = new Uint8Array(ev.data);
     if (a[0] !== TAG_COMMAND) return null;
     try {
@@ -329,16 +343,21 @@ export function createDaemon(window: Window, document: Document, location: Locat
           replay();
         }
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         const f = commandFrame(ev);
         if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
         const p = f.payload || {};
         if ((p.checkout || null) !== (checkout || null)) return;
-        if (f.verb === "tree.failed") onFailed?.(p.reason || "");
-        else if (f.verb === "head.dirty") onHead?.();
-        else onDirty(p.path || "");
+        treePush(f.verb, p);
       },
     });
+    // A push of this checkout's tree: a dir it could not watch, a moved HEAD,
+    // or a changed dir.
+    function treePush(verb: string, p: PushPayload) {
+      if (verb === "tree.failed") onFailed?.(p.reason || "");
+      else if (verb === "head.dirty") onHead?.();
+      else onDirty(p.path || "");
+    }
     return {
       watch: (path: string) => {
         const rel = path || "";
@@ -376,7 +395,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
         if (reopened) onDirty();
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         if (commandFrame(ev)?.verb === "runs.dirty") onDirty();
       },
     });
@@ -398,7 +417,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
       onOpen: (_ws: WebSocket, reopened: boolean) => {
         if (reopened) onFrame({ verb: "changes.dirty", payload: { repo } });
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         const frame = commandFrame(ev);
         if (frame) onFrame(frame);
       },
@@ -423,19 +442,24 @@ export function createDaemon(window: Window, document: Document, location: Locat
   const presenceOpens: (() => void)[] = [];
   function reportPresence(report: PresenceReport) {
     if (!presenceSocket) return false;
-    return presenceSocket.sendIfOpen(encodeCommand({ id: 0, verb: "presence.report", payload: report }));
+    return presenceSocket.sendIfOpen(
+      encodeCommand({ id: 0, verb: "presence.report", payload: report }),
+    );
   }
   function onPresenceOpen(fn: () => void) {
     presenceOpens.push(fn);
   }
 
-  function subscribePresence(onPresence: (presence: Presence) => void, { onPush, onOpen }: PresenceHandlers = {}) {
+  function subscribePresence(
+    onPresence: (presence: Presence) => void,
+    { onPush, onOpen }: PresenceHandlers = {},
+  ) {
     const sub = persistentSocket("/ws", {
       onOpen: (_ws: WebSocket, reopened: boolean) => {
         onOpen?.(reopened);
         for (const fn of presenceOpens) fn();
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_COMMAND) {
           const f = commandFrame(ev);
@@ -505,7 +529,9 @@ export function createDaemon(window: Window, document: Document, location: Locat
         messages.flash(msg);
         sendWindow(window, "workbench:run-verb-failed", { message: msg });
       } else if (s.status === "exited") {
-        sendWindow(window, "workbench:run-verb-failed", { message: WBRun.exitNote(verb, s.code, finalLine()) });
+        sendWindow(window, "workbench:run-verb-failed", {
+          message: WBRun.exitNote(verb, s.code, finalLine()),
+        });
       }
     });
   });

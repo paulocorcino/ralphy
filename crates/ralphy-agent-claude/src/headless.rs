@@ -47,7 +47,10 @@ impl ClaudeAgent {
     /// session's `SessionStart` line proves its hooks run, and and draining stdout/stderr via reader threads
     /// to avoid pipe-buffer deadlock. Polls `try_wait` until `timeout` fires;
     /// kills the child on expiry and returns `exited = false`.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one call needs its directories, model, effort, timeout and call number"
+    )]
     fn run_headless_call(
         &self,
         cmd_dir: &Path,
@@ -108,8 +111,8 @@ impl ClaudeAgent {
     /// `max_exec_calls` calls, and classifies the per-call output into a core
     /// `Outcome` via `headless_reason_to_outcome`.
     pub(crate) fn execute_headless(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
-        std::fs::create_dir_all(&self.run_dir).ok();
-        std::fs::create_dir_all(ws.ralphy_dir()).ok();
+        std::fs::create_dir_all(&self.run_dir).context("creating the run directory")?;
+        std::fs::create_dir_all(ws.ralphy_dir()).context("creating the .ralphy directory")?;
 
         std::fs::write(ws.ralphy_dir().join("exec.md"), PROMPT_EXECUTE)
             .context("writing .ralphy/exec.md")?;

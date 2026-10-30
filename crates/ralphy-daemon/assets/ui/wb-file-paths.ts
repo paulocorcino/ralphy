@@ -15,10 +15,34 @@ const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "s
 
 // Neither renderable source nor image: refused.
 const BINARY_EXT = new Set([
-  "pdf", "zip", "gz",
-  "tar", "rar", "7z", "exe", "dll", "so", "dylib", "bin", "class", "jar", "wasm",
-  "mp3", "wav", "flac", "ogg", "mp4", "mov", "avi", "mkv", "webm", "woff",
-  "woff2", "ttf", "eot", "otf",
+  "pdf",
+  "zip",
+  "gz",
+  "tar",
+  "rar",
+  "7z",
+  "exe",
+  "dll",
+  "so",
+  "dylib",
+  "bin",
+  "class",
+  "jar",
+  "wasm",
+  "mp3",
+  "wav",
+  "flac",
+  "ogg",
+  "mp4",
+  "mov",
+  "avi",
+  "mkv",
+  "webm",
+  "woff",
+  "woff2",
+  "ttf",
+  "eot",
+  "otf",
 ]);
 
 function extOf(name: string) {
@@ -45,12 +69,14 @@ function isNoteInNotesDir(rel: string) {
   // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
   // there and would be two different answers here.
   const parts = rel.split("/").filter((p) => p && p !== ".");
+  const [root, folder, name] = parts;
   return (
     parts.length === 3 &&
-    parts[0] === ".ralphy" &&
-    parts[1] === "notes" &&
-    parts[2].length > ".note".length &&
-    parts[2].endsWith(".note")
+    root === ".ralphy" &&
+    folder === "notes" &&
+    name !== undefined &&
+    name.length > ".note".length &&
+    name.endsWith(".note")
   );
 }
 
@@ -80,6 +106,21 @@ export function fullPath(root: string, rel: string) {
 export function parentRel(rel: string) {
   const i = rel.lastIndexOf("/");
   return i < 0 ? "" : rel.slice(0, i);
+}
+
+// Where a duplicate of `rel` lands, beside it: the first of `<stem>
+// copy<ext>`, `<stem> copy 2<ext>`, … that `taken` (the names in its folder)
+// does not hold. A leading dot is the whole name of a dotfile, not an
+// extension.
+export function duplicateRel(rel: string, taken: Set<string>) {
+  const parent = parentRel(rel);
+  const name = rel.slice(parent ? parent.length + 1 : 0);
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : "";
+  let candidate = `${stem} copy${ext}`;
+  for (let i = 2; taken.has(candidate); i++) candidate = `${stem} copy ${i}${ext}`;
+  return parent ? `${parent}/${candidate}` : candidate;
 }
 
 // A file tab's identity (#406): project, path and — ONLY under a selected

@@ -159,11 +159,7 @@ pub(crate) async fn close_session_route(
 ) -> Response {
     if let Some(repo_ref) = q.repo.as_deref() {
         if sessions.get(q.id).is_some_and(|info| info.repo == repo_ref) {
-            return if sessions.close(q.id) {
-                Json(serde_json::json!({ "closed": true })).into_response()
-            } else {
-                (StatusCode::NOT_FOUND, "unknown session").into_response()
-            };
+            return close_local(&sessions, q.id);
         }
         let daemon_id = identity
             .as_ref()
@@ -171,32 +167,7 @@ pub(crate) async fn close_session_route(
             .unwrap_or_default();
         let (peers, rejects) = read_peer_store(peers_dir).await;
         match fleet::route(repo_ref, &daemon_id, &peers) {
-            fleet::route::Route::Peer { peer, .. } => {
-                let path = format!("/api/sessions/close?id={}", q.id);
-                return match peer::client::post_json(peer, &path, &serde_json::json!({})).await {
-                    Ok((200, body)) => (
-                        StatusCode::OK,
-                        [(header::CONTENT_TYPE, "application/json")],
-                        body,
-                    )
-                        .into_response(),
-                    Ok((404, _)) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
-                    Ok((status, body)) => (
-                        StatusCode::BAD_GATEWAY,
-                        format!(
-                            "peer {} answered HTTP {status}: {}",
-                            peer.environment,
-                            String::from_utf8_lossy(&body)
-                        ),
-                    )
-                        .into_response(),
-                    Err(error) => (
-                        StatusCode::BAD_GATEWAY,
-                        peer::client::transport_failed(peer, format!("{error:#}")).await,
-                    )
-                        .into_response(),
-                };
-            }
+            fleet::route::Route::Peer { peer, .. } => return close_on_peer(peer, q.id).await,
             fleet::route::Route::UnknownDaemon { daemon_id } => {
                 return (
                     StatusCode::BAD_GATEWAY,
@@ -207,10 +178,42 @@ pub(crate) async fn close_session_route(
             fleet::route::Route::Local { .. } => {}
         }
     }
-    if sessions.close(q.id) {
+    close_local(&sessions, q.id)
+}
+
+fn close_local(sessions: &session::SessionManager, id: u64) -> Response {
+    if sessions.close(id) {
         Json(serde_json::json!({ "closed": true })).into_response()
     } else {
         (StatusCode::NOT_FOUND, "unknown session").into_response()
+    }
+}
+
+/// Ask the peer that owns a session to close it, and answer with its reply.
+async fn close_on_peer(peer: &peer::PeerDescriptor, id: u64) -> Response {
+    let path = format!("/api/sessions/close?id={id}");
+    match peer::client::post_json(peer, &path, &serde_json::json!({})).await {
+        Ok((200, body)) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response(),
+        Ok((404, _)) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
+        Ok((status, body)) => (
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "peer {} answered HTTP {status}: {}",
+                peer.environment,
+                String::from_utf8_lossy(&body)
+            ),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::BAD_GATEWAY,
+            peer::client::transport_failed(peer, format!("{error:#}")).await,
+        )
+            .into_response(),
     }
 }
 
@@ -221,29 +224,21 @@ pub(crate) fn session_routes(s: &RouterShared) -> Router {
         identity: s.identity.clone(),
         environment: s.environment.clone(),
         bound_port: s.bound_port,
+        sessions: s.sessions.clone(),
+        registry_path: s.registry_path.clone(),
+        shutdown: s.shutdown.clone(),
     };
     Router::new()
         .route(
             "/ws/session",
             get({
-                let sessions = s.sessions.clone();
-                let registry = s.registry_path.clone();
-                // A live session bridge stops serving on graceful shutdown: it
-                // detaches, and never closes the session.
-                let shutdown = s.shutdown.clone();
                 let audit = s.audit.clone();
                 move |ws: WebSocketUpgrade,
                       q: Query<SessionQuery>,
                       caller: Option<axum::Extension<super::audit_layer::Caller>>| {
-                    let sessions = sessions.clone();
-                    let registry_path = registry.clone();
-                    let shutdown = shutdown.clone();
                     let host = host.clone();
                     let who = super::audit_layer::SocketAudit::of(audit.clone(), caller);
-                    async move {
-                        session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown, who)
-                            .await
-                    }
+                    async move { session_ws_upgrade(ws, q, host, who).await }
                 }
             }),
         )

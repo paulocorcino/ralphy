@@ -121,6 +121,14 @@ pub struct TriageLabels {
     pub promote_marker: String,
 }
 
+/// The model and the effort the operator chose for one triage session
+/// (`None` = the adapter's default).
+#[derive(Clone, Copy)]
+struct ModelAndEffort<'a> {
+    model: Option<&'a str>,
+    effort: Option<&'a str>,
+}
+
 /// Dispatch the triage session to the selected agent's adapter. The charter is
 /// shared ([`ralphy_core::build_triage_prompt`]); only the invocation differs.
 fn triage_with_agent(
@@ -128,10 +136,10 @@ fn triage_with_agent(
     repo: &Path,
     out_path: &Path,
     req: &TriageRequest,
-    model: Option<&str>,
-    effort: Option<&str>,
+    chosen: ModelAndEffort<'_>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
+    let ModelAndEffort { model, effort } = chosen;
     match agent {
         Agent::Claude => ralphy_agent_claude::triage_issues(
             repo,
@@ -232,48 +240,63 @@ pub fn apply_triage(
     decide: impl Fn(&TriageItem) -> bool,
 ) -> Result<()> {
     for item in &draft.items {
-        match item.verdict {
-            TriageVerdict::Promote => {
-                if !decide(item) {
-                    continue;
-                }
-                // ADR-0027: promote records its evidence stamp before admitting
-                // the issue to the queue. Upsert (not plain comment) so re-triage
-                // edits the marked comment rather than stacking a second one.
-                let body = item.comment.as_deref().unwrap_or_default();
-                tracker.upsert_marked_comment(item.number, &labels.promote_marker, body)?;
-                tracker.remove_label(item.number, &labels.triage_agent_label)?;
-                tracker.add_label(item.number, &labels.queue_label)?;
-            }
-            TriageVerdict::Consolidate => {
-                if !decide(item) {
-                    continue;
-                }
-                let body = item.comment.as_deref().unwrap_or_default();
-                tracker.upsert_marked_comment(item.number, &labels.marker, body)?;
-                tracker.remove_label(item.number, &labels.triage_agent_label)?;
-                tracker.add_label(item.number, &labels.queue_label)?;
-            }
-            TriageVerdict::Bounce => {
-                // Returning work to a human is always safe: never gated on `decide`.
-                if let Some(body) = item.comment.as_deref() {
-                    tracker.comment(item.number, body)?;
-                }
-                tracker.remove_label(item.number, &labels.triage_agent_label)?;
-                tracker.add_label(item.number, &labels.needs_info_label)?;
-            }
-            TriageVerdict::Escalate => {
-                // Handing a decision to a maintainer is always safe: never gated
-                // on `decide` (ADR-0018 §3). Comment + swap only — any proposed
-                // follow-up issue is created interactively in `run()`, never here,
-                // so the `--yes` path can never author a new issue.
-                if let Some(body) = item.comment.as_deref() {
-                    tracker.comment(item.number, body)?;
-                }
-                tracker.remove_label(item.number, &labels.triage_agent_label)?;
-                tracker.add_label(item.number, &labels.human_label)?;
-            }
+        // Only the outward publishes ask `decide`. Returning work to a human
+        // (bounce) and handing a decision to a maintainer (escalate, ADR-0018
+        // §3) are always safe.
+        let publishes = matches!(
+            item.verdict,
+            TriageVerdict::Promote | TriageVerdict::Consolidate
+        );
+        if publishes && !decide(item) {
+            continue;
         }
+        apply_verdict(item, tracker, labels)?;
+    }
+    Ok(())
+}
+
+/// Apply one verdict through the tracker: its comment, then the swap from the
+/// triage label to the label the verdict names.
+fn apply_verdict(
+    item: &TriageItem,
+    tracker: &dyn IssueTracker,
+    labels: &TriageLabels,
+) -> Result<()> {
+    let next_label = match item.verdict {
+        TriageVerdict::Promote => {
+            // ADR-0027: promote records its evidence stamp before admitting
+            // the issue to the queue. Upsert (not plain comment) so re-triage
+            // edits the marked comment rather than stacking a second one.
+            let body = item.comment.as_deref().unwrap_or_default();
+            tracker.upsert_marked_comment(item.number, &labels.promote_marker, body)?;
+            &labels.queue_label
+        }
+        TriageVerdict::Consolidate => {
+            let body = item.comment.as_deref().unwrap_or_default();
+            tracker.upsert_marked_comment(item.number, &labels.marker, body)?;
+            &labels.queue_label
+        }
+        TriageVerdict::Bounce => {
+            comment_if_any(item, tracker)?;
+            &labels.needs_info_label
+        }
+        TriageVerdict::Escalate => {
+            // Comment + swap only — any proposed follow-up issue is created
+            // interactively in `run()`, never here, so the `--yes` path can
+            // never author a new issue.
+            comment_if_any(item, tracker)?;
+            &labels.human_label
+        }
+    };
+    tracker.remove_label(item.number, &labels.triage_agent_label)?;
+    tracker.add_label(item.number, next_label)?;
+    Ok(())
+}
+
+/// Post the item's comment as a plain comment, when it has one.
+fn comment_if_any(item: &TriageItem, tracker: &dyn IssueTracker) -> Result<()> {
+    if let Some(body) = item.comment.as_deref() {
+        tracker.comment(item.number, body)?;
     }
     Ok(())
 }
@@ -383,8 +406,10 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         &repo,
         &out_path,
         &req,
-        args.model.as_deref(),
-        Some(&args.effort),
+        ModelAndEffort {
+            model: args.model.as_deref(),
+            effort: Some(&args.effort),
+        },
         Duration::from_secs(args.max_minutes * 60),
     )?;
     let threads = std::mem::take(&mut attachments.threads);
@@ -463,7 +488,9 @@ fn triage_labels(repo: &Path) -> TriageLabels {
 /// `yes`, whatever the case.
 fn ask_yes(prompt: &str) -> Result<bool> {
     print!("{prompt}");
-    std::io::stdout().flush().ok();
+    std::io::stdout()
+        .flush()
+        .context("writing the question to stdout")?;
     let mut answer = String::new();
     std::io::stdin()
         .read_line(&mut answer)

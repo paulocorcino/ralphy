@@ -29,6 +29,7 @@ pub(crate) fn materialize_opencode_skills(ws: &Workspace) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
     use std::fs;
 
     // ── materialize_opencode_skills ────────────────────────────────────────
@@ -37,7 +38,7 @@ mod tests {
     fn materialize_opencode_skills_extracts_required_skills() {
         let base =
             std::env::temp_dir().join(format!("ralphy-opencode-skills-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -64,6 +65,6 @@ mod tests {
         materialize_opencode_skills(&ws).expect("re-materialize");
         assert!(skills_dir.join("reviewer/SKILL.md").is_file());
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 }

@@ -13,12 +13,21 @@
    `checkouts` (wb-checkouts-store.ts). It reaches `shell()` only through the
    names in its `uses` (ADR-0073 D4). `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import { component } from "./wb-alpine.ts";
+import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { CheckoutRow, Project } from "./wb-shell-types.d.ts";
+
+// The sort of the branch list: the current branch first, then by name.
+function currentFirst(current: string) {
+  return (a: string, b: string) => {
+    if (a === current) return -1;
+    if (b === current) return 1;
+    return a.localeCompare(b);
+  };
+}
 
 export function wbBranchDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -37,16 +46,20 @@ export function wbBranchDialog() {
       checkoutDirty: false,
       // Branch name -> the worktree that holds it (from `branch.list`; an
       // older peer sends none).
-      worktrees: {} as Record<string, string>,
+      worktrees: emptyRecord<string>(),
     },
     // The `worktree.remove` calls in flight, per repo ref: a second delete of
     // the same worktree is ignored until its re-read lands; another worktree
     // of the same repo can be deleted at the same time.
-    worktreeRemoving: {} as Record<string, string[]>,
+    worktreeRemoving: emptyRecord<string[]>(),
 
     init() {
-      window.addEventListener("workbench:branch-open", (e) => this.openBranchModal(e.detail.project));
-      window.addEventListener("workbench:checkout-menu", (e) => this.openCheckoutChip(e.detail.project, e.detail.anchor));
+      window.addEventListener("workbench:branch-open", (e) =>
+        this.openBranchModal(e.detail.project),
+      );
+      window.addEventListener("workbench:checkout-menu", (e) =>
+        this.openCheckoutChip(e.detail.project, e.detail.anchor),
+      );
     },
 
     openBranchModal(p: Project) {
@@ -56,7 +69,11 @@ export function wbBranchDialog() {
       const ref = this.$store.projects.repoRef(p);
       // Under a selection "current" is the WORKTREE's branch (#407).
       const ck = this.$store.checkouts.checkoutOf(ref);
-      const wt = ck ? (this.$store.checkouts.worktreeListings[ref]?.worktrees || []).find((w) => w && w.name === ck) : null;
+      const wt = ck
+        ? (this.$store.checkouts.worktreeListings[ref]?.worktrees || []).find(
+            (w) => w && w.name === ck,
+          )
+        : null;
       this.branchModal = {
         slug: ref,
         filter: "",
@@ -70,10 +87,10 @@ export function wbBranchDialog() {
         worktrees: {},
       };
       this.branchOpen = true;
-      this.loadBranches(ref);
+      void this.loadBranches(ref);
       // The chip's dirty dot and the `current` seed above read the listing.
-      this.$store.checkouts.ensureWorktreeListing(ref);
-      this.$nextTick(() => {
+      void this.$store.checkouts.ensureWorktreeListing(ref);
+      void this.$nextTick(() => {
         this.$refs.branchFilter?.focus();
       });
     },
@@ -117,17 +134,25 @@ export function wbBranchDialog() {
       const all = this.branchModal.branches;
       const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
       const cur = this.branchModal.current;
-      return hit.sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)));
+      return hit.sort(currentFirst(cur));
     },
 
     openCheckoutChip(p: Project, anchor: HTMLElement) {
       const ref = this.$store.projects.repoRef(p);
       const listing = this.$store.checkouts.worktreeListings[ref] || null;
-      const mine = (this.$store.projects.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
+      const mine = (this.$store.projects.liveSessions || []).filter((s) =>
+        WBSessionRoute.matchesRepo(s, ref),
+      );
       window.WBConsole.checkoutMenu({
         anchor,
         host: document.body,
-        rows: window.WBConsole.checkoutMenuRows(listing, this.$store.checkouts.checkoutOf(ref), mine, p.branch, !!p.dirty),
+        rows: window.WBConsole.checkoutMenuRows(
+          listing,
+          this.$store.checkouts.checkoutOf(ref),
+          mine,
+          p.branch,
+          !!p.dirty,
+        ),
         onPick: (row) => this.$store.checkouts.setCheckout(ref, row.primary ? null : row.name),
         onRemove: (row) => this.removeWorktree(ref, row),
       });
@@ -151,8 +176,9 @@ export function wbBranchDialog() {
     // A held top match does nothing: it cannot be switched to.
     branchEnter() {
       const list = this.branchList();
-      if (list.length) {
-        if (!this.branchHeldBy(list[0])) this.switchBranch(list[0]);
+      const top = list[0];
+      if (top !== undefined) {
+        if (!this.branchHeldBy(top)) this.switchBranch(top);
       } else if (this.canCreateBranch()) this.createBranch();
     },
 
@@ -169,13 +195,15 @@ export function wbBranchDialog() {
       if (name !== this.branchModal.current) {
         const slug = this.branchModal.slug;
         const checkout = this.$store.checkouts.checkoutOf(slug);
-        const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        const prev = p ? p.branch : null;
+        const p = checkout
+          ? null
+          : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
+        const prev = p?.branch;
         if (p) this.$store.projects.setRowGit(p, { branch: name }); // optimistic — the chip updates immediately
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
-        this._mutateBranch("branch.switch", slug, name, () => {
-          if (p) this.$store.projects.setRowGit(p, { branch: prev! });
+        void this._mutateBranch("branch.switch", slug, name, () => {
+          if (p) this.$store.projects.setRowGit(p, { branch: prev });
         });
       }
       this.closeBranchModal();
@@ -191,14 +219,20 @@ export function wbBranchDialog() {
       const from = this.branchModal.current;
       const slug = this.branchModal.slug;
       const checkout = this.$store.checkouts.checkoutOf(slug);
-      const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-      const prevBranch = p ? p.branch : null;
-      const prevBranches = p ? [...(p.branches || [])] : null;
+      const p = checkout
+        ? null
+        : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
+      const prevBranch = p?.branch;
+      const prevBranches = p ? [...(p.branches || [])] : undefined;
       // A fresh branch is checked out onto.
-      if (p) this.$store.projects.setRowGit(p, { branches: [...(p.branches || []), name], branch: name });
+      if (p)
+        this.$store.projects.setRowGit(p, {
+          branches: [...(p.branches || []), name],
+          branch: name,
+        });
       window.WB.emit("branch-create", { project: slug, name, from, checkout });
-      this._mutateBranch("branch.create", slug, name, () => {
-        if (p) this.$store.projects.setRowGit(p, { branch: prevBranch!, branches: prevBranches! });
+      void this._mutateBranch("branch.create", slug, name, () => {
+        if (p) this.$store.projects.setRowGit(p, { branch: prevBranch, branches: prevBranches });
       });
       this.closeBranchModal();
     },
@@ -224,8 +258,12 @@ export function wbBranchDialog() {
       this.$store.checkouts.hideWorktree(slug, w.name);
       let failure: string | null = null;
       try {
-        const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
-        if (WBFail.isError(reply)) failure = WBFail.cause(reply, "The daemon refused to delete the worktree.");
+        const reply = await window.WBDaemon.observe("worktree.remove", {
+          repo: slug,
+          name: w.name,
+        });
+        if (WBFail.isError(reply))
+          failure = WBFail.cause(reply, "The daemon refused to delete the worktree.");
       } catch {
         failure = "Could not reach the daemon. Check whether the worktree was deleted.";
       }
@@ -247,9 +285,14 @@ export function wbBranchDialog() {
     _reportRemoval(slug: string, name: string, failure: string | null) {
       const listing = this.$store.checkouts.worktreeListings[slug];
       const ck = this.$store.checkouts.checkoutOf(slug);
-      if (ck && WBProject.checkoutAfterListing(ck, listing) === null) this.$store.checkouts.checkoutGone(slug, ck);
+      if (ck && WBProject.checkoutAfterListing(ck, listing) === null)
+        this.$store.checkouts.checkoutGone(slug, ck);
       const kept = !listing || listing.worktrees.some((x) => x && x.name === name);
-      if (failure && kept) window.WBConsole.askNotice({ title: `Could not delete worktree ${name}`, message: failure });
+      if (failure && kept)
+        void window.WBConsole.askNotice({
+          title: `Could not delete worktree ${name}`,
+          message: failure,
+        });
       else this.$store.modals.flash(failure || `Worktree ${name} deleted`);
     },
 
@@ -282,7 +325,7 @@ export function wbBranchDialog() {
       } finally {
         // Re-read the listing on every path (an unconfirmed switch may have
         // landed); a moved HEAD also changes the working tree and sync row.
-        this.$store.checkouts.ensureWorktreeListing(slug, true);
+        void this.$store.checkouts.ensureWorktreeListing(slug, true);
         if (slug) sendWindow(window, "workbench:changes-read", { ref: slug });
       }
     },

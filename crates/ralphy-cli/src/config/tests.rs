@@ -1,20 +1,6 @@
+use super::test_support::{remove_scratch, tmp_ws};
 use super::*;
 use std::fs;
-use std::sync::atomic::{AtomicU32, Ordering};
-
-static N: AtomicU32 = AtomicU32::new(0);
-
-fn tmp_ws(name: &str) -> (Workspace, PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "ralphy-config-{}-{}-{}",
-        std::process::id(),
-        N.fetch_add(1, Ordering::Relaxed),
-        name
-    ));
-    fs::create_dir_all(&dir).unwrap();
-    let ws = Workspace::new(&dir);
-    (ws, dir)
-}
 
 #[test]
 fn copilot_config_round_trip() {
@@ -39,7 +25,7 @@ fn copilot_config_round_trip() {
     assert_eq!(c.plan_model, None);
     assert_eq!(c.exec_model, None);
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -55,7 +41,7 @@ fn claude_effort_config_accepts_only_core_values() {
         let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
         assert_eq!(claude.plan_effort.as_deref(), Some(value));
         assert_eq!(claude.exec_effort.as_deref(), Some(value));
-        fs::remove_dir_all(dir).ok();
+        remove_scratch(dir);
     }
 
     for invalid in ["none", "minimal", "extreme"] {
@@ -66,7 +52,7 @@ fn claude_effort_config_accepts_only_core_values() {
             let claude: ClaudeSettings = settings.agent_settings(ClaudeSettings::SECTION).unwrap();
             assert_eq!(claude.plan_effort, None);
             assert_eq!(claude.exec_effort, None);
-            fs::remove_dir_all(dir).ok();
+            remove_scratch(dir);
         }
     }
 }
@@ -109,7 +95,7 @@ fn cursor_config_round_trip() {
     let c: CursorSettings = s.agent_settings(CursorSettings::SECTION).unwrap();
     assert!(!c.allow_codebase_indexing_i_understand_the_risk);
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// ADR-0043 D8 (#257): the two Gemini per-phase pins persist, print, emit and
@@ -162,7 +148,7 @@ fn gemini_config_round_trip() {
     assert_eq!(g.plan_model, None);
     assert_eq!(g.exec_model, None);
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// D7's escape hatch (#234): a bool key that only `'true'`/`'false'` set, so a
@@ -198,7 +184,7 @@ fn copilot_allow_builtin_mcps_round_trip() {
     assert!(!c.allow_builtin_mcp_servers_i_understand_the_risk);
     assert_eq!(config_json(&ws).unwrap()[KEY], serde_json::json!(false));
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// The two effort keys land in the same `copilot` section and surface through
@@ -241,7 +227,7 @@ fn copilot_effort_config_round_trip() {
         "a refused set must persist nothing"
     );
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// `config set` stores a key and `config unset` clears it, per key; a boolean
@@ -316,13 +302,13 @@ fn config_keys_round_trip_through_set_and_unset() {
         }
         unset(&ws, key).unwrap();
         assert_eq!(read(&Settings::load(&ws).unwrap()), "None", "{key}: unset");
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     let (ws, dir) = tmp_ws("unknown-key");
     let err = set(&ws, "bad.key", "x").unwrap_err();
     assert!(err.to_string().contains("unknown config key"), "{err}");
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -337,7 +323,7 @@ fn runs_keep_refuses_a_value_that_is_not_a_non_negative_integer() {
         );
     }
     assert_eq!(Settings::load(&ws).unwrap().runs.keep, None);
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 // --- config handler round-trip ---
@@ -383,7 +369,7 @@ fn new_keys_handler_round_trip() {
         .unwrap();
     assert_eq!(c.max_minutes_per_issue, Some(0));
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// A `.ralphy/settings.json` written by a pre-#79 binary (typed vendor
@@ -446,7 +432,7 @@ fn previous_version_settings_file_still_parses_with_precedence() {
         );
     }
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -464,7 +450,7 @@ fn get_json_round_trips() {
     // The object parses as a plain map (the daemon Query verb re-parses it).
     assert!(v.is_object());
 
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -487,7 +473,7 @@ fn config_json_masks_events_token() {
     );
 
     std::env::remove_var("RALPHY_EVENTS_DIR");
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// Every registry key is covered by validation, help, and all three
@@ -544,7 +530,7 @@ fn every_registry_key_is_handled_by_all_subcommands() {
     }
 
     std::env::remove_var("RALPHY_EVENTS_DIR");
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 #[test]
@@ -581,7 +567,7 @@ fn events_keys_write_global_store_not_settings_json() {
     assert!(!ws.settings_path().exists());
 
     std::env::remove_var("RALPHY_EVENTS_DIR");
-    fs::remove_dir_all(&dir).ok();
+    remove_scratch(&dir);
 }
 
 /// The cleartext-sink warning (audit F14) fires for exactly one shape: an

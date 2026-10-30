@@ -24,7 +24,7 @@ struct Daemon {
 
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("parse the peer id"),
         name: name.to_string(),
         avatar: "🐙".to_string(),
     }
@@ -55,9 +55,9 @@ fn write_usage(dir: &std::path::Path, session_id: &str) {
             "agent": "codex",
             "tokens": 352
         }))
-        .unwrap(),
+        .expect("write fixture.jsonl"),
     )
-    .unwrap();
+    .expect("encode the JSON body");
 }
 
 async fn serve(
@@ -66,8 +66,13 @@ async fn serve(
     usage_dir: PathBuf,
     auth: Arc<AuthState>,
 ) -> Daemon {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (shutdown, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
@@ -80,7 +85,9 @@ async fn serve(
     );
     let task = tokio::spawn(async move {
         let _shutdown = shutdown;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     Daemon { port, task }
 }
@@ -89,7 +96,7 @@ async fn usage(port: u16) -> serde_json::Value {
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
-            .unwrap();
+            .expect("connect to the test server");
         stream
             .write_all(
                 format!(
@@ -98,13 +105,19 @@ async fn usage(port: u16) -> serde_json::Value {
                 .as_bytes(),
             )
             .await
-            .unwrap();
+            .expect("send the request");
         let mut response = Vec::new();
-        stream.read_to_end(&mut response).await.unwrap();
-        let response = String::from_utf8(response).unwrap();
+        stream
+            .read_to_end(&mut response)
+            .await
+            .expect("read the response");
+        let response = String::from_utf8(response).expect("read the body as UTF-8");
         assert!(response.starts_with("HTTP/1.1 200"), "got {response}");
-        let body = response.split_once("\r\n\r\n").unwrap().1;
-        serde_json::from_str(body).unwrap()
+        let body = response
+            .split_once("\r\n\r\n")
+            .expect("split the HTTP response")
+            .1;
+        serde_json::from_str(body).expect("parse the JSON body")
     })
     .await
     .expect("usage request timed out")
@@ -176,6 +189,10 @@ async fn usage_federates_and_names_missing_contributions() {
     );
 
     peer.task.abort();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the task was aborted above, so its join error is expected"
+    )]
     let _ = peer.task.await;
     let partial = usage(local.port).await;
     assert_eq!(partial["records"].as_array().unwrap().len(), 1);

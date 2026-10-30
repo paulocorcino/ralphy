@@ -22,7 +22,14 @@ import type { FenceList } from "./wb-stage-fence-list.ts";
 import type { OpenerLink } from "./wb-desk-detach.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { DetachReason } from "./wb-console-session.ts";
-import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, Point, Rect } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskFence,
+  DeskWindowFields,
+  ExtentOpts,
+  Point,
+  Rect,
+} from "./wb-types.d.ts";
 
 const { fenceMembership, tileIntoRect, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
 const { detachFold, DETACH_MAX } = WBDeskFolds;
@@ -144,6 +151,30 @@ export function createFences(deps: FenceDeps) {
     setWin,
   });
 
+  async function tileOnConfirm(f: DeskFence) {
+    // A detached fence has nothing here to tile; `arrangeFence` says so, so
+    // the question is not put to the operator.
+    if (popups.isDetached(f.id)) return arrangeFence(f.id);
+    const ok = await askConfirm({
+      title: "Tile this fence?",
+      message: `Rearranges the consoles in ${f.name || "this fence"}. Sessions keep running.`,
+      confirmLabel: "Tile",
+    });
+    if (ok) arrangeFence(f.id);
+  }
+
+  async function removeOnConfirm(f: DeskFence) {
+    // A DETACHED fence refuses removal and says why; no question first.
+    if (popups.isDetached(f.id)) return removeFence(f.id);
+    const ok = await askConfirm({
+      title: "Remove this fence?",
+      message: `Removes ${f.name || "this fence"}. Consoles stay where they are.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (ok) removeFence(f.id);
+  }
+
   // A fence is a stage child BELOW every window (`z-index: 1` against `Z_BASE`)
   // with `pointer-events: none`, so "never intercepts a window drag, resize or
   // focus click" holds by construction and `onFloorDown`'s `e.target !== st`
@@ -247,33 +278,13 @@ export function createFences(deps: FenceDeps) {
     tile.type = "button";
     tile.title = "Tile this fence's consoles";
     tile.textContent = "⊞";
-    tile.addEventListener("click", async () => {
-      // A detached fence has nothing here to tile; `arrangeFence` says so, so
-      // the question is not put to the operator.
-      if (popups.isDetached(f.id)) return arrangeFence(f.id);
-      const ok = await askConfirm({
-        title: "Tile this fence?",
-        message: `Rearranges the consoles in ${f.name || "this fence"}. Sessions keep running.`,
-        confirmLabel: "Tile",
-      });
-      if (ok) arrangeFence(f.id);
-    });
+    tile.addEventListener("click", () => void tileOnConfirm(f));
     const drop = document.createElement("button");
     drop.className = "fence-drop";
     drop.type = "button";
     drop.title = "Remove this fence";
     drop.textContent = "×";
-    drop.addEventListener("click", async () => {
-      // A DETACHED fence refuses removal and says why; no question first.
-      if (popups.isDetached(f.id)) return removeFence(f.id);
-      const ok = await askConfirm({
-        title: "Remove this fence?",
-        message: `Removes ${f.name || "this fence"}. Consoles stay where they are.`,
-        confirmLabel: "Remove",
-        danger: true,
-      });
-      if (ok) removeFence(f.id);
-    });
+    drop.addEventListener("click", () => void removeOnConfirm(f));
     const detach = document.createElement("button");
     detach.className = "fence-detach";
     detach.type = "button";
@@ -301,7 +312,9 @@ export function createFences(deps: FenceDeps) {
       const all = readWindowRects(st);
       const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] || []);
       // A console in its own tab stays there: it is in one place at a time.
-      const items = all.filter((w) => ids.has(w.id) && !w.inTab).map((w) => ({ id: w.id, rect: w.rect }));
+      const items = all
+        .filter((w) => ids.has(w.id) && !w.inTab)
+        .map((w) => ({ id: w.id, rect: w.rect }));
       if (!items.length) return;
       sendDocument(document, "workbench:fence-columns", { items });
     });
@@ -338,17 +351,7 @@ export function createFences(deps: FenceDeps) {
 
   function detachFence(id: string) {
     const out = detachFold(popups.detachedIds(), { type: "detach", fenceId: id });
-    for (const effect of out.effects) {
-      if (effect.type === "focus") {
-        focusDetached(id);
-        return;
-      }
-      if (effect.type === "refuse") {
-        fenceNotice(id, `Maximum of ${DETACH_MAX} detached fences`);
-        WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
-        return; // the registry is NOT committed
-      }
-    }
+    if (detachEnded(id, out.effects)) return;
     if (!out.effects.some((e) => e.type === "open")) return;
 
     const st = stage();
@@ -405,13 +408,31 @@ export function createFences(deps: FenceDeps) {
     WB.emit("fence-detach", { fence: id });
   }
 
+  // A detach the fold ends here: the fence is already in a popup (raise it),
+  // or the cap refuses one more. Neither commits the registry.
+  function detachEnded(id: string, effects: ReturnType<typeof detachFold>["effects"]) {
+    for (const effect of effects) {
+      if (effect.type === "focus") {
+        focusDetached(id);
+        return true;
+      }
+      if (effect.type === "refuse") {
+        fenceNotice(id, `Maximum of ${DETACH_MAX} detached fences`);
+        WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Raising a popup that already holds this fence — the ONLY way to raise
   // one. The handle is the direct route; after a reload it died with the
   // document and the channel is the only one left.
   function focusDetached(id: string) {
     const live = popups.entry(id);
     if (live?.handle && !live.handle.closed) live.handle.focus();
-    else link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
+    else
+      link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
     WB.emit("fence-focus", { fence: id });
   }
 
@@ -472,7 +493,7 @@ export function createFences(deps: FenceDeps) {
       .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
-    const headH = el.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
+    const headH = fenceHeadHeight(el);
     const tiles = tileIntoRect(
       {
         left: rect.left,
@@ -484,6 +505,7 @@ export function createFences(deps: FenceDeps) {
     );
     members.forEach((win, i) => {
       const t = tiles[i];
+      if (!t) return;
       // The computed tile, written now: a read after the transition would
       // race a hidden tab and a convergence.
       setWin(win, { rect: { left: t.left, top: t.top, width: t.width, height: t.height } });
@@ -498,11 +520,7 @@ export function createFences(deps: FenceDeps) {
       focusWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
-    // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
-    // way to scroll away from a full bleed whose titlebar is covered.
-    for (const win of wins) {
-      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
-    }
+    raiseFullBleeds();
     // AFTER the 0.24s tiling transition: an immediate fold would measure the
     // pre-arrange boxes.
     setTimeout(() => {
@@ -514,6 +532,18 @@ export function createFences(deps: FenceDeps) {
       refreshFenceChrome();
       applyExtent();
     }, 300);
+  }
+
+  // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
+  // way to scroll away from a full bleed whose titlebar is covered.
+  function raiseFullBleeds() {
+    for (const win of wins) {
+      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
+    }
+  }
+
+  function fenceHeadHeight(el: HTMLElement) {
+    return el.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
   }
 
   return { buildFence, startFenceMove, startFenceResize, arrangeFence, detachFence };

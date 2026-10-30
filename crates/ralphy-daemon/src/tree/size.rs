@@ -115,8 +115,10 @@ impl Drop for Held<'_> {
 /// ignore rules are anchored to. `rel` empty is the root itself.
 pub fn size(root: &Path, rel: &str, budget: SizeBudget, slot: &Slot) -> Result<Size, SizeError> {
     let _held = slot.take().ok_or(SizeError::Busy)?;
-    let base = confine::confine(root, "").map_err(|_| SizeError::NotFound)?;
-    let dir = confine::confine(root, rel).map_err(|_| SizeError::NotFound)?;
+    let base = confine::confine(root, "")
+        .map_err(|e| confine::miss(SizeError::NotFound, "confining the root", &e))?;
+    let dir = confine::confine(root, rel)
+        .map_err(|e| confine::miss(SizeError::NotFound, "confining the path", &e))?;
     if !dir.is_dir() {
         return Err(SizeError::NotFound);
     }

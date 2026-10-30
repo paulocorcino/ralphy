@@ -307,6 +307,15 @@ fn the_title_and_a_hyperlink_survive_a_snapshot() {
     );
 }
 
+/// A wide character is one character of the text, not a character and a
+/// space, and a combining mark stays on the character it marks.
+#[test]
+fn the_text_holds_a_wide_character_once_and_keeps_a_combining_mark() {
+    let mut screen = Screen::new(ROWS_40, COLS_120, SCROLLBACK_LINES);
+    screen.feed("\u{6F22}x e\u{301}\r\n".as_bytes());
+    assert_eq!(screen.text().lines().next(), Some("\u{6F22}x e\u{301}"));
+}
+
 /// A line written at 120 columns is wrapped, not cut, at 60, and is whole
 /// again at 120.
 #[test]

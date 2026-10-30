@@ -31,7 +31,13 @@ type NavigatorFacts = Partial<Navigator> & {
   deviceMemory?: number;
   /** iOS only. */
   standalone?: boolean;
-  connection?: { type?: string; effectiveType?: string; rtt?: number; downlink?: number; saveData?: boolean };
+  connection?: {
+    type?: string;
+    effectiveType?: string;
+    rtt?: number;
+    downlink?: number;
+    saveData?: boolean;
+  };
   keyboard?: { getLayoutMap?(): Promise<{ get(code: string): string | undefined }> };
 };
 
@@ -74,6 +80,12 @@ export const WBDevice = (function () {
     }
   }
 
+  // `getParameter` is typed `any`; the four names asked here are strings.
+  function glString(gl: WebGLRenderingContext, name: number): string {
+    const v: unknown = gl.getParameter(name);
+    return typeof v === "string" ? v : "";
+  }
+
   // One context, read, then lost at once. The consoles hold at most 12
   // WebGL contexts (wb-console.ts GPU_BUDGET) and Chrome drops the oldest
   // past 16, so one more for a moment takes no console's place.
@@ -81,13 +93,17 @@ export const WBDevice = (function () {
     const doc = win.document;
     if (!doc) return null;
     const canvas = doc.createElement("canvas");
-    const gl = (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
+    const gl = (canvas.getContext("webgl") ||
+      canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
     if (!gl) return null;
-    const out: Record<string, string> = { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
+    const out: Record<string, string> = {
+      vendor: glString(gl, gl.VENDOR),
+      renderer: glString(gl, gl.RENDERER),
+    };
     const dbg = gl.getExtension("WEBGL_debug_renderer_info");
     if (dbg) {
-      out.unmasked_vendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
-      out.unmasked_renderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+      out.unmasked_vendor = glString(gl, dbg.UNMASKED_VENDOR_WEBGL);
+      out.unmasked_renderer = glString(gl, dbg.UNMASKED_RENDERER_WEBGL);
     }
     const lose = gl.getExtension("WEBGL_lose_context");
     if (lose) lose.loseContext();
@@ -157,8 +173,20 @@ export const WBDevice = (function () {
       ua_data: await attempt(() =>
         uad
           ? uad
-              .getHighEntropyValues(["platformVersion", "model", "architecture", "bitness", "fullVersionList", "formFactors"])
-              .then((h) => ({ ...h, brands: uad.brands, mobile: uad.mobile, platform: uad.platform }))
+              .getHighEntropyValues([
+                "platformVersion",
+                "model",
+                "architecture",
+                "bitness",
+                "fullVersionList",
+                "formFactors",
+              ])
+              .then((h) => ({
+                ...h,
+                brands: uad.brands,
+                mobile: uad.mobile,
+                platform: uad.platform,
+              }))
           : null,
       ),
       platform: await attempt(() => nav.platform),
@@ -170,7 +198,8 @@ export const WBDevice = (function () {
         calendar: intl.calendar,
         numbering_system: intl.numberingSystem,
         hour_cycle: await attempt(
-          () => new win.Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hourCycle,
+          () =>
+            new win.Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hourCycle,
         ),
       },
       tz_offset_min: await attempt(() => -new win.Date().getTimezoneOffset()),
@@ -204,7 +233,12 @@ export const WBDevice = (function () {
         inverted_colors: firstMatch(win, "inverted-colors", ["inverted", "none"]),
         color_gamut: firstMatch(win, "color-gamut", ["rec2020", "p3", "srgb"]),
         dynamic_range: firstMatch(win, "dynamic-range", ["high", "standard"]),
-        display_mode: firstMatch(win, "display-mode", ["standalone", "fullscreen", "minimal-ui", "browser"]),
+        display_mode: firstMatch(win, "display-mode", [
+          "standalone",
+          "fullscreen",
+          "minimal-ui",
+          "browser",
+        ]),
       },
       engine_signals: {
         webkit_touch_callout: cssSupports(win, "-webkit-touch-callout", "none"),
@@ -217,6 +251,7 @@ export const WBDevice = (function () {
       gpu: await attempt(() => gpu(win)),
       voices: await attempt(() => voices(win)),
       automation: await attempt(() => nav.webdriver),
+      // oxlint-disable-next-line typescript/no-deprecated -- the report has always sent this count; browsers keep `PluginArray.length` for pages that read it
       plugins: await attempt(() => (nav.plugins ? nav.plugins.length : null)),
       pdf_viewer: await attempt(() => nav.pdfViewerEnabled),
       cookies: await attempt(() => nav.cookieEnabled),
@@ -266,9 +301,9 @@ export const WBDevice = (function () {
     }
     const quiet = (left = RETRIES) => send(left).catch(() => {});
     win.document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
-      if (e.detail && e.detail.action === "login") quiet();
+      if (e.detail && e.detail.action === "login") void quiet();
     });
-    quiet();
+    void quiet();
   }
 
   return { collect, report };

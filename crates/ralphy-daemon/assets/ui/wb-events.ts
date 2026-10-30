@@ -92,7 +92,14 @@ export function createEmitter(document: Document): Window["WB"] {
  * because a script may assign any value to it; no script of the workbench
  * does, so it is the opening window or `null`. */
 export function openerOf(w: Window): Window | null {
-  return w.opener ?? null;
+  const opener: unknown = w.opener;
+  return isWindow(opener) ? opener : null;
+}
+
+// A cross-origin window answers `in` for `postMessage`, which `instanceof Window`
+// does not: the opener may belong to another realm.
+function isWindow(v: unknown): v is Window {
+  return typeof v === "object" && v !== null && "postMessage" in v;
 }
 
 /** Whether `v` names a `workbench:action` gesture. */
@@ -103,11 +110,18 @@ export function isWorkbenchActionName(v: unknown): v is WorkbenchActionName {
 /** Send, on `wb`, a gesture a popup posted. An action that is not a gesture
  * name is dropped: the answer is `false`. `fromWindow` is the popup, for a
  * gesture whose answer goes back to it. */
-export function forwardAction(wb: Window["WB"], action: unknown, detail: unknown, fromWindow?: Window): boolean {
+export function forwardAction(
+  wb: Window["WB"],
+  action: unknown,
+  detail: unknown,
+  fromWindow?: Window,
+): boolean {
   if (!isWorkbenchActionName(action)) return false;
   // The popup is a page of this build, and its own `WB.emit` checked the
   // detail against the action before it posted it.
-  const known = (typeof detail === "object" && detail ? detail : {}) as NonNullable<WorkbenchActions[WorkbenchActionName]>;
+  const known = (typeof detail === "object" && detail ? detail : {}) as NonNullable<
+    WorkbenchActions[WorkbenchActionName]
+  >;
   wb.emit(action, fromWindow ? { ...known, fromWindow } : known);
   return true;
 }

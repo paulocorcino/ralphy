@@ -28,10 +28,12 @@ export type DbmlRef = { from: DbmlEndpoint; to: DbmlEndpoint; kind: DbmlRefKind 
 
 export type DbmlGroup = { name: string; tables: string[] };
 
-export type DbmlSchema = { tables: DbmlTable[]; refs: DbmlRef[]; groups: DbmlGroup[]; skipped: number };
-
-/** The label of the group that holds the tables no other rule placed. */
-export const OTHER_TABLES = "Other tables";
+export type DbmlSchema = {
+  tables: DbmlTable[];
+  refs: DbmlRef[];
+  groups: DbmlGroup[];
+  skipped: number;
+};
 
 // ---- the text, as lines ---------------------------------------------------------
 
@@ -51,7 +53,7 @@ function commentEnd(text: string, i: number) {
 // The end of the string that starts at `i`, or -1 when none starts there. A
 // triple-quoted string may span lines; any other string ends at its line.
 function stringEnd(text: string, i: number) {
-  if (!QUOTES.includes(text[i])) return -1;
+  if (!QUOTES.includes(text.charAt(i))) return -1;
   if (!text.startsWith("'''", i)) return lineStringEnd(text, i);
   const close = text.indexOf("'''", i + 3);
   return close < 0 ? text.length : close + 3;
@@ -87,7 +89,7 @@ function toLines(text: string): string[] {
       out += text.slice(i, sEnd).replace(/\s*\n\s*/g, " ");
       i = sEnd;
     } else {
-      out += braceBreak(text[i]);
+      out += braceBreak(text.charAt(i));
       i += 1;
     }
   }
@@ -103,7 +105,7 @@ const IDENT = /[\p{L}\p{N}_$]+/uy;
 
 function skipSpaces(s: string, i: number) {
   let j = i;
-  while (j < s.length && /\s/.test(s[j])) j += 1;
+  while (j < s.length && /\s/.test(s.charAt(j))) j += 1;
   return j;
 }
 
@@ -156,17 +158,22 @@ function typeEnd(s: string, start: number) {
     return close < 0 ? s.length : close + 1;
   }
   let i = start;
-  while (i < s.length && !/\s/.test(s[i])) {
+  while (i < s.length && !/\s/.test(s.charAt(i))) {
     if (s[i] === "[" && i === start) break;
     i = skipGroup(s, i);
   }
   return i;
 }
 
+function closerOf(opener: string) {
+  if (opener === "(") return ")";
+  return opener === "[" ? "]" : "";
+}
+
 // The index after the `(…)` or `[…]` group that starts at `i`, or after the
 // one character there when no group starts.
 function skipGroup(s: string, i: number) {
-  const closer = s[i] === "(" ? ")" : s[i] === "[" ? "]" : "";
+  const closer = closerOf(s.charAt(i));
   if (!closer) return i + 1;
   const close = s.indexOf(closer, i);
   return close < 0 ? s.length : close + 1;
@@ -202,7 +209,7 @@ function splitSettings(s: string): string[] {
   const scan = { quote: "", depth: 0 };
   let from = 0;
   for (let i = 0; i < inner.length; i += 1) {
-    if (!isSplitComma(scan, inner[i])) continue;
+    if (!isSplitComma(scan, inner.charAt(i))) continue;
     parts.push(inner.slice(from, i));
     from = i + 1;
   }
@@ -210,7 +217,13 @@ function splitSettings(s: string): string[] {
   return parts.map((p) => p.trim()).filter((p) => p !== "");
 }
 
-type Settings = { pk: boolean; notNull: boolean; unique: boolean; note: string | null; ref: string | null };
+type Settings = {
+  pk: boolean;
+  notNull: boolean;
+  unique: boolean;
+  note: string | null;
+  ref: string | null;
+};
 
 // The settings the reader shows. `increment`, `default: …` and the others are
 // not shown, so they are dropped here.
@@ -235,12 +248,15 @@ const REF_OP = /\s*(<>|>|<|-)\s*/y;
 function readOp(s: string, i: number): { op: string; end: number } | null {
   REF_OP.lastIndex = i;
   const m = REF_OP.exec(s);
-  return m ? { op: m[1], end: i + m[0].length } : null;
+  const op = m?.[1];
+  return m && op !== undefined ? { op, end: i + m[0].length } : null;
 }
 
 function endpointOf(d: Dotted): DbmlEndpoint | null {
   if (!d || d === "composite" || d.parts.length < 2) return null;
-  return { table: d.parts.slice(0, -1).join("."), column: d.parts[d.parts.length - 1] };
+  const column = d.parts.at(-1);
+  if (column === undefined) return null;
+  return { table: d.parts.slice(0, -1).join("."), column };
 }
 
 function makeRef(a: DbmlEndpoint, op: string, b: DbmlEndpoint): DbmlRef {
@@ -295,7 +311,8 @@ function openTable(st: State, header: string): Block {
     columns: [],
   };
   const alias = /^\s+as\s+("[^"]*"|\S+)/i.exec(after);
-  if (alias) st.aliases.set(unquote(alias[1]), table.name);
+  const aliasName = alias?.[1];
+  if (aliasName !== undefined) st.aliases.set(unquote(aliasName), table.name);
   st.schema.tables.push(table);
   return { kind: "table", table };
 }
@@ -335,7 +352,8 @@ function openTopBlock(st: State, header: string): Block {
 function openBlock(st: State, header: string) {
   const top = st.stack[st.stack.length - 1];
   if (!top) st.stack.push(openTopBlock(st, header));
-  else if (top.kind === "table" && /^note$/i.test(header)) st.stack.push({ kind: "tablenote", table: top.table });
+  else if (top.kind === "table" && /^note$/i.test(header))
+    st.stack.push({ kind: "tablenote", table: top.table });
   else st.stack.push(SKIP);
 }
 
@@ -401,7 +419,8 @@ function readRefLine(st: State, line: string) {
 // `Ref name: a.b > c.d` is one the reader knows.
 function readTopLine(st: State, line: string) {
   const m = /^ref\b[^:]*:(.*)$/i.exec(line);
-  if (m) readRefLine(st, m[1]);
+  const rest = m?.[1];
+  if (rest !== undefined) readRefLine(st, rest);
   else st.schema.skipped += 1;
 }
 
@@ -472,97 +491,6 @@ export function parseDbml(text: string): DbmlSchema {
   return st.schema;
 }
 
-// ---- grouping ---------------------------------------------------------------------
-
-/** The shortest shared prefix, in characters, that puts two names in one group. */
-const MIN_PREFIX = 4;
-
-const SEPARATOR = /[_\-.]/;
-
-// Compare as lower case by code unit: the same order on every machine.
-function byLower(a: string, b: string) {
-  const x = a.toLowerCase();
-  const y = b.toLowerCase();
-  if (x === y) return 0;
-  return x < y ? -1 : 1;
-}
-
-function prefixLength(a: string, b: string) {
-  const x = a.toLowerCase();
-  const y = b.toLowerCase();
-  let n = 0;
-  while (n < x.length && n < y.length && x[n] === y[n]) n += 1;
-  return n;
-}
-
-// Neighbours of the sorted names that share a prefix of MIN_PREFIX or more.
-function runsOf(sorted: DbmlTable[]): DbmlTable[][] {
-  const runs: DbmlTable[][] = [];
-  for (const table of sorted) {
-    const run = runs[runs.length - 1];
-    if (run && prefixLength(run[run.length - 1].name, table.name) >= MIN_PREFIX) run.push(table);
-    else runs.push([table]);
-  }
-  return runs;
-}
-
-// True when the label stops inside a word of some name: no table has exactly
-// that name, and the character after it is not the start of a new word.
-function endsInsideWord(label: string, names: string[]) {
-  if (names.some((n) => n.toLowerCase() === label.toLowerCase())) return false;
-  return !names.every((n) => /^[\p{Lu}\d_\-.]/u.test(n.slice(label.length)));
-}
-
-// The label of a run of names: their shared prefix, cut after its last
-// separator, so `BOT_GROUP` and `BOT_FILES` give `BOT`.
-function labelOf(names: string[]) {
-  const length = Math.min(...names.map((n) => prefixLength(names[0], n)));
-  const prefix = names[0].slice(0, length);
-  let cut = prefix;
-  if (SEPARATOR.test(prefix) && !SEPARATOR.test(prefix.slice(-1))) {
-    cut = prefix.slice(0, Math.max(prefix.lastIndexOf("_"), prefix.lastIndexOf("-"), prefix.lastIndexOf(".")) + 1);
-  }
-  const label = cut.replace(/[_\-.]+$/, "") || prefix;
-  return endsInsideWord(label, names) ? `${label}…` : label;
-}
-
-function addTo(buckets: Map<string, DbmlTable[]>, label: string, tables: DbmlTable[]) {
-  const list = buckets.get(label);
-  if (list) list.push(...tables);
-  else buckets.set(label, [...tables]);
-}
-
-function byLabel(a: { label: string }, b: { label: string }) {
-  if (a.label === OTHER_TABLES || b.label === OTHER_TABLES) return Number(a.label === OTHER_TABLES) - Number(b.label === OTHER_TABLES);
-  return byLower(a.label, b.label);
-}
-
-/**
- * The tables in groups: a `TableGroup` of the file first, then the tables
- * that share a name prefix, then `Other tables`. Groups and the tables in
- * them are in name order.
- */
-export function groupTables(schema: DbmlSchema): { label: string; tables: DbmlTable[] }[] {
-  const byName = new Map(schema.tables.map((t) => [t.name, t]));
-  const buckets = new Map<string, DbmlTable[]>();
-  const taken = new Set<string>();
-  for (const group of schema.groups) {
-    for (const name of group.tables) {
-      const table = byName.get(name);
-      if (!table || taken.has(name)) continue;
-      taken.add(name);
-      addTo(buckets, group.name, [table]);
-    }
-  }
-  const rest = schema.tables.filter((t) => !taken.has(t.name)).sort((a, b) => byLower(a.name, b.name));
-  for (const run of runsOf(rest)) {
-    addTo(buckets, run.length > 1 ? labelOf(run.map((t) => t.name)) : OTHER_TABLES, run);
-  }
-  return [...buckets]
-    .map(([label, tables]) => ({ label, tables: tables.sort((a, b) => byLower(a.name, b.name)) }))
-    .sort(byLabel);
-}
-
 // ---- navigation -------------------------------------------------------------------
 
 /** The key of one column in the sets that `matchSchema` and `sameColumns` return. */
@@ -575,9 +503,13 @@ export function colKey(table: string, column: string) {
  * its own name or by any of its column names, and each column by its name.
  * An empty term matches every table and no column.
  */
-export function matchSchema(schema: DbmlSchema, term: string): { tables: Set<string>; columns: Set<string> } {
+export function matchSchema(
+  schema: DbmlSchema,
+  term: string,
+): { tables: Set<string>; columns: Set<string> } {
   const needle = term.toLowerCase();
-  if (needle === "") return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
+  if (needle === "")
+    return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
   const tables = new Set<string>();
   const columns = new Set<string>();
   for (const table of schema.tables) {
@@ -610,11 +542,14 @@ function sameName(c: DbmlColumn, column: string, bare: string | null) {
  */
 export function sameColumns(schema: DbmlSchema, table: string, column: string): Set<string> {
   const self = colKey(table, column);
-  const clicked = schema.tables.find((t) => t.name === table)?.columns.find((c) => c.name === column);
+  const clicked = schema.tables
+    .find((t) => t.name === table)
+    ?.columns.find((c) => c.name === column);
   const bare = clicked && !clicked.pk ? withoutPrefix(column) : null;
   const same = new Set<string>();
   for (const t of schema.tables) {
-    for (const c of t.columns.filter((x) => sameName(x, column, bare))) same.add(colKey(t.name, c.name));
+    for (const c of t.columns.filter((x) => sameName(x, column, bare)))
+      same.add(colKey(t.name, c.name));
   }
   same.delete(self);
   return same;
@@ -661,7 +596,9 @@ function mermaidWord(raw: string) {
 function entityLines(id: string, table: DbmlTable) {
   const label = table.name.replace(/"/g, "'");
   if (table.columns.length === 0) return [`  ${id}["${label}"]`];
-  const rows = table.columns.map((c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`);
+  const rows = table.columns.map(
+    (c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`,
+  );
   return [`  ${id}["${label}"] {`, ...rows, "  }"];
 }
 
@@ -686,7 +623,8 @@ export function toMermaidEr(schema: DbmlSchema, names: string[]): string {
   for (const ref of schema.refs) {
     const from = ids.get(ref.from.table);
     const to = ids.get(ref.to.table);
-    if (from && to) lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
+    if (from && to)
+      lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
   }
   return lines.join("\n");
 }

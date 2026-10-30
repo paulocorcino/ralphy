@@ -14,12 +14,26 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
-import type { ConsoleWin, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskRecord,
+  ExtentOpts,
+  SpawnCarry,
+  WindowSnapshot,
+} from "./wb-types.d.ts";
 
-const { peerReturnDecision, peerHost, peerOfflineView, peerActionLabel, heldReturnDecision, unheardRef, relaunchRequest } = WBConsoleSession;
+const {
+  peerReturnDecision,
+  peerHost,
+  peerOfflineView,
+  peerActionLabel,
+  heldReturnDecision,
+  unheardRef,
+  relaunchRequest,
+} = WBConsoleSession;
 const { placeholderSession, isUnknownCheckout } = WBDeskFolds;
 const { sessionIdOf } = WBWindowState;
 
@@ -46,9 +60,20 @@ export type PlaceholderDeps = {
     repo: string | null | undefined,
     desk: ChromeRecord,
     kind: string | null | undefined,
-  ) => { win: ConsoleWin; body: HTMLElement; title: HTMLElement; restartBtn: HTMLButtonElement; closeBtn: HTMLButtonElement };
+  ) => {
+    win: ConsoleWin;
+    body: HTMLElement;
+    title: HTMLElement;
+    restartBtn: HTMLButtonElement;
+    closeBtn: HTMLButtonElement;
+  };
   // A live window, a window's record, and what a birth writes (`wb-console-spawn.ts`).
-  spawnWindow: (termOpts: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) => ConsoleWin;
+  spawnWindow: (
+    termOpts: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk?: SpawnCarry,
+  ) => ConsoleWin;
   deskOf: (win: ConsoleWin) => WindowSnapshot;
   recordBirth: (win: ConsoleWin, carry: SpawnCarry | undefined) => void;
   // The session list, read now.
@@ -98,7 +123,10 @@ export function createPlaceholders(deps: PlaceholderDeps) {
   // cheapest Observe read that takes a checkout (no spawn): the ONE reply that
   // means the tree is gone is `unknown checkout`. Anything else — an
   // unreachable daemon included — lets the launch decide.
-  async function checkoutStillThere(repo: string | null | undefined, checkout: string | null | undefined) {
+  async function checkoutStillThere(
+    repo: string | null | undefined,
+    checkout: string | null | undefined,
+  ) {
     const daemon = window.WBDaemon;
     if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
     let reply;
@@ -131,7 +159,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     }
   }
 
-  async function spawnOrMissing(req: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
+  async function spawnOrMissing(
+    req: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    carry: SpawnCarry,
+  ) {
     try {
       if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
@@ -195,7 +228,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
   // what its peer's fleet state is, and redraws on every fleet read.
   // `held.unheard`: restored while the session list did not hear from its
   // peer, so whether it runs is not known; it asks again on each fleet read.
-  function spawnPlaceholder(record: SpawnCarry, missing?: string | null, refused?: { message: string | null } | null, held?: { unheard?: boolean }) {
+  function spawnPlaceholder(
+    record: SpawnCarry,
+    missing?: string | null,
+    refused?: { message: string | null } | null,
+    held?: { unheard?: boolean },
+  ) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -210,7 +248,9 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     note.className = "session-offline";
     const text = document.createElement("p");
     text.textContent =
-      record.kind === "console" ? "This console is not running." : "This agent console is not running.";
+      record.kind === "console"
+        ? "This console is not running."
+        : "This agent console is not running.";
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "Relaunch";
@@ -247,7 +287,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         detail.append(summary, detailText);
         note.append(detail);
       }
-      detailText!.textContent = view.detail || "";
+      if (detailText) detailText.textContent = view.detail || "";
       detail.hidden = !view.detail;
     };
     const showPeer = () => {
@@ -259,23 +299,45 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       // The fleet may call the peer available while its session list timed
       // out: a held box asks the list itself, and never waits for `wasOffline`.
       if (unheard && available) {
-        askHeld();
+        void askHeld();
         return;
       }
       if (!available) wasOffline = true;
+      showPeerTurn(group, available);
+    };
+    // What the box does with the fleet's latest word on the peer: relaunch,
+    // offer a relaunch, or say that the peer is offline or refused.
+    function showPeerTurn(group: Group, available: boolean) {
       const turn = peerReturnDecision({ kind: record.kind, canLaunch, available, wasOffline });
       if (turn === "relaunch") {
         btn.click();
         return;
       }
       if (turn === "offer") {
-        show({ text: `${peerHost(group, record.environment)} is back.`, detail: "", action: "relaunch" });
+        show({
+          text: `${peerHost(group, record.environment)} is back.`,
+          detail: "",
+          action: "relaunch",
+        });
         return;
       }
       if (available && !refused) return;
-      show(peerOfflineView(available ? null : group, refused?.message, peerHost(group, record.environment)));
-    };
-    if (refused) show(peerOfflineView(null, refused.message, peerHost(peerGroups.get(daemon), record.environment)));
+      show(
+        peerOfflineView(
+          available ? null : group,
+          refused?.message,
+          peerHost(group, record.environment),
+        ),
+      );
+    }
+    if (refused)
+      show(
+        peerOfflineView(
+          null,
+          refused.message,
+          peerHost(peerGroups.get(daemon), record.environment),
+        ),
+      );
     let unheard = !!(daemon && held?.unheard);
     // The box says why it waits: the list did not hear from the peer. "Try
     // again" asks the list again, and launches only when the list heard from
@@ -302,9 +364,14 @@ export function createPlaceholders(deps: PlaceholderDeps) {
           return;
         }
         unheard = false;
-        if (turn === "attach") attach(session!);
+        if (turn === "attach" && session) attach(session);
         else if (turn === "relaunch") btn.click();
-        else show({ text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`, detail: "", action: "relaunch" });
+        else
+          show({
+            text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`,
+            detail: "",
+            action: "relaunch",
+          });
       } finally {
         asking = false;
       }
@@ -321,7 +388,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // A placeholder restored for a recorded worktree asks whether that tree is
     // still there (no spawn), so the box says "gone" on load, not on the click.
     else if (record.checkout) {
-      checkoutStillThere(record.repo, record.checkout).then((there) => {
+      void checkoutStillThere(record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
       });
     }
@@ -364,23 +431,11 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       const session = await check();
       if (session && win.isConnected) attach(session);
     };
-    btn.addEventListener("click", async (e: MouseEvent) => {
+    const onRelaunchClick = async (e: MouseEvent) => {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
-      // The store's wake answers when the peer is usable, and reports its own
-      // failure; the box then says again what it said.
-      if (peerAction === "wake") {
-        text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;
-        const woke = typeof wakePeerNow() === "function" && (await wakePeerNow()!(daemon));
-        if (!win.isConnected) return;
-        if (!woke) {
-          btn.disabled = false;
-          show(shown!);
-          showPeer();
-          return;
-        }
-      }
+      if (peerAction === "wake" && !(await wakeFirst())) return;
       const session = await check();
       if (!win.isConnected) return;
       if (session) {
@@ -396,21 +451,43 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         showUnheard();
         return;
       }
+      relaunchHere();
+    };
+    btn.addEventListener("click", (e: MouseEvent) => {
+      void onRelaunchClick(e);
+    });
+    // The store's wake answers when the peer is usable, and reports its own
+    // failure; the box then says again what it said. False when the click
+    // stops here.
+    async function wakeFirst() {
+      text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;
+      const wake = wakePeerNow();
+      const woke = typeof wake === "function" && (await wake(daemon));
+      if (!win.isConnected) return false;
+      if (!woke) {
+        btn.disabled = false;
+        if (shown) show(shown);
+        showPeer();
+        return false;
+      }
+      return true;
+    }
+    // The agent menu's launch path, reusing this record's id, rect and
+    // maximized state — in the recorded worktree unless that is the one that
+    // is gone, in which case the button said "primary". For a local record
+    // an unreadable session list launches too: the launch then fails as it
+    // always did.
+    function relaunchHere() {
       const carry = deskOf(win);
       markRelaunch(carry.id, () => drop(true));
-      // The agent menu's launch path, reusing this record's id, rect and
-      // maximized state — in the recorded worktree unless that is the one that
-      // is gone, in which case the button said "primary". For a local record
-      // an unreadable session list launches too: the launch then fails as it
-      // always did.
       if (missing) carry.checkout = null;
-      spawnOrMissing(
+      void spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
         record.agent,
         record.repo,
         carry,
       );
-    });
+    }
     closeBtn.onclick = async () => {
       // Nothing is running here; the question says so rather than borrowing the
       // live console's warning.

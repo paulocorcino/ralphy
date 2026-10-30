@@ -88,9 +88,9 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // Alpine calls this once, when `main.ts` registers the store. `main.ts`
     // builds `WBDaemon` and `WBConsole` first.
     init() {
-      this.probeSession();
+      void this.probeSession();
       this.subscribePresence();
-      this.loadIdentity();
+      void this.loadIdentity();
       // The board's two time-driven refresh triggers (#301), registered ONCE;
       // the predicate (wb-kanban.ts) decides.
       document.addEventListener("visibilitychange", () => {
@@ -224,7 +224,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:desk-reread");
       sendWindow(window, "workbench:attention-reread");
       sendWindow(window, "workbench:board-refresh", { trigger: "reopen" });
-      if (window.Alpine.store("projects").openSlug) window.Alpine.store("runs").hydrateRuns();
+      if (window.Alpine.store("projects").openSlug) void window.Alpine.store("runs").hydrateRuns();
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
@@ -257,7 +257,11 @@ export function connectionStore(deps: ConnectionStoreDeps) {
           this.securityChanged({ policy: s.policy });
           // The login gate (wb-login.ts) and the restored view (app.ts) are
           // not the store's.
-          sendWindow(window, "workbench:auth-read", { authed: s.authed, password: s.password, policy: s.policy });
+          sendWindow(window, "workbench:auth-read", {
+            authed: s.authed,
+            password: s.password,
+            policy: s.policy,
+          });
         }
       } catch {
         // No restore: `authed` is still at its `true` default, and a restore
@@ -321,7 +325,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:desk-reread");
       sendWindow(window, "workbench:attention-reread");
       // Not only with the Runs panel open: the runs lock the writes.
-      window.Alpine.store("runs").hydrateRuns();
+      void window.Alpine.store("runs").hydrateRuns();
       this.rereadOpenPanels();
       this.resumeSockets();
       sendWindow(window, "workbench:release-reread");
@@ -365,7 +369,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     changesCurrent(slug: string, current: boolean) {
       this.changesNotCurrent[slug] = !current;
     },
-    BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
+    BUILD_SKEW_LOCK:
+      "This page is older than Ralphy. Save your work, and the page loads the new version.",
     // The daemon runs another build than this page (ADR-0070 D6). With no
     // unsaved work the tab reloads. With unsaved work it waits: the notice
     // stays, only saving that work is allowed, and each heartbeat asks again.

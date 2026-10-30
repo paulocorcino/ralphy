@@ -94,7 +94,11 @@ const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
 export function dragThreshold(pointerType: string) {
   return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
 }
-export function dragBegins(start: Point | null | undefined, pointer: Point | null | undefined, threshold: number) {
+export function dragBegins(
+  start: Point | null | undefined,
+  pointer: Point | null | undefined,
+  threshold: number,
+) {
   const dx = (pointer?.x || 0) - (start?.x || 0);
   const dy = (pointer?.y || 0) - (start?.y || 0);
   return Math.hypot(dx, dy) >= threshold;
@@ -135,34 +139,34 @@ export function flingStep(velocity: number, ms: number) {
 // The bytes each button sends. An arrow is NOT one sequence: in application
 // cursor mode a full-screen program expects `ESC O A`, and `ESC [ A` there
 // scrolls nothing. `appCursor` is read live off `term.modes`.
-// Null-prototype: a plain literal answers `"toString"` with a function, and
-// the name comes off a `data-key` attribute — a string from the DOM.
-const KEY_BYTES: Record<string, string | undefined> = Object.assign(Object.create(null), {
-  esc: "\x1b",
-  tab: "\t",
+// A `Map`: a plain literal answers `"toString"` with a function, and the name
+// comes off a `data-key` attribute — a string from the DOM.
+const KEY_BYTES = new Map<string, string>([
+  ["esc", "\x1b"],
+  ["tab", "\t"],
   // CR, what a real Return key sends. Lets a menu be answered with the bar
   // alone, without opening the virtual keyboard.
-  enter: "\r",
+  ["enter", "\r"],
   // Opens an agent's command menu without the virtual keyboard.
-  slash: "/",
-  "ctrl-c": "\x03",
-});
-const ARROW_FINAL: Record<string, string | undefined> = Object.assign(Object.create(null), {
-  up: "A",
-  down: "B",
-  right: "C",
-  left: "D",
-});
+  ["slash", "/"],
+  ["ctrl-c", "\x03"],
+]);
+const ARROW_FINAL = new Map<string, string>([
+  ["up", "A"],
+  ["down", "B"],
+  ["right", "C"],
+  ["left", "D"],
+]);
 // `shift` is the bar's Shift latch. xterm's encodings: Tab becomes back-tab
 // (CBT, which Claude Code cycles its modes on), and an arrow takes the
 // modifier parameter 2 in both cursor modes. Esc, Enter, / and ^C have no
 // Shift form here, so they are sent unchanged.
 export function keySequence(name: string, appCursor: boolean, shift: boolean) {
   if (shift && name === "tab") return "\x1b[Z";
-  const literal = KEY_BYTES[name];
-  if (typeof literal === "string") return literal;
-  const final = ARROW_FINAL[name];
-  if (typeof final !== "string") return "";
+  const literal = KEY_BYTES.get(name);
+  if (literal !== undefined) return literal;
+  const final = ARROW_FINAL.get(name);
+  if (final === undefined) return "";
   if (shift) return "\x1b[1;2" + final;
   return (appCursor ? "\x1bO" : "\x1b[") + final;
 }
@@ -232,24 +236,29 @@ export function pasteOffered(clipboard: Clipboard | undefined) {
 // key was pressed on, and only while it is still attached. Otherwise the paste
 // is dropped. A refused read is dropped too. Not pure like the folds above: it
 // acts on `t`, and it reads `win._term` when the read settles.
-type PasteTerm = { pasteImage(image: Blob): unknown; term: { paste(text: string): void; focus(): void } };
+type PasteTerm = {
+  pasteImage(image: Blob): unknown;
+  term: { paste(text: string): void; focus(): void };
+};
 export function pasteAfterRead<T extends PasteTerm>(
   win: { _term: T | null },
   t: T,
   read: Promise<{ image?: Blob; text?: string }>,
 ) {
   const attached = () => win._term === t;
-  return read
-    .then(({ image, text }) => {
-      if (!attached()) return;
-      if (image) t.pasteImage(image);
-      else if (text) t.term.paste(text);
-    })
-    // The key bar shows nothing for a refused or failed read.
-    .catch(() => {})
-    .finally(() => {
-      if (attached()) t.term.focus();
-    });
+  return (
+    read
+      .then(({ image, text }) => {
+        if (!attached()) return;
+        if (image) t.pasteImage(image);
+        else if (text) t.term.paste(text);
+      })
+      // The key bar shows nothing for a refused or failed read.
+      .catch(() => {})
+      .finally(() => {
+        if (attached()) t.term.focus();
+      })
+  );
 }
 
 // THE RIGHT BUTTON is copy or paste, and the browser menu never opens over a
@@ -305,7 +314,13 @@ export function phoneBleed(maxed: boolean, viewportWidth: number) {
 // takes buffer-absolute rows, hence `viewportY`. Clamped to the screen so a
 // finger that slid off the bottom selects to the last row; a zero/NaN cell
 // height answers the top row, not NaN.
-export function selectionRow(clientY: number, screenTop: number, cellHeight: number, rows: number, viewportY: number) {
+export function selectionRow(
+  clientY: number,
+  screenTop: number,
+  cellHeight: number,
+  rows: number,
+  viewportY: number,
+) {
   const base = Number.isFinite(viewportY) ? viewportY : 0;
   if (!Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(clientY)) return base;
   const last = Math.max(0, (Number.isFinite(rows) ? rows : 1) - 1);
@@ -355,9 +370,7 @@ export const IMAGE_PASTE_MAX = 4 * 1024 * 1024;
 // What `pasteDecision` reads of a paste.
 type PasteInput = { types: readonly string[] | null | undefined; size: number; watching: boolean };
 export function pasteDecision({ types, size, watching }: PasteInput) {
-  const hasImage = (types || []).some(
-    (t) => typeof t === "string" && t.startsWith("image/"),
-  );
+  const hasImage = (types || []).some((t) => typeof t === "string" && t.startsWith("image/"));
   if (!hasImage) return "passthrough";
   if (watching) return "watched";
   if (!(size >= 0) || size > IMAGE_PASTE_MAX) return "too-large";
@@ -374,7 +387,7 @@ export function scrubClipboard(text: string) {
   let out = "";
   for (const ch of text.replace(/\r\n/g, "\n")) {
     // A `for…of` over a string yields non-empty code points.
-    const c = ch.codePointAt(0)!;
+    const c = ch.codePointAt(0) ?? 0;
     // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.
     if (c === 9 || c === 10 || (c >= 32 && c !== 127 && !(c >= 0x80 && c <= 0x9f))) out += ch;
   }

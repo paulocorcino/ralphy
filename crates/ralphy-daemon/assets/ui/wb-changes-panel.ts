@@ -19,9 +19,10 @@
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import { component } from "./wb-alpine.ts";
+import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
+import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-types.d.ts";
 
 export function wbChanges() {
@@ -35,20 +36,20 @@ export function wbChanges() {
     // --- the change set and the branch ------------------------------------
     // Per slug, named apart from the panel-wide `changesError` below: a
     // duplicate key in this literal is a silent no-op.
-    changesReadError: {} as Record<string, string>,
+    changesReadError: emptyRecord<string>(),
     // Per slug, the read state of the change set, the branch (sync), the board
     // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
     // its fact is not current.
-    changesRead: {} as Record<string, Read>,
-    syncRead: {} as Record<string, Read>,
+    changesRead: emptyRecord<Read>(),
+    syncRead: emptyRecord<Read>(),
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
-    changesStaged: {} as Record<string, ChangeEntry[]>,
-    changesUnstaged: {} as Record<string, ChangeEntry[]>,
+    changesStaged: emptyRecord<ChangeEntry[]>(),
+    changesUnstaged: emptyRecord<ChangeEntry[]>(),
     // The sync row per project (#316): the fold of `sync.status`. Same three
     // triggers as the change set, never a timer.
-    syncByProject: {} as Record<string, Sync>,
+    syncByProject: emptyRecord<Sync>(),
     // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
     // slot for the whole bar: the three acts share the upstream, so a second
     // click while one is out would race it against the first — and a push's
@@ -77,8 +78,8 @@ export function wbChanges() {
     refreshChanges() {
       if (!this.sideOpen || this.sideView !== "changes" || !this.$store.projects.openSlug) return;
       if (document.visibilityState !== "visible") return;
-      this.loadChanges(this.$store.projects.openSlug);
-      this.loadSync(this.$store.projects.openSlug);
+      void this.loadChanges(this.$store.projects.openSlug);
+      void this.loadSync(this.$store.projects.openSlug);
     },
 
     // The open project's change count (#307) via `changes.list`: reloads on
@@ -103,7 +104,11 @@ export function wbChanges() {
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesReadError[slug] = "";
-        this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
+        this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], {
+          ok: true,
+          value: true,
+          at: Date.now(),
+        });
         this._reportCurrent(slug);
       } catch {
         if (seq === this._changesSeq) {
@@ -119,7 +124,9 @@ export function wbChanges() {
       this.changesRead[slug] = read;
       this._reportCurrent(slug);
       if (read.goodAt) {
-        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms));
+        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) =>
+          this.$store.connection.fmtClock(ms),
+        );
         return;
       }
       this.$store.checkouts.changeCountRead(slug, null);
@@ -146,15 +153,16 @@ export function wbChanges() {
         }
         const sync = WBChanges.foldSync(reply);
         this.syncByProject[slug] = sync;
-        this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
+        this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], {
+          ok: true,
+          value: true,
+          at: Date.now(),
+        });
         this._reportCurrent(slug);
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
-        const branch = WBChanges.headBranch(sync);
-        const p = this.$store.checkouts.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        if (p && branch !== null && p.branch !== branch) this.$store.projects.setRowGit(p, { branch });
-        const head = WBChanges.headOf(sync);
-        if (p && head !== null) this.$store.projects.setRowGit(p, { head });
+        if (!this.$store.checkouts.checkoutOf(slug))
+          primaryReadMovesRow(this.$store.projects, slug, sync);
       } catch {
         if (seq === this._syncSeq) {
           this.syncFailed(slug, "the daemon did not answer");
@@ -169,10 +177,16 @@ export function wbChanges() {
       this._reportCurrent(slug);
       const prev = this.syncByProject[slug];
       if (read.goodAt && prev && prev.state !== "unknown") {
-        this.syncByProject[slug] = { ...prev, note: WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms)) };
+        this.syncByProject[slug] = {
+          ...prev,
+          note: WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms)),
+        };
         return;
       }
-      this.syncByProject[slug] = { ...WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
+      this.syncByProject[slug] = {
+        ...WBChanges.foldSync(null),
+        note: `Could not read the branch: ${reason}`,
+      };
     },
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
@@ -187,9 +201,7 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not fetch: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not fetch: the daemon gave no reason."));
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
@@ -197,7 +209,7 @@ export function wbChanges() {
       } finally {
         this.syncBusy = null;
       }
-      this.loadSync(slug);
+      void this.loadSync(slug);
     },
 
     // Fast-forward from the upstream. A successful pull moves the working tree,
@@ -213,9 +225,7 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not pull: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not pull: the daemon gave no reason."));
         } else {
           moved = true;
         }
@@ -224,8 +234,8 @@ export function wbChanges() {
       } finally {
         this.syncBusy = null;
       }
-      this.loadSync(slug);
-      if (moved) this.loadChanges(slug);
+      void this.loadSync(slug);
+      if (moved) void this.loadChanges(slug);
     },
 
     // Publish the branch (#320). The OPERATOR's click is the whole consent (no
@@ -242,16 +252,14 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not push: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not push: the daemon gave no reason."));
         }
       } catch {
         this._changesRefused("Could not push: the daemon did not answer.");
       } finally {
         this.syncBusy = null;
       }
-      this.loadSync(slug);
+      void this.loadSync(slug);
     },
 
     _changesSub: null as Subscription | null, // the run-completion nudge subscription for the open project (#310)
@@ -259,15 +267,18 @@ export function wbChanges() {
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
       if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame) => {
-        if (this.$store.connection.tabHidden()) return;
-        // Optional-chained: a frame without wb-changes.ts must not throw
-        // inside `onmessage`.
-        if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
-          this.loadChanges(this.$store.projects.openSlug);
-          this.loadSync(this.$store.projects.openSlug);
-        }
-      });
+      this._changesSub = window.WBDaemon.subscribeChanges(
+        this.$store.projects.openSlug,
+        (frame) => {
+          if (this.$store.connection.tabHidden()) return;
+          // Optional-chained: a frame without wb-changes.ts must not throw
+          // inside `onmessage`.
+          if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
+            void this.loadChanges(this.$store.projects.openSlug);
+            void this.loadSync(this.$store.projects.openSlug);
+          }
+        },
+      );
     },
     destroyChangesSub() {
       try {
@@ -285,21 +296,22 @@ export function wbChanges() {
         this.commitMsg = "";
         this.commitMsgSlug = slug;
       }
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         this.destroyChangesSub();
         this.mountChangesSub();
-        if (this.$store.projects.openSlug) this.loadChanges(this.$store.projects.openSlug);
-        if (this.$store.projects.openSlug) this.loadSync(this.$store.projects.openSlug);
+        if (this.$store.projects.openSlug) void this.loadChanges(this.$store.projects.openSlug);
+        if (this.$store.projects.openSlug) void this.loadSync(this.$store.projects.openSlug);
       });
     },
     // On `workbench:head-moved` (the files' socket heard `head.dirty`): re-read
     // what the branch drives: the chip, the sync row and the Changes count.
     gitFollowHead(ref: string) {
-      this.loadChanges(ref);
-      this.loadSync(ref);
+      void this.loadChanges(ref);
+      void this.loadSync(ref);
       // Under a selection the chip reads the worktree's branch from the
       // listing, not `p.branch`.
-      if (this.$store.checkouts.checkoutOf(ref)) this.$store.checkouts.ensureWorktreeListing(ref, true);
+      if (this.$store.checkouts.checkoutOf(ref))
+        void this.$store.checkouts.ensureWorktreeListing(ref, true);
     },
 
     // --- the rows and the commit box -----------------------------------------
@@ -330,7 +342,11 @@ export function wbChanges() {
     syncBusyTitle(verb: string) {
       if (!this.syncBusy) return "";
       if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
-      return ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[verb] || "";
+      return (
+        ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[
+          verb
+        ] || ""
+      );
     },
     groupNote(group: string) {
       return WBChanges.groupDiscardNote(group);
@@ -368,19 +384,20 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.stage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, paths },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not stage: the daemon gave no reason."),
-          );
+          this._changesRefused(WBFail.failed(reply, "Could not stage: the daemon gave no reason."));
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
         this._changesRefused("Could not stage: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     async unstagePaths(slug: string, paths: string[]) {
@@ -389,7 +406,10 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.unstage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, paths },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -399,8 +419,8 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not unstage: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
@@ -421,7 +441,10 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.discard",
-          window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, paths: [entry.path] },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -431,8 +454,8 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not discard: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     async commitStaged(slug: string) {
@@ -444,7 +467,10 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.commit",
-          window.WBDaemon.withCheckout({ repo: slug, message }, this.$store.checkouts.checkoutOf(slug)),
+          window.WBDaemon.withCheckout(
+            { repo: slug, message },
+            this.$store.checkouts.checkoutOf(slug),
+          ),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -457,8 +483,8 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not commit: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
@@ -471,19 +497,24 @@ export function wbChanges() {
     // The write lock (the Alpine store `connection`) hears whether the change
     // set and the branch shown for `slug` are current.
     _reportCurrent(slug: string) {
-      this.$store.connection.changesCurrent(slug, !(this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false));
+      this.$store.connection.changesCurrent(
+        slug,
+        !(this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false),
+      );
     },
 
     init() {
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
-      window.addEventListener("workbench:project-changed", (e) => this.gitFollowProject(e.detail.slug));
+      window.addEventListener("workbench:project-changed", (e) =>
+        this.gitFollowProject(e.detail.slug),
+      );
       // The open checkout's HEAD moved (the files' `/ws/tree` socket says so).
       window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
       // The page asks for a read of one project's change set and branch: the
       // sidebar refresh, a branch act, a new or restored checkout.
       window.addEventListener("workbench:changes-read", (e) => {
-        this.loadChanges(e.detail.ref);
-        this.loadSync(e.detail.ref);
+        void this.loadChanges(e.detail.ref);
+        void this.loadSync(e.detail.ref);
       });
       // A new checkout of `ref`: another tree's change set is not this tree's
       // "last value" (ADR-0070 D3), so its reads start over.
@@ -495,9 +526,22 @@ export function wbChanges() {
       // Opening the Changes view is a read trigger.
       window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
       // A resume of the page's sockets (`resumeSockets`).
-      window.addEventListener("workbench:sockets-resume", (e) => this._changesSub?.resume?.(e.detail.stale));
+      window.addEventListener("workbench:sockets-resume", (e) =>
+        this._changesSub?.resume?.(e.detail.stale),
+      );
       // Registered once; the tick asks whether the panel is open.
       this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
     },
   });
+}
+
+// A sync read of the primary tree of `slug` moves the branch and the head of
+// its project row.
+function primaryReadMovesRow(projects: ProjectsStore, slug: string, sync: Sync) {
+  const p = projects.projects.find((x) => projects.repoRef(x) === slug);
+  if (!p) return;
+  const branch = WBChanges.headBranch(sync);
+  if (branch !== null && p.branch !== branch) projects.setRowGit(p, { branch });
+  const head = WBChanges.headOf(sync);
+  if (head !== null) projects.setRowGit(p, { head });
 }

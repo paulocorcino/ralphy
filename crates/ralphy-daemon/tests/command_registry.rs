@@ -4,6 +4,11 @@
 //! anything spawns. The spawned exe is `command_test_child`, which logs its
 //! argv.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 #[path = "support/golden.rs"]
 mod golden;
 
@@ -26,7 +31,7 @@ const UNKNOWN_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
 
 fn identity(id: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("the test id parses"),
         name: "daemon".to_string(),
         avatar: "🐙".to_string(),
     }
@@ -37,12 +42,17 @@ fn save_registry(path: &Path, entries: &[(&str, &Path)]) {
     for (slug, repo) in entries {
         store.upsert(slug, &repo.to_string_lossy());
     }
-    registry::save_to(&store, path).unwrap();
+    registry::save_to(&store, path).expect("the registry is saved");
 }
 
 async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>) -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
@@ -55,7 +65,9 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
     );
     tokio::spawn(async move {
         let _shutdown = tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     port
 }
@@ -80,7 +92,7 @@ fn descriptor(id: &str, port: u16) -> PeerDescriptor {
 async fn ask(port: u16, verb: &str, payload: serde_json::Value) -> Vec<serde_json::Value> {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
         .await
-        .unwrap();
+        .expect("the websocket connects");
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
@@ -90,7 +102,7 @@ async fn ask(port: u16, verb: &str, payload: serde_json::Value) -> Vec<serde_jso
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(20), async {
         let mut frames = Vec::new();
         while let Some(Ok(message)) = ws.next().await {
@@ -110,7 +122,7 @@ async fn ask(port: u16, verb: &str, payload: serde_json::Value) -> Vec<serde_jso
 async fn ask_one(port: u16, verb: &str, payload: serde_json::Value) -> serde_json::Value {
     let frames = ask(port, verb, payload).await;
     assert_eq!(frames.len(), 1, "one reply frame: {frames:?}");
-    frames.into_iter().next().unwrap()
+    frames.into_iter().next().expect("the reply has a frame")
 }
 
 fn names(reply: &serde_json::Value) -> Vec<String> {

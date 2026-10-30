@@ -162,7 +162,7 @@ export const WBGeometry = (function () {
       const c = titleBarPoint(w?.rect);
       for (const f of list) {
         if (rectHolds(f.rect, c)) {
-          out[f.id].push(w.id);
+          out[f.id]?.push(w.id);
           break;
         }
       }
@@ -189,9 +189,7 @@ export const WBGeometry = (function () {
   // never compared with itself — a move must not refuse its own start rect.
   function fenceFits(fences: readonly Placed[], candidate: Placed) {
     const rect = candidate?.rect || {};
-    return !(fences || []).some(
-      (f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
-    );
+    return !(fences || []).some((f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}));
   }
 
   // The move delta a fence and the members it carries may actually take: the
@@ -284,19 +282,29 @@ export const WBGeometry = (function () {
   // the extent asking for a negative offset. Flooring the ceiling too would
   // make that floor unfalsifiable by the table's negative control.
   function clampOffset(offset: Offset, viewport: Size, extent: Size) {
-    const maxLeft = (extent?.width || 0) - (viewport?.width || 0);
-    const maxTop = (extent?.height || 0) - (viewport?.height || 0);
+    const v = sizeOrZero(viewport);
+    const e = sizeOrZero(extent);
     return {
-      left: Math.max(0, Math.min(offset?.left || 0, maxLeft)),
-      top: Math.max(0, Math.min(offset?.top || 0, maxTop)),
+      left: Math.max(0, Math.min(offset?.left || 0, e.width - v.width)),
+      top: Math.max(0, Math.min(offset?.top || 0, e.height - v.height)),
     };
   }
 
+  // A size whose missing side reads 0.
+  function sizeOrZero(size: Partial<Size> | null | undefined) {
+    return { width: size?.width || 0, height: size?.height || 0 };
+  }
+
+  // A rect whose missing edge or side reads 0.
+  function rectOrZero(rect: Partial<Rect> | null | undefined) {
+    return { left: rect?.left || 0, top: rect?.top || 0, ...sizeOrZero(rect) };
+  }
+
   function bringIntoView(target: Rect, viewport: Size, extent: Size) {
-    const vw = viewport?.width || 0;
-    const vh = viewport?.height || 0;
-    const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
-    const top = (target?.top || 0) + (target?.height || 0) / 2 - vh / 2;
+    const v = sizeOrZero(viewport);
+    const t = rectOrZero(target);
+    const left = t.left + t.width / 2 - v.width / 2;
+    const top = t.top + t.height / 2 - v.height / 2;
     return clampOffset({ left, top }, viewport, extent);
   }
 
@@ -314,7 +322,6 @@ export const WBGeometry = (function () {
       extent,
     );
   }
-
 
   // Ease-out cubic on a 0..1 clock: fast off the mark, settling into the target.
   function slideEase(t: number) {
@@ -353,23 +360,36 @@ export const WBGeometry = (function () {
     viewport: Size,
     extent: Size,
   ) {
+    const at = storedOffset(stored);
+    if (at) {
+      const clamped = clampOffset(at, viewport, extent);
+      if (showsWork(rects, clamped, viewport)) return clamped;
+    }
+    return bringIntoView(bboxOf(rects), viewport, extent);
+  }
+
+  // The offset a client kept, or null when either value is not a finite number.
+  function storedOffset(
+    stored: { left?: unknown; top?: unknown } | null | undefined,
+  ): Offset | null {
     const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const left = num(stored?.left);
     const top = num(stored?.top);
-    if (left !== null && top !== null) {
-      const at = clampOffset({ left, top }, viewport, extent);
-      const vw = viewport?.width || 0;
-      const vh = viewport?.height || 0;
-      const shows = (rects || []).some(
-        (r) =>
-          (r.left || 0) < at.left + vw &&
-          (r.left || 0) + (r.width || 0) > at.left &&
-          (r.top || 0) < at.top + vh &&
-          (r.top || 0) + (r.height || 0) > at.top,
+    return left !== null && top !== null ? { left, top } : null;
+  }
+
+  // Whether some rect intersects the viewport placed at `at`.
+  function showsWork(rects: readonly Rect[], at: Offset, viewport: Size) {
+    const v = sizeOrZero(viewport);
+    return (rects || []).some((rect) => {
+      const r = rectOrZero(rect);
+      return (
+        r.left < at.left + v.width &&
+        r.left + r.width > at.left &&
+        r.top < at.top + v.height &&
+        r.top + r.height > at.top
       );
-      if (shows) return at;
-    }
-    return bringIntoView(bboxOf(rects), viewport, extent);
+    });
   }
 
   // How far the plane scrolls per frame while a window is dragged against the
@@ -389,7 +409,12 @@ export const WBGeometry = (function () {
   // point. Each edge contributes a pressure in `[0, band]` and the axis takes
   // their DIFFERENCE — deliberately, so a viewport narrower than two bands
   // cancels instead of oscillating between its own two edges.
-  function panNudge(pointer: Point, viewport: ClientBox, band?: number | null, step?: number | null) {
+  function panNudge(
+    pointer: Point,
+    viewport: ClientBox,
+    band?: number | null,
+    step?: number | null,
+  ) {
     const b = band == null ? PAN_BAND : band;
     const s = step == null ? PAN_STEP : step;
     const press = (v: number) => Math.max(0, Math.min(v, b));
@@ -455,11 +480,13 @@ export const WBGeometry = (function () {
   // title bar a locked fence holds (the `fenceHolds` fold); when every slot is
   // held, the box moves right of the fence that holds it until one is free.
   // `moved` says the box left the viewport's cascade, so the caller reveals it.
-  function freeSpawnRect(view: Partial<Rect> | null | undefined, index: number, fences: readonly DeskFence[]) {
+  function freeSpawnRect(
+    view: Partial<Rect> | null | undefined,
+    index: number,
+    fences: readonly DeskFence[],
+  ) {
     const v = view || {};
-    // An unmeasurable viewport is a tab still `display:none`: plain caps.
-    const width = v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560;
-    const height = v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340;
+    const { width, height } = spawnSize(v);
     const at = (k: number) => ({
       left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
       top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
@@ -471,15 +498,27 @@ export const WBGeometry = (function () {
       const rect = at(start + i);
       if (!fenceHolds(fences, rect, false)) return { rect, moved: false };
     }
-    const rect = at(start);
-    // Each step leaves one fence behind for good, so the walk ends within one
-    // step per fence.
+    return { rect: pastLockedFences(fences, at(start)), moved: true };
+  }
+
+  // The size of a console born outside a fence. An unmeasurable viewport is a
+  // tab still `display:none`: plain caps.
+  function spawnSize(v: Partial<Rect>) {
+    return {
+      width: v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560,
+      height: v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340,
+    };
+  }
+
+  // Move `rect` right of each locked fence that holds it. Each step leaves one
+  // fence behind for good, so the walk ends within one step per fence.
+  function pastLockedFences(fences: readonly DeskFence[], rect: Rect) {
     for (let i = 0; i <= (fences || []).length; i++) {
       const held = fenceOf(fences, rect);
       if (!held?.locked) break;
       rect.left = (held.rect?.left || 0) + (held.rect?.width || 0) + SPAWN_PAD;
     }
-    return { rect, moved: true };
+    return rect;
   }
 
   return {

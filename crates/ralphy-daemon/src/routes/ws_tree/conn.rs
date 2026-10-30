@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use super::frame::{dirty_push, failed_payload, parse_request, Alias, Request, Verb};
 use super::{
     close_peer_tree_poller, spawn_nudge_forwarder, spawn_peer_tree_poller, PeerTreePoller,
-    PeerWatchSet,
+    PeerWatchSet, TreeHost,
 };
 use crate::protocol::{self, Frame};
 use crate::routes::{read_peer_store, send_command};
@@ -48,13 +48,13 @@ pub(super) struct TreeConn {
 }
 
 impl TreeConn {
-    pub(super) fn new(
-        watchers: Arc<watch::WatcherManager>,
-        registry_path: PathBuf,
-        peers_dir: PathBuf,
-        daemon_id: Option<String>,
-        nudge_tx: UnboundedSender<(String, String)>,
-    ) -> Self {
+    pub(super) fn new(host: TreeHost, nudge_tx: UnboundedSender<(String, String)>) -> Self {
+        let TreeHost {
+            watchers,
+            registry_path,
+            peers_dir,
+            daemon_id,
+        } = host;
         Self {
             watchers,
             registry_path,

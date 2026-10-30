@@ -10,6 +10,11 @@
 //! SOLE env-setter in its file: `RALPHY_DAEMON_DIR` is process-global, so this
 //! env-setting test must be alone in its file (no intra-process race).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -45,7 +50,12 @@ fn app(state: &Arc<AuthState>) -> axum::Router {
 }
 
 async fn body_string(resp: axum::response::Response) -> String {
-    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("read the response body")
+        .to_bytes();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
@@ -55,7 +65,7 @@ fn post_form(path: &str, body: String) -> Request<Body> {
         .uri(path)
         .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(Body::from(body))
-        .unwrap()
+        .expect("build the request")
 }
 
 /// The current RFC 6238 code for `SEED`, computed here rather than through the
@@ -65,10 +75,10 @@ fn post_form(path: &str, body: String) -> Request<Body> {
 fn code(offset: i64) -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("read the system clock")
         .as_secs();
     let counter = (now / 30) as i64 + offset;
-    let mut mac = Hmac::<Sha1>::new_from_slice(SEED).unwrap();
+    let mut mac = Hmac::<Sha1>::new_from_slice(SEED).expect("key the HMAC");
     mac.update(&(counter as u64).to_be_bytes());
     let hs = mac.finalize().into_bytes();
     let off = (hs[hs.len() - 1] & 0x0f) as usize;
@@ -84,12 +94,12 @@ fn arm_seed(dir: &std::path::Path) {
         &ralphy_daemon::totp::Seed::from_bytes(SEED.to_vec()),
         &ralphy_daemon::totp::seed_path_in(dir),
     )
-    .unwrap();
+    .expect("save the test seed");
 }
 
 fn seed_armed(dir: &std::path::Path) -> bool {
     ralphy_daemon::totp::load_seed_from(&ralphy_daemon::totp::seed_path_in(dir))
-        .unwrap()
+        .expect("load the test seed")
         .is_some()
 }
 
@@ -114,7 +124,8 @@ fn enrol_cheap_password(dir: &std::path::Path, pw: &str) {
         data_encoding::BASE64.encode(&salt),
         data_encoding::BASE64.encode(&dk)
     );
-    std::fs::write(ralphy_daemon::password::password_path_in(dir), record).unwrap();
+    std::fs::write(ralphy_daemon::password::password_path_in(dir), record)
+        .expect("write the password record");
 }
 
 #[tokio::test]

@@ -346,6 +346,10 @@ pub fn project_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, A
 /// parameter there is to malform — anything else yields [`ArgvError`] and NO
 /// argv, mirroring [`branch_argv`]'s guard.
 pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "a verb this builder does not serve is refused, which fails closed"
+    )]
     let sub = match verb {
         Verb::SyncFetch => "fetch",
         Verb::SyncPull => "pull",
@@ -386,6 +390,10 @@ pub fn changes_paths_argv(
     verb: Verb,
     payload: &serde_json::Value,
 ) -> Result<Vec<String>, ArgvError> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "a verb this builder does not serve is refused, which fails closed"
+    )]
     let sub = match verb {
         Verb::ChangesStage => "stage",
         Verb::ChangesUnstage => "unstage",
@@ -464,6 +472,10 @@ fn well_shaped_ref(raw: &str) -> bool {
 /// ralphy command line; the shape gate is what keeps the name from being an
 /// option to the `git checkout` behind it.
 pub fn branch_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "a verb this builder does not serve is refused, which fails closed"
+    )]
     let sub = match verb {
         Verb::BranchSwitch => "switch",
         Verb::BranchCreate => "create",
@@ -628,6 +640,10 @@ fn remotely_settable_key(key: &str) -> bool {
 /// passed as a single argv token (never a shell string). Any absent/ill-shaped
 /// value yields [`ArgvError`] and NO argv. Runs in `cwd = <repo path>` with no
 /// `--repo` flag (defaults to `.`).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "a verb this builder does not serve is refused, which fails closed"
+)]
 pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     let key = || -> Result<String, ArgvError> {

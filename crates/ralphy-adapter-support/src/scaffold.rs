@@ -49,6 +49,27 @@ pub struct PlanCfg<'a> {
     pub no_plan_msg: &'a str,
 }
 
+/// Create `dir` and its parents, best-effort: the step that needs the directory
+/// reports a failure with its own context.
+pub(crate) fn ensure_dir(dir: &Path) {
+    #[expect(
+        clippy::unused_result_ok,
+        reason = "the step that writes into the directory reports the failure with its own context"
+    )]
+    fs::create_dir_all(dir).ok();
+}
+
+/// Remove a file a previous run may have left, so it cannot pass for this run's
+/// output. The file is usually absent, and a leftover that cannot be removed is
+/// overwritten or reported by the step that writes it.
+pub(crate) fn remove_stale_file(file: &Path) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the file is usually absent, and the step that writes it reports a real failure"
+    )]
+    let _ = fs::remove_file(file);
+}
+
 /// Drive the shared plan shell. FIRST checks the resume short-circuit: when
 /// `cfg.plan_path` is already a finalized plan for `cfg.issue_number` (its last
 /// line carries the trailer), returns `Ok(None)` WITHOUT touching the file or
@@ -69,10 +90,10 @@ pub fn run_plan_session<P>(
     if crate::resume::plan_is_finalized_for(cfg.plan_path, cfg.issue_number) {
         return Ok(None);
     }
-    fs::create_dir_all(cfg.ralphy_dir).ok();
-    fs::create_dir_all(cfg.run_dir).ok();
+    ensure_dir(cfg.ralphy_dir);
+    ensure_dir(cfg.run_dir);
     // Plan fresh every run; never reuse a stale artifact.
-    let _ = fs::remove_file(cfg.plan_path);
+    remove_stale_file(cfg.plan_path);
     // Full charter on disk (mirrors .ralphy/exec.md); rewritten each plan call so
     // a resumed session still finds it.
     fs::write(cfg.plan_charter_path, cfg.charter_body)
@@ -125,6 +146,10 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
     out.push_str("\n\n");
     out.push_str(&crate::resume::plan_trailer(issue_number));
     out.push('\n');
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "best-effort: a failed write only forgoes resume and never fails the plan"
+    )]
     let _ = fs::write(plan_path, out);
 }
 
@@ -166,8 +191,8 @@ pub fn run_exec_session<P>(
     run: impl FnOnce() -> Result<(HeadlessRun, P)>,
     is_auth_error: impl Fn(&str) -> bool,
 ) -> Result<(HeadlessRun, P)> {
-    fs::create_dir_all(cfg.run_dir).ok();
-    fs::create_dir_all(cfg.ralphy_dir).ok();
+    ensure_dir(cfg.run_dir);
+    ensure_dir(cfg.ralphy_dir);
     let (r, p) = run()?;
     if !r.exited_cleanly && is_auth_error(&r.log) {
         bail!("{} (see {})", cfg.auth_msg, cfg.log_path.display());
@@ -178,6 +203,7 @@ pub fn run_exec_session<P>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch_dir;
 
     // A `HeadlessRun` fabricated for the ladder tests — no real child process; the
     // scaffold only reads `.log`.
@@ -250,7 +276,7 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.to_string(), "limit");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -263,7 +289,7 @@ mod tests {
         let err =
             run_plan_session(cfg, || Ok((fake_run("boom"), ())), |_| true, |_| None).unwrap_err();
         assert!(err.to_string().starts_with("AUTH_BAIL"), "got: {err}");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -276,7 +302,7 @@ mod tests {
         let err =
             run_plan_session(cfg, || Ok((fake_run("boom"), ())), |_| false, |_| None).unwrap_err();
         assert!(err.to_string().starts_with("NO_PLAN_BAIL"), "got: {err}");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -301,7 +327,7 @@ mod tests {
         .expect("fresh plan yields Some");
         assert_eq!(p, 7);
         assert!(r.log.is_empty());
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -333,7 +359,7 @@ mod tests {
             charter_seen, "charter",
             "the charter is written before the run"
         );
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -360,7 +386,7 @@ mod tests {
             crate::resume::plan_is_finalized_for(&plan_path, 71),
             "a clean plan missing its trailer must be stamped so resume works"
         );
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -387,7 +413,7 @@ mod tests {
             !crate::resume::plan_is_finalized_for(&plan_path, 71),
             "an unclean (killed) plan must NOT be marked finalized"
         );
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -423,7 +449,7 @@ mod tests {
             1,
             "exactly one trailer"
         );
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -454,7 +480,7 @@ mod tests {
             before,
             "plan bytes unchanged"
         );
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -483,7 +509,7 @@ mod tests {
         assert!(after.starts_with("# fresh plan"), "got: {after:?}");
         assert!(crate::resume::plan_is_finalized_for(&plan_path, 147));
         assert!(!crate::resume::plan_is_finalized_for(&plan_path, 999));
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -506,7 +532,7 @@ mod tests {
         )
         .unwrap();
         assert!(out.is_some(), "truncated plan (no trailer) must re-plan");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -535,7 +561,7 @@ mod tests {
         }
         assert!(!ran.get(), "run closure never called across two resumes");
         assert_eq!(fs::read(&plan_path).unwrap(), before, "bytes identical");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     fn exec_cfg(dir: &Path) -> ExecCfg<'_> {
@@ -566,7 +592,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p, 9);
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -585,7 +611,7 @@ mod tests {
         .expect("a clean run is never an auth failure");
         assert!(r.exited_cleanly);
         assert_eq!(p, 9);
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 
     #[test]
@@ -602,6 +628,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("EXEC_AUTH"), "got: {err}");
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch_dir(&dir);
     }
 }

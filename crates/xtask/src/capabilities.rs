@@ -136,30 +136,7 @@ fn scan(repo: &Path, base: &str, head: &str) -> Result<Vec<Finding>> {
         ],
     )?;
     let files = parse_diff(&diff);
-    // A line removed in one place and added in another is code that moved: the
-    // capability it holds was already in the tree.
-    let moved: HashSet<&str> = files
-        .iter()
-        .flat_map(|f| f.removed.iter().map(|l| l.trim()))
-        .filter(|l| !l.is_empty())
-        .collect();
-    let mut findings = Vec::new();
-    let mut hosts: BTreeMap<String, (String, u32)> = BTreeMap::new();
-    for file in &files {
-        findings.extend(rules::path_findings(file));
-        for (line, text) in &file.added {
-            if moved.contains(text.trim()) {
-                continue;
-            }
-            let (found, named) = rules::line_findings(&file.path, *line, text);
-            findings.extend(found);
-            for host in named {
-                hosts
-                    .entry(host)
-                    .or_insert_with(|| (file.path.clone(), *line));
-            }
-        }
-    }
+    let (mut findings, hosts) = diff_findings(&files);
     for (host, (path, line)) in hosts {
         if !tree_mentions(repo, &merge_base, &host)? {
             let detail = format!("a URL host the repository did not name before: `{host}`");
@@ -187,13 +164,41 @@ fn scan(repo: &Path, base: &str, head: &str) -> Result<Vec<Finding>> {
     Ok(findings)
 }
 
+/// The findings that the diff shows by itself, from its paths and its added
+/// lines, and each URL host an added line names, with the first place that
+/// names it.
+fn diff_findings(files: &[FileDiff]) -> (Vec<Finding>, BTreeMap<String, (String, u32)>) {
+    // A line removed in one place and added in another is code that moved: the
+    // capability it holds was already in the tree.
+    let moved: HashSet<&str> = files
+        .iter()
+        .flat_map(|f| f.removed.iter().map(|l| l.trim()))
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut findings = Vec::new();
+    let mut hosts: BTreeMap<String, (String, u32)> = BTreeMap::new();
+    for file in files {
+        findings.extend(rules::path_findings(file));
+        for (line, text) in &file.added {
+            if moved.contains(text.trim()) {
+                continue;
+            }
+            let (found, named) = rules::line_findings(&file.path, *line, text);
+            findings.extend(found);
+            for host in named {
+                hosts
+                    .entry(host)
+                    .or_insert_with(|| (file.path.clone(), *line));
+            }
+        }
+    }
+    (findings, hosts)
+}
+
 /// Parse `git diff --unified=0` output.
 pub(crate) fn parse_diff(diff: &str) -> Vec<FileDiff> {
     let mut files: Vec<FileDiff> = Vec::new();
-    let mut next_line = 0u32;
-    // The `+++`/`---` file headers come before the first hunk; inside a hunk,
-    // a line that starts with `+++` is an added line.
-    let mut in_hunk = false;
+    let mut next_line: Option<u32> = None;
     for line in diff.lines() {
         if let Some(rest) = line.strip_prefix("diff --git ") {
             let path = rest.rsplit_once(" b/").map_or(rest, |(_, b)| b);
@@ -201,27 +206,37 @@ pub(crate) fn parse_diff(diff: &str) -> Vec<FileDiff> {
                 path: path.to_string(),
                 ..FileDiff::default()
             });
-            in_hunk = false;
+            next_line = None;
             continue;
         }
-        let Some(file) = files.last_mut() else {
-            continue;
-        };
-        if let Some(hunk) = line.strip_prefix("@@ ") {
-            next_line = hunk_start(hunk).unwrap_or(0);
-            in_hunk = true;
-        } else if !in_hunk {
-            if line.starts_with("Binary files ") {
-                file.binary = true;
-            }
-        } else if let Some(text) = line.strip_prefix('+') {
-            file.added.push((next_line, text.to_string()));
-            next_line += 1;
-        } else if let Some(text) = line.strip_prefix('-') {
-            file.removed.push(text.to_string());
+        if let Some(file) = files.last_mut() {
+            read_file_line(file, line, &mut next_line);
         }
     }
     files
+}
+
+/// One line of a file's part of the diff. `next_line` is `None` before the
+/// file's first hunk, then the new-side number of the next added line.
+fn read_file_line(file: &mut FileDiff, line: &str, next_line: &mut Option<u32>) {
+    if let Some(hunk) = line.strip_prefix("@@ ") {
+        *next_line = Some(hunk_start(hunk).unwrap_or(0));
+        return;
+    }
+    // The `+++`/`---` file headers come before the first hunk; inside a hunk,
+    // a line that starts with `+++` is an added line.
+    let Some(number) = next_line else {
+        if line.starts_with("Binary files ") {
+            file.binary = true;
+        }
+        return;
+    };
+    if let Some(text) = line.strip_prefix('+') {
+        file.added.push((*number, text.to_string()));
+        *number += 1;
+    } else if let Some(text) = line.strip_prefix('-') {
+        file.removed.push(text.to_string());
+    }
 }
 
 /// The first new-side line of a hunk header body such as `-3,2 +4,5 @@`.

@@ -38,8 +38,13 @@ fn descriptor(port: u16) -> PeerDescriptor {
 /// per request is exact here: the client awaits each response before sending the
 /// next, so requests can never arrive pipelined into one read.
 async fn counting_peer() -> (u16, Arc<AtomicUsize>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let accepts = Arc::new(AtomicUsize::new(0));
     let counter = accepts.clone();
     tokio::spawn(async move {

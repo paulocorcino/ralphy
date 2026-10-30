@@ -99,11 +99,11 @@ impl FromStr for Hash {
         let salt: [u8; SALT_LEN] = salt_vec
             .as_slice()
             .try_into()
-            .map_err(|_| anyhow!("password salt is not {SALT_LEN} bytes"))?;
+            .with_context(|| format!("password salt is not {SALT_LEN} bytes"))?;
         let dk: [u8; DK_LEN] = dk_vec
             .as_slice()
             .try_into()
-            .map_err(|_| anyhow!("password derived key is not {DK_LEN} bytes"))?;
+            .with_context(|| format!("password derived key is not {DK_LEN} bytes"))?;
         Ok(Hash {
             salt,
             iterations,

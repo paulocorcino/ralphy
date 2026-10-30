@@ -85,11 +85,10 @@ pub fn format_final_report(r: &VerifyReport) -> String {
         r.queue.len()
     ));
 
-    if r.queue.is_empty() {
-        out.push_str("warning: no queue-labeled issue\n");
-    } else {
-        let n = suggested_issue(&r.queue).unwrap();
+    if let Some(n) = suggested_issue(&r.queue) {
         out.push_str(&format!("next step: {}\n", next_step_command(n)));
+    } else {
+        out.push_str("warning: no queue-labeled issue\n");
     }
 
     out
@@ -127,11 +126,10 @@ fn print_final_report(r: &VerifyReport) {
         r.skill_count,
         r.queue.len()
     ));
-    if r.queue.is_empty() {
-        print_note("note: no issue is queued for the agent yet");
-    } else {
-        let n = suggested_issue(&r.queue).unwrap();
+    if let Some(n) = suggested_issue(&r.queue) {
         print_ok(&format!("Next: {}", next_step_command(n)));
+    } else {
+        print_note("note: no issue is queued for the agent yet");
     }
 }
 
@@ -242,8 +240,7 @@ pub(crate) fn finalize(
         );
     }
 
-    if !r.queue.is_empty() {
-        let n = suggested_issue(&r.queue).unwrap();
+    if let Some(n) = suggested_issue(&r.queue) {
         let answer = ask_yes_no("Try a safe practice run now (no changes made)?", false)?;
         if smoke_test_decision(&answer) {
             run_smoke_test(repo, n, selected_agent)?;

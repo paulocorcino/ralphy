@@ -14,7 +14,15 @@
 import { component } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { fullPath } from "./wb-file-paths.ts";
-import { folderContents, folderSize, formatBytes, modifiedText, typeText, yesNo, type SizeReply } from "./wb-properties-format.ts";
+import {
+  folderContents,
+  folderSize,
+  formatBytes,
+  modifiedText,
+  typeText,
+  yesNo,
+  type SizeReply,
+} from "./wb-properties-format.ts";
 
 /** One line of the dialog. `pending` shows the spinner; `retry` offers a new try. */
 type Row = { label: string; value: string; pending?: boolean; retry?: boolean };
@@ -49,7 +57,8 @@ const closedProps = (): Props => ({
 /** The words of a refusal. An older daemon does not know the verb, and a second
  * count is refused while one runs. */
 function refusal(reply: DaemonReply | null, fallback: string) {
-  if (reply?.message === "unknown verb") return "This host runs an older daemon. Update it to see properties.";
+  if (reply?.message === "unknown verb")
+    return "This host runs an older daemon. Update it to see properties.";
   if (reply?.reason === "busy") return "Another size is being calculated. Try again.";
   return WBFail.failed(reply, fallback);
 }
@@ -70,15 +79,18 @@ export function wbPropertiesDialog() {
         isFolder: detail.isFolder || detail.path === "",
         statPending: true,
       };
-      this.propsLoadStat(seq);
-      if (this.props.isFolder) this.propsLoadSize(seq);
+      void this.propsLoadStat(seq);
+      if (this.props.isFolder) void this.propsLoadSize(seq);
     },
 
     // The daemon that hosts the open project, in the checkout the tree shows
     // (#406), as every read of the tree does.
     propsAsk<V extends "file.stat" | "tree.size">(verb: V) {
       const slug = this.$store.projects.openSlug;
-      const payload = WBDaemon.withCheckout({ repo: slug, path: this.props.path }, this.$store.checkouts.checkoutOf(slug));
+      const payload = WBDaemon.withCheckout(
+        { repo: slug, path: this.props.path },
+        this.$store.checkouts.checkoutOf(slug),
+      );
       return WBDaemon.observe(verb, payload).catch(() => null);
     },
 
@@ -87,7 +99,10 @@ export function wbPropertiesDialog() {
       if (seq !== this._propsSeq) return;
       this.props.statPending = false;
       if (!reply || WBFail.isError(reply)) {
-        this.props.statError = refusal(reply, "Could not read the properties: the daemon gave no reason.");
+        this.props.statError = refusal(
+          reply,
+          "Could not read the properties: the daemon gave no reason.",
+        );
         return;
       }
       this.props.stat = reply;
@@ -100,14 +115,17 @@ export function wbPropertiesDialog() {
       if (seq !== this._propsSeq) return;
       this.props.sizePending = false;
       if (!reply || WBFail.isError(reply)) {
-        this.props.sizeError = refusal(reply, "Could not count the folder: the daemon gave no reason.");
+        this.props.sizeError = refusal(
+          reply,
+          "Could not count the folder: the daemon gave no reason.",
+        );
         return;
       }
       this.props.size = reply;
     },
 
     propsRetrySize() {
-      this.propsLoadSize(this._propsSeq);
+      void this.propsLoadSize(this._propsSeq);
     },
 
     propsClose() {
@@ -123,7 +141,10 @@ export function wbPropertiesDialog() {
     },
 
     propsRoot() {
-      return this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root || "";
+      return (
+        this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root ||
+        ""
+      );
     },
 
     // The lines of the dialog, in order. The facts of the path come from
@@ -159,21 +180,33 @@ export function wbPropertiesDialog() {
     // numbers; a lower bound says so; a refusal says why and offers a new try.
     propsSizeRows(): Row[] {
       const { size, sizePending, sizeError } = this.props;
-      if (sizePending) return ["Size", "Contains"].map((label) => ({ label, value: "Calculating…", pending: true }));
-      if (sizeError || !size) return [{ label: "Size", value: sizeError || "Unknown", retry: true }];
+      if (sizePending)
+        return ["Size", "Contains"].map((label) => ({
+          label,
+          value: "Calculating…",
+          pending: true,
+        }));
+      if (sizeError || !size)
+        return [{ label: "Size", value: sizeError || "Unknown", retry: true }];
       const rows: Row[] = [
         { label: "Size", value: folderSize(size) },
         { label: "Contains", value: folderContents(size) },
         { label: "Ignored contents", value: formatBytes(size.ignored_bytes ?? 0) },
       ];
-      if (size.truncated) rows.push({ label: "Note", value: "The count stopped after 5 s, so these numbers are a minimum." });
+      if (size.truncated)
+        rows.push({
+          label: "Note",
+          value: "The count stopped after 5 s, so these numbers are a minimum.",
+        });
       return rows;
     },
 
     // What a screen reader hears while the dialog waits and when it is done.
     propsStatus() {
       if (this.props.sizePending) return "Calculating the size of the folder…";
-      return this.props.open && this.props.isFolder && this.props.size ? "The size of the folder is ready." : "";
+      return this.props.open && this.props.isFolder && this.props.size
+        ? "The size of the folder is ready."
+        : "";
     },
 
     propsBusy() {

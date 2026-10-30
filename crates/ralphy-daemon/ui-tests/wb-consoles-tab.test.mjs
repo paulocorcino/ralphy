@@ -1,9 +1,11 @@
-// Unit tests for assets/ui/wb-consoles-tab.ts, the two Alpine components of
-// the Consoles tab: `wbConsoleMenus` (the toolbar menus and their keys) and
-// `wbColumns` (the columns beside a maximized console, the footer pills, and
-// the console module's events). Each is built with `loadComponent`, so every
-// test here also fails when a component reads a shell() name it does not list
-// in `uses`, or assigns a shell() field (ADR-0073 D4).
+// Unit tests for assets/ui/wb-consoles-tab.ts and wb-consoles-tab-menus.ts,
+// the two Alpine components of the Consoles tab: `wbConsoleMenus` (the
+// toolbar menus and their keys; the tests of it alone are in
+// wb-consoles-tab-menus.test.mjs) and `wbColumns` (the columns beside a
+// maximized console, the footer pills, and the console module's events).
+// Each is built with `loadComponent`, so every test here also fails when a
+// component reads a shell() name it does not list in `uses`, or assigns a
+// shell() field (ADR-0073 D4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -43,34 +45,6 @@ function page() {
   };
   return { shell: loaded.state, menus: menus.scope, columns: columns.scope, fire, key, listeners };
 }
-
-// ADR-0063 §3: a NEW console opens in the checkout selected at the moment of
-// the click, and in the primary when none is — the console keeps it afterwards
-// (the title comes from the daemon's announcement, never from this selection).
-// A console is born in the primary whatever the Files chip shows (ADR-0063,
-// amendment 2026-09-16 b): the selection is what the panels LOOK at; only the
-// console's own title switcher moves it.
-test("newConsole opens the agent in the primary even under a selected checkout", () => {
-  const { scope: state, shell } = loadComponent("wbConsoleMenus");
-  const calls = [];
-  const real = globalThis.WBConsole;
-  // The component reaches `WBConsole` as a bare global; the real one needs a DOM.
-  globalThis.WBConsole = { open: (o) => calls.push(o), count: () => 0 };
-  try {
-    shell.$store.tabs.active = "consoles";
-    state.$store.projects.setOpen("o/r");
-    shell.$store.checkouts.checkouts = { "o/r": "wt-a" };
-    state.newConsole("claude");
-    shell.$store.checkouts.checkouts = {};
-    state.newConsole("codex");
-  } finally {
-    globalThis.WBConsole = real;
-  }
-  assert.deepEqual(calls, [
-    { repo: "o/r", agent: "claude", checkout: null },
-    { repo: "o/r", agent: "codex", checkout: null },
-  ]);
-});
 
 // ADR-0051 §5: the same chord walks the columns while two or more consoles
 // are open, and the fences otherwise. The listener itself is a sink in the
@@ -132,70 +106,6 @@ test("Alt+Shift+↑/↓ walks the rows of a column, and applies nothing with no 
   } finally {
     done();
   }
-});
-
-test("the Note menu keeps a card on top, puts it back, and refuses a card in a popup", () => {
-  const { scope: state, shell, window } = loadComponent("wbConsoleMenus");
-  const calls = [];
-  window.WBNotes = {
-    putBack: () => calls.push("putBack"),
-    keepOnTop: (id) => calls.push("keepOnTop:" + id),
-    list: () => [{ id: "a", onTop: false, away: false }],
-  };
-  state.$nextTick = (fn) => fn();
-  shell.$store.tabs.active = "consoles";
-  state.noteMenu = true;
-
-  // Putting back keeps the menu open and redraws the rows.
-  state.toggleOnTop({ id: "a", onTop: true, away: false });
-  assert.deepEqual(calls, ["putBack"]);
-  assert.equal(state.noteMenu, true);
-  assert.deepEqual(state.noteItems, [{ id: "a", onTop: false, away: false }]);
-
-  // Keeping on top closes the menu, so the card is in view.
-  state.toggleOnTop({ id: "a", onTop: false, away: false });
-  assert.deepEqual(calls, ["putBack", "keepOnTop:a"]);
-  assert.equal(state.noteMenu, false);
-
-  // A card in a detached popup: nothing happens.
-  state.toggleOnTop({ id: "b", onTop: false, away: true });
-  assert.equal(calls.length, 2);
-});
-
-test("Alt+Shift+R from another tab opens the Consoles tab and its menu", () => {
-  const { scope: state, shell } = loadComponent("wbConsoleMenus");
-  const calls = [];
-  state.$nextTick = () => {};
-  shell.$store.tabs.activate = (tab) => {
-    calls.push("activate:" + tab);
-    shell.$store.tabs.active = tab;
-  };
-  shell.$store.tabs.active = "code";
-
-  state.openConsoleRunMenu();
-  // The menu sits in the Consoles tab's toolbar: on another tab it is hidden.
-  assert.deepEqual(calls, ["activate:consoles"]);
-  assert.equal(state.agentMenu, true);
-  assert.equal(state.consoleRunOpen, true);
-});
-
-test("keeping a card on top from another tab opens the Consoles tab first", () => {
-  const { scope: state, shell, window } = loadComponent("wbConsoleMenus");
-  const calls = [];
-  window.WBNotes = { keepOnTop: (id) => calls.push("keepOnTop:" + id) };
-  const ticks = [];
-  state.$nextTick = (fn) => ticks.push(fn);
-  shell.$store.tabs.activate = (tab) => {
-    calls.push("activate:" + tab);
-    shell.$store.tabs.active = tab;
-  };
-  shell.$store.tabs.active = "code";
-
-  state.toggleOnTop({ id: "a", onTop: false, away: false });
-  // The card is placed only after the tab is shown: a hidden tab measures 0×0.
-  assert.deepEqual(calls, ["activate:consoles"]);
-  ticks.forEach((fn) => fn());
-  assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
 });
 
 // The console module names the consoles whose records left the desk; the
@@ -418,9 +328,9 @@ test("nothing outside the two components names their state", () => {
   // The page without the two parts: one is left out by the helper, the other
   // is cut out of the text it put in.
   const columns = readFileSync(join(UI, PARTS.wbColumns), "utf8");
-  const page = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
-  assert.ok(page.includes(columns), "the page holds the columns part");
-  const outside = withoutComments(page.replace(columns, ""));
+  const html = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
+  assert.ok(html.includes(columns), "the page holds the columns part");
+  const outside = withoutComments(html.replace(columns, ""));
   for (const name of ["agentMenu", "toggleAgentMenu", "consoleRunText", "fenceItems", "noteItems", "columnMenu", "columnView", "consoleCount", "stageW"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }

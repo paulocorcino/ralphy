@@ -91,7 +91,7 @@ impl tracing::Subscriber for GlobalCapture {
                     ..Default::default()
                 };
                 event.record(&mut f);
-                target.lock().unwrap().push(f);
+                target.lock().expect("lock the capture sink").push(f);
             }
         });
     }
@@ -105,6 +105,11 @@ fn install_global_capture() {
     use std::sync::OnceLock;
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a global default set elsewhere makes this fail, and the doc above calls \
+                     that harmless"
+        )]
         let _ = tracing::subscriber::set_global_default(GlobalCapture);
     });
 }
@@ -116,7 +121,7 @@ pub(crate) fn capture_run<T>(f: impl FnOnce() -> T) -> (T, Vec<CapturedFields>) 
     CAPTURE_TARGET.with(|t| *t.borrow_mut() = Some(sink.clone()));
     let out = f();
     CAPTURE_TARGET.with(|t| *t.borrow_mut() = None);
-    let events = std::mem::take(&mut *sink.lock().unwrap());
+    let events = std::mem::take(&mut *sink.lock().expect("lock the capture sink"));
     (out, events)
 }
 

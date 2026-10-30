@@ -16,29 +16,37 @@
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
    `workbench:action` seam carrying the new content, for a backend to persist.
 
-   This module owns the panes, the split and the mirror. The Markdown pane,
-   the find, the encoding menu and the save steps are its siblings
-   `wb-viewer-markdown.ts`, `-find.ts`, `-encoding.ts` and `-save.ts`; it
-   builds them in `createViewer`.
+   This module owns the panes. The split and the mirror are
+   `wb-file-viewer-slot.ts`, and the diff, image and refused panes are
+   `wb-file-viewer-read-only.ts`. The Markdown pane, the find, the encoding
+   menu and the save steps are its siblings `wb-viewer-markdown.ts`,
+   `-find.ts`, `-encoding.ts` and `-save.ts`; it builds them in
+   `createViewer`.
 --------------------------------------------------------------------------- */
 import { WBMonaco } from "./wb-monaco.ts";
-import { WBSplit } from "./wb-split.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
+import { need, required } from "./wb-dom-need.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
-import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import { isRendered } from "./wb-viewer-render.ts";
-import { createViewerEncoding, encodingBtnHtml, encodingLabel, refreshEncodingPill } from "./wb-viewer-encoding.ts";
+import {
+  createViewerEncoding,
+  encodingBtnHtml,
+  encodingLabel,
+  refreshEncodingPill,
+} from "./wb-viewer-encoding.ts";
 import { createViewerFind } from "./wb-viewer-find.ts";
 import { createViewerMarkdown, linkTarget, remoteImageNotice } from "./wb-viewer-markdown.ts";
 import { createViewerSave } from "./wb-viewer-save.ts";
+import { createViewerSlot } from "./wb-file-viewer-slot.ts";
+import { createViewerReadOnly } from "./wb-file-viewer-read-only.ts";
 import type { ViewerMarkdown } from "./wb-viewer-markdown.ts";
 import type { ReopenBytes } from "./wb-viewer-save.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 
 /**
  * One open file pane. `open` fills the first group; the rest appear as the
@@ -101,15 +109,6 @@ type OpenSpec = {
   bom?: boolean;
 } & ({ content: string; refused?: undefined } | { content?: undefined; refused: string });
 
-/** The mirror: a second editor over a pane's model, in a `.viewer` of its own. */
-type Mirror = {
-  rec: ViewerRecord;
-  el: HTMLElement;
-  ed: MonacoEditor | null;
-  ro: ResizeObserver | undefined;
-  saveKey: MonacoDisposable | undefined;
-};
-
 /** Whether `v` has the shape `descOf` gives a file: what one window posts to
  * another when a file pane is detached or comes home. */
 export function isFileDescriptor(v: unknown): v is FileDescriptor {
@@ -164,184 +163,78 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   const find = createViewerFind({ document, alive });
   const { findInEditor, findInMarkdown } = find;
   const saver = createViewerSave({
-    window, messages, reopenRefused,
+    window,
+    messages,
+    reopenRefused,
     renderMarkdown: (rec) => markdown.renderMarkdown(rec),
     drawMermaid: (rec) => markdown.drawMermaid(rec),
   });
-  const { save, showSaveError, clearSaveError, descOf, reloadFile, applyFresh, showDiskBadge, hideDiskBadge } = saver;
-  const encoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
-  const { wireEncodingMenu } = encoding;
+  const {
+    save,
+    showSaveError,
+    clearSaveError,
+    descOf,
+    reloadFile,
+    applyFresh,
+    showDiskBadge,
+    hideDiskBadge,
+  } = saver;
+  const viewerEncoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
+  const { wireEncodingMenu } = viewerEncoding;
   const markdown: ViewerMarkdown = createViewerMarkdown({
-    window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor, saver, encoding, find,
+    window,
+    document,
+    viewers,
+    setPathLabel,
+    setCaption,
+    detachBtnHtml,
+    detachClick,
+    mountEditor,
+    saver,
+    encoding: viewerEncoding,
+    find,
   });
   const { buildMarkdown, drawMermaid, jumpTo } = markdown;
+  // `isNarrow` is built below, so the slot and the read-only panes take it late.
+  const { refresh, show, mirrors, mirrored, closeMirror } = createViewerSlot({
+    window,
+    document,
+    viewers,
+    map,
+    alive,
+    findInEditor,
+    drawMermaid,
+    setPathLabel,
+    setCaption,
+    isNarrow: (el) => isNarrow(el),
+    watchNarrow,
+    bindSave,
+  });
+  const { buildDiff, buildImage, buildRefused } = createViewerReadOnly({
+    window,
+    document,
+    viewers,
+    messages,
+    alive,
+    setPathLabel,
+    setCaption,
+    detachBtnHtml,
+    detachClick,
+    reloadFile,
+    isNarrow: (el) => isNarrow(el),
+    watchNarrow,
+  });
 
-
-  // --- the secondary pane: the slot (ADR-0037 §3c) ---------------------------
-  // What is on screen: the active pane and, beside it, the slot the shell
-  // resolved (`WBSplit.resolve`) — a pinned pane's id, or the active pane's
-  // own id with `mirror` set. The decision is the shell's; this module only
-  // paints it, and paints SINGLE whenever the slot's pane is not here yet (a
-  // reload restores the slot while its bytes are in flight) — the next
-  // `setActive`/`refresh` converges, the same rule the shell's late opener
-  // follows.
-  let shown: { id: string | null; slot: ViewerSlot | null } = { id: null, slot: null };
-  // The mirror: a second Monaco editor over the active pane's model, in a
-  // sibling `.viewer` of its own so the grid, the toolbar and the narrow-pane
-  // container query all see one more pane. At most one, ever. It owns its
-  // EDITOR only — the model is the mirrored pane's, and `disposeEditor` closes
-  // the mirror before the model on every path.
-  let mirror: Mirror | null = null;
-  let divider: HTMLElement | null = null;
-
-  function refresh() {
-    paint();
-  }
-
-  // Monaco and mermaid both need a laid-out container, so a pane is
-  // (re)painted on every show.
-  function paint() {
-    const { id, slot } = shown;
-    const slotRec = slot ? map.get(slot.id) : null;
-    const split = isSplit(slot, slotRec);
-    for (const rec of map.values()) {
-      const { on, display, gridColumn } = paneLayout(rec.id, id, split, slot?.id);
-      Object.assign(rec.el!.style, { display, gridColumn });
-      rec.visible = on;
-      if (on) {
-        setTimeout(() => {
-          rec.ed?.layout();
-          // A find asked for while the pane was off screen (see findInEditor).
-          if (rec.pendingFind && rec.ed) {
-            const term: string = rec.pendingFind;
-            rec.pendingFind = null;
-            findInEditor(rec, term);
-          }
-        }, 0);
-        if (isRendered(rec.kind)) drawMermaid(rec);
-      }
-    }
-    if (!viewers) return;
-    viewers.classList.toggle("split", split);
-    if (!split) {
-      // Nothing on screen (Consoles, Spend): the mirror is HIDDEN like every
-      // other pane, keeping its own scroll and cursor for the return — that
-      // independence is what the second editor is for. Any other single
-      // paint is a slot that was closed or moved: the mirror goes.
-      if (id === null && mirror && alive(mirror.rec)) mirror.el.style.display = "none";
-      else closeMirror();
-      return;
-    }
-    ensureDivider();
-    viewers.style.setProperty("--wb-split", ratioPct(slot!.ratio));
-    if (slot!.mirror) ensureMirror(slotRec!);
-    else closeMirror();
-    if (slot!.focus) {
-      const target = focusTarget(slot!, mirror, slotRec!.ed as MonacoEditor | undefined);
-      setTimeout(() => target?.focus(), 0);
-    }
-  }
-
-  const ratioPct = (ratio: number | null) => `${((Number.isFinite(ratio) ? ratio! : 0.5) * 100).toFixed(2)}%`;
-
-  function ensureMirror(rec: ViewerRecord) {
-    if (mirror?.rec === rec) {
-      mirror.el.style.display = "flex";
-      return;
-    }
-    closeMirror();
-    const el = document.createElement("div");
-    el.className = "viewer code-viewer mirror-viewer";
-    el.dataset.mirrorOf = rec.id;
-    // `.viewer` takes its `display` inline (paint sets flex/none per pane):
-    // without it the body has no flex to fill and Monaco mounts 0px tall.
-    el.style.display = "flex";
-    el.style.gridColumn = "3";
-    el.innerHTML = `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <span class="viewer-mirror-tag">Mirror</span>
-        <span class="spacer"></span>
-        <button class="vbtn" data-act="mirror" title="Close mirror" aria-label="Close mirror"><i class="bi bi-x-lg"></i><span class="vbtn-label">Close mirror</span></button>
-      </div>
-      <div class="viewer-body"></div>`;
-    setPathLabel(el, rec);
-    el.querySelector<HTMLElement>('[data-act="mirror"]')!.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
-    viewers!.append(el);
-    const holder: Mirror = { rec, el, ed: null, ro: undefined, saveKey: undefined };
-    const ed = WBMonaco.createOver(el.querySelector<HTMLElement>(".viewer-body")!, (rec.ed as MonacoEditor).getModel()!, {
-      narrow: isNarrow(el),
-    });
-    // No content listener: the model is shared, so the pane's own listener
-    // already marks it dirty for an edit made here.
-    holder.saveKey = bindSave(ed, rec);
-    watchNarrow(holder, ed);
-    holder.ed = ed;
-    mirror = holder;
-    if (rec.mirrorBtn) setCaption(rec.mirrorBtn, "bi-x-lg", "Close mirror");
-  }
-
-  function closeMirror() {
-    if (!mirror) return;
-    const { rec, el, ed, ro, saveKey } = mirror;
-    mirror = null;
-    ro?.disconnect();
-    saveKey?.dispose();
-    ed?.dispose();
-    el.remove();
-    if (rec.mirrorBtn) setCaption(rec.mirrorBtn, "bi-files", "Mirror");
-  }
-
-  // The divider between the two columns: a drag moves the split, the × clears
-  // the slot. Pointer-driven the way the desk's resize bands are
-  // (`wb-console.ts`): every exit path drops all three listeners, and the
-  // ratio is announced ONCE, on release, for the shell to keep.
-  function ensureDivider() {
-    if (divider) return;
-    divider = document.createElement("div");
-    divider.className = "viewers-divider";
-    divider.innerHTML =
-      '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
-    divider.querySelector<HTMLElement>(".slot-close")!.onclick = () => window.Alpine?.store("tabs")?.clearSlot();
-    divider.addEventListener("pointerdown", (e: PointerEvent) => {
-      if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;
-      e.preventDefault();
-      const pointerId = e.pointerId;
-      const box = viewers!.getBoundingClientRect();
-      let ratio: number | null = null;
-      const onMove = (ev: PointerEvent) => {
-        if (ev.pointerId !== pointerId) return;
-        ratio = WBSplit.clampRatio(ev.clientX - box.left, box.width);
-        viewers!.style.setProperty("--wb-split", ratioPct(ratio));
-      };
-      const onUp = () => {
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-        document.removeEventListener("pointercancel", onUp);
-        if (ratio != null)
-          sendDocument(document, "workbench:split-ratio", { ratio });
-      };
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
-      document.addEventListener("pointercancel", onUp);
-    });
-    viewers!.append(divider);
-  }
-
-  // The canvas crossing the split's width floor is the shell's to re-decide:
-  // it holds the slot, this module only paints what it was last told.
-  if (viewers && typeof ResizeObserver === "function") {
-    new ResizeObserver(() => {
-      sendDocument(document, "workbench:canvas-resize", { width: viewers.clientWidth });
-    }).observe(viewers);
-  }
-
-  function mountEditor(rec: BytesRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) {
+  function mountEditor(
+    rec: BytesRecord,
+    container: HTMLElement,
+    opts: { path?: string; wordWrap?: string },
+  ) {
     const path = (opts && opts.path) || rec.path;
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .catch((err) => {
+      .catch((err: unknown) => {
         // The AMD loader did not boot — degrade to read-only bytes rather
         // than leave an empty pane (#308).
         // Only a BOOT failure lands here; a throw from create()/wiring below
@@ -387,9 +280,9 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
         }
         // A mirror asked for before there was an editor to mirror (a reload
         // restores the slot while the bytes are still in flight): paint now.
-        if (shown.slot?.mirror && shown.slot.id === rec.id) refresh();
+        if (mirrors(rec.id)) refresh();
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
@@ -406,8 +299,12 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // it is Monaco's own `automaticLayout` business. The observer is the pane's,
   // not the editor's: `disposeEditor` ends it with the editor it feeds.
   const NARROW_PX = 560;
-  const isNarrow = (el: HTMLElement | undefined) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
-  function watchNarrow(rec: { el?: HTMLElement; ro?: ResizeObserver }, ed: MonacoEditor | MonacoDiffEditor) {
+  const isNarrow = (el: HTMLElement | undefined) =>
+    !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
+  function watchNarrow(
+    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    ed: MonacoEditor | MonacoDiffEditor,
+  ) {
     if (!rec.el || typeof ResizeObserver !== "function") return;
     let narrow = isNarrow(rec.el);
     rec.ro = new ResizeObserver(() => {
@@ -438,88 +335,30 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   function disposeEditor(rec: ViewerRecord) {
     // The mirror sits over THIS pane's model: its editor goes before the model
     // does, on every path — an editor over a disposed model throws on render.
-    if (mirror?.rec === rec) closeMirror();
+    if (mirrored() === rec) closeMirror();
     rec.ro?.disconnect();
     rec.ro = undefined;
     rec.saveKey?.dispose();
     rec.saveKey = undefined;
     if (!rec.ed) return;
+    disposeEditorAndModels(rec, rec.ed);
+    rec.ed = undefined;
+  }
+
+  function disposeEditorAndModels(rec: ViewerRecord, ed: NonNullable<ViewerRecord["ed"]>) {
     if (rec.kind === "diff") {
       // A diff editor holds TWO models and BOTH must be disposed on EVERY
       // path — disposing the editor does NOT (the leak is only visible in
       // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
       // goes first: a model disposed while attached raises a page error (#407).
-      const m = (rec.ed as MonacoDiffEditor).getModel();
-      rec.ed.dispose();
+      const m = (ed as MonacoDiffEditor).getModel();
+      ed.dispose();
       m?.original?.dispose();
       m?.modified?.dispose();
     } else {
-      (rec.ed as MonacoEditor).getModel()?.dispose();
-      rec.ed.dispose();
+      (ed as MonacoEditor).getModel()?.dispose();
+      ed.dispose();
     }
-    rec.ed = undefined;
-  }
-
-  // --- a diff tab (read-only, two-sided) ----------------------------------
-  function mountDiff(rec: BytesRecord, container: HTMLElement) {
-    if (rec.mounting || rec.mountFailed) return Promise.resolve();
-    rec.mounting = true;
-    return WBMonaco.ready()
-      .then((monaco) => {
-        rec.mounting = false;
-        // Same record-identity liveness rule as mountEditor: a diff tab closed
-        // inside the boot window must mount nothing on its detached container.
-        if (!monaco || !alive(rec)) return;
-        const ed = WBMonaco.createDiff(container, {
-          original: rec.original!,
-          modified: rec.content,
-          path: rec.path,
-          uid: rec.uid,
-          project: rec.project,
-          narrow: isNarrow(rec.el),
-        });
-        rec.ed = ed;
-        watchNarrow(rec, ed);
-        if (rec.visible) ed.layout();
-      })
-      .catch((err) => {
-        // No `<pre>` degrade here: two texts side by side have no honest
-        // single-pane fallback, and one of them rendered alone would read as
-        // "no changes". Say it failed and close the tab (#311).
-        rec.mounting = false;
-        rec.mountFailed = true;
-        console.error("[workbench] monaco diff failed to mount", err);
-        messages.flash("Could not open the editor.");
-        window.Alpine?.store("tabs")?.closeTab(rec.id);
-      });
-  }
-
-  function buildDiff(rec: BytesRecord) {
-    const el = document.createElement("div");
-    el.className = "viewer diff-viewer";
-    el.dataset.tabId = rec.id;
-    el.style.display = "none";
-    // Find ONLY: no Save, no Reload, no disk badge, no Detach. This surface is
-    // read-only by design (#311) — no commit, discard or staging control — and a
-    // detached popup folds back a single-file descriptor a two-sided pane has no
-    // representation in.
-    el.innerHTML = `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <span class="spacer"></span>
-        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
-      </div>
-      <div class="viewer-body"></div>`;
-    setPathLabel(el, rec);
-    viewers!.append(el);
-
-    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
-      const mod = (rec.ed as MonacoDiffEditor | undefined)?.getModifiedEditor();
-      mod?.focus();
-      mod?.getAction("actions.find")?.run();
-    };
-    rec.el = el;
-    mountDiff(rec, el.querySelector<HTMLElement>(".viewer-body")!);
   }
 
   // --- a source-code editor tab ------------------------------------------
@@ -543,27 +382,30 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    viewers!.append(el);
+    required(viewers, "the element that holds the panes").append(el);
     wireEncodingMenu(rec, el);
 
-    const saveBtn = el.querySelector<HTMLElement>('[data-act="save"]')!;
-    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
+    const saveBtn = need(el, '[data-act="save"]');
+    need(el, '[data-act="find"]').onclick = () => {
       (rec.ed as MonacoEditor | undefined)?.focus();
-      (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run();
+      (rec.ed as MonacoEditor | undefined)
+        ?.getAction("actions.find")
+        ?.run()
+        .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
     saveBtn.onclick = () => save(rec);
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {
-      applyFresh(rec, rec.pendingDisk!);
+    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
+    need(el, '[data-act="disk"]').onclick = () => {
+      if (rec.pendingDisk !== undefined) applyFresh(rec, rec.pendingDisk);
       hideDiskBadge(rec);
     };
-    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
+    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
     rec.mirrorBtn = mirrorBtn;
-    mountEditor(rec, el.querySelector<HTMLElement>(".viewer-body")!, {});
+    void mountEditor(rec, need(el, ".viewer-body"), {});
   }
 
   // A pane that opened refused now has bytes: rebuild it as the pane its
@@ -572,7 +414,18 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   function reopenRefused(rec: RefusedRecord, bytes: ReopenBytes) {
     const { id, project, label, path, kind, checkout, detached } = rec;
     API.close(id);
-    API.open({ id, project, label, path, ftype: kind, checkout, detached, content: bytes.content, encoding: bytes.encoding, bom: bytes.bom });
+    API.open({
+      id,
+      project,
+      label,
+      path,
+      ftype: kind,
+      checkout,
+      detached,
+      content: bytes.content,
+      encoding: bytes.encoding,
+      bom: bytes.bom,
+    });
     if (rec.visible) refresh();
     window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
@@ -609,7 +462,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   }
 
   function setPathLabel(el: HTMLElement, rec: ViewerRecord) {
-    const span = el.querySelector<HTMLElement>(".viewer-path")!;
+    const span = need(el, ".viewer-path");
     const { dir, file, full } = pathLabel(rec);
     span.textContent = "";
     const d = document.createElement("span");
@@ -626,7 +479,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // pane hides, and the same words in `title`/`aria-label` for when it does.
   function setCaption(btn: HTMLElement, icon: string, caption: string) {
     btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
-    btn.querySelector(".vbtn-label")!.textContent = caption;
+    need(btn, ".vbtn-label").textContent = caption;
     btn.title = caption;
     btn.setAttribute("aria-label", caption);
   }
@@ -634,94 +487,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   function detachClick(rec: BytesRecord) {
     const evt = rec.detached ? "workbench:reattach-request" : "workbench:detach-request";
     sendDocument(document, evt, descOf(rec));
-  }
-
-  // --- an image tab (read-only) -------------------------------------------
-  // `rec.content` is a `data:` URL the daemon's verified media type built
-  // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
-  // Save, no Edit — the Write class is untouched by images.
-  function buildImage(rec: BytesRecord) {
-    const el = document.createElement("div");
-    el.className = "viewer image-viewer";
-    el.dataset.tabId = rec.id;
-    el.style.display = "none";
-    el.innerHTML = `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <span class="img-meta"></span>
-        <span class="spacer"></span>
-        <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"><i class="bi bi-arrows-angle-expand"></i><span class="vbtn-label">Actual size</span></button>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-        ${detachBtnHtml(rec)}
-      </div>
-      <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
-    setPathLabel(el, rec);
-    viewers!.append(el);
-
-    const img = el.querySelector<HTMLImageElement>(".img-canvas")!;
-    const meta = el.querySelector(".img-meta")!;
-    // The intrinsic size is only known once the bytes decode, and a decode
-    // failure is worth saying out loud: the daemon verified the type, so a
-    // browser that still cannot paint it means an unsupported/corrupt file.
-    img.onload = () => (meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`);
-    img.onerror = () => (meta.textContent = "Image could not be displayed.");
-    img.src = rec.content;
-
-    el.querySelector<HTMLElement>('[data-act="zoom"]')!.onclick = (ev: MouseEvent) => {
-      // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
-      // slider is a feature this pane does not need to read a screenshot.
-      const actual = el.classList.toggle("actual-size");
-      setCaption(ev.currentTarget as HTMLElement, actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand", actual ? "Fit" : "Actual size");
-    };
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
-    rec.el = el;
-  }
-
-  // --- a refused file: the tab stays and says why -------------------------
-  // What the daemon would not serve as text (`binary`, `too large`, an
-  // encoding it cannot name) used to close the tab under the click with a
-  // flash nobody saw. The tab now holds its place, names the reason in the
-  // pane, and Reload retries (the file may have been converted meanwhile).
-  const REFUSAL_TEXT: Record<string, string> = {
-    binary: "This file is binary and cannot be shown as text.",
-    "too large": "This file is larger than 2 MiB. The workbench shows files up to 2 MiB.",
-    "not an image": "This file is not an image the workbench can display.",
-    "unknown encoding": "That encoding is not one the workbench knows.",
-    unencodable: "This file cannot be decoded with that encoding.",
-  };
-  function refusalText(reason: string) {
-    if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
-    // `detached.html` loads no `wb-fail.ts`.
-    return WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
-  }
-
-  function buildRefused(rec: RefusedRecord) {
-    const el = document.createElement("div");
-    el.className = "viewer refused-viewer";
-    el.dataset.tabId = rec.id;
-    el.style.display = "none";
-    el.innerHTML = `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <span class="spacer"></span>
-        <span class="viewer-save-err" style="display:none"></span>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-      </div>
-      <div class="viewer-body refused-body">
-        <i class="bi bi-file-earmark-x"></i>
-        <p class="refused-text"></p>
-        <p class="refused-hint"></p>
-      </div>`;
-    setPathLabel(el, rec);
-    el.querySelector(".refused-text")!.textContent = refusalText(rec.refused);
-    if (rec.refused === "binary") {
-      el.querySelector(".refused-hint")!.textContent =
-        "This file may be text in an older encoding. Set the fallback encoding in “Settings”, or reopen the file with another encoding.";
-    }
-    viewers!.append(el);
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    rec.el = el;
   }
 
   // --- public API ---------------------------------------------------------
@@ -746,9 +511,19 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       if (map.has(id)) return;
       const shown = label || (WBFleet ? WBFleet.refSlug(project) : project);
       const pane: PaneRecord = {
-        id, project, label: shown, path, kind: ftype, original, uid: ++uidSeq,
-        editing: false, visible: false, detached: !!detached, checkout: checkout || null,
-        encoding: encoding || "UTF-8", bom: !!bom,
+        id,
+        project,
+        label: shown,
+        path,
+        kind: ftype,
+        original,
+        uid: ++uidSeq,
+        editing: false,
+        visible: false,
+        detached: !!detached,
+        checkout: checkout || null,
+        encoding: encoding || "UTF-8",
+        bom: !!bom,
       };
       if (spec.refused !== undefined) {
         const refused: RefusedRecord = { ...pane, refused: spec.refused };
@@ -819,8 +594,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     // or nothing. One argument is the single pane every caller had; the
     // detached popup never passes a second.
     setActive(id: string | null, slot?: ViewerSlot | "" | null) {
-      shown = { id, slot: slot || null };
-      paint();
+      show(id, slot || null);
     },
 
     // The canvas width the split decision is made against.
@@ -851,7 +625,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       // before touching the DOM, so a tab closed mid-boot mounts nothing.
       map.delete(id);
       disposeEditor(rec);
-      rec.el!.remove();
+      rec.el?.remove();
     },
 
     // Scroll an open markdown pane to a `#fragment`, once the bytes landed.

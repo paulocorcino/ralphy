@@ -19,7 +19,12 @@ export function isSplit(slot: ViewerSlot | null, slotRec: PaneShape | null | und
 
 /** The place of the pane `recId` when `id` is active: the active pane takes
  * column 1 and the slot's pane column 3, and one pane alone has no column. */
-export function paneLayout(recId: string, id: string | null, split: boolean, slotId: string | undefined): PaneLayout {
+export function paneLayout(
+  recId: string,
+  id: string | null,
+  split: boolean,
+  slotId: string | undefined,
+): PaneLayout {
   const on = recId === id || (split && recId === slotId);
   if (!on) return { on, display: "none", gridColumn: "" };
   if (!split) return { on, display: "flex", gridColumn: "" };
@@ -28,6 +33,10 @@ export function paneLayout(recId: string, id: string | null, split: boolean, slo
 
 /** The editor a focused slot hands the keyboard to: the mirror's own editor
  * when the slot is a mirror, else the pinned pane's. */
-export function focusTarget<E>(slot: ViewerSlot, mirror: { ed: E | null } | null, slotEd: E | undefined): E | null | undefined {
+export function focusTarget<E>(
+  slot: ViewerSlot,
+  mirror: { ed: E | null } | null,
+  slotEd: E | undefined,
+): E | null | undefined {
   return slot.mirror ? mirror?.ed : slotEd;
 }

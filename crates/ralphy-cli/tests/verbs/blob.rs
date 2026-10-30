@@ -10,12 +10,12 @@ use std::process::Output;
 use super::support::run_git;
 
 fn init_repo() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     let root = dir.path();
     run_git(root, &["init", "--quiet"]);
     run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["config", "user.name", "Test"]);
-    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    std::fs::write(root.join("README.md"), "hello\n").expect("writing a file");
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "--quiet", "-m", "init"]);
     dir

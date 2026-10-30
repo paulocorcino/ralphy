@@ -20,21 +20,26 @@ mod notes;
 /// `ws://…/ws/command` URL, the repo slug, AND the leaked repo root so a test can
 /// assert on-disk state after a Write.
 pub(super) async fn serve_repo() -> (String, String, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.txt"), b"x").unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
+    std::fs::write(dir.path().join("a.txt"), b"x").expect("write a.txt");
     let root = dir.path().to_path_buf();
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/workspace";
     store.upsert(slug, &dir.path().to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -47,7 +52,9 @@ pub(super) async fn serve_repo() -> (String, String, PathBuf) {
     );
     std::mem::forget(_tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/command"),
@@ -76,7 +83,7 @@ pub(super) async fn round_trip(
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("send the frame");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut replies = Vec::new();
@@ -342,27 +349,32 @@ async fn symlink_write_escape_refused() {
 /// uses: the pointer FILE is what `checkout::is_linked` reads, so no `git`
 /// child is needed to make `wt-a` resolve.
 pub(super) async fn serve_worktree_repo() -> (String, String, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("a.txt"), b"x").unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
+    std::fs::write(dir.path().join("a.txt"), b"x").expect("write a.txt");
     let wt = dir.path().join(".ralphy/worktrees/wt-a");
-    std::fs::create_dir_all(wt.join("docs")).unwrap();
+    std::fs::create_dir_all(wt.join("docs")).expect("create the directory docs");
     let gitdir = dir
         .path()
         .join(".git/worktrees/wt-a")
         .to_string_lossy()
         .replace('\\', "/");
-    std::fs::write(wt.join(".git"), format!("gitdir: {gitdir}\n")).unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {gitdir}\n")).expect("write .git");
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/worktree";
     store.upsert(slug, &dir.path().to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     let root = dir.path().to_path_buf();
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -375,7 +387,9 @@ pub(super) async fn serve_worktree_repo() -> (String, String, PathBuf) {
     );
     std::mem::forget(_tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/command"),

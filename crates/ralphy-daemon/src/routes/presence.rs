@@ -120,15 +120,8 @@ pub(crate) async fn watch_stores(
     pushes: broadcast::Sender<Push>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let stamp = |r: std::path::PathBuf, p: std::path::PathBuf| {
-        tokio::task::spawn_blocking(move || (store_stamp(&r), peers_stamp(&p)))
-    };
-    let mut last = match stamp(registry_path.clone(), peers_dir.clone()).await {
-        Ok(stamps) => stamps,
-        Err(e) => {
-            tracing::warn!(error = %e, "the store watch stopped; repos and peers are no longer pushed");
-            return;
-        }
+    let Some(mut last) = stamp_stores(&registry_path, &peers_dir).await else {
+        return;
     };
     let mut tick = tokio::time::interval(STORE_STAMP_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -137,21 +130,35 @@ pub(crate) async fn watch_stores(
         tokio::select! {
             _ = shutdown.changed() => break,
             _ = tick.tick() => {
-                let now = match stamp(registry_path.clone(), peers_dir.clone()).await {
-                    Ok(stamps) => stamps,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "the store watch stopped; repos and peers are no longer pushed");
-                        break;
-                    }
+                let Some(now) = stamp_stores(&registry_path, &peers_dir).await else {
+                    break;
                 };
-                if now.0 != last.0 {
-                    push(&pushes, Push::Repos);
-                }
-                if now.1 != last.1 {
-                    push(&pushes, Push::Peers);
-                }
+                push_changed(&pushes, &last, &now);
                 last = now;
             }
+        }
+    }
+}
+
+/// Push `repos.dirty`, then `peers.dirty`, for each stamp that changed.
+fn push_changed(pushes: &broadcast::Sender<Push>, last: &(String, String), now: &(String, String)) {
+    if now.0 != last.0 {
+        push(pushes, Push::Repos);
+    }
+    if now.1 != last.1 {
+        push(pushes, Push::Peers);
+    }
+}
+
+/// The stamps of `repos.toml` and of the peer store, or `None` when the
+/// blocking task that reads them failed, which ends the watch.
+async fn stamp_stores(registry_path: &Path, peers_dir: &Path) -> Option<(String, String)> {
+    let (r, p) = (registry_path.to_path_buf(), peers_dir.to_path_buf());
+    match tokio::task::spawn_blocking(move || (store_stamp(&r), peers_stamp(&p))).await {
+        Ok(stamps) => Some(stamps),
+        Err(e) => {
+            tracing::warn!(error = %e, "the store watch stopped; repos and peers are no longer pushed");
+            None
         }
     }
 }

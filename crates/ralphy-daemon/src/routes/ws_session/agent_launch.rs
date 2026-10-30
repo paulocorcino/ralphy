@@ -16,6 +16,17 @@ use crate::{agent_state, auth, checkout, confine, registry, session};
 /// A launch refused before anything is written or spawned.
 type Refusal = (StatusCode, String);
 
+/// A launch whose repo, checkout and gates are settled: what is asked for and
+/// the directory the child runs in.
+struct SettledLaunch {
+    agent_str: String,
+    agent: session::Agent,
+    repo: String,
+    path: String,
+    checkout: Option<checkout::Checkout>,
+    cwd: PathBuf,
+}
+
 impl Upgrade {
     pub(super) async fn agent(self) -> Response {
         let Some((agent_str, agent)) = self.requested_agent() else {
@@ -33,8 +44,15 @@ impl Upgrade {
             Ok(settled) => settled,
             Err((status, why)) => return self.refuse(status, why),
         };
-        self.spawn_agent(agent_str, agent, &repo, &path, checkout, cwd)
-            .await
+        let launch = SettledLaunch {
+            agent_str,
+            agent,
+            repo,
+            path,
+            checkout,
+            cwd,
+        };
+        self.spawn_agent(launch).await
     }
 
     fn requested_agent(&self) -> Option<(String, session::Agent)> {
@@ -70,15 +88,14 @@ impl Upgrade {
         };
         let (name, primary) = (name.to_string(), root.to_path_buf());
         let resolved = blocking_read(move || {
-            let c =
-                checkout::resolve(&name, |n| checkout::is_linked(&primary, n)).map_err(|_| ())?;
-            confine::confine(&primary, &c.prefix("")).map_err(|_| ())?;
-            Ok::<_, ()>(c)
+            let c = checkout::resolve(&name, |n| checkout::is_linked(&primary, n))?;
+            confine::confine(&primary, &c.prefix(""))?;
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c)
         })
         .await;
         match resolved {
             Some(Ok(c)) => Ok(Some(c)),
-            Some(Err(())) => Err((StatusCode::BAD_REQUEST, checkout::UNKNOWN.to_string())),
+            Some(Err(_)) => Err((StatusCode::BAD_REQUEST, checkout::UNKNOWN.to_string())),
             None => Err((StatusCode::INTERNAL_SERVER_ERROR, "unavailable".to_string())),
         }
     }
@@ -113,15 +130,15 @@ impl Upgrade {
         Ok(())
     }
 
-    async fn spawn_agent(
-        self,
-        agent_str: String,
-        agent: session::Agent,
-        repo: &str,
-        path: &str,
-        checkout: Option<checkout::Checkout>,
-        cwd: PathBuf,
-    ) -> Response {
+    async fn spawn_agent(self, launch: SettledLaunch) -> Response {
+        let SettledLaunch {
+            agent_str,
+            agent,
+            repo,
+            path,
+            checkout,
+            cwd,
+        } = launch;
         // The id first: the agent-state files are named by it and must exist
         // before the child that reads them is launched (ADR-0059 §5). Only a
         // vendor with hooks gets the slot; the store dir failing to resolve means
@@ -146,8 +163,8 @@ impl Upgrade {
         };
         // The fallback `--name` is built from the project NAME: a remoteless repo's
         // slug is a `path-<hash>` key, and the operator reads this name.
-        let project = registry::project_name(repo, path);
-        let root = PathBuf::from(path);
+        let project = registry::project_name(&repo, &path);
+        let root = PathBuf::from(&path);
         let spec = session::spec_with_status(
             agent,
             &root,
@@ -184,7 +201,7 @@ impl Upgrade {
                 self.who.console(&launch_record(
                     id,
                     &agent_str,
-                    Some(repo.to_string()),
+                    Some(repo.clone()),
                     None,
                     &self.tab,
                 ));

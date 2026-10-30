@@ -148,6 +148,7 @@ pub fn ensure_gitignore_entries(path: &Path, names: &[std::ffi::OsString]) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch_dir;
 
     /// A fresh temp dir holding `src/nested/deep.txt` = `deep`, plus the `dest`
     /// path (not created) the dance targets.
@@ -156,7 +157,7 @@ mod tests {
             "ralphy-support-skills-{tag}-{}",
             std::process::id()
         ));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch_dir(&base);
         let src = base.join("src");
         fs::create_dir_all(src.join("nested")).unwrap();
         fs::write(src.join("nested/deep.txt"), b"deep").unwrap();
@@ -172,7 +173,7 @@ mod tests {
             fs::read_to_string(dest.join("nested/deep.txt")).unwrap(),
             "deep"
         );
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch_dir(&base);
     }
 
     #[test]
@@ -185,7 +186,7 @@ mod tests {
             fs::read_to_string(dest.join("nested/deep.txt")).unwrap(),
             "deep"
         );
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch_dir(&base);
     }
 
     #[test]
@@ -198,13 +199,13 @@ mod tests {
             src.join("nested/deep.txt").is_file(),
             "removing the link must not reach the target"
         );
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch_dir(&base);
     }
 
     #[test]
     fn ensure_gitignore_entries_merges_without_clobbering() {
         let base = std::env::temp_dir().join(format!("ralphy-support-gi-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch_dir(&base);
         fs::create_dir_all(&base).unwrap();
         let path = base.join(".gitignore");
         fs::write(&path, b"my-secret\n").unwrap();
@@ -228,6 +229,6 @@ mod tests {
             "a second call must not duplicate: {gi:?}"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch_dir(&base);
     }
 }

@@ -50,7 +50,7 @@ export function releaseDialogs() {
     },
     // `ralphy update` in a terminal restarts only this daemon, so only its own
     // consoles close.
-    get releaseConsoleWarning() {
+    get releaseConsoleWarning(): string {
       const n = this.$store.projects.localSessions().length;
       if (!n) return "";
       if (n === 1) return "1 console is open. The update closes it and stops the agent in it.";
@@ -71,12 +71,13 @@ export function releaseDialogs() {
       this.whatsNewOpen = true;
       this.$store.release.markReleaseSeen();
       // The warning counts the consoles open now, not at the last poll.
-      this.$store.projects.refreshLive();
+      void this.$store.projects.refreshLive();
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;
       // A running update goes on without the panel; a question does not.
-      if (this.relUpdate.phase === "confirm" || this.relUpdate.phase === "error") this.cancelUpdate();
+      if (this.relUpdate.phase === "confirm" || this.relUpdate.phase === "error")
+        this.cancelUpdate();
     },
     async beginUpdate() {
       let needCode = false;
@@ -89,19 +90,34 @@ export function releaseDialogs() {
       }
       // The list as it is now, not as the last poll left it.
       await this.$store.projects.refreshLive();
-      const consoles = this.$store.projects.localSessions().map(
-        (s) => s.name || (s.repo && s.repo !== "~" ? this.$store.projects.projectLabel(s.repo) : "home"),
-      );
+      const consoles = this.$store.projects
+        .localSessions()
+        .map(
+          (s) =>
+            s.name ||
+            (s.repo && s.repo !== "~" ? this.$store.projects.projectLabel(s.repo) : "home"),
+        );
       // A peer that can be woken through `wsl.exe` is the one the update takes
       // after this daemon (ADR-0056 §11). Its consoles close only if it takes a
       // new version, so they are counted apart.
       const wsl = (this.$store.projects.fleetPeers || []).filter((p) => p.nudgeable);
       const peers = wsl.map((p) => p.name || p.environment);
-      const peerConsoles = wsl.reduce((n, p) => n + this.$store.projects.peerSessions(p.daemon_id).length, 0);
-      this.relUpdate = { phase: "confirm", code: "", needCode, consoles, peers, peerConsoles, error: "" };
+      const peerConsoles = wsl.reduce(
+        (n, p) => n + this.$store.projects.peerSessions(p.daemon_id).length,
+        0,
+      );
+      this.relUpdate = {
+        phase: "confirm",
+        code: "",
+        needCode,
+        consoles,
+        peers,
+        peerConsoles,
+        error: "",
+      };
     },
     // The line about the WSL peers in the update question.
-    get updatePeerText() {
+    get updatePeerText(): string {
       const u = this.relUpdate;
       if (!u.peers || !u.peers.length) return "";
       const names = u.peers.join(", ");
@@ -111,7 +127,15 @@ export function releaseDialogs() {
       return `Then Ralphy updates the WSL copy too: ${names}. If it takes a new version, ${consoles} as well.`;
     },
     cancelUpdate() {
-      this.relUpdate = { phase: "idle", code: "", needCode: false, consoles: [], peers: [], peerConsoles: 0, error: "" };
+      this.relUpdate = {
+        phase: "idle",
+        code: "",
+        needCode: false,
+        consoles: [],
+        peers: [],
+        peerConsoles: 0,
+        error: "",
+      };
     },
     async confirmUpdate() {
       const u = this.relUpdate;
@@ -129,11 +153,17 @@ export function releaseDialogs() {
         return;
       }
       this.relUpdate = { ...u, phase: "restarting", code: "" };
-      this.awaitNewBuild(this.$store.release.release.current);
+      void this.awaitNewBuild(this.$store.release.release.current);
     },
     // The line under the question when the daemon refused or the update failed.
-    updateRefusal(result: { ok: boolean; status?: number; retryAfter?: string | null; message?: string }) {
-      if (result.status === 401) return "Code rejected. Enter the current code from your authenticator app.";
+    updateRefusal(result: {
+      ok: boolean;
+      status?: number;
+      retryAfter?: string | null;
+      message?: string;
+    }) {
+      if (result.status === 401)
+        return "Code rejected. Enter the current code from your authenticator app.";
       if (result.status === 429) {
         return `Too many attempts. Wait ${result.retryAfter || "a few"} seconds and try again.`;
       }
@@ -161,7 +191,8 @@ export function releaseDialogs() {
           this.relUpdate = {
             ...this.relUpdate,
             phase: "error",
-            error: "The new version did not start, so the previous version runs again. The file .ralphy/update.log in your home folder says why.",
+            error:
+              "The new version did not start, so the previous version runs again. The file .ralphy/update.log in your home folder says why.",
           };
           return;
         }
@@ -169,7 +200,8 @@ export function releaseDialogs() {
       this.relUpdate = {
         ...this.relUpdate,
         phase: "error",
-        error: "Ralphy did not come back in two minutes. The file .ralphy/update.log in your home folder says why.",
+        error:
+          "Ralphy did not come back in two minutes. The file .ralphy/update.log in your home folder says why.",
       };
     },
     async setReleaseWatch(enable: boolean) {

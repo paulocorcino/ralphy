@@ -52,6 +52,22 @@ fn the_more_specific_shapes_win_over_a_bare_contains() {
     assert_eq!(classify(r#"let s = html.contains("x");"#), None);
 }
 
+#[test]
+fn a_scoped_slice_and_a_script_order_are_read_from_their_calls() {
+    assert_eq!(
+        classify(r#"let at = src.split_once("<body").expect("a body");"#),
+        Some(Shape::ScopedSlice)
+    );
+    assert_eq!(
+        classify(r#"assert!(head_at < body_at && html.contains("x"));"#),
+        Some(Shape::ScriptOrder)
+    );
+    assert_eq!(
+        classify(r#"assert!(strip_css_comments(css).contains("x"));"#),
+        Some(Shape::Normalized)
+    );
+}
+
 /// A pin is a fragment of source text; a failure message is a sentence.
 #[test]
 fn assertion_prose_is_not_counted_as_a_pin() {

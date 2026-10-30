@@ -53,9 +53,10 @@ export function refreshEncodingPill(rec: ViewerRecord) {
 function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
   for (const item of menu.querySelectorAll<HTMLElement>(".enc-item")) {
     const i = Number(item.dataset.reopen ?? item.dataset.savewith);
-    const [, name, bom] = ENCODINGS[i];
-    const current =
-      String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
+    const row = ENCODINGS[i];
+    if (!row) continue;
+    const [, name, bom] = row;
+    const current = String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
     item.classList.toggle("current", current);
   }
 }
@@ -86,7 +87,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const group = (head: string, act: string) =>
       `<div class="dropdown-head">${head}</div>` +
       ENCODINGS.map(
-        ([label, name, bom], i) =>
+        ([label], i) =>
           `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
       ).join("");
     menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
@@ -116,8 +117,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       if (!item) return;
       ev.stopPropagation();
       close();
-      if (item.dataset.reopen != null) reopenWith(rec, ENCODINGS[Number(item.dataset.reopen)]);
-      else if (item.dataset.savewith != null) saveWith(rec, ENCODINGS[Number(item.dataset.savewith)]);
+      const encoding = ENCODINGS[Number(item.dataset.reopen ?? item.dataset.savewith)];
+      if (!encoding) return;
+      if (item.dataset.reopen != null) reopenWith(rec, encoding);
+      else if (item.dataset.savewith != null) saveWith(rec, encoding);
     };
   }
 
@@ -128,7 +131,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       readWith(rec, name)
         .then((reply) => {
           if (!reply || reply.status !== "ok") {
-            showSaveError(rec, WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
+            showSaveError(
+              rec,
+              WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`),
+            );
             return;
           }
           rec.encoding = reply.encoding || name;
@@ -137,7 +143,9 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
           if (rec.refused !== null) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
         })
-        .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
+        .catch(() =>
+          showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`),
+        );
     };
     if (!rec.dirty) return go();
     // The design-system dialog where there is a shell; `window.confirm` only
@@ -149,7 +157,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
         confirmLabel: "Reopen",
         danger: true,
       }) ?? Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
-    ask.then((ok) => ok && go());
+    void ask.then((ok) => ok && go());
   }
 
   // Save with: the text as it is, written under `name` — the conversion the

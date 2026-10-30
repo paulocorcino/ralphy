@@ -30,7 +30,17 @@ export type NoteFileDeps = {
 };
 
 export function createNoteFile(deps: NoteFileDeps) {
-  const { window, consoleHost, messages, recordOf, patch, render, paintPath, paintState, loadInto } = deps;
+  const {
+    window,
+    consoleHost,
+    messages,
+    recordOf,
+    patch,
+    render,
+    paintPath,
+    paintState,
+    loadInto,
+  } = deps;
 
   // Point a card at another file (ADR-0064 §11's missing-file state). The
   // record is re-aimed and the file is re-read; nothing on disk is touched,
@@ -80,30 +90,36 @@ export function createNoteFile(deps: NoteFileDeps) {
     const pointing = !!el._notePointing;
     endRename(el);
     if (!record || !next) return;
-    if (pointing) {
-      // A whole rel path, not a file name: the card is being aimed somewhere
-      // else in the checkout, and the read decides whether there is a note
-      // there. Identity is `(repo, checkout, path)` (ADR-0064 §4) and this is
-      // the one gesture that could break it: two cards over one file would be
-      // two editors autosaving it, each overwriting the other with stale text
-      // and neither told.
-      const taken = (consoleHost?.notes?.() || []).find(
-        (n) =>
-          n.id !== record.id &&
-          n.repo === record.repo &&
-          (n.checkout ?? null) === (record.checkout ?? null) &&
-          n.path === next,
-      );
-      if (taken) {
-        paintState(el, "Another note already uses that file.");
-        return;
-      }
-      patch(record.id, { path: next });
-      paintPath(el, next);
-      el.classList.remove("missing");
-      loadInto(el, { ...record, path: next });
+    if (pointing) pointAt(el, record, next);
+    else renameFile(el, record, next);
+  }
+
+  // A whole rel path, not a file name: the card is being aimed somewhere
+  // else in the checkout, and the read decides whether there is a note
+  // there. Identity is `(repo, checkout, path)` (ADR-0064 §4) and this is
+  // the one gesture that could break it: two cards over one file would be
+  // two editors autosaving it, each overwriting the other with stale text
+  // and neither told.
+  function pointAt(el: NoteCard, record: NoteSource, next: string) {
+    const taken = (consoleHost?.notes?.() || []).find(
+      (n) =>
+        n.id !== record.id &&
+        n.repo === record.repo &&
+        (n.checkout ?? null) === (record.checkout ?? null) &&
+        n.path === next,
+    );
+    if (taken) {
+      paintState(el, "Another note already uses that file.");
       return;
     }
+    patch(record.id, { path: next });
+    paintPath(el, next);
+    el.classList.remove("missing");
+    loadInto(el, { ...record, path: next });
+  }
+
+  // A new file name for the note, in the same directory.
+  function renameFile(el: NoteCard, record: NoteSource, next: string) {
     if (!record.path || next === baseName(record.path)) return;
     // Always a `.note`: the verbs refuse anything else, and a note renamed out
     // of its extension would be a file nothing can open (ADR-0064 §5).
@@ -120,7 +136,15 @@ export function createNoteFile(deps: NoteFileDeps) {
         paintPath(el, to);
         paintState(el, "Renamed");
       })
-      .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
+      .catch((err: unknown) =>
+        paintState(
+          el,
+          WBFail.cause(
+            { message: err instanceof Error ? err.message : undefined },
+            "The daemon did not answer.",
+          ),
+        ),
+      );
   }
 
   // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
@@ -128,27 +152,37 @@ export function createNoteFile(deps: NoteFileDeps) {
   function deleteNote(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
     if (!record?.path || record.checkout) return;
-    messages?.askConfirm({
-      title: "Delete this note's file?",
-      message: `${record.path} is deleted from the checkout. This cannot be undone.`,
-      confirmLabel: "Delete",
-      danger: true,
-    }).then((ok) => {
-      if (!ok) return;
-      window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
-        .then((reply) => {
-          if (WBFail.isError(reply)) {
-            paintState(el, WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
-            return;
-          }
-          // The record goes without a toast: an undo that cannot put the file
-          // back would be a lie.
-          el._noteDirty = false;
-          consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
-          render();
-        })
-        .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
-    });
+    void messages
+      ?.askConfirm({
+        title: "Delete this note's file?",
+        message: `${record.path} is deleted from the checkout. This cannot be undone.`,
+        confirmLabel: "Delete",
+        danger: true,
+      })
+      .then((ok) => {
+        if (!ok) return;
+        window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
+          .then((reply) => {
+            if (WBFail.isError(reply)) {
+              paintState(el, WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
+              return;
+            }
+            // The record goes without a toast: an undo that cannot put the file
+            // back would be a lie.
+            el._noteDirty = false;
+            consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
+            render();
+          })
+          .catch((err: unknown) =>
+            paintState(
+              el,
+              WBFail.cause(
+                { message: err instanceof Error ? err.message : undefined },
+                "The daemon did not answer.",
+              ),
+            ),
+          );
+      });
   }
 
   return { pointElsewhere, renameNote, endRename, commitRename, deleteNote };

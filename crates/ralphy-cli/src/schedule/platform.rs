@@ -8,8 +8,14 @@
 // This module renders BOTH scheduler backends, but the host executor in
 // `schedule.rs` is `#[cfg]`-split so any single-platform build calls only half
 // of it (the other half is exercised only from tests, which dead-code analysis
-// ignores). The unused half is live on the other OS — allow rather than lose it.
-#![allow(dead_code)]
+// ignores). The unused half is live on the other OS — expect rather than lose it.
+#![cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "one build uses the renderers of one scheduler backend, and the tests use both"
+    )
+)]
 
 use std::path::Path;
 

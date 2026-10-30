@@ -24,8 +24,11 @@ const TPL_PRD_TEMPLATE: &str =
 
 // SUSPENDED (see `write_scaffold`): the `## Agent skills` block write is parked
 // under evaluation. These helpers are kept and unit-tested for re-enabling, so
-// they read as dead in a non-test build — allow it rather than delete the work.
-#[allow(dead_code)]
+// they read as dead in a non-test build — expect that rather than delete the work.
+#[expect(
+    dead_code,
+    reason = "the block is suspended and only suspended helpers use it"
+)]
 const AGENT_SKILLS_HEADING: &str = "## Agent skills";
 
 /// Select the issue-tracker template by the remote host. A host containing
@@ -48,7 +51,7 @@ fn select_issue_tracker(remote_host: Option<&str>) -> (&'static str, &'static st
 /// Render the `## Agent skills` block from the captured config: three one-line
 /// summaries (issue tracker, triage labels, domain docs), each pointing at the
 /// `docs/agents/*.md` file written alongside it.
-#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
+#[expect(dead_code, reason = "the block is suspended, so nothing calls it")]
 fn agent_skills_block(cfg: &InitConfig) -> String {
     let tracker = match select_issue_tracker(cfg.remote_host.as_deref()).1 {
         b if b == TPL_ISSUE_GITHUB => "GitHub issues (use the `gh` CLI)",
@@ -70,7 +73,7 @@ fn agent_skills_block(cfg: &InitConfig) -> String {
 /// Replace an existing `## Agent skills` section in `doc` (from that heading up to
 /// the next top-level `## ` heading or EOF) with `block`, or append `block` when
 /// no such section exists. The result contains the heading exactly once. Pure.
-#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
+#[expect(dead_code, reason = "the block is suspended, so nothing calls it")]
 fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
     let block = block.trim_end();
     let Some(start) = find_heading(doc, AGENT_SKILLS_HEADING) else {
@@ -109,7 +112,7 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
 /// Byte offset of the first line that starts with `needle` (at column 0), or
 /// `None`. `needle` is matched as a line prefix so `## Agent skills` does not
 /// match `### Agent skills sub`.
-#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
+#[expect(dead_code, reason = "the block is suspended, so nothing calls it")]
 fn find_heading(doc: &str, needle: &str) -> Option<usize> {
     if doc.starts_with(needle) {
         return Some(0);
@@ -122,7 +125,7 @@ fn find_heading(doc: &str, needle: &str) -> Option<usize> {
 /// Byte offset of the first line that opens a top-level (h1 or h2) markdown
 /// heading, or `None`. Used to bound an `## ` section: deeper `### ` headings
 /// nest within it, so only `# ` / `## ` ends it.
-#[allow(dead_code)] // SUSPENDED — see AGENT_SKILLS_HEADING.
+#[expect(dead_code, reason = "the block is suspended, so nothing calls it")]
 fn next_top_heading(s: &str) -> Option<usize> {
     let mut offset = 0;
     for line in s.split_inclusive('\n') {
@@ -245,6 +248,10 @@ mod tests {
     #[test]
     fn write_scaffold_prd_opt_in_controls_prd_docs() {
         let dir = std::env::temp_dir().join(format!("ralphy-scaffold-prd-{}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -257,6 +264,10 @@ mod tests {
 
         let dir2 =
             std::env::temp_dir().join(format!("ralphy-scaffold-noprd-{}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir2);
         std::fs::create_dir_all(&dir2).unwrap();
         let mut cfg2 = block_cfg();
@@ -265,7 +276,15 @@ mod tests {
         assert!(!dir2.join("docs/roadmap.md").exists());
         assert!(!dir2.join("docs/prd").exists());
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir2);
     }
 }

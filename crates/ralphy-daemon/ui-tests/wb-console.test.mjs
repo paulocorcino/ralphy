@@ -25,9 +25,13 @@ function familyGroup(name) {
   if (name.startsWith("wb-desk-")) return 4;
   return -1;
 }
+function compareNames(a, b) {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
 const SRC = readdirSync(UI)
   .filter((name) => familyGroup(name) >= 0)
-  .sort((a, b) => familyGroup(a) - familyGroup(b) || (a < b ? -1 : a > b ? 1 : 0))
+  .sort((a, b) => familyGroup(a) - familyGroup(b) || compareNames(a, b))
   .map((name) => readFileSync(join(UI, name), "utf8"))
   .join("");
 

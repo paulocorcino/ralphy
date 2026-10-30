@@ -33,7 +33,10 @@ pub use state::{IssueEntry, IssueStatus, RunState, SleepState};
 // `state.rs`'s own tests), but stay re-exported at this stable path per
 // ADR-0022 rather than moved behind `state::` — a future consumer naming the
 // type explicitly should not need to guess it lives in the private submodule.
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "no consumer names these items at this path, but the path stays stable"
+)]
 pub use state::{fold, Counts, QueueRef};
 
 /// The pool of branding header faces (human + animal). One is picked per run by a

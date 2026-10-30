@@ -56,6 +56,7 @@ mod tests {
             None,
             "a missing plan is a silent no-op"
         );
+        #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -93,6 +94,7 @@ mod tests {
             Some("- [x] a\n"),
             "the lost revision did not poison the guard"
         );
+        #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
         std::fs::remove_dir_all(&dir).ok();
     }
 }

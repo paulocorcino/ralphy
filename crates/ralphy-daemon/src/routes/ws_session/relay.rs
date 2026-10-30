@@ -25,35 +25,50 @@ const PEER_CLOSED: &str = "peer-closed";
 
 pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     if let Some(id) = query.id {
-        let mut out = format!("id={id}&repo={}", encode_query_value(slug));
-        if query.takeover == Some(1) {
-            out.push_str("&takeover=1");
-        }
-        if query.watch == Some(1) {
-            out.push_str("&watch=1");
-        }
-        push_holder(&mut out, query);
-        push_gzip(&mut out, query);
-        push_since(&mut out, query);
-        push_link(&mut out, query);
-        return out;
+        return reattach_query(query, id, slug);
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
     // in its own checkout of `slug`.
     if query.console == Some(1) {
-        let mut out = format!("console=1&repo={}", encode_query_value(slug));
-        if let Some(command) = query.command.as_deref().map(str::trim) {
-            if !command.is_empty() {
-                out.push_str("&command=");
-                out.push_str(&encode_query_value(command));
-            }
-        }
-        push_record(&mut out, query);
-        push_holder(&mut out, query);
-        push_gzip(&mut out, query);
-        push_link(&mut out, query);
-        return out;
+        return console_query(query, slug);
     }
+    launch_query(query, slug)
+}
+
+/// The query of a reattach to session `id`.
+fn reattach_query(query: &SessionQuery, id: u64, slug: &str) -> String {
+    let mut out = format!("id={id}&repo={}", encode_query_value(slug));
+    if query.takeover == Some(1) {
+        out.push_str("&takeover=1");
+    }
+    if query.watch == Some(1) {
+        out.push_str("&watch=1");
+    }
+    push_holder(&mut out, query);
+    push_gzip(&mut out, query);
+    push_since(&mut out, query);
+    push_link(&mut out, query);
+    out
+}
+
+/// The query of a free console, with its startup command.
+fn console_query(query: &SessionQuery, slug: &str) -> String {
+    let mut out = format!("console=1&repo={}", encode_query_value(slug));
+    if let Some(command) = query.command.as_deref().map(str::trim) {
+        if !command.is_empty() {
+            out.push_str("&command=");
+            out.push_str(&encode_query_value(command));
+        }
+    }
+    push_record(&mut out, query);
+    push_holder(&mut out, query);
+    push_gzip(&mut out, query);
+    push_link(&mut out, query);
+    out
+}
+
+/// The query of a new agent launch.
+fn launch_query(query: &SessionQuery, slug: &str) -> String {
     let mut out = format!(
         "repo={}&agent={}",
         encode_query_value(slug),
@@ -145,20 +160,30 @@ pub(crate) struct Opening {
     pub(crate) record: Option<ConsoleRecord>,
 }
 
-/// Open `peer_query` on the peer that owns the session and bridge it to the
+/// The peer to dial, the query to open on it, and who this daemon says it is.
+pub(crate) struct PeerDial<'a> {
+    pub(crate) peer: &'a peer::PeerDescriptor,
+    pub(crate) query: &'a str,
+    pub(crate) me: peer::client::SelfRef<'a>,
+}
+
+/// Open `dial.query` on the peer that owns the session and bridge it to the
 /// browser. A refused dial is refused with the peer's diagnosis (`502` on a
 /// reattach); an HTTP refusal from the peer keeps its own status and body. A
 /// peer that announces its refusal in a frame needs nothing here: the frame is
 /// relayed like any other.
 pub(crate) async fn relay_to_peer(
     ws: WebSocketUpgrade,
-    peer: &peer::PeerDescriptor,
-    peer_query: &str,
+    dial: PeerDial<'_>,
     opening: Opening,
-    me: peer::client::SelfRef<'_>,
     refuser: &Refuser,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
+    let PeerDial {
+        peer,
+        query: peer_query,
+        me,
+    } = dial;
     match peer::client::session(peer, peer_query, me).await {
         Ok(peer_socket) => {
             let Opening { tab, who, record } = opening;
@@ -253,7 +278,7 @@ async fn to_browser(
     end: &mut Option<&'static str>,
 ) -> ControlFlow<()> {
     let Some(Ok(message)) = incoming else {
-        let _ = browser.send(Message::Close(None)).await;
+        close_browser(browser).await;
         return ControlFlow::Break(());
     };
     match from_peer(message, traffic, end) {
@@ -265,10 +290,18 @@ async fn to_browser(
         }
         Step::Skip => ControlFlow::Continue(()),
         Step::Close => {
-            let _ = browser.send(Message::Close(None)).await;
+            close_browser(browser).await;
             ControlFlow::Break(())
         }
     }
+}
+
+async fn close_browser(browser: &mut WebSocket) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the browser may already be gone"
+    )]
+    let _ = browser.send(Message::Close(None)).await;
 }
 
 /// What the relay does with one frame it read.
@@ -337,10 +370,18 @@ fn from_peer(
 }
 
 pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the peer may already be gone"
+    )]
     let _ = peer
         .send(tokio_tungstenite::tungstenite::Message::Close(None))
         .await;
     if let tokio_tungstenite::MaybeTlsStream::Plain(stream) = peer.get_mut() {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the peer may already be gone"
+        )]
         let _ = stream.shutdown().await;
     }
 }

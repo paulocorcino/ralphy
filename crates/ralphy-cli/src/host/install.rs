@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use super::checks::{
     classify_describe, parse_facts, CheckId, CheckStatus, HostCheck, HostFacts, RalphyOnHost,
 };
-use super::pair::{connect, Local, Session};
+use super::pair::{connect, Destination, Local, Session};
 use super::report::Report;
 use super::shell::{installed_folder, HostOp, HostOs, InstalledOp};
 use super::ssh::HostShell;
@@ -256,12 +256,12 @@ fn printed_hash(stdout: &str) -> Option<String> {
 pub(crate) fn install(
     shell: &mut impl HostShell,
     local: &Local<'_>,
-    dest: &str,
-    key_file: Option<&Path>,
+    destination: Destination<'_>,
     keygen: impl FnOnce(&Path) -> Result<()>,
     fetch: &mut impl Fetch,
     out: &mut Report<impl Write>,
 ) -> Result<()> {
+    let Destination { dest, key_file } = destination;
     let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {
@@ -284,6 +284,31 @@ pub(crate) fn install(
     }
     let offer = offer(&facts, local).map_err(|why| anyhow!(why))?;
 
+    send_binary(&mut s, fetch, &offer, out)?;
+    move_daemon(&mut s, local, out)?;
+    if matches!(ralphy, RalphyOnHost::Old { .. }) {
+        out.note(&format!(
+            "`ralphy` on the PATH of {dest} is still the old version. To use the new one by hand, put {} first in PATH.",
+            offer.folder
+        ))?;
+    } else {
+        out.note(&format!(
+            "To use Ralphy by hand on {dest}, add {} to PATH.",
+            offer.folder
+        ))?;
+    }
+    Ok(())
+}
+
+/// Send the offered binary to the host and put it in place, only when the hash
+/// the host computed for its copy matches the bytes that were sent.
+fn send_binary<S: HostShell>(
+    s: &mut Session<'_, S>,
+    fetch: &mut impl Fetch,
+    offer: &Offer,
+    out: &mut Report<impl Write>,
+) -> Result<()> {
+    let dest = s.dest;
     let bytes = fetch.binary(&offer.source, offer.target)?;
     let expected = format!("{:x}", Sha256::digest(&bytes));
     out.note(&format!(
@@ -306,7 +331,17 @@ pub(crate) fn install(
     }
     s.run_ok(&HostOp::CommitBinary, b"")?;
     out.note(&format!("Installed Ralphy in {} on {dest}.", offer.folder))?;
+    Ok(())
+}
 
+/// Move the daemon of the host to the installed binary: its autostart entry
+/// and, when it runs, the daemon itself.
+fn move_daemon<S: HostShell>(
+    s: &mut Session<'_, S>,
+    local: &Local<'_>,
+    out: &mut Report<impl Write>,
+) -> Result<()> {
+    let dest = s.dest;
     let now = s.run_ok(&HostOp::Installed(InstalledOp::Describe), b"")?;
     let RalphyOnHost::Described(d) = classify_describe(&now)? else {
         bail!(
@@ -328,17 +363,6 @@ pub(crate) fn install(
         s.run_ok(&HostOp::Installed(InstalledOp::Restart), b"")?;
         out.note(&format!(
             "Restarted the daemon on {dest} with the installed Ralphy."
-        ))?;
-    }
-    if matches!(ralphy, RalphyOnHost::Old { .. }) {
-        out.note(&format!(
-            "`ralphy` on the PATH of {dest} is still the old version. To use the new one by hand, put {} first in PATH.",
-            offer.folder
-        ))?;
-    } else {
-        out.note(&format!(
-            "To use Ralphy by hand on {dest}, add {} to PATH.",
-            offer.folder
         ))?;
     }
     Ok(())

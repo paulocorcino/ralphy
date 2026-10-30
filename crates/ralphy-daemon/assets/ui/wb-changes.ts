@@ -57,9 +57,7 @@ function marker(status: string) {
 // yield `readme.md`, not `deep/nested/readme.md`.
 function splitPath(path: string) {
   const cut = path.lastIndexOf("/");
-  return cut < 0
-    ? { name: path, dir: "" }
-    : { name: path.slice(cut + 1), dir: path.slice(0, cut) };
+  return cut < 0 ? { name: path, dir: "" } : { name: path.slice(cut + 1), dir: path.slice(0, cut) };
 }
 
 function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
@@ -350,7 +348,10 @@ function commitTarget(sync: Sync | null | undefined) {
 // the board's label editor is refused by the same guard (`mutate.rs`'s
 // `guard_run_lock(&ws, "label set", …)`) and needs the same sentence with a
 // different subject. One predicate, two subjects — never two predicates.
-function writeLockReason(runs: Run[] | null | undefined, tail = "These controls work again when it finishes.") {
+function writeLockReason(
+  runs: Run[] | null | undefined,
+  tail = "These controls work again when it finishes.",
+) {
   if (!Array.isArray(runs) || runs.length === 0) return "";
   return `A run is active in this project. ${tail}`;
 }
@@ -370,10 +371,7 @@ function discardConfirm(entry: ChangeEntry) {
   if (e.status === "untracked") {
     return {
       title: "Delete untracked file",
-      message:
-        "Delete “" +
-        name +
-        "”? It was never committed and cannot be recovered.",
+      message: "Delete “" + name + "”? It was never committed and cannot be recovered.",
       confirmLabel: "Delete permanently",
       danger: true,
       unrecoverable: true,
@@ -381,10 +379,7 @@ function discardConfirm(entry: ChangeEntry) {
   }
   return {
     title: "Discard changes",
-    message:
-      "Discard unstaged changes to “" +
-      name +
-      "”? Staged changes for this file are kept.",
+    message: "Discard unstaged changes to “" + name + "”? Staged changes for this file are kept.",
     confirmLabel: "Discard changes",
     danger: true,
     unrecoverable: false,

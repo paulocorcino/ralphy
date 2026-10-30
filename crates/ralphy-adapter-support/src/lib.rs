@@ -52,6 +52,9 @@ pub use json_session::{
     run_text_session_held, strip_bom, JsonSession, TextSession,
 };
 
+#[cfg(test)]
+mod scratch;
+
 mod resume;
 pub use resume::{plan_is_finalized_for, plan_trailer};
 

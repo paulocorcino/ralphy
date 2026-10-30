@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use ralphy_core::Workspace;
 
 /// A firing cadence in whole minutes or whole hours — the two granularities the
@@ -28,9 +28,9 @@ pub fn parse_interval(s: &str) -> Result<Schedule> {
         None => bail!("empty interval: use <N>m or <N>h (e.g. 30m, 2h)"),
     };
     let head = &s[..s.len() - unit.len_utf8()];
-    let n: u32 = head.parse().map_err(|_| {
-        anyhow::anyhow!("invalid interval {s:?}: expected <N>m or <N>h (e.g. 30m, 2h)")
-    })?;
+    let n: u32 = head
+        .parse()
+        .with_context(|| format!("invalid interval {s:?}: expected <N>m or <N>h (e.g. 30m, 2h)"))?;
     if n == 0 {
         bail!("interval must be positive, got {s:?}");
     }

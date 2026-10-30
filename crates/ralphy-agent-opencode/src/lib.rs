@@ -36,6 +36,8 @@ use ralphy_adapter_support::{run_exec_session, run_plan_session, ExecCfg, IssueB
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, Workspace};
 use tracing::info;
 
+#[cfg(test)]
+mod cleanup;
 mod command;
 mod events;
 mod outcome;

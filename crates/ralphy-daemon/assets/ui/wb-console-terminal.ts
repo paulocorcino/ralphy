@@ -10,7 +10,9 @@
    the state of its own terminal and socket; the session is the daemon's.
    The touch gesture is `wb-console-touch.ts`; the image paste, OSC 52 and
    the right button are `wb-console-paste.ts`; the GPU addon is
-   `terminalGpu` in `wb-console-gpu.ts` (#621).
+   `terminalGpu` in `wb-console-gpu.ts` (#621). `TerminalDeps` and
+   `TerminalOpts` are `wb-console-terminal-types.d.ts`; the retirement of a
+   socket is `wb-console-terminal-socket.ts`.
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
@@ -21,7 +23,6 @@ import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
 import { frameQueue } from "./wb-console-frames.ts";
 import { placeOf } from "./wb-console-probe.ts";
-import type { ScrollProbe } from "./wb-console-probe.ts";
 import { terminalGpu } from "./wb-console-gpu.ts";
 import { reportStall } from "./wb-stall.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
@@ -29,17 +30,13 @@ import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
 import type { FramePayload, SocketEvent } from "./wb-console-frames.ts";
 import type { Group } from "./wb-fleet.ts";
+import { announceDetach, detachSocket } from "./wb-console-terminal-socket.ts";
+import type { LinkState, TerminalDeps, TerminalOpts } from "./wb-console-terminal-types.d.ts";
 
 const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
-const {
-  encodeTerminal,
-  encodeDetach,
-  encodeShown,
-  endNotice,
-  reconnectDecision,
-  peerGate,
-} = WBConsoleSession;
+const { encodeTerminal, encodeDetach, encodeShown, endNotice, reconnectDecision, peerGate } =
+  WBConsoleSession;
 
 // The count of the session's output bytes a `session-open` says the terminal
 // shows, or null when the daemon sent none that is a whole count.
@@ -79,88 +76,17 @@ function showScrollbarWhileNeeded(term: XtermTerminal) {
   scrollable.updateOptions({ vertical: SCROLLBAR_VISIBLE });
 }
 
-// What the terminal reads from the console, and nothing else.
-export type TerminalDeps = {
-  // The console's page: `WBDaemon` (the image paste) and `getShell` (whether
-  // the shell's key listener exists).
-  window: Pick<Window, "WBDaemon" | "getShell">;
-  // The session socket's origin, scheme-matched to the page.
-  WS_ORIGIN: string;
-  // The stored font size, read when a terminal is made.
-  fontSize: () => number;
-  // The plane and the viewport; null before the page has them.
-  stage: () => HTMLElement | null;
-  workspace: () => HTMLElement | null;
-  // Stops a jump of the viewport in flight: a two-finger pan outranks it.
-  cancelSlide: () => void;
-  // The system clipboard. They are made in `wb-console-keys.ts`: the key bar uses them too.
-  writeClipboard: (text: string, term: XtermTerminal) => void;
-  readClipboard: () => Promise<ClipboardRead>;
-  // The page's scroll probe; absent where the page has none (ADR-0084).
-  scrollProbe?: ScrollProbe;
-};
-
-// What a clipboard read gives: an image, or else text (`clipboardContent`).
-type ClipboardRead = { image?: Blob; text?: string };
-
-// The link of a window that had a socket: "lost" while it reconnects, "back"
-// when a socket opens again or the window stops trying.
-export type LinkState = "lost" | "back";
-
-// What `attachTerminal` is built with, and what the chrome hands back to
-// rebuild a terminal after sleep (`TermWiring`).
-export type TerminalOpts = SessionRequest & {
-  // Arms or disarms the key bar's line-selection button.
-  onSelecting?: (on: boolean) => void;
-  // A key or a paste was refused because this window only watches.
-  onWatchedInput?: () => void;
-  onCtrlLatch?: (on: boolean) => void;
-  onShiftLatch?: (on: boolean) => void;
-  // The session's id, and the daemon's announcement when it came with one.
-  onSession?: (id: number | null, announced?: FramePayload) => void;
-  // This window parked as a watcher: `announced` is the daemon's reason.
-  onPark?: (announced: string | null) => void;
-  onEnded?: (announced: string | null, refusal: string | null) => void;
-  // The baton came back to this window.
-  onResume?: () => void;
-  // Whether a full-bleed console covers this window, and whether it has the
-  // focus: the size rule of wb-console-fit.ts.
-  covered?: () => boolean;
-  focused?: () => boolean;
-  // The peer's fleet group, or null for a local project.
-  peerGroup?: () => Group | null;
-  onPeerHold?: (group: Group | null) => void;
-  onPeerBack?: () => void;
-  // Shown beside the terminal, never in it: a notice in the terminal forgets
-  // the byte count, and the reconnect could not resume (ADR-0079 D8).
-  onLink?: (state: LinkState) => void;
-  readFleet?: () => void;
-};
-
 export function createTerminal(deps: TerminalDeps) {
-  const { window, WS_ORIGIN, fontSize, stage, workspace, cancelSlide, writeClipboard, readClipboard } =
-    deps;
-
-  // Announce `reason` on an open socket. A socket still connecting cannot send.
-  function announceDetach(ws: WebSocket | null, reason: DetachReason | undefined) {
-    if (reason && ws && ws.readyState === 1) ws.send(encodeDetach(reason));
-  }
-
-  // Retire a socket so its pending events cannot reach us. `onmessage` matters
-  // as much as `onclose`: a frame still queued lands AFTER this returns, when
-  // `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
-  // its own in the node harness and the popup.
-  function detachSocket(ws: WebSocket | null, reason: DetachReason | undefined) {
-    if (!ws) return;
-    ws.onclose = null;
-    ws.onmessage = null;
-    ws.onopen = null;
-    ws.onerror = null;
-    try {
-      announceDetach(ws, reason);
-      if (ws.readyState <= 1) ws.close();
-    } catch {}
-  }
+  const {
+    window,
+    WS_ORIGIN,
+    fontSize,
+    stage,
+    workspace,
+    cancelSlide,
+    writeClipboard,
+    readClipboard,
+  } = deps;
 
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
@@ -195,7 +121,11 @@ export function createTerminal(deps: TerminalDeps) {
     const probe = deps.scrollProbe?.watch(term, () => placeOf(body));
     // A wheel the page made for a touch (`wheelToApp`) is not trusted. In the
     // capture phase: xterm stops the wheel events it takes.
-    if (probe) body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), { passive: true, capture: true });
+    if (probe)
+      body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), {
+        passive: true,
+        capture: true,
+      });
     const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts, probe });
     const { setSelecting, stopFling, stopScroll } = touch;
     fitAddon.fit();
@@ -328,10 +258,7 @@ export function createTerminal(deps: TerminalDeps) {
     }
 
     function scheduleReconnect() {
-      retryDelay = Math.min(
-        retryDelay ? retryDelay * 2 : RECONNECT_BASE,
-        RECONNECT_MAX,
-      );
+      retryDelay = Math.min(retryDelay ? retryDelay * 2 : RECONNECT_BASE, RECONNECT_MAX);
       const wait = retryDelay + Math.random() * 0.3 * retryDelay; // jitter
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -358,7 +285,9 @@ export function createTerminal(deps: TerminalDeps) {
         WBSessionRoute.tabAttempt(),
         shown ?? undefined,
       );
-      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }));
+      ws = new WebSocket(
+        WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }),
+      );
       const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
@@ -404,8 +333,7 @@ export function createTerminal(deps: TerminalDeps) {
         currentSessionId = owner.sessionId;
         currentDaemonId = owner.daemonId;
         currentEnvironment = owner.environment;
-        if (typeof opts.onSession === "function")
-          opts.onSession(currentSessionId, event.payload);
+        if (typeof opts.onSession === "function") opts.onSession(currentSessionId, event.payload);
         joinWatch(event.payload);
         // Last: the notices above are not session output.
         shown = offsetOf(event.payload);
@@ -470,7 +398,7 @@ export function createTerminal(deps: TerminalDeps) {
           }
         }
       });
-      ws.onmessage = (ev: MessageEvent) => frames.take(new Uint8Array(ev.data));
+      ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => frames.take(new Uint8Array(ev.data));
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
       const closed = () => {
@@ -491,19 +419,10 @@ export function createTerminal(deps: TerminalDeps) {
             giveUp();
             return;
           case "park-as-watcher":
-            // Park ONCE, immediately. A watch socket that itself drops falls
-            // back to the backoff, so a refused watch cannot busy-loop.
-            if (!watching) {
-              watching = true;
-              // The watcher repaints from the snapshot, under its banner.
-              shown = null;
-              if (typeof opts.onPark === "function") opts.onPark(announced);
-              connect({ id: currentSessionId, repo: currentRepo, watch: true });
-            } else {
-              scheduleReconnect();
-            }
+            parkAsWatcher();
             return;
-          default:
+          case "connect":
+          case "reconnect":
             if (retryDelay === 0) {
               link("lost");
               // The fleet may already know why; its answer can hold this window.
@@ -512,6 +431,19 @@ export function createTerminal(deps: TerminalDeps) {
             scheduleReconnect();
         }
       };
+      // Park ONCE, immediately. A watch socket that itself drops falls back
+      // to the backoff, so a refused watch cannot busy-loop.
+      function parkAsWatcher() {
+        if (watching) {
+          scheduleReconnect();
+          return;
+        }
+        watching = true;
+        // The watcher repaints from the snapshot, under its banner.
+        shown = null;
+        if (typeof opts.onPark === "function") opts.onPark(announced);
+        connect({ id: currentSessionId, repo: currentRepo, watch: true });
+      }
       // After the frames that wait behind a replay decode: a `session-end`
       // among them names the reason this close is read with.
       ws.onclose = () => frames.whenIdle(closed);
@@ -571,7 +503,8 @@ export function createTerminal(deps: TerminalDeps) {
       sendInput(d);
     });
 
-    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") hold(peerGroup());
+    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold")
+      hold(peerGroup());
     else connect(opts);
 
     return {

@@ -42,6 +42,14 @@ pub(crate) struct Local<'a> {
     pub latest: Option<String>,
 }
 
+/// Where a host flow connects: the destination to pass to `ssh`, and the key
+/// to use (`None` = the operator's SSH config or agent).
+#[derive(Clone, Copy)]
+pub(crate) struct Destination<'a> {
+    pub dest: &'a str,
+    pub key_file: Option<&'a Path>,
+}
+
 /// A signed-in session: the key to use (`None` = the operator's SSH config or
 /// agent) and the host's OS.
 pub(super) struct Session<'s, S: HostShell> {
@@ -96,13 +104,15 @@ fn survey<S: HostShell>(
     let ralphy = classify_describe(&described)?;
     let host_id = match &ralphy {
         RalphyOnHost::Described(d) => d.daemon_id.clone(),
-        _ => None,
+        RalphyOnHost::Missing | RalphyOnHost::Old { .. } => None,
     };
     let names = fleet_names(local, host_id.as_deref());
     let mut checks = evaluate(&facts, &ralphy, &names, s.dest, wanted_name);
     let doctor = match ralphy {
         RalphyOnHost::Missing => None,
-        _ => parse_doctor(&s.run(&HostOp::Doctor, b"")?),
+        RalphyOnHost::Old { .. } | RalphyOnHost::Described(_) => {
+            parse_doctor(&s.run(&HostOp::Doctor, b"")?)
+        }
     };
     with_doctor(&mut checks, doctor.as_ref(), s.os);
     let offer = offer_for(&mut checks, &facts, &ralphy, local);
@@ -138,7 +148,10 @@ pub(crate) type Probe<'a> = &'a dyn Fn(&TunnelSpec, Option<&str>) -> Result<Stri
 /// write the local descriptor with its tunnel section. Writing the descriptor
 /// is the last side effect, so a failure anywhere before it leaves the local
 /// store as it was.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each input of the add flow is a separate thing that the tests replace"
+)]
 pub(crate) fn add(
     shell: &mut impl HostShell,
     local: &Local<'_>,
@@ -337,12 +350,12 @@ fn port_fallback(
 pub(crate) fn check(
     shell: &mut impl HostShell,
     local: &Local<'_>,
-    dest: &str,
-    key_file: Option<&Path>,
+    destination: Destination<'_>,
     wanted_name: Option<&str>,
     keygen: impl FnOnce(&Path) -> Result<()>,
     out: &mut Report<impl Write>,
 ) -> Result<Vec<HostCheck>> {
+    let Destination { dest, key_file } = destination;
     let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {
@@ -422,20 +435,12 @@ pub(crate) fn remove(
     }
     if let Some(kind) = classify(&uname) {
         let silent = format!("{name} did not answer: {}", uname.stderr.trim());
-        if rotate_token {
-            let why = format!(
-                "{silent}. Its access token was not changed, and Ralphy still knows {name}"
-            );
-            return Err(ssh_error(kind, why));
-        }
-        forget(store, host)?;
-        out.note(&format!("Forgot {name} on this computer."))?;
-        return match public_line {
-            Some(line) => Err(ssh_error(kind, format!(
-                "{silent}. The key line remains on {name}: remove this line from its authorized keys file:\n{line}"
-            ))),
-            None => out.note(&format!("{silent}. This computer has no key of its own there.")),
+        let unreached = Unreached {
+            kind,
+            silent,
+            public_line,
         };
+        return remove_unreached(store, host, rotate_token, unreached, out);
     }
     let os = detect_os(shell, dest, identity.as_deref(), &uname)?;
     let mut s = Session {
@@ -456,29 +461,78 @@ pub(crate) fn remove(
 
     match public_line.as_deref().and_then(key_body) {
         None => out.note(&format!("This computer has no key of its own on {name}."))?,
-        Some(body) => {
-            let admin = os == HostOs::Windows && {
-                let probe = s.run(&HostOp::Probe, b"")?;
-                probe.stdout.contains("S-1-5-32-544")
-            };
-            let keys = s.run_ok(&HostOp::ReadKeys { admin }, b"")?;
-            match without_key_line(&keys.stdout, body) {
-                None => out.note(&format!("This computer's key line is not on {name}."))?,
-                Some(rest) if rest.trim().is_empty() => {
-                    s.run_ok(&HostOp::ClearKeys { admin }, b"")?;
-                    out.note(&format!("Removed this computer's key line on {name}."))?;
-                }
-                Some(rest) => {
-                    s.run_ok(&HostOp::WriteKeys { admin }, rest.as_bytes())?;
-                    out.note(&format!("Removed this computer's key line on {name}."))?;
-                }
-            }
-        }
+        Some(body) => remove_key_line(&mut s, name, body, out)?,
     }
 
     forget(store, host)?;
     out.note(&format!("Forgot {name} on this computer."))?;
     out.note("The open tunnel closes when the daemon restarts.")?;
+    Ok(())
+}
+
+/// A host that `ralphy host remove` could not reach: the SSH failure, the
+/// message that says so, and this computer's key line that may remain there.
+struct Unreached {
+    kind: SshFailure,
+    silent: String,
+    public_line: Option<String>,
+}
+
+/// `ralphy host remove` for a host that did not answer: with a token rotation
+/// it fails and Ralphy keeps the host; otherwise the descriptor is forgotten
+/// and the operator is told which key line to remove by hand.
+fn remove_unreached(
+    store: &Path,
+    host: &PeerDescriptor,
+    rotate_token: bool,
+    unreached: Unreached,
+    out: &mut Report<impl Write>,
+) -> Result<()> {
+    let name = host.name.as_str();
+    let Unreached {
+        kind,
+        silent,
+        public_line,
+    } = unreached;
+    if rotate_token {
+        let why =
+            format!("{silent}. Its access token was not changed, and Ralphy still knows {name}");
+        return Err(ssh_error(kind, why));
+    }
+    forget(store, host)?;
+    out.note(&format!("Forgot {name} on this computer."))?;
+    match public_line {
+        Some(line) => Err(ssh_error(kind, format!(
+            "{silent}. The key line remains on {name}: remove this line from its authorized keys file:\n{line}"
+        ))),
+        None => out.note(&format!("{silent}. This computer has no key of its own there.")),
+    }
+}
+
+/// Delete every line of the host's authorized keys file that holds `body`.
+/// An administrator on Windows has its keys in another file.
+fn remove_key_line<S: HostShell>(
+    s: &mut Session<'_, S>,
+    name: &str,
+    body: &str,
+    out: &mut Report<impl Write>,
+) -> Result<()> {
+    let admin = s.os == HostOs::Windows && {
+        let probe = s.run(&HostOp::Probe, b"")?;
+        probe.stdout.contains("S-1-5-32-544")
+    };
+    let keys = s.run_ok(&HostOp::ReadKeys { admin }, b"")?;
+    match without_key_line(&keys.stdout, body) {
+        None => out.note(&format!("This computer's key line is not on {name}."))?,
+        Some(rest) if rest.trim().is_empty() => {
+            s.run_ok(&HostOp::ClearKeys { admin }, b"")?;
+            out.note(&format!("Removed this computer's key line on {name}."))?;
+        }
+        Some(rest) => {
+            s.run_ok(&HostOp::WriteKeys { admin }, rest.as_bytes())?;
+            out.note(&format!("Removed this computer's key line on {name}."))?;
+        }
+    }
     Ok(())
 }
 

@@ -27,6 +27,8 @@ use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Usage, Wo
 use tracing::info;
 
 mod auth;
+#[cfg(test)]
+mod cleanup;
 mod command;
 mod outcome;
 mod skills;
@@ -304,6 +306,7 @@ impl Agent for KimiAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
     use std::path::PathBuf;
 
     /// ADR-0044 D4: resolved effort is stored on the agent and discarded at
@@ -330,7 +333,7 @@ mod tests {
     #[test]
     fn execute_writes_exec_md_charter() {
         let base = std::env::temp_dir().join(format!("ralphy-kimi-exec-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
         fs::create_dir_all(ws.ralphy_dir()).unwrap();
@@ -345,7 +348,7 @@ mod tests {
         assert!(ralphy_adapter_support::EXEC_CHARTER.len() < 512);
         assert!(PROMPT_EXECUTE.len() > 512);
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     #[test]

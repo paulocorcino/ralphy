@@ -67,24 +67,13 @@ pub(crate) fn execute_phase(
     // (ADR-0033 §5, last-non-empty-wins).
     let mut exec_session_id: Option<String> = None;
     let outcome = loop {
-        let before_sha = cx.repo.head_sha().ok();
-        let Execution {
-            outcome,
-            usage,
-            session_id,
-        } = cx.agent.execute(plan, cx.ws)?;
-        // Accumulate across the resume loop so the single execute ledger line
-        // carries the whole issue's execution cost, not just the last attempt.
-        // Model attribution happens once, after the loop, via `fold_usage` —
-        // the ONE place accumulated-usage model derivation lives (ADR-0008
-        // D8); the runner stays vendor-neutral and passes no fallback
-        // (ADR-0002 — alias fallback lives in the adapter).
-        exec_attempts.push(usage);
-        if let Some(id) = session_id.filter(|id| !id.is_empty()) {
-            exec_session_id = Some(id);
-        }
-        let after_sha = cx.repo.head_sha().ok();
-        no_commit_streak = advance_streak(no_commit_streak, &before_sha, &after_sha);
+        let outcome = execute_once(
+            cx,
+            plan,
+            &mut exec_attempts,
+            &mut exec_session_id,
+            &mut no_commit_streak,
+        )?;
 
         // The operator's stop (docs/adr/0054), read BEFORE the resume decision.
         // A stop-killed child ends with no verdict, and a transcript that already
@@ -134,6 +123,37 @@ pub(crate) fn execute_phase(
     })
 }
 
+/// Run `execute()` once and account for it: its usage joins `exec_attempts`,
+/// a non-empty vendor session replaces `exec_session_id`, and the no-commit
+/// streak advances or resets by whether HEAD moved.
+fn execute_once(
+    cx: &IssueCtx,
+    plan: &Plan,
+    exec_attempts: &mut Vec<Usage>,
+    exec_session_id: &mut Option<String>,
+    no_commit_streak: &mut u32,
+) -> Result<Outcome> {
+    let before_sha = cx.repo.head_sha().ok();
+    let Execution {
+        outcome,
+        usage,
+        session_id,
+    } = cx.agent.execute(plan, cx.ws)?;
+    // Accumulate across the resume loop so the single execute ledger line
+    // carries the whole issue's execution cost, not just the last attempt.
+    // Model attribution happens once, after the loop, via `fold_usage` —
+    // the ONE place accumulated-usage model derivation lives (ADR-0008
+    // D8); the runner stays vendor-neutral and passes no fallback
+    // (ADR-0002 — alias fallback lives in the adapter).
+    exec_attempts.push(usage);
+    if let Some(id) = session_id.filter(|id| !id.is_empty()) {
+        *exec_session_id = Some(id);
+    }
+    let after_sha = cx.repo.head_sha().ok();
+    *no_commit_streak = advance_streak(*no_commit_streak, &before_sha, &after_sha);
+    Ok(outcome)
+}
+
 /// The streak of executes that committed nothing, after one more execute.
 /// A commit resets it, a no-commit execute advances it. If either SHA read
 /// failed, progress is unknown — the streak is left untouched rather than
@@ -157,7 +177,11 @@ fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(String,
         // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap
         // skips it.
         Outcome::Limit(None) if !stop_on_limit_exec => Some((synthetic_reset(), true)),
-        _ => None,
+        Outcome::Done
+        | Outcome::Blocked(_)
+        | Outcome::Timeout
+        | Outcome::Stuck
+        | Outcome::Limit(_) => None,
     }
 }
 

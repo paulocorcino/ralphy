@@ -132,14 +132,7 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
         })
         .collect();
 
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
-        }
-    }
+    crate::since::retain_since(&mut records, input.since);
     Ok(records)
 }
 

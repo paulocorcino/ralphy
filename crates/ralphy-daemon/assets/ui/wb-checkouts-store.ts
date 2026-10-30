@@ -63,8 +63,10 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     init() {
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo, name) => repo != null && this.checkoutGone(repo, name));
-      window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
+      window.WBDaemon?.onUnknownCheckout?.(
+        (repo, name) => repo != null && this.checkoutGone(repo, name),
+      );
+      void window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
       // A branch refusal names an act against the project that WAS open.
       window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
     },
@@ -111,7 +113,9 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // once the repo has a worktree; a pick sets the #406 selection (what
     // Files, Changes, diff and Find show), never where a console is launched.
     hasWorktrees(p: Project) {
-      return WBProject.hasWorktrees(this.worktreeListings[window.Alpine.store("projects").repoRef(p)] || null);
+      return WBProject.hasWorktrees(
+        this.worktreeListings[window.Alpine.store("projects").repoRef(p)] || null,
+      );
     },
 
     checkoutOf(ref: string | null | undefined) {
@@ -129,7 +133,8 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       else delete next[ref];
       this.checkouts = next;
       window.WBConsole?.setCheckout?.(ref, name || null);
-      if (window.Alpine.store("projects").openSlug === ref) sendWindow(window, "workbench:checkout-changed");
+      if (window.Alpine.store("projects").openSlug === ref)
+        sendWindow(window, "workbench:checkout-changed");
       // The Changes panel and the sync row are the SELECTED checkout's (#407).
       // Another tree's change set is not this tree's "last value" (ADR-0070
       // D3): its reads start over.
@@ -152,17 +157,16 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     async ensureWorktreeListing(ref: string | null | undefined, force = false) {
       if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
       const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
-      let listing: Listing | null = null;
-      try {
-        const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
-        if (reply && reply.status === "ok") listing = reply.checkouts || null;
-      } catch {}
+      const listing = await readWorktreeListing(ref);
       if (seq !== this._listingSeq) return; // superseded → the newer read owns it
       if (listing || force) this._storeListing(ref, listing);
     },
     _storeListing(ref: string, listing: Listing | null) {
       const hidden = this._hidden[ref] || [];
-      const shown = listing && hidden.length ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) } : listing;
+      const shown =
+        listing && hidden.length
+          ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) }
+          : listing;
       this.worktreeListings = { ...this.worktreeListings, [ref]: shown };
       window.WBConsole?.ingestWorktrees?.(ref, shown);
     },
@@ -174,7 +178,10 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     },
     // The delete of `name` settled: the next listing shows it if it is there.
     unhideWorktree(ref: string, name: string) {
-      this._hidden = { ...this._hidden, [ref]: (this._hidden[ref] || []).filter((n) => n !== name) };
+      this._hidden = {
+        ...this._hidden,
+        [ref]: (this._hidden[ref] || []).filter((n) => n !== name),
+      };
     },
     // Copy the desk mirror's selections into the reactive map once the desk
     // has landed (boot, and again after a login under the `Session` policy),
@@ -185,7 +192,7 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       this.checkouts = window.WBConsole?.checkouts?.() || {};
       if (open) sendWindow(window, "workbench:checkout-changed");
       if (open) {
-        this.ensureWorktreeListing(open);
+        void this.ensureWorktreeListing(open);
         // The desk can land AFTER the open's own reads: re-read under the
         // restored selection, only when it differs (two git spawns otherwise).
         if (this.checkoutOf(open) !== before) {
@@ -197,3 +204,15 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
 }
 
 export type CheckoutsStore = ReturnType<typeof checkoutsStore>;
+
+// The worktree listing of `ref` from `worktree.list`, or null when the read
+// fails or the reply has none.
+async function readWorktreeListing(ref: string): Promise<Listing | null> {
+  try {
+    const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
+    if (reply && reply.status === "ok") return reply.checkouts || null;
+  } catch {
+    // A transport error reads as no listing, as a refusal does.
+  }
+  return null;
+}

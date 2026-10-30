@@ -104,7 +104,7 @@ const WINDOWS_INSTALLED: &str = r#""%USERPROFILE%\.ralphy\bin\ralphy.exe""#;
 pub(crate) fn installed_folder(os: HostOs) -> &'static str {
     match os {
         HostOs::Windows => r"%USERPROFILE%\.ralphy\bin",
-        _ => "~/.ralphy/bin",
+        HostOs::Linux | HostOs::MacOs => "~/.ralphy/bin",
     }
 }
 
@@ -115,7 +115,7 @@ fn ralphy(os: HostOs, args: &str) -> String {
         HostOs::Windows => format!(
             "if exist {WINDOWS_INSTALLED} ({WINDOWS_INSTALLED} {args}) else (ralphy {args})"
         ),
-        _ => format!(
+        HostOs::Linux | HostOs::MacOs => format!(
             "if [ -x {UNIX_INSTALLED} ]; then {UNIX_INSTALLED} {args}; else ralphy {args}; fi"
         ),
     }
@@ -194,7 +194,22 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
     match op {
         HostOp::Uname => return Ok("uname -s".to_string()),
         HostOp::WindowsVer => return Ok("cmd /c ver".to_string()),
-        _ => {}
+        HostOp::Probe
+        | HostOp::Describe { .. }
+        | HostOp::Doctor
+        | HostOp::SetName { .. }
+        | HostOp::InstallAutostart
+        | HostOp::EnableLinger
+        | HostOp::RequireTokenOn
+        | HostOp::Restart
+        | HostOp::RotateToken
+        | HostOp::ReadKeys { .. }
+        | HostOp::WriteKeys { .. }
+        | HostOp::ClearKeys { .. }
+        | HostOp::AppendKey { .. }
+        | HostOp::WriteBinary
+        | HostOp::CommitBinary
+        | HostOp::Installed(_) => {}
     }
     let Some(os) = os else {
         bail!("the host's operating system is not known yet");

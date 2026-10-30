@@ -485,4 +485,6 @@ impl Agent for CopilotAgent {
 }
 
 #[cfg(test)]
+mod cleanup;
+#[cfg(test)]
 mod tests;

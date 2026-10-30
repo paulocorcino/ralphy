@@ -4,7 +4,13 @@
 
 // Verbatim in the menu's title attribute AND pinned by both test layers.
 /** One adapter of `GET /api/agents` (roster.rs). */
-export type RosterRow = { id: string; label?: string; accelerator?: string; available?: boolean; reason?: string | null };
+export type RosterRow = {
+  id: string;
+  label?: string;
+  accelerator?: string;
+  available?: boolean;
+  reason?: string | null;
+};
 /** A live session, as the menu counts it. */
 export type Session = { agent?: string; repo?: string };
 
@@ -15,6 +21,11 @@ const NOT_INSTALLED = "Not installed here.";
 // shows the sentence (ADR-0065 §6).
 function shownReason(reason: string | null | undefined): string {
   return !reason || reason === "not installed here" ? NOT_INSTALLED : reason;
+}
+
+function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | null | undefined) {
+  if (needsRepo) return NEEDS_REPO;
+  return unavailable ? shownReason(reason) : "";
 }
 
 function rowFor(
@@ -30,9 +41,7 @@ function rowFor(
   // A count drawn from another repo would offer to reach a session with a
   // different working directory — a row that lies about what its click does.
   const scope = plain ? openSlug || "~" : openSlug;
-  const mine = (sessions || []).filter(
-    (s) => s && s.agent === kind && s.repo === scope,
-  );
+  const mine = (sessions || []).filter((s) => s && s.agent === kind && s.repo === scope);
   const needsRepo = !plain && !openSlug;
   const unavailable = !plain && available === false;
   const disabled = needsRepo || unavailable;
@@ -44,7 +53,7 @@ function rowFor(
     disabled,
     needsRepo,
     unavailable,
-    title: needsRepo ? NEEDS_REPO : unavailable ? shownReason(reason) : "",
+    title: rowTitle(needsRepo, unavailable, reason),
     tryAnyway: unavailable && !needsRepo,
     // How many of this row's consoles are already open in this repo. A
     // READOUT only: the menu is "New console", so every row's click launches
@@ -62,16 +71,7 @@ function menuRows({
   openSlug,
 }: { roster?: RosterRow[] | null; sessions?: Session[] | null; openSlug?: string | null } = {}) {
   const rows = (roster || []).map((r) =>
-    rowFor(
-      r.id,
-      r.label || r.id,
-      false,
-      r.accelerator,
-      r.available,
-      r.reason,
-      sessions,
-      openSlug,
-    ),
+    rowFor(r.id, r.label || r.id, false, r.accelerator, r.available, r.reason, sessions, openSlug),
   );
   // The plain shell is not a vendor adapter, so it never enters the daemon's
   // roster; the menu appends it last on digit 0.
@@ -96,7 +96,10 @@ function canLaunch(row: MenuRow | null | undefined, tryAnyway = false): boolean 
 
 // Whether a click on `row` launches, or is refused (`null`). The one intent
 // a row has: a launch.
-function consoleIntent(row: MenuRow | null | undefined, { tryAnyway = false }: { tryAnyway?: boolean } = {}) {
+function consoleIntent(
+  row: MenuRow | null | undefined,
+  { tryAnyway = false }: { tryAnyway?: boolean } = {},
+) {
   return canLaunch(row, tryAnyway) ? "launch" : null;
 }
 
@@ -109,7 +112,8 @@ function runRows(roster: RosterRow[] | null | undefined) {
   }));
 }
 
-function rosterState(roster: unknown, repo: string | null | undefined) {
+// A peer's body reaches here as it came, so a body that is no array is read as empty.
+function rosterState(roster: RosterRow[] | null | undefined, repo: string | null | undefined) {
   const rows: RosterRow[] = Array.isArray(roster) ? roster.slice() : [];
   return { repo: repo || null, roster: rows, agents: runRows(rows) };
 }

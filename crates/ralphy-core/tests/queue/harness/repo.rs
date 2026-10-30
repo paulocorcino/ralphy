@@ -6,6 +6,17 @@ use std::time::Duration;
 
 use ralphy_core::{BranchMode, Issue, QueueConfig};
 
+/// Remove a scratch directory at the end of a test, or before a test starts. The
+/// directory may be gone already, and a failed removal must not fail the test.
+pub(crate) fn remove_scratch(path: &Path) {
+    #[expect(
+        clippy::unused_result_ok,
+        reason = "a scratch directory may be gone already, and a failed cleanup must not \
+                 fail the test"
+    )]
+    fs::remove_dir_all(path).ok();
+}
+
 pub(crate) fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
         .arg("-C")
@@ -23,7 +34,10 @@ pub(crate) fn current_branch(repo: &Path) -> String {
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .expect("spawn git");
-    String::from_utf8(out.stdout).unwrap().trim().to_string()
+    String::from_utf8(out.stdout)
+        .expect("git output was not UTF-8")
+        .trim()
+        .to_string()
 }
 
 pub(crate) fn branch_exists(repo: &Path, branch: &str) -> bool {
@@ -50,9 +64,12 @@ pub(crate) fn rev_parse(repo: &Path, refname: &str) -> Option<String> {
         ])
         .output()
         .expect("spawn git");
-    out.status
-        .success()
-        .then(|| String::from_utf8(out.stdout).unwrap().trim().to_string())
+    out.status.success().then(|| {
+        String::from_utf8(out.stdout)
+            .expect("git output was not UTF-8")
+            .trim()
+            .to_string()
+    })
 }
 
 /// The tracked file paths at `refname` (recursive), one per entry.
@@ -64,7 +81,7 @@ pub(crate) fn git_ls(repo: &Path, refname: &str) -> Vec<String> {
         .output()
         .expect("spawn git");
     String::from_utf8(out.stdout)
-        .unwrap()
+        .expect("git output was not UTF-8")
         .lines()
         .map(str::to_string)
         .collect()
@@ -94,7 +111,7 @@ pub(crate) fn ensure_usage_dir() -> PathBuf {
         sweep_stale("ralphy-usage-test-");
         sweep_stale("ralphy-queue-");
         let dir = std::env::temp_dir().join(format!("ralphy-usage-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        remove_scratch(&dir);
         std::env::set_var("RALPHY_USAGE_DIR", &dir);
         dir
     })
@@ -121,7 +138,7 @@ fn sweep_stale(prefix: &str) {
             .and_then(|t| t.elapsed().ok())
             .is_some_and(|age| age > std::time::Duration::from_secs(3600));
         if old && entry.path().is_dir() {
-            fs::remove_dir_all(entry.path()).ok();
+            remove_scratch(&entry.path());
         }
     }
 }
@@ -140,13 +157,13 @@ pub(crate) fn init_repo(name: &str) -> PathBuf {
     // minutes. A leftover repo under the same name made `git init` a re-init
     // and the commit below fail with "nothing to commit" (measured 6 in 25
     // runs of tests/stop.rs, which has the same helper, 2026-09-26).
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
+    remove_scratch(&dir);
+    fs::create_dir_all(&dir).expect("create the scratch repo dir");
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["config", "user.email", "t@example.com"]);
     git(&dir, &["config", "user.name", "Test"]);
-    fs::write(dir.join(".gitignore"), ".ralphy/\n").unwrap();
-    fs::write(dir.join("README.md"), "hello\n").unwrap();
+    fs::write(dir.join(".gitignore"), ".ralphy/\n").expect("write .gitignore");
+    fs::write(dir.join("README.md"), "hello\n").expect("write README.md");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "-q", "-m", "init"]);
     dir

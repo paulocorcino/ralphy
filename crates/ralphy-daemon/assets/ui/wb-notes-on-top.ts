@@ -6,6 +6,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import { NOTE_DEFAULT, NOTE_MIN, onTopClamp, onTopRect, titleOf } from "./wb-notes-folds.ts";
 import type { FloatBox } from "./wb-notes-folds.ts";
 import { dragThreshold, dragBegins } from "./wb-console-input.ts";
+import { need } from "./wb-dom-need.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { CardHost, DeskFence, NoteCard, NoteSource } from "./wb-types.d.ts";
 
@@ -26,7 +27,10 @@ export type NoteOnTopDeps = {
   /** The desk record of a card, by id. */
   recordOf: (id: string | null | undefined) => NoteSource | null;
   /** True for a card whose fence is detached, so it is in the popup. */
-  isAway: (record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) => boolean;
+  isAway: (
+    record: Pick<NoteSource, "rect"> | null | undefined,
+    fences: DeskFence[] | null | undefined,
+  ) => boolean;
   /** Give a sleeping card its editor back. */
   wakeCard: (el: NoteCard) => void;
   /** True in a detached fence's popup, where the document holds a fragment of the plane. */
@@ -96,7 +100,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     }
     for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = el.style[side];
     sh.style.setProperty("--note-tone", getComputedStyle(el).getPropertyValue("--note-tone"));
-    sh.firstChild!.textContent = titleOf(el._noteMarkdown, "Untitled note");
+    need(sh, ".note-shadow-title").textContent = titleOf(el._noteMarkdown, "Untitled note");
   }
 
   // Float the card in front of the windows (decisions 1–4). One card at a
@@ -106,19 +110,26 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // the orphan `mountDetached` kept, when this window's desk does not hold it.
   function keepOnTop(id: string | null | undefined) {
     const el = cardEl(id);
-    const record = recordOf(id) || (fragment() ? el?._noteOrphan : null);
-    if (!record || !el) return false;
-    if (isAway(record, consoleHost?.fenceRecords?.() || [])) return false;
+    const record = floatableRecord(id, el);
+    if (!record || !el || !id) return false;
     if (onTopId === id) return true;
     putBack();
     wakeCard(el);
-    onTopId = id!;
+    onTopId = id;
     el.classList.add("on-top");
     placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
     paintShadow(el);
     watchViewport();
     stack?.focusWin(el);
     return true;
+  }
+
+  // The record of a card that may float, or null: a card in a detached
+  // fence's popup stays where it is.
+  function floatableRecord(id: string | null | undefined, el: ReturnType<typeof cardEl>) {
+    const record = recordOf(id) || (fragment() ? el?._noteOrphan : null);
+    if (!record || isAway(record, consoleHost?.fenceRecords?.() || [])) return null;
+    return record;
   }
 
   // Back to the desk rect, which the inline style never stopped holding.
@@ -128,7 +139,16 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     const el = id ? cardEl(id) : null;
     if (!el) return;
     el.classList.remove("on-top", "band");
-    for (const v of ["--ot-x", "--ot-y", "--ot-w", "--ot-h", "--ws-x", "--ws-y", "--ws-w", "--ws-h"]) {
+    for (const v of [
+      "--ot-x",
+      "--ot-y",
+      "--ot-w",
+      "--ot-h",
+      "--ws-x",
+      "--ws-y",
+      "--ws-w",
+      "--ws-h",
+    ]) {
       el.style.removeProperty(v);
     }
     el._noteOnTop = null;

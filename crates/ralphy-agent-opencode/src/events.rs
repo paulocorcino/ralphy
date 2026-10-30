@@ -123,17 +123,24 @@ pub(crate) fn parse_opencode_events(stdout: &str) -> (String, bool) {
         if is_error_event(&val) {
             saw_error = true;
         }
-        let payload = event_payload(&val);
-        let is_text = val.get("type").and_then(|v| v.as_str()) == Some("text")
-            || payload.get("type").and_then(|v| v.as_str()) == Some("text");
-        if is_text {
-            if let Some(t) = payload.get("text").and_then(|v| v.as_str()) {
-                text.push_str(t);
-                text.push('\n');
-            }
+        if let Some(t) = text_part(&val) {
+            text.push_str(t);
+            text.push('\n');
         }
     }
     (text, saw_error)
+}
+
+/// The assistant text one event carries when the event, or its `part`
+/// payload, is typed `text`. The text is read from the payload.
+fn text_part(val: &serde_json::Value) -> Option<&str> {
+    let payload = event_payload(val);
+    let is_text = val.get("type").and_then(|v| v.as_str()) == Some("text")
+        || payload.get("type").and_then(|v| v.as_str()) == Some("text");
+    if !is_text {
+        return None;
+    }
+    payload.get("text").and_then(|v| v.as_str())
 }
 
 /// Extract a reset hint from an OpenCode error event or message text (best-effort).
@@ -153,7 +160,11 @@ fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
 fn retry_after_field(event: &serde_json::Value) -> Option<String> {
     let s = match event.get("retryAfter")? {
         serde_json::Value::String(s) => s.clone(),
-        other => other.to_string(),
+        other @ (serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Array(_)
+        | serde_json::Value::Object(_)) => other.to_string(),
     };
     (!s.is_empty() && s != "null").then_some(s)
 }

@@ -52,6 +52,10 @@ struct StoreCopy {
 
 impl Drop for StoreCopy {
     fn drop(&mut self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a drop cannot return the error, and the temp directory may be gone already"
+        )]
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -72,6 +76,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     ));
     // A process killed before `Drop` ran leaves a directory this pid+seq can name
     // again; a stale `-wal` there would be replayed over the fresh `.db` snapshot.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the directory is usually absent, and create_dir_all below reports a real failure"
+    )]
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
     let name = db
@@ -88,6 +96,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     for suffix in ["-wal", "-shm"] {
         let side = db.with_file_name(format!("{name}{suffix}"));
         if side.exists() {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a sidecar is best-effort; the snapshot of the .db alone is still read"
+            )]
             let _ = std::fs::copy(&side, copy.dir.join(format!("{name}{suffix}")));
         }
     }
@@ -190,6 +202,19 @@ struct ModelAgg {
     last_ts: Option<chrono::DateTime<chrono::FixedOffset>>,
 }
 
+impl ModelAgg {
+    /// Widens the first and last time with one row's `created_at`. The column
+    /// is TEXT, RFC3339-with-`Z` (verified live); a value that does not parse
+    /// leaves both times as they are.
+    fn widen(&mut self, created_at: Option<&str>) {
+        let Some(ts) = created_at.and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) else {
+            return;
+        };
+        self.first_ts = Some(self.first_ts.map_or(ts, |cur| cur.min(ts)));
+        self.last_ts = Some(self.last_ts.map_or(ts, |cur| cur.max(ts)));
+    }
+}
+
 /// The fallible core of [`scan_copilot`], separated so every error funnels through
 /// one `unwrap_or_default`. Reads the private copy, joins the usage rows to their
 /// `sessions.cwd`, and aggregates per session × model. Falls back to a cwd-less
@@ -271,14 +296,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         agg.tokens.output += output_tokens.unwrap_or(0).max(0) as u64;
         agg.tokens.cache_read += cache_read.unwrap_or(0).max(0) as u64;
         agg.tokens.cache_creation += cache_write.unwrap_or(0).max(0) as u64;
-        // `created_at` is TEXT, RFC3339-with-`Z` (verified live).
-        if let Some(ts) = created_at
-            .as_deref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-        {
-            agg.first_ts = Some(agg.first_ts.map_or(ts, |cur| cur.min(ts)));
-            agg.last_ts = Some(agg.last_ts.map_or(ts, |cur| cur.max(ts)));
-        }
+        agg.widen(created_at.as_deref());
     }
 
     let mut records: Vec<InteractiveRecord> = groups
@@ -302,14 +320,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         })
         .collect();
 
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
-        }
-    }
+    crate::since::retain_since(&mut records, input.since);
     Ok(records)
 }
 

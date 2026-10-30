@@ -108,7 +108,7 @@ export function createFit({ term, body, fitAddon, socket, covered, focused, watc
   return {
     fit,
     // The cover over this console went: run the request it kept.
-    uncovered() {
+    uncovered: () => {
       if (pending) request();
     },
     // The socket opened: tell the PTY the size now, or when the rule allows it.
@@ -125,7 +125,7 @@ export function createFit({ term, body, fitAddon, socket, covered, focused, watc
       if (term.rows !== rows || term.cols !== cols) term.resize(cols, rows);
     },
     // Stops the refit of a window that is closed or ended.
-    dispose() {
+    dispose: () => {
       disposed = true;
       ro.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);

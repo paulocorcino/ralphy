@@ -112,12 +112,7 @@ fn collect_tool_results(v: &Value, failed: &mut Vec<String>, denied: &mut Vec<St
     match v {
         Value::Object(map) => {
             if let Some(Value::Object(result)) = map.get("result") {
-                if let Some(d) = result.get("permissionDenied") {
-                    denied.push(describe(d, "a denied tool call"));
-                }
-                if let Some(d) = result.get("failure") {
-                    failed.push(describe(d, "a failed tool call"));
-                }
+                record_tool_result(result, failed, denied);
             }
             for child in map.values() {
                 collect_tool_results(child, failed, denied);
@@ -128,7 +123,22 @@ fn collect_tool_results(v: &Value, failed: &mut Vec<String>, denied: &mut Vec<St
                 collect_tool_results(child, failed, denied);
             }
         }
-        _ => {}
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+/// Records one tool `result` object: a `permissionDenied` key into `denied`, a
+/// `failure` key into `failed`. A result may carry both.
+fn record_tool_result(
+    result: &serde_json::Map<String, Value>,
+    failed: &mut Vec<String>,
+    denied: &mut Vec<String>,
+) {
+    if let Some(d) = result.get("permissionDenied") {
+        denied.push(describe(d, "a denied tool call"));
+    }
+    if let Some(d) = result.get("failure") {
+        failed.push(describe(d, "a failed tool call"));
     }
 }
 

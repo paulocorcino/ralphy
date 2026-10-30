@@ -213,6 +213,31 @@ fn put_reply(store: &desk::DeskStore, refused: &[desk::apply::Refusal]) -> Respo
     Json(body).into_response()
 }
 
+/// The body of a PUT as a list of changes, or the refusal it gets before
+/// the desk lock is taken.
+fn read_put_body(raw: &[u8]) -> Result<desk::apply::DeskBody, Box<Response>> {
+    let value: serde_json::Value = serde_json::from_slice(raw).map_err(|e| {
+        Box::new(failed(
+            StatusCode::BAD_REQUEST,
+            format!("the desk upload is not JSON: {e}"),
+        ))
+    })?;
+    if value
+        .as_object()
+        .is_some_and(|m| !m.contains_key("changes"))
+    {
+        return Err(Box::new(reload_first(
+            "this page was loaded by an older version of Ralphy; reload it",
+        )));
+    }
+    serde_json::from_value(value).map_err(|e| {
+        Box::new(failed(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("the desk upload is not a list of changes: {e}"),
+        ))
+    })
+}
+
 /// `PUT /api/desk`: apply a list of desk changes (ADR-0050 amendment
 /// 2026-10-04, changes, not the desk). The body is
 /// `{ seq, generation, changes }`; `desk::apply::apply` applies the changes
@@ -246,29 +271,9 @@ pub(crate) async fn desk_put_route(
     tab: Option<String>,
     raw: &[u8],
 ) -> Response {
-    let value: serde_json::Value = match serde_json::from_slice(raw) {
-        Ok(value) => value,
-        Err(e) => {
-            return failed(
-                StatusCode::BAD_REQUEST,
-                format!("the desk upload is not JSON: {e}"),
-            )
-        }
-    };
-    if value
-        .as_object()
-        .is_some_and(|m| !m.contains_key("changes"))
-    {
-        return reload_first("this page was loaded by an older version of Ralphy; reload it");
-    }
-    let body: desk::apply::DeskBody = match serde_json::from_value(value) {
+    let body = match read_put_body(raw) {
         Ok(body) => body,
-        Err(e) => {
-            return failed(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                format!("the desk upload is not a list of changes: {e}"),
-            )
-        }
+        Err(refusal) => return *refusal,
     };
     let mut seqs = DESK_WRITE.lock().await;
     let stored = match desk::load_from(&path) {
@@ -404,6 +409,45 @@ pub(crate) struct RestoreBody {
     pub version: Option<desk::history::Version>,
 }
 
+/// The desk a restore puts back, and why: a saved version by id, or an
+/// uploaded version that passes the checks of a PUT body.
+fn restore_source(
+    dir: &Path,
+    body: RestoreBody,
+) -> Result<(desk::DeskStore, desk::history::Reason), Box<Response>> {
+    use desk::history::{self, Reason};
+    match (body.id, body.version) {
+        (Some(id), None) => match history::load(dir, id) {
+            Ok(v) => Ok((v.desk, Reason::Restore)),
+            Err(e) if history::is_not_found(&e) => Err(Box::new(failed(
+                StatusCode::NOT_FOUND,
+                format!("no desk version {id}"),
+            ))),
+            Err(e) => Err(Box::new(failed(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("{e:#}"),
+            ))),
+        },
+        (None, Some(v)) => {
+            if v.kind != history::VERSION_KIND {
+                return Err(Box::new(failed(
+                    StatusCode::BAD_REQUEST,
+                    "the file is not a desk version".to_string(),
+                )));
+            }
+            let d = &v.desk;
+            if let Some(refusal) = refuse_records(&d.windows, &d.fences, &d.notes, &d.checkouts) {
+                return Err(Box::new(refusal));
+            }
+            Ok((v.desk, Reason::Upload))
+        }
+        _ => Err(Box::new(failed(
+            StatusCode::BAD_REQUEST,
+            "send either `id` or `version`".to_string(),
+        ))),
+    }
+}
+
 /// `POST /api/desk/history`: make a saved or uploaded version the desk.
 ///
 /// Under the desk lock: the current desk is saved as a `before-restore`
@@ -424,33 +468,9 @@ pub(crate) async fn desk_history_restore_route(
     use desk::history::{self, Reason};
     let dir = history_dir(&path);
     let _held = DESK_WRITE.lock().await;
-    let (saved, reason) = match (body.id, body.version) {
-        (Some(id), None) => match history::load(&dir, id) {
-            Ok(v) => (v.desk, Reason::Restore),
-            Err(e) if history::is_not_found(&e) => {
-                return failed(StatusCode::NOT_FOUND, format!("no desk version {id}"));
-            }
-            Err(e) => return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
-        },
-        (None, Some(v)) => {
-            if v.kind != history::VERSION_KIND {
-                return failed(
-                    StatusCode::BAD_REQUEST,
-                    "the file is not a desk version".to_string(),
-                );
-            }
-            let d = &v.desk;
-            if let Some(refusal) = refuse_records(&d.windows, &d.fences, &d.notes, &d.checkouts) {
-                return refusal;
-            }
-            (v.desk, Reason::Upload)
-        }
-        _ => {
-            return failed(
-                StatusCode::BAD_REQUEST,
-                "send either `id` or `version`".to_string(),
-            );
-        }
+    let (saved, reason) = match restore_source(&dir, body) {
+        Ok(source) => source,
+        Err(refusal) => return *refusal,
     };
     let current = match desk::load_from(&path) {
         Ok(current) => current,

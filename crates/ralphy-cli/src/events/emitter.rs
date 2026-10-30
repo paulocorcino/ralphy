@@ -106,34 +106,31 @@ fn probe_agent() -> ureq::Agent {
 fn public_ip() -> Option<String> {
     let agent = probe_agent();
     let deadline = std::time::Instant::now() + IP_PROBE_BUDGET;
-    for url in IP_PROBES_RAW {
+    let raw = IP_PROBES_RAW
+        .iter()
+        .map(|url| (*url, parse_raw_ip as fn(&str) -> Option<String>));
+    let probes = raw.chain(std::iter::once((
+        IP_PROBE_TRACE,
+        parse_cloudflare_trace as fn(&str) -> Option<String>,
+    )));
+    for (url, parse) in probes {
         if std::time::Instant::now() >= deadline {
             return None;
         }
-        if let Ok(mut resp) = agent.get(url).call() {
-            if let Some(ip) = resp
-                .body_mut()
-                .read_to_string()
-                .ok()
-                .and_then(|b| parse_raw_ip(&b))
-            {
-                return Some(ip);
-            }
-        }
-    }
-    if std::time::Instant::now() < deadline {
-        if let Ok(mut resp) = agent.get(IP_PROBE_TRACE).call() {
-            if let Some(ip) = resp
-                .body_mut()
-                .read_to_string()
-                .ok()
-                .and_then(|b| parse_cloudflare_trace(&b))
-            {
-                return Some(ip);
-            }
+        if let Some(ip) = probe_ip(&agent, url, parse) {
+            return Some(ip);
         }
     }
     None
+}
+
+/// One IP probe: GET `url` and read the address out of the body with `parse`.
+/// `None` when the request fails, the body is unreadable, or `parse` finds no
+/// valid address — the caller then tries the next endpoint.
+fn probe_ip(agent: &ureq::Agent, url: &str, parse: fn(&str) -> Option<String>) -> Option<String> {
+    let mut resp = agent.get(url).call().ok()?;
+    let body = resp.body_mut().read_to_string().ok()?;
+    parse(&body)
 }
 
 /// Parse a raw-IP probe body: trim surrounding whitespace and accept it only when it

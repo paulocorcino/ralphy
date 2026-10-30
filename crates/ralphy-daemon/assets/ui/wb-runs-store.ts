@@ -97,18 +97,31 @@ export function runsStore(_deps: RunsStoreDeps) {
           this.runsFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
-        this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
-        this.runsByProject[slug] = (reply.runs || []).map((d) => withKeptPlan(WBRun.fromSnapshot(d), prevRuns));
-        this.runsError = unreadableText(reply.unreadable || []);
-        // Keep the selected run while it is still listed.
-        this.currentRunId = keptRunId(this.projectRuns(), this.currentRunId);
-        // The panel reads the selected run's plan, if it shows (wb-runs-panel.ts).
-        sendWindow(window, "workbench:runs-read");
+        this.runsListed(slug, reply, prevRuns);
       } catch (err) {
         if (superseded(this, seq, slug)) return;
         // A transport failure is a read failure, not an idle project.
-        this.runsFailed(slug, WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"));
+        this.runsFailed(
+          slug,
+          WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"),
+        );
       }
+    },
+    // A good `runs.list`: the runs of `slug`, by replacement.
+    runsListed(slug: string, reply: ReplyOf<"runs.list">, prevRuns: Run[]) {
+      this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], {
+        ok: true,
+        value: true,
+        at: Date.now(),
+      });
+      this.runsByProject[slug] = (reply.runs || []).map((d) =>
+        withKeptPlan(WBRun.fromSnapshot(d), prevRuns),
+      );
+      this.runsError = unreadableText(reply.unreadable || []);
+      // Keep the selected run while it is still listed.
+      this.currentRunId = keptRunId(this.projectRuns(), this.currentRunId);
+      // The panel reads the selected run's plan, if it shows (wb-runs-panel.ts).
+      sendWindow(window, "workbench:runs-read");
     },
     // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
     // marked not current; before one, there are none and the panel says why.
@@ -168,11 +181,11 @@ export function runsStore(_deps: RunsStoreDeps) {
     // follows the tree's open/close path, and the selection falls back to the
     // first run of the project now open.
     runsFollowProject() {
-      window.Alpine.nextTick(() => {
+      void window.Alpine.nextTick(() => {
         this.destroyRunsSub();
         this.mountRunsSub();
         this.currentRunId = this.projectRuns()[0]?.runid || null;
-        if (window.Alpine.store("projects").openSlug) this.hydrateRuns();
+        if (window.Alpine.store("projects").openSlug) void this.hydrateRuns();
       });
     },
   };

@@ -37,7 +37,10 @@ export type ModalsStoreDeps = {
 function focusTakesKeys(el: HTMLElement | null) {
   return !!(
     el &&
-    (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.isContentEditable ||
+      el.closest(".monaco-editor"))
   );
 }
 
@@ -49,6 +52,13 @@ function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
     modals.modalOpen("runOpen") ||
     modals.modalOpen("branchOpen")
   );
+}
+
+// Why `name` cannot be a single directory entry, or "" when it can.
+function nameProblem(name: string) {
+  if (!name) return "name is required";
+  if (/[\\/]/.test(name)) return "name cannot contain / or \\";
+  return name === "." || name === ".." ? "name cannot be . or .." : "";
 }
 
 // `deps` is the shape every store takes; the store is where the door's flash
@@ -103,7 +113,10 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // A click on the scrim closes nothing: a stray click must not throw away
     // what a modal holds. Only its own buttons and Escape close it.
     scrim(path: string, close: () => void) {
-      const isOpen = (scope: object) => path.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], scope);
+      const isOpen = (scope: object) =>
+        path
+          .split(".")
+          .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], scope);
       let was = false;
       const self = this;
       return {
@@ -161,7 +174,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     modalClosed(path: string) {
       const i = this._modalStack.findLastIndex((m) => m.path === path);
       if (i < 0) return;
-      const [{ opener }] = this._modalStack.splice(i, 1);
+      const opener = this._modalStack.splice(i, 1)[0]?.opener;
       if (opener?.isConnected) opener.focus();
     },
     // Accelerators are ignored while typing or while a modal is up.
@@ -233,13 +246,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // says *which* character was wrong.
     promptSubmit() {
       const name = this.promptModal.value.trim();
-      const bad = !name
-        ? "name is required"
-        : /[\\/]/.test(name)
-          ? "name cannot contain / or \\"
-          : name === "." || name === ".."
-            ? "name cannot be . or .."
-            : "";
+      const bad = nameProblem(name);
       if (bad) {
         this.promptModal.error = bad;
         return;

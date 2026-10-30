@@ -13,6 +13,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
 import type { Hit } from "./wb-file-search.ts";
+import type { TreeMemory } from "./wb-files-levels.ts";
 
 /** What a search step reads, writes or calls on the files component. */
 type SearchFiles = {
@@ -33,7 +34,7 @@ type SearchFiles = {
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   expandedRels(): string[];
-  treeMem(): void;
+  treeMem(): TreeMemory;
   useDaemonTree(): boolean;
   applyFileSearch(hits: Hit[], truncated: boolean, seq: number): Promise<void>;
   clearFileSearch(): Promise<void>;
@@ -56,19 +57,28 @@ export function searchNow(files: SearchFiles): Promise<void> {
   const verb = WBFileSearch.verbFor(files.fileSearch.mode);
   files.fileSearch.note = "searching…";
   // Find and grep walk the SELECTED tree (#406).
-  const payload = window.WBDaemon.withCheckout({ repo: slug, query }, files.$store.checkouts.checkoutOf(slug));
+  const payload = window.WBDaemon.withCheckout(
+    { repo: slug, query },
+    files.$store.checkouts.checkoutOf(slug),
+  );
   return window.WBDaemon.observe(verb, payload)
     .then((reply) => {
       if (seq !== files.fileSearch.seq || slug !== files.$store.projects.openSlug) return;
       if (WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
-        files.fileSearch.note = WBFail.failed(reply, "Could not search: the daemon gave no reason.");
+        files.fileSearch.note = WBFail.failed(
+          reply,
+          "Could not search: the daemon gave no reason.",
+        );
         return;
       }
       return files.applyFileSearch(reply.hits, !!reply.truncated, seq);
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       if (seq !== files.fileSearch.seq) return;
-      files.fileSearch.note = WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
+      files.fileSearch.note = WBFail.failed(
+        { message: err instanceof Error ? err.message : undefined },
+        "Could not search: the daemon did not answer.",
+      );
     });
 }
 
@@ -76,31 +86,32 @@ export function searchNow(files: SearchFiles): Promise<void> {
 // session, load every ancestor level (shallow-first), then filter. The
 // expands run under `_restoringExpansion`: the remembered expansion must
 // not learn them.
-export async function applySearch(files: SearchFiles, hits: Hit[], truncated: boolean, seq: number) {
+export async function applySearch(
+  files: SearchFiles,
+  hits: Hit[],
+  truncated: boolean,
+  seq: number,
+) {
   files.treeMem();
   files.fileSearch.hits = hits;
   files.fileSearch.truncated = truncated;
   files.fileSearch.note = WBFileSearch.note({ hits, truncated });
   const tree = files.rawTree();
   if (!tree) return;
-  if (files.fileSearch.expandedBefore === null) files.fileSearch.expandedBefore = files.expandedRels();
+  if (files.fileSearch.expandedBefore === null)
+    files.fileSearch.expandedBefore = files.expandedRels();
   // ONE paint, at the end: every lazy level repaints on its own, and one
   // landing between the old marks cleared and the new ones set left a
   // blank tree that nothing repainted (MEASURED 2026-09-15).
   files._restoringExpansion = true;
   tree.enableUpdate(false);
   try {
-    for (const dir of WBFileSearch.dirsToLoad(hits)) {
-      // A newer search, or a torn-down tree, owns the screen now.
-      if (seq !== files.fileSearch.seq || tree !== files.rawTree()) return;
-      const f = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === dir);
-      if (f && files.isFolder(f) && !f.expanded) await f.setExpanded(true);
-    }
-    if (seq !== files.fileSearch.seq || tree !== files.rawTree()) return;
-    files._fileHits = WBFileSearch.hitMap(hits);
+    if (!(await expandHitDirs(files, tree, hits, seq))) return;
+    const fileHits = WBFileSearch.hitMap(hits);
+    files._fileHits = fileHits;
     // `autoExpand: false`: the extension would also open every MATCHED
     // folder, a burst of lazy loads.
-    tree.filterNodes((n: WunderbaumNode) => files._fileHits!.has(files.relPath(n)), {
+    tree.filterNodes((n: WunderbaumNode) => fileHits.has(files.relPath(n)), {
       mode: "hide",
       autoExpand: false,
       matchBranch: false,
@@ -116,6 +127,27 @@ export async function applySearch(files: SearchFiles, hits: Hit[], truncated: bo
       tree.enableUpdate(true);
     }
   }
+}
+
+// A newer search, or a torn-down tree, owns the screen now.
+function searchIsStale(files: SearchFiles, tree: WunderbaumTree, seq: number): boolean {
+  return seq !== files.fileSearch.seq || tree !== files.rawTree();
+}
+
+// Open every ancestor level of the hits, shallow-first. False when the
+// search went stale on the way.
+async function expandHitDirs(
+  files: SearchFiles,
+  tree: WunderbaumTree,
+  hits: Hit[],
+  seq: number,
+): Promise<boolean> {
+  for (const dir of WBFileSearch.dirsToLoad(hits)) {
+    if (searchIsStale(files, tree, seq)) return false;
+    const f = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === dir);
+    if (f && files.isFolder(f) && !f.expanded) await f.setExpanded(true);
+  }
+  return !searchIsStale(files, tree, seq);
 }
 
 // Take the filter off and fold back what the search opened, deepest first.

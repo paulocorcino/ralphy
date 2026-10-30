@@ -43,13 +43,9 @@ pub(super) fn scan(src: &str, fns: CopyFns, out: &mut Vec<Found>) {
     let mut in_sentence = false;
 
     while i < cs.len() {
-        if !opens_tag(&cs, i) {
-            gather_text(cs[i], line, &mut text, &mut text_line);
-            if cs[i] == '\n' {
-                line += 1;
-            }
-            i += 1;
-            continue;
+        i = text_run(&cs, i, &mut line, &mut text, &mut text_line);
+        if i >= cs.len() {
+            break;
         }
         let shown = flush_text(&mut text, text_line, &stack, in_sentence, out);
 
@@ -60,16 +56,56 @@ pub(super) fn scan(src: &str, fns: CopyFns, out: &mut Vec<Found>) {
             in_sentence = continues_sentence(&name, &[], in_sentence, shown);
             i = end;
         } else {
-            let (end, continues, raw_text) =
-                start_tag(&cs, i, &mut line, &mut stack, out, in_sentence || shown);
-            in_sentence = continues;
-            i = end;
-            if let Some((name, attrs)) = raw_text {
-                i = raw_text_body(&cs, i, &name, &attrs, &mut line, fns, out);
-            }
+            let carry = in_sentence || shown;
+            (i, in_sentence) = open_element(&cs, i, &mut line, &mut stack, out, carry, fns);
         }
     }
     flush_text(&mut text, text_line, &stack, in_sentence, out);
+}
+
+/// Gather the text from `i` up to the next tag or the end of input, and
+/// return the index where it stops.
+fn text_run(
+    cs: &[char],
+    mut i: usize,
+    line: &mut usize,
+    text: &mut String,
+    text_line: &mut usize,
+) -> usize {
+    while i < cs.len() && !opens_tag(cs, i) {
+        gather_text(cs[i], *line, text, text_line);
+        if cs[i] == '\n' {
+            *line += 1;
+        }
+        i += 1;
+    }
+    i
+}
+
+/// Open the element whose start tag is at `i`: read the tag and, for a
+/// `<script>` or `<style>`, its body. Returns the index after them and whether
+/// text after the tag goes on with the sentence (see `start_tag`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the scan position and state of one tag, passed on to the tag readers"
+)]
+fn open_element(
+    cs: &[char],
+    i: usize,
+    line: &mut usize,
+    stack: &mut Vec<(String, Option<String>)>,
+    out: &mut Vec<Found>,
+    carry: bool,
+    fns: CopyFns,
+) -> (usize, bool) {
+    let (end, continues, raw_text) = start_tag(cs, i, line, stack, out, carry);
+    let Some((name, attrs)) = raw_text else {
+        return (end, continues);
+    };
+    (
+        raw_text_body(cs, end, &name, &attrs, line, fns, out),
+        continues,
+    )
 }
 
 /// Skip the comment or the declaration (`<!DOCTYPE …>`) at `i`. Returns the
@@ -183,6 +219,10 @@ fn book_attributes(
 
 /// Read the body of a `<script>` or `<style>` that opened at `i`, and return
 /// the index after its end tag. Only a script with no `src` is copy.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the scan position and state of one tag, passed on to the tag readers"
+)]
 fn raw_text_body(
     cs: &[char],
     i: usize,

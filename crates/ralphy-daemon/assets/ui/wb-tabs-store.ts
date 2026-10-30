@@ -17,17 +17,27 @@
    `detachFile` opens the popup through the detached file windows that `wire`
    (app.ts) keeps; `main.ts` passes them in `deps`. `main.ts` registers the
    store as `tabs`, after `release`. `tabsStore` builds it without Alpine, so
-   `node --test` can test it (ADR-0073 D3, D6).
+   `node --test` can test it (ADR-0073 D3, D6). Opening a Changes row into a
+   diff tab is in wb-tabs-store-diff.ts, and opening a file into a tab in
+   wb-tabs-store-open.ts.
    --------------------------------------------------------------------------- */
-import { WBFail } from "./wb-fail.ts";
-import { WBChanges } from "./wb-changes.ts";
-import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
+import { openDiff } from "./wb-tabs-store-diff.ts";
+import { fetchContent, openLink, openTab } from "./wb-tabs-store-open.ts";
+import { fileTabId } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
 import { consoleTab, consoleTabId, freshTabId, isConsoleTabId } from "./wb-console-tabs.ts";
 import { WBColumns } from "./wb-columns.ts";
 import type { Messages } from "./wb-messages.ts";
-import type { CanvasTab, ChangeEntry, DiffTarget, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
+import type { StoredTab } from "./wb-client-view.ts";
+import type {
+  CanvasTab,
+  ChangeEntry,
+  MenuItem,
+  Slot,
+  TabBody,
+  TabOpen,
+} from "./wb-shell-types.d.ts";
 
 /** The detached file windows, as `wire` (app.ts) keeps them. */
 export type DetachedFiles = { watch: (win: Window, desc: FileDescriptor) => void };
@@ -39,6 +49,27 @@ export type TabsStoreDeps = {
   /** The detached file windows: a detached file is watched until it comes home. */
   detached: DetachedFiles;
 };
+
+// A file tab of the open project at `from` or under it. A diff tab keeps its
+// path: it shows a version, not the file.
+function movedBy(
+  t: CanvasTab,
+  from: string,
+  openSlug: string | null,
+): t is CanvasTab & { path: string; project: string } {
+  if (t.kind === "diff" || t.project !== openSlug) return false;
+  return t.path === from || !!t.path?.startsWith(`${from}/`);
+}
+
+// The stored file tabs that can open again: each needs a project and a path.
+function storedFileTabs(tabs: StoredTab[] | undefined) {
+  return (tabs || []).filter((t) => !!t && !!t.project && !!t.path);
+}
+
+// The stored active tab while this store carries it, else Consoles.
+function restoredActive(want: string | null | undefined, tabs: CanvasTab[]) {
+  return want && tabs.some((t) => t.id === want) ? want : "consoles";
+}
 
 // `deps` is the shape every store takes; the tabs tell the operator through
 // the store `modals`, as they did from `shell()`.
@@ -146,8 +177,11 @@ export function tabsStore(deps: TabsStoreDeps) {
       for (const t of window.WBView.read()?.consoleTabs || []) {
         const id = t.id ?? consoleTabId(t.deskId);
         const seen = new Set(this.consoleDeskIds());
-        const grid = t.grid.map((col) => col.filter((x) => !seen.has(x))).filter((col) => col.length);
-        if (grid.length && !this.tabs.some((x) => x.id === id)) this.tabs.push(consoleTab(id, t.deskId, t.title, grid));
+        const grid = t.grid
+          .map((col) => col.filter((x) => !seen.has(x)))
+          .filter((col) => col.length);
+        if (grid.length && !this.tabs.some((x) => x.id === id))
+          this.tabs.push(consoleTab(id, t.deskId, t.title, grid));
       }
     },
     // A console that left the page leaves its tab's grid, and a tab with no
@@ -159,7 +193,8 @@ export function tabsStore(deps: TabsStoreDeps) {
         const grid = tab.grid || [];
         const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter(here)));
         if (JSON.stringify(kept) !== JSON.stringify(grid)) this.setTabGrid(tab.id, kept);
-        else if (tab.deskId && WBColumns.flat(grid).includes(tab.deskId)) this.renameConsoleTab(tab, rows.get(tab.deskId));
+        else if (tab.deskId && WBColumns.flat(grid).includes(tab.deskId))
+          this.renameConsoleTab(tab, rows.get(tab.deskId));
       }
       this.placeConsoleTabs();
     },
@@ -175,7 +210,15 @@ export function tabsStore(deps: TabsStoreDeps) {
 
     // --- canvas tabs ------------------------------------------------------
     // The SAME terminal glyph as the New-console button and its menu rows.
-    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as CanvasTab[],
+    tabs: [
+      {
+        id: "consoles",
+        kind: "consoles",
+        title: "Consoles",
+        icon: "bi bi-terminal",
+        closable: false,
+      },
+    ] as CanvasTab[],
     active: "consoles",
     // The secondary pane (ADR-0037 §3c): `{ kind: "pin", id }` shows that tab
     // beside whichever is active, `{ kind: "mirror" }` shows the active code
@@ -195,7 +238,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (!repo) return;
       if (this.active !== "consoles") this.activate("consoles");
       const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
-      window.Alpine.nextTick(() =>
+      void window.Alpine.nextTick(() =>
         window.WBNotes.openFromExplorer({
           repo,
           checkout: tree,
@@ -212,113 +255,25 @@ export function tabsStore(deps: TabsStoreDeps) {
       );
     },
 
-    // `file.read`, resolving to what the pane opens with: `{content, encoding,
-    // bom}` (ADR-0036 amendment 2026-09-22), or `{refused: reason}` when the
-    // daemon served nothing for a reason the pane can state (`binary`, `too
-    // large`, …) — the tab KEEPS its place and says so — or `null` when there
-    // is nothing to hold a tab open for (`not found`, a transport drop): the
-    // tab closes. `checkout` is the tab's PINNED checkout (#406).
-    fetchContent(project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody> {
-      const refuse = (reason: string) => {
-        window.WB.emit("open-refused", { project, path, reason });
-        window.Alpine.store("modals").flash?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
-        if (reason === "not found" || reason === "transport") {
-          this.closeTab(fileTabId(project, path, checkout));
-          return null;
-        }
-        return { refused: reason };
-      };
-      // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
-      if (ftype === "image") {
-        let refusal: TabBody = null;
-        return WBDaemon.readImage(project, path, (reason) => (refusal = refuse(reason)), checkout)
-          .then((url) => (url == null ? refusal : { content: url }))
-          .catch(() => refuse("transport"));
-      }
-      return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
-        .then((reply) => {
-          if (reply.status === "ok") {
-            return { content: reply.content, encoding: reply.encoding, bom: reply.bom };
-          }
-          return refuse(WBFail.message(reply, "refused"));
-        })
-        .catch(() => refuse("transport"));
+    // `file.read`, resolving to what the pane opens with (wb-tabs-store-open.ts).
+    fetchContent(
+      project: string,
+      path: string,
+      ftype: string,
+      checkout: string | null | undefined,
+    ): Promise<TabBody> {
+      return fetchContent(this, project, path, ftype, checkout);
     },
 
     // --- opening a file into a tab ----------------------------------------
-    // A markdown link to another repo file: same viewer choice and binary
-    // refusal as a tree click. `checkout` is the SOURCE pane's pin (#406): a
-    // link in a worktree's document names that worktree's file.
-    // `as: "bytes"` is the ONE caller that refuses the note routing below: a
-    // `.note` whose bytes are not a container (ADR-0064 §11) must not become a
-    // card, and classifying it again would be the loop the card just escaped.
-    // The viewer serves text and images and refuses anything else, so what is
-    // honest here is the refusal, named — not a pane that would show nothing.
-    openLink({ project, path, fragment, checkout, as }: OpenRequest) {
-      const title = path.split("/").pop()!;
-      if (as === "bytes") {
-        window.WB.emit("open-refused", { project, path, reason: "not a note" });
-        window.Alpine.store("modals").flash?.(`${path} is not a note.`);
-        return;
-      }
-      const ftype = classify(title);
-      // A note linking to a note lands on the plane, exactly as a double-click
-      // in the explorer does.
-      if (ftype === "note") {
-        this.openNote(path, project, checkout);
-        return;
-      }
-      if (ftype === "binary") {
-        window.WB.emit("open-refused", { project, path, reason: "binary" });
-        window.Alpine.store("modals").flash?.("Cannot open binary files.");
-        return;
-      }
-      this.openTab({ project: project!, path, title, ftype, fragment, checkout });
+    // A markdown link to another repo file (wb-tabs-store-open.ts).
+    openLink(request: OpenRequest) {
+      openLink(this, request);
     },
 
-    // `content`: a re-attached popup passes its (possibly edited) bytes back.
-    // `fragment`/`find`: a `#heading` or search term to land on once the bytes
-    // are shown. `checkout` PINS the tab to the tree it was opened in (#406):
-    // a Save from a tab showing worktree bytes must never land on the primary.
-    // `encoding`/`bom` come back with a re-attached popup's bytes, so the
-    // reattached pane saves the way the detached one would have.
-    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen) {
-      const ck = checkout !== undefined ? checkout : window.Alpine.store("checkouts").checkoutOf(project);
-      const id = fileTabId(project, path, ck);
-      if (this.tabs.some((t) => t.id === id)) {
-        this.activate(id);
-        if (fragment) WBViewer.jumpTo(id, fragment);
-        if (find) WBViewer.find(id, find);
-        return;
-      }
-      this.tabs.push({ id, kind: ftype, title, path, project, icon: tabIcon(ftype), closable: true, checkout: ck });
-      this.showTab(id);
-      this.persistView();
-      window.Alpine.nextTick(() => {
-        // A re-attach passes bytes in; a fresh open reads `file.read`.
-        const bytes: Promise<TabBody> =
-          content != null
-            ? Promise.resolve({ content, encoding, bom })
-            : this.fetchContent(project, path, ftype, ck);
-        bytes.then((body) => {
-          if (body == null) return; // nothing to show: fetchContent closed the tab
-          WBViewer.open({
-            id,
-            project,
-            label: window.Alpine.store("projects").projectLabel(project),
-            path,
-            ftype,
-            checkout: ck,
-            ...body,
-          });
-          // NOT `setActive(id)`: `restoreView` opens N tabs in one burst and
-          // THEN activates the stored one, so the last read to answer must not
-          // own the screen.
-          this.syncViewer();
-          if (fragment) WBViewer.jumpTo(id, fragment);
-          if (find) WBViewer.find(id, find);
-        });
-      });
+    // A file into a tab, read or handed back by a popup (wb-tabs-store-open.ts).
+    openTab(open: TabOpen) {
+      openTab(this, open);
     },
 
     // Re-point every open tab under the moved path: a tab's id IS its path,
@@ -326,8 +281,7 @@ export function tabsStore(deps: TabsStoreDeps) {
     repathTabs(from: string, to: string) {
       // Snapshot: the collision branch CLOSES a tab, which mutates `this.tabs`.
       for (const t of [...this.tabs]) {
-        if (t.kind === "diff" || t.project !== window.Alpine.store("projects").openSlug) continue;
-        if (t.path !== from && !t.path?.startsWith(`${from}/`)) continue;
+        if (!movedBy(t, from, window.Alpine.store("projects").openSlug)) continue;
         const newPath = to + t.path.slice(from.length);
         const newId = fileTabId(t.project, newPath, t.checkout);
         if (this.tabs.some((x) => x.id === newId)) {
@@ -337,134 +291,29 @@ export function tabsStore(deps: TabsStoreDeps) {
           continue;
         }
         window.WBViewer?.repath(t.id, { id: newId, path: newPath });
-        if (this.active === t.id) this.showTab(newId);
-        if (this.slot?.kind === "pin" && this.slot.id === t.id) this.slot = { kind: "pin", id: newId };
-        if (this.lastLeft === t.id) this.lastLeft = newId;
+        this.renameTabId(t.id, newId);
         t.path = newPath;
         t.id = newId;
       }
       // The viewer's own "what is shown" is keyed by id too.
-      window.Alpine.nextTick(() => this.syncViewer());
+      void window.Alpine.nextTick(() => this.syncViewer());
       this.persistView();
     },
 
+    // The places that name a tab by id follow its new id: the active tab,
+    // the pinned slot and the last tab on the left.
+    renameTabId(oldId: string, newId: string) {
+      if (this.active === oldId) this.showTab(newId);
+      if (this.slot?.kind === "pin" && this.slot.id === oldId)
+        this.slot = { kind: "pin", id: newId };
+      if (this.lastLeft === oldId) this.lastLeft = newId;
+    },
+
     // --- opening a Changes row into a diff tab ----------------------------
-    // HEAD on one side, the working tree on the other (#311). Read-only;
-    // Monaco computes the diff, nothing produces a patch.
+    // HEAD on one side, the working tree on the other (#311)
+    // (wb-tabs-store-diff.ts).
     openDiff(project: string, entry: ChangeEntry) {
-      // git lists a new folder as one row whose path ends with "/": it has
-      // no text to compare, and a diff of it was an empty tab.
-      if (entry.path.endsWith("/")) {
-        deps.messages.flash(`${entry.path} is a new folder. Open its files in Files.`);
-        return;
-      }
-      // Both diff sides read text, and a binary side closes the tab again: an
-      // image or other binary path never reaches the diff.
-      const ftype = classify(entry.path.split("/").pop()!);
-      if (ftype === "image" || ftype === "binary") {
-        this.openChangedBinary(project, entry, ftype);
-        return;
-      }
-      // Pinned to the selection at open (#407): both sides read `t.checkout`.
-      const t = WBChanges.diffTarget(entry, project, window.Alpine.store("checkouts").checkoutOf(project));
-      if (this.tabs.some((x) => x.id === t.id)) {
-        this.activate(t.id);
-        return;
-      }
-      this.tabs.push({
-        id: t.id,
-        kind: "diff",
-        title: t.title,
-        path: t.workingPath,
-        project,
-        checkout: t.checkout,
-        icon: "bi bi-file-earmark-diff",
-        closable: true,
-      });
-      this.showTab(t.id);
-      window.WB.emit("open-diff", { project, path: t.workingPath, checkout: t.checkout });
-      window.Alpine.nextTick(() => {
-        // Latched: a path refused on BOTH sides would flash twice.
-        let refused = false;
-        const refuse = (reason: string) => {
-          if (refused) return null;
-          refused = true;
-          window.Alpine.store("modals").flash?.(WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
-          this.closeTab(t.id);
-          return null;
-        };
-        Promise.all([this.diffHeadSide(project, t, refuse), this.diffWorkSide(project, t, refuse)])
-          .then(([head, work]) => {
-            // A refusal on EITHER side aborts: half a diff reads as "no changes".
-            if (head == null || work == null) return;
-            // Closed during the round trips: mounting now would leak a pane
-            // with no tab to close it.
-            if (!this.tabs.some((x) => x.id === t.id)) return;
-            WBViewer.open({
-              id: t.id,
-              project,
-              checkout: t.checkout,
-              label: window.Alpine.store("projects").projectLabel(project),
-              path: t.workingPath,
-              ftype: "diff",
-              content: work,
-              original: head,
-            });
-            // As `openTab`: the pane follows the CURRENT active tab.
-            this.syncViewer();
-          })
-          .catch(() => refuse("transport"));
-      });
-    },
-
-    // A Changes row that names an image or other binary. An image shows its
-    // working copy in the image pane (ADR-0049); a deleted one has no working
-    // copy, and `blob.read` serves text only, so it is refused like a binary.
-    openChangedBinary(project: string, entry: ChangeEntry, ftype: string) {
-      const path = entry.path;
-      if (ftype === "binary") {
-        window.WB.emit("open-refused", { project, path, reason: "binary" });
-        window.Alpine.store("modals").flash?.("Cannot open binary files.");
-        return;
-      }
-      if (entry.status === "deleted") {
-        window.WB.emit("open-refused", { project, path, reason: "deleted" });
-        window.Alpine.store("modals").flash?.("This image was deleted, so there is nothing to show.");
-        return;
-      }
-      const title = path.split("/").pop()!;
-      this.openTab({ project, path, title, ftype, checkout: window.Alpine.store("checkouts").checkoutOf(project) });
-    },
-
-    // The diff's HEAD side; an added/untracked path diffs against emptiness.
-    diffHeadSide(project: string, t: DiffTarget, refuse: (reason: string) => null) {
-      if (t.headAbsent) return Promise.resolve("");
-      return WBDaemon.observe(
-        "blob.read",
-        WBDaemon.withCheckout({ repo: project, revision: "head", path: t.headPath }, t.checkout),
-      ).then((reply) => {
-        if (WBFail.isError(reply)) return refuse(WBFail.message(reply, "refused"));
-        const blob = reply.blob || {};
-        if (blob.status === "present") return blob.content;
-        if (blob.status === "absent") return "";
-        return refuse(blob.reason || "refused");
-      });
-    },
-
-    // The diff's working side. `not found` is NOT a refusal: a stale row
-    // (deleted between the list and the click) diffs against emptiness.
-    diffWorkSide(project: string, t: DiffTarget, refuse: (reason: string) => null) {
-      if (t.workingAbsent) return Promise.resolve("");
-      // NOT `fetchContent`: it collapses every refusal to `null` and closes
-      // the `file:` tab id rather than this diff's.
-      return WBDaemon.observe(
-        "file.read",
-        WBDaemon.withCheckout({ repo: project, path: t.workingPath }, t.checkout),
-      ).then((reply) => {
-        if (reply.status === "ok") return reply.content;
-        const reason = WBFail.message(reply, "refused");
-        return reason === "not found" ? "" : refuse(reason);
-      });
+      openDiff(this, deps.messages, project, entry);
     },
 
     // Pop a file tab out into a standalone popup; the in-app tab closes.
@@ -497,7 +346,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.showTab(id);
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend") sendWindow(window, "workbench:spend-shown");
-      window.Alpine.nextTick(() => {
+      void window.Alpine.nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.
         if (id === "consoles") window.WBConsole?.refitAll?.();
@@ -524,7 +373,12 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (r.left && r.left !== this.slot?.id) this.lastLeft = r.left;
       WBViewer.setActive(
         r.left,
-        r.right && { id: r.right, mirror: r.mirror, focus: r.focus === "right", ratio: this.splitRatio },
+        r.right && {
+          id: r.right,
+          mirror: r.mirror,
+          focus: r.focus === "right",
+          ratio: this.splitRatio,
+        },
       );
     },
 
@@ -542,7 +396,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.syncLater();
     },
     syncLater() {
-      window.Alpine.nextTick(() => this.syncViewer());
+      void window.Alpine.nextTick(() => this.syncViewer());
       this.persistView();
     },
     // Whether the canvas is wide enough for two panes right now: the tab menu
@@ -570,10 +424,10 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
-        this.activate(next.id);
+        if (next) this.activate(next.id);
       } else {
         // A background close can still be the slot's pane: repaint.
-        window.Alpine.nextTick(() => this.syncViewer());
+        void window.Alpine.nextTick(() => this.syncViewer());
       }
       this.persistView();
     },
@@ -597,13 +451,23 @@ export function tabsStore(deps: TabsStoreDeps) {
           // The pin (#406) survives a reload.
           checkout: t.checkout ?? null,
         }));
-      const consoleTabs = this.consoleTabs().map((t) => ({ id: t.id, deskId: t.deskId || "", title: t.title, grid: t.grid || [] }));
+      const consoleTabs = this.consoleTabs().map((t) => ({
+        id: t.id,
+        deskId: t.deskId || "",
+        title: t.title,
+        grid: t.grid || [],
+      }));
       // A stored `active` naming a tab this store does not carry would leave
       // the canvas blank: degrade to Consoles.
       const alive =
         this.active === "consoles" ||
         consoleTabs.some((t) => t.id === this.active) ||
-        files.some((f) => fileTabId(f.project!, f.path!, f.checkout) === this.active);
+        files.some(
+          (f) =>
+            f.project !== undefined &&
+            f.path !== undefined &&
+            fileTabId(f.project, f.path, f.checkout) === this.active,
+        );
       window.WBView?.patch({
         tabs: files,
         consoleTabs,
@@ -625,8 +489,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (!stored) return;
       this._restoring = true;
       try {
-        for (const t of stored.tabs || []) {
-          if (!t || !t.project || !t.path) continue;
+        for (const t of storedFileTabs(stored.tabs)) {
           this.openTab({
             project: t.project,
             path: t.path,
@@ -639,8 +502,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         // paints single until they do) and before the activation that paints.
         this.slot = WBSplit.fromStored(stored.split, this.tabs);
         this.splitRatio = stored.split?.ratio ?? null;
-        const want = stored.active;
-        this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
+        this.activate(restoredActive(stored.active, this.tabs));
       } finally {
         // The reads are async: hold the suppressor so a refusal landing later
         // cannot rewrite the store. A LATER close persists normally.
@@ -655,7 +517,10 @@ export function tabsStore(deps: TabsStoreDeps) {
     showTabMenu(x: number, y: number, t: CanvasTab) {
       if (!t?.closable) return;
       // A console tab shows the stage, which has no pane to put beside another.
-      if (t.kind === "console") this.renderMenu(x, y, [{ label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) }]);
+      if (t.kind === "console")
+        this.renderMenu(x, y, [
+          { label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) },
+        ]);
       else this.showSlotMenu(x, y, t);
     },
     showSlotMenu(x: number, y: number, t: CanvasTab) {

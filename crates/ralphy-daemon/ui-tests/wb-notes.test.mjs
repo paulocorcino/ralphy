@@ -307,6 +307,10 @@ function onStage({ records, WBDaemon = {} }) {
     createElement: (tag) => fakeEl(tag),
     querySelector: () => null,
     addEventListener() {},
+    events: [],
+    dispatchEvent(ev) {
+      this.events.push([ev.type, ev.detail]);
+    },
   };
   const desk = { records };
   const host = {
@@ -319,7 +323,7 @@ function onStage({ records, WBDaemon = {} }) {
   };
   const notes = createNotes(window, document, { console: host });
   const ids = () => stage.querySelectorAll(".note-card").map((c) => c.dataset.noteId);
-  return { notes, stage, desk, ids };
+  return { notes, stage, desk, ids, document };
 }
 
 const RECT = { left: 0, top: 0, width: 10, height: 10 };
@@ -390,6 +394,47 @@ test("the card on top is put back before its card leaves the stage", () => {
   assert.equal(notes.onTopNow(), null);
   assert.equal(card.classList.contains("on-top"), false);
   assert.equal(card._noteShadow, null);
+});
+
+test("in a fence's popup, a card the desk does not hold floats on the record it was handed", () => {
+  const record = { id: "o", repo: "r", path: "a.note", rect: RECT };
+  const { notes } = onStage({ records: [] });
+  notes.mountDetached(record);
+  const real = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  try {
+    assert.equal(notes.keepOnTop("o"), true);
+  } finally {
+    globalThis.getComputedStyle = real;
+  }
+  assert.equal(notes.cardEl("o").classList.contains("on-top"), true);
+});
+
+test("a file that is not a note leaves the stage and opens as bytes", async () => {
+  const record = { id: "x", repo: "r", checkout: null, path: "a.note", rect: RECT };
+  const saved = [];
+  const { notes, desk, document } = withHost({ saveNotes: (next) => saved.push(next) }, () =>
+    onStage({ records: [record], WBDaemon: { observe: async () => ({ status: "error", message: "not a note" }) } }),
+  );
+  desk.records = [record];
+  notes.render();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(saved.at(-1), []);
+  assert.deepEqual(document.events, [["workbench:open-request", { project: "r", path: "a.note", checkout: null, as: "bytes" }]]);
+});
+
+test("a note whose file cannot be read stays on the stage and says why beside its path", async () => {
+  const record = { id: "m", repo: "r", path: "gone.note", rect: RECT };
+  const { notes, document } = onStage({
+    records: [record],
+    WBDaemon: { observe: async () => ({ status: "error", message: "not found" }) },
+  });
+  notes.render();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  const card = notes.cardEl("m");
+  assert.equal(card.classList.contains("missing"), true);
+  assert.match(card.querySelector(".note-state").title, /^gone\.note — /);
+  assert.deepEqual(document.events, []);
 });
 
 test("a render builds no card for a note whose fence is in a popup", () => {

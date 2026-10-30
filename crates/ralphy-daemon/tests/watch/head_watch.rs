@@ -39,11 +39,11 @@ fn git(dir: &Path, args: &[&str]) {
 /// Bind a daemon over a temp repo with one commit; return the `/ws/tree` URL,
 /// the slug and the root.
 async fn serve_repo() -> (String, String, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path().join("repo");
-    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(&root).expect("create the test directory");
     git(&root, &["init", "-q", "-b", "main"]);
-    std::fs::write(root.join("a.txt"), b"a").unwrap();
+    std::fs::write(root.join("a.txt"), b"a").expect("write a.txt");
     git(&root, &["add", "a.txt"]);
     git(&root, &["commit", "-q", "-m", "first"]);
 
@@ -51,12 +51,17 @@ async fn serve_repo() -> (String, String, PathBuf) {
     let mut store = registry::RegistryStore::default();
     let slug = "owner/head";
     store.upsert(slug, &root.to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn.
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -69,7 +74,9 @@ async fn serve_repo() -> (String, String, PathBuf) {
     );
     std::mem::forget(tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/tree"),
@@ -90,7 +97,7 @@ async fn send_head_watch(ws: &mut Ws, repo: &str, checkout: Option<&str>) {
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
-        .unwrap();
+        .expect("send the frame");
 }
 
 /// The payload of the first `head.dirty` within `dur`, if any.

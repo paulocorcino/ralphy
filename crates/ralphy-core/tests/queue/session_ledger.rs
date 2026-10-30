@@ -48,7 +48,7 @@ fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> Stri
         &RecordingTracker::default(),
         &ScriptedClock::never(),
     )
-    .unwrap();
+    .expect("run_queue failed");
 
     let slug = ralphy_core::git::project_slug(&repo);
     let file = usage_dir.join(format!("{}.jsonl", slug.replace('/', "-")));
@@ -60,7 +60,7 @@ fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> Stri
         .unwrap_or_else(|| panic!("no execute line: {content}"))
         .to_string();
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
     line
 }
 

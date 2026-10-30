@@ -145,7 +145,10 @@ async fn read_until_close(
                 seen.closed = true;
                 break;
             }
-            _ => continue,
+            tungstenite::Message::Text(_)
+            | tungstenite::Message::Ping(_)
+            | tungstenite::Message::Pong(_)
+            | tungstenite::Message::Frame(_) => continue,
         };
         match protocol::decode(&bytes).expect("a well-formed frame") {
             Frame::Terminal { data, .. } => {
@@ -159,7 +162,7 @@ async fn read_until_close(
                 assert_eq!(cmd.payload["reason"], "child-exited");
                 seen.ended_after = Some(seen.received.len());
             }
-            _ => {}
+            Frame::Command(_) | Frame::Presence(_) => {}
         }
         tokio::time::sleep(pause).await;
     }
@@ -260,7 +263,7 @@ fn size_of(frame: &Frame) -> Option<(u64, u64)> {
         Frame::Command(cmd) if cmd.verb == SESSION_SIZE => {
             Some((cmd.payload["rows"].as_u64()?, cmd.payload["cols"].as_u64()?))
         }
-        _ => None,
+        Frame::Command(_) | Frame::Terminal { .. } | Frame::Presence(_) => None,
     }
 }
 
@@ -307,7 +310,9 @@ async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
     assert_eq!(size_of(&next_frame(&mut client).await), Some((24, 80)));
     match next_frame(&mut client).await {
         Frame::Terminal { data, .. } => assert_eq!(data, b"REPLAY"),
-        other => panic!("the replay follows the size: {other:?}"),
+        other @ (Frame::Command(_) | Frame::Presence(_)) => {
+            panic!("the replay follows the size: {other:?}")
+        }
     }
     let after_replay = loop {
         if let Some(size) = size_of(&next_frame(&mut client).await) {
@@ -480,7 +485,9 @@ async fn a_lagged_receiver_sends_the_screen_again_from_a_new_offset() {
     while live.len() < tail.snapshot.len() {
         match next_frame(&mut client).await {
             Frame::Terminal { data, .. } => live.extend(data),
-            other => panic!("only live output follows: {other:?}"),
+            other @ (Frame::Command(_) | Frame::Presence(_)) => {
+                panic!("only live output follows: {other:?}")
+            }
         }
     }
     assert_eq!(live[..tail.snapshot.len()], tail.snapshot[..]);

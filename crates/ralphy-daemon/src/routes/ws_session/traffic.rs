@@ -298,22 +298,26 @@ impl Traffic {
         }
         match self.peer_stage {
             PeerStage::Live | PeerStage::Open => self.live(bytes.len()),
-            PeerStage::FirstOutput { replay, gzip } => {
-                if bytes.first() == Some(&protocol::TAG_TERMINAL) {
-                    self.peer_stage = PeerStage::Live;
-                    if replay {
-                        let raw = if gzip {
-                            gunzipped_frame_len(bytes)
-                        } else {
-                            bytes.len()
-                        };
-                        self.replay(bytes.len(), raw);
-                        return;
-                    }
-                }
-                self.live(bytes.len());
+            PeerStage::FirstOutput { replay, gzip } => self.peer_first_output(bytes, replay, gzip),
+        }
+    }
+
+    /// Count a frame that follows a `session-open`: its first terminal frame
+    /// is the replay when the announcement said one follows.
+    fn peer_first_output(&mut self, bytes: &[u8], replay: bool, gzip: bool) {
+        if bytes.first() == Some(&protocol::TAG_TERMINAL) {
+            self.peer_stage = PeerStage::Live;
+            if replay {
+                let raw = if gzip {
+                    gunzipped_frame_len(bytes)
+                } else {
+                    bytes.len()
+                };
+                self.replay(bytes.len(), raw);
+                return;
             }
         }
+        self.live(bytes.len());
     }
 
     /// Whether `bytes` is a `session-open` announcement. It moves the stage

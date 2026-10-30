@@ -17,7 +17,16 @@ import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { inTab } from "./wb-console-place.ts";
 import type { PopupRegistry } from "./wb-desk-popups.ts";
-import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, NoteCard, Offset, Rect, Size } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskFence,
+  DeskNote,
+  ExtentOpts,
+  NoteCard,
+  Offset,
+  Rect,
+  Size,
+} from "./wb-types.d.ts";
 
 const { PHONE_MAX_WIDTH } = WBConsoleInput;
 const { fenceSpawnRect, rectsOverlap, fenceOf, fenceHolds } = WBGeometry;
@@ -151,7 +160,7 @@ export function createFenceList(deps: FenceListDeps) {
 
   // One fence's count readout and its columns button.
   function paintFenceCount(el: FenceElement, s: FenceSummary, away: Record<string, string[]>) {
-    const n = away[s.id] ? away[s.id].length : s.count;
+    const n = away[s.id]?.length ?? s.count;
     // Parenthesised: it trails the name field and reads as an aside to it.
     const count = el.querySelector<HTMLElement>(".fence-count");
     if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
@@ -432,9 +441,7 @@ export function createFenceList(deps: FenceListDeps) {
   function renameFence(id: string, name: string | null | undefined) {
     saveFences(
       fences().map((f: DeskFence) =>
-        f.id === id
-          ? { ...f, name: String(name == null ? "" : name).slice(0, FENCE_NAME_MAX) }
-          : f,
+        f.id === id ? { ...f, name: String(name == null ? "" : name).slice(0, FENCE_NAME_MAX) } : f,
       ),
     );
     renderFences();

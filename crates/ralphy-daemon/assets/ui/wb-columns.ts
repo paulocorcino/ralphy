@@ -50,10 +50,20 @@ export type ColumnFence = { id: string; name: string };
 export type ColumnGroup = { fence: ColumnFence | null; rows: ColumnRow[] };
 
 /** A console the list names: a member a detached fence's popup told us about. */
-export type DetachedMember = { id: string; agent: string | null; name?: string | null; repo?: string | null; kind: string | null };
+export type DetachedMember = {
+  id: string;
+  agent: string | null;
+  name?: string | null;
+  repo?: string | null;
+  kind: string | null;
+};
 
 /** A console the list is folded from: a window on this stage. */
-type RosterRow = DetachedMember & { state?: string | null; detail?: string | null; running?: boolean };
+type RosterRow = DetachedMember & {
+  state?: string | null;
+  detail?: string | null;
+  running?: boolean;
+};
 
 /** The input of `listFold`. */
 type ListFoldInput = {
@@ -77,9 +87,7 @@ type ExternalEvent = { type?: string; ids?: string[] } | null | undefined;
 type OpenResult = { ok: false; reason: string | null } | { ok: true; columns: Grid };
 
 /** The answer of `swap`. */
-type SwapResult =
-  | { ok: false }
-  | { ok: true; columns: Grid; ended: boolean; unmax: string | null };
+type SwapResult = { ok: false } | { ok: true; columns: Grid; ended: boolean; unmax: string | null };
 
 /** A console at its stage rect, for `fromRects`. */
 type StageItem = { id: string; rect?: Partial<Rect> | null };
@@ -111,9 +119,12 @@ export const WBColumns = (function () {
   }
 
   // [column, row] of `id`, or null.
-  function where(grid: readonly (readonly (string | null)[])[], id: string | null): [number, number] | null {
-    for (let c = 0; c < grid.length; c++) {
-      const r = grid[c].indexOf(id);
+  function where(
+    grid: readonly (readonly (string | null)[])[],
+    id: string | null,
+  ): [number, number] | null {
+    for (const [c, col] of grid.entries()) {
+      const r = col.indexOf(id);
       if (r >= 0) return [c, r];
     }
     return null;
@@ -127,7 +138,13 @@ export const WBColumns = (function () {
   // Open `id` next to `callerId`: "right" as a new column directly right of
   // the caller's column, "down" as a new row directly below the caller. An
   // empty grid is a lone maximized console: the caller is then the only one.
-  function open(grid: Grid, callerId: string, id: string, capValue: number, dir: string): OpenResult {
+  function open(
+    grid: Grid,
+    callerId: string,
+    id: string,
+    capValue: number,
+    dir: string,
+  ): OpenResult {
     const list = grid.length ? grid : [[callerId]];
     const ids = flat(list);
     if (ids.includes(id)) return { ok: false, reason: REASON_OPEN };
@@ -135,10 +152,18 @@ export const WBColumns = (function () {
     const at = where(list, callerId);
     if (!at) return { ok: false, reason: null };
     const [c, r] = at;
-    const next = list.map((col) => [...col]);
-    if (dir === "down") next[c].splice(r + 1, 0, id);
-    else next.splice(c + 1, 0, [id]);
+    const next = list.map((col, i) =>
+      dir === "down" && i === c ? [...col.slice(0, r + 1), id, ...col.slice(r + 1)] : [...col],
+    );
+    if (dir !== "down") next.splice(c + 1, 0, [id]);
     return { ok: true, columns: next };
+  }
+
+  // A copy of `grid` with the console at each `[column, row]` of `changes` replaced.
+  function replaceAt(grid: Grid, changes: [[number, number], string][]): Grid {
+    return grid.map((col, c) =>
+      col.map((cell, r) => changes.find(([at]) => at[0] === c && at[1] === r)?.[1] ?? cell),
+    );
   }
 
   // Put `id` in the row `atId` holds (ADR-0051 §5, swap). An `id` already in
@@ -151,9 +176,15 @@ export const WBColumns = (function () {
     const at = where(list, atId);
     if (!at || id === atId) return { ok: false };
     const from = where(list, id);
-    const next = list.map((col) => [...col]);
-    next[at[0]][at[1]] = id;
-    if (from) next[from[0]][from[1]] = atId;
+    const next = replaceAt(
+      list,
+      from
+        ? [
+            [at, id],
+            [from, atId],
+          ]
+        : [[at, id]],
+    );
     return {
       ok: true,
       columns: next,
@@ -184,6 +215,12 @@ export const WBColumns = (function () {
     return { ...without(grid, [id]), unmax: id === flat(grid)[0] ? id : null };
   }
 
+  // The first console of `grid` when `ids` holds it, else null.
+  function firstIn(grid: Grid, ids: string[]) {
+    const head = flat(grid)[0];
+    return head !== undefined && ids.includes(head) ? head : null;
+  }
+
   // A change that came from outside this client, in the shape of `restore`.
   // `ended` (the session exited), `maximized` (another device maximized a
   // console) and `moved` (another client changed a rect or a fence) leave the
@@ -200,11 +237,10 @@ export const WBColumns = (function () {
     };
     if (event?.type !== "closed" && event?.type !== "detached") return same;
     const ids = event.ids || [];
-    const head = flat(grid)[0];
     if (!flat(grid).some((id) => ids.includes(id))) return same;
     return {
       ...without(grid, ids),
-      unmax: event.type === "detached" && ids.includes(head) ? head : null,
+      unmax: event.type === "detached" ? firstIn(grid, ids) : null,
       changed: true,
     };
   }
@@ -231,6 +267,11 @@ export const WBColumns = (function () {
   // column whose FIRST console it overlaps by more than half the narrower
   // width, the largest overlap winning; otherwise it starts a column. Only the
   // first console is compared, so a staircase does not chain into one column.
+  function compareIds(a: string, b: string) {
+    if (a < b) return -1;
+    return a > b ? 1 : 0;
+  }
+
   function fromRects(items: StageItem[] | null | undefined): Grid {
     const box = (r: Partial<Rect> | null | undefined) => ({
       left: Number(r?.left) || 0,
@@ -239,13 +280,14 @@ export const WBColumns = (function () {
     });
     const list = (items || [])
       .map((it) => ({ id: it.id, ...box(it.rect) }))
-      .sort((a, b) => a.left - b.left || a.top - b.top || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      .sort((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
     const cols = [];
     for (const it of list) {
       let best = null;
       let bestOverlap = 0;
       for (const col of cols) {
         const a = col[0];
+        if (!a) continue;
         const overlap = Math.min(a.left + a.width, it.left + it.width) - Math.max(a.left, it.left);
         if (overlap > Math.min(a.width, it.width) / 2 && overlap > bestOverlap) {
           best = col;
@@ -274,19 +316,29 @@ export const WBColumns = (function () {
   // a shorter column; "y" walks the rows of one column. Both wrap at the ends;
   // from outside the grid, a forward step takes the first console and a
   // backward step the last.
-  function focusMove(paintedList: Painted[], focusedId: string | null, axis: string, step: number): string | null {
-    if (!paintedList.length) return null;
+  function focusMove(
+    paintedList: Painted[],
+    focusedId: string | null,
+    axis: string,
+    step: number,
+  ): string | null {
     const cols: Grid = [];
     for (const p of paintedList) (cols[p.index] ||= []).push(p.id);
     const at = where(cols, focusedId);
-    if (!at) return step > 0 ? paintedList[0].id : paintedList[paintedList.length - 1].id;
+    if (!at) return paintedList.at(step > 0 ? 0 : -1)?.id ?? null;
     const [c, r] = at;
-    if (axis === "y") {
-      const col = cols[c];
-      return col[(r + step + col.length) % col.length];
-    }
-    const to = cols[(c + step + cols.length) % cols.length];
-    return to[Math.min(r, to.length - 1)];
+    if (axis === "y") return wrapRow(cols[c], r + step);
+    return nearRow(cols[(c + step + cols.length) % cols.length], r);
+  }
+
+  // The id at row `n` of `col`, counting around its ends.
+  function wrapRow(col: readonly string[] | undefined, n: number) {
+    return col?.[(n + col.length) % col.length] ?? null;
+  }
+
+  // The id at row `r` of `col`, or at its last row when `col` is shorter.
+  function nearRow(col: readonly string[] | undefined, r: number) {
+    return col?.[Math.min(r, col.length - 1)] ?? null;
   }
 
   // The grid this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,
@@ -299,8 +351,21 @@ export const WBColumns = (function () {
   // flat list of ids, stored before rows existed, reads as one row per
   // column. The FIRST stored id must be the desk's maximized console, or the
   // grid is ignored (ADR-0051 §8); then ids no longer on the desk drop.
-  function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined): Grid {
+  function fromStored(
+    stored: unknown,
+    desk: { id: string; max?: boolean }[] | null | undefined,
+  ): Grid {
     if (!Array.isArray(stored)) return [];
+    const cols = storedColumns(stored);
+    const records = desk || [];
+    if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
+    const next = keep(cols, new Set(records.map((r) => r.id)));
+    return flat(next).length >= 2 ? next : [];
+  }
+
+  // The columns of a stored grid: each id once, the first time it appears,
+  // and no empty column. An id that is not a string drops.
+  function storedColumns(stored: unknown[]): Grid {
     const seen = new Set<string>();
     const cols: Grid = [];
     for (const item of stored) {
@@ -313,10 +378,7 @@ export const WBColumns = (function () {
       }
       if (col.length) cols.push(col);
     }
-    const records = desk || [];
-    if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
-    const next = keep(cols, new Set(records.map((r) => r.id)));
-    return flat(next).length >= 2 ? next : [];
+    return cols;
   }
 
   // The stored direction, "right" when there is none.
@@ -347,16 +409,21 @@ export const WBColumns = (function () {
   }
 
   // The reason a console on this page cannot be opened as a column, or null.
-  function rowReason(open: boolean, full: boolean | undefined, tabbed: boolean) {
+  function rowReason(inGrid: boolean, full: boolean | undefined, tabbed: boolean) {
     if (tabbed) return REASON_TAB;
-    if (open) return REASON_OPEN;
+    if (inGrid) return REASON_OPEN;
     return full ? REASON_FULL : null;
   }
 
-  // The row of a console on this page. `open`: it is in the grid already.
+  // The row of a console on this page. `inGrid`: it is in the grid already.
   // `tabbed`: it is in its own tab, out of the stage.
-  function liveRow(r: RosterRow, open: boolean, full: boolean | undefined, tabbed: boolean): ColumnRow {
-    const reason = rowReason(open, full, tabbed);
+  function liveRow(
+    r: RosterRow,
+    inGrid: boolean,
+    full: boolean | undefined,
+    tabbed: boolean,
+  ): ColumnRow {
+    const reason = rowReason(inGrid, full, tabbed);
     return {
       id: r.id,
       agent: r.agent,
@@ -375,7 +442,12 @@ export const WBColumns = (function () {
   // The row of the console that opened the list (ADR-0051 Â§5): named, never
   // opened or swapped.
   function selfRow(r: RosterRow): ColumnRow {
-    return { ...liveRow(r, false, false, false), enabled: false, reason: REASON_SELF, swappable: false };
+    return {
+      ...liveRow(r, false, false, false),
+      enabled: false,
+      reason: REASON_SELF,
+      swappable: false,
+    };
   }
 
   // The row of a console in a detached fence: named, never opened or swapped.
@@ -395,7 +467,16 @@ export const WBColumns = (function () {
     };
   }
 
-  function listFold({ rows, fences, membership, detached, columns, from, full, tabbed }: ListFoldInput): ColumnGroup[] {
+  function listFold({
+    rows,
+    fences,
+    membership,
+    detached,
+    columns,
+    from,
+    full,
+    tabbed,
+  }: ListFoldInput): ColumnGroup[] {
     const inColumns = idSet(columns);
     const inTabs = idSet(tabbed);
     // A console in no fence looks up `undefined`.
@@ -404,14 +485,34 @@ export const WBColumns = (function () {
     const loose: ColumnRow[] = [];
     for (const r of rows || []) {
       const into = byFence.get(fenceOfWin.get(r.id));
-      const row = r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
+      const row =
+        r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
       (into || loose).push(row);
     }
+    addDetached(byFence, detached);
+    return listGroups(loose, fences, byFence);
+  }
+
+  // The members of each detached fence join its rows, after its live ones.
+  // A fence that is not listed takes none.
+  function addDetached(
+    byFence: Map<string | undefined, ColumnRow[]>,
+    detached: ListFoldInput["detached"],
+  ) {
     for (const [fenceId, members] of Object.entries(detached || {})) {
       const into = byFence.get(fenceId);
       if (!into) continue;
       for (const m of members) into.push(detachedRow(m));
     }
+  }
+
+  // The groups of the list: the loose consoles first, then each fence with a
+  // row, in the order of `fences`.
+  function listGroups(
+    loose: ColumnRow[],
+    fences: ListFoldInput["fences"],
+    byFence: Map<string | undefined, ColumnRow[]>,
+  ) {
     const group = (fence: ColumnFence | null, rows: ColumnRow[]): ColumnGroup => ({ fence, rows });
     const groups: ColumnGroup[] = [];
     if (loose.length) groups.push(group(null, loose));
@@ -431,10 +532,19 @@ export const WBColumns = (function () {
   // The list with only the rows that match `query`, case-insensitive, against
   // the console name, the agent, the repo text and the fence name. A fence
   // whose name matches keeps all its rows. Groups left with no rows drop.
-  function filterGroups(groups: ColumnGroup[], query: string | null | undefined, repoText: (ref: string) => string) {
-    const q = String(query || "").trim().toLowerCase();
+  function filterGroups(
+    groups: ColumnGroup[],
+    query: string | null | undefined,
+    repoText: (ref: string) => string,
+  ) {
+    const q = String(query || "")
+      .trim()
+      .toLowerCase();
     if (!q) return groups;
-    const has = (text: string | null | undefined) => String(text || "").toLowerCase().includes(q);
+    const has = (text: string | null | undefined) =>
+      String(text || "")
+        .toLowerCase()
+        .includes(q);
     const out = [];
     for (const g of groups) {
       const rows = has(g.fence?.name)

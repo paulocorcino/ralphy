@@ -16,6 +16,7 @@
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import type { Messages } from "./wb-messages.ts";
+import type { IssueDetail as Detail } from "./wb-kanban.ts";
 import type { BoardIssue, Read } from "./wb-shell-types.d.ts";
 
 /** What `main.ts` gives the store. */
@@ -25,7 +26,7 @@ export type BoardStoreDeps = {
 };
 
 /** The fields of an `issue.show` reply that the board keeps. */
-export type IssueDetail = { body?: unknown; comments?: unknown; blocked_by?: unknown };
+export type IssueDetail = Pick<Detail, "body" | "comments" | "blocked_by">;
 
 // `deps` is the shape every store takes; the board tells the operator nothing
 // itself, because the board component flashes each failure.
@@ -50,17 +51,27 @@ export function boardStore(_deps: BoardStoreDeps) {
       this.boardIssues[slug] = issues;
       this.boardLabels[slug] = labels;
       this.boardError[slug] = null;
-      this.boardRead[slug] = WBFail.readFold(this.boardRead[slug], { ok: true, value: true, at: Date.now() });
+      this.boardRead[slug] = WBFail.readFold(this.boardRead[slug], {
+        ok: true,
+        value: true,
+        at: Date.now(),
+      });
     },
 
     // A failed `board.list` (ADR-0070 D3). After a good read the cards stay,
     // under a banner that says they are not current; before one, there are no
     // cards and the banner says why. Moving a card is locked meanwhile.
     boardReadFailed(slug: string, msg: string) {
-      const read = WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
+      const read = WBFail.readFold(this.boardRead[slug], {
+        ok: false,
+        reason: msg,
+        at: Date.now(),
+      });
       this.boardRead[slug] = read;
       if (read.goodAt) {
-        this.boardError[slug] = WBFail.notCurrent(read, (ms) => window.Alpine.store("connection").fmtClock(ms));
+        this.boardError[slug] = WBFail.notCurrent(read, (ms) =>
+          window.Alpine.store("connection").fmtClock(ms),
+        );
         return;
       }
       this.boardIssues[slug] = [];

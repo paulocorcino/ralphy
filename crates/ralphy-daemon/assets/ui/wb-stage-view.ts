@@ -351,7 +351,6 @@ export function createView(deps: ViewDeps) {
   // `deltaMode: DOM_DELTA_LINE` (Firefox) instead of pixels.
   const WHEEL_LINE = 16;
 
-
   // The auto-pan loop of a drag: while the pointer presses against a viewport
   // edge, the plane scrolls under it each frame, and `place(pointer)` in the tick
   // keeps the drop correct in stage coordinates. The gesture calls `follow`
@@ -381,10 +380,12 @@ export function createView(deps: ViewDeps) {
       const { dx, dy } = nudge();
       if (!dx && !dy) return; // leaving the band ENDS the loop
       // `nudge` answers zero without a viewport or a pointer, so both are here.
-      const ws = workspace()!;
+      const ws = workspace();
+      const pointer = last;
+      if (!ws || !pointer) return;
       ws.scrollLeft += dx;
       ws.scrollTop += dy;
-      place(last!);
+      place(pointer);
       panRaf = requestAnimationFrame(tick);
     };
     const follow = (pointer: Point) => {
@@ -447,6 +448,11 @@ export function createView(deps: ViewDeps) {
     e.preventDefault();
   }
 
+  function wheelPixels(e: WheelEvent, pageHeight: number) {
+    if (e.deltaMode === 1) return e.deltaY * WHEEL_LINE;
+    return e.deltaMode === 2 ? e.deltaY * pageHeight : e.deltaY;
+  }
+
   // The wheel. The VERTICAL axis is native `overflow:auto`; this adds only the
   // horizontal reach where the platform does not provide it.
   function onWheel(e: WheelEvent) {
@@ -463,13 +469,7 @@ export function createView(deps: ViewDeps) {
     if (!ws) return;
     // `deltaY` is only pixels when `deltaMode` says so: Firefox reports LINE
     // (±3 per notch) and does not convert shift-wheel itself.
-    const px =
-      e.deltaMode === 1
-        ? e.deltaY * WHEEL_LINE
-        : e.deltaMode === 2
-          ? e.deltaY * ws.clientHeight
-          : e.deltaY;
-    ws.scrollLeft += px;
+    ws.scrollLeft += wheelPixels(e, ws.clientHeight);
     e.preventDefault();
   }
 

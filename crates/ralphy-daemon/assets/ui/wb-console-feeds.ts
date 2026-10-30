@@ -52,7 +52,8 @@ export function createFeeds(deps: FeedsDeps) {
   // or forgets it (ADR-0050 amendment 2026-10-04).
   // Reads in flight at the same moment share one request: every held box
   // asks on the same fleet read, and each request asks every peer.
-  let sessionsRead: Promise<{ sessions: HostedSession[]; unheard: ReadonlySet<string> }> | null = null;
+  let sessionsRead: Promise<{ sessions: HostedSession[]; unheard: ReadonlySet<string> }> | null =
+    null;
   function readSessions() {
     if (!sessionsRead) {
       sessionsRead = (async () => {
@@ -78,7 +79,7 @@ export function createFeeds(deps: FeedsDeps) {
   function projectNameOf(ref: string | null | undefined) {
     const known = projectNames.get(ref);
     if (known) return known.name;
-    return WBFleet ? WBFleet.refSlug(ref) : ref!;
+    return WBFleet.refSlug(ref);
   }
   function projectTitleOf(ref: string | null | undefined) {
     if (ref === "~") return ref;
@@ -86,7 +87,9 @@ export function createFeeds(deps: FeedsDeps) {
   }
   // `rows` is `[{ ref, name, title }]`. Titles and tooltips already drawn are
   // drawn again; a console NAME already given is the operator's and stays.
-  function ingestProjects(rows: { ref: string; name: string; title?: string }[] | null | undefined) {
+  function ingestProjects(
+    rows: { ref: string; name: string; title?: string }[] | null | undefined,
+  ) {
     projectNames.clear();
     for (const r of rows || []) {
       if (r && r.ref && r.name) projectNames.set(r.ref, { name: r.name, title: r.title || r.name });
@@ -94,7 +97,11 @@ export function createFeeds(deps: FeedsDeps) {
     for (const win of wins) {
       if (!win._title || !win._presentation) continue;
       const p = win._presentation;
-      p.tooltip = WBConsoleName.tooltipLines(projectTitleOf(win._deskRepo), p.environment, p.name).join("\n");
+      p.tooltip = WBConsoleName.tooltipLines(
+        projectTitleOf(win._deskRepo),
+        p.environment,
+        p.name,
+      ).join("\n");
       win._title.title = p.tooltip;
       renderTitle(win, win._title, p);
     }
@@ -109,12 +116,20 @@ export function createFeeds(deps: FeedsDeps) {
   const peerGroups = new Map<string, Group>();
   let wakePeer: ((daemon: string) => Promise<boolean>) | null = null;
   let readFleet: (() => void) | null = null;
-  function ingestFleet(groups: Group[] | null | undefined, hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined) {
-    peerGroups.clear();
-    for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
+  function ingestFleet(
+    groups: Group[] | null | undefined,
+    hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined,
+  ) {
+    keepPeerGroups(groups);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
     if (typeof hooks?.read === "function") readFleet = hooks.read;
     for (const win of [...wins]) if (typeof win._peerRefresh === "function") win._peerRefresh();
+  }
+
+  // The fleet groups of the peers, by daemon id; the local group is not kept.
+  function keepPeerGroups(groups: Group[] | null | undefined) {
+    peerGroups.clear();
+    for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
   }
 
   // The store `projects`' last `/api/sessions` poll, kept for the menus' state dots.

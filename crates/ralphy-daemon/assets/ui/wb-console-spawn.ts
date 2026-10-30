@@ -13,11 +13,23 @@ import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
+import { need } from "./wb-dom-need.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
-import type { ConsoleTerm, ConsoleWin, DeskRecord, DeskWindowFields, ExtentOpts, Presentation, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type {
+  ConsoleTerm,
+  ConsoleWin,
+  DeskRecord,
+  DeskSessionFields,
+  DeskWindowFields,
+  ExtentOpts,
+  Presentation,
+  Rect,
+  SpawnCarry,
+  WindowSnapshot,
+} from "./wb-types.d.ts";
 
 const { birthDecision, peerOfflineView, peerActionLabel, consoleCommand } = WBConsoleSession;
 const { sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
@@ -41,13 +53,22 @@ export type SpawnDeps = {
     repo: string | null | undefined,
     desk: ChromeRecord,
     kind: string | null | undefined,
-  ) => { win: ConsoleWin; body: HTMLElement; title: HTMLElement; restartBtn: HTMLButtonElement; closeBtn: HTMLButtonElement };
+  ) => {
+    win: ConsoleWin;
+    body: HTMLElement;
+    title: HTMLElement;
+    restartBtn: HTMLButtonElement;
+    closeBtn: HTMLButtonElement;
+  };
   // The title: what it says, and its painting.
   sessionPresentation: (
     label: string | null | undefined,
     repo: string | null | undefined,
     prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
-    owner: { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null } | null | undefined,
+    owner:
+      | { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null }
+      | null
+      | undefined,
   ) => Presentation;
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
   // The worktree switcher: its menu, the restart, and the repo's listing.
@@ -55,7 +76,11 @@ export type SpawnDeps = {
   restartWin: (win: ConsoleWin) => Promise<void>;
   ensureListing: (ref: string | null | undefined, force?: boolean) => void;
   // Builds the key bar of a window and gives back its latch buttons.
-  buildKeyBar: (win: ConsoleWin) => { ctrlBtn: HTMLButtonElement; shiftBtn: HTMLButtonElement; selBtn: HTMLButtonElement };
+  buildKeyBar: (win: ConsoleWin) => {
+    ctrlBtn: HTMLButtonElement;
+    shiftBtn: HTMLButtonElement;
+    selBtn: HTMLButtonElement;
+  };
   // Sleeps or wakes a window (`wb-console-dormancy.ts`).
   applyDormancy: (win: ConsoleWin) => unknown;
   // Builds the terminal of a window.
@@ -133,22 +158,33 @@ export function createSpawn(deps: SpawnDeps) {
     markRelaunch,
   } = deps;
 
+  // The state `sleepWindow` leaves. `_visible` is false until the observer
+  // reports: a window not yet reported reads as visible, and any
+  // `applyDormancy` before the report would wake it.
+  function markDormant(win: ConsoleWin, termOpts: TerminalOpts) {
+    win._dormantSession = termOpts.id ?? null;
+    win._dormantWatch = termOpts.watch;
+    win._dormant = true;
+    win._visible = false;
+    win.classList.add("dormant");
+  }
+
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
-  function spawnWindow(termOpts: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
+  function spawnWindow(
+    termOpts: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk?: SpawnCarry,
+  ) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
-    if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };
-    // Every NEW launch names its record: the daemon keeps one session per
-    // record, so a second page relaunching it joins this one (ADR-0050
-    // amendment 2026-10-04).
-    if (termOpts.id == null) termOpts = { ...termOpts, record: win._deskId };
-    // A launch that names a worktree records the intent NOW, so a daemon that
-    // dies mid-launch still leaves it behind.
-    if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
+    if (termOpts.id == null && !termOpts.console)
+      termOpts = { ...termOpts, name: win._deskConsoleName };
+    termOpts = launchRecord(termOpts, win);
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;
     // the key-bar buttons (assigned below) only REFLECT them.
@@ -178,7 +214,7 @@ export function createSpawn(deps: SpawnDeps) {
     const showPeerDown = (group: Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
-        strip = document.createElement("div") as HTMLElement;
+        strip = document.createElement("div");
         strip.className = "session-peer-down";
         const text = document.createElement("span");
         text.className = "session-peer-down-text";
@@ -191,22 +227,22 @@ export function createSpawn(deps: SpawnDeps) {
         btn.className = "session-reconnect";
         btn.addEventListener("click", (e: MouseEvent) => {
           e.stopPropagation();
-          if (btn.dataset.act === "wake") wakePeerNow()?.(peerDaemon);
+          if (btn.dataset.act === "wake") void wakePeerNow()?.(peerDaemon);
           else readFleetNow()?.();
         });
         strip.append(text, detail, btn);
         win.insertBefore(strip, body);
       }
       const view = peerOfflineView(group, null, win._deskEnvironment);
-      strip.querySelector(".session-peer-down-text")!.textContent = view.text;
-      const detail = strip.querySelector<HTMLElement>(".session-detail")!;
-      detail.querySelector("p")!.textContent = view.detail || "";
+      need(strip, ".session-peer-down-text").textContent = view.text;
+      const detail = need(strip, ".session-detail");
+      need(detail, "p").textContent = view.detail || "";
       detail.hidden = !view.detail;
-      const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
+      const btn = need(strip, ".session-reconnect");
       btn.dataset.act = view.action || "";
-      const label = peerActionLabel(view.action);
-      btn.hidden = !label;
-      if (label) btn.textContent = label;
+      const actionLabel = peerActionLabel(view.action);
+      btn.hidden = !actionLabel;
+      if (actionLabel) btn.textContent = actionLabel;
     };
 
     // The parked strip: this window watches a session another window drives.
@@ -344,14 +380,7 @@ export function createSpawn(deps: SpawnDeps) {
     // it is read at each call. A dormant window has none, and its wake asks.
     win._peerRefresh = () => win._term?.peerRefresh();
     if (birthDecision({ id: termOpts.id, observed: !!budget.dormancyWatch() }) === "dormant") {
-      // The state `sleepWindow` leaves. `_visible` is false until the observer
-      // reports: a window not yet reported reads as visible, and any
-      // `applyDormancy` before the report would wake it.
-      win._dormantSession = termOpts.id!;
-      win._dormantWatch = termOpts.watch;
-      win._dormant = true;
-      win._visible = false;
-      win.classList.add("dormant");
+      markDormant(win, termOpts);
     } else {
       // On the window, not in a local: after a sleep/wake cycle a captured
       // local would name a disposed terminal.
@@ -389,16 +418,15 @@ export function createSpawn(deps: SpawnDeps) {
             agent: termOpts.agent ?? label,
             // Explicit target, else `windowCheckout`: announcement beats
             // request beats record.
-            checkout:
-              checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
+            checkout: checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
           };
-      spawnOrMissing(fresh, label, repo, carry);
+      void spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     };
     win._relaunchIn = relaunchIn;
     restartBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
-      restartWin(win);
+      void restartWin(win);
     });
     // The switcher needs the repo's listing; one read per ref, cached.
     if (kind === "agent") ensureListing(repo);
@@ -445,10 +473,7 @@ export function createSpawn(deps: SpawnDeps) {
         }).then(
           (response) => {
             if (WBSessionRoute.closeSucceeded(response.status)) finish();
-            else
-              win._term?.term.write(
-                `\r\n[close failed — the daemon refused it]\r\n`,
-              );
+            else win._term?.term.write(`\r\n[close failed — the daemon refused it]\r\n`);
           },
           () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),
         );
@@ -472,11 +497,7 @@ export function createSpawn(deps: SpawnDeps) {
   function recordBirth(win: ConsoleWin, carry: SpawnCarry | undefined) {
     const r = currentDesk().find((x) => x.id === win._deskId);
     if (r) {
-      const fields: DeskWindowFields = {};
-      if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
-      if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
-        fields.consoleName = win._deskConsoleName;
-      }
+      const fields = birthFields(r, win);
       if (Object.keys(fields).length) setWin(win, fields);
       return;
     }
@@ -495,7 +516,7 @@ export function createSpawn(deps: SpawnDeps) {
   function adoptOrphan(win: ConsoleWin) {
     if (!win.isConnected || !win._deskUnrecorded) return;
     // A fresh read first: the record may have landed without a push here.
-    reloadDesk().then(() => {
+    void reloadDesk().then(() => {
       if (!win.isConnected || !win._deskUnrecorded) return;
       if (currentDesk().some((r) => r.id === win._deskId)) return;
       recordLeft(win);
@@ -513,14 +534,8 @@ export function createSpawn(deps: SpawnDeps) {
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
     };
-    if (
-      (r.sessionId ?? null) !== session.sessionId ||
-      (r.daemonId ?? null) !== session.daemonId ||
-      (r.environment ?? null) !== session.environment
-    ) {
-      fields.session = session;
-    }
-    if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
+    if (sessionDiffers(r, session)) fields.session = session;
+    if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
     if (Object.keys(fields).length) setWin(win, fields);
   }
 
@@ -547,7 +562,19 @@ export function createSpawn(deps: SpawnDeps) {
   // is no agent — a normal shell in the repo dir, labelled "console", or, with
   // `command`, a shell running that command and labelled by it (the same label
   // the daemon gives the session, so the desk record relaunches it as such).
-  function open({ repo, agent, plain, checkout, command }: { repo?: string | null; agent?: string | null; plain?: boolean; checkout?: string | null; command?: string }) {
+  function open({
+    repo,
+    agent,
+    plain,
+    checkout,
+    command,
+  }: {
+    repo?: string | null;
+    agent?: string | null;
+    plain?: boolean;
+    checkout?: string | null;
+    command?: string;
+  }) {
     if (atDeskCap()) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
       return false;
@@ -561,4 +588,42 @@ export function createSpawn(deps: SpawnDeps) {
   }
 
   return { spawnWindow, recordBirth, recordSession, deskOf, open };
+}
+
+// The terminal options of a launch with the record of the window `win`, and
+// the worktree intent written on the window.
+function launchRecord(termOpts: TerminalOpts, win: ConsoleWin): TerminalOpts {
+  // Every NEW launch names its record: the daemon keeps one session per
+  // record, so a second page relaunching it joins this one (ADR-0050
+  // amendment 2026-10-04).
+  if (termOpts.id == null) termOpts = { ...termOpts, record: win._deskId };
+  // A launch that names a worktree records the intent NOW, so a daemon that
+  // dies mid-launch still leaves it behind.
+  if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
+  return termOpts;
+}
+
+// The fields of the record `r` that the birth of `win` changed: a relaunch in
+// another tree, a name the record lacked.
+function birthFields(r: DeskRecord, win: ConsoleWin): DeskWindowFields {
+  const fields: DeskWindowFields = {};
+  if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
+  if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
+    fields.consoleName = win._deskConsoleName;
+  }
+  return fields;
+}
+
+// The window is in another checkout than its record names.
+function checkoutDiffers(r: DeskRecord, win: ConsoleWin) {
+  return (r.checkout ?? null) !== (win._deskCheckout ?? null);
+}
+
+// The session the daemon announced is not the one the record names.
+function sessionDiffers(r: DeskRecord, session: DeskSessionFields) {
+  return (
+    (r.sessionId ?? null) !== session.sessionId ||
+    (r.daemonId ?? null) !== session.daemonId ||
+    (r.environment ?? null) !== session.environment
+  );
 }

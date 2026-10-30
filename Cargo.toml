@@ -23,10 +23,26 @@ members = [
     "crates/xtask",
 ]
 
-# Every `unsafe` block sits under a named `allow` that says which FFI it
+# Every `unsafe` block sits under a named `expect` that says which FFI it
 # wraps (ADR-0072 D13).
 [workspace.lints.rust]
 unsafe_code = "deny"
+
+# The error rules of AGENTS.md, checked by clippy. The settings of
+# `disallowed_methods` and `too_many_arguments` are in `clippy.toml`.
+[workspace.lints.clippy]
+let_underscore_must_use = "deny"
+unused_result_ok = "deny"
+map_err_ignore = "deny"
+wildcard_enum_match_arm = "deny"
+unwrap_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+allow_attributes_without_reason = "deny"
+allow_attributes = "deny"
+disallowed_methods = "deny"
+too_many_arguments = "deny"
 
 [workspace.package]
 edition = "2021"

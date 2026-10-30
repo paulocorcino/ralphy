@@ -527,7 +527,8 @@ test("a right-click on the tree opens the menu once, however often the tree was 
   const menus = [];
   state.showMenu = (x, y, node) => menus.push([x, y, node]);
   const realMar10 = globalThis.mar10;
-  globalThis.mar10 = { Wunderbaum: Object.assign(function () {}, { getNode: () => null }) };
+  function Wunderbaum() {}
+  globalThis.mar10 = { Wunderbaum: Object.assign(Wunderbaum, { getNode: () => null }) };
   const rightClick = () => listeners.forEach((fn) => fn({ clientX: 7, clientY: 9, preventDefault() {} }));
   try {
     state.mountTree();
@@ -773,6 +774,50 @@ test("a re-list keeps the scroll offset and the selection, unless a reveal lande
   assert.equal(tree.element.scrollTop, 0);
 });
 
+// A reveal brings a row on screen and selects it.
+test("a reveal opens the folders above the row, shallowest first, and selects it; an unmounted folder reveals nothing", async () => {
+  const disk = { "": [{ title: "a", folder: true }], a: [{ title: "b", folder: true }], "a/b": [{ title: "f.txt" }] };
+  const tree = fakeTree(disk);
+  await tree.open();
+  const { s } = reconcileFiles(tree, disk);
+  const node = await s.revealRel("a/b/f.txt");
+  assert.deepEqual(tree.log, ["expand a", "expand a/b"]);
+  assert.equal(tree.relOf(node), "a/b/f.txt");
+  assert.equal(tree.active, node);
+  assert.equal(await s.revealRel("z/f.txt"), null);
+  assert.equal(tree.active, node, "the selection stays where it was");
+});
+
+// A reconcile asked for while one of the same level runs.
+test("a reconcile asked for during a pass waits for the level, which is read once more", async () => {
+  const disk = { "": [{ title: "x.txt" }] };
+  const tree = fakeTree(disk);
+  await tree.open();
+  const { s } = reconcileFiles(tree, disk);
+  const passes = [];
+  let finish;
+  s._reconcileOnce = (node, rel) => {
+    passes.push(rel);
+    return passes.length === 1 ? new Promise((resolve, reject) => (finish = { resolve, reject })) : Promise.resolve();
+  };
+  const first = s.reconcileLevel(tree.root, "");
+  let settled = false;
+  const second = s.reconcileLevel(tree.root, "").then(() => (settled = true));
+  await Promise.resolve();
+  assert.equal(settled, false, "the second caller waits for the pass in flight");
+  finish.resolve();
+  await Promise.all([first, second]);
+  assert.deepEqual(passes, ["", ""], "the level is read once more, and only once");
+
+  // A pass that throws still settles every caller that waits on it.
+  passes.length = 0;
+  const failing = s.reconcileLevel(tree.root, "").catch((e) => e.message);
+  const waiting = s.reconcileLevel(tree.root, "").then(() => "settled");
+  finish.reject(new Error("socket dropped"));
+  assert.deepEqual(await Promise.all([failing, waiting]), ["socket dropped", "settled"]);
+  assert.deepEqual(passes, [""], "a pass that threw is not run again");
+});
+
 test("a full path takes the separator of the root it is joined onto", () => {
   const rows = [
     ["C:\\Dev\\r", "src/a.txt", "C:\\Dev\\r\\src\\a.txt"],
@@ -848,4 +893,70 @@ test("every other key, and Alt+Enter with no row, is left to the tree", () => {
   assert.equal(options.keydown({ node: file, event: { key: "ArrowDown", altKey: true } }), undefined);
   assert.equal(options.keydown({ node: undefined, event: { key: "Enter", altKey: true } }), undefined);
   assert.deepEqual(sent.filter((e) => e.type === "workbench:properties-open"), []);
+});
+
+// `duplicateNode` over a folder that holds `names`; the copies it asks for.
+async function duplicate(rel, names) {
+  const { scope: s } = loadComponent("wbFiles", { magics: { $refs: {}, $nextTick: (f) => f() } });
+  const real = globalThis.WBDaemon;
+  const writes = [];
+  globalThis.WBDaemon = {
+    observe: async () => ({ status: "ok", entries: names.map((name) => ({ name })) }),
+    write: async (verb, payload) => {
+      writes.push([verb, payload.path, payload.to]);
+      return { status: "ok" };
+    },
+    withCheckout: (payload) => ({ ...payload }),
+  };
+  s.$store.projects.setOpen("o/r");
+  s.relPath = () => rel;
+  s.onTreeDirty = async () => {};
+  s.revealRel = async () => null;
+  try {
+    await s.duplicateNode({});
+  } finally {
+    globalThis.WBDaemon = real;
+  }
+  return writes;
+}
+
+test("a duplicate lands beside its file under the first copy name the folder does not hold", async () => {
+  assert.deepEqual(await duplicate("docs/a.txt", ["a.txt", "a copy.txt"]), [["file.copy", "docs/a.txt", "docs/a copy 2.txt"]]);
+  assert.deepEqual(await duplicate("plan.md", ["plan.md"]), [["file.copy", "plan.md", "plan copy.md"]]);
+  // A leading dot is the whole name of a dotfile, not an extension.
+  assert.deepEqual(await duplicate("cfg/.env", [".env"]), [["file.copy", "cfg/.env", "cfg/.env copy"]]);
+});
+
+// The open tabs of the folder a nudge names read their bytes again.
+test("a nudge re-reads an image tab through the image read, and a text tab through file.read", async () => {
+  const { scope: s, shell } = loadComponent("wbFiles", { magics: { $refs: {}, $nextTick: (f) => f() } });
+  const real = { daemon: globalThis.WBDaemon, viewer: globalThis.WBViewer };
+  const reads = [];
+  const changed = [];
+  globalThis.WBDaemon = {
+    observe: async (verb, payload) => {
+      reads.push([verb, payload.path]);
+      return { status: "ok", content: "text" };
+    },
+    readImage: async (project, path) => {
+      reads.push(["image", path]);
+      return "data:image/png;base64,AA==";
+    },
+    withCheckout: (payload) => ({ ...payload }),
+  };
+  globalThis.WBViewer = { encodingOf: () => null, externalChange: (id, content) => changed.push([id, content]) };
+  shell.$store.projects.setOpen("o/r");
+  shell.$store.tabs.tabs.push(
+    { id: "i", kind: "image", project: "o/r", path: "img/a.png", checkout: null },
+    { id: "t", kind: "code", project: "o/r", path: "img/b.txt", checkout: null },
+    { id: "o", kind: "code", project: "o/r", path: "doc/c.txt", checkout: null },
+  );
+  try {
+    await s.refreshOpenViewers("img");
+  } finally {
+    globalThis.WBDaemon = real.daemon;
+    globalThis.WBViewer = real.viewer;
+  }
+  assert.deepEqual(reads, [["image", "img/a.png"], ["file.read", "img/b.txt"]]);
+  assert.deepEqual(changed, [["i", "data:image/png;base64,AA=="], ["t", "text"]]);
 });

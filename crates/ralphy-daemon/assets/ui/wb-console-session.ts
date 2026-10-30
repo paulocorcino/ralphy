@@ -83,7 +83,13 @@ export const RESUME_HIDDEN_MS = 60000;
 //   "attach"  — build the terminal and open the socket now.
 // A launch has no id to wake to (`dormancyDecision` D5), and without an
 // observer nothing would ever wake the window.
-export function birthDecision({ id, observed }: { id: number | null | undefined; observed: boolean }) {
+export function birthDecision({
+  id,
+  observed,
+}: {
+  id: number | null | undefined;
+  observed: boolean;
+}) {
   return id != null && observed ? "dormant" : "attach";
 }
 
@@ -211,7 +217,11 @@ export function reconnectDecision({
 // nothing, and a launch (no id) is held by its placeholder (`peerHeld`).
 // The answers a socket decision can have, and "hold" for a peer that is down.
 export type PeerDecision = "connect" | "reconnect" | "park-as-watcher" | "give-up" | "hold";
-type PeerGateInput = { decision: PeerDecision; group: Group | null | undefined; id: number | null | undefined };
+type PeerGateInput = {
+  decision: PeerDecision;
+  group: Group | null | undefined;
+  id: number | null | undefined;
+};
 export function peerGate({ decision, group, id }: PeerGateInput): PeerDecision {
   if (id == null || !group || decision === "give-up") return decision;
   return WBFleet.available(group) ? decision : "hold";
@@ -231,7 +241,8 @@ type RelaunchRecord = {
 };
 export function relaunchRequest(record: RelaunchRecord) {
   const repo = record.repo === "~" ? undefined : record.repo;
-  if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };
+  if (record.kind !== "agent")
+    return { console: true, repo, command: consoleCommand(record.agent) };
   return { repo, agent: record.agent, checkout: record.checkout ?? null };
 }
 
@@ -262,7 +273,7 @@ export function peerOfflineView(
   const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
   const view = (text: string, action: PeerAction) => ({ text, detail, action });
   const wakeOrRetry: PeerAction = WBFleet.wakeable(group) ? "wake" : "retry";
-  switch (group && group.state) {
+  switch (group?.state ?? "") {
     case "asleep":
       return view(`${host} is asleep.`, wakeOrRetry);
     case "unreachable":
@@ -338,7 +349,10 @@ export function heldReturnDecision({ kind, canLaunch, session }: HeldReturnInput
   return kind === "console" && canLaunch ? "relaunch" : "offer";
 }
 
-export function unheardRef(ref: string | null | undefined, unheard: ReadonlySet<string> | null | undefined) {
+export function unheardRef(
+  ref: string | null | undefined,
+  unheard: ReadonlySet<string> | null | undefined,
+) {
   const daemon = WBFleet.refDaemon(ref);
   return !!daemon && !!unheard?.has(daemon);
 }
@@ -361,7 +375,10 @@ export function consoleCommand(label: string | null | undefined) {
 // The session the window holds, on a `/api/sessions` listing: the daemon's
 // id AND the repo ref, because a restarted daemon hands out ids from 1
 // again and a peer's id 1 is not this daemon's (the ref carries the peer).
-export function sessionRowFor(win: ConsoleWin, sessions: readonly HostedSession[] | null | undefined) {
+export function sessionRowFor(
+  win: ConsoleWin,
+  sessions: readonly HostedSession[] | null | undefined,
+) {
   const id = sessionIdOf(win);
   if (id == null) return null;
   const ref = win._deskRepo;
@@ -379,6 +396,7 @@ export function sessionRowFor(win: ConsoleWin, sessions: readonly HostedSession[
 export function agentStateTitle(state: string | null | undefined, detail?: string) {
   if (!state) return "";
   if (state === "unknown") return "Agent state unknown";
-  if (state === "silent") return detail ? `Agent state not reported: ${detail}` : "Agent state not reported";
+  if (state === "silent")
+    return detail ? `Agent state not reported: ${detail}` : "Agent state not reported";
   return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
 }

@@ -49,7 +49,7 @@ pub(crate) fn confirm_close(
     let sessions = match sessions {
         Sessions::NoDaemon | Sessions::None => return Ok(true),
         Sessions::Open(open) if open.is_empty() => return Ok(true),
-        other => other,
+        other @ (Sessions::Open(_) | Sessions::Unknown) => other,
     };
     if yes {
         return Ok(true);
@@ -75,7 +75,7 @@ pub(crate) fn confirm_close(
                 writeln!(out, "  {}", label(session))?;
             }
         }
-        _ => writeln!(
+        Sessions::NoDaemon | Sessions::None | Sessions::Unknown => writeln!(
             out,
             "The open consoles could not be counted. This closes them and stops the agents inside."
         )?,

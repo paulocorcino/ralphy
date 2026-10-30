@@ -51,6 +51,7 @@ pub fn plan_is_finalized_for(plan_path: &Path, issue_number: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch_file;
 
     fn tmp(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("ralphy-resume-{}-{}", std::process::id(), name))
@@ -61,7 +62,7 @@ mod tests {
         let p = tmp("last");
         fs::write(&p, "# plan\n<!-- ralphy-plan: issue=147 -->").unwrap();
         assert!(plan_is_finalized_for(&p, 147));
-        let _ = fs::remove_file(&p);
+        remove_scratch_file(&p);
     }
 
     #[test]
@@ -69,7 +70,7 @@ mod tests {
         let p = tmp("blank");
         fs::write(&p, "# plan\n<!-- ralphy-plan: issue=147 -->\n\n").unwrap();
         assert!(plan_is_finalized_for(&p, 147));
-        let _ = fs::remove_file(&p);
+        remove_scratch_file(&p);
     }
 
     #[test]
@@ -77,7 +78,7 @@ mod tests {
         let p = tmp("other");
         fs::write(&p, "# plan\n<!-- ralphy-plan: issue=999 -->").unwrap();
         assert!(!plan_is_finalized_for(&p, 147));
-        let _ = fs::remove_file(&p);
+        remove_scratch_file(&p);
     }
 
     #[test]
@@ -85,7 +86,7 @@ mod tests {
         let p = tmp("trunc");
         fs::write(&p, "# plan\n## Steps\n- [ ] half-written").unwrap();
         assert!(!plan_is_finalized_for(&p, 147));
-        let _ = fs::remove_file(&p);
+        remove_scratch_file(&p);
     }
 
     #[test]

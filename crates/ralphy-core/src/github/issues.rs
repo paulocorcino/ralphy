@@ -467,6 +467,10 @@ pub fn add_label(number: u64, label: &str, repo_root: &Path) -> Result<()> {
     }
     // The most common failure is a missing label; create it and retry once.
     let (color, description) = label_bootstrap_spec(label);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a failed label creation shows as the failure of the retry below"
+    )]
     let _ = gh(repo_root)
         .args([
             "label",

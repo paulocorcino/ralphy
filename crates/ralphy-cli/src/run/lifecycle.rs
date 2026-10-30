@@ -64,7 +64,10 @@ pub(super) fn finish_border(
 /// `try_start_notifier` runs `getMe` and `try_start_sink` spawns a thread; either
 /// failing warns once and returns `None`, leaving the installed Layer inert and the
 /// run unaffected (ADR-0007 D7).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the run facts that the workers start from"
+)]
 pub(super) fn start_delivery(
     obs: &Observability,
     title: &str,
@@ -236,7 +239,10 @@ pub(super) fn install_observability(
 /// heartbeat silence), THEN tear down the notifier, THEN the CloudEvents sink. Each
 /// teardown joins under a bounded timeout so a wedged network can't hold the process
 /// open. Borrows `result` so the caller can still `?`-propagate it afterwards.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the handles and results that the end of the run uses"
+)]
 pub(super) fn finalize_run(
     agent: CliAgent,
     presenter: &ui::PresenterHandle,

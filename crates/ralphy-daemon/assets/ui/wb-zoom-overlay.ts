@@ -14,7 +14,17 @@
    `wireDiagramZoom` once.
 --------------------------------------------------------------------------- */
 import { dragBegins, dragThreshold } from "./wb-console-input.ts";
-import { clampPan, fitScale, fitView, minScale, panBy, pinchView, wheelFactor, zoomAt, ZOOM_STEP } from "./wb-diagram-zoom.ts";
+import {
+  clampPan,
+  fitScale,
+  fitView,
+  minScale,
+  panBy,
+  pinchView,
+  wheelFactor,
+  zoomAt,
+  ZOOM_STEP,
+} from "./wb-diagram-zoom.ts";
 import type { Pair, Point, Size, View } from "./wb-diagram-zoom.ts";
 
 type Picture = HTMLImageElement | SVGSVGElement;
@@ -170,7 +180,12 @@ type Controller = {
 
 // The view's state. `fitted` stays true until the operator zooms or pans, so a
 // window resize keeps a fitted picture fitted and leaves a zoomed one alone.
-function createController(surface: HTMLElement, stage: HTMLElement, size: Size, cap: number): Controller {
+function createController(
+  surface: HTMLElement,
+  stage: HTMLElement,
+  size: Size,
+  cap: number,
+): Controller {
   let view: View = { scale: 1, x: 0, y: 0 };
   let fitted = true;
   const box = (): Size => ({ w: surface.clientWidth, h: surface.clientHeight });
@@ -203,7 +218,12 @@ function createController(surface: HTMLElement, stage: HTMLElement, size: Size, 
 // two quick taps switch between the fit and the actual size. A press becomes
 // a drag only past the drag threshold, and the first drag move covers the
 // whole distance from where the press began (WORKBENCH-BUILD-GUIDE, Touch).
-function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: MouseEvent) => Point, close: () => void) {
+function attachGestures(
+  surface: HTMLElement,
+  ctl: Controller,
+  local: (ev: MouseEvent) => Point,
+  close: () => void,
+) {
   const points = new Map<number, Point>();
   let start: Point = { x: 0, y: 0 };
   let last: Point = start;
@@ -212,9 +232,9 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
   // Pointer capture makes the `pointerup` target the surface whatever was
   // under the finger, so the target of the press is the one that is read.
   let onGround = false;
-  const pair = (): Pair => {
+  const pair = (): Pair | null => {
     const [a, b] = [...points.values()];
-    return [a, b];
+    return a && b ? [a, b] : null;
   };
   const tap = (ev: PointerEvent) => {
     if (onGround) return close();
@@ -236,7 +256,8 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
     if (points.size === 2) {
       const prev = pair();
       points.set(ev.pointerId, now);
-      ctl.pinch(prev, pair());
+      const next = pair();
+      if (prev && next) ctl.pinch(prev, next);
       return;
     }
     points.set(ev.pointerId, now);
@@ -248,8 +269,9 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
   const release = (ev: PointerEvent) => {
     if (!points.delete(ev.pointerId)) return;
     // A finger that stays down after a pinch drags from where it is, and never taps.
-    if (points.size > 0) {
-      last = [...points.values()][0];
+    const remaining = [...points.values()][0];
+    if (remaining) {
+      last = remaining;
       moved = true;
     } else if (!moved && ev.type === "pointerup") tap(ev);
   };
@@ -270,7 +292,8 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
 function trapTab(ev: KeyboardEvent, overlay: HTMLElement, bar: HTMLElement) {
   const buttons = [...bar.querySelectorAll<HTMLElement>("button")];
   const first = buttons[0];
-  const last = buttons[buttons.length - 1];
+  const last = buttons.at(-1);
+  if (!first || !last) return;
   const active = overlay.ownerDocument.activeElement;
   if (ev.shiftKey && (active === first || active === overlay)) last.focus();
   else if (!ev.shiftKey && active === last) first.focus();
@@ -279,14 +302,20 @@ function trapTab(ev: KeyboardEvent, overlay: HTMLElement, bar: HTMLElement) {
 }
 
 function attachKeys(overlay: HTMLElement, bar: HTMLElement, actions: Record<string, () => void>) {
-  const keys: Record<string, string> = { Escape: "close", "+": "in", "=": "in", "-": "out", "0": "fit" };
+  const keys: Record<string, string> = {
+    Escape: "close",
+    "+": "in",
+    "=": "in",
+    "-": "out",
+    "0": "fit",
+  };
   overlay.addEventListener("keydown", (ev) => {
     if (ev.key === "Tab") return trapTab(ev, overlay, bar);
     const act = keys[ev.key];
     if (!act) return;
     ev.preventDefault();
     ev.stopPropagation();
-    actions[act]();
+    actions[act]?.();
   });
 }
 
@@ -322,7 +351,7 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
   };
   bar.addEventListener("click", (ev) => {
     const act = (ev.target as Element).closest("[data-zoom]")?.getAttribute("data-zoom");
-    if (act) actions[act]();
+    if (act) actions[act]?.();
   });
   attachGestures(surface, ctl, local, close);
   attachKeys(overlay, bar, actions);

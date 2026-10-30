@@ -56,7 +56,10 @@ const DBML: MonarchGrammar = {
     block: [[/\}/, "delimiter", "@pop"], [/\{/, "delimiter", "@block"], { include: "common" }],
     settings: [
       [/\]/, "delimiter", "@pop"],
-      [/\b(?:primary\s+key|not\s+null|pk|null|unique|increment|default|note|ref|delete|update)\b/, "attribute.name"],
+      [
+        /\b(?:primary\s+key|not\s+null|pk|null|unique|increment|default|note|ref|delete|update)\b/,
+        "attribute.name",
+      ],
       { include: "common" },
     ],
     common: [
@@ -76,8 +79,16 @@ const DBML: MonarchGrammar = {
       [/\[/, "delimiter", "@settings"],
       [/[{}()\]]/, "delimiter"],
     ],
-    comment: [[/\*\//, "comment", "@pop"], [/[^*]+/, "comment"], [/\*/, "comment"]],
-    longString: [[/'''/, "string", "@pop"], [/[^']+/, "string"], [/'/, "string"]],
+    comment: [
+      [/\*\//, "comment", "@pop"],
+      [/[^*]+/, "comment"],
+      [/\*/, "comment"],
+    ],
+    longString: [
+      [/'''/, "string", "@pop"],
+      [/[^']+/, "string"],
+      [/'/, "string"],
+    ],
   },
 };
 
@@ -100,14 +111,24 @@ const MERMAID: MonarchGrammar = {
       [/(?:\|\||\|o|\}o|\}\|)(?:--|\.\.)(?:\|\||o\||o\{|\|\{)/, "operator"],
       [/\|[^|]*\|/, "string"],
       [/<?(?:-\.+->|-\.+-|==+>|={3,}|-{3,}|--[>xo)]>?|-[>)]>?)/, "operator"],
-      [/\b(?:stateDiagram-v2|stateDiagram|sankey-beta|xychart-beta|block-beta|graph|flowchart|sequenceDiagram|classDiagram|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram)\b/, "keyword"],
-      [/\b(?:subgraph|end|direction|participant|actor|[Nn]ote|loop|alt|else|opt|par|and|rect|activate|deactivate|classDef|class|style|linkStyle|click|title|section|dateFormat|accTitle|accDescr)\b/, "keyword"],
+      [
+        /\b(?:stateDiagram-v2|stateDiagram|sankey-beta|xychart-beta|block-beta|graph|flowchart|sequenceDiagram|classDiagram|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram)\b/,
+        "keyword",
+      ],
+      [
+        /\b(?:subgraph|end|direction|participant|actor|[Nn]ote|loop|alt|else|opt|par|and|rect|activate|deactivate|classDef|class|style|linkStyle|click|title|section|dateFormat|accTitle|accDescr)\b/,
+        "keyword",
+      ],
       [/\b(?:TB|TD|BT|RL|LR|PK|FK|UK)\b/, "attribute.name"],
       [/[A-Za-z_]\w*/, ""],
       [/\d+(?:\.\d+)?/, "number"],
       [/[[\]{}()]/, "delimiter"],
     ],
-    directive: [[/\}%%/, "metatag", "@pop"], [/[^}]+/, "metatag"], [/\}/, "metatag"]],
+    directive: [
+      [/\}%%/, "metatag", "@pop"],
+      [/[^}]+/, "metatag"],
+      [/\}/, "metatag"],
+    ],
   },
 };
 

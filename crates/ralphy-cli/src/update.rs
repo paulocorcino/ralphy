@@ -61,7 +61,7 @@ pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
             }
             take(&gap[0])
         }
-        _ => Ok(()),
+        Standing::Behind(_) | Standing::Level | Standing::Ahead | Standing::Unknown => Ok(()),
     }
 }
 
@@ -118,6 +118,10 @@ fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Insta
     say("checksum ok");
 
     let staging = std::env::temp_dir().join(format!("ralphy-update-{}", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
     let _ = std::fs::remove_dir_all(&staging);
     let staged = apply::unpack(&bytes, &archive.name, &staging)?;
 
@@ -125,6 +129,10 @@ fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Insta
     // The same primitive `ralphy install` places through, so both replace a
     // running image the same way.
     let parked = crate::install::replace_binary(&dest, &staged)?;
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
     let _ = std::fs::remove_dir_all(&staging);
     say(&format!("replaced {}", dest.display()));
     Ok(Installed { dest, parked })

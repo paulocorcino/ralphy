@@ -263,11 +263,14 @@ fn with_module_imports(refs: Vec<String>) -> Vec<String> {
 }
 
 /// The paths of the static `import`/`export … from` lines of a module. The
-/// workbench modules put each import on one line, at the top.
+/// workbench modules put their imports at the top; oxfmt wraps an import
+/// too wide for one line, and its path is then on the closing `} from` line.
 fn static_imports(js: &str) -> Vec<&str> {
     js.lines()
         .map(str::trim_start)
-        .filter(|l| l.starts_with("import ") || l.starts_with("export "))
+        .filter(|l| {
+            l.starts_with("import ") || l.starts_with("export ") || l.starts_with("} from ")
+        })
         .filter_map(|l| {
             let from = l
                 .find(" from \"")

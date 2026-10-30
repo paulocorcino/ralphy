@@ -194,6 +194,15 @@ fn set_marker(path: &Path, enable: bool) -> Result<()> {
     }
 }
 
+/// The two opt-in flags that [`compute_policy`] reads from disk: `login` puts
+/// the browser UI behind a login on a loopback bind, `token` makes a loopback
+/// bind demand the access token too.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Requirements {
+    pub login: bool,
+    pub token: bool,
+}
+
 /// Compute the effective policy from the resolved inputs (ADR-0032 §4 +
 /// amendment §A). A loopback bind is `Localhost` UNLESS the operator opted into
 /// require-login AND a TOTP seed is armed AND a signing token exists, in which
@@ -207,12 +216,11 @@ pub fn compute_policy(
     token: Option<String>,
     seed: Option<totp::Seed>,
     password: Option<password::Hash>,
-    require_login: bool,
-    require_token: bool,
+    require: Requirements,
     epoch: epoch::SessionEpoch,
 ) -> Result<AuthPolicy> {
     match AuthPolicy::for_bind(bind_ip, token.clone())? {
-        AuthPolicy::Localhost if require_token => match token.filter(|t| !t.is_empty()) {
+        AuthPolicy::Localhost if require.token => match token.filter(|t| !t.is_empty()) {
             Some(key) => Ok(upgrade_with_session(
                 AuthPolicy::Bearer(key.clone()),
                 Some(key),
@@ -226,7 +234,7 @@ pub fn compute_policy(
                  `ralphy daemon require-token off` to stop requiring it"
             ),
         },
-        AuthPolicy::Localhost => match (require_login, token, seed) {
+        AuthPolicy::Localhost => match (require.login, token, seed) {
             (true, Some(key), Some(seed)) => Ok(AuthPolicy::Session(Arc::new(SessionAuth {
                 token: key,
                 totp: seed,
@@ -242,7 +250,7 @@ pub fn compute_policy(
         bearer @ AuthPolicy::Bearer(_) => {
             Ok(upgrade_with_session(bearer, token, seed, password, epoch))
         }
-        session => Ok(session),
+        session @ AuthPolicy::Session(_) => Ok(session),
     }
 }
 

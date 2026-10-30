@@ -190,13 +190,14 @@ pub fn decode(bytes: &[u8]) -> Result<String, NoteError> {
         // little and a stream producing much is refused, not held.
         .take(len + 1)
         .read_to_end(&mut text)
-        .map_err(|_| NoteError::NotNote)?;
+        .map_err(|e| confine::miss(NoteError::NotNote, "inflating the note", &e))?;
     // Exactly, not at least: flate2 answers a stream that ends mid-block with
     // the bytes it got and no error, so the length IS the integrity check.
     if text.len() as u64 != len {
         return Err(NoteError::NotNote);
     }
-    String::from_utf8(text).map_err(|_| NoteError::NotNote)
+    String::from_utf8(text)
+        .map_err(|e| confine::miss(NoteError::NotNote, "reading the note text", &e))
 }
 
 /// Read the confined `rel` note under `root` as markdown. The extension must
@@ -204,12 +205,15 @@ pub fn decode(bytes: &[u8]) -> Result<String, NoteError> {
 /// compressed, and a missing or out-of-root target is [`NoteError::NotFound`].
 pub fn read(root: &Path, rel: &str) -> Result<String, NoteError> {
     refuse_other_extension(rel)?;
-    let path = confine::confine(root, rel).map_err(|_| NoteError::NotFound)?;
-    let meta = std::fs::metadata(&path).map_err(|_| NoteError::NotFound)?;
+    let path = confine::confine(root, rel)
+        .map_err(|e| confine::miss(NoteError::NotFound, "confining the path", &e))?;
+    let meta = std::fs::metadata(&path)
+        .map_err(|e| confine::miss(NoteError::NotFound, "reading the note facts", &e))?;
     if meta.len() > MAX_READ_BYTES {
         return Err(NoteError::TooLarge);
     }
-    let bytes = std::fs::read(&path).map_err(|_| NoteError::NotFound)?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| confine::miss(NoteError::NotFound, "reading the note", &e))?;
     decode(&bytes)
 }
 

@@ -18,6 +18,15 @@ mod peer_poll;
 use conn::TreeConn;
 pub(crate) use peer_poll::*;
 
+/// What the daemon lends to one `/ws/tree` connection: the watchers, the stores
+/// it reads and this daemon's identity.
+pub(crate) struct TreeHost {
+    pub(crate) watchers: Arc<watch::WatcherManager>,
+    pub(crate) registry_path: PathBuf,
+    pub(crate) peers_dir: PathBuf,
+    pub(crate) daemon_id: Option<String>,
+}
+
 /// `GET /ws/tree`: the persistent live-tree subscription socket (#196, ADR-0036
 /// §4). A client `Frame::Command{verb:"watch", payload:{repo,path}}` starts
 /// watching that repo dir (subscribing to the repo's nudge broadcast on the first
@@ -56,15 +65,12 @@ pub(crate) use peer_poll::*;
 /// coordinates: `tree.dirty { repo, path: <operator rel>, checkout: <name> }`.
 pub(crate) async fn tree_ws(
     mut socket: WebSocket,
-    watchers: Arc<watch::WatcherManager>,
-    registry_path: PathBuf,
-    peers_dir: PathBuf,
-    daemon_id: Option<String>,
+    host: TreeHost,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     run_exits: tokio::sync::broadcast::Sender<String>,
 ) {
     let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
-    let mut conn = TreeConn::new(watchers, registry_path, peers_dir, daemon_id, nudge_tx);
+    let mut conn = TreeConn::new(host, nudge_tx);
     // The run-completion nudge bus (#310): daemon-wide, held by NO watch, so it
     // needs no subscription verb and adds nothing to the teardown. Every
     // connection relays every nudge; the browser filters by its open repo.
@@ -147,25 +153,15 @@ pub(crate) fn tree_routes(s: &RouterShared) -> Router {
     Router::new().route(
         "/ws/tree",
         get(move |ws: WebSocketUpgrade| {
-            let watchers = watchers.clone();
-            let registry_path = registry.clone();
-            let peers_dir = peers.clone();
-            let daemon_id = daemon_id.clone();
+            let host = TreeHost {
+                watchers: watchers.clone(),
+                registry_path: registry.clone(),
+                peers_dir: peers.clone(),
+                daemon_id: daemon_id.clone(),
+            };
             let shutdown = shutdown.clone();
             let run_exits = run_exits.clone();
-            async move {
-                ws.on_upgrade(move |socket| {
-                    tree_ws(
-                        socket,
-                        watchers,
-                        registry_path,
-                        peers_dir,
-                        daemon_id,
-                        shutdown,
-                        run_exits,
-                    )
-                })
-            }
+            async move { ws.on_upgrade(move |socket| tree_ws(socket, host, shutdown, run_exits)) }
         }),
     )
 }

@@ -91,7 +91,31 @@ impl DeliveryEngine for SnapshotEngine {
         let seed = match &event {
             RunEvent::PlanWritten { number, steps, .. } => Some((*number, Some(steps.clone()))),
             RunEvent::Executing { number, .. } => Some((*number, None)),
-            _ => None,
+            RunEvent::QueueBuilt { .. }
+            | RunEvent::IssueStarted { .. }
+            | RunEvent::Planning { .. }
+            | RunEvent::IssueClosed { .. }
+            | RunEvent::NonGreen { .. }
+            | RunEvent::Skipped { .. }
+            | RunEvent::HumanBlocked { .. }
+            | RunEvent::NeedsSplit { .. }
+            | RunEvent::Notice { .. }
+            | RunEvent::DeadlinePassed { .. }
+            | RunEvent::RunStopped { .. }
+            | RunEvent::SleepStarted { .. }
+            | RunEvent::SleepEnded
+            | RunEvent::ApiDegraded
+            | RunEvent::ApiRecovered
+            | RunEvent::IdleReaped { .. }
+            | RunEvent::HooksUnprovenAllowed { .. }
+            | RunEvent::AgentState { .. }
+            | RunEvent::KnowledgeConsolidating { .. }
+            | RunEvent::KnowledgeConsolidated { .. }
+            | RunEvent::RunStarted { .. }
+            | RunEvent::RunFinished { .. }
+            | RunEvent::RunSkipped { .. }
+            | RunEvent::PlanOpened { .. }
+            | RunEvent::PlanClosed { .. } => None,
         };
         self.state.apply(event);
         let seed = seed.map(|(number, steps)| {
@@ -569,7 +593,10 @@ mod tests {
     /// Holds the lock for the test and restores `ralphy_core::stop` on the way
     /// out, INCLUDING through a panicking assertion — a leaked `true` would ride
     /// along into every test that runs after it (docs/adr/0054).
-    struct StopFlagGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+    struct StopFlagGuard(
+        #[expect(dead_code, reason = "the guard is held only for its Drop")]
+        std::sync::MutexGuard<'static, ()>,
+    );
 
     impl StopFlagGuard {
         fn acquire() -> Self {

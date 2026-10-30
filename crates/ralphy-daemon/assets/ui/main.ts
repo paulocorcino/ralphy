@@ -16,7 +16,8 @@ import { releaseDialogs } from "./wb-release-dialogs.ts";
 import { hostsDialog } from "./wb-hosts-dialog.ts";
 import { addProjectDialog } from "./wb-add-project-dialog.ts";
 import { securityDialog } from "./wb-security-dialog.ts";
-import { wbColumns, wbConsoleMenus } from "./wb-consoles-tab.ts";
+import { wbColumns } from "./wb-consoles-tab.ts";
+import { wbConsoleMenus } from "./wb-consoles-tab-menus.ts";
 import { wbConsoleTabMenu } from "./wb-console-tabs.ts";
 import { wbFiles } from "./wb-files.ts";
 import { wbMoveDialog } from "./wb-move-dialog.ts";
@@ -77,7 +78,12 @@ startPresence(window, document, { send: daemon.reportPresence, onOpen: daemon.on
 window.WBViewer = createViewer(window, document, { messages });
 wireDiagramZoom(window, document);
 // The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
-window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages, stack, gestures });
+window.WBNotes = createNotes(window, document, {
+  console: window.WBConsole,
+  messages,
+  stack,
+  gestures,
+});
 // `wire` hands back the detached file windows: the store `connection` asks
 // them about unsaved work before a build reload, and the store `tabs` hands
 // them a file it detaches.

@@ -108,14 +108,16 @@ fn the_explorer_opens_a_note_as_a_card() {
     // records: an automated browser dismisses them by default, which turns
     // a guarded click into a silently cancelled one.
     let stage = include_str!("../../assets/ui/wb-notes-stage.ts");
-    for js in [notes, stage, file] {
+    let chrome = include_str!("../../assets/ui/wb-notes-chrome.ts");
+    let open = include_str!("../../assets/ui/wb-notes-open.ts");
+    for js in [notes, stage, file, chrome, open] {
         assert!(
             !js.contains("window.confirm(") && !js.contains("window.prompt("),
             "a note's file actions must use the workbench's own dialog and field"
         );
     }
     assert!(
-        file.contains("messages?.askConfirm({"),
+        squeeze(file).contains("messages?.askConfirm({"),
         "deleting a note's FILE must ask first (ADR-0064 §11)"
     );
     // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment

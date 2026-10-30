@@ -21,8 +21,16 @@ import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-desk-popups.ts
 import type { DetachReason } from "./wb-console-session.ts";
 import type { FenceList } from "./wb-stage-fence-list.ts";
 import type { DetachMessage } from "./wb-detach-link.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
-import type { ConsoleWin, DeskFence, DeskNote, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskFence,
+  DeskNote,
+  DeskRecord,
+  ExtentOpts,
+  SpawnCarry,
+  WindowSnapshot,
+} from "./wb-types.d.ts";
 
 const { fenceMembership, fenceOf } = WBGeometry;
 const { detachFold, popupMatches, noteNameOk } = WBDeskFolds;
@@ -142,7 +150,8 @@ export function createDetach(deps: DetachDeps) {
     fenceFloor,
   } = deps;
   const { isDetached, commitDetached, newPopupEntry } = popups;
-  const { readFenceRects, readWindowRects, refreshFenceChrome, renderNotes, showDetachGlyph } = fenceFloor;
+  const { readFenceRects, readWindowRects, refreshFenceChrome, renderNotes, showDetachGlyph } =
+    fenceFloor;
 
   // A PEER's liveness as a rule: (state, event, windowMs) -> { state, effects }.
   // Pure, so it decides both directions of the link (origin watching popup,
@@ -163,15 +172,12 @@ export function createDetach(deps: DetachDeps) {
     if (lost) return { state: same, effects: [] };
     switch (event?.type) {
       case "beat":
-        return { state: { seen: typeof event.at === "number" ? event.at : seen, lost: false }, effects: [] };
+        return {
+          state: { seen: typeof event.at === "number" ? event.at : seen, lost: false },
+          effects: [],
+        };
       case "tick":
-        // `seen: null` — never heard from — expires nothing: the origin seeds
-        // every entry with `Date.now()` at creation AND at boot-restore, so one
-        // rule governs the post-reload adoption grace and steady state alike.
-        if (seen == null || typeof event.at !== "number") return { state: same, effects: [] };
-        if (event.at - seen > windowMs)
-          return { state: { seen, lost: true }, effects: [{ type: "peer-lost" }] };
-        return { state: same, effects: [] };
+        return tickFold(same, event.at, windowMs);
       case "gone":
         // An announced departure: the same effect, without waiting the window out.
         return { state: { seen, lost: true }, effects: [{ type: "peer-lost" }] };
@@ -269,7 +275,8 @@ export function createDetach(deps: DetachDeps) {
   function heardFrom(m: DetachMessage) {
     if (!fromThisTab(m)) return false;
     if (m.type === "popup-here" || m.type === "popup-ping") return true;
-    return popupMatches(popups.entry(m.fenceId!), m);
+    if (m.fenceId == null) return false;
+    return popupMatches(popups.entry(m.fenceId), m);
   }
 
   // A name report sent while this tab was reloading reached nobody. The
@@ -277,7 +284,7 @@ export function createDetach(deps: DetachDeps) {
   // the desk has loaded. `recordNoteName` refuses a record that already has
   // its path, so this is safe to repeat.
   function replayNoteNames(id: string, members: NonNullable<DetachMessage["members"]>) {
-    whenDeskLoaded().then(() => {
+    void whenDeskLoaded().then(() => {
       for (const x of members) {
         if (x?.kind === "note" && typeof x.path === "string") {
           recordNoteName(id, { noteId: x.id, path: x.path });
@@ -289,7 +296,9 @@ export function createDetach(deps: DetachDeps) {
   // The fence record of a popup entry: the one on the stage, or an empty one.
   function fenceFor(id: string) {
     const st = stage();
-    return (st ? readFenceRects(st).find((f) => f.id === id) : null) || { id, name: "", rect: null };
+    return (
+      (st ? readFenceRects(st).find((f) => f.id === id) : null) || { id, name: "", rect: null }
+    );
   }
 
   // A popup that survived this tab's reload, announcing which fence it
@@ -324,29 +333,38 @@ export function createDetach(deps: DetachDeps) {
 
   function onPopupBeat(id: string) {
     const entry = popups.entry(id);
-    if (entry?.peer) entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
+    if (entry?.peer)
+      entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
     // Any word at all clears the probe: `stillThere` asks "has it answered
     // SINCE I asked", and a beat is an answer.
     if (entry) entry.probed = false;
   }
 
+  // A console closed INSIDE the popup. Same registry gate as `popup-here`.
+  function onPopupMembers(id: string, members: DetachMessage["members"]) {
+    if (isDetached(id)) adoptMembers(id, members);
+  }
+
+  // The popup asking whether THIS document is still here. Answering from a
+  // message handler is the point: a throttled tab still delivers messages.
+  function onPopupPing(id: string) {
+    if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
+  }
+
   // The origin's half of the lifecycle channel.
   link.onMessage((m) => {
     if (!heardFrom(m)) return;
-    // A message with no fence id changes nothing: no entry answers to it, so
-    // each branch below returns first.
-    const id = m.fenceId!;
+    // A message with no fence id changes nothing: no entry answers to it.
+    const id = m.fenceId;
+    if (id == null) return;
     if (m.type === "popup-here") {
       onPopupHere(id, m);
     } else if (m.type === "popup-members") {
-      // A console closed INSIDE the popup. Same registry gate as `popup-here`.
-      if (isDetached(id)) adoptMembers(id, m.members);
+      onPopupMembers(id, m.members);
     } else if (m.type === "popup-beat") {
       onPopupBeat(id);
     } else if (m.type === "popup-ping") {
-      // The popup asking whether THIS document is still here. Answering from a
-      // message handler is the point: a throttled tab still delivers messages.
-      if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
+      onPopupPing(id);
     } else if (m.type === "popup-note-named") {
       recordNoteName(id, m);
     } else if (m.type === "popup-note-claimed") {
@@ -367,10 +385,9 @@ export function createDetach(deps: DetachDeps) {
   function recordNoteName(id: string, m: NoteReport) {
     const entry = popups.entry(id);
     const record = notes().find((n) => n.id === m.noteId);
-    if (!isDetached(id) || !noteNameOk(entry, record, m)) return;
+    if (!entry || !isDetached(id) || !noteNameOk(entry, record, m)) return;
     saveNotes(notes().map((n) => (n.id === m.noteId ? { ...n, path: m.path } : n)));
-    // `noteNameOk` is false for an entry that does not exist.
-    entry!.members = entry!.members.map((x) => {
+    entry.members = entry.members.map((x) => {
       if (x.kind !== "note" || x.id !== m.noteId) return x;
       const { draft, claim, ...rest } = x;
       return { ...rest, path: m.path };
@@ -384,8 +401,13 @@ export function createDetach(deps: DetachDeps) {
   function recordNoteClaim(id: string, m: NoteReport) {
     const entry = popups.entry(id);
     const record = notes().find((n) => n.id === m.noteId);
-    if (!isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
-    entry!.members = entry!.members.map((x) =>
+    if (
+      !entry ||
+      !isDetached(id) ||
+      !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })
+    )
+      return;
+    entry.members = entry.members.map((x) =>
       x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
     );
   }
@@ -475,12 +497,17 @@ export function createDetach(deps: DetachDeps) {
     const rec = loadDesk().find((r) => r.id === m.id);
     const member = rec?.consoleName ? { ...m, consoleName: rec.consoleName } : m;
     if (member.session != null) {
-      spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
+      spawnWindow(
+        { id: member.session, repo: member.repo },
+        member.agent || "console",
+        member.repo,
+        member,
+      );
     } else {
       // The snapshot keeps no session id, so a member relaunched in the
       // popup comes home as a placeholder. `_revive` attaches it to the
       // session that runs now and never launches one.
-      spawnPlaceholder(member)._revive!();
+      void spawnPlaceholder(member)._revive?.();
     }
   }
 
@@ -524,23 +551,12 @@ export function createDetach(deps: DetachDeps) {
   // itself opened.
   window.addEventListener("message", (e) => {
     if (e.origin !== location.origin) return;
-    let owner: string | null = null;
-    for (const [id, entry] of popups.entries()) if (entry.handle === e.source) owner = id;
+    const owner = popupOwner(e.source);
     if (owner == null) return;
     const m: unknown = e.data;
     if (!isFencePopupMessage(m)) return;
     if (m.type === "wb-fence-ready") {
-      const entry = popups.entry(owner)!;
-      entry.greeted = true;
-      if (entry.rescue) {
-        clearTimeout(entry.rescue);
-        entry.rescue = null;
-      }
-      // `tab` rides the handover, never the popup's own storage — `window.open` gave it a COPY of ours.
-      (e.source as Window).postMessage(
-        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab, pid: entry.pid },
-        location.origin,
-      );
+      greetPopup(owner, e.source as Window);
     } else if (m.type === "wb-emit") {
       forwardAction(WB, m.action, m.detail);
     } else if (m.type === "wb-note-named") {
@@ -553,6 +569,37 @@ export function createDetach(deps: DetachDeps) {
       reattachFence(owner);
     }
   });
+
+  // The fence whose popup is the window `source`, or null for a window this
+  // tab did not open. The last entry that holds it wins.
+  function popupOwner(source: MessageEventSource | null) {
+    let owner: string | null = null;
+    for (const [id, entry] of popups.entries()) if (entry.handle === source) owner = id;
+    return owner;
+  }
+
+  // The popup of the fence `owner` is ready: its rescue stops, and it is
+  // handed the fence and its members.
+  function greetPopup(owner: string, source: Window) {
+    const entry = popups.entry(owner);
+    if (!entry) return;
+    entry.greeted = true;
+    if (entry.rescue) {
+      clearTimeout(entry.rescue);
+      entry.rescue = null;
+    }
+    // `tab` rides the handover, never the popup's own storage — `window.open` gave it a COPY of ours.
+    source.postMessage(
+      {
+        type: "wb-fence-open",
+        fence: entry.fence,
+        members: entry.members,
+        tab: link.tab,
+        pid: entry.pid,
+      },
+      location.origin,
+    );
+  }
 
   return {
     peerFold,
@@ -567,3 +614,19 @@ export function createDetach(deps: DetachDeps) {
 }
 
 export type Detach = ReturnType<typeof createDetach>;
+
+// A tick of the peer's clock at `at`: the peer is lost once it has been
+// silent for more than `windowMs`. `seen: null` — never heard from — expires
+// nothing: the origin seeds every entry with `Date.now()` at creation AND at
+// boot-restore, so one rule governs the post-reload adoption grace and steady
+// state alike.
+function tickFold(
+  same: PeerState,
+  at: number | undefined,
+  windowMs: number,
+): { state: PeerState; effects: { type: "peer-lost" }[] } {
+  if (same.seen == null || typeof at !== "number") return { state: same, effects: [] };
+  if (at - same.seen > windowMs)
+    return { state: { seen: same.seen, lost: true }, effects: [{ type: "peer-lost" }] };
+  return { state: same, effects: [] };
+}

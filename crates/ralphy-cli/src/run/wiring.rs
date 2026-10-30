@@ -237,7 +237,10 @@ fn order_by_dependency(
 /// the executor and (only in a split run) once for the planner — so `--plan-agent`
 /// can wire two adapters without duplicating the match. The `String`/`Option`
 /// config values are cloned per call so the same `RunArgs` can back both builds.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "it takes the resolved settings of each vendor adapter"
+)]
 pub(crate) fn build_agent(
     which: CliAgent,
     args: &RunArgs,
@@ -369,7 +372,17 @@ pub(crate) fn resolve_plan_agent(plan_agent: Option<CliAgent>, agent: CliAgent) 
 /// effective tokens are resolved and captured — the run keeps using them,
 /// children never see them. Mirrors the `ANTHROPIC_API_KEY` scrub.
 pub(crate) fn strip_secret_tokens_from_env() {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "both callers run before the first worker thread starts, so no other \
+                  thread reads the environment while it changes"
+    )]
     std::env::remove_var(events::config::TOKEN_ENV);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "both callers run before the first worker thread starts, so no other \
+                  thread reads the environment while it changes"
+    )]
     std::env::remove_var(telegram::config::TOKEN_ENV);
 }
 
@@ -421,7 +434,12 @@ pub(crate) fn check_agents_present(
 pub(crate) fn preflight_agents(executor: CliAgent, planner: CliAgent) -> Result<()> {
     check_agents_present(executor, planner, |a| match a {
         CliAgent::Cursor => ralphy_agent_cursor::locate_cursor().is_some(),
-        _ => ralphy_adapter_support::locate_program(a.cli_name()).is_some(),
+        CliAgent::Claude
+        | CliAgent::Codex
+        | CliAgent::Copilot
+        | CliAgent::Gemini
+        | CliAgent::Kimi
+        | CliAgent::OpenCode => ralphy_adapter_support::locate_program(a.cli_name()).is_some(),
     })
     .map_err(|e| anyhow::anyhow!(e))
 }

@@ -14,7 +14,13 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // (CI's included) embeds the asset with CRLF.
     let console = include_str!("../../assets/ui/wb-console-api.ts").replace("\r\n", "\n");
     let stack = include_str!("../../assets/ui/wb-stage-stack.ts");
-    let notes = include_str!("../../assets/ui/wb-notes.ts");
+    // The card is built by two modules: `wb-notes.ts` and its chrome.
+    let card = [
+        include_str!("../../assets/ui/wb-notes.ts"),
+        include_str!("../../assets/ui/wb-notes-chrome.ts"),
+    ]
+    .concat();
+    let notes = card.as_str();
     let veil = include_str!("../../assets/ui/wb-notes-veil.ts");
     let menus = include_str!("../../assets/ui/wb-notes-menus.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
@@ -136,6 +142,10 @@ fn the_shell_writes_the_desk_only_as_changes() {
         ("wb-notes.ts", notes),
         ("wb-notes-folds.ts", folds),
         (
+            "wb-notes-chrome.ts",
+            include_str!("../../assets/ui/wb-notes-chrome.ts"),
+        ),
+        (
             "wb-notes-stage.ts",
             include_str!("../../assets/ui/wb-notes-stage.ts"),
         ),
@@ -162,6 +172,10 @@ fn the_shell_writes_the_desk_only_as_changes() {
         (
             "wb-notes-file.ts",
             include_str!("../../assets/ui/wb-notes-file.ts"),
+        ),
+        (
+            "wb-notes-open.ts",
+            include_str!("../../assets/ui/wb-notes-open.ts"),
         ),
         (
             "wb-notes-menus.ts",

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use axum::extract::ws::WebSocket;
 
-use super::{collect_config, not_answered, send_command, stream};
+use super::{collect_config, not_answered, send_command, store_dir, stream, CommandCtx};
 use crate::dispatch::{self, Verb};
 use crate::protocol::Command;
 
@@ -70,12 +70,13 @@ pub(super) async fn spawn_host(
     socket: &mut WebSocket,
     cmd: &Command,
     verb: Verb,
-    store_dir: &Path,
-    daemon_id: Option<&str>,
+    ctx: &CommandCtx,
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
-    secret_ok: bool,
 ) {
-    let (password, argv) = match check(cmd, verb, secret_ok) {
+    let store_dir = store_dir(&ctx.peers_dir);
+    let store_dir = store_dir.as_path();
+    let daemon_id = ctx.daemon_id.as_deref();
+    let (password, argv) = match check(cmd, verb, ctx.secret_ok) {
         Ok(checked) => checked,
         Err(reply) => {
             send_command(socket, cmd.id, &cmd.verb, reply).await;
@@ -121,6 +122,10 @@ async fn collect_reply(
     store_dir: &Path,
     daemon_id: Option<&str>,
 ) -> serde_json::Value {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "only a host verb reaches this function and `Verb` has over 60 variants"
+    )]
     let field = match verb {
         Verb::HostAliases => Some("aliases"),
         Verb::HostKey => Some("key"),

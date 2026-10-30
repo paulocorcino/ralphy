@@ -174,7 +174,7 @@ pub fn consolidate_knowledge(
     timeout: Duration,
 ) -> Result<Usage> {
     let _ = effort;
-    std::fs::create_dir_all(run_dir).ok();
+    std::fs::create_dir_all(run_dir).context("creating the run directory")?;
     let log_path = run_dir.join("consolidate.log");
 
     info!(?model, "consolidating knowledge with copilot");
@@ -255,6 +255,7 @@ pub fn triage_issues(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
 
     /// The D7/D11 guards must be wired into all four one-shot verbs — #237 wires
     /// real subprocess execution here for the first time, so a missing call would
@@ -331,6 +332,6 @@ mod tests {
         .unwrap();
         let err = check_builtin_mcp_receipt(&log_path).expect_err("connected must fail");
         assert!(err.to_string().contains("github-mcp-server"), "{err}");
-        std::fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 }

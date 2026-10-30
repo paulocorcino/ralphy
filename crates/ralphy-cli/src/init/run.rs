@@ -257,6 +257,10 @@ mod tests {
     #[test]
     fn write_scaffold_writes_the_agent_docs_and_no_instruction_file() {
         let dir = std::env::temp_dir().join(format!("ralphy-init-scaffold-{}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -277,6 +281,10 @@ mod tests {
         assert!(!dir.join("CLAUDE.md").exists());
         assert!(!dir.join("AGENTS.md").exists());
 
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

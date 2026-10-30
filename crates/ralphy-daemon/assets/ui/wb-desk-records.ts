@@ -9,7 +9,15 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
-import type { ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskWindowFields, Rect } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskChange,
+  DeskFence,
+  DeskNote,
+  DeskRecord,
+  DeskWindowFields,
+  Rect,
+} from "./wb-types.d.ts";
 
 const { atCap, DESK_MAX, NOTE_MAX } = WBDeskFolds;
 const { sessionIdOf } = WBWindowState;
@@ -38,7 +46,19 @@ export type DeskRecordsDeps = {
 };
 
 export function createDeskRecords(deps: DeskRecordsDeps) {
-  const { sync, desk, fences, notes, checkouts, refreshView, emitDesk, scheduleDeskFlush, restoreRect, refreshFenceChrome, consolePrefix } = deps;
+  const {
+    sync,
+    desk,
+    fences,
+    notes,
+    checkouts,
+    refreshView,
+    emitDesk,
+    scheduleDeskFlush,
+    restoreRect,
+    refreshFenceChrome,
+    consolePrefix,
+  } = deps;
   // A window's record as a `create` carries it. A maximized window stores its
   // *pre-maximize* rect (the class drives the full-bleed via CSS), so `max`
   // restores the full-screen state while the stored rect still restores the
@@ -89,8 +109,12 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   // records handed back (`saveFences`, `saveNotes`) becomes the changes that
   // tell it from the view: a create, a remove, or a set of the fields that
   // differ, and nothing for a record left as it was.
-  const rectOnly = (r: Rect | undefined) => (r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null);
-  const SET_FIELDS: Record<"fence" | "note", (r: Partial<DeskFence & DeskNote>) => { [field: string]: JsonValue | undefined }> = {
+  const rectOnly = (r: Rect | undefined) =>
+    r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null;
+  const SET_FIELDS: Record<
+    "fence" | "note",
+    (r: Partial<DeskFence & DeskNote>) => { [field: string]: JsonValue | undefined }
+  > = {
     fence: (r) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: !!r.locked }),
     note: (r) => ({
       rect: rectOnly(r.rect),
@@ -98,21 +122,28 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
       file: { repo: r.repo, path: r.path ?? "", checkout: r.checkout ?? null },
     }),
   };
-  function commitList(type: "fence" | "note", before: (DeskFence | DeskNote)[], next: (DeskFence | DeskNote)[]) {
+  function commitList(
+    type: "fence" | "note",
+    before: (DeskFence | DeskNote)[],
+    next: (DeskFence | DeskNote)[],
+  ) {
     const was = new Map<string, DeskFence | DeskNote>(before.map((r) => [r.id, r]));
     const kept = new Set(next.map((r) => r.id));
-    const changes = before.filter((r) => !kept.has(r.id)).map((r): DeskChange => ({ op: "remove", type, id: r.id }));
+    const changes = before
+      .filter((r) => !kept.has(r.id))
+      .map((r): DeskChange => ({ op: "remove", type, id: r.id }));
     for (const r of next) {
       const old = was.get(r.id);
       if (!old) {
-        changes.push({ op: "create", type, record: r } as DeskChange);
+        changes.push({ op: "create", type, record: r });
         continue;
       }
       const a = SET_FIELDS[type](old);
       const b = SET_FIELDS[type](r);
       const fields: { [field: string]: JsonValue | undefined } = {};
-      for (const k of Object.keys(b)) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
-      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields } as DeskChange);
+      for (const k of Object.keys(b))
+        if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
+      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields });
     }
     if (!changes.length) return;
     for (const c of changes) sync.emit(c);
@@ -134,7 +165,7 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
     const named = WBConsoleName.nameDesk(desk(), consolePrefix);
     let emitted = false;
     named.forEach((r, i) => {
-      if (desk()[i].consoleName || !r.consoleName) return;
+      if (desk()[i]?.consoleName || !r.consoleName) return;
       sync.emit({ op: "set", type: "window", id: r.id, fields: { consoleName: r.consoleName } });
       emitted = true;
     });
@@ -174,8 +205,9 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   // Select (`name`) or clear (`null`) a project's checkout. A clear names the
   // tree it clears, so it never erases a tree another device picked since.
   function setCheckout(ref: string, name: string | null | undefined) {
+    const current = checkouts()[ref];
     if (name) emitDesk({ op: "checkout", repo: ref, name: String(name) });
-    else if (checkouts()[ref]) emitDesk({ op: "checkout-clear", repo: ref, ifName: checkouts()[ref] });
+    else if (current) emitDesk({ op: "checkout-clear", repo: ref, ifName: current });
   }
   function allCheckouts() {
     return { ...checkouts() };

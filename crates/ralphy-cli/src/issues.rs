@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Args, ValueEnum};
 use serde::Serialize;
 
@@ -338,7 +338,17 @@ fn push_snapshot(
     // The effective token honours RALPHY_EVENTS_TOKEN over the stored one; strip it
     // from the env once captured so nothing this process spawns inherits it (ADR-0019).
     let token = effective_token(entry.as_ref().and_then(|e| e.token.as_deref()));
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this command runs on the main thread and has started no thread, so none \
+                  reads the environment while it changes"
+    )]
     std::env::remove_var(TOKEN_ENV);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this command runs on the main thread and has started no thread, so none \
+                  reads the environment while it changes"
+    )]
     std::env::remove_var(crate::telegram::config::TOKEN_ENV);
 
     // The per-run identity/context, minted exactly as `ralphy run` does.
@@ -399,10 +409,8 @@ fn issue_history(slug: &str, n: u64) -> Vec<UsageRow> {
 /// function against a future widening.
 fn parse_show_spec(spec: &[String]) -> Result<Option<u64>> {
     let number = |t: &str| -> Result<u64> {
-        t.parse::<u64>().map_err(|_| {
-            anyhow::anyhow!(
-                "unrecognized issue selector `{t}` — use `issues show <n>` or `issues <n>`"
-            )
+        t.parse::<u64>().with_context(|| {
+            format!("unrecognized issue selector `{t}` — use `issues show <n>` or `issues <n>`")
         })
     };
     match spec {

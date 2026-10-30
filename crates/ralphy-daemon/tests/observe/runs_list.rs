@@ -17,9 +17,9 @@ const LIVE_RUNID: &str = "01TESTRUNIDTESTRUNIDTE";
 /// document, one dead-pid document and one malformed file. Returns the
 /// `ws://…/ws/command` URL and the repo slug.
 async fn serve_repo() -> (String, String) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("create the temp dir");
     let runstate = dir.path().join(".ralphy").join("runstate");
-    std::fs::create_dir_all(&runstate).unwrap();
+    std::fs::create_dir_all(&runstate).expect("create the test directory");
     std::fs::write(
         runstate.join(format!("{LIVE_RUNID}.json")),
         serde_json::to_vec(&serde_json::json!({
@@ -30,9 +30,9 @@ async fn serve_repo() -> (String, String) {
             "started_at": "2026-07-24T10:00:00-03:00",
             "phase": { "state": "executing", "active": 71 },
         }))
-        .unwrap(),
+        .expect("encode the runstate JSON"),
     )
-    .unwrap();
+    .expect("write the runstate file");
     std::fs::write(
         runstate.join("01DEADRUNIDDEADRUNIDDE.json"),
         serde_json::to_vec(&serde_json::json!({
@@ -42,22 +42,27 @@ async fn serve_repo() -> (String, String) {
             "pid": 4_000_001u32,
             "started_at": "2026-07-24T09:00:00-03:00",
         }))
-        .unwrap(),
+        .expect("encode the runstate JSON"),
     )
-    .unwrap();
-    std::fs::write(runstate.join("bad.json"), b"not json").unwrap();
+    .expect("write the runstate file");
+    std::fs::write(runstate.join("bad.json"), b"not json").expect("write bad.json");
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/runs";
     store.upsert(slug, &dir.path().to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
     std::mem::forget(dir);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
     let (_tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -71,7 +76,9 @@ async fn serve_repo() -> (String, String) {
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
     std::mem::forget(_tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
     (
         format!("ws://127.0.0.1:{port}/ws/command"),
@@ -99,7 +106,7 @@ async fn round_trip(
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("send the frame");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut replies = Vec::new();

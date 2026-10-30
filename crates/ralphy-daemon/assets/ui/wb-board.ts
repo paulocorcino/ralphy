@@ -15,11 +15,12 @@
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import { component } from "./wb-alpine.ts";
+import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
+import type { BoardLabel } from "./wb-kanban.ts";
 import type { BoardIssue, BoardRow, ReadyPlan, RunPill, Timer } from "./wb-shell-types.d.ts";
 
 export function wbBoard() {
@@ -55,7 +56,7 @@ export function wbBoard() {
     // the resume signal, `WBRun.planTrailerIssue`), so the board shows it and
     // can throw it away. `planByProject[slug] = { md, summary }`, replaced on
     // every board load via the same confined `file.read`. Daemon-only (#300).
-    planByProject: {} as Record<string, ReadyPlan | null>,
+    planByProject: emptyRecord<ReadyPlan | null>(),
     planModal: { open: false, issue: null as number | null },
 
     async loadPlan(slug: string | null) {
@@ -149,8 +150,7 @@ export function wbBoard() {
       if (!held || this.$store.connection.writeLocked()) return;
       const ok = await this.$store.modals.askConfirm({
         title: "Discard this plan?",
-        message:
-          `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
+        message: `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
         confirmLabel: "Discard",
         danger: true,
       });
@@ -193,33 +193,20 @@ export function wbBoard() {
       this._boardLoadedAt = Date.now();
       // The ready plan rides every board trigger. NOT awaited: a plan read
       // must never delay the rows.
-      this.loadPlan(this.$store.projects.openSlug);
+      void this.loadPlan(this.$store.projects.openSlug);
       try {
-        const reply = await Promise.race([
-          window.WBDaemon.observe("board.list", { repo: slug }),
-          new Promise<never>((_, rej) =>
-            setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
-          ),
-        ]);
+        const reply = await boardFold(slug, this.BOARD_FOLD_TIMEOUT_MS);
         if (WBFail.isError(reply)) {
           const msg = WBFail.failed(reply, "Could not load the board.");
           this.$store.board.boardReadFailed(slug, msg);
           this.$store.modals.flash(msg);
           return;
         }
-        const board = reply.board || {};
-        const issues = (board.issues || []).map((r) => this.boardRowToIssue(r));
-        // A Map, so a label named `constructor` reads as missing. A blank
-        // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
-        const colors = new Map<string, string>();
-        for (const l of board.labels || []) {
-          if (!l.color) continue;
-          colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
-        }
-        this.$store.board.boardReadOk(slug, issues, colors);
+        const fold = readFold(reply.board, (r) => this.boardRowToIssue(r));
+        this.$store.board.boardReadOk(slug, fold.issues, fold.colors);
         // Fold rows carry `body: ""`: re-merge the open drawer's detail or it
         // goes blank on every refresh.
-        if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
+        if (this.kanbanSel != null) void this.loadIssueDetail(this.kanbanSel);
       } catch {
         this.$store.board.boardReadFailed(slug, "Could not load the board.");
         this.$store.modals.flash("Could not load the board.");
@@ -230,7 +217,7 @@ export function wbBoard() {
         // by the recursive call before it awaits, so this settles.
         if (this._boardPending || this.$store.projects.openSlug !== slug) {
           this._boardPending = false;
-          if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
+          if (this.$store.projects.openSlug && this.kanbanOpen) void this.loadBoard();
         }
       }
     },
@@ -245,7 +232,7 @@ export function wbBoard() {
         docVisible: document.visibilityState === "visible",
         focused: document.hasFocus(),
       });
-      if (ok) this.loadBoard();
+      if (ok) void this.loadBoard();
     },
     // The board head's refresh control.
     refreshBoard() {
@@ -266,7 +253,7 @@ export function wbBoard() {
         reason: row.reason ?? row.state_reason ?? null,
         labels: row.labels || [],
         assignees: row.assignees || [],
-        blockedBy: row.blocked_by || row.blockedBy || [],
+        blockedBy: rowBlockers(row),
         created: row.created || "",
         updated: row.updated || "",
         body: "",
@@ -279,8 +266,15 @@ export function wbBoard() {
     kanbanColumns() {
       const all = this.projectIssues();
       const K = window.WBKanban;
-      const shown = all.filter((i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
-      const bucket: Record<string, BoardIssue[]> = { backlog: [], agent: [], human: [], closed: [] };
+      const shown = all.filter(
+        (i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel),
+      );
+      const bucket: Record<ReturnType<typeof K.columnOf>, BoardIssue[]> = {
+        backlog: [],
+        agent: [],
+        human: [],
+        closed: [],
+      };
       for (const i of shown) bucket[K.columnOf(i)].push(i);
       return {
         backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
@@ -295,13 +289,15 @@ export function wbBoard() {
     },
     // Per-column live count (post-filter), for the column header badge.
     kanbanCount(colId: string) {
-      return (this.kanbanColumns() as Record<string, BoardIssue[]>)[colId].length;
+      const columns: Record<string, BoardIssue[]> = this.kanbanColumns();
+      return columns[colId]?.length ?? 0;
     },
     // The label set present in the project, for the filter dropdown.
     kanbanLabelOptions() {
-      const seen = new Set();
+      const seen = new Set<string>();
       for (const i of this.projectIssues()) for (const l of i.labels || []) seen.add(l);
-      return [...seen].sort();
+      // Distinct members, so no tie; `<` compares UTF-16 code units, as the sort without a compare function does.
+      return [...seen].sort((a, b) => (a < b ? -1 : 1));
     },
 
     // The run pill for a card (the actively-worked issue of a live run).
@@ -323,7 +319,10 @@ export function wbBoard() {
     },
     labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) || window.WBKanban.labelColor(l);
+      return (
+        this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) ||
+        window.WBKanban.labelColor(l)
+      );
     },
     labelInk(l: string) {
       return window.WBKanban.labelInk(l);
@@ -356,7 +355,7 @@ export function wbBoard() {
     openIssue(number: number) {
       this.kanbanSel = number;
       // `issue.show` merges body + comments + blockers into the cached row.
-      this.loadIssueDetail(number);
+      void this.loadIssueDetail(number);
     },
 
     async loadIssueDetail(number: number) {
@@ -371,7 +370,9 @@ export function wbBoard() {
       // on every refresh, and two projects routinely carry the same number.
       const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
       const stale = () =>
-        gen !== this._issueDetailGen || this.$store.projects.openSlug !== slug || this.kanbanSel !== number;
+        gen !== this._issueDetailGen ||
+        this.$store.projects.openSlug !== slug ||
+        this.kanbanSel !== number;
       const fail = (msg: string) => {
         if (stale()) return;
         this.issueError = msg;
@@ -383,13 +384,13 @@ export function wbBoard() {
           fail(WBFail.failed(reply, "Could not load the issue."));
           return;
         }
-        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
+        const detail = shownIssue(reply);
+        if (!detail) {
           fail("Could not load the issue.");
           return;
         }
-        const detail = reply.issue;
-        if (stale()) return;
-        if (!this.$store.board.issueDetailRead(slug!, number, detail)) return;
+        if (stale() || !slug) return;
+        if (!this.$store.board.issueDetailRead(slug, number, detail)) return;
         // Success owns the banner too: this one may land second.
         this.issueError = null;
       } catch {
@@ -407,7 +408,9 @@ export function wbBoard() {
     // The GitHub URL of an issue on the OPEN project, from its `remoteUrl`
     // (#204); `null` with no GitHub remote. Only the lookup stays here.
     githubUrl(number: number) {
-      const p = this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === this.$store.projects.openSlug);
+      const p = this.$store.projects.projects.find(
+        (x) => this.$store.projects.repoRef(x) === this.$store.projects.openSlug,
+      );
       return WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
@@ -417,7 +420,12 @@ export function wbBoard() {
       const all = this.projectIssues();
       return iss.blockedBy.map((n) => {
         const b = all.find((x) => x.number === n);
-        return { number: n, open: b ? b.state === "open" : false, known: !!b, title: b?.title || "" };
+        return {
+          number: n,
+          open: b ? b.state === "open" : false,
+          known: !!b,
+          title: b?.title || "",
+        };
       });
     },
 
@@ -436,8 +444,10 @@ export function wbBoard() {
     toggleLabelMenu() {
       this.labelMenuOpen = !this.labelMenuOpen;
       if (!this.labelMenuOpen) return;
-      this.$nextTick(() =>
-        document.querySelector(".kd-label-menu")?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      void this.$nextTick(() =>
+        document
+          .querySelector(".kd-label-menu")
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
       );
     },
     hasLabel(iss: BoardIssue | null, label: string) {
@@ -452,10 +462,15 @@ export function wbBoard() {
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];
       const slug = this.$store.projects.openSlug;
-      this.$store.board.issueLabelsSet(slug!, iss.number, has ? prev.filter((l) => l !== label) : [...prev, label]);
+      if (!slug) return;
+      this.$store.board.issueLabelsSet(
+        slug,
+        iss.number,
+        has ? prev.filter((l) => l !== label) : [...prev, label],
+      );
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
-      (async () => {
+      void (async () => {
         try {
           const reply = await window.WBDaemon.observe("label.set", {
             repo: slug,
@@ -464,8 +479,10 @@ export function wbBoard() {
             op,
           });
           if (WBFail.isError(reply)) {
-            this.$store.board.issueLabelsSet(slug!, iss.number, prev);
-            this.$store.modals.flash(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
+            this.$store.board.issueLabelsSet(slug, iss.number, prev);
+            this.$store.modals.flash(
+              WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."),
+            );
             return; // a refused write changed nothing to re-read
           }
           // Re-fold so the column reflects the server, not the optimistic
@@ -498,9 +515,9 @@ export function wbBoard() {
     // store `runs` hear the same event.
     boardFollowProject() {
       this.kanbanSel = null;
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
-        if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
+        if (this.$store.projects.openSlug && this.kanbanOpen) void this.loadBoard();
       });
     },
 
@@ -509,12 +526,14 @@ export function wbBoard() {
       window.addEventListener("workbench:project-changed", () => this.boardFollowProject());
       // A refresh trigger of the page (#301): the runs socket, a reopened
       // socket, the tab becoming visible, a login. The predicate decides.
-      window.addEventListener("workbench:board-refresh", (e) => this.maybeRefreshBoard(e.detail.trigger));
+      window.addEventListener("workbench:board-refresh", (e) =>
+        this.maybeRefreshBoard(e.detail.trigger),
+      );
       // The board opened (`toggleKanban`): lazy-load the tracker for the open
       // project.
       window.addEventListener("workbench:board-opened", () => {
         this.kanbanSel = null;
-        this.loadBoard();
+        void this.loadBoard();
       });
       // A trail node of the Runs panel (#301) opens that issue's detail.
       window.addEventListener("workbench:issue-open", (e) => this.openIssue(e.detail.issue));
@@ -524,4 +543,45 @@ export function wbBoard() {
       this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
     },
   });
+}
+
+// The `board.list` reply for the repo `slug`, or a rejection after `timeoutMs`.
+function boardFold(slug: string, timeoutMs: number) {
+  return Promise.race([
+    window.WBDaemon.observe("board.list", { repo: slug }),
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("board fold timed out")), timeoutMs),
+    ),
+  ]);
+}
+
+// The issues of a board fold, in the shape that `toIssue` makes, and the
+// colors of its labels.
+function readFold<T>(board: DaemonReplies["board.list"]["board"], toIssue: (row: BoardRow) => T) {
+  const b = board || {};
+  return { issues: (b.issues || []).map(toIssue), colors: labelColors(b.labels) };
+}
+
+// The repo's label colors by label name. A Map, so a label named
+// `constructor` reads as missing. A blank color is skipped: a bare "#" is
+// truthy and masks `labelColor`'s fallback.
+function labelColors(labels: BoardLabel[] | undefined) {
+  const colors = new Map<string, string>();
+  for (const l of labels || []) {
+    if (!l.color) continue;
+    colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
+  }
+  return colors;
+}
+
+// The issues that block a fold row, under either name the fold uses.
+function rowBlockers(row: BoardRow) {
+  return row.blocked_by || row.blockedBy || [];
+}
+
+// The issue of an `issue.show` reply, or null when the reply carries none.
+function shownIssue(reply: ReplyOf<"issue.show">) {
+  if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object")
+    return null;
+  return reply.issue;
 }

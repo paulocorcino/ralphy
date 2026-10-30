@@ -12,7 +12,7 @@
 
    The count is shown on the rail and in the tab title. A row has one action:
    a console's row has "Go to the console", which shows the console the way
-   the Go-to picker does (`revealWindow` in wb-consoles-tab.ts); a run's row
+   the Go-to picker does (`revealWindow` in wb-consoles-tab-menus.ts); a run's row
    has "Open the run", which shows the run in the Runs panel
    (`workbench:run-select`, heard by wb-runs-panel.ts). The store
    `connection` also sends `workbench:attention-reread` on an
@@ -51,7 +51,12 @@ import { WBProject } from "./wb-project.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
 /** The kind of a request (`attention::Kind`). */
-export type AttentionKind = "console-waiting" | "console-silent" | "console-done" | "run-waiting" | "run-finished";
+export type AttentionKind =
+  | "console-waiting"
+  | "console-silent"
+  | "console-done"
+  | "run-waiting"
+  | "run-finished";
 
 /** What a row's one action opens: "none" for a finished run, which is no
  * longer in the Runs panel. */
@@ -79,7 +84,11 @@ export type AttentionReply = { requests: AttentionRequest[] };
 /** One daemon's Telegram state (`TelegramState` in `telegram_state.rs`):
  * `main` is the id of the main daemon that sends for it, and `main_name` its
  * name when the daemon that answered knows it. */
-export type TelegramStateReply = { state: "off" | "sends" | "through-main"; main?: string; main_name?: string };
+export type TelegramStateReply = {
+  state: "off" | "sends" | "through-main";
+  main?: string;
+  main_name?: string;
+};
 
 /** A peer's state in the joined reply (`PeerView` in `api_telegram.rs`). */
 export type PeerTelegram = TelegramStateReply & { daemon_id: string; environment: string };
@@ -106,7 +115,9 @@ export function telegramText(reply: TelegramStateReply) {
 /** The panel's line for each peer of the reply: its environment, then its
  * state. */
 export function peerTelegramLines(reply: TelegramReply) {
-  return (reply.peers || []).map((peer) => `${peer.environment || peer.daemon_id} · ${telegramText(peer)}`);
+  return (reply.peers || []).map(
+    (peer) => `${peer.environment || peer.daemon_id} · ${telegramText(peer)}`,
+  );
 }
 
 /** How many times, a quarter of a second apart, the page tries to show the
@@ -213,7 +224,10 @@ export function ageText(since: string, now: number) {
 
 /** The session a console request names: the number after the last `/` of
  * `console`, under the same repo ref (a peer's ref carries the peer). */
-export function sessionOf(request: AttentionRequest, sessions: readonly HostedSession[] | null | undefined) {
+export function sessionOf(
+  request: AttentionRequest,
+  sessions: readonly HostedSession[] | null | undefined,
+) {
   if (!request.console) return null;
   const id = Number(request.console.slice(request.console.lastIndexOf("/") + 1));
   return (sessions || []).find((s) => s.id === id && s.repo === request.repo) || null;
@@ -243,12 +257,16 @@ export function wbAttention() {
 
     init() {
       this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
-      this.read();
-      this.readTelegram();
+      void this.read();
+      void this.readTelegram();
       this._link = consoleLinkOf(window.location.search);
       if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
-      window.addEventListener("workbench:attention-reread", () => this.read());
-      window.addEventListener("workbench:logged-in", () => this.read());
+      window.addEventListener("workbench:attention-reread", () => {
+        void this.read();
+      });
+      window.addEventListener("workbench:logged-in", () => {
+        void this.read();
+      });
       window.addEventListener("workbench:menus-close", () => this.close());
       document.addEventListener("focusin", (e) => this.focused(e.target));
       window.setInterval(() => {
@@ -366,7 +384,7 @@ export function wbAttention() {
       const was = this.open;
       sendWindow(window, "workbench:menus-close");
       this.open = !was;
-      if (this.open) this.readTelegram();
+      if (this.open) void this.readTelegram();
     },
     close() {
       this.open = false;
@@ -415,7 +433,8 @@ export function wbAttention() {
       if (!win?._deskId) return;
       for (const request of this.requests) {
         const session = sessionOf(request, this.$store.projects.liveSessions);
-        if (request.kind === "console-done" && session?.record === win._deskId) this.finish(request);
+        if (request.kind === "console-done" && session?.record === win._deskId)
+          void this.finish(request);
       }
     },
     // Dismiss `request` with nothing said when the daemon refuses: the row
@@ -444,7 +463,7 @@ export function wbAttention() {
     // own tab when it has one, else the Consoles tab, panned to it.
     goTo(request: AttentionRequest) {
       this.open = false;
-      if (request.kind === "console-done") this.finish(request);
+      if (request.kind === "console-done") void this.finish(request);
       const id = sessionOf(request, this.$store.projects.liveSessions)?.record;
       if (id) this.reveal(id);
     },
@@ -457,7 +476,7 @@ export function wbAttention() {
         return;
       }
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
-      this.$nextTick(() => WBConsole.reveal(id));
+      void this.$nextTick(() => WBConsole.reveal(id));
     },
   });
 }

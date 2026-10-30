@@ -19,7 +19,13 @@ use ralphy_adapter_support::{run_headless, HeadlessCall};
 
 static STOP_FLAG_LOCK: Mutex<()> = Mutex::new(());
 
-struct StopFlagGuard(#[allow(dead_code)] MutexGuard<'static, ()>);
+struct StopFlagGuard(
+    #[expect(
+        dead_code,
+        reason = "the field only holds the lock until the guard drops"
+    )]
+    MutexGuard<'static, ()>,
+);
 
 impl StopFlagGuard {
     fn acquire() -> Self {
@@ -33,6 +39,16 @@ impl Drop for StopFlagGuard {
     fn drop(&mut self) {
         ralphy_core::stop::clear();
     }
+}
+
+/// Remove a scratch file a test made. It may be gone already, and a leftover
+/// file in the temp dir fails nothing.
+fn remove_scratch(file: &std::path::Path) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "cleanup of a test file that may be gone, and no test reads it after"
+    )]
+    let _ = std::fs::remove_file(file);
 }
 
 fn child_cmd(mode: &str) -> Command {
@@ -110,7 +126,7 @@ fn without_a_stop_request_the_wall_timeout_still_fires() {
 fn the_builder_path_reports_a_stop_as_a_stop_not_a_timeout() {
     let _flag = StopFlagGuard::acquire();
     let log_path = temp_log("builder");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 
     // Pre-set: nothing about the discrimination depends on WHEN the flag rises,
     // and a pre-set flag makes this test cost milliseconds instead of seconds.
@@ -127,5 +143,5 @@ fn the_builder_path_reports_a_stop_as_a_stop_not_a_timeout() {
     assert!(r.stopped, "HeadlessRun carries the stop through");
     assert!(!r.timed_out, "and never as a timeout");
     assert!(!r.exited_cleanly, "a reaped child did not exit cleanly");
-    let _ = std::fs::remove_file(&log_path);
+    remove_scratch(&log_path);
 }

@@ -152,6 +152,10 @@ fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) 
     let (code, timed_out) = (out.exit.and_then(|s| s.code()), out.timed_out);
     let mut log = out.stdout;
     log.push_str(&out.stderr);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the log is a copy for the operator; the session result stands without it"
+    )]
     let _ = fs::write(log_path, &log);
 
     if is_gemini_auth_error(&log) {
@@ -176,11 +180,16 @@ fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) 
 
 /// Ensure the artifact's and the log's parent dirs exist, then drop any stale
 /// artifact — a prior run's file must never masquerade as this session's output.
-fn clear_stale_artifact(out_path: &Path, log_path: &Path) {
+fn clear_stale_artifact(out_path: &Path, log_path: &Path) -> Result<()> {
     for parent in [out_path.parent(), log_path.parent()].into_iter().flatten() {
-        fs::create_dir_all(parent).ok();
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
-    let _ = fs::remove_file(out_path);
+    match fs::remove_file(out_path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            Err(error).with_context(|| format!("removing the stale output {}", out_path.display()))
+        }
+        Err(_) | Ok(()) => Ok(()),
+    }
 }
 
 /// Read and validate the JSON artifact a one-shot was asked to write.
@@ -235,7 +244,7 @@ pub fn diagnose_repo(
     // D2 before any side effect: a charter ralphy refuses to send must cost
     // neither a materialized root nor a written policy document.
     check_stdin_ceiling(&prompt)?;
-    clear_stale_artifact(&out_path, &log_path);
+    clear_stale_artifact(&out_path, &log_path)?;
 
     info!(?model, "diagnosing repo with gemini");
     let cmd = one_shot_command(&one_shot_base(repo), neutral_cwd, model)?;
@@ -267,7 +276,7 @@ pub fn draft_issues(
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     check_stdin_ceiling(&prompt)?;
-    clear_stale_artifact(out_path, &log_path);
+    clear_stale_artifact(out_path, &log_path)?;
 
     info!(
         ?model,
@@ -317,7 +326,7 @@ pub fn triage_issues(
     let prompt = triage_prompt(repo, req, out_path);
     let log_path = repo.join(".ralphy").join("triage.log");
     check_stdin_ceiling(&prompt)?;
-    clear_stale_artifact(out_path, &log_path);
+    clear_stale_artifact(out_path, &log_path)?;
 
     info!(?model, "triaging issues with gemini");
     let mut cmd = one_shot_command(&one_shot_base(repo), repo, model)?;
@@ -350,7 +359,7 @@ pub fn consolidate_knowledge(
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     check_stdin_ceiling(PROMPT_CONSOLIDATE)?;
-    fs::create_dir_all(run_dir).ok();
+    fs::create_dir_all(run_dir).context("creating the run directory")?;
     let log_path = run_dir.join("consolidate.log");
 
     info!(?model, "consolidating knowledge with gemini");
@@ -559,7 +568,7 @@ mod tests {
         fs::create_dir_all(out.parent().unwrap()).unwrap();
         fs::write(&out, r#"{"issues":["a previous run's draft"]}"#).unwrap();
 
-        clear_stale_artifact(&out, &log);
+        clear_stale_artifact(&out, &log).expect("clearing the artifact");
         assert!(!out.exists(), "the previous run's draft must be gone");
         assert!(
             log.parent().unwrap().is_dir(),

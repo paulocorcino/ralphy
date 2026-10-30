@@ -20,33 +20,9 @@ use ralphy_core::Usage;
 /// as `input_tokens + output_tokens`, so reasoning already sits inside `output`.
 /// `model` is the resolved invocation model (the rollout has no per-event model).
 fn parse_codex_rollout_usage(jsonl: &str, model: Option<String>) -> Usage {
-    let mut last: Option<serde_json::Value> = None;
-    for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        // opencode-style envelope: the real fields live under `payload`; fall
-        // back to the value itself so a flat shape still parses.
-        let payload = value.get("payload").unwrap_or(&value);
-        if payload.get("type").and_then(|v| v.as_str()) != Some("token_count") {
-            continue;
-        }
-        let Some(ttu) = payload
-            .get("info")
-            .and_then(|info| info.get("total_token_usage"))
-        else {
-            continue;
-        };
-        // Keep only populated snapshots; `{}`/null `info` must not clobber the
-        // last good cumulative total.
-        if ttu.is_object() {
-            last = Some(ttu.clone());
-        }
-    }
+    // Keep only populated snapshots; `{}`/null `info` must not clobber the
+    // last good cumulative total.
+    let last = jsonl.lines().rev().find_map(token_count_snapshot);
 
     let mut usage = Usage {
         model,
@@ -61,6 +37,25 @@ fn parse_codex_rollout_usage(jsonl: &str, model: Option<String>) -> Usage {
         usage.cache_creation = 0;
     }
     usage
+}
+
+/// The populated `total_token_usage` object of one rollout line, or `None`
+/// when the line is blank, not JSON, not a `token_count` event, or carries an
+/// empty snapshot.
+fn token_count_snapshot(line: &str) -> Option<serde_json::Value> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    // opencode-style envelope: the real fields live under `payload`; fall
+    // back to the value itself so a flat shape still parses.
+    let payload = value.get("payload").unwrap_or(&value);
+    if payload.get("type").and_then(|v| v.as_str()) != Some("token_count") {
+        return None;
+    }
+    let ttu = payload.get("info")?.get("total_token_usage")?;
+    ttu.is_object().then(|| ttu.clone())
 }
 
 /// `$CODEX_HOME/sessions` when `CODEX_HOME` is set (matching Codex's own

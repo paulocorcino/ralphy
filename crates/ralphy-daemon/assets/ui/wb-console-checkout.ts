@@ -28,13 +28,27 @@ export type CheckoutRow = {
   state: string | null;
 };
 
+// A tree of the checkout menu before the console's own state is added.
+type TreeRow = Omit<CheckoutRow, "current" | "state">;
+
+// The menu row of a worktree in a listing.
+function worktreeRow(w: Listing["worktrees"][number]): TreeRow {
+  return {
+    name: String(w.name || ""),
+    branch: String(w.branch || ""),
+    dirty: w.dirty === true,
+    primary: false,
+  };
+}
+
 // What `checkoutMenu` is built from. `host` is where the element lands.
 export type CheckoutMenuOptions = {
   anchor: HTMLElement;
   host: HTMLElement;
   rows: CheckoutRow[];
   onPick: (row: CheckoutRow) => void;
-  onRemove?: (row: CheckoutRow) => void;
+  // A Promise is allowed: the menu starts it and does not wait.
+  onRemove?: (row: CheckoutRow) => void | Promise<void>;
   onCreate?: () => void;
 };
 
@@ -74,7 +88,17 @@ export type CheckoutDeps = {
 };
 
 export function createCheckoutSwitcher(deps: CheckoutDeps) {
-  const { window, document, OPTS, wins, lastSessions, agentStateTitle, askConfirm, setWin, renderTitle } = deps;
+  const {
+    window,
+    document,
+    OPTS,
+    wins,
+    lastSessions,
+    agentStateTitle,
+    askConfirm,
+    setWin,
+    renderTitle,
+  } = deps;
 
   // ---- the title's worktree segment as a switcher (#412) --------------------
   //
@@ -119,23 +143,28 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     primaryBranch = "",
     primaryDirty = false,
   ): CheckoutRow[] {
-    const rows: { name: string; branch: string; dirty: boolean; primary: boolean }[] = [
-      { name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true },
+    const rows: TreeRow[] = [
+      {
+        name: "primary",
+        branch: String(primaryBranch || ""),
+        dirty: primaryDirty === true,
+        primary: true,
+      },
     ];
-    for (const w of listing?.worktrees || []) {
-      rows.push({
-        name: String(w.name || ""),
-        branch: String(w.branch || ""),
-        dirty: w.dirty === true,
-        primary: false,
-      });
-    }
-    const states = sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
-    return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name, state: states[r.name] || null }));
+    for (const w of listing?.worktrees || []) rows.push(worktreeRow(w));
+    const states =
+      sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
+    return rows.map((r) => ({
+      ...r,
+      current: (current ?? "primary") === r.name,
+      state: states[r.name] || null,
+    }));
   }
   function sessionsOfRepo(ref: string) {
     const route = WBSessionRoute;
-    return (lastSessions() || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
+    return (lastSessions() || []).filter(
+      (s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref),
+    );
   }
 
   // The checkout menu — ONE component, under the console's title segment and
@@ -163,64 +192,13 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     const menu = document.createElement("div");
     menu.className = "session-checkout-menu";
     menu.addEventListener("pointerdown", (e) => e.stopPropagation());
-    for (const row of rows) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "session-checkout-item" + (row.current ? " current" : "");
-      const glyph = document.createElement("i");
-      glyph.className = row.current ? "bi bi-check2" : row.primary ? "bi bi-house-door" : "bi bi-folder2";
-      const name = document.createElement("span");
-      name.className = "session-checkout-name";
-      name.textContent = row.name;
-      item.append(glyph, name);
-      if (row.branch) {
-        const branch = document.createElement("span");
-        branch.className = "session-checkout-branch";
-        branch.textContent = row.branch;
-        item.append(branch);
-      }
-      // The agent in this tree (ADR-0059): the same words as the console's dot.
-      if (row.state) {
-        const state = document.createElement("span");
-        state.className = `session-checkout-state ${row.state}`;
-        state.title = agentStateTitle(row.state);
-        item.append(state);
-      }
-      if (row.dirty) {
-        const dot = document.createElement("span");
-        dot.className = "session-checkout-dirty";
-        dot.title = "Uncommitted changes";
-        item.append(dot);
-      }
-      if (onRemove && !row.primary) {
-        // A span, not a button: a button inside a button is not HTML, and the
-        // browser would hoist it out of the row.
-        const trash = document.createElement("span");
-        trash.setAttribute("role", "button");
-        trash.tabIndex = 0;
-        trash.className = "session-checkout-remove";
-        trash.title = "Delete this worktree";
-        trash.innerHTML = '<i class="bi bi-trash3"></i>';
-        // The trash must not also PICK the row it sits on.
-        trash.addEventListener("click", (e) => {
-          e.stopPropagation();
-          closeCheckoutMenu();
-          onRemove(row);
-        });
-        item.append(trash);
-      }
-      item.addEventListener("click", (e) => {
-        e.stopPropagation();
-        closeCheckoutMenu();
-        if (!row.current) onPick(row);
-      });
-      menu.append(item);
-    }
+    for (const row of rows) menu.append(checkoutItem(row, onPick, onRemove));
     if (onCreate) {
       const create = document.createElement("button");
       create.type = "button";
       create.className = "session-checkout-item create";
-      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
+      create.innerHTML =
+        '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
       create.title = "Create a worktree and restart this console in it";
       create.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -229,20 +207,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       });
       menu.append(create);
     }
-    const r = anchor.getBoundingClientRect();
-    if (host === document.body) {
-      // The shell's chip: the menu floats over the page, at the anchor.
-      menu.style.position = "fixed";
-      menu.style.left = `${r.left}px`;
-      menu.style.top = `${r.bottom + 2}px`;
-    } else {
-      const h = host.getBoundingClientRect();
-      menu.style.left = `${Math.max(0, r.left - h.left)}px`;
-      menu.style.top = `${r.bottom - h.top + 2}px`;
-    }
+    placeMenu(menu, anchor, host);
     host.append(menu);
     const away = (e: PointerEvent) => {
-      if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) closeCheckoutMenu();
+      if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node))
+        closeCheckoutMenu();
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeCheckoutMenu();
@@ -252,14 +221,98 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     openMenu = { anchor, el: menu, away, key };
     return menu;
   }
+  function checkoutGlyph(row: CheckoutRow) {
+    if (row.current) return "bi bi-check2";
+    return row.primary ? "bi bi-house-door" : "bi bi-folder2";
+  }
+  // The menu's row for one tree: its glyph, name, branch, agent state and
+  // dirty flag, and a trash action when `onRemove` is given.
+  function checkoutItem(
+    row: CheckoutRow,
+    onPick: CheckoutMenuOptions["onPick"],
+    onRemove: CheckoutMenuOptions["onRemove"],
+  ) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "session-checkout-item" + (row.current ? " current" : "");
+    const glyph = document.createElement("i");
+    glyph.className = checkoutGlyph(row);
+    const name = document.createElement("span");
+    name.className = "session-checkout-name";
+    name.textContent = row.name;
+    item.append(glyph, name);
+    if (row.branch) {
+      const branch = document.createElement("span");
+      branch.className = "session-checkout-branch";
+      branch.textContent = row.branch;
+      item.append(branch);
+    }
+    // The agent in this tree (ADR-0059): the same words as the console's dot.
+    if (row.state) {
+      const state = document.createElement("span");
+      state.className = `session-checkout-state ${row.state}`;
+      state.title = agentStateTitle(row.state);
+      item.append(state);
+    }
+    if (row.dirty) {
+      const dot = document.createElement("span");
+      dot.className = "session-checkout-dirty";
+      dot.title = "Uncommitted changes";
+      item.append(dot);
+    }
+    if (onRemove && !row.primary) {
+      item.append(removeAction(row, onRemove));
+    }
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeCheckoutMenu();
+      if (!row.current) onPick(row);
+    });
+    return item;
+  }
+  // The trash action of a worktree row. A span, not a button: a button inside
+  // a button is not HTML, and the browser would hoist it out of the row.
+  function removeAction(row: CheckoutRow, onRemove: NonNullable<CheckoutMenuOptions["onRemove"]>) {
+    const trash = document.createElement("span");
+    trash.setAttribute("role", "button");
+    trash.tabIndex = 0;
+    trash.className = "session-checkout-remove";
+    trash.title = "Delete this worktree";
+    trash.innerHTML = '<i class="bi bi-trash3"></i>';
+    // The trash must not also PICK the row it sits on.
+    trash.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeCheckoutMenu();
+      void onRemove(row);
+    });
+    return trash;
+  }
+  // Puts the menu under its anchor: fixed over the page for the shell's chip
+  // (`host` is the body), else relative to the console window `host`.
+  function placeMenu(menu: HTMLElement, anchor: HTMLElement, host: HTMLElement) {
+    const r = anchor.getBoundingClientRect();
+    if (host === document.body) {
+      menu.style.position = "fixed";
+      menu.style.left = `${r.left}px`;
+      menu.style.top = `${r.bottom + 2}px`;
+      return;
+    }
+    const h = host.getBoundingClientRect();
+    menu.style.left = `${Math.max(0, r.left - h.left)}px`;
+    menu.style.top = `${r.bottom - h.top + 2}px`;
+  }
   function openCheckoutMenu(win: ConsoleWin, anchor: HTMLElement) {
     const ref = win._deskRepo;
     checkoutMenu({
       anchor,
       host: win,
       rows: checkoutMenuRows(worktreeListings[ref], win._deskCheckout ?? null, sessionsOfRepo(ref)),
-      onPick: (row) => switchCheckout(win, row.primary ? null : row.name),
-      onCreate: () => createWorktreeFor(win),
+      onPick: (row) => {
+        void switchCheckout(win, row.primary ? null : row.name);
+      },
+      onCreate: () => {
+        void createWorktreeFor(win);
+      },
     });
   }
 
@@ -288,8 +341,9 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     win._deskCheckout = checkout;
     setWin(win, { checkout: checkout ?? null });
     endLiveThen(win, () => {
-      // Both callers checked that `_relaunchIn` is a function.
-      win._relaunchIn!(checkout);
+      const relaunchIn = win._relaunchIn;
+      if (typeof relaunchIn !== "function") return;
+      relaunchIn(checkout);
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
     });
   }
@@ -309,7 +363,13 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // the base branch. The name gate is `WBProject.worktreeCreateRow`; a refusal
   // the daemon DID send (`error`) re-opens with the message under the field.
   // Resolves `{name, base}` or `null` on cancel.
-  function askWorktree({ base, branches, listing, error = "", name = "" }: WorktreeAsk): Promise<WorktreeAnswer> {
+  function askWorktree({
+    base,
+    branches,
+    listing,
+    error = "",
+    name = "",
+  }: WorktreeAsk): Promise<WorktreeAnswer> {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -334,20 +394,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     nameInput.value = name;
     const baseLabel = document.createElement("label");
     baseLabel.textContent = "From";
-    const baseInput = document.createElement(branches?.length ? "select" : "input");
-    baseInput.className = "prompt-input";
-    if (branches?.length) {
-      for (const b of branches) {
-        const opt = document.createElement("option");
-        opt.value = b;
-        opt.textContent = b;
-        baseInput.append(opt);
-      }
-      baseInput.value = branches.includes(base) ? base : branches[0];
-    } else {
-      baseInput.value = base || "";
-      (baseInput as HTMLInputElement).placeholder = "Branch to start from";
-    }
+    const baseInput = baseField(base, branches);
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
     note.textContent = `${WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. You lose the text in this console.`;
@@ -385,7 +432,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       const problem = () =>
         WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
       const submit = () => {
-        const row = WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
+        const row = WBProject?.worktreeCreateRow?.(
+          listing || { worktrees: [] },
+          baseInput.value,
+          nameInput.value,
+        );
         if (!row) {
           err.textContent = problem() || "Choose a branch to start from.";
           err.hidden = false;
@@ -428,6 +479,28 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     });
   }
 
+  // The prompt's base branch field: a list of the known branches with `base`
+  // chosen, or free text when no branch could be read.
+  function baseField(base: string, branches: string[]) {
+    if (!branches?.length) {
+      const input = document.createElement("input");
+      input.className = "prompt-input";
+      input.value = base || "";
+      input.placeholder = "Branch to start from";
+      return input;
+    }
+    const select = document.createElement("select");
+    select.className = "prompt-input";
+    for (const b of branches) {
+      const opt = document.createElement("option");
+      opt.value = b;
+      opt.textContent = b;
+      select.append(opt);
+    }
+    select.value = branches.includes(base) ? base : (branches[0] ?? "");
+    return select;
+  }
+
   // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
   // shell, and move THIS console into it (the prompt already said it restarts).
   // Base list is `branch.list`, one read per prompt; unreadable → free text.
@@ -441,7 +514,13 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     let error = "";
     let name = "";
     for (;;) {
-      const ask = await askWorktree({ base, branches, listing: worktreeListings[repo], error, name });
+      const ask = await askWorktree({
+        base,
+        branches,
+        listing: worktreeListings[repo],
+        error,
+        name,
+      });
       if (!ask) return;
       name = ask.name;
       base = ask.base;
@@ -452,14 +531,21 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
         error = "Could not reach the daemon. Check whether the worktree was created.";
         continue;
       }
-      if (!reply || reply.status !== "ok") {
-        error = WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
+      const refused = addRefusal(reply);
+      if (refused) {
+        error = refused;
         continue;
       }
       announceWorktree(repo, name, reply);
       moveTo(win, name);
       return;
     }
+  }
+  // The words of a `worktree.add` refusal for the prompt, or "" when the
+  // worktree was added.
+  function addRefusal(reply: ReplyOf<"worktree.add">) {
+    if (reply && reply.status === "ok") return "";
+    return WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
   }
   // The branches the prompt offers and the one it starts from; unreadable
   // gives no list and no base.
@@ -477,7 +563,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // The listing is read again, then the shell is told the worktree exists.
   function announceWorktree(repo: string, name: string, reply: { message?: unknown }) {
     ensureListing(repo, true);
-    WB.emit("worktree-created", { project: repo, name, message: typeof reply.message === "string" ? reply.message : "" });
+    WB.emit("worktree-created", {
+      project: repo,
+      name,
+      message: typeof reply.message === "string" ? reply.message : "",
+    });
   }
 
   return {

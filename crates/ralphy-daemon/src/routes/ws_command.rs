@@ -142,29 +142,16 @@ fn for_peer(cmd: &Command, slug: &str) -> Command {
 /// repo gets one `status:"error"` frame and spawns nothing. A one-reply verb is
 /// answered by [`answer_one`]. The run keeps its own lifecycle: see the teardown
 /// invariant on [`stream::stream_child`].
-// The router's per-route dependencies, one parameter each (precedent: `usage_route`).
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn command_ws(
     mut socket: WebSocket,
-    registry_path: PathBuf,
-    peers_dir: PathBuf,
+    ctx: CommandCtx,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
-    daemon_id: Option<String>,
     run_exits: tokio::sync::broadcast::Sender<String>,
     bound_port: u16,
-    sessions: Arc<session::SessionManager>,
-    secret_ok: bool,
     who: SocketAudit,
 ) {
     let Some(cmd) = read_first_command(&mut socket).await else {
         return;
-    };
-    let ctx = CommandCtx {
-        registry_path,
-        peers_dir,
-        daemon_id,
-        sessions,
-        secret_ok,
     };
     let verb = match answer_one(&ctx, &cmd, &who).await {
         Answer::Reply(reply) => {
@@ -175,17 +162,7 @@ pub(crate) async fn command_ws(
     };
     let daemon_id = ctx.daemon_id.as_deref();
     if verb.is_host() {
-        let store_dir = store_dir(&ctx.peers_dir);
-        host::spawn_host(
-            &mut socket,
-            &cmd,
-            verb,
-            &store_dir,
-            daemon_id,
-            &mut shutdown,
-            secret_ok,
-        )
-        .await;
+        host::spawn_host(&mut socket, &cmd, verb, &ctx, &mut shutdown).await;
         return;
     }
     let (descriptors, _) = read_peer_store(ctx.peers_dir.clone()).await;
@@ -223,6 +200,10 @@ pub(crate) async fn command_ws(
         child,
         &mut shutdown,
         move || {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a nudge nobody hears is a no-op"
+            )]
             let _ = run_exits.send(slug);
         },
     )
@@ -557,26 +538,18 @@ pub(crate) fn command_routes(s: &RouterShared) -> Router {
                     .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
                 let secret_ok = request_may_carry_a_secret(&headers);
                 let who = SocketAudit::of(audit.clone(), caller);
-                let registry_path = registry.clone();
+                let ctx = CommandCtx {
+                    registry_path: registry.clone(),
+                    peers_dir: peers.clone(),
+                    daemon_id: daemon_id.clone(),
+                    sessions: sessions.clone(),
+                    secret_ok,
+                };
                 let shutdown = shutdown.clone();
-                let daemon_id = daemon_id.clone();
                 let run_exits = run_exits.clone();
-                let peers_dir = peers.clone();
-                let sessions = sessions.clone();
                 async move {
                     ws.on_upgrade(move |socket| {
-                        command_ws(
-                            socket,
-                            registry_path,
-                            peers_dir,
-                            shutdown,
-                            daemon_id,
-                            run_exits,
-                            bound_port,
-                            sessions,
-                            secret_ok,
-                            who,
-                        )
+                        command_ws(socket, ctx, shutdown, run_exits, bound_port, who)
                     })
                 }
             },

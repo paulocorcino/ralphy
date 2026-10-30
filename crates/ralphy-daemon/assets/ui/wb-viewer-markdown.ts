@@ -2,10 +2,12 @@
 // toolbar, links, images, outline and the edit/preview toggle. The rendered
 // body itself is `wb-viewer-render.ts`.
 import { sendDocument } from "./wb-events.ts";
+import { inPane, need, required } from "./wb-dom-need.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
-import { drawDiagram, isRendered, renderBody, slugOf } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
+import { isRendered, renderBody } from "./wb-viewer-render.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import type { MonacoEditor } from "./wb-monaco.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
@@ -38,7 +40,7 @@ export function remoteImageNotice(src: string, alt: string) {
 // for anything that climbs OUT of the repo — the daemon would refuse it
 // anyway, and not asking is the honest way to spell "not ours".
 function repoRelative(dir: string, src: string) {
-  let clean = src.split(/[?#]/)[0];
+  let clean = src.split(/[?#]/)[0] ?? "";
   try {
     clean = decodeURIComponent(clean);
   } catch {
@@ -69,7 +71,8 @@ function repoRelative(dir: string, src: string) {
 export function linkTarget(dir: string, href: string | null) {
   if (!href) return null;
   if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" as const };
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/"))
+    return { kind: "external" as const };
   const path = repoRelative(dir, href);
   if (!path) return null;
   const hash = href.indexOf("#");
@@ -87,7 +90,11 @@ export type ViewerMarkdownDeps = {
   detachBtnHtml: (rec: ViewerRecord) => string;
   detachClick: (rec: BytesRecord) => void;
   /** Mount a code editor in `container`: the pane's Edit mode. */
-  mountEditor: (rec: BytesRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) => unknown;
+  mountEditor: (
+    rec: BytesRecord,
+    container: HTMLElement,
+    opts: { path?: string; wordWrap?: string },
+  ) => unknown;
   saver: Pick<ViewerSave, "save" | "reloadFile" | "applyFresh" | "hideDiskBadge">;
   encoding: Pick<ViewerEncoding, "wireEncodingMenu">;
   find: Pick<ViewerFind, "mdSearch" | "mdSearchStep" | "mdSearchClose">;
@@ -96,7 +103,16 @@ export type ViewerMarkdownDeps = {
 export type ViewerMarkdown = ReturnType<typeof createViewerMarkdown>;
 
 export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
-  const { window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor } = deps;
+  const {
+    window,
+    document,
+    viewers,
+    setPathLabel,
+    setCaption,
+    detachBtnHtml,
+    detachClick,
+    mountEditor,
+  } = deps;
   const { save, reloadFile, applyFresh, hideDiskBadge } = deps.saver;
   const { wireEncodingMenu } = deps.encoding;
   const { mdSearch, mdSearchStep, mdSearchClose } = deps.find;
@@ -135,34 +151,36 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
         <div class="md-editor" style="display:none"></div>
       </div>`;
     setPathLabel(el, rec);
-    viewers!.append(el);
+    required(viewers, "the element that holds the panes").append(el);
     wireEncodingMenu(rec, el);
     rec.el = el;
     rec.saveBtn = el.querySelector<HTMLElement>('[data-act="save"]');
 
     // edit / preview toggle
-    el.querySelector<HTMLElement>('[data-act="toggle"]')!.onclick = () => toggleEdit(rec);
+    need(el, '[data-act="toggle"]').onclick = () => toggleEdit(rec);
     // The heading outline on a NARROW pane: the same <nav>, laid over the
     // article by CSS while `.md-split` carries `toc-open` (on a wide pane the
     // button is not shown and the nav is the column it always was). A jump or
     // a tap on the article closes it — the index is a way in, not a fixture.
-    const split = el.querySelector(".md-split")!;
-    el.querySelector<HTMLElement>('[data-act="outline"]')!.onclick = () => split.classList.toggle("toc-open");
-    el.querySelector(".md-outline")!.addEventListener("click", (ev) => {
+    const split = need(el, ".md-split");
+    need(el, '[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
+    need(el, ".md-outline").addEventListener("click", (ev) => {
       if ((ev.target as Element).closest(".outline-item")) split.classList.remove("toc-open");
     });
-    el.querySelector(".md-scroll")!.addEventListener("pointerdown", () => split.classList.remove("toc-open"));
-    el.querySelector<HTMLElement>('[data-act="save"]')!.onclick = () => save(rec);
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {
-      applyFresh(rec, rec.pendingDisk!);
+    need(el, ".md-scroll").addEventListener("pointerdown", () =>
+      split.classList.remove("toc-open"),
+    );
+    need(el, '[data-act="save"]').onclick = () => save(rec);
+    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
+    need(el, '[data-act="disk"]').onclick = () => {
+      if (rec.pendingDisk !== undefined) applyFresh(rec, rec.pendingDisk);
       hideDiskBadge(rec);
     };
-    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
+    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
     // in-page find over the rendered article
-    const find = el.querySelector(".md-find")!;
-    const input = el.querySelector<HTMLInputElement>(".md-find-input")!;
-    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
+    const find = need(el, ".md-find");
+    const input = need<HTMLInputElement>(el, ".md-find-input");
+    need(el, '[data-act="find"]').onclick = () => {
       find.classList.add("open");
       input.focus();
       input.select();
@@ -172,19 +190,19 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       if (e.key === "Enter") mdSearchStep(rec, e.shiftKey ? -1 : 1);
       if (e.key === "Escape") mdSearchClose(rec);
     });
-    el.querySelector<HTMLElement>('[data-find="next"]')!.onclick = () => mdSearchStep(rec, 1);
-    el.querySelector<HTMLElement>('[data-find="prev"]')!.onclick = () => mdSearchStep(rec, -1);
-    el.querySelector<HTMLElement>('[data-find="close"]')!.onclick = () => mdSearchClose(rec);
+    need(el, '[data-find="next"]').onclick = () => mdSearchStep(rec, 1);
+    need(el, '[data-find="prev"]').onclick = () => mdSearchStep(rec, -1);
+    need(el, '[data-find="close"]').onclick = () => mdSearchClose(rec);
     // Links inside the rendered article: one delegated listener for the pane's
     // lifetime, so a re-render (reload, edit→preview) never re-wires anything.
-    el.querySelector(".md-body")!.addEventListener("click", (ev) => linkClick(rec, ev));
+    need(el, ".md-body").addEventListener("click", (ev) => linkClick(rec, ev));
 
     renderMarkdown(rec);
   }
 
   function renderMarkdown(rec: BytesRecord) {
     if (!isRendered(rec.kind)) return;
-    const article = rec.el!.querySelector(".md-body")!;
+    const article = inPane(rec, ".md-body");
     rec.mermaidPending = renderBody(rec.kind, article, rec.content, rec.uid, document);
     resolveImages(rec, article);
     decorateZoomable(article);
@@ -233,7 +251,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       note.className = "md-img-blocked";
       const icon = document.createElement("i");
       icon.className = "bi bi-image";
-      const { text, reason } = remoteImageNotice(img.getAttribute("src") || "", img.getAttribute("alt") || "");
+      const { text, reason } = remoteImageNotice(
+        img.getAttribute("src") || "",
+        img.getAttribute("alt") || "",
+      );
       note.title = reason;
       note.append(icon, text);
       img.replaceWith(note);
@@ -245,7 +266,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // open in a new tab so the workbench is not what gets replaced.
   function linkClick(rec: ViewerRecord, ev: Event) {
     const a = (ev.target as Element).closest?.<HTMLAnchorElement>("a[href]");
-    if (!a || !rec.el!.contains(a)) return;
+    if (!a || !rec.el?.contains(a)) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
     const target = linkTarget(dir, a.getAttribute("href"));
     if (!target) {
@@ -281,7 +302,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       // A malformed escape still names SOMETHING; match it as written.
     }
     want = want.toLowerCase();
-    const heads = rec.el!.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6");
+    const heads =
+      rec.el?.querySelectorAll(
+        ".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6",
+      ) ?? [];
     for (const h of heads) {
       if (slugOf(h.textContent) === want) {
         h.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -296,18 +320,19 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     rec.mermaidPending = [];
     pending.forEach((holder) => {
       // `drawDiagram` returns the SVG already sanitized.
-      drawDiagram(window, holder.id + "-svg", holder.dataset.src!)
+      drawDiagram(window, holder.id + "-svg", holder.dataset.src ?? "")
         .then((svg) => (holder.innerHTML = svg))
-        .catch((err) => {
+        .catch((err: unknown) => {
           holder.classList.add("mermaid-error");
-          holder.textContent = "Mermaid error: " + (err?.message || err);
+          holder.textContent =
+            "Mermaid error: " + String(err instanceof Error && err.message ? err.message : err);
         });
     });
   }
 
   // Heading outline: the jump index, one entry per heading, indented by level.
   function buildOutline(rec: ViewerRecord, article: Element) {
-    const nav = rec.el!.querySelector(".md-outline")!;
+    const nav = inPane(rec, ".md-outline");
     nav.innerHTML = "";
     const heads = article.querySelectorAll("h1, h2, h3, h4");
     if (!heads.length) {
@@ -328,9 +353,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
 
   // Swap the markdown pane between rendered preview and a raw-source editor.
   function toggleEdit(rec: BytesRecord) {
-    const split = rec.el!.querySelector(".md-split")!;
-    const editor = rec.el!.querySelector<HTMLElement>(".md-editor")!;
-    const toggle = rec.el!.querySelector<HTMLElement>('[data-act="toggle"]')!;
+    const split = inPane(rec, ".md-split");
+    const editor = inPane(rec, ".md-editor");
+    const toggle = inPane(rec, '[data-act="toggle"]');
     rec.editing = !rec.editing;
     if (rec.editing) {
       split.classList.add("editing");

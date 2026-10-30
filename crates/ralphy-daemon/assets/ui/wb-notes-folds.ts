@@ -7,10 +7,18 @@
    timer or `window`, except where a card is painted (`applyLook`, `noCredential`)
    or the fence geometry is asked (`lockedBy`, `spawnRect`).
 
-   `wb-notes.ts` imports these and keeps every name in its returned object.
+   `wb-notes.ts` keeps every name of `NOTE_FOLDS` in its returned object.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
-import type { DeskFence, NoteCard, NoteLook, NoteSource, Offset, Rect, Size } from "./wb-types.d.ts";
+import type {
+  DeskFence,
+  NoteCard,
+  NoteLook,
+  NoteSource,
+  Offset,
+  Rect,
+  Size,
+} from "./wb-types.d.ts";
 
 /** What `noteDormancyDecision` reads: the card's facts and the clock. */
 export type DormancyFacts = {
@@ -132,13 +140,13 @@ export function titleOf(markdown: string | null | undefined, fallback?: string) 
 export function legacyTitleOf(body: string | null | undefined) {
   const lines = String(body || "").split("\n");
   let at = 0;
-  while (at < lines.length && lines[at].trim() === "") at += 1;
-  const m = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "");
-  if (!m) return null;
+  while (at < lines.length && lines[at]?.trim() === "") at += 1;
+  const name = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "")?.[1];
+  if (name === undefined) return null;
   // The blank line that separated the heading from the text goes with it.
   let after = at + 1;
   if ((lines[after] ?? "").trim() === "") after += 1;
-  return { name: m[1], rest: lines.slice(after).join("\n") };
+  return { name, rest: lines.slice(after).join("\n") };
 }
 
 // When this note was last written, for the footer (ADR-0064 §7 as amended).
@@ -174,8 +182,8 @@ export function anchorsOf(markdown: string | null | undefined) {
     // A `##` inside a code fence is source, not a heading.
     if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
     if (fenced) continue;
-    const m = /^##\s+(.+?)\s*$/.exec(line);
-    if (m) out.push({ text: m[1], index: out.length });
+    const text = /^##\s+(.+?)\s*$/.exec(line)?.[1];
+    if (text !== undefined) out.push({ text, index: out.length });
   }
   return out;
 }
@@ -281,9 +289,15 @@ export function noCredential(input: HTMLInputElement) {
 // a read never rewrites the file for no reason. One field, a closed set — a
 // YAML parser here would be a dependency for `color: sage`.
 
+// The length of the `---` line that opens a front matter, or 0 when there is none.
+function openingLength(text: string) {
+  if (text.startsWith("---\n")) return 4;
+  return text.startsWith("---\r\n") ? 5 : 0;
+}
+
 export function splitFrontMatter(markdown: string | null | undefined) {
   const text = String(markdown || "");
-  const open = text.startsWith("---\n") ? 4 : text.startsWith("---\r\n") ? 5 : 0;
+  const open = openingLength(text);
   if (!open) return null;
   const rest = text.slice(open);
   let offset = 0;
@@ -309,8 +323,8 @@ export function fieldOf(markdown: string | null | undefined, key: string, set: s
   if (!split) return null;
   const re = new RegExp("^\\s*" + key + ":\\s*(\\S+)\\s*$");
   for (const line of split.inner.split("\n")) {
-    const m = re.exec(line.replace(/\r$/, ""));
-    if (m) return set.includes(m[1]) ? m[1] : null;
+    const value = re.exec(line.replace(/\r$/, ""))?.[1];
+    if (value !== undefined) return set.includes(value) ? value : null;
   }
   return null;
 }
@@ -337,9 +351,8 @@ export function titleFieldOf(markdown: string | null | undefined) {
   const split = splitFrontMatter(markdown);
   if (!split) return null;
   for (const line of split.inner.split("\n")) {
-    const m = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""));
-    if (!m) continue;
-    const raw = m[1];
+    const raw = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""))?.[1];
+    if (raw === undefined) continue;
     if (!raw.startsWith('"')) return raw;
     return raw
       .slice(1, raw.endsWith('"') && raw.length > 1 ? -1 : undefined)
@@ -369,25 +382,37 @@ export function styleOf(markdown: string | null | undefined) {
 // the same single `color:` line it always did. `title` leads because it is
 // the document's name; `fill`/`ink` trail because they are refinements of
 // the colour above them.
-export function withHeader(body: string, title: string | null | undefined, style: Partial<NoteLook> | null | undefined, veiled?: boolean) {
-  const tone = toneOf(style?.tone);
-  const fill = fillOf(style?.fill);
-  const ink = inkOf(style?.ink);
-  const font = fontOf(style?.font);
-  const size = sizeOf(style?.size);
-  const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
+export function withHeader(
+  body: string,
+  title: string | null | undefined,
+  style: Partial<NoteLook> | null | undefined,
+  veiled?: boolean,
+) {
+  const name = String(title || "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
   const lines: string[] = [];
   if (name) lines.push(`title: ${titleYaml(name)}`);
-  lines.push(`color: ${tone}`);
-  if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
-  if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
-  if (font !== DEFAULT_FONT) lines.push(`font: ${font}`);
-  if (size !== DEFAULT_SIZE) lines.push(`size: ${size}`);
+  lines.push(`color: ${toneOf(style?.tone)}`, ...refinementLines(style));
   // Last, and only when true: `hidden: false` is what every note in the
   // world already is, and writing it would put a line in every file to say
   // nothing.
   if (veiled) lines.push("hidden: true");
   return `---\n${lines.join("\n")}\n---\n${body}`;
+}
+
+// The header lines of the look after the colour: a default is omitted.
+function refinementLines(style: Partial<NoteLook> | null | undefined) {
+  const fill = fillOf(style?.fill);
+  const ink = inkOf(style?.ink);
+  const font = fontOf(style?.font);
+  const size = sizeOf(style?.size);
+  const lines: string[] = [];
+  if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
+  if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
+  if (font !== DEFAULT_FONT) lines.push(`font: ${font}`);
+  if (size !== DEFAULT_SIZE) lines.push(`size: ${size}`);
+  return lines;
 }
 
 // Restyling keeps the name, whatever the caller happens to hold: the two
@@ -416,7 +441,9 @@ export function withVeil(markdown: string | null | undefined, veiled: boolean) {
 // the name stops being shown twice. It happens on a retitle and nowhere else
 // — opening a note rewrites nothing.
 export function withTitle(markdown: string | null | undefined, title: string | null | undefined) {
-  const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
+  const name = String(title || "")
+    .replace(/[\r\n]+/g, " ")
+    .trim();
   const body = bodyOf(markdown);
   const legacy = legacyTitleOf(body);
   return withHeader(legacy ? legacy.rest : body, name, styleOf(markdown), veiledOf(markdown));
@@ -425,7 +452,10 @@ export function withTitle(markdown: string | null | undefined, title: string | n
 // Is this card read-only? Its own `locked`, or the lock of the fence that
 // holds it — the same derivation a console's lock uses (ADR-0051 §6), which
 // is why the fence's lock is NOT copied onto the record.
-export function lockedBy(record: Pick<NoteSource, "locked" | "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
+export function lockedBy(
+  record: Pick<NoteSource, "locked" | "rect"> | null | undefined,
+  fences: DeskFence[] | null | undefined,
+) {
   if (record?.locked) return "self";
   const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
   return held?.locked ? "fence" : null;
@@ -440,7 +470,12 @@ export function lockedBy(record: Pick<NoteSource, "locked" | "rect"> | null | un
 // it appeared. A plane where every slot is fenced falls back to the first:
 // somewhere visible beats nowhere.
 export const SPAWN_SLOTS = 6;
-export function spawnRect(viewport: Partial<Size> | null | undefined, offset: Partial<Offset> | null | undefined, taken: number | null | undefined, fences: DeskFence[] | null | undefined) {
+export function spawnRect(
+  viewport: Partial<Size> | null | undefined,
+  offset: Partial<Offset> | null | undefined,
+  taken: number | null | undefined,
+  fences: DeskFence[] | null | undefined,
+) {
   const at = (n: number): Rect => {
     const step = 24 * (n % SPAWN_SLOTS);
     return {
@@ -479,7 +514,15 @@ export function spawnRect(viewport: Partial<Size> | null | undefined, offset: Pa
 // the containing-block chain of the observer's root (`#workspace`), and the
 // observer reports it as not intersecting while it floats in plain view
 // (measured 2026-09-27: it fell asleep one sweep after the timeout).
-export function noteDormancyDecision({ visible, onTop, dirty, inFlight, asleep, elapsed, after }: DormancyFacts) {
+export function noteDormancyDecision({
+  visible,
+  onTop,
+  dirty,
+  inFlight,
+  asleep,
+  elapsed,
+  after,
+}: DormancyFacts) {
   if (visible || onTop) return asleep ? "wake" : "stay";
   if (dirty || inFlight) return asleep ? "wake" : "stay";
   if (asleep) return "stay";
@@ -498,13 +541,20 @@ export const ON_TOP_FLOOR = { width: 420, height: 320 };
 export const ON_TOP_BAND_BELOW = 840;
 export const ON_TOP_MARGIN = 12;
 export const ON_TOP_TOP = 44;
-export function onTopRect(rect: Partial<Size> | null | undefined, viewport: Partial<Size> | null | undefined): FloatBox {
+export function onTopRect(
+  rect: Partial<Size> | null | undefined,
+  viewport: Partial<Size> | null | undefined,
+): FloatBox {
   const vw = viewport?.width || 0;
   const vh = viewport?.height || 0;
   if (vw < ON_TOP_BAND_BELOW) return { band: true };
   const width = Math.round(Math.min(Math.max(rect?.width || 0, ON_TOP_FLOOR.width), vw * 0.5));
   const height = Math.round(
-    Math.min(Math.max(rect?.height || 0, ON_TOP_FLOOR.height), vh * 0.8, vh - ON_TOP_TOP - ON_TOP_MARGIN),
+    Math.min(
+      Math.max(rect?.height || 0, ON_TOP_FLOOR.height),
+      vh * 0.8,
+      vh - ON_TOP_TOP - ON_TOP_MARGIN,
+    ),
   );
   return { band: false, left: vw - width - ON_TOP_MARGIN, top: ON_TOP_TOP, width, height };
 }
@@ -530,18 +580,20 @@ export function onTopClamp(box: Rect, viewport: Partial<Size> | null | undefined
 // that includes `javascript:`, `data:` and `vbscript:` — is inert.
 export const SAFE_SCHEMES = ["http:", "https:", "mailto:"];
 export function isSafeScheme(href: string | null) {
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(href || ""));
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(href || ""))?.[1];
   // No scheme means a `/`-rooted path, which the browser resolves on this
   // origin: an ordinary navigation, not a foreign one.
-  if (!scheme) return true;
-  return SAFE_SCHEMES.includes(scheme[1].toLowerCase() + ":");
+  if (scheme === undefined) return true;
+  return SAFE_SCHEMES.includes(scheme.toLowerCase() + ":");
 }
 
 // The detached-fence popup loads no `wb-file-viewer.ts`, so without this every
 // link in a note there would fall into the `!target` branch and silently do
 // nothing. A repo-relative link still cannot be opened from a popup that has
 // no explorer — that one stays inert, and says so by doing nothing.
-export function popupLinkTarget(href: string | null): { kind: "fragment"; fragment: string } | { kind: "external" } | null {
+export function popupLinkTarget(
+  href: string | null,
+): { kind: "fragment"; fragment: string } | { kind: "external" } | null {
   if (!href) return null;
   if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
@@ -554,3 +606,49 @@ export function baseName(path: string) {
 export function dirName(path: string) {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
+
+// The folds and constants `WBNotes` hands out: browser checks, the markup
+// and the torn-off pages read them there by name.
+export const NOTE_FOLDS = {
+  titleOf,
+  anchorsOf,
+  savedLabel,
+  noteSlug,
+  stampName,
+  toneOf,
+  bodyOf,
+  colorOf,
+  styleOf,
+  withStyle,
+  withTitle,
+  titleFieldOf,
+  veiledOf,
+  withVeil,
+  fillOf,
+  inkOf,
+  fontOf,
+  sizeOf,
+  lockedBy,
+  spawnRect,
+  noteDormancyDecision,
+  onTopRect,
+  onTopClamp,
+  ON_TOP_FLOOR,
+  ON_TOP_BAND_BELOW,
+  ON_TOP_TOP,
+  TONES,
+  FILLS,
+  INKS,
+  FONTS,
+  SIZES,
+  DEFAULT_TONE,
+  DEFAULT_FILL,
+  DEFAULT_INK,
+  DEFAULT_FONT,
+  DEFAULT_SIZE,
+  DEFAULT_DIR,
+  NEW_NOTE_STYLE,
+  NOTE_MIN,
+  NOTE_DEFAULT,
+  SAVE_AFTER_MS,
+};

@@ -13,6 +13,7 @@ import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
 import type { ConsoleWin, Rect } from "./wb-types.d.ts";
 import { windowTitle } from "./wb-window-title.ts";
+import { required } from "./wb-dom-need.ts";
 
 /** The opener's answer to "ready": the fence, its members, and the ids of
  * the tab and of this window. */
@@ -28,14 +29,20 @@ type FenceOpen = {
  * build than this page, which the daemon served when the window opened. */
 export function isFenceOpen(v: unknown): v is FenceOpen {
   if (!isRecord(v) || v.type !== "wb-fence-open") return false;
-  const fence = v.fence;
+  return (
+    isOpenedFence(v.fence) &&
+    (v.members === undefined || (Array.isArray(v.members) && v.members.every(isPopupMember))) &&
+    (v.tab === undefined || isNullableString(v.tab))
+  );
+}
+
+// The `fence` of the opener's answer: an id, and maybe a name and a rect.
+function isOpenedFence(fence: unknown) {
   return (
     isRecord(fence) &&
     typeof fence.id === "string" &&
     isOptionalString(fence.name) &&
-    (fence.rect == null || isPartialRect(fence.rect)) &&
-    (v.members === undefined || (Array.isArray(v.members) && v.members.every(isPopupMember))) &&
-    (v.tab === undefined || isNullableString(v.tab))
+    (fence.rect == null || isPartialRect(fence.rect))
   );
 }
 
@@ -67,7 +74,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // window from an earlier popup of the same fence.
   let PID: string | null = null;
   let MEMBERS: PopupMember[] = [];
-  const stageEl = () => document.getElementById("stage")!;
+  const stageEl = () => required(document.getElementById("stage"), "the stage");
   const empty = (why: string) => {
     stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };
@@ -121,13 +128,18 @@ export function wireDetachedFence(window: Window, document: Document) {
     WBConsole.applyColumns(WBColumns.painted(g, cap), { unmax: null, raise: false, ...opts });
   };
   function openColumns() {
-    const all = WBColumns.fromRects(consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })));
+    const all = WBColumns.fromRects(
+      consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })),
+    );
     const ids = WBColumns.flat(all);
-    if (!ids.length) return;
-    const old = WBColumns.flat(grid)[0] ?? stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
+    const first = ids[0];
+    if (first === undefined) return;
+    const old =
+      WBColumns.flat(grid)[0] ??
+      stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
     grid = ids.length >= 2 ? all : [];
     paintGrid(all, { unmax: old && !ids.includes(old) ? old : null, raise: true });
-    WBConsole.focusColumn(ids[0]);
+    WBConsole.focusColumn(first);
   }
   function restoreColumn(id: string) {
     const r = WBColumns.restore(grid, id);
@@ -142,7 +154,11 @@ export function wireDetachedFence(window: Window, document: Document) {
     if (!head) return;
     const byId = new Map(consoles().map((w) => [w._deskId, w]));
     const headWin = byId.get(head);
-    if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
+    if (
+      headWin &&
+      !headWin.classList.contains("maximized") &&
+      !headWin.classList.contains("column")
+    ) {
       return restoreColumn(head);
     }
     const kept = WBColumns.keep(grid, new Set(byId.keys()));
@@ -157,7 +173,9 @@ export function wireDetachedFence(window: Window, document: Document) {
   // Each press keeps the next note of this window on top; the card's
   // own Put back takes it off. One card on top at a time.
   function nextNoteOnTop() {
-    const ids: (string | null | undefined)[] = [...stageEl().querySelectorAll<HTMLElement>(".note-card")].map((el) => el.dataset.noteId);
+    const ids: (string | null | undefined)[] = [
+      ...stageEl().querySelectorAll<HTMLElement>(".note-card"),
+    ].map((el) => el.dataset.noteId);
     const now = window.WBNotes?.onTopNow();
     if (!ids.length || (now && ids.length === 1)) return;
     window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);
@@ -339,9 +357,14 @@ export function wireDetachedFence(window: Window, document: Document) {
     }, LINK.HEARTBEAT_MS);
     let leaving = false;
 
+    // A message of the opener's tab. The channel is browser-wide: a message
+    // of another tab, or of a malformed sender, is dropped.
+    function fromOurTab(m: DetachMessage | null | undefined) {
+      if (!m || typeof m.type !== "string") return false;
+      return TAB != null && m.tab === TAB;
+    }
     LINK.onMessage((m) => {
-      if (!m || typeof m.type !== "string") return;
-      if (TAB == null || m.tab !== TAB) return;
+      if (!fromOurTab(m)) return;
       // A window that is unloading answers nothing: its `popup-here`
       // could be the one a reloaded opener adopts, over the popup that
       // replaced it (#476).
@@ -352,10 +375,18 @@ export function wireDetachedFence(window: Window, document: Document) {
       if (heardHere(m)) {
         // The answer is the same, and it is what re-adopts this window after
         // the opener's reload.
-        peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+        peer = WBConsole.peerFold(
+          peer,
+          { type: "beat", at: Date.now() },
+          LINK.PEER_WINDOW_MS,
+        ).state;
         say("popup-here");
       } else if (m.type === "origin-beat") {
-        peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+        peer = WBConsole.peerFold(
+          peer,
+          { type: "beat", at: Date.now() },
+          LINK.PEER_WINDOW_MS,
+        ).state;
       } else if (m.type === "origin-focus" && forThisFence(m)) {
         window.focus();
       } else if (m.type === "origin-close" && forThisFence(m)) {

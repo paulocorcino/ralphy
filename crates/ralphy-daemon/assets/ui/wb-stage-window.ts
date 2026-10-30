@@ -36,6 +36,11 @@ export type StageWindowDeps = {
   refreshCover: () => void;
 };
 
+function lockTitle(own: boolean, held: boolean) {
+  if (held) return "Locked by its fence. Unlock the fence first.";
+  return own ? "Unlock" : "Lock in place";
+}
+
 export function createStageWindow(deps: StageWindowDeps) {
   const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover } = deps;
 
@@ -58,7 +63,8 @@ export function createStageWindow(deps: StageWindowDeps) {
     return !!(win.offsetWidth || win.offsetHeight);
   }
   function restoreRect(win: HTMLElement) {
-    const inline = (prop: "left" | "top" | "width" | "height", fallback: number) => parseInt(win.style[prop], 10) || fallback;
+    const inline = (prop: "left" | "top" | "width" | "height", fallback: number) =>
+      parseInt(win.style[prop], 10) || fallback;
     const fromInline = () => ({
       left: inline("left", win.offsetLeft),
       top: inline("top", win.offsetTop),
@@ -99,10 +105,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
     const maxed = win.classList.toggle("maximized", on);
-    if (!maxed && !win.classList.contains("column")) {
-      win.style.removeProperty("--max-left");
-      win.style.removeProperty("--max-top");
-    }
+    if (!maxed) dropMaxPin(win);
     syncMaxLock();
     if (ws && offsets) {
       ws.scrollLeft = offsets.left;
@@ -118,6 +121,13 @@ export function createStageWindow(deps: StageWindowDeps) {
     } catch {}
     applyExtent();
     if (persist) setWin(win, { max: on });
+  }
+
+  // A restored console floats again, so the bleed's pin goes; a column keeps it.
+  function dropMaxPin(win: ConsoleWin) {
+    if (win.classList.contains("column")) return;
+    win.style.removeProperty("--max-left");
+    win.style.removeProperty("--max-top");
   }
 
   function toggleMax(win: ConsoleWin) {
@@ -175,7 +185,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     const held = !own && heldByFence(win);
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-    btn.title = held ? "Locked by its fence. Unlock the fence first." : own ? "Unlock" : "Lock in place";
+    btn.title = lockTitle(own, held);
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
@@ -194,7 +204,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     focusWin(win);
     // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
     // move the top layer without a round trip through the exit.
-    win.requestFullscreen().catch((err) => {
+    win.requestFullscreen().catch((err: unknown) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
       console.warn("fullscreen refused", err);
@@ -233,7 +243,8 @@ export function createStageWindow(deps: StageWindowDeps) {
     // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
     const at = (w: HTMLElement, v: string) => parseInt(w.style.getPropertyValue(v), 10) || 0;
     const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].sort(
-      (a, b) => at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
+      (a, b) =>
+        at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
     if (cols.length) {
       for (const w of cols) focusWin(w);
@@ -274,7 +285,9 @@ export function createStageWindow(deps: StageWindowDeps) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll<HTMLElement>(".session-window.maximized, .session-window.column")) {
+    for (const win of st.querySelectorAll<HTMLElement>(
+      ".session-window.maximized, .session-window.column",
+    )) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -300,7 +313,9 @@ export function createStageWindow(deps: StageWindowDeps) {
     // Read the DOM, not `wins`: a window is on the stage from `buildChrome`'s
     // append (before `spawnWindow` registers it) to its removal. Fences count
     // too — ADR-0051 §2 sizes the plane to windows AND fences.
-    const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(restoreRect);
+    const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(
+      restoreRect,
+    );
     const ext = stageExtent(
       rects,
       { width: ws.clientWidth, height: ws.clientHeight },

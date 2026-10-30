@@ -41,14 +41,16 @@ fn terminal(data: &[u8]) -> Message {
 async fn http_get(port: u16, path: &str) -> String {
     let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("connect to the test server");
     sock.write_all(
         format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").as_bytes(),
     )
     .await
-    .unwrap();
+    .expect("send the request");
     let mut raw = String::new();
-    sock.read_to_string(&mut raw).await.unwrap();
+    sock.read_to_string(&mut raw)
+        .await
+        .expect("read the response");
     raw.split_once("\r\n\r\n")
         .map(|(_, body)| body.to_string())
         .unwrap_or(raw)
@@ -76,14 +78,16 @@ async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Va
     let mut open = None;
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
-            match message.unwrap() {
+            match message.expect("read the next frame") {
                 Message::Binary(bytes) => match protocol::decode(&bytes) {
                     Ok(Frame::Terminal { data, .. }) => {
                         if data
                             .windows(CURSOR_POSITION_REQUEST.len())
                             .any(|window| window == CURSOR_POSITION_REQUEST)
                         {
-                            ws.send(terminal(CURSOR_POSITION_REPLY)).await.unwrap();
+                            ws.send(terminal(CURSOR_POSITION_REPLY))
+                                .await
+                                .expect("send the frame");
                         }
                         terminal_text.push_str(&String::from_utf8_lossy(&data));
                         if terminal_text.replace("\r\n", "").contains(needle) {
@@ -96,7 +100,7 @@ async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Va
                     _ => {}
                 },
                 Message::Close(_) => return true,
-                _ => {}
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
             }
         }
         true

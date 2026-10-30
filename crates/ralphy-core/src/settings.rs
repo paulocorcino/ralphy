@@ -225,6 +225,7 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static N: AtomicU32 = AtomicU32::new(0);
@@ -289,7 +290,7 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("agent_x"), "got: {err}");
 
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -320,7 +321,7 @@ mod tests {
             "flatten must preserve unknown keys; got:\n{back}"
         );
 
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -358,7 +359,7 @@ mod tests {
             s.save(&ws).unwrap();
             let reloaded = Settings::load(&ws).unwrap();
             assert_eq!(get(&reloaded), want, "{case}: round trip");
-            fs::remove_dir_all(&dir).ok();
+            remove_scratch(&dir);
         }
     }
 
@@ -385,7 +386,7 @@ mod tests {
         assert_eq!(reloaded.worktree.copy, vec![".env", ".vscode/"]);
         assert_eq!(reloaded.worktree.share, vec!["node_modules"]);
         assert!(!reloaded.extra.contains_key("worktree"), "typed, not extra");
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -409,6 +410,6 @@ mod tests {
             "flatten must preserve unknown keys; got:\n{back}"
         );
 
-        fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 }

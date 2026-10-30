@@ -42,7 +42,7 @@ pub(crate) fn not_answered(collected: &dispatch::Collected) -> Option<serde_json
     let message = match collected {
         dispatch::Collected::StillRunning => STILL_RUNNING,
         dispatch::Collected::NoSlot => NO_SLOT,
-        _ => return None,
+        dispatch::Collected::Done(..) | dispatch::Collected::Failed(_) => return None,
     };
     Some(serde_json::json!({ "status": "error", "message": message }))
 }

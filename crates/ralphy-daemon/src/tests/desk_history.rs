@@ -208,6 +208,22 @@ async fn an_upload_a_put_would_refuse_is_refused_and_writes_nothing() {
 }
 
 #[tokio::test]
+async fn a_restore_with_neither_an_id_nor_a_version_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (status, body) = call(
+        dir.path(),
+        "POST",
+        "/api/desk/history",
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "send either `id` or `version`");
+    assert!(!dir.path().join("desk.toml").exists());
+    assert!(!dir.path().join("desk-history").exists());
+}
+
+#[tokio::test]
 async fn an_unknown_version_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (status, _) = call(dir.path(), "GET", "/api/desk/history?id=7", None).await;

@@ -10,6 +10,7 @@
 //! and handed back here so the main loop can both reply to the shell's
 //! cursor-position query and poll the child for exit.
 
+use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -35,26 +36,7 @@ fn main() -> Result<()> {
     session.write_all(format!("echo {MARKER}\r\n").as_bytes())?;
     session.write_all(b"exit\r\n")?;
 
-    let mut rendered = String::new();
-    let start = Instant::now();
-    loop {
-        while let Ok(chunk) = rx.try_recv() {
-            // Act as the terminal: answer the cursor-position query so the shell
-            // unblocks at start-up.
-            if find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some() {
-                session.write_all(CURSOR_POSITION_REPLY)?;
-            }
-            rendered.push_str(&String::from_utf8_lossy(&chunk));
-        }
-        if session.try_wait()?.is_some() {
-            break;
-        }
-        if start.elapsed() > Duration::from_secs(15) {
-            session.kill()?;
-            bail!("shell did not exit within 15s");
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
+    let mut rendered = render_until_exit(&mut session, &rx)?;
     // Drain anything emitted between the last poll and exit.
     while let Ok(chunk) = rx.try_recv() {
         rendered.push_str(&String::from_utf8_lossy(&chunk));
@@ -71,6 +53,32 @@ fn main() -> Result<()> {
         Ok(())
     } else {
         bail!("did not see {MARKER:?} in the captured PTY output");
+    }
+}
+
+/// The output the shell rendered until it exited, polled every 20 ms. The
+/// cursor-position query is answered as it arrives. The shell is killed when
+/// it has not exited within 15 s.
+fn render_until_exit(session: &mut PtySession, rx: &Receiver<Vec<u8>>) -> Result<String> {
+    let mut rendered = String::new();
+    let start = Instant::now();
+    loop {
+        while let Ok(chunk) = rx.try_recv() {
+            // Act as the terminal: answer the cursor-position query so the shell
+            // unblocks at start-up.
+            if find_subslice(&chunk, CURSOR_POSITION_REQUEST).is_some() {
+                session.write_all(CURSOR_POSITION_REPLY)?;
+            }
+            rendered.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        if session.try_wait()?.is_some() {
+            return Ok(rendered);
+        }
+        if start.elapsed() > Duration::from_secs(15) {
+            session.kill()?;
+            bail!("shell did not exit within 15s");
+        }
+        thread::sleep(Duration::from_millis(20));
     }
 }
 

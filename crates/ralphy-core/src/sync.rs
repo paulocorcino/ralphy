@@ -300,22 +300,24 @@ pub fn pull(repo: &Path) -> Result<PullOutcome> {
             stderr = %String::from_utf8_lossy(&out.stderr).trim(),
             "`git merge --ff-only` refused"
         );
-        // Re-read rather than assume: the counts that cleared divergence are
-        // from BEFORE the merge, and a run (or the operator) can have committed
-        // in between. Only a still-fast-forwardable branch is really blocked by
-        // the working tree.
-        if let Some(t) = status(repo)?.tracking {
-            if t.ahead > 0 && t.behind > 0 {
-                return Ok(PullOutcome::Diverged {
-                    ahead: t.ahead,
-                    behind: t.behind,
-                });
-            }
-        }
-        return Ok(PullOutcome::WorkingTreeBlocked);
+        return refused_fast_forward(repo);
     }
     Ok(PullOutcome::FastForwarded {
         commits: tracking.behind,
+    })
+}
+
+/// Why `git merge --ff-only` refused. Re-read rather than assume: the counts
+/// that cleared divergence are from BEFORE the merge, and a run (or the
+/// operator) can have committed in between. Only a still-fast-forwardable
+/// branch is really blocked by the working tree.
+fn refused_fast_forward(repo: &Path) -> Result<PullOutcome> {
+    Ok(match status(repo)?.tracking {
+        Some(t) if t.ahead > 0 && t.behind > 0 => PullOutcome::Diverged {
+            ahead: t.ahead,
+            behind: t.behind,
+        },
+        _ => PullOutcome::WorkingTreeBlocked,
     })
 }
 

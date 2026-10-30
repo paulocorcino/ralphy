@@ -216,35 +216,51 @@ pub fn annotate_unpriced(
     prices: &PriceTable,
 ) {
     for row in records {
-        let Some(object) = row.as_object_mut() else {
-            continue;
-        };
-        let tokens = ledger_tokens(object);
-        let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let model = rows::recover_ledger_model(field(object, "model"), session, recovered);
-        let (_, cause) = rows::price(model, session, &tokens, prices);
-        if let Some(cause) = cause {
-            object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
+        if let Some(object) = row.as_object_mut() {
+            annotate_ledger_row(object, recovered, prices);
         }
     }
-
     for row in interactive {
-        let Some(object) = row.as_object_mut() else {
-            continue;
-        };
-        let Some(tokens) = interactive_tokens(object) else {
-            object.insert(
-                "unpriced_cause".into(),
-                serde_json::Value::from("unmetered"),
-            );
-            continue;
-        };
-        let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let model = rows::recover_interactive_model(field(object, "model"), session, recovered);
-        let (_, cause) = rows::price(model, session, &tokens, prices);
-        if let Some(cause) = cause {
-            object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
+        if let Some(object) = row.as_object_mut() {
+            annotate_interactive_row(object, recovered, prices);
         }
+    }
+}
+
+/// Add `unpriced_cause` to one ledger row that does not price.
+fn annotate_ledger_row(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    recovered: &BTreeMap<String, String>,
+    prices: &PriceTable,
+) {
+    let tokens = ledger_tokens(object);
+    let session = field(object, "session_id").filter(|id| !id.is_empty());
+    let model = rows::recover_ledger_model(field(object, "model"), session, recovered);
+    let (_, cause) = rows::price(model, session, &tokens, prices);
+    if let Some(cause) = cause {
+        object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
+    }
+}
+
+/// Add `unpriced_cause` to one interactive record that does not price: an
+/// unmetered record is `unmetered`.
+fn annotate_interactive_row(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    recovered: &BTreeMap<String, String>,
+    prices: &PriceTable,
+) {
+    let Some(tokens) = interactive_tokens(object) else {
+        object.insert(
+            "unpriced_cause".into(),
+            serde_json::Value::from("unmetered"),
+        );
+        return;
+    };
+    let session = field(object, "session_id").filter(|id| !id.is_empty());
+    let model = rows::recover_interactive_model(field(object, "model"), session, recovered);
+    let (_, cause) = rows::price(model, session, &tokens, prices);
+    if let Some(cause) = cause {
+        object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
     }
 }
 

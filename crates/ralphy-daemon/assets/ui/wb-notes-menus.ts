@@ -32,7 +32,12 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   // other opened.
   let openMenu: HTMLElement | null = null;
   let openMenuTrigger = "";
-  function openDrop(el: NoteCard, popSelector: string, triggerSelector: string, fill: (pop: HTMLElement) => boolean | void) {
+  function openDrop(
+    el: NoteCard,
+    popSelector: string,
+    triggerSelector: string,
+    fill: (pop: HTMLElement) => boolean | void,
+  ) {
     const pop = el.querySelector<HTMLElement>(popSelector);
     if (!pop) return;
     const wasOpen = !pop.hidden;
@@ -130,7 +135,11 @@ export function createNoteMenus(deps: NoteMenusDeps) {
     document.removeEventListener("pointerdown", closeOnOutside, true);
   }
   function closeOnOutside(ev: PointerEvent) {
-    if (openMenu && !openMenu.contains(ev.target as Node | null) && !(ev.target as Element | null)?.closest?.(openMenuTrigger)) {
+    if (
+      openMenu &&
+      !openMenu.contains(ev.target as Node | null) &&
+      !(ev.target as Element | null)?.closest?.(openMenuTrigger)
+    ) {
       closeMenu();
     }
   }
@@ -149,7 +158,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   // rules. Three of them are this bundle's own additions, because upstream had
   // no rule at all: `[ ] ` on a plain line, `[text](url)` (commonmark ships an
   // input rule for an IMAGE and none for a link), and the `@@path` shorthand.
-  const MARKDOWN_HELP = [
+  const MARKDOWN_HELP: [string, string][] = [
     ["**bold**", "Bold"],
     ["*italic*", "Italic"],
     ["`code`", "Inline code"],

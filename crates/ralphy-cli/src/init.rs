@@ -20,28 +20,43 @@ mod skills;
 mod verify;
 mod wizard;
 
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "the init module keeps its public paths for items that nothing in the binary names"
+)]
 pub use gate::{evaluate_gate, format_report, Agent, EnvFindings, HardFail};
 /// The console yes/no prompt, reachable by the other crate-internal callers that
 /// need the SAME `[Y/n]` shape (`daemon add --init`, #363) without `render`
 /// becoming public — the crate's `pub` surface is unchanged.
 pub(crate) use render::ask_yes_no;
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "the init module keeps its public paths for items that nothing in the binary names"
+)]
 pub use run::{
     create_repo_decision, labels_decision, private_visibility_decision, repo_name_from_path, run,
     InitArgs,
 };
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "the init module keeps its public paths for items that nothing in the binary names"
+)]
 pub use skills::{
     download_decision, install_skills_from, install_skills_step, skill_names, skills_target,
     sparse_fetch_commands, Outcome,
 };
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "the init module keeps its public paths for items that nothing in the binary names"
+)]
 pub use verify::{
     format_final_report, required_artifacts_missing, smoke_test_decision, suggested_issue,
     VerifyReport,
 };
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "the init module keeps its public paths for items that nothing in the binary names"
+)]
 pub use wizard::{InitConfig, InitState, Question, Stage};
 
 pub(crate) use gate::agent_logged_in;

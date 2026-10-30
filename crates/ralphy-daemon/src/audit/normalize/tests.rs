@@ -132,6 +132,22 @@ fn the_gpu_model_loses_the_angle_wrapping() {
 }
 
 #[test]
+fn the_gpu_vendor_is_the_first_vendor_the_renderer_names() {
+    for (raw, vendor) in [
+        ("AMD Radeon RX 6800", GpuVendor::Amd),
+        ("Radeon Pro 560X", GpuVendor::Amd),
+        ("Intel(R) UHD Graphics 620", GpuVendor::Intel),
+        ("Mali-G78 MC24", GpuVendor::Arm),
+        ("llvmpipe (LLVM 15.0.7, 256 bits)", GpuVendor::Software),
+        ("PowerVR Rogue GE8320", GpuVendor::Other),
+        // A laptop with two GPUs: the earlier vendor in the list wins.
+        ("Intel(R) Iris(R) Xe with Radeon", GpuVendor::Amd),
+    ] {
+        assert_eq!(gpu(raw).vendor, vendor, "{raw}");
+    }
+}
+
+#[test]
 fn the_profile_stays_when_only_the_network_or_the_keyboard_changes() {
     assert_eq!(
         of("iphone-safari").profile,

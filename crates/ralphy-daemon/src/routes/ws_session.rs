@@ -2,6 +2,7 @@
 //! daemon-owned sessions, locally or relayed to the peer that owns them.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 mod agent_launch;
 mod bridge;
@@ -22,6 +23,7 @@ pub(crate) use upgrade::session_ws_upgrade;
 
 use crate::device::DeviceId;
 use crate::identity;
+use crate::session;
 use traffic::{EffectiveType, Link, Tab};
 
 #[cfg(test)]
@@ -161,4 +163,9 @@ pub(crate) struct SessionHost {
     pub(crate) environment: String,
     /// The port this daemon bound, so a peer probe can refuse to dial itself.
     pub(crate) bound_port: u16,
+    pub(crate) sessions: Arc<session::SessionManager>,
+    pub(crate) registry_path: PathBuf,
+    /// A live session bridge stops serving on graceful shutdown: it detaches,
+    /// and never closes the session.
+    pub(crate) shutdown: tokio::sync::watch::Receiver<bool>,
 }

@@ -19,7 +19,9 @@ fn through_codec(data: Vec<u8>) -> Vec<u8> {
     let framed = protocol::encode(&Frame::Terminal { session: 1, data });
     match protocol::decode(&framed).expect("terminal frame decodes") {
         Frame::Terminal { data, .. } => data,
-        other => panic!("expected a terminal frame, got {other:?}"),
+        frame @ (Frame::Command(_) | Frame::Presence(_)) => {
+            panic!("expected a terminal frame, got {frame:?}")
+        }
     }
 }
 
@@ -44,7 +46,9 @@ async fn read_until(
                 .windows(CURSOR_POSITION_REQUEST.len())
                 .any(|w| w == CURSOR_POSITION_REQUEST)
             {
-                let _ = session.write(CURSOR_POSITION_REPLY);
+                session
+                    .write(CURSOR_POSITION_REPLY)
+                    .expect("answer the cursor query");
             }
             acc.push_str(&String::from_utf8_lossy(&data));
             if acc.contains(needle) {

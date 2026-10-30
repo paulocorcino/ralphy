@@ -142,7 +142,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
-    std::fs::create_dir_all(run_dir).ok();
+    std::fs::create_dir_all(run_dir).context("creating the run directory")?;
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
 

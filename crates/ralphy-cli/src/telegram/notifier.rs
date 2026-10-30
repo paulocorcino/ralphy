@@ -129,18 +129,18 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // Captured before the fold: an idle reap also clears `degraded`, and the
         // edge below would otherwise read that clear as a recovery and push
         // "API recovered, resuming" about a child Ralphy just killed.
-        let reaped = match event {
-            RunEvent::IdleReaped { idle_minutes } => Some(idle_minutes),
-            _ => None,
+        let reaped = if let RunEvent::IdleReaped { idle_minutes } = event {
+            Some(idle_minutes)
+        } else {
+            None
         };
         // A `waiting` agent is a push (ADR-0059 §2); `working`/`done` fold
         // into the card. Edge-triggered by the adapter already (it emits on a
         // change), so one event is one buzz.
-        let waiting = match &event {
-            RunEvent::AgentState { state, detail, .. } if state == "waiting" => {
-                Some(detail.clone())
-            }
-            _ => None,
+        let waiting = if let RunEvent::AgentState { state, detail, .. } = &event {
+            (state == "waiting").then(|| detail.clone())
+        } else {
+            None
         };
         // Detect the sleep edge per applied event, not once per drained batch: a
         // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain
@@ -150,46 +150,8 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // folded state keeps it idempotent, so a drop under back-pressure cannot
         // double-fire.
         self.state.apply(event);
-        let now_sleeping = self.state.sleep.is_some();
-        if now_sleeping && !self.prev_sleeping {
-            // Disposable notice: a usage limit that keeps re-parking (synthetic
-            // reset, ADR-0030) would otherwise post a fresh buzz every cycle and
-            // bury the chat. Delete the prior notice first so at most one is ever
-            // live, then buzz with the current reset time.
-            self.delete_sleep_notice();
-            self.sleep_notice_id = self
-                .gate(
-                    "sleep push failed",
-                    self.client
-                        .send_message(self.chat_id, &render_sleep_push(&self.state)),
-                )
-                .and_then(|v| v.get("message_id").and_then(Value::as_i64));
-        } else if !now_sleeping && self.prev_sleeping {
-            // Resumed: the pause is over, so drop the disposable notice to keep the
-            // chat organized. No resume push — the live card already reflects the
-            // resume, and a lingering "resuming" line is exactly the clutter this
-            // change removes.
-            self.delete_sleep_notice();
-        }
-        self.prev_sleeping = now_sleeping;
-
-        // The API-degraded edge, same matched-pair shape as the sleep edge: a
-        // false→true buzzes on entering degraded, true→false on recovery. A lone
-        // `ApiRecovered` (no prior degraded folded) is a no-op.
-        let now_degraded = self.state.degraded;
-        if now_degraded && !self.prev_degraded {
-            self.gate(
-                "degraded push failed",
-                self.client
-                    .send_message(self.chat_id, &render_degraded_push(&self.state)),
-            );
-        } else if !now_degraded && self.prev_degraded && reaped.is_none() {
-            self.gate(
-                "recover push failed",
-                self.client
-                    .send_message(self.chat_id, &render_recover_push(&self.state)),
-            );
-        }
+        self.follow_sleep_edge();
+        self.follow_degraded_edge(reaped.is_some());
         if let Some(detail) = waiting {
             self.gate(
                 "waiting push failed",
@@ -210,41 +172,20 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
                 ),
             );
         }
-        self.prev_degraded = now_degraded;
     }
 
     fn on_tick(&mut self, changed: bool) {
         // Retire an expired progress ping first, every tick, independent of whether
         // an edit happens this pass.
         self.expire_ping();
-        if let Some(mid) = self.message_id {
-            if should_edit(changed, self.last_edit.elapsed(), REFRESH_INTERVAL) {
-                let card = render_card(&self.state, now_epoch());
-                // Skip the round-trip when the body is unchanged: Telegram rejects an
-                // identical edit, which would otherwise warn! once per idle refresh.
-                if card != self.last_card {
-                    // Only record the card as shown on success, so a transient
-                    // failure is retried on the next refresh rather than masked.
-                    if self
-                        .gate(
-                            "edit failed",
-                            self.client.edit_message_text(self.chat_id, mid, &card),
-                        )
-                        .is_some()
-                    {
-                        self.last_card = card;
-                        // The edit is silent — buzz the phone on genuine progress.
-                        // Suppressed while sleeping: the disposable sleep notice
-                        // already buzzes, and the 60s countdown re-render must not
-                        // ping every minute.
-                        if self.state.sleep.is_none() {
-                            self.fire_ping();
-                        }
-                    }
-                }
-                self.last_edit = Instant::now();
-            }
+        let Some(mid) = self.message_id else {
+            return;
+        };
+        if !should_edit(changed, self.last_edit.elapsed(), REFRESH_INTERVAL) {
+            return;
         }
+        self.refresh_card(mid);
+        self.last_edit = Instant::now();
     }
 
     fn on_finish(&mut self) {
@@ -272,6 +213,80 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
 }
 
 impl<T: Transport> TelegramEngine<T> {
+    /// Follow the usage-limit sleep edge of the event just folded: entering a
+    /// sleep posts the disposable notice, resuming deletes it.
+    fn follow_sleep_edge(&mut self) {
+        let now_sleeping = self.state.sleep.is_some();
+        if now_sleeping && !self.prev_sleeping {
+            // Disposable notice: a usage limit that keeps re-parking (synthetic
+            // reset, ADR-0030) would otherwise post a fresh buzz every cycle and
+            // bury the chat. Delete the prior notice first so at most one is ever
+            // live, then buzz with the current reset time.
+            self.delete_sleep_notice();
+            self.sleep_notice_id = self
+                .gate(
+                    "sleep push failed",
+                    self.client
+                        .send_message(self.chat_id, &render_sleep_push(&self.state)),
+                )
+                .and_then(|v| v.get("message_id").and_then(Value::as_i64));
+        } else if !now_sleeping && self.prev_sleeping {
+            // Resumed: the pause is over, so drop the disposable notice to keep the
+            // chat organized. No resume push — the live card already reflects the
+            // resume, and a lingering "resuming" line is exactly the clutter this
+            // change removes.
+            self.delete_sleep_notice();
+        }
+        self.prev_sleeping = now_sleeping;
+    }
+
+    /// Follow the API-degraded edge of the event just folded, same matched-pair
+    /// shape as the sleep edge: a false→true buzzes on entering degraded,
+    /// true→false on recovery. A lone `ApiRecovered` (no prior degraded folded)
+    /// is a no-op, and so is the clear an idle reap makes (`reaped`).
+    fn follow_degraded_edge(&mut self, reaped: bool) {
+        let now_degraded = self.state.degraded;
+        if now_degraded && !self.prev_degraded {
+            self.gate(
+                "degraded push failed",
+                self.client
+                    .send_message(self.chat_id, &render_degraded_push(&self.state)),
+            );
+        } else if !now_degraded && self.prev_degraded && !reaped {
+            self.gate(
+                "recover push failed",
+                self.client
+                    .send_message(self.chat_id, &render_recover_push(&self.state)),
+            );
+        }
+        self.prev_degraded = now_degraded;
+    }
+
+    /// Edit the card `mid` to the current render when it differs from what is
+    /// shown, and buzz the phone for the change.
+    fn refresh_card(&mut self, mid: i64) {
+        let card = render_card(&self.state, now_epoch());
+        // Skip the round-trip when the body is unchanged: Telegram rejects an
+        // identical edit, which would otherwise warn! once per idle refresh.
+        if card == self.last_card {
+            return;
+        }
+        // Only record the card as shown on success, so a transient
+        // failure is retried on the next refresh rather than masked.
+        let edit = self.client.edit_message_text(self.chat_id, mid, &card);
+        if self.gate("edit failed", edit).is_none() {
+            return;
+        }
+        self.last_card = card;
+        // The edit is silent — buzz the phone on genuine progress.
+        // Suppressed while sleeping: the disposable sleep notice
+        // already buzzes, and the 60s countdown re-render must not
+        // ping every minute.
+        if self.state.sleep.is_none() {
+            self.fire_ping();
+        }
+    }
+
     /// Fold a transport result into the run's single [`net_warned`](Self::net_warned)
     /// gate: on success clear the gate and hand back the value; on failure warn
     /// once with a compact one-line reason (never the raw multi-line anyhow chain)

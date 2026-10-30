@@ -115,17 +115,24 @@ fn strip_ansi(line: &str) -> String {
     let mut it = line.chars().peekable();
     while let Some(c) = it.next() {
         if c == '\u{1b}' && it.peek() == Some(&'[') {
-            it.next();
-            for c in it.by_ref() {
-                if c.is_ascii_alphabetic() {
-                    break;
-                }
-            }
+            skip_csi(&mut it);
         } else {
             out.push(c);
         }
     }
     out
+}
+
+/// Consumes the rest of one CSI sequence after its `ESC`: the `[`, the
+/// parameter bytes, and the final letter. An unterminated sequence consumes
+/// the rest of the line.
+fn skip_csi(it: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    it.next();
+    for c in it.by_ref() {
+        if c.is_ascii_alphabetic() {
+            break;
+        }
+    }
 }
 
 impl Revocation {
@@ -154,7 +161,7 @@ impl Revocation {
             // `FatalConfigError`.
             Revocation::AutonomyDisabled => Some(52),
             Revocation::UntrustedWorkspace => Some(55),
-            _ => None,
+            Revocation::EnforcedAuth | Revocation::AdminToolServers | Revocation::Demoted => None,
         }
     }
 
@@ -263,38 +270,44 @@ pub(crate) fn inspect_admin_tier(
 ) -> Vec<AdminControl> {
     let mut out = Vec::new();
     if let Some(v) = settings_json.and_then(|s| serde_json::from_str::<Value>(s).ok()) {
-        let flag = |path: [&str; 2]| -> bool {
-            v.get(path[0])
-                .and_then(|o| o.get(path[1]))
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        };
-        if flag(["admin", "secureModeEnabled"]) {
-            out.push(AdminControl::AutonomyDisabled("admin.secureModeEnabled"));
-        }
-        if flag(["security", "disableYoloMode"]) {
-            out.push(AdminControl::AutonomyDisabled("security.disableYoloMode"));
-        }
-        if let Some(t) = v
-            .get("security")
-            .and_then(|s| s.get("auth"))
-            .and_then(|a| a.get("enforcedType"))
-            .and_then(Value::as_str)
-        {
-            out.push(AdminControl::EnforcedAuth(t.to_string()));
-        }
-        if let Some(servers) = v.get("mcpServers").and_then(Value::as_object) {
-            let mut names: Vec<String> = servers.keys().cloned().collect();
-            names.sort();
-            if !names.is_empty() {
-                out.push(AdminControl::InjectedToolServers(names));
-            }
-        }
+        push_settings_controls(&v, &mut out);
     }
     if let Some(dir) = admin_policy_dir.filter(|d| d.exists()) {
         out.push(AdminControl::AdminPolicies(dir.to_path_buf()));
     }
     out
+}
+
+/// The controls one parsed system settings document sets, in the order
+/// secure mode, YOLO lock, enforced auth, injected tool servers.
+fn push_settings_controls(v: &Value, out: &mut Vec<AdminControl>) {
+    let flag = |path: [&str; 2]| -> bool {
+        v.get(path[0])
+            .and_then(|o| o.get(path[1]))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
+    if flag(["admin", "secureModeEnabled"]) {
+        out.push(AdminControl::AutonomyDisabled("admin.secureModeEnabled"));
+    }
+    if flag(["security", "disableYoloMode"]) {
+        out.push(AdminControl::AutonomyDisabled("security.disableYoloMode"));
+    }
+    if let Some(t) = v
+        .get("security")
+        .and_then(|s| s.get("auth"))
+        .and_then(|a| a.get("enforcedType"))
+        .and_then(Value::as_str)
+    {
+        out.push(AdminControl::EnforcedAuth(t.to_string()));
+    }
+    if let Some(servers) = v.get("mcpServers").and_then(Value::as_object) {
+        let mut names: Vec<String> = servers.keys().cloned().collect();
+        names.sort();
+        if !names.is_empty() {
+            out.push(AdminControl::InjectedToolServers(names));
+        }
+    }
 }
 
 /// The administrator's settings file at its OS DEFAULT path.

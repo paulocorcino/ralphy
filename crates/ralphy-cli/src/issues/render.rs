@@ -1,5 +1,7 @@
 //! The text and JSON a `ralphy issues` view prints.
 
+use std::borrow::Cow;
+
 use anyhow::Result;
 use serde_json::{Map, Value};
 
@@ -82,31 +84,25 @@ pub(super) fn render_board_json(
     repo_labels: &[(String, String)],
 ) -> Result<String> {
     let ready_set: std::collections::BTreeSet<u64> = ready.iter().map(|i| i.number).collect();
-    let keep = |b: &github::BoardIssue| blocked::assignee_union_keep(&b.assignees, login);
-    let mut rows: Vec<Value> = Vec::new();
     // Ready issues first, preserving the core's graph order — this is what makes
     // board-order == core-queue-order true by construction. A row missing from the
     // open read is synthesized so it is never silently dropped.
-    for iss in ready {
-        let b = match open.iter().find(|b| b.number == iss.number) {
-            Some(b) => b.clone(),
-            None => degraded_board_issue(iss),
-        };
-        if keep(&b) {
-            rows.push(serde_json::to_value(&b)?);
-        }
-    }
+    let ready_rows = ready.iter().map(|iss| {
+        open.iter()
+            .find(|b| b.number == iss.number)
+            .map_or_else(|| Cow::Owned(degraded_board_issue(iss)), Cow::Borrowed)
+    });
     // Remaining open issues, then the closed batch — natural read order.
-    for b in open {
-        if !ready_set.contains(&b.number) && keep(b) {
-            rows.push(serde_json::to_value(b)?);
-        }
-    }
-    for b in closed {
-        if keep(b) {
-            rows.push(serde_json::to_value(b)?);
-        }
-    }
+    let rest = open
+        .iter()
+        .filter(|b| !ready_set.contains(&b.number))
+        .chain(closed)
+        .map(Cow::Borrowed);
+    let rows = ready_rows
+        .chain(rest)
+        .filter(|b| blocked::assignee_union_keep(&b.assignees, login))
+        .map(|b| serde_json::to_value(&*b))
+        .collect::<Result<Vec<Value>, _>>()?;
     let labels: Vec<Value> = repo_labels
         .iter()
         .map(|(name, color)| serde_json::json!({"name": name, "color": color}))

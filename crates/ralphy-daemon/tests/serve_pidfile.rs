@@ -5,6 +5,11 @@
 //! `RALPHY_EXE_OVERRIDE` are process-global, so this test must be alone in its
 //! file (no intra-process race).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::net::{IpAddr, Ipv4Addr};
 
 use ralphy_daemon::{auth, pidfile, release, DaemonConfig};

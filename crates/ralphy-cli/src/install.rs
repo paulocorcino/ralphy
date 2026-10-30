@@ -214,7 +214,14 @@ pub(crate) fn park_existing(dest: &Path) -> Result<Option<PathBuf>> {
 /// an operator with no binary is worse off than one who did not update.
 pub(crate) fn restore_parked(parked: Option<&Path>, dest: &Path) {
     if let Some(parked) = parked {
-        let _ = std::fs::rename(parked, dest);
+        // The caller returns the error that made it restore, so this one is only
+        // printed.
+        if let Err(e) = std::fs::rename(parked, dest) {
+            eprintln!(
+                "Could not put the previous binary back from {}: {e}",
+                parked.display()
+            );
+        }
     }
 }
 
@@ -257,6 +264,11 @@ fn copy_permissions(from: Option<&Path>, to: &Path) {
         .and_then(|p| std::fs::metadata(p).ok())
         .map(|m| m.permissions().mode())
         .unwrap_or(0o755);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the copy is already in place, and a mode that cannot be set leaves the \
+                  file as copied"
+    )]
     let _ = std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode | 0o111));
 }
 
@@ -290,26 +302,29 @@ fn put_on_path(dir: &Path, no_modify_path: bool) {
         return;
     }
     match user_path::add_to_user_path(dir) {
-        Ok(added) => {
-            if added.places.is_empty() {
-                println!("{} is already set to be on your PATH.", dir.display());
-            } else {
-                println!("Added {} to your PATH in:", dir.display());
-                for place in &added.places {
-                    println!("  {place}");
-                }
-            }
-            match added.reload {
-                Some(cmd) => println!(
-                    "Open a new terminal to use `ralphy`, or run this in this one: {cmd}"
-                ),
-                None => println!("Open a new terminal to use `ralphy`."),
-            }
-        }
+        Ok(added) => print_path_added(dir, &added),
         Err(e) => println!(
             "Note: could not add {} to your PATH ({e:#}). Add it by hand so `ralphy` resolves from any directory.",
             dir.display()
         ),
+    }
+}
+
+/// Tell the operator where `dir` was added to `PATH` and how to use it now.
+fn print_path_added(dir: &Path, added: &user_path::Added) {
+    if added.places.is_empty() {
+        println!("{} is already set to be on your PATH.", dir.display());
+    } else {
+        println!("Added {} to your PATH in:", dir.display());
+        for place in &added.places {
+            println!("  {place}");
+        }
+    }
+    match &added.reload {
+        Some(cmd) => {
+            println!("Open a new terminal to use `ralphy`, or run this in this one: {cmd}")
+        }
+        None => println!("Open a new terminal to use `ralphy`."),
     }
 }
 
@@ -399,6 +414,10 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-install-{}-{tag}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
@@ -425,6 +444,10 @@ mod tests {
             expected.push_str(".old");
             Some(expected).as_deref()
         });
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -436,6 +459,10 @@ mod tests {
         std::fs::write(&new, b"new").expect("new");
         assert_eq!(replace_binary(&dest, &new).expect("replace"), None);
         assert_eq!(std::fs::read(&dest).expect("read"), b"new");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -452,6 +479,10 @@ mod tests {
             b"old",
             "a failed replacement must never leave the operator without a binary"
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -482,6 +513,10 @@ mod tests {
         std::fs::write(&new, b"new").expect("new");
         replace_binary(&dest, &new).expect("a held leftover must not fail the install");
         assert_eq!(std::fs::read(&dest).expect("read"), b"new");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -503,6 +538,10 @@ mod tests {
             b"old",
             "the park holds the binary just replaced, not the one before it"
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -561,6 +600,10 @@ mod tests {
         if symlink(&away.join(binary_name()), &bin.join(binary_name())).is_ok() {
             assert_eq!(path_fix(&in_away, &path, &bin), PathFix::Add(bin.clone()));
         }
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -572,6 +615,10 @@ mod tests {
         let dest = dir.join(binary_name());
         if symlink(&dir.join("nowhere"), &dest).is_err() {
             // Windows without Developer Mode: nothing to assert.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the scratch directory may be gone"
+            )]
             let _ = std::fs::remove_dir_all(&dir);
             return;
         }
@@ -583,6 +630,10 @@ mod tests {
         let parked = park_existing(&dest).expect("park").expect("parked");
         assert!(!occupied(&dest), "the way is clear now");
         assert!(parked.symlink_metadata().is_ok());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
