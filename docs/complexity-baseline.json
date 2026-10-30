@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/install.rs": {
-      "put_on_path": [
-        11
-      ]
-    },
     "crates/ralphy-cli/src/issues/render.rs": {
       "render_board_json": [
         12
