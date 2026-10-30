@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use anyhow::Result;
+use subtle::ConstantTimeEq;
 
 use crate::{cookie, epoch, password, totp};
 
@@ -509,18 +510,11 @@ fn detached_last_step_path() -> PathBuf {
         .join("daemon-totp-laststep")
 }
 
-/// Constant-time byte equality: length-checked, then XOR-accumulate over the
-/// whole slice so the compare time does not vary with how many leading bytes
-/// match. Avoids a timing side-channel on the token.
+/// Constant-time byte equality: length-checked, then `subtle` compares the
+/// whole slice, so the compare time does not vary with how many leading bytes
+/// match. Avoids a timing side-channel on the token. The length is not secret.
 pub(crate) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
+    a.len() == b.len() && bool::from(a.ct_eq(b))
 }
 
 #[cfg(test)]
@@ -544,6 +538,17 @@ mod tests {
             declared_hosts: declared_host_set(&declared),
             remote_images: AtomicBool::new(false),
         }
+    }
+
+    #[test]
+    fn ct_eq_is_true_only_for_the_same_bytes_at_the_same_length() {
+        assert!(ct_eq(b"token", b"token"));
+        assert!(ct_eq(b"", b""));
+        assert!(!ct_eq(b"token", b"Token"), "a first-byte difference");
+        assert!(!ct_eq(b"token", b"tokem"), "a last-byte difference");
+        assert!(!ct_eq(b"token", b"token2"), "a longer input, same prefix");
+        assert!(!ct_eq(b"token2", b"token"), "a shorter input, same prefix");
+        assert!(!ct_eq(b"token", b""), "an empty input");
     }
 
     #[test]
