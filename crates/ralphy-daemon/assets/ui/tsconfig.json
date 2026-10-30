@@ -23,6 +23,9 @@
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noUnusedParameters": true,
+    // The checks of #804: a read by index may be `undefined`, so a guard comes
+    // before the value is used.
+    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "types": []
   },
