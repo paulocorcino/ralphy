@@ -302,24 +302,11 @@ fn count_capped(links: &[String]) -> Vec<(String, bool)> {
 /// truncation, and write it under `dir`. Returns the visible outcome; a `gh`
 /// failure maps to `download failed: <code>` and never propagates (best-effort).
 fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> AttachmentOutcome {
-    let mut name = filename_from_url(url);
-    let mut class = classify_format(&name);
-    // An inline-pasted asset has no extension to classify, so it enters as a
-    // *provisional* image: gated and downloaded like one, then required to prove
-    // itself by content below. Nothing else escapes name-based denial.
-    let provisional_image = class == FormatClass::Denied && is_extensionless_asset(url);
-    if provisional_image {
-        class = FormatClass::Image;
-    }
-    if class == FormatClass::Denied {
-        return AttachmentOutcome::NotFetched {
-            reason: "denied format".to_string(),
-        };
-    }
-    // Gate images on adapter capability before spending a download (ADR-0025 §4).
-    if let Some(outcome) = gated_image_outcome(class, images) {
-        return outcome;
-    }
+    let name = filename_from_url(url);
+    let (class, provisional_image) = match admitted_class(&name, url, images) {
+        Ok(admitted) => admitted,
+        Err(outcome) => return outcome,
+    };
     // `gh api <url>` carries `gh`'s own credential — never anonymous (ADR-0025 §2).
     // The exact argv is indicative; the network path is unverified this pass.
     let out = gh_output(&format!("gh api {url}"), || {
@@ -335,6 +322,47 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> At
             };
         }
     };
+    store_download(dir, name, class, provisional_image, bytes)
+}
+
+/// The format class an attachment is fetched as, and whether it is a
+/// provisional image, decided by name and adapter capability before any
+/// download. `Err` is the visible outcome of an attachment that is not fetched.
+fn admitted_class(
+    name: &str,
+    url: &str,
+    images: &ImageCapability,
+) -> Result<(FormatClass, bool), AttachmentOutcome> {
+    let mut class = classify_format(name);
+    // An inline-pasted asset has no extension to classify, so it enters as a
+    // *provisional* image: gated and downloaded like one, then required to prove
+    // itself by content in `store_download`. Nothing else escapes name-based
+    // denial.
+    let provisional_image = class == FormatClass::Denied && is_extensionless_asset(url);
+    if provisional_image {
+        class = FormatClass::Image;
+    }
+    if class == FormatClass::Denied {
+        return Err(AttachmentOutcome::NotFetched {
+            reason: "denied format".to_string(),
+        });
+    }
+    // Gate images on adapter capability before spending a download (ADR-0025 §4).
+    match gated_image_outcome(class, images) {
+        Some(outcome) => Err(outcome),
+        None => Ok((class, provisional_image)),
+    }
+}
+
+/// Vet downloaded bytes and write them under `dir`: the login-HTML guard, the
+/// content check of a provisional image, and the by-category size policy.
+fn store_download(
+    dir: &Path,
+    mut name: String,
+    class: FormatClass,
+    provisional_image: bool,
+    bytes: Vec<u8>,
+) -> AttachmentOutcome {
     if looks_like_login_html(None, &bytes) {
         return AttachmentOutcome::NotFetched {
             reason: "auth".to_string(),
