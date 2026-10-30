@@ -25,35 +25,50 @@ const PEER_CLOSED: &str = "peer-closed";
 
 pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     if let Some(id) = query.id {
-        let mut out = format!("id={id}&repo={}", encode_query_value(slug));
-        if query.takeover == Some(1) {
-            out.push_str("&takeover=1");
-        }
-        if query.watch == Some(1) {
-            out.push_str("&watch=1");
-        }
-        push_holder(&mut out, query);
-        push_gzip(&mut out, query);
-        push_since(&mut out, query);
-        push_link(&mut out, query);
-        return out;
+        return reattach_query(query, id, slug);
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
     // in its own checkout of `slug`.
     if query.console == Some(1) {
-        let mut out = format!("console=1&repo={}", encode_query_value(slug));
-        if let Some(command) = query.command.as_deref().map(str::trim) {
-            if !command.is_empty() {
-                out.push_str("&command=");
-                out.push_str(&encode_query_value(command));
-            }
-        }
-        push_record(&mut out, query);
-        push_holder(&mut out, query);
-        push_gzip(&mut out, query);
-        push_link(&mut out, query);
-        return out;
+        return console_query(query, slug);
     }
+    launch_query(query, slug)
+}
+
+/// The query of a reattach to session `id`.
+fn reattach_query(query: &SessionQuery, id: u64, slug: &str) -> String {
+    let mut out = format!("id={id}&repo={}", encode_query_value(slug));
+    if query.takeover == Some(1) {
+        out.push_str("&takeover=1");
+    }
+    if query.watch == Some(1) {
+        out.push_str("&watch=1");
+    }
+    push_holder(&mut out, query);
+    push_gzip(&mut out, query);
+    push_since(&mut out, query);
+    push_link(&mut out, query);
+    out
+}
+
+/// The query of a free console, with its startup command.
+fn console_query(query: &SessionQuery, slug: &str) -> String {
+    let mut out = format!("console=1&repo={}", encode_query_value(slug));
+    if let Some(command) = query.command.as_deref().map(str::trim) {
+        if !command.is_empty() {
+            out.push_str("&command=");
+            out.push_str(&encode_query_value(command));
+        }
+    }
+    push_record(&mut out, query);
+    push_holder(&mut out, query);
+    push_gzip(&mut out, query);
+    push_link(&mut out, query);
+    out
+}
+
+/// The query of a new agent launch.
+fn launch_query(query: &SessionQuery, slug: &str) -> String {
     let mut out = format!(
         "repo={}&agent={}",
         encode_query_value(slug),
