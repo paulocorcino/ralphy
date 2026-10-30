@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/peer.rs": {
-      "fold": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/src/rekey.rs": {
       "rekey_desk": [
         13
