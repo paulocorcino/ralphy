@@ -134,7 +134,8 @@ export function revalidateLevel(files: LevelFiles, rel: string) {
       if (slug !== files.$store.projects.openSlug || !files._tree) return;
       if (JSON.stringify(files._treeCache!.get(key) ?? null) === before) return;
       const node = rel === "" ? files.rawTree()!.root : files.findFolderByRel(rel);
-      if (node) return files.reconcileLevel(node, rel);
+      if (!node) return;
+      return files.reconcileLevel(node, rel);
     })
     // A dropped read leaves the cached level on screen, but says so.
     .catch((err: unknown) => files.treeWentStale(err));

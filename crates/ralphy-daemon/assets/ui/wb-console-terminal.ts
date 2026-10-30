@@ -394,7 +394,7 @@ export function createTerminal(deps: TerminalDeps) {
           }
         }
       });
-      ws.onmessage = (ev: MessageEvent) => frames.take(new Uint8Array(ev.data));
+      ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => frames.take(new Uint8Array(ev.data));
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
       const closed = () => {
@@ -417,7 +417,8 @@ export function createTerminal(deps: TerminalDeps) {
           case "park-as-watcher":
             parkAsWatcher();
             return;
-          default:
+          case "connect":
+          case "reconnect":
             if (retryDelay === 0) {
               link("lost");
               // The fleet may already know why; its answer can hold this window.

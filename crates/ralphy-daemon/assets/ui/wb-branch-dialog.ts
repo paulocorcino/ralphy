@@ -13,7 +13,7 @@
    `checkouts` (wb-checkouts-store.ts). It reaches `shell()` only through the
    names in its `uses` (ADR-0073 D4). `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import { component } from "./wb-alpine.ts";
+import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
@@ -37,12 +37,12 @@ export function wbBranchDialog() {
       checkoutDirty: false,
       // Branch name -> the worktree that holds it (from `branch.list`; an
       // older peer sends none).
-      worktrees: {} as Record<string, string>,
+      worktrees: emptyRecord<string>(),
     },
     // The `worktree.remove` calls in flight, per repo ref: a second delete of
     // the same worktree is ignored until its re-read lands; another worktree
     // of the same repo can be deleted at the same time.
-    worktreeRemoving: {} as Record<string, string[]>,
+    worktreeRemoving: emptyRecord<string[]>(),
 
     init() {
       window.addEventListener("workbench:branch-open", (e) => this.openBranchModal(e.detail.project));

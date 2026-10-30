@@ -135,34 +135,34 @@ export function flingStep(velocity: number, ms: number) {
 // The bytes each button sends. An arrow is NOT one sequence: in application
 // cursor mode a full-screen program expects `ESC O A`, and `ESC [ A` there
 // scrolls nothing. `appCursor` is read live off `term.modes`.
-// Null-prototype: a plain literal answers `"toString"` with a function, and
-// the name comes off a `data-key` attribute — a string from the DOM.
-const KEY_BYTES: Record<string, string | undefined> = Object.assign(Object.create(null), {
-  esc: "\x1b",
-  tab: "\t",
+// A `Map`: a plain literal answers `"toString"` with a function, and the name
+// comes off a `data-key` attribute — a string from the DOM.
+const KEY_BYTES = new Map<string, string>([
+  ["esc", "\x1b"],
+  ["tab", "\t"],
   // CR, what a real Return key sends. Lets a menu be answered with the bar
   // alone, without opening the virtual keyboard.
-  enter: "\r",
+  ["enter", "\r"],
   // Opens an agent's command menu without the virtual keyboard.
-  slash: "/",
-  "ctrl-c": "\x03",
-});
-const ARROW_FINAL: Record<string, string | undefined> = Object.assign(Object.create(null), {
-  up: "A",
-  down: "B",
-  right: "C",
-  left: "D",
-});
+  ["slash", "/"],
+  ["ctrl-c", "\x03"],
+]);
+const ARROW_FINAL = new Map<string, string>([
+  ["up", "A"],
+  ["down", "B"],
+  ["right", "C"],
+  ["left", "D"],
+]);
 // `shift` is the bar's Shift latch. xterm's encodings: Tab becomes back-tab
 // (CBT, which Claude Code cycles its modes on), and an arrow takes the
 // modifier parameter 2 in both cursor modes. Esc, Enter, / and ^C have no
 // Shift form here, so they are sent unchanged.
 export function keySequence(name: string, appCursor: boolean, shift: boolean) {
   if (shift && name === "tab") return "\x1b[Z";
-  const literal = KEY_BYTES[name];
-  if (typeof literal === "string") return literal;
-  const final = ARROW_FINAL[name];
-  if (typeof final !== "string") return "";
+  const literal = KEY_BYTES.get(name);
+  if (literal !== undefined) return literal;
+  const final = ARROW_FINAL.get(name);
+  if (final === undefined) return "";
   if (shift) return "\x1b[1;2" + final;
   return (appCursor ? "\x1bO" : "\x1b[") + final;
 }

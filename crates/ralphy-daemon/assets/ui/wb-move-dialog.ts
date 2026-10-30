@@ -25,13 +25,18 @@ type MovePick = {
   error: string;
 };
 
+// A function, not a cast on the literal: the type-aware lint flags that cast.
+function closedMovePick(): MovePick {
+  return { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" };
+}
+
 export function wbMoveDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).
-    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as MovePick,
+    movePick: closedMovePick(),
     _movePickSeq: 0,
     // The destination is PICKED, never typed: the picker browses real
     // directories through `tree.list`. On `workbench:move-open`, which the

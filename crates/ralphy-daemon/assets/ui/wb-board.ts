@@ -15,7 +15,7 @@
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import { component } from "./wb-alpine.ts";
+import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
@@ -56,7 +56,7 @@ export function wbBoard() {
     // the resume signal, `WBRun.planTrailerIssue`), so the board shows it and
     // can throw it away. `planByProject[slug] = { md, summary }`, replaced on
     // every board load via the same confined `file.read`. Daemon-only (#300).
-    planByProject: {} as Record<string, ReadyPlan | null>,
+    planByProject: emptyRecord<ReadyPlan | null>(),
     planModal: { open: false, issue: null as number | null },
 
     async loadPlan(slug: string | null) {
@@ -287,9 +287,10 @@ export function wbBoard() {
     },
     // The label set present in the project, for the filter dropdown.
     kanbanLabelOptions() {
-      const seen = new Set();
+      const seen = new Set<string>();
       for (const i of this.projectIssues()) for (const l of i.labels || []) seen.add(l);
-      return [...seen].sort();
+      // Distinct members, so no tie; `<` compares UTF-16 code units, as the sort without a compare function does.
+      return [...seen].sort((a, b) => (a < b ? -1 : 1));
     },
 
     // The run pill for a card (the actively-worked issue of a live run).

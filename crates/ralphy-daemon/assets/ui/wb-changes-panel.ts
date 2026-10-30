@@ -19,7 +19,7 @@
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import { component } from "./wb-alpine.ts";
+import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
 import type { ProjectsStore } from "./wb-projects-store.ts";
@@ -36,20 +36,20 @@ export function wbChanges() {
     // --- the change set and the branch ------------------------------------
     // Per slug, named apart from the panel-wide `changesError` below: a
     // duplicate key in this literal is a silent no-op.
-    changesReadError: {} as Record<string, string>,
+    changesReadError: emptyRecord<string>(),
     // Per slug, the read state of the change set, the branch (sync), the board
     // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
     // its fact is not current.
-    changesRead: {} as Record<string, Read>,
-    syncRead: {} as Record<string, Read>,
+    changesRead: emptyRecord<Read>(),
+    syncRead: emptyRecord<Read>(),
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
-    changesStaged: {} as Record<string, ChangeEntry[]>,
-    changesUnstaged: {} as Record<string, ChangeEntry[]>,
+    changesStaged: emptyRecord<ChangeEntry[]>(),
+    changesUnstaged: emptyRecord<ChangeEntry[]>(),
     // The sync row per project (#316): the fold of `sync.status`. Same three
     // triggers as the change set, never a timer.
-    syncByProject: {} as Record<string, Sync>,
+    syncByProject: emptyRecord<Sync>(),
     // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
     // slot for the whole bar: the three acts share the upstream, so a second
     // click while one is out would race it against the first — and a push's

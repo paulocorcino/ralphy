@@ -172,7 +172,7 @@ export function createSpawn(deps: SpawnDeps) {
     const showPeerDown = (group: Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
-        strip = document.createElement("div") as HTMLElement;
+        strip = document.createElement("div");
         strip.className = "session-peer-down";
         const text = document.createElement("span");
         text.className = "session-peer-down-text";

@@ -116,7 +116,7 @@ export function shell() {
 
     // --- the open project -------------------------------------------------
     // The fact itself is the Alpine store `projects` (wb-projects-store.ts).
-    toggle(ref: string, row?: Project) {
+    toggle(ref: string, _row?: Project) {
       const previous = this.$store.projects.openSlug;
       // A row on a host that cannot answer stays closed. The click still wakes
       // a sleeping host: that is the act the operator asked for.

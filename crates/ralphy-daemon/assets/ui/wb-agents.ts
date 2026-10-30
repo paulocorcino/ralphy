@@ -109,7 +109,8 @@ function runRows(roster: RosterRow[] | null | undefined) {
   }));
 }
 
-function rosterState(roster: unknown, repo: string | null | undefined) {
+// A peer's body reaches here as it came, so a body that is no array is read as empty.
+function rosterState(roster: RosterRow[] | null | undefined, repo: string | null | undefined) {
   const rows: RosterRow[] = Array.isArray(roster) ? roster.slice() : [];
   return { repo: repo || null, roster: rows, agents: runRows(rows) };
 }

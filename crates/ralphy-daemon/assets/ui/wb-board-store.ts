@@ -16,6 +16,7 @@
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import type { Messages } from "./wb-messages.ts";
+import type { IssueDetail as Detail } from "./wb-kanban.ts";
 import type { BoardIssue, Read } from "./wb-shell-types.d.ts";
 
 /** What `main.ts` gives the store. */
@@ -25,7 +26,7 @@ export type BoardStoreDeps = {
 };
 
 /** The fields of an `issue.show` reply that the board keeps. */
-export type IssueDetail = { body?: unknown; comments?: unknown; blocked_by?: unknown };
+export type IssueDetail = Pick<Detail, "body" | "comments" | "blocked_by">;
 
 // `deps` is the shape every store takes; the board tells the operator nothing
 // itself, because the board component flashes each failure.

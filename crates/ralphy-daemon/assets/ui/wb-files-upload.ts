@@ -44,6 +44,20 @@ type UploadAsk = {
   error: string;
 };
 
+// A function, not a cast on the literal: the type-aware lint flags that cast.
+function closedUpload(): UploadAsk {
+  return {
+    open: false,
+    repo: "",
+    folder: "",
+    rows: [],
+    limitMb: DEFAULT_MAX_MB,
+    choice: "keep_both",
+    busy: false,
+    error: "",
+  };
+}
+
 // The files of the open dialog. Outside the component: Alpine's Proxy would
 // wrap each `File`, and a `File` read through a Proxy throws.
 let pending: (Blob & { name: string })[] = [];
@@ -71,16 +85,7 @@ export function conflictFor(row: UploadRow, choice: ExistingChoice): OnConflict 
 export function wbUploadDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
-    upload: {
-      open: false,
-      repo: "",
-      folder: "",
-      rows: [],
-      limitMb: DEFAULT_MAX_MB,
-      choice: "keep_both",
-      busy: false,
-      error: "",
-    } as UploadAsk,
+    upload: closedUpload(),
 
     // On `workbench:upload-open`.
     async openUpload(ask: UploadOpen) {

@@ -25,6 +25,11 @@ type RemoveHost = {
   failure: WBHosts.Failure | null;
 };
 
+// A function, not a cast on the literal: the type-aware lint flags that cast.
+function closedRemoveHost(): RemoveHost {
+  return { open: false, daemon: "", name: "", rotate: false, busy: false, lines: [], failure: null };
+}
+
 type HostPayload = { destination: string; identity?: string; name?: string; password?: string };
 
 // What an ended `host` run leads to, read from the state after its exit.
@@ -49,7 +54,7 @@ export function hostsDialog() {
       // The eye button of the password field. Hidden again on each open.
       hostSecretShown: false,
       // Remove in a row of the Hosts dialog (#497): the host being removed.
-      removeHost: { open: false, daemon: "", name: "", rotate: false, busy: false, lines: [], failure: null } as RemoveHost,
+      removeHost: closedRemoveHost(),
       // --- Add a host (ADR-0067 §11, #497) ----------------------------------
       // Thin calls: every state change goes through `WBHosts.next`, and the
       // daemon runs `ralphy host …` on this computer.
@@ -62,7 +67,7 @@ export function hostsDialog() {
       // Opens on the list when a host is paired over SSH, else on the form.
       openAddHost() {
         const tab = this.sshHosts().length ? "hosts" : "add";
-        this.addHost = Object.assign(WBHosts.initial(), { open: true, tab: tab as WBHosts.State["tab"] });
+        this.addHost = Object.assign(WBHosts.initial(), { open: true, tab });
         this.hostSecretShown = false;
         this.removeHost.open = false;
         window.WBDaemon.observe("host.aliases", {})

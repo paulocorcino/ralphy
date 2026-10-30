@@ -196,11 +196,14 @@ export function columnClasses(
 // The repos a fence's members belong to, for the fence's chrome. Deduped,
 // sorted (DOM order is not stable), `"~"` rendered as `home` like `list()`.
 export function fenceRepos(members: readonly ({ repo?: string } | undefined)[]) {
-  const names = new Set<string | null | undefined>((members || []).map((m) => (m?.repo === "~" ? "home" : m?.repo)));
-  names.delete(undefined);
-  names.delete(null);
-  names.delete("");
-  return [...names].sort().join(" · ");
+  const names = new Set<string>();
+  for (const m of members || []) {
+    const repo = m?.repo === "~" ? "home" : m?.repo;
+    if (repo) names.add(repo);
+  }
+  // The members of a `Set` are distinct, so there is no tie; `<` compares UTF-16
+  // code units, as the sort without a compare function does.
+  return [...names].sort((a, b) => (a < b ? -1 : 1)).join(" · ");
 }
 
 // One fence readout for BOTH the fence's chrome and the toolbar list (#343):

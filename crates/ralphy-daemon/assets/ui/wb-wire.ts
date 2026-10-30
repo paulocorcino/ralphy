@@ -320,7 +320,34 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         case "delete":
           await actDelete(d, aim);
           break;
-        default:
+        case "branch-create":
+        case "branch-switch":
+        case "command":
+        case "console-close":
+        case "console-open":
+        case "console-restart":
+        case "console-switch-checkout":
+        case "copy-path":
+        case "detach":
+        case "detach-blocked":
+        case "fence-detach":
+        case "fence-detach-blocked":
+        case "fence-detach-refused":
+        case "fence-focus":
+        case "fence-reattach":
+        case "fence-remove-refused":
+        case "issue-label-change":
+        case "kanban-toggle":
+        case "login":
+        case "logoff":
+        case "open":
+        case "open-diff":
+        case "open-refused":
+        case "reload":
+        case "run-issue-focus":
+        case "run-start":
+        case "setting-change":
+          // The other gestures change nothing on the daemon's tree.
           break;
       }
     }

@@ -86,7 +86,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const group = (head: string, act: string) =>
       `<div class="dropdown-head">${head}</div>` +
       ENCODINGS.map(
-        ([label, name, bom], i) =>
+        ([label], i) =>
           `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
       ).join("");
     menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");

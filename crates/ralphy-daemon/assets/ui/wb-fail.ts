@@ -129,7 +129,7 @@ function why(reply: Reply, fallback: string) {
 }
 
 // One line of a success report (`warning: …`) as a sentence.
-function sentence(line: unknown) {
+function sentence(line: string | null | undefined) {
   const t = bare(String(line || ""));
   return t ? `${capital(t)}.` : "";
 }

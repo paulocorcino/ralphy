@@ -66,7 +66,7 @@ export function wirePaste(deps: PasteDeps) {
     const reader = new FileReader();
     reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
     reader.onload = () => {
-      const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
+      const base64 = (typeof reader.result === "string" ? reader.result : "").replace(/^data:[^,]*,/, "");
       daemon
         .write("image.write", { repo: currentRepoNow(), base64 })
         .then((reply) => {

@@ -92,7 +92,14 @@ export function createEmitter(document: Document): Window["WB"] {
  * because a script may assign any value to it; no script of the workbench
  * does, so it is the opening window or `null`. */
 export function openerOf(w: Window): Window | null {
-  return w.opener ?? null;
+  const opener: unknown = w.opener;
+  return isWindow(opener) ? opener : null;
+}
+
+// A cross-origin window answers `in` for `postMessage`, which `instanceof Window`
+// does not: the opener may belong to another realm.
+function isWindow(v: unknown): v is Window {
+  return typeof v === "object" && v !== null && "postMessage" in v;
 }
 
 /** Whether `v` names a `workbench:action` gesture. */

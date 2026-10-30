@@ -262,7 +262,7 @@ export function peerOfflineView(
   const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
   const view = (text: string, action: PeerAction) => ({ text, detail, action });
   const wakeOrRetry: PeerAction = WBFleet.wakeable(group) ? "wake" : "retry";
-  switch (group && group.state) {
+  switch (group?.state ?? "") {
     case "asleep":
       return view(`${host} is asleep.`, wakeOrRetry);
     case "unreachable":

@@ -145,7 +145,7 @@ export function destination(s: State): string {
 // The form fields `destination` was built from, to fill the form when a
 // host is edited. A destination without `@` is an address or an SSH config
 // alias; either way it goes back into the Host field unchanged.
-export function fields(dest: unknown): { user: string; address: string; port: string } {
+export function fields(dest: string | null | undefined): { user: string; address: string; port: string } {
   let d = String(dest || "").trim();
   let port = "";
   if (d.indexOf("ssh://") === 0) {
@@ -167,7 +167,7 @@ function fresh(s: State, tab: State["tab"]): State {
 
 // Split raw output into JSON-line events. `buf` carries a partial last line
 // to the next chunk; a line that is not an event object is dropped.
-export function feed(buf: unknown, chunk: unknown): { rest: string; events: Progress[] } {
+export function feed(buf: string | null | undefined, chunk: string | null | undefined): { rest: string; events: Progress[] } {
   const parts = (String(buf || "") + String(chunk || "")).split("\n");
   // `split` always returns at least one part.
   const rest = parts.pop() ?? "";
@@ -192,7 +192,7 @@ export function feed(buf: unknown, chunk: unknown): { rest: string; events: Prog
 
 // The CLI's errors are chained, so they start lowercase; shown alone they
 // start a sentence.
-function sentence(text: unknown): string {
+function sentence(text: string | null | undefined): string {
   const t = String(text || "");
   return t.charAt(0).toUpperCase() + t.slice(1);
 }

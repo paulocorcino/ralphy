@@ -218,8 +218,8 @@ interface AlpineDirective {
 
 /** The Alpine helpers a directive handler uses. */
 interface AlpineDirectiveUtilities {
-  evaluateLater(expression: string): (receive: (value: string) => void) => void;
-  effect(callback: () => void): void;
+  evaluateLater: (expression: string) => (receive: (value: string) => void) => void;
+  effect: (callback: () => void) => void;
 }
 
 /** A Wunderbaum tree (`vendor/wunderbaum`), as `wb-files.ts` builds it. */
