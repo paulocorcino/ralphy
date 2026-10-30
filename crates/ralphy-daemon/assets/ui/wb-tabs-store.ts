@@ -18,11 +18,12 @@
    (app.ts) keeps; `main.ts` passes them in `deps`. `main.ts` registers the
    store as `tabs`, after `release`. `tabsStore` builds it without Alpine, so
    `node --test` can test it (ADR-0073 D3, D6). Opening a Changes row into a
-   diff tab is in wb-tabs-store-diff.ts.
+   diff tab is in wb-tabs-store-diff.ts, and opening a file into a tab in
+   wb-tabs-store-open.ts.
    --------------------------------------------------------------------------- */
-import { WBFail } from "./wb-fail.ts";
 import { openDiff } from "./wb-tabs-store-diff.ts";
-import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
+import { fetchContent, openLink, openTab } from "./wb-tabs-store-open.ts";
+import { fileTabId } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
 import { consoleTab, consoleTabId, freshTabId, isConsoleTabId } from "./wb-console-tabs.ts";
@@ -231,114 +232,20 @@ export function tabsStore(deps: TabsStoreDeps) {
       );
     },
 
-    // `file.read`, resolving to what the pane opens with: `{content, encoding,
-    // bom}` (ADR-0036 amendment 2026-09-22), or `{refused: reason}` when the
-    // daemon served nothing for a reason the pane can state (`binary`, `too
-    // large`, …) — the tab KEEPS its place and says so — or `null` when there
-    // is nothing to hold a tab open for (`not found`, a transport drop): the
-    // tab closes. `checkout` is the tab's PINNED checkout (#406).
+    // `file.read`, resolving to what the pane opens with (wb-tabs-store-open.ts).
     fetchContent(project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody> {
-      const refuse = (reason: string) => {
-        window.WB.emit("open-refused", { project, path, reason });
-        window.Alpine.store("modals").flash?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
-        if (reason === "not found" || reason === "transport") {
-          this.closeTab(fileTabId(project, path, checkout));
-          return null;
-        }
-        return { refused: reason };
-      };
-      // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
-      if (ftype === "image") {
-        let refusal: TabBody = null;
-        return WBDaemon.readImage(project, path, (reason) => (refusal = refuse(reason)), checkout)
-          .then((url) => (url == null ? refusal : { content: url }))
-          .catch(() => refuse("transport"));
-      }
-      return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
-        .then((reply) => {
-          if (reply.status === "ok") {
-            return { content: reply.content, encoding: reply.encoding, bom: reply.bom };
-          }
-          return refuse(WBFail.message(reply, "refused"));
-        })
-        .catch(() => refuse("transport"));
+      return fetchContent(this, project, path, ftype, checkout);
     },
 
     // --- opening a file into a tab ----------------------------------------
-    // A markdown link to another repo file: same viewer choice and binary
-    // refusal as a tree click. `checkout` is the SOURCE pane's pin (#406): a
-    // link in a worktree's document names that worktree's file.
-    // `as: "bytes"` is the ONE caller that refuses the note routing below: a
-    // `.note` whose bytes are not a container (ADR-0064 §11) must not become a
-    // card, and classifying it again would be the loop the card just escaped.
-    // The viewer serves text and images and refuses anything else, so what is
-    // honest here is the refusal, named — not a pane that would show nothing.
-    openLink({ project, path, fragment, checkout, as }: OpenRequest) {
-      const title = path.split("/").pop() ?? path;
-      if (as === "bytes") {
-        window.WB.emit("open-refused", { project, path, reason: "not a note" });
-        window.Alpine.store("modals").flash?.(`${path} is not a note.`);
-        return;
-      }
-      const ftype = classify(title);
-      // A note linking to a note lands on the plane, exactly as a double-click
-      // in the explorer does.
-      if (ftype === "note") {
-        this.openNote(path, project, checkout);
-        return;
-      }
-      if (ftype === "binary") {
-        window.WB.emit("open-refused", { project, path, reason: "binary" });
-        window.Alpine.store("modals").flash?.("Cannot open binary files.");
-        return;
-      }
-      if (project === null) return;
-      this.openTab({ project, path, title, ftype, fragment, checkout });
+    // A markdown link to another repo file (wb-tabs-store-open.ts).
+    openLink(request: OpenRequest) {
+      openLink(this, request);
     },
 
-    // `content`: a re-attached popup passes its (possibly edited) bytes back.
-    // `fragment`/`find`: a `#heading` or search term to land on once the bytes
-    // are shown. `checkout` PINS the tab to the tree it was opened in (#406):
-    // a Save from a tab showing worktree bytes must never land on the primary.
-    // `encoding`/`bom` come back with a re-attached popup's bytes, so the
-    // reattached pane saves the way the detached one would have.
-    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen) {
-      const ck = checkout !== undefined ? checkout : window.Alpine.store("checkouts").checkoutOf(project);
-      const id = fileTabId(project, path, ck);
-      if (this.tabs.some((t) => t.id === id)) {
-        this.activate(id);
-        if (fragment) WBViewer.jumpTo(id, fragment);
-        if (find) WBViewer.find(id, find);
-        return;
-      }
-      this.tabs.push({ id, kind: ftype, title, path, project, icon: tabIcon(ftype), closable: true, checkout: ck });
-      this.showTab(id);
-      this.persistView();
-      void window.Alpine.nextTick(() => {
-        // A re-attach passes bytes in; a fresh open reads `file.read`.
-        const bytes: Promise<TabBody> =
-          content != null
-            ? Promise.resolve({ content, encoding, bom })
-            : this.fetchContent(project, path, ftype, ck);
-        void bytes.then((body) => {
-          if (body == null) return; // nothing to show: fetchContent closed the tab
-          WBViewer.open({
-            id,
-            project,
-            label: window.Alpine.store("projects").projectLabel(project),
-            path,
-            ftype,
-            checkout: ck,
-            ...body,
-          });
-          // NOT `setActive(id)`: `restoreView` opens N tabs in one burst and
-          // THEN activates the stored one, so the last read to answer must not
-          // own the screen.
-          this.syncViewer();
-          if (fragment) WBViewer.jumpTo(id, fragment);
-          if (find) WBViewer.find(id, find);
-        });
-      });
+    // A file into a tab, read or handed back by a popup (wb-tabs-store-open.ts).
+    openTab(open: TabOpen) {
+      openTab(this, open);
     },
 
     // Re-point every open tab under the moved path: a tab's id IS its path,
