@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/routes/presence.rs": {
-      "watch_stores": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
       "drain": [
         11
