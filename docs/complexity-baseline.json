@@ -337,14 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
-      "drain": [
-        11
-      ],
-      "stream_child": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/src/routes/ws_session/relay.rs": {
       "peer_session_query": [
         13
