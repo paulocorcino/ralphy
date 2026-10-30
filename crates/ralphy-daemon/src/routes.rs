@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::extract::ws::{Message, WebSocket};
 use axum::Router;
 
 use crate::mux::{ChannelSender, WriterClosed};
@@ -330,23 +329,6 @@ fn command_bytes(id: u64, verb: &str, payload: serde_json::Value) -> Vec<u8> {
         verb: verb.to_string(),
         payload,
     }))
-}
-
-/// Send a structured command reply frame over the socket, ignoring a send error
-/// (the client may already be gone).
-pub(crate) async fn send_command(
-    socket: &mut WebSocket,
-    id: u64,
-    verb: &str,
-    payload: serde_json::Value,
-) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the client may already be gone"
-    )]
-    let _ = socket
-        .send(Message::Binary(command_bytes(id, verb, payload).into()))
-        .await;
 }
 
 /// Queue one command frame on a channel of the socket's writer. Fails when
