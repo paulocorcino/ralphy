@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-console-title.ts": {
-      "sessionPresentation": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-touch.ts": {
       "(anonymous)": [
         11

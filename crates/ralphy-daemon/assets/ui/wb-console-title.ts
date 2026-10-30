@@ -93,8 +93,7 @@ export function createTitle(deps: TitleDeps) {
     prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
     owner: { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null } | null | undefined,
   ) {
-    const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
-    const environment = owner?.environment ?? prior?.environment ?? null;
+    const { daemonId, environment } = sessionPlace(prior, owner);
     // The vendor's own session name (`--name`; Claude only). On the TOOLTIP, not
     // the title: a fourth segment would outrun the titlebar. NO desk fallback:
     // the name dies with the child and the daemon re-announces it on every
@@ -351,5 +350,17 @@ export function createTitle(deps: TitleDeps) {
     closeCheckoutMenu,
     checkoutMenu,
     restartWin,
+  };
+}
+
+// The daemon and the environment a session runs on: the `session-open`
+// payload's, else the record's, else none.
+function sessionPlace(
+  prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
+  owner: { daemon_id?: string; environment?: string } | null | undefined,
+) {
+  return {
+    daemonId: owner?.daemon_id ?? prior?.daemonId ?? null,
+    environment: owner?.environment ?? prior?.environment ?? null,
   };
 }
