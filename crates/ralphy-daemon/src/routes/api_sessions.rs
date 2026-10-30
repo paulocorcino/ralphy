@@ -159,11 +159,7 @@ pub(crate) async fn close_session_route(
 ) -> Response {
     if let Some(repo_ref) = q.repo.as_deref() {
         if sessions.get(q.id).is_some_and(|info| info.repo == repo_ref) {
-            return if sessions.close(q.id) {
-                Json(serde_json::json!({ "closed": true })).into_response()
-            } else {
-                (StatusCode::NOT_FOUND, "unknown session").into_response()
-            };
+            return close_local(&sessions, q.id);
         }
         let daemon_id = identity
             .as_ref()
@@ -171,32 +167,7 @@ pub(crate) async fn close_session_route(
             .unwrap_or_default();
         let (peers, rejects) = read_peer_store(peers_dir).await;
         match fleet::route(repo_ref, &daemon_id, &peers) {
-            fleet::route::Route::Peer { peer, .. } => {
-                let path = format!("/api/sessions/close?id={}", q.id);
-                return match peer::client::post_json(peer, &path, &serde_json::json!({})).await {
-                    Ok((200, body)) => (
-                        StatusCode::OK,
-                        [(header::CONTENT_TYPE, "application/json")],
-                        body,
-                    )
-                        .into_response(),
-                    Ok((404, _)) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
-                    Ok((status, body)) => (
-                        StatusCode::BAD_GATEWAY,
-                        format!(
-                            "peer {} answered HTTP {status}: {}",
-                            peer.environment,
-                            String::from_utf8_lossy(&body)
-                        ),
-                    )
-                        .into_response(),
-                    Err(error) => (
-                        StatusCode::BAD_GATEWAY,
-                        peer::client::transport_failed(peer, format!("{error:#}")).await,
-                    )
-                        .into_response(),
-                };
-            }
+            fleet::route::Route::Peer { peer, .. } => return close_on_peer(peer, q.id).await,
             fleet::route::Route::UnknownDaemon { daemon_id } => {
                 return (
                     StatusCode::BAD_GATEWAY,
@@ -207,10 +178,42 @@ pub(crate) async fn close_session_route(
             fleet::route::Route::Local { .. } => {}
         }
     }
-    if sessions.close(q.id) {
+    close_local(&sessions, q.id)
+}
+
+fn close_local(sessions: &session::SessionManager, id: u64) -> Response {
+    if sessions.close(id) {
         Json(serde_json::json!({ "closed": true })).into_response()
     } else {
         (StatusCode::NOT_FOUND, "unknown session").into_response()
+    }
+}
+
+/// Ask the peer that owns a session to close it, and answer with its reply.
+async fn close_on_peer(peer: &peer::PeerDescriptor, id: u64) -> Response {
+    let path = format!("/api/sessions/close?id={id}");
+    match peer::client::post_json(peer, &path, &serde_json::json!({})).await {
+        Ok((200, body)) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response(),
+        Ok((404, _)) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
+        Ok((status, body)) => (
+            StatusCode::BAD_GATEWAY,
+            format!(
+                "peer {} answered HTTP {status}: {}",
+                peer.environment,
+                String::from_utf8_lossy(&body)
+            ),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::BAD_GATEWAY,
+            peer::client::transport_failed(peer, format!("{error:#}")).await,
+        )
+            .into_response(),
     }
 }
 

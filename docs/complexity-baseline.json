@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/routes/api_sessions.rs": {
-      "close_session_route": [
-        14
-      ]
-    },
     "crates/ralphy-daemon/src/routes/presence.rs": {
       "watch_stores": [
         13
