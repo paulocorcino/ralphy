@@ -35,7 +35,7 @@ use crate::usage::parse_plan_usage;
 ///
 /// The consolidation session's tokens are captured the same way `plan` is —
 /// `--output-format stream-json --verbose` makes the stdout stream carry the
-/// terminal `result` event, which [`parse_plan_usage`] reads — so the run-level
+/// terminal `result` event, which `parse_plan_usage` reads — so the run-level
 /// `consolidate` ledger line carries real usage (ADR-0008 D9, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
