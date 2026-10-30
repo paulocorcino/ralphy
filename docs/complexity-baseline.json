@@ -1,14 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-detached-fence.ts": {
-      "(anonymous)": [
-        13
-      ],
-      "isFenceOpen": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-file-viewer.ts": {
       "disposeEditor": [
         12
