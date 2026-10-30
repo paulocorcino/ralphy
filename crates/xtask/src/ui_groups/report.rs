@@ -149,7 +149,8 @@ fn render_summary(
     line(
         o,
         format!(
-            "{} members in {} sections; {HTML}: {} bindings in shell() scope, {named} name a member\n",
+            "{} members in {} sections; {HTML}: \
+             {} bindings in shell() scope, {named} name a member\n",
             shell.members.len(),
             shell.sections.len(),
             bindings.len()
