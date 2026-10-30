@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-      "revealRel": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
       "repathTabs": [
         14

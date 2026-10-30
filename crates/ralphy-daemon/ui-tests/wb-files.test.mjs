@@ -773,6 +773,20 @@ test("a re-list keeps the scroll offset and the selection, unless a reveal lande
   assert.equal(tree.element.scrollTop, 0);
 });
 
+// A reveal brings a row on screen and selects it.
+test("a reveal opens the folders above the row, shallowest first, and selects it; an unmounted folder reveals nothing", async () => {
+  const disk = { "": [{ title: "a", folder: true }], a: [{ title: "b", folder: true }], "a/b": [{ title: "f.txt" }] };
+  const tree = fakeTree(disk);
+  await tree.open();
+  const { s } = reconcileFiles(tree, disk);
+  const node = await s.revealRel("a/b/f.txt");
+  assert.deepEqual(tree.log, ["expand a", "expand a/b"]);
+  assert.equal(tree.relOf(node), "a/b/f.txt");
+  assert.equal(tree.active, node);
+  assert.equal(await s.revealRel("z/f.txt"), null);
+  assert.equal(tree.active, node, "the selection stays where it was");
+});
+
 // A reconcile asked for while one of the same level runs.
 test("a reconcile asked for during a pass waits for the level, which is read once more", async () => {
   const disk = { "": [{ title: "x.txt" }] };

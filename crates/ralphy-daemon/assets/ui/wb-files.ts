@@ -48,6 +48,19 @@ function freshBytes(t: CanvasTab, project: string): Promise<string | null | unde
   return WBDaemon.observe("file.read", payload).then((reply) => (reply?.status === "ok" ? reply.content : null));
 }
 
+// Expand every ancestor folder of `rel`, shallow-first. A revealed FILE has
+// nothing to expand. False when an ancestor is not mounted: nothing to reveal.
+async function expandAncestors(tree: WunderbaumTree, rel: string, relPath: (n: WunderbaumNode) => string) {
+  const parts = rel.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    const prefix = parts.slice(0, i).join("/");
+    const f = tree.findFirst((n: WunderbaumNode) => relPath(n) === prefix);
+    if (!f) return false;
+    if (!f.expanded) await f.setExpanded(true);
+  }
+  return true;
+}
+
 // A promise that settles when the reconcile of `rel` in flight finishes.
 function waitForLevel(waiters: Map<string, (() => void)[]>, rel: string) {
   return new Promise<void>((resolve) => {
@@ -470,14 +483,7 @@ export function wbFiles() {
         this._revealSeq = (this._revealSeq || 0) + 1;
         this._revealedRel = rel;
       }
-      const parts = rel.split("/");
-      // Ancestors only: a revealed FILE has nothing to expand.
-      for (let i = 1; i < parts.length; i++) {
-        const prefix = parts.slice(0, i).join("/");
-        const f = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === prefix);
-        if (!f) return null; // an unmounted ancestor: nothing to reveal
-        if (!f.expanded) await f.setExpanded(true);
-      }
+      if (!(await expandAncestors(tree, rel, (n) => this.relPath(n)))) return null;
       const node = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
       if (!node) return null;
       node.setActive();
