@@ -99,6 +99,40 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
 }
 
 #[test]
+fn the_markdown_has_a_section_per_file_and_a_table_per_area() {
+    let row = |file: &str, area: &str, text: &str, concatenated: bool| Row {
+        text: text.to_string(),
+        file: file.to_string(),
+        line: 7,
+        kind: Kind::Text,
+        area: area.to_string(),
+        concatenated,
+        pinned_by: Vec::new(),
+        continues: false,
+    };
+    let md = to_markdown(&[
+        row("a.html", "", "a | b", true),
+        row("a.html", "Hosts", "c", false),
+        row("b.ts", "Hosts", "d", false),
+    ]);
+    let headings: Vec<&str> = md.lines().filter(|l| l.starts_with('#')).collect();
+    assert_eq!(
+        headings,
+        [
+            "# UI copy inventory",
+            "## Totals",
+            "## a.html",
+            "### (top level)",
+            "### Hosts",
+            "## b.ts",
+            "### Hosts",
+        ]
+    );
+    assert!(md.contains("| 7 | text | a \\| b | yes |  |"));
+    assert!(md.contains("| 7 | text | c |  |  |"));
+}
+
+#[test]
 fn a_one_word_text_is_pinned_only_next_to_its_sink() {
     let anchor = Some("title=");
     assert!(pins_form(r#"<b title="close">"#, "close", anchor, true));

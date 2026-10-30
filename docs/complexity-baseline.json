@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/ui_copy.rs": {
-      "to_markdown": [
-        15
-      ]
-    },
     "crates/xtask/src/ui_copy/html.rs": {
       "scan": [
         14
