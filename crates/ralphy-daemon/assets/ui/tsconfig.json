@@ -17,6 +17,12 @@
     // type from a value, so an untagged type import would stay in the served
     // file and fail in the browser.
     "verbatimModuleSyntax": true,
+    // The checks of #803: a `case` ends, an override says so, every path
+    // returns, and every parameter is used.
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "types": []
   },
