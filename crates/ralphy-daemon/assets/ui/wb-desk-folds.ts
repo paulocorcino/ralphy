@@ -92,9 +92,10 @@ export function reconcileDesk<S extends LiveSession, R extends FoldRecord = Desk
           s.kind === record.kind,
       );
     }
-    if (i >= 0) {
+    const session = live[i];
+    if (session) {
       used.add(i);
-      out.push({ record, session: live[i], action: "attach" });
+      out.push({ record, session, action: "attach" });
     } else {
       // A shell is free and idempotent, so it comes back by itself; an agent
       // console waits for a click — loading a page must never spawn a vendor
@@ -289,8 +290,8 @@ export function fenceCycle(
   if (!order.length) return null;
   const d = step < 0 ? -1 : 1;
   const at = order.findIndex((f) => f.id === currentId);
-  if (at < 0) return (d > 0 ? order[0] : order[order.length - 1]).id;
-  return order[(at + d + order.length) % order.length].id;
+  if (at < 0) return order.at(d > 0 ? 0 : -1)?.id ?? null;
+  return order[(at + d + order.length) % order.length]?.id ?? null;
 }
 
 // How many fences may be detached at once: a popup is a real OS window with

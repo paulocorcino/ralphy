@@ -268,7 +268,12 @@ export function wbBoard() {
       const all = this.projectIssues();
       const K = window.WBKanban;
       const shown = all.filter((i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
-      const bucket: Record<string, BoardIssue[]> = { backlog: [], agent: [], human: [], closed: [] };
+      const bucket: Record<ReturnType<typeof K.columnOf>, BoardIssue[]> = {
+        backlog: [],
+        agent: [],
+        human: [],
+        closed: [],
+      };
       for (const i of shown) bucket[K.columnOf(i)].push(i);
       return {
         backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
@@ -283,7 +288,8 @@ export function wbBoard() {
     },
     // Per-column live count (post-filter), for the column header badge.
     kanbanCount(colId: string) {
-      return (this.kanbanColumns() as Record<string, BoardIssue[]>)[colId].length;
+      const columns: Record<string, BoardIssue[]> = this.kanbanColumns();
+      return columns[colId]?.length ?? 0;
     },
     // The label set present in the project, for the filter dropdown.
     kanbanLabelOptions() {

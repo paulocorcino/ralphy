@@ -34,8 +34,9 @@ function prefixLength(a: string, b: string) {
 function runsOf(sorted: DbmlTable[]): DbmlTable[][] {
   const runs: DbmlTable[][] = [];
   for (const table of sorted) {
-    const run = runs[runs.length - 1];
-    if (run && prefixLength(run[run.length - 1].name, table.name) >= MIN_PREFIX) run.push(table);
+    const run = runs.at(-1);
+    const last = run?.at(-1);
+    if (run && last && prefixLength(last.name, table.name) >= MIN_PREFIX) run.push(table);
     else runs.push([table]);
   }
   return runs;
@@ -51,8 +52,9 @@ function endsInsideWord(label: string, names: string[]) {
 // The label of a run of names: their shared prefix, cut after its last
 // separator, so `BOT_GROUP` and `BOT_FILES` give `BOT`.
 function labelOf(names: string[]) {
-  const length = Math.min(...names.map((n) => prefixLength(names[0], n)));
-  const prefix = names[0].slice(0, length);
+  const [first = ""] = names;
+  const length = Math.min(...names.map((n) => prefixLength(first, n)));
+  const prefix = first.slice(0, length);
   let cut = prefix;
   if (SEPARATOR.test(prefix) && !SEPARATOR.test(prefix.slice(-1))) {
     cut = prefix.slice(0, Math.max(prefix.lastIndexOf("_"), prefix.lastIndexOf("-"), prefix.lastIndexOf(".")) + 1);

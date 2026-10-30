@@ -185,7 +185,7 @@ export const ROUTE_DEADLINE_MS: Partial<Record<ApiRoute, number>> = { "POST /api
 /** The method and the URL of `route` with `query`. Values are encoded; names are not. */
 export function apiRequest(route: ApiRoute, query?: Record<string, string | number>) {
   const space = route.indexOf(" ");
-  const path = route.slice(space + 1).split("?")[0];
+  const [path = ""] = route.slice(space + 1).split("?");
   const pairs = Object.entries(query || {}).map(([name, value]) => `${name}=${encodeURIComponent(value)}`);
   return { method: route.slice(0, space), url: pairs.length ? `${path}?${pairs.join("&")}` : path };
 }

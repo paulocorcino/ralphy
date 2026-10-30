@@ -134,7 +134,7 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
     const named = WBConsoleName.nameDesk(desk(), consolePrefix);
     let emitted = false;
     named.forEach((r, i) => {
-      if (desk()[i].consoleName || !r.consoleName) return;
+      if (desk()[i]?.consoleName || !r.consoleName) return;
       sync.emit({ op: "set", type: "window", id: r.id, fields: { consoleName: r.consoleName } });
       emitted = true;
     });
@@ -174,8 +174,9 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   // Select (`name`) or clear (`null`) a project's checkout. A clear names the
   // tree it clears, so it never erases a tree another device picked since.
   function setCheckout(ref: string, name: string | null | undefined) {
+    const current = checkouts()[ref];
     if (name) emitDesk({ op: "checkout", repo: ref, name: String(name) });
-    else if (checkouts()[ref]) emitDesk({ op: "checkout-clear", repo: ref, ifName: checkouts()[ref] });
+    else if (current) emitDesk({ op: "checkout-clear", repo: ref, ifName: current });
   }
   function allCheckouts() {
     return { ...checkouts() };

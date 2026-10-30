@@ -160,6 +160,14 @@ export function wbColumns() {
       this.columnDir = WBColumns.dirOf(dir);
       window.WBView?.patch({ columnDir: this.columnDir });
     },
+    // True when the first console asked for a restore or a wait, so the paint
+    // stops here. A restore needs the first console's id: with none, there is
+    // nothing to restore.
+    settleHeadGap(head: string | undefined, headWin: ConsoleWin | null | undefined) {
+      const gap = headGap(head, headWin, WBConsole.isRelaunching);
+      if (gap === "restore" && head) this.restoreColumn(head);
+      return gap !== null;
+    },
     // Re-derive what is painted from the list and the current cap. A console
     // that left the stage (closed, detached) leaves the list.
     paintColumns(opts?: { raise?: boolean }) {
@@ -168,12 +176,7 @@ export function wbColumns() {
       );
       const head = this.columnIds()[0];
       const headWin = head ? byId.get(head) : null;
-      const gap = headGap(head, headWin, WBConsole.isRelaunching);
-      if (gap === "restore") {
-        this.restoreColumn(head);
-        return;
-      }
-      if (gap === "wait") return;
+      if (this.settleHeadGap(head, headWin)) return;
       const kept = WBColumns.keep(this.columns, new Set(byId.keys()));
       const keptIds = WBColumns.flat(kept);
       // The first console left the stage and one is left: it takes the maximize.
@@ -340,7 +343,8 @@ export function wbColumns() {
     columnsFromFence(items: FenceColumnItems) {
       const grid = WBColumns.fromRects(items);
       const ids = WBColumns.flat(grid);
-      if (!ids.length) return;
+      const first = ids[0];
+      if (first === undefined) return;
       const old =
         this.columnIds()[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
       const cap = ids.length >= 2 ? this.columnCap() : 1;
@@ -351,7 +355,7 @@ export function wbColumns() {
         persist: true,
       });
       this.paintColumns();
-      WBConsole.focusColumn(ids[0]);
+      WBConsole.focusColumn(first);
     },
 
     // Alt+Shift+←/→. Returns the fence landed on, or null when the plane has

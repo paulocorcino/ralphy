@@ -129,11 +129,12 @@ export function wireDetachedFence(window: Window, document: Document) {
   function openColumns() {
     const all = WBColumns.fromRects(consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })));
     const ids = WBColumns.flat(all);
-    if (!ids.length) return;
+    const first = ids[0];
+    if (first === undefined) return;
     const old = WBColumns.flat(grid)[0] ?? stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
     grid = ids.length >= 2 ? all : [];
     paintGrid(all, { unmax: old && !ids.includes(old) ? old : null, raise: true });
-    WBConsole.focusColumn(ids[0]);
+    WBConsole.focusColumn(first);
   }
   function restoreColumn(id: string) {
     const r = WBColumns.restore(grid, id);

@@ -48,7 +48,7 @@ function commentEnd(text: string, i: number) {
 // The end of the string that starts at `i`, or -1 when none starts there. A
 // triple-quoted string may span lines; any other string ends at its line.
 function stringEnd(text: string, i: number) {
-  if (!QUOTES.includes(text[i])) return -1;
+  if (!QUOTES.includes(text.charAt(i))) return -1;
   if (!text.startsWith("'''", i)) return lineStringEnd(text, i);
   const close = text.indexOf("'''", i + 3);
   return close < 0 ? text.length : close + 3;
@@ -84,7 +84,7 @@ function toLines(text: string): string[] {
       out += text.slice(i, sEnd).replace(/\s*\n\s*/g, " ");
       i = sEnd;
     } else {
-      out += braceBreak(text[i]);
+      out += braceBreak(text.charAt(i));
       i += 1;
     }
   }
@@ -100,7 +100,7 @@ const IDENT = /[\p{L}\p{N}_$]+/uy;
 
 function skipSpaces(s: string, i: number) {
   let j = i;
-  while (j < s.length && /\s/.test(s[j])) j += 1;
+  while (j < s.length && /\s/.test(s.charAt(j))) j += 1;
   return j;
 }
 
@@ -153,7 +153,7 @@ function typeEnd(s: string, start: number) {
     return close < 0 ? s.length : close + 1;
   }
   let i = start;
-  while (i < s.length && !/\s/.test(s[i])) {
+  while (i < s.length && !/\s/.test(s.charAt(i))) {
     if (s[i] === "[" && i === start) break;
     i = skipGroup(s, i);
   }
@@ -168,7 +168,7 @@ function closerOf(opener: string) {
 // The index after the `(…)` or `[…]` group that starts at `i`, or after the
 // one character there when no group starts.
 function skipGroup(s: string, i: number) {
-  const closer = closerOf(s[i]);
+  const closer = closerOf(s.charAt(i));
   if (!closer) return i + 1;
   const close = s.indexOf(closer, i);
   return close < 0 ? s.length : close + 1;
@@ -204,7 +204,7 @@ function splitSettings(s: string): string[] {
   const scan = { quote: "", depth: 0 };
   let from = 0;
   for (let i = 0; i < inner.length; i += 1) {
-    if (!isSplitComma(scan, inner[i])) continue;
+    if (!isSplitComma(scan, inner.charAt(i))) continue;
     parts.push(inner.slice(from, i));
     from = i + 1;
   }
@@ -237,12 +237,15 @@ const REF_OP = /\s*(<>|>|<|-)\s*/y;
 function readOp(s: string, i: number): { op: string; end: number } | null {
   REF_OP.lastIndex = i;
   const m = REF_OP.exec(s);
-  return m ? { op: m[1], end: i + m[0].length } : null;
+  const op = m?.[1];
+  return m && op !== undefined ? { op, end: i + m[0].length } : null;
 }
 
 function endpointOf(d: Dotted): DbmlEndpoint | null {
   if (!d || d === "composite" || d.parts.length < 2) return null;
-  return { table: d.parts.slice(0, -1).join("."), column: d.parts[d.parts.length - 1] };
+  const column = d.parts.at(-1);
+  if (column === undefined) return null;
+  return { table: d.parts.slice(0, -1).join("."), column };
 }
 
 function makeRef(a: DbmlEndpoint, op: string, b: DbmlEndpoint): DbmlRef {
@@ -297,7 +300,8 @@ function openTable(st: State, header: string): Block {
     columns: [],
   };
   const alias = /^\s+as\s+("[^"]*"|\S+)/i.exec(after);
-  if (alias) st.aliases.set(unquote(alias[1]), table.name);
+  const aliasName = alias?.[1];
+  if (aliasName !== undefined) st.aliases.set(unquote(aliasName), table.name);
   st.schema.tables.push(table);
   return { kind: "table", table };
 }
@@ -403,7 +407,8 @@ function readRefLine(st: State, line: string) {
 // `Ref name: a.b > c.d` is one the reader knows.
 function readTopLine(st: State, line: string) {
   const m = /^ref\b[^:]*:(.*)$/i.exec(line);
-  if (m) readRefLine(st, m[1]);
+  const rest = m?.[1];
+  if (rest !== undefined) readRefLine(st, rest);
   else st.schema.skipped += 1;
 }
 

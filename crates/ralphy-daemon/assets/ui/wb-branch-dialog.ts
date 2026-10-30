@@ -160,8 +160,9 @@ export function wbBranchDialog() {
     // A held top match does nothing: it cannot be switched to.
     branchEnter() {
       const list = this.branchList();
-      if (list.length) {
-        if (!this.branchHeldBy(list[0])) this.switchBranch(list[0]);
+      const top = list[0];
+      if (top !== undefined) {
+        if (!this.branchHeldBy(top)) this.switchBranch(top);
       } else if (this.canCreateBranch()) this.createBranch();
     },
 

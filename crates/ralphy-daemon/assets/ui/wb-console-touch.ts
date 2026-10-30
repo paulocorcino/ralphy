@@ -14,6 +14,11 @@ import type { ScrollWatch } from "./wb-console-probe.ts";
 const { touchScrollLines, touchScrollTarget, touchGesture, touchCentroid, flingStep, selectionRow, FLING_MIN } =
   WBConsoleInput;
 
+// The finger, when exactly one is down; else null.
+function loneTouch(e: TouchEvent) {
+  return e.touches.length === 1 ? e.touches[0] : null;
+}
+
 // What the touch gesture reads from the terminal, and nothing else.
 export type TouchDeps = {
   // The terminal the gesture scrolls and selects in.
@@ -144,10 +149,11 @@ export function wireTouch(deps: TouchDeps) {
       // Armed selection. Prevented so the synthesized click never reaches
       // xterm's mousedown, which would clear the selection; the textarea
       // keeps its focus, so the keyboard stays up.
-      if (selecting && e.touches.length === 1) {
+      const lone = loneTouch(e);
+      if (selecting && lone) {
         e.preventDefault();
         touchY = null;
-        selStart = rowAt(e.touches[0].clientY);
+        selStart = rowAt(lone.clientY);
         try {
           term.selectLines(selStart, selStart);
         } catch {}
@@ -168,12 +174,13 @@ export function wireTouch(deps: TouchDeps) {
         return;
       }
       stopPan();
-      if (gesture !== "terminal") {
+      const finger = e.touches[0];
+      if (gesture !== "terminal" || !finger) {
         touchY = null;
         return;
       }
-      touchY = e.touches[0].clientY;
-      touchX = e.touches[0].clientX;
+      touchY = finger.clientY;
+      touchX = finger.clientX;
       touchAccum = 0;
       touchVelocity = 0;
       touchLastAt = e.timeStamp;
@@ -194,9 +201,10 @@ export function wireTouch(deps: TouchDeps) {
         dragPan(e, pan);
         return;
       }
-      if (touchY == null || e.touches.length !== 1) return;
-      const y = e.touches[0].clientY;
-      touchX = e.touches[0].clientX;
+      const lone = loneTouch(e);
+      if (touchY == null || !lone) return;
+      const y = lone.clientY;
+      touchX = lone.clientX;
       const dy = y - touchY;
       touchY = y;
       const dt = e.timeStamp - touchLastAt;
@@ -211,8 +219,9 @@ export function wireTouch(deps: TouchDeps) {
   // One finger on an armed selection selects the lines from the first row
   // touched to the row under the finger.
   function dragSelection(e: TouchEvent, from: number) {
-    if (e.touches.length === 1) {
-      const row = rowAt(e.touches[0].clientY);
+    const lone = loneTouch(e);
+    if (lone) {
+      const row = rowAt(lone.clientY);
       try {
         term.selectLines(Math.min(from, row), Math.max(from, row));
       } catch {

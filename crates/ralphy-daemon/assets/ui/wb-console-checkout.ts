@@ -458,7 +458,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       opt.textContent = b;
       select.append(opt);
     }
-    select.value = branches.includes(base) ? base : branches[0];
+    select.value = branches.includes(base) ? base : (branches[0] ?? "");
     return select;
   }
 
