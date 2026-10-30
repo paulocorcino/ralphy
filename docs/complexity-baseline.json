@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/routes.rs": {
-      "router_with_roster": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/src/routes/api_desk.rs": {
       "desk_history_restore_route": [
         11
