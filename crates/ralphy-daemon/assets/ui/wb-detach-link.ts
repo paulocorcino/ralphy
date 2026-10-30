@@ -58,16 +58,28 @@ export type DetachMessage = {
  * (a popup the daemon served after an update). */
 export function isDetachMessage(v: unknown): v is DetachMessage {
   if (!isRecord(v) || typeof v.type !== "string" || !isNullableString(v.tab)) return false;
-  const members = v.members;
   return (
-    (v.fenceId === undefined || isNullableString(v.fenceId)) &&
-    (v.pid === undefined || isNullableString(v.pid)) &&
-    (members === undefined ||
-      (Array.isArray(members) &&
-        members.every((m) => isRecord(m) && typeof m.id === "string" && (m.kind == null || typeof m.kind === "string") && isOptionalString(m.path)))) &&
+    isOptionalNullableString(v.fenceId) &&
+    isOptionalNullableString(v.pid) &&
+    isDetachMembers(v.members) &&
     isOptionalString(v.noteId) &&
     isOptionalString(v.path) &&
     isOptionalString(v.claim)
+  );
+}
+
+// Absent, null or a string.
+function isOptionalNullableString(v: unknown) {
+  return v === undefined || isNullableString(v);
+}
+
+// The `members` of a message: absent, or a list of members that each have an
+// id, and maybe a kind and a path.
+function isDetachMembers(members: unknown) {
+  return (
+    members === undefined ||
+    (Array.isArray(members) &&
+      members.every((m) => isRecord(m) && typeof m.id === "string" && (m.kind == null || typeof m.kind === "string") && isOptionalString(m.path)))
   );
 }
 
