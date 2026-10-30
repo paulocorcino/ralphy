@@ -1,17 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-console-spawn.ts": {
-      "recordBirth": [
-        11
-      ],
-      "recordSession": [
-        15
-      ],
-      "spawnWindow": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-terminal.ts": {
       "(anonymous)": [
         11
