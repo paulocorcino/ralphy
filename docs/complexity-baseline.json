@@ -112,17 +112,6 @@
         13
       ]
     },
-    "crates/ralphy-core/src/acceptance.rs": {
-      "apply_ledger": [
-        12
-      ],
-      "evidence_comment": [
-        13
-      ],
-      "logical_checkbox_items": [
-        12
-      ]
-    },
     "crates/ralphy-core/src/checkouts.rs": {
       "add": [
         13
