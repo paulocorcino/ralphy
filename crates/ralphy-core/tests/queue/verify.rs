@@ -39,7 +39,7 @@ fn verify_gate_passes_and_issue_closes() {
         "verify artifact comment posted on pass: {comments:?}"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn a_resumed_plan_with_every_step_done_runs_the_gates_and_closes() {
         tracker.labels.borrow()
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn verify_gate_fails_skips_issue_and_continues_queue() {
     let r2 = report.worked.iter().find(|r| r.number == 2).unwrap();
     assert!(r2.closed, "the passing issue closed");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn verify_gate_repairs_then_closes() {
         "the repaired (passing) gate run is recorded"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -232,7 +232,7 @@ fn verify_none_opts_out_and_skips_settings_fallback() {
         "opt-out posts no verify artifact"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn verify_falls_back_to_settings_when_plan_section_absent() {
         "fallback gate failure posts the verify artifact: {comments:?}"
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn green_issue_writes_one_plan_and_one_execute_ledger_line() {
         plan_lines[0]
     );
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn require_verify_gate_parks_no_gate_issue_and_continues() {
     let r2 = report.worked.iter().find(|r| r.number == 2).unwrap();
     assert!(r2.closed, "the gated issue closed normally");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -414,7 +414,7 @@ fn no_gate_without_require_flag_closes_with_warn_regression() {
     );
     assert!(report.stop.is_none());
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -462,7 +462,7 @@ fn protocol_lint_bounces_once_and_repaired_plan_closes_clean() {
     );
     assert!(report.stop.is_none());
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -498,7 +498,7 @@ fn protocol_lint_second_violation_closes_with_report() {
     );
     assert!(report.stop.is_none());
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -536,5 +536,5 @@ fn a_malformed_verify_section_leaves_the_issue_open_without_a_repair() {
     assert!(!r1.closed);
     assert_eq!(r1.skip, Some(ralphy_core::SkipReason::VerifyFailed));
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

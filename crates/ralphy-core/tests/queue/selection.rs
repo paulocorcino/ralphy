@@ -36,7 +36,7 @@ fn stop_before_halts_before_labeled_issue() {
     // Branch has work (from #1), so it is handed back on the run branch.
     assert_eq!(current_branch(&repo), report.branch);
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn view_and_run_agree_issue_for_issue() {
     assert!(r7.outcome.is_some(), "eligible issue was executed");
     assert!(agent.executed.borrow().contains(&7));
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn forced_issues_ignore_stop_before() {
             "{case}: a named issue's stop-before never halts a forced run"
         );
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -201,7 +201,7 @@ fn human_return_labels_skip_their_issues_and_the_queue_continues() {
     }
     assert!(report.stop.is_none(), "the run continues past the skips");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -230,5 +230,5 @@ fn only_issue_does_not_override_human_return() {
     assert!(tracker.closes.borrow().is_empty());
     assert!(report.stop.is_none(), "a skip continues, it does not stop");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }

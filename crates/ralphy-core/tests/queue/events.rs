@@ -89,7 +89,7 @@ fn pins_green_run_vocabulary() {
     // bounce — so the invocation count is 2.
     assert_eq!(green.get("invocations"), "2");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn exec_usage_single_attempt_keeps_its_model_or_none() {
         assert_eq!(green.get("up"), up, "{case}: up");
         assert_eq!(green.get("out"), out, "{case}: out");
 
-        fs::remove_dir_all(&repo).ok();
+        remove_scratch(&repo);
     }
 }
 
@@ -221,7 +221,7 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
     assert_eq!(green.get("cw"), "3300");
     assert_eq!(green.get("out"), "4400");
 
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn pins_skip_and_stop_vocabulary() {
     assert_eq!(non_green.get("number"), "2");
     // `?outcome` (Debug on the shorthand) — the decoder reads this rendered form.
     assert_eq!(non_green.get("outcome"), "Blocked(\"nope\")");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 
     // Deadline: the clock reports passed before #2.
     let repo = init_repo("pins-deadline");
@@ -271,7 +271,7 @@ fn pins_skip_and_stop_vocabulary() {
         .get("number"),
         "2"
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 
     // Stop-before label on #2.
     let repo = init_repo("pins-stopbefore");
@@ -295,7 +295,7 @@ fn pins_skip_and_stop_vocabulary() {
         .get("number"),
         "2"
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 
     // Human-return label on #1; the queue continues to #2.
     let repo = init_repo("pins-humanreturn");
@@ -318,7 +318,7 @@ fn pins_skip_and_stop_vocabulary() {
     assert_eq!(hr.get("number"), "1");
     // `%label` (Display) — the decoder's `clean_opt` strips no quotes here.
     assert_eq!(hr.get("label"), "needs-info");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 
     // Verify gate red past the repair budget on #1; the queue continues to #2.
     let repo = init_repo("pins-verifyfail");
@@ -345,7 +345,7 @@ fn pins_skip_and_stop_vocabulary() {
         !vg.get("summary").is_empty(),
         "the `%summary` field must carry the failure text"
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
@@ -371,7 +371,7 @@ fn pins_blocked_and_split_vocabulary() {
     assert_eq!(blocked.get("number"), "5");
     // `?blockers` — a Debug-rendered `Vec<u64>` the decoder parses the numbers out of.
     assert_eq!(blocked.get("blockers"), "[2]");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 
     // #5 blocked by open #2, which carries a human gate.
     let repo = init_repo("pins-humangate");
@@ -398,7 +398,7 @@ fn pins_blocked_and_split_vocabulary() {
     assert_eq!(hb.get("number"), "5");
     assert_eq!(hb.get("blockers"), "[2]");
     assert_eq!(hb.get("human_blockers"), "[2]");
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 
     // An infeasible plan whose reason names a bundle → the needs-split verdict.
     let repo = init_repo("pins-bundle");
@@ -419,7 +419,7 @@ fn pins_blocked_and_split_vocabulary() {
         pin(&events, "bundle plan — needs split", &["message", "number"],).get("number"),
         "3"
     );
-    fs::remove_dir_all(&repo).ok();
+    remove_scratch(&repo);
 }
 
 #[test]
