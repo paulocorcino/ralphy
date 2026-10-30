@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/events/emitter.rs": {
-      "public_ip": [
-        14
-      ]
-    },
     "crates/ralphy-cli/src/guard.rs": {
       "shell_tokens": [
         11
