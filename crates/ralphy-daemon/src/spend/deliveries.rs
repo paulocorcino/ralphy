@@ -212,24 +212,7 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
     let rows = ordered
         .into_iter()
         .take(MAX_ROWS)
-        .map(|(issue, accum)| {
-            let usd = accum.usd();
-            let share = match (usd, column_usd) {
-                (Some(value), total) if total > 0.0 => value / total,
-                _ => 0.0,
-            };
-            DeliveryRow {
-                issue,
-                usd,
-                total: fmt_total(usd, accum.floor),
-                floor: accum.floor,
-                attempts: accum.attempts,
-                tokens: accum.tokens,
-                tokens_label: fmt_tokens(accum.tokens),
-                share,
-                share_label: fmt_share(share),
-            }
-        })
+        .map(|(issue, accum)| delivery_row(issue, accum, column_usd))
         .collect();
 
     let column = column_priced.then_some(column_usd);
@@ -253,6 +236,26 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
             consolidation_total: consolidation.total(),
             consolidation_floor: consolidation.floor,
         },
+    }
+}
+
+/// One row of the delivery column, with its share of the column's cost.
+fn delivery_row(issue: u64, accum: Accum, column_usd: f64) -> DeliveryRow {
+    let usd = accum.usd();
+    let share = match (usd, column_usd) {
+        (Some(value), total) if total > 0.0 => value / total,
+        _ => 0.0,
+    };
+    DeliveryRow {
+        issue,
+        usd,
+        total: fmt_total(usd, accum.floor),
+        floor: accum.floor,
+        attempts: accum.attempts,
+        tokens: accum.tokens,
+        tokens_label: fmt_tokens(accum.tokens),
+        share,
+        share_label: fmt_share(share),
     }
 }
 
