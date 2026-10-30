@@ -8,6 +8,11 @@
 //! the agent override are process-global environment, so each test needs a
 //! process of its own (nextest runs each test in its own process).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

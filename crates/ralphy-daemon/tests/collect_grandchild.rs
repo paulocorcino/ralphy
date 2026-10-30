@@ -3,6 +3,11 @@
 //! grandchild. Proves the handle inheritance on each OS, which the unit fakes
 //! cannot.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::sync::mpsc;
 use std::time::Duration;
 

@@ -13,8 +13,13 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
 async fn serve(registry_path: PathBuf) -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
@@ -33,7 +38,7 @@ async fn serve(registry_path: PathBuf) -> u16 {
             app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .await
-        .unwrap();
+        .expect("the test server runs");
     });
     port
 }
@@ -42,7 +47,7 @@ async fn serve(registry_path: PathBuf) -> u16 {
 async fn device_cookie(port: u16) -> String {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("the test socket connects");
     stream
         .write_all(
             format!(
@@ -51,9 +56,12 @@ async fn device_cookie(port: u16) -> String {
             .as_bytes(),
         )
         .await
-        .unwrap();
+        .expect("the request is written");
     let mut reply = String::new();
-    stream.read_to_string(&mut reply).await.unwrap();
+    stream
+        .read_to_string(&mut reply)
+        .await
+        .expect("the reply is read");
     reply
         .lines()
         .filter_map(|line| line.split_once(':'))
@@ -63,7 +71,7 @@ async fn device_cookie(port: u16) -> String {
         .unwrap_or_else(|| panic!("a device cookie in {reply}"))
         .split(';')
         .next()
-        .unwrap()
+        .expect("the reply sets a device cookie")
         .to_string()
 }
 

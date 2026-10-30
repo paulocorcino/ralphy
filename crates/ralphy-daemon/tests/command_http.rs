@@ -2,6 +2,11 @@
 //! command socket sends, under the same guard, cap and audit record, and
 //! refuses a command whose output streams (ADR-0082 D1, ADR-0072 D3, D11).
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -41,12 +46,12 @@ fn app_with(registry_path: PathBuf, auth: std::sync::Arc<AuthState>) -> axum::Ro
 /// A registry in `dir` with one slug whose checkout is `dir/repo`.
 fn registered(dir: &Path) -> PathBuf {
     let repo = dir.join("repo");
-    std::fs::create_dir_all(&repo).unwrap();
-    std::fs::write(repo.join("note.txt"), "hello").unwrap();
+    std::fs::create_dir_all(&repo).expect("the test directory is created");
+    std::fs::write(repo.join("note.txt"), "hello").expect("the test file is written");
     let registry_path = dir.join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert(SLUG, &repo.to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).expect("the registry is saved");
     registry_path
 }
 
@@ -56,15 +61,20 @@ async fn serve(registry_path: PathBuf) -> u16 {
 }
 
 async fn serve_app(app: axum::Router) -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     tokio::spawn(async move {
         axum::serve(
             listener,
             app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
         )
         .await
-        .unwrap();
+        .expect("the test server runs");
     });
     port
 }
@@ -93,17 +103,20 @@ async fn over_http(
     }
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
-        .unwrap();
+        .expect("the test socket connects");
     let request = format!(
         "POST /api/command HTTP/1.1\r\n{extra}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
-    stream.write_all(request.as_bytes()).await.unwrap();
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("the request is written");
     let mut reply = String::new();
     tokio::time::timeout(Duration::from_secs(20), stream.read_to_string(&mut reply))
         .await
         .expect("an answer within 20s")
-        .unwrap();
+        .expect("the reply is read");
     let status: u16 = reply
         .split_whitespace()
         .nth(1)
@@ -126,14 +139,16 @@ async fn over_socket(
 ) -> serde_json::Value {
     let mut request = format!("ws://127.0.0.1:{port}/ws/command")
         .into_client_request()
-        .unwrap();
+        .expect("the websocket request is valid");
     for (name, value) in headers {
         request.headers_mut().insert(
-            header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
-            value.parse().unwrap(),
+            header::HeaderName::from_bytes(name.as_bytes()).expect("the header name is valid"),
+            value.parse().expect("the header value is valid"),
         );
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    let (mut ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("the websocket connects");
     let frame = Frame::Command(Command {
         id: 1,
         verb: verb.to_string(),
@@ -141,7 +156,7 @@ async fn over_socket(
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
-        .unwrap();
+        .expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(20), async {
         while let Some(msg) = ws.next().await {
             let Ok(Message::Binary(bytes)) = msg else {

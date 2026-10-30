@@ -1,5 +1,10 @@
 //! Repo commands proxy through the local daemon and execute on the owning peer.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,7 +28,7 @@ const ENV: &str = "WSL: Ubuntu-22.04";
 
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
-        id: id.parse().unwrap(),
+        id: id.parse().expect("the test id parses"),
         name: name.to_string(),
         avatar: "🐙".to_string(),
     }
@@ -32,7 +37,7 @@ fn identity(id: &str, name: &str) -> Identity {
 fn save_registry(path: &Path, repo: &Path) {
     let mut store = registry::RegistryStore::default();
     store.upsert(SLUG, &repo.to_string_lossy());
-    registry::save_to(&store, path).unwrap();
+    registry::save_to(&store, path).expect("the registry is saved");
 }
 
 async fn serve(
@@ -40,8 +45,13 @@ async fn serve(
     registry_path: PathBuf,
     auth: Arc<AuthState>,
 ) -> (u16, tokio::task::JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the test port binds");
+    let port = listener
+        .local_addr()
+        .expect("the test port has an address")
+        .port();
     let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
@@ -54,7 +64,9 @@ async fn serve(
     );
     let task = tokio::spawn(async move {
         let _shutdown = tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("the test server runs");
     });
     (port, task)
 }
@@ -78,7 +90,7 @@ fn descriptor(id: &str, port: u16) -> PeerDescriptor {
 async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serde_json::Value {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
         .await
-        .unwrap();
+        .expect("the websocket connects");
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -88,11 +100,11 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
-            if let Message::Binary(bytes) = message.unwrap() {
+            if let Message::Binary(bytes) = message.expect("the websocket frame arrives") {
                 if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
                     if reply.id == id {
                         return reply.payload;
@@ -109,7 +121,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
 async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> Vec<Command> {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
         .await
-        .unwrap();
+        .expect("the websocket connects");
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -119,12 +131,12 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut replies = Vec::new();
         while let Some(message) = ws.next().await {
-            let Message::Binary(bytes) = message.unwrap() else {
+            let Message::Binary(bytes) = message.expect("the websocket frame arrives") else {
                 continue;
             };
             let Ok(Frame::Command(reply)) = protocol::decode(&bytes) else {

@@ -10,6 +10,11 @@
 //! and `RALPHY_TEST_*` are process-global. The two legs run SEQUENTIALLY inside
 //! one test so the exit code can differ per leg without an intra-process race.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "nextest runs each test in its own process, so a test may change its environment"
+)]
+
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -33,14 +38,16 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
         .into(),
     ))
     .await
-    .unwrap();
+    .expect("the frame is sent");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = ws.next().await {
-            let bytes = match msg.unwrap() {
+            let bytes = match msg.expect("the websocket frame arrives") {
                 Message::Binary(b) => b,
                 Message::Close(_) => break,
-                _ => continue,
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
+                    continue
+                }
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.id == id {
