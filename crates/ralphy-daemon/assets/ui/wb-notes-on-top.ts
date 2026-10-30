@@ -106,9 +106,8 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // the orphan `mountDetached` kept, when this window's desk does not hold it.
   function keepOnTop(id: string | null | undefined) {
     const el = cardEl(id);
-    const record = recordOf(id) || (fragment() ? el?._noteOrphan : null);
+    const record = floatableRecord(id, el);
     if (!record || !el) return false;
-    if (isAway(record, consoleHost?.fenceRecords?.() || [])) return false;
     if (onTopId === id) return true;
     putBack();
     wakeCard(el);
@@ -119,6 +118,14 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     watchViewport();
     stack?.focusWin(el);
     return true;
+  }
+
+  // The record of a card that may float, or null: a card in a detached
+  // fence's popup stays where it is.
+  function floatableRecord(id: string | null | undefined, el: ReturnType<typeof cardEl>) {
+    const record = recordOf(id) || (fragment() ? el?._noteOrphan : null);
+    if (!record || isAway(record, consoleHost?.fenceRecords?.() || [])) return null;
+    return record;
   }
 
   // Back to the desk rect, which the inline style never stopped holding.

@@ -52,11 +52,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-notes-on-top.ts": {
-      "keepOnTop": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
       "addCard": [
         12
