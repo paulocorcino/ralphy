@@ -23,6 +23,14 @@ env:
   # `ci_installs_the_pinned_oxlint` fails when the two differ.
   OXLINT_VERSION: "1.85.0"
   OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
+  # The tools of the `checks` job: release binaries, pinned like oxlint. The
+  # local forms, with `cargo install --locked --version`, are in AGENTS.md.
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+  MACHETE_VERSION: "0.9.2"
+  MACHETE_SHA256: 48200087f54c55aabcd4db4af1e25742b49846c02a1b1bfa134711945b35b2e9
+  TYPOS_VERSION: "1.51.1"
+  TYPOS_SHA256: 93c301fd4120ff076e2cc2a6d6a61cab4a4bdb81899287c0938b452e56d1f454
 
 jobs:
   lint:
@@ -53,6 +61,49 @@ jobs:
       # docs/ui-copy-rules.json; a violation or a stale exemption fails the job.
       - name: UI copy (ADR-0065)
         run: cargo run --locked -q -p xtask -- ui-copy --check
+
+  checks:
+    name: actionlint · machete · typos · doc
+    # Checks that no test makes: a mistake in a workflow, a dependency that no
+    # code uses, a typo, and a doc comment whose link or markup is wrong. They
+    # do not depend on the platform, so they run once on Linux.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # Reads the workflows, and runs shellcheck over their `run:` steps.
+      - name: Workflows (actionlint)
+        run: |
+          ./.github/scripts/fetch-actionlint.sh
+          ./actionlint
+
+      # A dependency in a Cargo.toml that no source file names. The binary
+      # sits in the working directory, so `cargo machete` finds it on PATH.
+      - name: Unused dependencies (cargo machete)
+        run: |
+          ./.github/scripts/fetch-cargo-machete.sh
+          PATH="$PWD:$PATH" cargo machete
+
+      # The words to accept are in _typos.toml.
+      - name: Spelling (typos)
+        run: |
+          ./.github/scripts/fetch-typos.sh
+          ./typos
+
+      # A broken intra-doc link or bad markup in a doc comment is a warning
+      # that rustdoc prints and the build does not fail on.
+      - name: Rustdoc
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 
   ui-tests:
     name: ui-tests
@@ -253,12 +304,15 @@ jobs:
           "$RALPHY_INSTALL_DIR/ralphy" --version
           sh assets/install/install.sh   # a second run repairs the install
           # The default folder, decided by the binary: a scratch home has no
-          # ~/.cargo/bin, so it is ~/.local/bin.
+          # ~/.cargo/bin, so it is ~/.local/bin. Each ( ) group sets its own HOME
+          # on purpose, so the next one starts from the real one.
+          # shellcheck disable=SC2030,SC2031
           ( export HOME="$RUNNER_TEMP/home"; mkdir -p "$HOME"; unset RALPHY_INSTALL_DIR
             sh assets/install/install.sh
             "$HOME/.local/bin/ralphy" --version )
           if [ "$(uname -s)" = Darwin ]; then
             # The daemon at sign-in: a launchd agent in a scratch home.
+            # shellcheck disable=SC2030,SC2031
             ( export HOME="$RUNNER_TEMP/daemon-home"; mkdir -p "$HOME"
               RALPHY_DAEMON=1 sh assets/install/install.sh
               test -f "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"

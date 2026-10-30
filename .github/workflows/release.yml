@@ -339,6 +339,9 @@ jobs:
           # category renamed — must still ship its archives, because the archives
           # are what `ralphy update` resolves. The flagged attempt therefore falls
           # back to an unannounced release rather than taking the release down.
+          # The flags stay unquoted: an empty one must not reach `gh` as an
+          # empty argument.
+          # shellcheck disable=SC2086
           if [[ -n "$discussion_flag" ]]; then
             if gh release create "$version" out/* \
               --repo "$GITHUB_REPOSITORY" \
