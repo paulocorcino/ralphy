@@ -94,7 +94,10 @@ fn silent_if_err<T, E>(sent: Result<T, E>) -> Flow {
 /// daemon open for minutes after the browser behind it vanished, and that leg
 /// would hold the writer slot against the client's own reattach.
 /// `tab` is the browser tab that opened the socket.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the socket, the attachment, the session identity and the tab, one parameter each"
+)]
 pub(crate) async fn session_ws(
     mut socket: WebSocket,
     mut attach: session::Attachment,
@@ -268,6 +271,10 @@ fn on_client_frame(bytes: &[u8], attach: &session::Attachment, traffic: &mut Tra
         Ok(Frame::Terminal { data, .. }) => silent_if_err(attach.write(&data)),
         Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
             if let Some((rows, cols)) = resize_of(&cmd) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a resize fails only once the console has ended, which the loop sees"
+                )]
                 let _ = attach.resize(rows, cols);
             }
             ControlFlow::Continue(())

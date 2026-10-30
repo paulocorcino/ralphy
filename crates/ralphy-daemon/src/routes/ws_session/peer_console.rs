@@ -13,7 +13,7 @@ use super::join::{claim_for, hold, Joined};
 use super::refuse::Refuser;
 use super::traffic::Tab;
 use super::upgrade::{launch_record, relayed_record};
-use super::{peer_session_query, relay_to_peer, session_ws, Opening};
+use super::{peer_session_query, relay_to_peer, session_ws, Opening, PeerDial};
 use super::{SessionLabels, SessionQuery};
 use crate::routes::audit_layer::SocketAudit;
 use crate::{fleet, peer, session};
@@ -72,7 +72,12 @@ impl PeerConsole<'_> {
                 tab,
                 who,
             };
-            return relay_to_peer(ws, peer, &peer_query, opening, me, &refuser, shutdown).await;
+            let dial = PeerDial {
+                peer,
+                query: &peer_query,
+                me,
+            };
+            return relay_to_peer(ws, dial, opening, &refuser, shutdown).await;
         };
         let status = peer::client::probe(
             peer,

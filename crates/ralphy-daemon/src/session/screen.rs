@@ -120,8 +120,10 @@ impl Screen {
     }
 
     /// `(rows, cols)`, after the clamp.
-    // Only tests read it today.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "only tests read the size today")
+    )]
     pub fn size(&self) -> (u16, u16) {
         (self.rows, self.cols)
     }
@@ -146,8 +148,13 @@ impl Screen {
     /// The plain text of the active screen: its scrollback and its visible
     /// rows, a wrapped row joined to the next, trailing spaces removed, one
     /// line per `\n`. The alternate screen has no scrollback.
-    // `read_screen` (#679) is its caller; until then only tests.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "only tests read the text until `read_screen` calls it"
+        )
+    )]
     pub fn text(&self) -> String {
         let grid = self.term.grid();
         let last = grid.columns() - 1;
@@ -229,7 +236,17 @@ impl EventListener for Listener {
         let title = match event {
             Event::Title(title) => Some(title),
             Event::ResetTitle => None,
-            _ => return,
+            Event::MouseCursorDirty
+            | Event::ClipboardStore(..)
+            | Event::ClipboardLoad(..)
+            | Event::ColorRequest(..)
+            | Event::PtyWrite(_)
+            | Event::TextAreaSizeRequest(_)
+            | Event::CursorBlinkingChange
+            | Event::Wakeup
+            | Event::Bell
+            | Event::Exit
+            | Event::ChildExit(_) => return,
         };
         *self.title.lock().unwrap_or_else(PoisonError::into_inner) = title;
     }

@@ -115,6 +115,11 @@ pub(crate) struct RouterShared {
     pub(crate) telegram_claim: crate::telegram_state::SharedClaim,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the router's stores, clock, shutdown and dependencies; \
+         its callers are in lib.rs and the daemon tests"
+)]
 pub(crate) fn router_with_roster(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
@@ -307,6 +312,10 @@ pub(crate) fn encode_query_value(value: &str) -> String {
             encoded.push(byte as char);
         } else {
             use std::fmt::Write as _;
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "writing to a String cannot fail"
+            )]
             let _ = write!(encoded, "%{byte:02X}");
         }
     }
@@ -326,6 +335,10 @@ pub(crate) async fn send_command(
         verb: verb.to_string(),
         payload,
     });
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the client may already be gone"
+    )]
     let _ = socket
         .send(Message::Binary(protocol::encode(&frame).into()))
         .await;

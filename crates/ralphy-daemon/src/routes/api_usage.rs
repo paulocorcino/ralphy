@@ -59,7 +59,10 @@ pub(crate) struct SpendQuery {
 /// verdict is computed HERE rather than in JavaScript because `no_price` (a real
 /// model absent from `pricing.toml`) is undecidable without the price table, and
 /// PRD #355 fixes that the client computes nothing numeric.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the route's stores, ids and query filters, one parameter each"
+)]
 pub(crate) async fn usage_route(
     usage_dir: PathBuf,
     stores: StorePaths,

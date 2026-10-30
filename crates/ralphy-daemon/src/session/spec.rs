@@ -110,7 +110,12 @@ impl Agent {
     pub fn locate_program(self) -> Option<PathBuf> {
         match self {
             Agent::Cursor => ralphy_proc_util::cursor::locate_cursor(),
-            _ => ralphy_proc_util::locate_program(self.program_name()),
+            Agent::Claude
+            | Agent::Codex
+            | Agent::Copilot
+            | Agent::Gemini
+            | Agent::Kimi
+            | Agent::OpenCode => ralphy_proc_util::locate_program(self.program_name()),
         }
     }
 
@@ -185,7 +190,10 @@ pub fn spec_for(
 ///
 /// `console` is the console name the shell sent with a new launch; with
 /// Claude's name opt-in on, its folded form is the `--name`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the agent, its paths and names, the size and the status files; a public function"
+)]
 pub fn spec_with_status(
     agent: Agent,
     root: &Path,
@@ -211,7 +219,12 @@ pub fn spec_with_status(
                 gemini_home(root).into_os_string(),
             )],
         ),
-        _ => (Vec::new(), Vec::new()),
+        Agent::Claude
+        | Agent::Codex
+        | Agent::Copilot
+        | Agent::Cursor
+        | Agent::Kimi
+        | Agent::OpenCode => (Vec::new(), Vec::new()),
     };
     let mut spec = SessionSpec {
         program,

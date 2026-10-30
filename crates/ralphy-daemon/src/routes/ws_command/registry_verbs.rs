@@ -12,6 +12,10 @@ use crate::{dir_list, registry};
 
 /// Serve a registry verb against THIS daemon's disk and registry. One reply
 /// frame either way.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "the caller sends only registry verbs here and `Verb` has over 60 variants"
+)]
 pub(crate) async fn serve_registry(
     cmd: &Command,
     verb: Verb,

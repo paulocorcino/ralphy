@@ -269,7 +269,10 @@ impl SessionManager {
     /// `session` field) and an [`Attachment`] to bridge onto the socket. A fresh
     /// session is never busy, so the initial attach always succeeds. `record` is
     /// the window record the launch named; its [`RecordClaim`] is the caller's.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the session's labels, its record and its spec; a public method"
+    )]
     pub fn spawn_attached(
         self: &Arc<Self>,
         repo: String,
@@ -293,7 +296,10 @@ impl SessionManager {
 
     /// [`spawn_attached`](Self::spawn_attached) with an id from
     /// [`reserve_id`](Self::reserve_id).
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the session's id, labels, record and spec; a public method"
+    )]
     pub fn spawn_attached_as(
         self: &Arc<Self>,
         id: SessionId,
@@ -382,7 +388,7 @@ impl SessionManager {
         );
         let attachment = self
             .attach(id, true)
-            .map_err(|_| anyhow::anyhow!("fresh session unexpectedly busy"))?;
+            .map_err(|error| anyhow::anyhow!("fresh session unexpectedly busy: {error:?}"))?;
         Ok((id, attachment))
     }
 

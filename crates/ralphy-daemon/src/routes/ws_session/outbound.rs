@@ -84,6 +84,10 @@ pub(super) async fn announce_end(
     traffic: &mut Traffic,
     reason: session::EndReason,
 ) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a farewell that takes over 5 seconds is abandoned"
+    )]
     let _ = tokio::time::timeout(Duration::from_secs(5), async {
         // The child's last output is sent before its end is named. Only a
         // child end drains: a takeover leaves the stream to the new owner,
@@ -112,6 +116,10 @@ pub(super) async fn announce_end(
             }),
         )
         .await;
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the client may already be gone"
+        )]
         let _ = socket.send(Message::Close(None)).await;
     })
     .await;

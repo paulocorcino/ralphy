@@ -44,6 +44,10 @@ async fn a_working_state_that_ages_out_counts_as_a_change() {
     );
     assert!(!sess.poll_status(later), "unknown again is not");
     manager.close(id);
+    #[expect(
+        clippy::unused_result_ok,
+        reason = "the cleanup of a scratch directory may find it gone"
+    )]
     std::fs::remove_dir_all(&dir).ok();
 }
 
