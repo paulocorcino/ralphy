@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-desk.ts": {
-      "converge": [
-        15
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-detach-link.ts": {
       "isDetachMessage": [
         13

@@ -313,20 +313,30 @@ export function createDesk(deps: DeskDeps) {
       // Another page wrote this adopted console's record: it is recorded now,
       // and takes the place written there.
       w._deskUnrecorded = false;
-      if (r.rect && !inGesture(w)) {
-        placeWindow(w, r.rect);
-        paintTabShadow(w);
-      }
+      convergeRect(w, r);
       if (!!r.locked !== !!w._deskLocked) applyLock(w, !!r.locked);
-      if (r.consoleName && r.consoleName !== w._deskConsoleName && !w.querySelector(".session-name-input")) {
-        w._deskConsoleName = r.consoleName;
-        if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
-      }
+      convergeName(w, r);
     }
     keepUnsavedCards(st);
     renderFences();
     renderNotes();
     applyExtent();
+  }
+
+  // The window takes the rect of its record, unless a gesture moves it now.
+  function convergeRect(w: ConsoleWin, r: DeskRecord) {
+    if (r.rect && !inGesture(w)) {
+      placeWindow(w, r.rect);
+      paintTabShadow(w);
+    }
+  }
+
+  // A name written on another device, unless the name is being edited here.
+  function convergeName(w: ConsoleWin, r: DeskRecord) {
+    if (r.consoleName && r.consoleName !== w._deskConsoleName && !w.querySelector(".session-name-input")) {
+      w._deskConsoleName = r.consoleName;
+      if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
+    }
   }
 
   function placeWindow(win: HTMLElement, r: Rect) {
