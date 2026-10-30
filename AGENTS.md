@@ -87,8 +87,13 @@ ubiquitous language, and each crate is roughly one bounded context.
   node --test crates/ralphy-daemon/ui-tests
   npx -y -p typescript@7.0.2 tsc --noEmit -p crates/ralphy-daemon/assets/ui
   npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
+  npx -y -p oxlint@1.85.0 -p oxlint-tsgolint@7.0.2005 oxlint --type-aware --deny-warnings crates/ralphy-daemon/assets/ui/*.ts
   cargo run -q -p xtask -- ui-copy --check
   ```
+
+  The type-aware run (the rules that read the types) takes the modules by
+  name. Run it in a POSIX shell such as Git Bash: PowerShell passes `*.ts`
+  to oxlint as it is, and oxlint finds no file.
 
   New workbench code is a `.ts` module, never a new `.js` file
   ([ADR-0075](./docs/adr/0075-the-workbench-script-is-written-in-typescript.md)).

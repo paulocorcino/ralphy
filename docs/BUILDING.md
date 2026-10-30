@@ -98,7 +98,13 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   `// complexity-exception: <reason>` line above it (ADR-0081). The
   TypeScript limit is oxlint's `complexity` rule in `.oxlintrc.json`, which
   the `ui-tests` job runs. The oxlint version and checksum are in the
-  workflow `env`, read by `.github/scripts/fetch-oxlint.sh`.
+  workflow `env`, read by `.github/scripts/fetch-oxlint.sh`. The same job
+  runs oxlint a second time with `--type-aware`, over the modules
+  `crates/ralphy-daemon/assets/ui/*.ts` by name: those rules read the types
+  through tsgolint. `TSGOLINT_VERSION` and `TSGOLINT_SHA256` in the workflow
+  `env` pin it; `.github/scripts/fetch-tsgolint.sh` downloads the npm
+  tarball of `@oxlint-tsgolint/linux-x64`, checks it, and oxlint finds the
+  binary through `OXLINT_TSGOLINT_PATH`.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc
