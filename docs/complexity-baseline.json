@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/session.rs": {
-      "spawn": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/src/session/screen.rs": {
       "text": [
         12
