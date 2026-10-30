@@ -93,13 +93,12 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   the pull request adds a clone that the base branch does not have. An edit
   inside a clone that already exists also makes it new, because jscpd
   fingerprints the text of the clone. The job `complexity`, on every push
-  and pull request, runs `cargo run -p xtask -- complexity --check` with
-  the pinned oxlint binary. It fails when a production
-  function scores over 10 and `docs/complexity-baseline.json` does not list
-  it, or when a listed function scores higher or lower than its entry
-  (ADR-0081). The oxlint version and checksum are in the workflow `env`,
-  shared by `ui-tests` and `complexity` through
-  `.github/scripts/fetch-oxlint.sh`.
+  and pull request, runs `cargo run -p xtask -- complexity --check`. It
+  fails when a Rust production function scores over 10 and has no
+  `// complexity-exception: <reason>` line above it (ADR-0081). The
+  TypeScript limit is oxlint's `complexity` rule in `.oxlintrc.json`, which
+  the `ui-tests` job runs. The oxlint version and checksum are in the
+  workflow `env`, read by `.github/scripts/fetch-oxlint.sh`.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc
