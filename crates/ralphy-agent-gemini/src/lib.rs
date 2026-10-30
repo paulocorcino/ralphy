@@ -9,12 +9,12 @@
 //!
 //! Three behaviours here exist to refuse a vendor default, and they gate the run
 //! rather than decorate it:
-//! - [`root`] points every child at a configuration root Ralphy owns
+//! - `root` points every child at a configuration root Ralphy owns
 //!   (`GEMINI_CLI_HOME`), so the operator's `~/.gemini` is never read or written
 //!   (D4);
-//! - [`policy`] hands the child a policy document on argv that always denies
+//! - `policy` hands the child a policy document on argv that always denies
 //!   `invoke_agent` and imports only the operator's *restrictive* rules (D5);
-//! - [`command`] scrubs every inherited authentication variable outside an
+//! - `command` scrubs every inherited authentication variable outside an
 //!   explicit allowlist, so unrelated cloud tooling cannot redirect the run to
 //!   another account (D7).
 
