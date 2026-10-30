@@ -46,7 +46,7 @@ jobs:
 
       # The `ci` profile, as in ci.yml: `release` without its link cost.
       - name: Build
-        run: cargo build --workspace --profile ci --all-targets
+        run: cargo build --locked --workspace --profile ci --all-targets
 
       # The Windows tests sometimes hang, and then nothing on the runner ends
       # the step: not nextest's kill, not the script's timer, not
@@ -61,7 +61,7 @@ jobs:
         run: ./.github/scripts/nextest-windows.ps1 -TimeoutMinutes 14; exit $LASTEXITCODE
 
       - name: Doctests
-        run: cargo test --workspace --profile ci --doc
+        run: cargo test --locked --workspace --profile ci --doc
 
   windows-install:
     name: install script (windows-latest)
@@ -81,7 +81,7 @@ jobs:
           toolchain: stable
 
       - name: Build
-        run: cargo build --bin ralphy
+        run: cargo build --locked --bin ralphy
 
       # A hosted Windows runner is elevated, so this is the administrator path:
       # it stops with no terminal, and with RALPHY_ALLOW_ROOT it registers the
@@ -204,7 +204,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
           CC_x86_64_unknown_linux_musl: musl-gcc
           CC_aarch64_unknown_linux_musl: musl-gcc
-        run: cargo build --release --bin ralphy --target ${{ matrix.target }}
+        run: cargo build --locked --release --bin ralphy --target ${{ matrix.target }}
 
       - name: Determine version
         id: version
@@ -287,7 +287,7 @@ jobs:
         # fold uses, so the workflow never re-implements it against the
         # markdown. An unrecorded version publishes a pointer rather than
         # failing a release whose artifacts are already built.
-        run: cargo run -q -p xtask -- changelog --notes "${GITHUB_REF#refs/tags/}"
+        run: cargo run --locked -q -p xtask -- changelog --notes "${GITHUB_REF#refs/tags/}"
 
       - name: Download all packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

@@ -70,7 +70,7 @@ jobs:
           # (exit 1) ends the step here, before the annotations and the checks
           # below it run.
           code=0
-          cargo run -q --manifest-path tool/Cargo.toml -p xtask -- capabilities \
+          cargo run --locked -q --manifest-path tool/Cargo.toml -p xtask -- capabilities \
             --repo pr --base "$BASE_SHA" --head "$HEAD_SHA" --github --check \
             > report.txt 2> error.txt || code=$?
           # Annotations go to the log; the table goes to the job summary.

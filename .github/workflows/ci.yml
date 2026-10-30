@@ -47,12 +47,12 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       # The workbench text follows ADR-0065. The rules are in
       # docs/ui-copy-rules.json; a violation or a stale exemption fails the job.
       - name: UI copy (ADR-0065)
-        run: cargo run -q -p xtask -- ui-copy --check
+        run: cargo run --locked -q -p xtask -- ui-copy --check
 
   ui-tests:
     name: ui-tests
@@ -140,7 +140,7 @@ jobs:
       # Test step below times tests and a compile blowup can never again read as
       # a test hang.
       - name: Build
-        run: cargo build --workspace --profile ci --all-targets
+        run: cargo build --locked --workspace --profile ci --all-targets
 
       # The Linux hang has the same signature as memory or disk exhaustion, so
       # sample both alongside the tests. The sampler runs inside the Test step
@@ -159,13 +159,13 @@ jobs:
             done ) &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
-          cargo nextest run --workspace --cargo-profile ci --no-fail-fast
+          cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
 
       - name: Test
         if: runner.os == 'macOS'
         timeout-minutes: 18
         # PTY tests drive sh on macOS, as on Linux (portable-pty).
-        run: cargo nextest run --workspace --cargo-profile ci --no-fail-fast
+        run: cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
 
       # The only place `launchctl` runs for real (ADR-0032, amendment
       # 2026-09-15): a hosted macOS runner is a logged-in GUI session, so the
@@ -194,7 +194,7 @@ jobs:
       # Nextest cannot run doctests. The workspace has none today, so this is a
       # cheap backstop that keeps the gate honest the day someone adds one.
       - name: Doctests
-        run: cargo test --workspace --profile ci --doc
+        run: cargo test --locked --workspace --profile ci --doc
 
   install-scripts:
     name: install scripts (${{ matrix.os }})
@@ -222,7 +222,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Build
-        run: cargo build --bin ralphy
+        run: cargo build --locked --bin ralphy
 
       - name: Lint install.sh
         if: runner.os == 'Linux'
@@ -360,7 +360,7 @@ jobs:
           printf '%s\n' "$fragments" | sed 's/^/  /'
 
       - name: The fragments parse
-        run: cargo run -q -p xtask -- changelog --check
+        run: cargo run --locked -q -p xtask -- changelog --check
 
   duplication:
     name: no new duplicated code
@@ -415,7 +415,7 @@ jobs:
       - name: No file over its limit grows against the base branch
         env:
           BASE_REF: ${{ github.base_ref }}
-        run: cargo run -q -p xtask -- oversized --base "origin/$BASE_REF"
+        run: cargo run --locked -q -p xtask -- oversized --base "origin/$BASE_REF"
 
   complexity:
     name: no function grows past its complexity limit
@@ -446,4 +446,4 @@ jobs:
         run: ./.github/scripts/fetch-oxlint.sh
 
       - name: No function over its complexity limit grows
-        run: cargo run -q -p xtask -- complexity --check --oxlint ./oxlint-x86_64-unknown-linux-gnu
+        run: cargo run --locked -q -p xtask -- complexity --check --oxlint ./oxlint-x86_64-unknown-linux-gnu
