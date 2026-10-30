@@ -47,11 +47,6 @@
         14
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-notes-folds.ts": {
-      "withHeader": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
       "addCard": [
         12
