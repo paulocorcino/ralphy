@@ -473,7 +473,7 @@ export function createChrome(deps: ChromeDeps) {
       width: ws?.clientWidth || 0,
       height: ws?.clientHeight || 0,
     };
-    // The popup gets no fences: its members' rects are re-origined, so the
+    // The popup gets no fences: its members' rects are measured from a new origin, so the
     // fold would match the wrong fence (`fenceHolds`).
     const spawn = freeSpawnRect(view, cascade, OPTS.autoBoot === false ? [] : fences());
     setBox(win, spawn.rect);

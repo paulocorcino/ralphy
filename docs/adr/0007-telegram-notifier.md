@@ -179,7 +179,7 @@ not: the console kept its own parallel reducer (`ui::QueueState` plus a
 presenter-local `ActiveIssue`), so the queue bar, the active line and the card
 were three progress rules over one event stream. The dry-run defect proved the
 cost — a plan-only pass advanced the console bar (`QueueState::supersede`) but
-left the card and the CloudEvents heartbeat perenially "planning".
+left the card and the CloudEvents heartbeat perennially "planning".
 
 - The console reducer is **deleted**. `ui::queue_bar_label(&RunState, RenderOpts)`
   and `ui::active_phase(&IssueStatus)` derive the whole live region from the fold.

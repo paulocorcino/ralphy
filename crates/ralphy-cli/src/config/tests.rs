@@ -58,7 +58,7 @@ fn claude_effort_config_accepts_only_core_values() {
         fs::remove_dir_all(dir).ok();
     }
 
-    for invalid in ["none", "minimal", "hihg"] {
+    for invalid in ["none", "minimal", "extreme"] {
         for key in ["claude.plan_effort", "claude.exec_effort"] {
             let (ws, dir) = tmp_ws(&format!("{key}-{invalid}"));
             assert!(set(&ws, key, invalid).is_err());

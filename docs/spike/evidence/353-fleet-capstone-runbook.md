@@ -59,7 +59,7 @@ different bring-up: if the documented path does not work, that is a finding.
 - **Idle termination is a wall-clock wait**, not a mock. Phase 5 kills the peer
   the way the VM does, then watches the degradation the design promises.
 - **Reconciling usage against the vendors' own dashboards is a judgement call**
-  — the same one the adapter capstones made, now with two HOMEs.
+  — the same one the adapter capstones made, now with two HOME directories.
 
 ---
 

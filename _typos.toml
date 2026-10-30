@@ -1,0 +1,51 @@
+# Spell check (`typos`). It skips text that Ralphy does not write: libraries
+# copied into the repo, the mockups, captured output of vendor tools, research
+# papers and the logs of live runs. It accepts only words that are spelled that
+# way on purpose.
+[files]
+extend-exclude = [
+    "**/vendor/**",
+    "**/fixtures/**",
+    "mocks/",
+    "docs/research/",
+    "docs/spike/live/",
+    # An audit written in Portuguese, kept as it was on its date.
+    "docs/spike/evidence/audits/audit-workbench-2026-07-13.md",
+    "*.log",
+]
+
+[default]
+extend-ignore-re = [
+    # A terminal escape written in source text: `\x1b[1Cfor` is the escape, then `for`.
+    '\\x1b\[[0-9;]*[A-Za-z]',
+    # A commit or session id in hexadecimal.
+    '\b[0-9a-f]{7,40}\b',
+    # The crate `flate2`.
+    'flate2',
+    # The custom properties `--ot-x` and others (the "on top" notes).
+    '--ot-',
+    # The `schtasks` option `/FO`.
+    '/FO\b',
+    # Test data on purpose: a misspelling, a cut word, a text in another language.
+    'the ADRESS field',
+    '"decod"',
+    'caf\\u\{e9\}',
+    'Bitte legen Sie eine Authentifizierung fest',
+    'reconhecido como um comando interno',
+]
+
+[default.extend-words]
+# Spellings that are correct but not in the default dictionary.
+unparseable = "unparseable"
+driveable = "driveable"
+invokable = "invokable"
+# The prefix of `mis-click`, `mis-split` and the like.
+mis = "mis"
+# The compound of `opt-in` in test names and ids.
+optin = "optin"
+# The ordinal suffix, as in `202nd`.
+nd = "nd"
+# The `PNG` plural and a short variable name in a browser check.
+pn = "pn"
+# Portuguese `fase`, "phase": the names of the stages of old plans and one test text.
+fase = "fase"

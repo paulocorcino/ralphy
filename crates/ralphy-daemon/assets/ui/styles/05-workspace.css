@@ -699,7 +699,7 @@
   position: relative;
   z-index: 2;
   /* stops short of the tools cluster pinned in the corner, so a long repo list
-     ellipsises instead of sliding under the close button. Widened for the THIRD
+     ellipsizes instead of sliding under the close button. Widened for the THIRD
      tool (detach, #346), the FOURTH (lock) and the FIFTH (columns): the cluster
      is right-pinned, so a stale reserve does not move the close button — it
      just lets the head slide under the glyphs. */

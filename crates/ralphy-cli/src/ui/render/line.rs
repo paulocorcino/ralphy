@@ -195,12 +195,12 @@ pub(crate) fn render_line(
             )
         }
         RunEvent::NonGreen { number, outcome } => {
-            let fo = parse_outcome(Some(outcome));
-            let (emoji, ascii, style) = fo.glyph();
+            let non_green = parse_outcome(Some(outcome));
+            let (emoji, ascii, style) = non_green.glyph();
             (
                 pick(emoji, ascii, opts.emoji),
                 style,
-                format!("#{number} {}{dur}", fo.label()),
+                format!("#{number} {}{dur}", non_green.label()),
             )
         }
         RunEvent::Skipped {

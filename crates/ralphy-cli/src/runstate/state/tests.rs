@@ -397,7 +397,7 @@ fn apply_threads_phase_agent_context() {
 
 #[test]
 fn issue_started_supersedes_a_non_terminal_prior_issue() {
-    // The dry-run bug: a plan-only pass left the prior issue perenially
+    // The dry-run bug: a plan-only pass left the prior issue perennially
     // "planning". The next `issue started` is the fold's supersede edge.
     let mut state = RunState::new("t", 2);
     state.apply(RunEvent::IssueStarted {
