@@ -9,14 +9,14 @@
 //!
 //! Two of this adapter's behaviours exist to contain a vendor default, and they are
 //! not optional garnish on the run — they gate it:
-//! - [`guards`] writes the opt-out (announced) into a repository that has not
+//! - `guards` writes the opt-out (announced) into a repository that has not
 //!   opted out of the codebase upload, before spawning in it (D6), and
 //! - every invocation runs against a scratch `CURSOR_CONFIG_DIR` seeded from the
 //!   operator's own, so a `--model` never reassigns the default model of their
 //!   interactive Cursor sessions (D4/D17).
 //!
-//! The same two gates cover the one-shot verbs in [`tasks`], which run outside the
-//! `Agent` contract entirely. Token usage is captured in [`usage`] from the
+//! The same two gates cover the one-shot verbs in `tasks`, which run outside the
+//! `Agent` contract entirely. Token usage is captured in `usage` from the
 //! stream's terminal `result` record and summed per invocation — records are
 //! incremental, not cumulative (ADR-0042 D11).
 
@@ -53,7 +53,7 @@ pub use command::locate_cursor;
 pub use settings::CursorSettings;
 
 /// The four one-shot verbs (`init`/`triage`/`consolidate`/`diagnose`), each behind
-/// D6's indexing gate. See [`tasks`].
+/// D6's indexing gate. See `tasks`.
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 
 /// The vendor's id grammar, normalized to the billing family (ADR-0042 D5) — the
