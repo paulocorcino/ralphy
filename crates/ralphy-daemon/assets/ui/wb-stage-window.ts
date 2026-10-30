@@ -99,10 +99,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
     const maxed = win.classList.toggle("maximized", on);
-    if (!maxed && !win.classList.contains("column")) {
-      win.style.removeProperty("--max-left");
-      win.style.removeProperty("--max-top");
-    }
+    if (!maxed) dropMaxPin(win);
     syncMaxLock();
     if (ws && offsets) {
       ws.scrollLeft = offsets.left;
@@ -118,6 +115,13 @@ export function createStageWindow(deps: StageWindowDeps) {
     } catch {}
     applyExtent();
     if (persist) setWin(win, { max: on });
+  }
+
+  // A restored console floats again, so the bleed's pin goes; a column keeps it.
+  function dropMaxPin(win: ConsoleWin) {
+    if (win.classList.contains("column")) return;
+    win.style.removeProperty("--max-left");
+    win.style.removeProperty("--max-top");
   }
 
   function toggleMax(win: ConsoleWin) {

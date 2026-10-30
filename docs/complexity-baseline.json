@@ -104,11 +104,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-window.ts": {
-      "setMax": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
       "repathTabs": [
         14
