@@ -142,19 +142,11 @@ pub fn knowledge_used(plan_md: &str) -> Option<Vec<String>> {
     if block.is_empty() {
         return None;
     }
-    let mut items: Vec<String> = Vec::new();
-    for line in block.lines() {
-        // The key line itself contributes only its inline tail after the `:`.
-        let line = match line.split_once("**Knowledge used**") {
-            Some((_, tail)) => tail.trim_start_matches(':'),
-            None => line,
-        };
-        let item = line.trim().trim_start_matches('-').trim();
-        if item.is_empty() || item.starts_with("```") {
-            continue;
-        }
-        items.push(item.to_string());
-    }
+    let items: Vec<String> = block
+        .lines()
+        .filter_map(citation)
+        .map(str::to_string)
+        .collect();
     if let [only] = items.as_slice() {
         if only
             .trim_matches(['`', '"', '\'', '.'])
@@ -164,6 +156,18 @@ pub fn knowledge_used(plan_md: &str) -> Option<Vec<String>> {
         }
     }
     Some(items)
+}
+
+/// The citation one line of the `**Knowledge used**` block carries, without
+/// its bullet; `None` for a blank line or a code fence.
+fn citation(line: &str) -> Option<&str> {
+    // The key line itself contributes only its inline tail after the `:`.
+    let line = match line.split_once("**Knowledge used**") {
+        Some((_, tail)) => tail.trim_start_matches(':'),
+        None => line,
+    };
+    let item = line.trim().trim_start_matches('-').trim();
+    (!item.is_empty() && !item.starts_with("```")).then_some(item)
 }
 
 /// The handoff sub-headings the prompts specify — the block boundaries for
