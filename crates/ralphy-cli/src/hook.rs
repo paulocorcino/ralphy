@@ -279,6 +279,10 @@ pub fn run_stop_hook() -> Result<()> {
     }
 
     if let Some(write) = classify_stop(&payload, read_transcript_last_assistant) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the hook never fails the session, so an unwritable flag file is not an error"
+        )]
         let _ = fs::write(&flag, write.contents());
     }
     Ok(())

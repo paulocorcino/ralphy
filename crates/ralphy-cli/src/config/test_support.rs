@@ -17,3 +17,8 @@ pub(super) fn tmp_ws(name: &str) -> (Workspace, PathBuf) {
     let ws = Workspace::new(&dir);
     (ws, dir)
 }
+
+#[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
+pub(super) fn remove_scratch(dir: impl AsRef<std::path::Path>) {
+    fs::remove_dir_all(dir).ok();
+}

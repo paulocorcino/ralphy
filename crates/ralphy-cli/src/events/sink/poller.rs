@@ -144,6 +144,7 @@ mod tests {
         assert_eq!(ev["data"]["issue"]["number"], 7);
         drop(delivered);
 
+        #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -185,6 +186,7 @@ mod tests {
         StepPoller::default().poll(&fresh, &test_ctx(), &state, &plan_path, &warned);
         assert_eq!(fresh.0.lock().unwrap().len(), 2);
 
+        #[expect(clippy::unused_result_ok, reason = "the scratch directory may be gone")]
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -120,10 +120,12 @@ fn changes_stage(args: ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes stage")?;
     match ralphy_core::worktree::stage(&repo_root, &args.path)? {
         StageOutcome::Staged { paths } => println!("Staged {paths} path(s)."),
-        refused => anyhow::bail!(
-            "{}",
-            refused.reason().unwrap_or_else(|| format!("{refused:?}"))
-        ),
+        refused @ (StageOutcome::NoPaths | StageOutcome::NotInChangeSet { .. }) => {
+            anyhow::bail!(
+                "{}",
+                refused.reason().unwrap_or_else(|| format!("{refused:?}"))
+            )
+        }
     }
     Ok(())
 }
@@ -133,10 +135,12 @@ fn changes_unstage(args: ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes unstage")?;
     match ralphy_core::worktree::unstage(&repo_root, &args.path)? {
         UnstageOutcome::Unstaged { paths } => println!("Unstaged {paths} path(s)."),
-        refused => anyhow::bail!(
-            "{}",
-            refused.reason().unwrap_or_else(|| format!("{refused:?}"))
-        ),
+        refused @ (UnstageOutcome::NoPaths | UnstageOutcome::NotInChangeSet { .. }) => {
+            anyhow::bail!(
+                "{}",
+                refused.reason().unwrap_or_else(|| format!("{refused:?}"))
+            )
+        }
     }
     Ok(())
 }
@@ -146,10 +150,12 @@ fn changes_commit(args: ChangesCommitArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes commit")?;
     match ralphy_core::worktree::commit(&repo_root, &args.message)? {
         CommitOutcome::Committed { sha } => println!("Committed {sha}."),
-        refused => anyhow::bail!(
-            "{}",
-            refused.reason().unwrap_or_else(|| format!("{refused:?}"))
-        ),
+        refused @ (CommitOutcome::NothingStaged | CommitOutcome::EmptyMessage) => {
+            anyhow::bail!(
+                "{}",
+                refused.reason().unwrap_or_else(|| format!("{refused:?}"))
+            )
+        }
     }
     Ok(())
 }
@@ -161,10 +167,15 @@ fn changes_discard(args: ChangesPathArgs) -> anyhow::Result<()> {
         DiscardOutcome::Discarded { restored, deleted } => {
             println!("Discarded {restored} path(s), deleted {deleted} untracked path(s).")
         }
-        refused => anyhow::bail!(
-            "{}",
-            refused.reason().unwrap_or_else(|| format!("{refused:?}"))
-        ),
+        refused @ (DiscardOutcome::NoPaths
+        | DiscardOutcome::NotInChangeSet { .. }
+        | DiscardOutcome::Conflicted { .. }
+        | DiscardOutcome::NothingInTheWorkingTree { .. }) => {
+            anyhow::bail!(
+                "{}",
+                refused.reason().unwrap_or_else(|| format!("{refused:?}"))
+            )
+        }
     }
     Ok(())
 }

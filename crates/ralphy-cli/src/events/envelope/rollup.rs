@@ -15,11 +15,13 @@ use crate::runstate::{IssueEntry, RunState};
 pub(super) fn finished_issues(rollup: &Value, state: &RunState) -> Vec<Value> {
     match rollup {
         Value::Array(entries) => entries.iter().map(|e| rollup_entry(e, state)).collect(),
-        _ => state
-            .issues
-            .iter()
-            .filter_map(|e| fold_entry(e, state))
-            .collect(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            state
+                .issues
+                .iter()
+                .filter_map(|e| fold_entry(e, state))
+                .collect()
+        }
     }
 }
 

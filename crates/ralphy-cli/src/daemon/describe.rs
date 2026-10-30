@@ -29,7 +29,6 @@ pub(crate) fn port_from_args(args: &[String]) -> u16 {
 }
 
 /// What a connection to the store's socket showed.
-#[cfg_attr(not(unix), allow(dead_code))]
 struct SocketProbe {
     path: std::path::PathBuf,
     answers: bool,
