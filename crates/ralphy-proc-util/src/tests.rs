@@ -110,6 +110,16 @@ fn mark_executable(p: &Path) {
     let _ = p;
 }
 
+/// Remove a scratch directory a test made. It may be gone already, and a
+/// leftover directory in the temp dir fails nothing.
+fn remove_scratch(dir: &Path) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "cleanup of a test directory that may be gone, and no test reads it after"
+    )]
+    let _ = fs::remove_dir_all(dir);
+}
+
 /// A group kill reaches its target group and stops there — never the caller's.
 ///
 /// `kill_tree_by_pid` used to spend the pgid as *text* on `kill(1)`, which has
@@ -153,7 +163,15 @@ fn a_group_kill_spares_the_callers_own_group() {
         .expect("polling the bystander should succeed")
         .is_some();
 
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "cleanup of the witness, which may have died already"
+    )]
     let _ = bystander.kill();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "cleanup of the witness, which may have died already"
+    )]
     let _ = bystander.wait();
 
     assert!(
@@ -189,7 +207,7 @@ fn home_scoped_path_home_branch_joins_home_rel_and_tail() {
 #[test]
 fn find_program_locates_a_file_on_the_search_path() {
     let tmp = std::env::temp_dir().join(format!("ralphy-find-prog-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
+    remove_scratch(&tmp);
     fs::create_dir_all(&tmp).unwrap();
     // A file with the searched extension (".EXE" via PATHEXT on Windows; on
     // non-Windows the bare name is what is matched).
@@ -208,7 +226,7 @@ fn find_program_locates_a_file_on_the_search_path() {
     assert!(got.is_file(), "resolved path must exist: {got:?}");
     assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("tool"));
 
-    let _ = fs::remove_dir_all(&tmp);
+    remove_scratch(&tmp);
 }
 
 #[test]
@@ -226,7 +244,7 @@ fn find_program_resolves_the_cmd_of_an_npm_shim() {
     ];
     for (i, (case, files)) in rows.into_iter().enumerate() {
         let tmp = std::env::temp_dir().join(format!("ralphy-find-cmd-{}-{i}", std::process::id()));
-        let _ = fs::remove_dir_all(&tmp);
+        remove_scratch(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         for file in files {
             fs::write(
@@ -241,7 +259,7 @@ fn find_program_resolves_the_cmd_of_an_npm_shim() {
             Some(tmp.clone().into_os_string()),
             Some(".EXE;.CMD".into()),
         );
-        let _ = fs::remove_dir_all(&tmp);
+        remove_scratch(&tmp);
         // The extension casing follows PATHEXT, which is harmless on a
         // case-insensitive filesystem.
         let got = got.unwrap_or_else(|| panic!("{case}: must resolve"));
@@ -450,7 +468,7 @@ fn locate_program_falls_back_to_local_bin_when_off_path() {
     // located — this is the gate/execution unification: the env gate would
     // otherwise miss it, while the adapter (resolve_program) would still run it.
     let home = std::env::temp_dir().join(format!("ralphy-locate-home-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&home);
+    remove_scratch(&home);
     let bin = home.join(".local").join("bin");
     fs::create_dir_all(&bin).unwrap();
     let name = "myagent";
@@ -480,7 +498,7 @@ fn locate_program_falls_back_to_local_bin_when_off_path() {
     )
     .is_none());
 
-    let _ = fs::remove_dir_all(&home);
+    remove_scratch(&home);
 }
 
 #[test]
@@ -488,7 +506,7 @@ fn locate_program_prefers_path_over_local_bin() {
     // When the program is on PATH, that wins — the fallback is only consulted
     // when PATH has nothing.
     let tmp = std::env::temp_dir().join(format!("ralphy-locate-path-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
+    remove_scratch(&tmp);
     let exe = if cfg!(windows) { "tool.exe" } else { "tool" };
     // The same program on PATH and in ~/.local/bin, so only the order decides.
     let path_dir = tmp.join("path");
@@ -510,7 +528,7 @@ fn locate_program_prefers_path_over_local_bin() {
     // PATHEXT (`.EXE`) rather than the file's `.exe`, which is harmless.
     assert_eq!(got.parent(), Some(path_dir.as_path()));
     assert_eq!(got.file_stem(), Some(std::ffi::OsStr::new("tool")));
-    let _ = fs::remove_dir_all(&tmp);
+    remove_scratch(&tmp);
 }
 
 /// A detached grandchild must not hold the pipe its parent writes to: a reader
@@ -539,6 +557,10 @@ fn std_handles_do_not_reach_a_detached_grandchild() {
     std::thread::spawn(move || {
         let mut text = String::new();
         let read = stdout.read_to_string(&mut text).map(|_| text);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the receiver is gone once the test has its answer"
+        )]
         let _ = tx.send(read);
     });
     let ended = rx.recv_timeout(Duration::from_secs(20));
@@ -565,7 +587,7 @@ fn std_handles_do_not_reach_a_detached_grandchild() {
 #[cfg(windows)]
 #[test]
 #[ignore = "run only as the child of std_handles_do_not_reach_a_detached_grandchild"]
-#[allow(
+#[expect(
     clippy::zombie_processes,
     reason = "the grandchild must outlive this process; the test above ends it"
 )]

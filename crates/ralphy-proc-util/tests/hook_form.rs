@@ -113,7 +113,9 @@ const EXEC_VERSION: Option<&str> = Some("2.1.139 (Claude Code)");
 fn cause(got: HookCheck) -> String {
     match got {
         HookCheck::Failed { cause } => cause,
-        other => panic!("expected a failed check, got {other:?}"),
+        other @ (HookCheck::Ok | HookCheck::NotChecked { .. }) => {
+            panic!("expected a failed check, got {other:?}")
+        }
     }
 }
 
