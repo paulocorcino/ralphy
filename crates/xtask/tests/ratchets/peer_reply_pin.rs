@@ -67,7 +67,7 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// that names the older daemon. The optional `phase.agent` of a run snapshot
 /// keeps version 4: a run of an older peer sends none, and the run card then
 /// draws no agent dot, as for a vendor with no hooks.
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xb1aa_c57d_f0dc_6880);
+const PEER_REPLY_PIN: (u32, u64) = (4, 0x1da2_853b_91d2_a9f8);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

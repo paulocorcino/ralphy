@@ -36,7 +36,12 @@
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 /** What the registry keeps for a tab: the id, the detached fences, and the
  * member ids each one held. */
-type DetachRecord = { v: 1; tab: string | null; fences: string[]; members: Record<string, string[]> };
+type DetachRecord = {
+  v: 1;
+  tab: string | null;
+  fences: string[];
+  members: Record<string, string[]>;
+};
 
 /** A message of the lifecycle channel. Every message names the acting tab; the
  * other fields depend on `type`. */
@@ -79,7 +84,13 @@ function isDetachMembers(members: unknown) {
   return (
     members === undefined ||
     (Array.isArray(members) &&
-      members.every((m) => isRecord(m) && typeof m.id === "string" && (m.kind == null || typeof m.kind === "string") && isOptionalString(m.path)))
+      members.every(
+        (m) =>
+          isRecord(m) &&
+          typeof m.id === "string" &&
+          (m.kind == null || typeof m.kind === "string") &&
+          isOptionalString(m.path),
+      ))
   );
 }
 
@@ -108,7 +119,9 @@ export const WBDetachLink = (function () {
       return {
         v: 1,
         tab: typeof rec.tab === "string" ? rec.tab : null,
-        fences: Array.isArray(rec.fences) ? rec.fences.filter((f): f is string => typeof f === "string") : [],
+        fences: Array.isArray(rec.fences)
+          ? rec.fences.filter((f): f is string => typeof f === "string")
+          : [],
         members,
       };
     } catch {

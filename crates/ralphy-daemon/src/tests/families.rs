@@ -127,12 +127,20 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-stage-fences.ts"),
     ),
     (
+        "wb-stage-parts.ts",
+        include_str!("../../assets/ui/wb-stage-parts.ts"),
+    ),
+    (
         "wb-stage-stack.ts",
         include_str!("../../assets/ui/wb-stage-stack.ts"),
     ),
     (
         "wb-stage-view.ts",
         include_str!("../../assets/ui/wb-stage-view.ts"),
+    ),
+    (
+        "wb-stage-window-gestures.ts",
+        include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
     ),
     (
         "wb-stage-window.ts",

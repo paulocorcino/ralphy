@@ -154,17 +154,28 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   ) {
     if (verdict.action === "attach") {
       const { session } = verdict;
-      spawnWindow({ id: session.id, repo: session.repo }, session.agent || "console", session.repo, verdict.record);
+      spawnWindow(
+        { id: session.id, repo: session.repo },
+        session.agent || "console",
+        session.repo,
+        verdict.record,
+      );
     } else if (verdict.action === "relaunch") {
       relaunch(verdict.record, unheard, pending);
     } else if (verdict.action === "placeholder") {
-      spawnPlaceholder(verdict.record, null, null, { unheard: unheardRef(verdict.record.repo, unheard) });
+      spawnPlaceholder(verdict.record, null, null, {
+        unheard: unheardRef(verdict.record.repo, unheard),
+      });
     } else if (!(verdict.id && onPlane.has(verdict.id))) {
       adopt(verdict.session, verdict.id);
     }
   }
 
-  function relaunch(record: DeskRecord, unheard: ReadonlySet<string>, pending: Promise<ConsoleWin>[]) {
+  function relaunch(
+    record: DeskRecord,
+    unheard: ReadonlySet<string>,
+    pending: Promise<ConsoleWin>[],
+  ) {
     if (unheardRef(record.repo, unheard)) {
       // The list did not hear from its peer: the console may still run
       // there, and a launch on a peer without the record join would be
@@ -319,12 +330,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     if (m.kind === "note") {
       window.WBNotes?.mountDetached(record as NoteSource);
     } else if (m.session != null) {
-      spawnWindow(
-        { id: m.session, repo: m.repo },
-        m.agent || "console",
-        m.repo,
-        record,
-      );
+      spawnWindow({ id: m.session, repo: m.repo }, m.agent || "console", m.repo, record);
     } else {
       spawnPlaceholder(record);
     }

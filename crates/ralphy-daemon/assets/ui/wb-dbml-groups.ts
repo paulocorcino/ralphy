@@ -57,7 +57,10 @@ function labelOf(names: string[]) {
   const prefix = first.slice(0, length);
   let cut = prefix;
   if (SEPARATOR.test(prefix) && !SEPARATOR.test(prefix.slice(-1))) {
-    cut = prefix.slice(0, Math.max(prefix.lastIndexOf("_"), prefix.lastIndexOf("-"), prefix.lastIndexOf(".")) + 1);
+    cut = prefix.slice(
+      0,
+      Math.max(prefix.lastIndexOf("_"), prefix.lastIndexOf("-"), prefix.lastIndexOf(".")) + 1,
+    );
   }
   const label = cut.replace(/[_\-.]+$/, "") || prefix;
   return endsInsideWord(label, names) ? `${label}…` : label;
@@ -70,7 +73,8 @@ function addTo(buckets: Map<string, DbmlTable[]>, label: string, tables: DbmlTab
 }
 
 function byLabel(a: { label: string }, b: { label: string }) {
-  if (a.label === OTHER_TABLES || b.label === OTHER_TABLES) return Number(a.label === OTHER_TABLES) - Number(b.label === OTHER_TABLES);
+  if (a.label === OTHER_TABLES || b.label === OTHER_TABLES)
+    return Number(a.label === OTHER_TABLES) - Number(b.label === OTHER_TABLES);
   return byLower(a.label, b.label);
 }
 
@@ -91,7 +95,9 @@ export function groupTables(schema: DbmlSchema): { label: string; tables: DbmlTa
       addTo(buckets, group.name, [table]);
     }
   }
-  const rest = schema.tables.filter((t) => !taken.has(t.name)).sort((a, b) => byLower(a.name, b.name));
+  const rest = schema.tables
+    .filter((t) => !taken.has(t.name))
+    .sort((a, b) => byLower(a.name, b.name));
   for (const run of runsOf(rest)) {
     addTo(buckets, run.length > 1 ? labelOf(run.map((t) => t.name)) : OTHER_TABLES, run);
   }

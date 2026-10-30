@@ -37,9 +37,20 @@ const single = (left: string | null) => ({ left, right: null, mirror: false, foc
 // gone, a mirror of a pane that is not code: single, slot kept, converging on
 // the next call once the world changes.
 /** The split slot: a pinned tab, or the mirror of the active code pane. */
-export type Slot = { kind: "pin"; id: string } | { kind: "mirror"; id?: undefined } | null | undefined;
+export type Slot =
+  | { kind: "pin"; id: string }
+  | { kind: "mirror"; id?: undefined }
+  | null
+  | undefined;
 /** A tab as the split reads it. */
-type Tab = { id: string; kind?: string; closable?: boolean; project?: string; path?: string; checkout?: string | null };
+type Tab = {
+  id: string;
+  kind?: string;
+  closable?: boolean;
+  project?: string;
+  path?: string;
+  checkout?: string | null;
+};
 
 function findTab(tabs: Tab[] | null | undefined, id: string) {
   return (tabs || []).find((t) => t.id === id);
@@ -54,7 +65,11 @@ function mirrorPanes(active: string, tabs: Tab[] | null | undefined) {
 
 // The left column when the pinned tab itself is active: the last tab the
 // operator read on the left, else the nearest other tab that has a pane.
-function pinnedLeft(slotId: string, lastLeft: string | null | undefined, tabs: Tab[] | null | undefined) {
+function pinnedLeft(
+  slotId: string,
+  lastLeft: string | null | undefined,
+  tabs: Tab[] | null | undefined,
+) {
   return lastLeft && lastLeft !== slotId && findTab(tabs, lastLeft)
     ? lastLeft
     : ((tabs || []).find((t) => t.closable && t.id !== slotId) || {}).id;

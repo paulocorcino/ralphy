@@ -60,3 +60,33 @@ fn ci_installs_the_pinned_tsgolint() {
          found {versions:?}"
     );
 }
+
+/// The oxfmt of the format check of the `ui-tests` job of `ci.yml`, fetched
+/// by version and checksum, and of the format command of `AGENTS.md`, run by
+/// `npx`. A new version formats some text in another way, so a raise is its
+/// own reformat commit.
+const OXFMT_VERSION: &str = "0.75.0";
+
+#[test]
+fn ci_installs_the_pinned_oxfmt() {
+    let root = workspace_root();
+    let ci = read(&root.join(".github/workflows/ci.yml"));
+    assert!(
+        ci.contains(&format!("OXFMT_VERSION: \"{OXFMT_VERSION}\"")),
+        "ci.yml must pin oxfmt {OXFMT_VERSION}"
+    );
+    let agents = read(&root.join("AGENTS.md"));
+    let command = Regex::new(r"oxfmt@(\S+)").expect("a valid literal regex");
+    let versions: Vec<&str> = command
+        .captures_iter(&agents)
+        .map(|caps| caps.get(1).map_or("", |m| m.as_str()))
+        .collect();
+    assert!(
+        !versions.is_empty(),
+        "AGENTS.md must name the format command of the workbench gate"
+    );
+    assert!(
+        versions.iter().all(|v| *v == OXFMT_VERSION),
+        "every oxfmt command in AGENTS.md must run oxfmt {OXFMT_VERSION}, found {versions:?}"
+    );
+}

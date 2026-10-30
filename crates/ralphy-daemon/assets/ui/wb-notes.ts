@@ -15,39 +15,39 @@
 // read, no `fetch`, no timer at load (the ui-tests evaluate this file under a
 // stub document), and no browser store of its own — `wb-client-view.ts` holds the one
 // there is (#339).
-import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
-import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
-import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, TONES, anchorsOf, applyLook, bodyOf, colorOf, fillOf, fontOf, inkOf, lockedBy, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
+import {
+  DEFAULT_FILL,
+  DEFAULT_INK,
+  DEFAULT_TONE,
+  NEW_NOTE_STYLE,
+  NOTE_DEFAULT,
+  applyLook,
+  lockedBy,
+  NOTE_FOLDS,
+} from "./wb-notes-folds.ts";
 import { createNoteChrome } from "./wb-notes-chrome.ts";
 import { createNoteDormancy } from "./wb-notes-dormancy.ts";
+import { createNoteDrafts } from "./wb-notes-drafts.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
 import { createNoteFile } from "./wb-notes-file.ts";
 import { installLinks } from "./wb-notes-links.ts";
 import { createNoteMenus } from "./wb-notes-menus.ts";
+import { createNoteOpen } from "./wb-notes-open.ts";
 import { createNoteOnTop } from "./wb-notes-on-top.ts";
 import { createNoteVeil } from "./wb-notes-veil.ts";
 import { createNoteMap } from "./wb-notes-map.ts";
 import { createNotePalette } from "./wb-notes-palette.ts";
 import { createNoteStage } from "./wb-notes-stage.ts";
 import type { CrepeLean } from "./wb-notes-editor.ts";
-import type { Home } from "./wb-notes-stage.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Gestures, Stack } from "./wb-stage-stack.ts";
-import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteSource, Offset, Size } from "./wb-types.d.ts";
+import type { CardHost, DeskFence, DeskNote, NoteCard, NoteSource } from "./wb-types.d.ts";
 
 type NotesWindow = Window & {
   CrepeLean?: CrepeLean;
   IntersectionObserver?: typeof IntersectionObserver;
   ResizeObserver?: typeof ResizeObserver;
-};
-
-/** Where a new card lands, and which file it opens (`create`, `openFromExplorer`). */
-type NewNote = {
-  repo?: string | null;
-  checkout?: string | null;
-  viewport?: Partial<Size> | null;
-  offset?: Partial<Offset> | null;
 };
 
 /** The cards of the stage, by note id. */
@@ -95,9 +95,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // `saveNotes` sends only the fields that differ (ADR-0050 amendment
   // 2026-10-04, changes, not the desk).
   function patch(id: string | null | undefined, fields: Partial<DeskNote>) {
-    const next = (consoleHost?.notes?.() || []).map((n) =>
-      n.id === id ? { ...n, ...fields } : n,
-    );
+    const next = (consoleHost?.notes?.() || []).map((n) => (n.id === id ? { ...n, ...fields } : n));
     consoleHost?.saveNotes(next);
   }
 
@@ -246,27 +244,63 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   // ---- the editor (in `wb-notes-editor.ts`) ------------------------------------
 
-  const { mountEditor, loadInto, paintTitle, paintState, syncFromEditor, markDirty, flush, paintPath } =
-    createNoteEditor({ window, document, consoleHost, recordOf, patch, render, paintIndex: (el) => paintIndex(el), veilPanel, paintVeil, fragment: () => fragment });
+  const {
+    mountEditor,
+    loadInto,
+    paintTitle,
+    paintState,
+    syncFromEditor,
+    markDirty,
+    flush,
+    paintPath,
+  } = createNoteEditor({
+    window,
+    document,
+    consoleHost,
+    recordOf,
+    patch,
+    render,
+    paintIndex: (el) => paintIndex(el),
+    veilPanel,
+    paintVeil,
+    fragment: () => fragment,
+  });
 
   // ---- the palette (in `wb-notes-palette.ts`) ----------------------------------
 
   // The palette and the menus close each other, so the palette reaches the
   // menus' `closeMenu` through an arrow.
   const { togglePalette, closePalette, buildPalette } = createNotePalette({
-    document, veiledNow, closeMenu: () => closeMenu(), syncFromEditor, markDirty,
+    document,
+    veiledNow,
+    closeMenu: () => closeMenu(),
+    syncFromEditor,
+    markDirty,
   });
 
   // ---- the menus and the cheat sheet (in `wb-notes-menus.ts`) ------------------
 
-  const { toggleMenu, toggleIndex, paintIndex, closeMenu, markdownHelp, MARKDOWN_HELP } = createNoteMenus({
-    window, document, recordOf, syncFromEditor, closePalette,
-  });
+  const { toggleMenu, toggleIndex, paintIndex, closeMenu, markdownHelp, MARKDOWN_HELP } =
+    createNoteMenus({
+      window,
+      document,
+      recordOf,
+      syncFromEditor,
+      closePalette,
+    });
 
   // ---- the file acts (in `wb-notes-file.ts`) -----------------------------------
 
   const { pointElsewhere, renameNote, endRename, commitRename, deleteNote } = createNoteFile({
-    window, consoleHost, messages, recordOf, patch, render, paintPath, paintState, loadInto,
+    window,
+    consoleHost,
+    messages,
+    recordOf,
+    patch,
+    render,
+    paintPath,
+    paintState,
+    loadInto,
   });
 
   // ---- dormancy (in `wb-notes-dormancy.ts`) ------------------------------------
@@ -274,7 +308,28 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // A card on top is never put to sleep, and `onTopNow` is built after this, so
   // it reaches the dormancy through an arrow.
   const { trackDormancy, untrackDormancy, wakeCard } = createNoteDormancy({
-    window, document, recordOf, loadInto, onTopNow: () => onTopNow(), veiledNow,
+    window,
+    document,
+    recordOf,
+    loadInto,
+    onTopNow: () => onTopNow(),
+    veiledNow,
+  });
+
+  // ---- creating, opening and closing a card (in `wb-notes-open.ts`) ----------
+
+  const { create, closeCard, openFromExplorer } = createNoteOpen({
+    window,
+    consoleHost,
+    messages,
+    stack,
+    cardEl,
+    recordOf,
+    deskNotes,
+    deskFences,
+    render,
+    syncFromEditor,
+    flush,
   });
 
   // ---- the card's chrome and the title (in `wb-notes-chrome.ts`) ---------------
@@ -282,10 +337,34 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // A card on top is built after the chrome, so its names reach the chrome
   // through arrows.
   const { buildCardParts } = createNoteChrome({
-    document, consoleHost, recordOf, patch, render, persistCards, closeCard, veiledNow, toggleReveal, setMarked,
-    mountEditor, syncFromEditor, markDirty, paintTitle, togglePalette, closePalette, toggleMenu, toggleIndex,
-    closeMenu, markdownHelp, pointElsewhere, renameNote, deleteNote, commitRename, endRename,
-    onTop: (el) => onTop(el), putBack: () => putBack(), floatGesture: (el, dir) => floatGesture(el, dir),
+    document,
+    consoleHost,
+    recordOf,
+    patch,
+    render,
+    persistCards,
+    closeCard,
+    veiledNow,
+    toggleReveal,
+    setMarked,
+    mountEditor,
+    syncFromEditor,
+    markDirty,
+    paintTitle,
+    togglePalette,
+    closePalette,
+    toggleMenu,
+    toggleIndex,
+    closeMenu,
+    markdownHelp,
+    pointElsewhere,
+    renameNote,
+    deleteNote,
+    commitRename,
+    endRename,
+    onTop: (el) => onTop(el),
+    putBack: () => putBack(),
+    floatGesture: (el, dir) => floatGesture(el, dir),
   });
 
   // ---- keys ----------------------------------------------------------
@@ -307,7 +386,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       // Two stages: out of the editor, then off the card. Held at the card so
       // an Escape meant for this edit never also reaches the plane.
       ev.stopPropagation();
-      const inEditor = el.querySelector<HTMLElement>(".note-body")?.contains(document.activeElement);
+      const inEditor = el
+        .querySelector<HTMLElement>(".note-body")
+        ?.contains(document.activeElement);
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (!inEditor) el.classList.remove("focused");
     });
@@ -328,7 +409,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     el.remove();
   }
 
-  // ---- creating, closing, rendering ---------------------------------------------
+  // ---- rendering ---------------------------------------------------------------
 
   // The desk's note records and fence records; none where a test has no host.
   function deskNotes() {
@@ -338,94 +419,14 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     return consoleHost?.fenceRecords?.() || [];
   }
 
-  // One rule for both ways a card is born: the cap refuses, it does not evict
-  // (see `saveNotes`); the new record lands at the end of the desk's list.
-  function addCard(fields: { repo: string; checkout: string | null; path: string }, { viewport, offset }: NewNote) {
-    const records = deskNotes();
-    const record = {
-      id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      ...fields,
-      rect: spawnRect(
-        viewport || { width: 0, height: 0 },
-        offset || { left: 0, top: 0 },
-        records.length,
-        deskFences(),
-      ),
-      locked: false,
-      ts: Date.now(),
-    };
-    const next = addNote(records, record, NOTE_MAX);
-    if (!next) {
-      messages?.toast({ text: `You can have at most ${NOTE_MAX} notes. Close one first.` });
-      return null;
-    }
-    consoleHost?.saveNotes(next);
-    render();
-    return record;
-  }
-
-  // A new note (ADR-0064 §9): no dialog. The card lands in the middle of the
-  // view with an empty editor and a default directory in its footer, and NO
-  // file — the first autosave names it, so a note nobody typed into is never
-  // written.
-  function create(where: NewNote = {}) {
-    const { repo, checkout } = where;
-    if (!repo) return null;
-    const record = addCard({ repo, checkout: checkout ?? null, path: "" }, where);
-    if (!record) return null;
-    const el = cardEl(record.id);
-    if (el) {
-      stack?.focusWin(el);
-      // "already in edit with the cursor placed" (ADR-0064 §9) — the editor
-      // mounts a tick later, so the intent is left on the card and honoured by
-      // `mountEditor`. Without it the first act after "New note" is a click
-      // into a card that is already focused.
-      el._noteFocusOnMount = true;
-    }
-    return record.id;
-  }
-
-  // Close the card, keep the file (ADR-0064 §11). The undo is what makes this
-  // safe to do with one click on a document nobody asked to delete.
-  function closeCard(id: string | null | undefined) {
-    const record = recordOf(id);
-    if (!record) return;
-    const el = cardEl(id);
-    // Whatever was typed lands before the card goes: a close is not a discard —
-    // including the character typed a frame ago, which the editor knows about
-    // before its listener does.
-    if (el) syncFromEditor(el);
-    // `.catch` is not decoration — the naming probe rejects on a socket the
-    // daemon closed without a reply, and without it the close button would
-    // silently do nothing at exactly the moment the operator is trying to
-    // tidy up.
-    const written = el && el._noteDirty ? flush(el).catch(() => {}) : Promise.resolve();
-    void written.then(() => {
-      // Read the record AFTER the flush: closing a never-saved note performs
-      // its first save, and the path the undo must restore is the one that
-      // save just chose — the pre-flush snapshot aims at nothing.
-      const saved = recordOf(id) || record;
-      consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
-      render();
-      messages?.toast({
-        // The path IS the sentence: "note closed · <path> kept" said the same
-        // thing twice, and `kept` was reassuring nobody about the file the
-        // `✕` never touches (asked 2026-09-22).
-        text: saved.path ? `Note ${saved.path} closed` : "Note closed",
-        action: "Undo",
-        onAction: () => {
-          consoleHost?.saveNotes((consoleHost?.notes() || []).concat([saved]));
-          render();
-        },
-      });
-    });
-  }
-
   // A card whose fence is detached is not on THIS stage — it is in the popup.
   // Derived, never stored: the record stays in the desk (the popup is a view,
   // not an owner), so a reload works this out again from the fence registry
   // instead of restoring a set that died with the document.
-  function isAway(record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
+  function isAway(
+    record: Pick<NoteSource, "rect"> | null | undefined,
+    fences: DeskFence[] | null | undefined,
+  ) {
     const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
     return !!held && !!consoleHost?.isDetached?.(held.id);
   }
@@ -460,7 +461,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
   function cardNodes(st: HTMLElement): CardNodes {
     const nodes: CardNodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId as string, el);
+    for (const el of st.querySelectorAll<NoteCard>(".note-card"))
+      nodes.set(el.dataset.noteId as string, el);
     return nodes;
   }
 
@@ -517,110 +519,48 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     return el;
   }
 
-  // ---- a draft that crosses a detach (ADR-0064 §8, amended for #475) -----------
+  // ---- a draft that crosses a detach (in `wb-notes-drafts.ts`) ----------------
 
-  // The text of a note that has NO FILE yet, for the detach snapshot. The
-  // popup must open immediately (`window.open` in the same click), and the first save
-  // is asynchronous, so the text travels in the snapshot instead of on
-  // disk. The card is marked handed off: from here the popup's card is the
-  // only writer, and `writeNow` refuses to name the note on this side.
-  // `claim` is a name this card already chose, so a write already sent and
-  // the popup's own write go to the same file.
-  function draftOf(id: string | null | undefined) {
-    const el = cardEl(id);
-    const record = recordOf(id);
-    if (!el || !record || record.path) return null;
-    syncFromEditor(el);
-    if (!el._noteDirty) return null;
-    el._noteHandedOff = true;
-    return { draft: el._noteMarkdown, claim: el._noteClaim || null };
-  }
-
-  // Drafts that came home with a re-attach, for a popup closed before its
-  // first save. `render` builds the card from one of them in place of a read,
-  // once, and only while the record still has no path. `claim` is the name
-  // the popup chose before its write: that write may have landed with no
-  // report after it.
-  const drafts = new Map<string, Home>();
-  function adoptDraft(id: string | null | undefined, draft: string | null | undefined, claim: string | null | undefined) {
-    if (id && typeof draft === "string") drafts.set(id, { draft, claim: claim || null });
-  }
-
-  // A card built from a draft that came home. When the popup had chosen a
-  // name, the file under that name is the newer text if it exists: it is
-  // read, and the name is recorded. Otherwise the draft is mounted and
-  // written under that name, so a re-attach never makes a second file.
-  function mountHome(el: NoteCard, record: NoteSource, home: Home) {
-    const claim = home.claim;
-    if (!claim) return mountDraft(el, home.draft);
-    el._noteClaim = claim;
-    paintPath(el, claim);
-    return window.WBDaemon.observe(
-      "note.read",
-      window.WBDaemon.withCheckout({ repo: record.repo, path: claim }, record.checkout),
-    )
-      .then((reply): Promise<NoteEditor | null | void> | null => {
-        if (el._noteGone) return null;
-        if (!WBFail.isError(reply)) {
-          el._noteClaim = null;
-          patch(record.id, { path: claim });
-          el._noteSavedAt = Number(reply.modified) || null;
-          return mountEditor(el, reply.markdown || "");
-        }
-        // "not a note" is someone else's file under that name: step past it.
-        if (WBFail.message(reply, "") !== "not found") {
-          el._noteClaim = null;
-          paintPath(el, "");
-        }
-        return mountDraft(el, home.draft);
-      })
-      .catch(() => mountDraft(el, home.draft));
-  }
-
-  // An editor over unsaved text: dirty from the start, so the ordinary
-  // autosave names the note and writes it (ADR-0064 §7). Dirty BEFORE the
-  // editor mounts, so a detach in that gap still carries the draft. A veiled
-  // draft mounts no editor and `mountEditor` cuts the document down to its
-  // header; the whole draft is put back, because the header alone is what
-  // the autosave would write.
-  function mountDraft(el: NoteCard, draft: string) {
-    el._noteDirty = true;
-    return mountEditor(el, draft).then(() => {
-      if (el._noteGone) return;
-      if (!el._noteEditor) el._noteMarkdown = draft;
-      markDirty(el);
-    });
-  }
+  const { draftOf, drafts, adoptDraft, mountHome, mountDraft } = createNoteDrafts({
+    window,
+    cardEl,
+    recordOf,
+    patch,
+    syncFromEditor,
+    markDirty,
+    mountEditor,
+    paintPath,
+  });
 
   // ---- a card on top (in `wb-notes-on-top.ts`) ---------------------------------
 
   const { onTop, keepOnTop, putBack, onTopNow, paintShadow, floatGesture } = createNoteOnTop({
-    window, document, consoleHost, stack, stage, cardEl, recordOf, isAway, wakeCard, fragment: () => fragment,
+    window,
+    document,
+    consoleHost,
+    stack,
+    stage,
+    cardEl,
+    recordOf,
+    isAway,
+    wakeCard,
+    fragment: () => fragment,
   });
 
   // ---- the cards on the stage (in `wb-notes-stage.ts`) -------------------------
 
   const { mountCard, dropCard } = createNoteStage({
-    buildCard, drafts, mountHome, loadInto, trackDormancy, onTopNow, putBack, flush, tearDownCard, isFragment: () => fragment,
+    buildCard,
+    drafts,
+    mountHome,
+    loadInto,
+    trackDormancy,
+    onTopNow,
+    putBack,
+    flush,
+    tearDownCard,
+    isFragment: () => fragment,
   });
-
-  // ---- opening from the explorer (ADR-0064 §11) ---------------------------------
-
-  // A double-click on a `.note` in the tree: jump to the card if it is already
-  // on the plane (identity is `(repo, checkout, path)`), else put one there.
-  // The read happens in `loadInto`, so a file that is not a note lands as the
-  // missing/refused state on a card the operator can close — never silently.
-  function openFromExplorer({ repo, checkout, path, viewport, offset }: NewNote & { path?: string | null }) {
-    if (!repo || !path) return null;
-    const tree = checkout ?? null;
-    const already = (consoleHost?.notes?.() || []).find(
-      (n) => n.repo === repo && (n.checkout ?? null) === tree && n.path === path,
-    );
-    if (already) return window.WBNotes.jump(already.id);
-    const record = addCard({ repo, checkout: tree, path }, { viewport, offset });
-    if (!record) return null;
-    return window.WBNotes.jump(record.id);
-  }
 
   // ---- the map (in `wb-notes-map.ts`) ------------------------------------------
 
@@ -654,49 +594,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   }
 
   return {
-    // folds
-    titleOf,
-    anchorsOf,
-    savedLabel,
-    noteSlug,
-    stampName,
-    toneOf,
-    bodyOf,
-    colorOf,
-    styleOf,
-    withStyle,
-    withTitle,
-    titleFieldOf,
-    veiledOf,
-    withVeil,
-    fillOf,
-    inkOf,
-    fontOf,
-    sizeOf,
-    lockedBy,
-    spawnRect,
-    noteDormancyDecision,
-    onTopRect,
-    onTopClamp,
-    ON_TOP_FLOOR,
-    ON_TOP_BAND_BELOW,
-    ON_TOP_TOP,
-    TONES,
-    FILLS,
-    INKS,
-    FONTS,
-    SIZES,
-    DEFAULT_TONE,
-    DEFAULT_FILL,
-    DEFAULT_INK,
-    DEFAULT_FONT,
-    DEFAULT_SIZE,
-    DEFAULT_DIR,
-    NEW_NOTE_STYLE,
+    ...NOTE_FOLDS,
     MARKDOWN_HELP,
-    NOTE_MIN,
-    NOTE_DEFAULT,
-    SAVE_AFTER_MS,
     // the card
     render,
     create,

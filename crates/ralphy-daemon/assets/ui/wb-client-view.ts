@@ -26,7 +26,13 @@
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 
 /** A stored file tab: what `persistView` in `app.ts` writes. */
-export type StoredTab = { project: string; path: string; title?: string; kind: string; checkout?: string | null };
+export type StoredTab = {
+  project: string;
+  path: string;
+  title?: string;
+  kind: string;
+  checkout?: string | null;
+};
 
 // A record written by an older build may hold a tab of another shape: such a
 // tab is not restored.
@@ -43,13 +49,23 @@ function isStoredTab(v: unknown): v is StoredTab {
 
 /** A stored console tab (ADR-0037 §3d): what `persistView` writes. */
 // `id` is null for a tab stored before the grid: the store gives it the id it had.
-export type StoredConsoleTab = { id: string | null; deskId: string; title: string; grid: string[][] };
+export type StoredConsoleTab = {
+  id: string | null;
+  deskId: string;
+  title: string;
+  grid: string[][];
+};
 
 function isIdGrid(v: unknown): v is string[][] {
   return (
     Array.isArray(v) &&
     v.length > 0 &&
-    v.every((col) => Array.isArray(col) && col.length > 0 && col.every((id) => typeof id === "string" && id !== ""))
+    v.every(
+      (col) =>
+        Array.isArray(col) &&
+        col.length > 0 &&
+        col.every((id) => typeof id === "string" && id !== ""),
+    )
   );
 }
 
@@ -57,7 +73,13 @@ function isIdGrid(v: unknown): v is string[][] {
 // restored. A tab stored before the grid, `{deskId, title}`, is a grid of its
 // one console.
 function storedConsoleTab(v: unknown): StoredConsoleTab | null {
-  if (!isRecord(v) || typeof v.deskId !== "string" || v.deskId === "" || typeof v.title !== "string") return null;
+  if (
+    !isRecord(v) ||
+    typeof v.deskId !== "string" ||
+    v.deskId === "" ||
+    typeof v.title !== "string"
+  )
+    return null;
   const id = typeof v.id === "string" && v.id !== "" ? v.id : null;
   if (v.grid === undefined) return { id, deskId: v.deskId, title: v.title, grid: [[v.deskId]] };
   return isIdGrid(v.grid) ? { id, deskId: v.deskId, title: v.title, grid: v.grid } : null;
@@ -153,7 +175,8 @@ export const WBView = (function () {
 
   function splitOf(raw: unknown) {
     if (!isRecord(raw)) return null;
-    const ratio = typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
+    const ratio =
+      typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
     if (raw.kind === "mirror") return { kind: "mirror", ratio };
     if (raw.kind === "pin" && typeof raw.project === "string" && typeof raw.path === "string") {
       return {

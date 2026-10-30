@@ -22,7 +22,14 @@ import type { FenceList } from "./wb-stage-fence-list.ts";
 import type { OpenerLink } from "./wb-desk-detach.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { DetachReason } from "./wb-console-session.ts";
-import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, Point, Rect } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskFence,
+  DeskWindowFields,
+  ExtentOpts,
+  Point,
+  Rect,
+} from "./wb-types.d.ts";
 
 const { fenceMembership, tileIntoRect, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
 const { detachFold, DETACH_MAX } = WBDeskFolds;
@@ -305,7 +312,9 @@ export function createFences(deps: FenceDeps) {
       const all = readWindowRects(st);
       const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] || []);
       // A console in its own tab stays there: it is in one place at a time.
-      const items = all.filter((w) => ids.has(w.id) && !w.inTab).map((w) => ({ id: w.id, rect: w.rect }));
+      const items = all
+        .filter((w) => ids.has(w.id) && !w.inTab)
+        .map((w) => ({ id: w.id, rect: w.rect }));
       if (!items.length) return;
       sendDocument(document, "workbench:fence-columns", { items });
     });
@@ -422,7 +431,8 @@ export function createFences(deps: FenceDeps) {
   function focusDetached(id: string) {
     const live = popups.entry(id);
     if (live?.handle && !live.handle.closed) live.handle.focus();
-    else link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
+    else
+      link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
     WB.emit("fence-focus", { fence: id });
   }
 

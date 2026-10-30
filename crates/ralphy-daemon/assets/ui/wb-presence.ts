@@ -16,7 +16,12 @@
    --------------------------------------------------------------------------- */
 
 /** One report, as the daemon reads it (`presence_board.rs`). */
-export type PresenceReport = { visible: boolean; lastInput: number | null; now: number; origin: string };
+export type PresenceReport = {
+  visible: boolean;
+  lastInput: number | null;
+  now: number;
+  origin: string;
+};
 
 /** What the module needs: the send on the `/ws` socket, the hook on each of
  * its opens, and a clock. */
@@ -57,7 +62,8 @@ export function startPresence(window: Window, document: Document, deps: Presence
     if (quiet) report();
   };
 
-  for (const name of INPUTS) document.addEventListener(name, input, { capture: true, passive: true });
+  for (const name of INPUTS)
+    document.addEventListener(name, input, { capture: true, passive: true });
   document.addEventListener("visibilitychange", report);
   deps.onOpen(report);
   window.setInterval(() => {

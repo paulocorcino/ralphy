@@ -17,9 +17,23 @@ import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
-import type { ConsoleWin, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskRecord,
+  ExtentOpts,
+  SpawnCarry,
+  WindowSnapshot,
+} from "./wb-types.d.ts";
 
-const { peerReturnDecision, peerHost, peerOfflineView, peerActionLabel, heldReturnDecision, unheardRef, relaunchRequest } = WBConsoleSession;
+const {
+  peerReturnDecision,
+  peerHost,
+  peerOfflineView,
+  peerActionLabel,
+  heldReturnDecision,
+  unheardRef,
+  relaunchRequest,
+} = WBConsoleSession;
 const { placeholderSession, isUnknownCheckout } = WBDeskFolds;
 const { sessionIdOf } = WBWindowState;
 
@@ -46,9 +60,20 @@ export type PlaceholderDeps = {
     repo: string | null | undefined,
     desk: ChromeRecord,
     kind: string | null | undefined,
-  ) => { win: ConsoleWin; body: HTMLElement; title: HTMLElement; restartBtn: HTMLButtonElement; closeBtn: HTMLButtonElement };
+  ) => {
+    win: ConsoleWin;
+    body: HTMLElement;
+    title: HTMLElement;
+    restartBtn: HTMLButtonElement;
+    closeBtn: HTMLButtonElement;
+  };
   // A live window, a window's record, and what a birth writes (`wb-console-spawn.ts`).
-  spawnWindow: (termOpts: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) => ConsoleWin;
+  spawnWindow: (
+    termOpts: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk?: SpawnCarry,
+  ) => ConsoleWin;
   deskOf: (win: ConsoleWin) => WindowSnapshot;
   recordBirth: (win: ConsoleWin, carry: SpawnCarry | undefined) => void;
   // The session list, read now.
@@ -98,7 +123,10 @@ export function createPlaceholders(deps: PlaceholderDeps) {
   // cheapest Observe read that takes a checkout (no spawn): the ONE reply that
   // means the tree is gone is `unknown checkout`. Anything else — an
   // unreachable daemon included — lets the launch decide.
-  async function checkoutStillThere(repo: string | null | undefined, checkout: string | null | undefined) {
+  async function checkoutStillThere(
+    repo: string | null | undefined,
+    checkout: string | null | undefined,
+  ) {
     const daemon = window.WBDaemon;
     if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
     let reply;
@@ -131,7 +159,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     }
   }
 
-  async function spawnOrMissing(req: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
+  async function spawnOrMissing(
+    req: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    carry: SpawnCarry,
+  ) {
     try {
       if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
@@ -195,7 +228,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
   // what its peer's fleet state is, and redraws on every fleet read.
   // `held.unheard`: restored while the session list did not hear from its
   // peer, so whether it runs is not known; it asks again on each fleet read.
-  function spawnPlaceholder(record: SpawnCarry, missing?: string | null, refused?: { message: string | null } | null, held?: { unheard?: boolean }) {
+  function spawnPlaceholder(
+    record: SpawnCarry,
+    missing?: string | null,
+    refused?: { message: string | null } | null,
+    held?: { unheard?: boolean },
+  ) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -210,7 +248,9 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     note.className = "session-offline";
     const text = document.createElement("p");
     text.textContent =
-      record.kind === "console" ? "This console is not running." : "This agent console is not running.";
+      record.kind === "console"
+        ? "This console is not running."
+        : "This agent console is not running.";
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "Relaunch";
@@ -274,13 +314,30 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         return;
       }
       if (turn === "offer") {
-        show({ text: `${peerHost(group, record.environment)} is back.`, detail: "", action: "relaunch" });
+        show({
+          text: `${peerHost(group, record.environment)} is back.`,
+          detail: "",
+          action: "relaunch",
+        });
         return;
       }
       if (available && !refused) return;
-      show(peerOfflineView(available ? null : group, refused?.message, peerHost(group, record.environment)));
+      show(
+        peerOfflineView(
+          available ? null : group,
+          refused?.message,
+          peerHost(group, record.environment),
+        ),
+      );
     }
-    if (refused) show(peerOfflineView(null, refused.message, peerHost(peerGroups.get(daemon), record.environment)));
+    if (refused)
+      show(
+        peerOfflineView(
+          null,
+          refused.message,
+          peerHost(peerGroups.get(daemon), record.environment),
+        ),
+      );
     let unheard = !!(daemon && held?.unheard);
     // The box says why it waits: the list did not hear from the peer. "Try
     // again" asks the list again, and launches only when the list heard from
@@ -309,7 +366,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         unheard = false;
         if (turn === "attach" && session) attach(session);
         else if (turn === "relaunch") btn.click();
-        else show({ text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`, detail: "", action: "relaunch" });
+        else
+          show({
+            text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`,
+            detail: "",
+            action: "relaunch",
+          });
       } finally {
         asking = false;
       }

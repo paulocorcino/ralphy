@@ -51,7 +51,12 @@ import { WBProject } from "./wb-project.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
 /** The kind of a request (`attention::Kind`). */
-export type AttentionKind = "console-waiting" | "console-silent" | "console-done" | "run-waiting" | "run-finished";
+export type AttentionKind =
+  | "console-waiting"
+  | "console-silent"
+  | "console-done"
+  | "run-waiting"
+  | "run-finished";
 
 /** What a row's one action opens: "none" for a finished run, which is no
  * longer in the Runs panel. */
@@ -79,7 +84,11 @@ export type AttentionReply = { requests: AttentionRequest[] };
 /** One daemon's Telegram state (`TelegramState` in `telegram_state.rs`):
  * `main` is the id of the main daemon that sends for it, and `main_name` its
  * name when the daemon that answered knows it. */
-export type TelegramStateReply = { state: "off" | "sends" | "through-main"; main?: string; main_name?: string };
+export type TelegramStateReply = {
+  state: "off" | "sends" | "through-main";
+  main?: string;
+  main_name?: string;
+};
 
 /** A peer's state in the joined reply (`PeerView` in `api_telegram.rs`). */
 export type PeerTelegram = TelegramStateReply & { daemon_id: string; environment: string };
@@ -106,7 +115,9 @@ export function telegramText(reply: TelegramStateReply) {
 /** The panel's line for each peer of the reply: its environment, then its
  * state. */
 export function peerTelegramLines(reply: TelegramReply) {
-  return (reply.peers || []).map((peer) => `${peer.environment || peer.daemon_id} · ${telegramText(peer)}`);
+  return (reply.peers || []).map(
+    (peer) => `${peer.environment || peer.daemon_id} · ${telegramText(peer)}`,
+  );
 }
 
 /** How many times, a quarter of a second apart, the page tries to show the
@@ -213,7 +224,10 @@ export function ageText(since: string, now: number) {
 
 /** The session a console request names: the number after the last `/` of
  * `console`, under the same repo ref (a peer's ref carries the peer). */
-export function sessionOf(request: AttentionRequest, sessions: readonly HostedSession[] | null | undefined) {
+export function sessionOf(
+  request: AttentionRequest,
+  sessions: readonly HostedSession[] | null | undefined,
+) {
   if (!request.console) return null;
   const id = Number(request.console.slice(request.console.lastIndexOf("/") + 1));
   return (sessions || []).find((s) => s.id === id && s.repo === request.repo) || null;
@@ -419,7 +433,8 @@ export function wbAttention() {
       if (!win?._deskId) return;
       for (const request of this.requests) {
         const session = sessionOf(request, this.$store.projects.liveSessions);
-        if (request.kind === "console-done" && session?.record === win._deskId) void this.finish(request);
+        if (request.kind === "console-done" && session?.record === win._deskId)
+          void this.finish(request);
       }
     },
     // Dismiss `request` with nothing said when the daemon refuses: the row

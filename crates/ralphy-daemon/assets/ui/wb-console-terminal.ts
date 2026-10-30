@@ -35,14 +35,8 @@ import type { LinkState, TerminalDeps, TerminalOpts } from "./wb-console-termina
 
 const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
-const {
-  encodeTerminal,
-  encodeDetach,
-  encodeShown,
-  endNotice,
-  reconnectDecision,
-  peerGate,
-} = WBConsoleSession;
+const { encodeTerminal, encodeDetach, encodeShown, endNotice, reconnectDecision, peerGate } =
+  WBConsoleSession;
 
 // The count of the session's output bytes a `session-open` says the terminal
 // shows, or null when the daemon sent none that is a whole count.
@@ -83,8 +77,16 @@ function showScrollbarWhileNeeded(term: XtermTerminal) {
 }
 
 export function createTerminal(deps: TerminalDeps) {
-  const { window, WS_ORIGIN, fontSize, stage, workspace, cancelSlide, writeClipboard, readClipboard } =
-    deps;
+  const {
+    window,
+    WS_ORIGIN,
+    fontSize,
+    stage,
+    workspace,
+    cancelSlide,
+    writeClipboard,
+    readClipboard,
+  } = deps;
 
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
@@ -119,7 +121,11 @@ export function createTerminal(deps: TerminalDeps) {
     const probe = deps.scrollProbe?.watch(term, () => placeOf(body));
     // A wheel the page made for a touch (`wheelToApp`) is not trusted. In the
     // capture phase: xterm stops the wheel events it takes.
-    if (probe) body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), { passive: true, capture: true });
+    if (probe)
+      body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), {
+        passive: true,
+        capture: true,
+      });
     const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts, probe });
     const { setSelecting, stopFling, stopScroll } = touch;
     fitAddon.fit();
@@ -252,10 +258,7 @@ export function createTerminal(deps: TerminalDeps) {
     }
 
     function scheduleReconnect() {
-      retryDelay = Math.min(
-        retryDelay ? retryDelay * 2 : RECONNECT_BASE,
-        RECONNECT_MAX,
-      );
+      retryDelay = Math.min(retryDelay ? retryDelay * 2 : RECONNECT_BASE, RECONNECT_MAX);
       const wait = retryDelay + Math.random() * 0.3 * retryDelay; // jitter
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -282,7 +285,9 @@ export function createTerminal(deps: TerminalDeps) {
         WBSessionRoute.tabAttempt(),
         shown ?? undefined,
       );
-      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }));
+      ws = new WebSocket(
+        WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }),
+      );
       const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
@@ -328,8 +333,7 @@ export function createTerminal(deps: TerminalDeps) {
         currentSessionId = owner.sessionId;
         currentDaemonId = owner.daemonId;
         currentEnvironment = owner.environment;
-        if (typeof opts.onSession === "function")
-          opts.onSession(currentSessionId, event.payload);
+        if (typeof opts.onSession === "function") opts.onSession(currentSessionId, event.payload);
         joinWatch(event.payload);
         // Last: the notices above are not session output.
         shown = offsetOf(event.payload);
@@ -499,7 +503,8 @@ export function createTerminal(deps: TerminalDeps) {
       sendInput(d);
     });
 
-    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") hold(peerGroup());
+    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold")
+      hold(peerGroup());
     else connect(opts);
 
     return {

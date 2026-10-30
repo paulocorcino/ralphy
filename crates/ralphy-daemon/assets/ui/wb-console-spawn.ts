@@ -18,7 +18,18 @@ import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
-import type { ConsoleTerm, ConsoleWin, DeskRecord, DeskSessionFields, DeskWindowFields, ExtentOpts, Presentation, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type {
+  ConsoleTerm,
+  ConsoleWin,
+  DeskRecord,
+  DeskSessionFields,
+  DeskWindowFields,
+  ExtentOpts,
+  Presentation,
+  Rect,
+  SpawnCarry,
+  WindowSnapshot,
+} from "./wb-types.d.ts";
 
 const { birthDecision, peerOfflineView, peerActionLabel, consoleCommand } = WBConsoleSession;
 const { sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
@@ -42,13 +53,22 @@ export type SpawnDeps = {
     repo: string | null | undefined,
     desk: ChromeRecord,
     kind: string | null | undefined,
-  ) => { win: ConsoleWin; body: HTMLElement; title: HTMLElement; restartBtn: HTMLButtonElement; closeBtn: HTMLButtonElement };
+  ) => {
+    win: ConsoleWin;
+    body: HTMLElement;
+    title: HTMLElement;
+    restartBtn: HTMLButtonElement;
+    closeBtn: HTMLButtonElement;
+  };
   // The title: what it says, and its painting.
   sessionPresentation: (
     label: string | null | undefined,
     repo: string | null | undefined,
     prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
-    owner: { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null } | null | undefined,
+    owner:
+      | { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null }
+      | null
+      | undefined,
   ) => Presentation;
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
   // The worktree switcher: its menu, the restart, and the repo's listing.
@@ -56,7 +76,11 @@ export type SpawnDeps = {
   restartWin: (win: ConsoleWin) => Promise<void>;
   ensureListing: (ref: string | null | undefined, force?: boolean) => void;
   // Builds the key bar of a window and gives back its latch buttons.
-  buildKeyBar: (win: ConsoleWin) => { ctrlBtn: HTMLButtonElement; shiftBtn: HTMLButtonElement; selBtn: HTMLButtonElement };
+  buildKeyBar: (win: ConsoleWin) => {
+    ctrlBtn: HTMLButtonElement;
+    shiftBtn: HTMLButtonElement;
+    selBtn: HTMLButtonElement;
+  };
   // Sleeps or wakes a window (`wb-console-dormancy.ts`).
   applyDormancy: (win: ConsoleWin) => unknown;
   // Builds the terminal of a window.
@@ -148,12 +172,18 @@ export function createSpawn(deps: SpawnDeps) {
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
-  function spawnWindow(termOpts: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
+  function spawnWindow(
+    termOpts: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk?: SpawnCarry,
+  ) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
-    if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };
+    if (termOpts.id == null && !termOpts.console)
+      termOpts = { ...termOpts, name: win._deskConsoleName };
     termOpts = launchRecord(termOpts, win);
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;
@@ -388,8 +418,7 @@ export function createSpawn(deps: SpawnDeps) {
             agent: termOpts.agent ?? label,
             // Explicit target, else `windowCheckout`: announcement beats
             // request beats record.
-            checkout:
-              checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
+            checkout: checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
           };
       void spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
@@ -444,10 +473,7 @@ export function createSpawn(deps: SpawnDeps) {
         }).then(
           (response) => {
             if (WBSessionRoute.closeSucceeded(response.status)) finish();
-            else
-              win._term?.term.write(
-                `\r\n[close failed — the daemon refused it]\r\n`,
-              );
+            else win._term?.term.write(`\r\n[close failed — the daemon refused it]\r\n`);
           },
           () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),
         );
@@ -536,7 +562,19 @@ export function createSpawn(deps: SpawnDeps) {
   // is no agent — a normal shell in the repo dir, labelled "console", or, with
   // `command`, a shell running that command and labelled by it (the same label
   // the daemon gives the session, so the desk record relaunches it as such).
-  function open({ repo, agent, plain, checkout, command }: { repo?: string | null; agent?: string | null; plain?: boolean; checkout?: string | null; command?: string }) {
+  function open({
+    repo,
+    agent,
+    plain,
+    checkout,
+    command,
+  }: {
+    repo?: string | null;
+    agent?: string | null;
+    plain?: boolean;
+    checkout?: string | null;
+    command?: string;
+  }) {
     if (atDeskCap()) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
       return false;

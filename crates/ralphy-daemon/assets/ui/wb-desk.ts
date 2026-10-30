@@ -31,7 +31,19 @@ import type { Group } from "./wb-fleet.ts";
 import type { OpenerLink } from "./wb-desk-detach.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { PopupRegistry } from "./wb-desk-popups.ts";
-import type { ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, ExtentOpts, NoteCard, Presentation, Rect, SpawnCarry } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskChange,
+  DeskFence,
+  DeskNote,
+  DeskRecord,
+  DeskReply,
+  ExtentOpts,
+  NoteCard,
+  Presentation,
+  Rect,
+  SpawnCarry,
+} from "./wb-types.d.ts";
 
 const { WIN_MIN_W, WIN_MIN_H } = WBGeometry;
 const { unheardRef, sessionRowFor } = WBConsoleSession;
@@ -248,32 +260,33 @@ export function createDesk(deps: DeskDeps) {
     deskSink.putSync(JSON.stringify(body));
   }
 
-  const { restoreDesk, restoreDetached, mountDetached, isDeskReconciled, isDeskSettled } = createDeskRestore({
-    window,
-    document,
-    OPTS,
-    viewStore,
-    link,
-    popups,
-    wins,
-    peerGroups,
-    loadDesk,
-    readSessions,
-    spawnWindow,
-    spawnOrMissing,
-    spawnPlaceholder,
-    renderFences,
-    renderNotes,
-    showDetachGlyph,
-    applyExtent,
-    raiseMaximized,
-    applyLanding,
-    fences: currentFences,
-    isDeskLoaded,
-    whenDeskLoaded,
-    reloadDesk,
-    currentDeskFailure,
-  });
+  const { restoreDesk, restoreDetached, mountDetached, isDeskReconciled, isDeskSettled } =
+    createDeskRestore({
+      window,
+      document,
+      OPTS,
+      viewStore,
+      link,
+      popups,
+      wins,
+      peerGroups,
+      loadDesk,
+      readSessions,
+      spawnWindow,
+      spawnOrMissing,
+      spawnPlaceholder,
+      renderFences,
+      renderNotes,
+      showDetachGlyph,
+      applyExtent,
+      raiseMaximized,
+      applyLanding,
+      fences: currentFences,
+      isDeskLoaded,
+      whenDeskLoaded,
+      reloadDesk,
+      currentDeskFailure,
+    });
 
   function ingestDesk(payload: Parameters<typeof sync.take>[0]) {
     const verdict = sync.take(payload);
@@ -333,7 +346,11 @@ export function createDesk(deps: DeskDeps) {
 
   // A name written on another device, unless the name is being edited here.
   function convergeName(w: ConsoleWin, r: DeskRecord) {
-    if (r.consoleName && r.consoleName !== w._deskConsoleName && !w.querySelector(".session-name-input")) {
+    if (
+      r.consoleName &&
+      r.consoleName !== w._deskConsoleName &&
+      !w.querySelector(".session-name-input")
+    ) {
       w._deskConsoleName = r.consoleName;
       if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
     }
@@ -341,8 +358,13 @@ export function createDesk(deps: DeskDeps) {
 
   function placeWindow(win: HTMLElement, r: Rect) {
     const at = (prop: "left" | "top" | "width" | "height") => parseInt(win.style[prop], 10);
-    if (at("left") === Math.round(r.left) && at("top") === Math.round(r.top) &&
-        at("width") === Math.round(r.width) && at("height") === Math.round(r.height)) return;
+    if (
+      at("left") === Math.round(r.left) &&
+      at("top") === Math.round(r.top) &&
+      at("width") === Math.round(r.width) &&
+      at("height") === Math.round(r.height)
+    )
+      return;
     win.style.left = r.left + "px";
     win.style.top = r.top + "px";
     win.style.width = r.width + "px";
@@ -371,7 +393,11 @@ export function createDesk(deps: DeskDeps) {
   const recordChecks = new WeakSet();
   function recordLeft(win: ConsoleWin) {
     if (recordChecks.has(win)) return;
-    if (win.classList.contains("placeholder") || win.classList.contains("ended") || sessionIdOf(win) == null) {
+    if (
+      win.classList.contains("placeholder") ||
+      win.classList.contains("ended") ||
+      sessionIdOf(win) == null
+    ) {
       leaveDesk([win._deskId]);
       return;
     }
@@ -385,7 +411,8 @@ export function createDesk(deps: DeskDeps) {
         // Not known: the next desk this page takes asks again. A list that
         // did not hear from this window's peer does not know either.
         if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read?.unheard)) return;
-        const live = sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
+        const live =
+          sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);
       });

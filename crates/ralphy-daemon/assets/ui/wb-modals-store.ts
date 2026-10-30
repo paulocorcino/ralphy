@@ -37,7 +37,10 @@ export type ModalsStoreDeps = {
 function focusTakesKeys(el: HTMLElement | null) {
   return !!(
     el &&
-    (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.isContentEditable ||
+      el.closest(".monaco-editor"))
   );
 }
 
@@ -110,7 +113,10 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // A click on the scrim closes nothing: a stray click must not throw away
     // what a modal holds. Only its own buttons and Escape close it.
     scrim(path: string, close: () => void) {
-      const isOpen = (scope: object) => path.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], scope);
+      const isOpen = (scope: object) =>
+        path
+          .split(".")
+          .reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], scope);
       let was = false;
       const self = this;
       return {

@@ -63,7 +63,9 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     init() {
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo, name) => repo != null && this.checkoutGone(repo, name));
+      window.WBDaemon?.onUnknownCheckout?.(
+        (repo, name) => repo != null && this.checkoutGone(repo, name),
+      );
       void window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
       // A branch refusal names an act against the project that WAS open.
       window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
@@ -111,7 +113,9 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // once the repo has a worktree; a pick sets the #406 selection (what
     // Files, Changes, diff and Find show), never where a console is launched.
     hasWorktrees(p: Project) {
-      return WBProject.hasWorktrees(this.worktreeListings[window.Alpine.store("projects").repoRef(p)] || null);
+      return WBProject.hasWorktrees(
+        this.worktreeListings[window.Alpine.store("projects").repoRef(p)] || null,
+      );
     },
 
     checkoutOf(ref: string | null | undefined) {
@@ -129,7 +133,8 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       else delete next[ref];
       this.checkouts = next;
       window.WBConsole?.setCheckout?.(ref, name || null);
-      if (window.Alpine.store("projects").openSlug === ref) sendWindow(window, "workbench:checkout-changed");
+      if (window.Alpine.store("projects").openSlug === ref)
+        sendWindow(window, "workbench:checkout-changed");
       // The Changes panel and the sync row are the SELECTED checkout's (#407).
       // Another tree's change set is not this tree's "last value" (ADR-0070
       // D3): its reads start over.
@@ -158,7 +163,10 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     },
     _storeListing(ref: string, listing: Listing | null) {
       const hidden = this._hidden[ref] || [];
-      const shown = listing && hidden.length ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) } : listing;
+      const shown =
+        listing && hidden.length
+          ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) }
+          : listing;
       this.worktreeListings = { ...this.worktreeListings, [ref]: shown };
       window.WBConsole?.ingestWorktrees?.(ref, shown);
     },
@@ -170,7 +178,10 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     },
     // The delete of `name` settled: the next listing shows it if it is there.
     unhideWorktree(ref: string, name: string) {
-      this._hidden = { ...this._hidden, [ref]: (this._hidden[ref] || []).filter((n) => n !== name) };
+      this._hidden = {
+        ...this._hidden,
+        [ref]: (this._hidden[ref] || []).filter((n) => n !== name),
+      };
     },
     // Copy the desk mirror's selections into the reactive map once the desk
     // has landed (boot, and again after a login under the `Session` policy),

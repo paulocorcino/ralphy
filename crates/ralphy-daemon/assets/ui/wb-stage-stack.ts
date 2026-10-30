@@ -64,9 +64,11 @@ export function createStack(document: Document) {
     if (z > Z_CEIL) {
       // Renormalize: re-stack the existing windows by their current z, resetting
       // the counter so focus never pushes a console over the overlay/tabbar tier.
-      const ordered = [...required(workspace(), "the workspace").querySelectorAll<Stacked>(".session-window, .note-card")].sort(
-        (a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0),
-      );
+      const ordered = [
+        ...required(workspace(), "the workspace").querySelectorAll<Stacked>(
+          ".session-window, .note-card",
+        ),
+      ].sort((a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0));
       z = Z_BASE;
       for (const w of ordered) {
         if (w === win) continue;

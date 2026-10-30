@@ -174,6 +174,10 @@ fn the_shell_writes_the_desk_only_as_changes() {
             include_str!("../../assets/ui/wb-notes-file.ts"),
         ),
         (
+            "wb-notes-open.ts",
+            include_str!("../../assets/ui/wb-notes-open.ts"),
+        ),
+        (
             "wb-notes-menus.ts",
             include_str!("../../assets/ui/wb-notes-menus.ts"),
         ),

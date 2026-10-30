@@ -60,7 +60,9 @@ const menuHosts = new WeakSet<Element>();
 
 export function mountTree(files: MountFiles) {
   const host = document.querySelector<HTMLElement>(".files-pane .wb-host");
-  const project = files.$store.projects.projects.find((p) => files.$store.projects.repoRef(p) === files.$store.projects.openSlug);
+  const project = files.$store.projects.projects.find(
+    (p) => files.$store.projects.repoRef(p) === files.$store.projects.openSlug,
+  );
   if (!host || !project) return;
   const mem = files.treeMem();
   // Freshness is per-open: the watch that kept a level honest died with
@@ -99,12 +101,15 @@ export function mountTree(files: MountFiles) {
     // the failure. A rethrow drew an "Error (…)" row inside the folder.
     // The footer says why; the folder closes, because it shows nothing.
     lazyLoad: (e: WunderbaumEvent) =>
-      WBReadRetry.patiently(() => files.loadTreeLevel(files.relPath(e.node))).catch((err: unknown) => {
-        files.treeWentStale(err);
-        if (WBFleet.refDaemon(files.$store.projects.openSlug || "")) void files.$store.projects.readFleetNow();
-        setTimeout(() => e.node.setExpanded(false));
-        return false;
-      }),
+      WBReadRetry.patiently(() => files.loadTreeLevel(files.relPath(e.node))).catch(
+        (err: unknown) => {
+          files.treeWentStale(err);
+          if (WBFleet.refDaemon(files.$store.projects.openSlug || ""))
+            void files.$store.projects.readFleetNow();
+          setTimeout(() => e.node.setExpanded(false));
+          return false;
+        },
+      ),
     // While the fleet calls the open project's peer down, a folder with
     // no level read before does not open: its read would fail. A level
     // read before opens from memory. A restore of the expanded folders

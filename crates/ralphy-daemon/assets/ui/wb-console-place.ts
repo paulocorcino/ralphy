@@ -32,7 +32,8 @@ export function paintTabShadow(win: ConsoleWin) {
   if (!sh) return;
   for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = win.style[side];
   const name = sh.querySelector(".console-shadow-name");
-  if (name) name.textContent = WBConsoleName.consoleLabel(win._deskConsoleName || "", win._deskAgent);
+  if (name)
+    name.textContent = WBConsoleName.consoleLabel(win._deskConsoleName || "", win._deskAgent);
 }
 
 function buildShadow(document: Document, win: ConsoleWin) {
@@ -44,7 +45,9 @@ function buildShadow(document: Document, win: ConsoleWin) {
   const name = document.createElement("span");
   name.className = "console-shadow-name";
   sh.append(icon, name);
-  sh.addEventListener("click", () => sendDocument(document, "workbench:console-tab-show", { id: win._deskId }));
+  sh.addEventListener("click", () =>
+    sendDocument(document, "workbench:console-tab-show", { id: win._deskId }),
+  );
   return sh;
 }
 
@@ -100,7 +103,8 @@ function slotsOf(held: readonly string[], grid: Grid | null, width: number) {
   const painted = grid ? WBColumns.painted(grid, WBColumns.cap(width, PHONE_MAX_WIDTH)) : [];
   const many = !!grid && WBColumns.flat(grid).length >= 2;
   const boxes = new Map(painted.map((p) => [p.id, p]));
-  const slot = (id: string): Slot | null => (held.includes(id) ? { p: boxes.get(id) ?? null, many } : null);
+  const slot = (id: string): Slot | null =>
+    held.includes(id) ? { p: boxes.get(id) ?? null, many } : null;
   return { slot, head: painted[0]?.id ?? null };
 }
 

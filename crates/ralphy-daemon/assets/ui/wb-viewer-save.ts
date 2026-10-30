@@ -108,7 +108,10 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
       // the best answer the pane has — and the reason lands in the pane.
       const fail = (reply?: DaemonReply) => {
-        showSaveError(rec, WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
+        showSaveError(
+          rec,
+          WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."),
+        );
         messages.flash("Could not reload the file.");
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
@@ -194,5 +197,15 @@ export function createViewerSave(deps: ViewerSaveDeps) {
     if (b) b.style.display = "none";
   }
 
-  return { save, showSaveError, clearSaveError, descOf, reloadFile, readWith, applyFresh, showDiskBadge, hideDiskBadge };
+  return {
+    save,
+    showSaveError,
+    clearSaveError,
+    descOf,
+    reloadFile,
+    readWith,
+    applyFresh,
+    showDiskBadge,
+    hideDiskBadge,
+  };
 }

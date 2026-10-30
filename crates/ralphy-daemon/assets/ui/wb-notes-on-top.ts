@@ -27,7 +27,10 @@ export type NoteOnTopDeps = {
   /** The desk record of a card, by id. */
   recordOf: (id: string | null | undefined) => NoteSource | null;
   /** True for a card whose fence is detached, so it is in the popup. */
-  isAway: (record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) => boolean;
+  isAway: (
+    record: Pick<NoteSource, "rect"> | null | undefined,
+    fences: DeskFence[] | null | undefined,
+  ) => boolean;
   /** Give a sleeping card its editor back. */
   wakeCard: (el: NoteCard) => void;
   /** True in a detached fence's popup, where the document holds a fragment of the plane. */
@@ -136,7 +139,16 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     const el = id ? cardEl(id) : null;
     if (!el) return;
     el.classList.remove("on-top", "band");
-    for (const v of ["--ot-x", "--ot-y", "--ot-w", "--ot-h", "--ws-x", "--ws-y", "--ws-w", "--ws-h"]) {
+    for (const v of [
+      "--ot-x",
+      "--ot-y",
+      "--ot-w",
+      "--ot-h",
+      "--ws-x",
+      "--ws-y",
+      "--ws-w",
+      "--ws-h",
+    ]) {
       el.style.removeProperty(v);
     }
     el._noteOnTop = null;

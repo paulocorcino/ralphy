@@ -57,19 +57,28 @@ export function searchNow(files: SearchFiles): Promise<void> {
   const verb = WBFileSearch.verbFor(files.fileSearch.mode);
   files.fileSearch.note = "searching…";
   // Find and grep walk the SELECTED tree (#406).
-  const payload = window.WBDaemon.withCheckout({ repo: slug, query }, files.$store.checkouts.checkoutOf(slug));
+  const payload = window.WBDaemon.withCheckout(
+    { repo: slug, query },
+    files.$store.checkouts.checkoutOf(slug),
+  );
   return window.WBDaemon.observe(verb, payload)
     .then((reply) => {
       if (seq !== files.fileSearch.seq || slug !== files.$store.projects.openSlug) return;
       if (WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
-        files.fileSearch.note = WBFail.failed(reply, "Could not search: the daemon gave no reason.");
+        files.fileSearch.note = WBFail.failed(
+          reply,
+          "Could not search: the daemon gave no reason.",
+        );
         return;
       }
       return files.applyFileSearch(reply.hits, !!reply.truncated, seq);
     })
     .catch((err: unknown) => {
       if (seq !== files.fileSearch.seq) return;
-      files.fileSearch.note = WBFail.failed({ message: err instanceof Error ? err.message : undefined }, "Could not search: the daemon did not answer.");
+      files.fileSearch.note = WBFail.failed(
+        { message: err instanceof Error ? err.message : undefined },
+        "Could not search: the daemon did not answer.",
+      );
     });
 }
 
@@ -77,14 +86,20 @@ export function searchNow(files: SearchFiles): Promise<void> {
 // session, load every ancestor level (shallow-first), then filter. The
 // expands run under `_restoringExpansion`: the remembered expansion must
 // not learn them.
-export async function applySearch(files: SearchFiles, hits: Hit[], truncated: boolean, seq: number) {
+export async function applySearch(
+  files: SearchFiles,
+  hits: Hit[],
+  truncated: boolean,
+  seq: number,
+) {
   files.treeMem();
   files.fileSearch.hits = hits;
   files.fileSearch.truncated = truncated;
   files.fileSearch.note = WBFileSearch.note({ hits, truncated });
   const tree = files.rawTree();
   if (!tree) return;
-  if (files.fileSearch.expandedBefore === null) files.fileSearch.expandedBefore = files.expandedRels();
+  if (files.fileSearch.expandedBefore === null)
+    files.fileSearch.expandedBefore = files.expandedRels();
   // ONE paint, at the end: every lazy level repaints on its own, and one
   // landing between the old marks cleared and the new ones set left a
   // blank tree that nothing repainted (MEASURED 2026-09-15).
@@ -121,7 +136,12 @@ function searchIsStale(files: SearchFiles, tree: WunderbaumTree, seq: number): b
 
 // Open every ancestor level of the hits, shallow-first. False when the
 // search went stale on the way.
-async function expandHitDirs(files: SearchFiles, tree: WunderbaumTree, hits: Hit[], seq: number): Promise<boolean> {
+async function expandHitDirs(
+  files: SearchFiles,
+  tree: WunderbaumTree,
+  hits: Hit[],
+  seq: number,
+): Promise<boolean> {
   for (const dir of WBFileSearch.dirsToLoad(hits)) {
     if (searchIsStale(files, tree, seq)) return false;
     const f = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === dir);

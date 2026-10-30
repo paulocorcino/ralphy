@@ -73,7 +73,8 @@ export function typeLabel(type: StatType) {
   }
 }
 
-const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+const plural = (n: number, one: string, many: string) =>
+  `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
 /** The size of a folder: a lower bound, marked `≥`, when the walk stopped early. */
 export function folderSize(reply: SizeReply) {

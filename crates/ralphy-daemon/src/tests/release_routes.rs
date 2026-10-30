@@ -68,9 +68,9 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         "the flag path the shortcuts ask is the one the panel gives to scrim()"
     );
 
-    assert!(module.contains("apiFetch('GET /api/release'"));
+    assert!(module.contains("apiFetch(\"GET /api/release\""));
     assert!(
-        module.contains("view.severity !== 'none'"),
+        module.contains("view.severity !== \"none\""),
         "loudness is the daemon's answer, not a browser-side derivation"
     );
 

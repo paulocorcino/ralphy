@@ -68,7 +68,9 @@ export function releaseStore(_deps: ReleaseStoreDeps) {
 
     releaseRead: null as ReadState,
     releaseStale() {
-      return WBFail.notCurrent(this.releaseRead, (ms) => window.Alpine.store("connection").fmtClock(ms));
+      return WBFail.notCurrent(this.releaseRead, (ms) =>
+        window.Alpine.store("connection").fmtClock(ms),
+      );
     },
     async loadRelease() {
       if (!WBRelease) return;

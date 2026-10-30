@@ -73,7 +73,13 @@ export type FleetRepoRow = {
 export type FleetReply = { peers: FleetPeer[]; repos: FleetRepoRow[] };
 
 /** A row of the adapter roster (`AgentRow` in `roster.rs`). */
-type AgentRow = { id: string; label: string; accelerator: string; available: boolean; reason: string | null };
+type AgentRow = {
+  id: string;
+  label: string;
+  accelerator: string;
+  available: boolean;
+  reason: string | null;
+};
 
 /** A refusal that names its cause. */
 type ErrorBody = { error: string };
@@ -83,9 +89,16 @@ interface ApiRoutes {
   "GET /api/identity": { ok: { name: string; avatar: string } };
   /** Reachable before login. */
   "GET /api/session": {
-    ok: { authed: boolean; password: boolean; policy: "localhost" | "bearer" | "session"; avatar?: string };
+    ok: {
+      authed: boolean;
+      password: boolean;
+      policy: "localhost" | "bearer" | "session";
+      avatar?: string;
+    };
   };
-  "GET /api/about": { ok: { name: string; version: string; license: string; repository: string; creator: string } };
+  "GET /api/about": {
+    ok: { name: string; version: string; license: string; repository: string; creator: string };
+  };
   /** With `repo`, a peer's roster: the daemon passes the peer's body on as it came. */
   "GET /api/agents": { ok: AgentRow[] };
   "GET /api/repos": { ok: RepoRow[] };
@@ -109,7 +122,12 @@ interface ApiRoutes {
   "GET /api/telegram": { ok: TelegramReply };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
-    ok: { daemon_id: string | null; records: SpendRecord[]; interactive: SpendRecord[]; missing: MissingUsage[] };
+    ok: {
+      daemon_id: string | null;
+      records: SpendRecord[];
+      interactive: SpendRecord[];
+      missing: MissingUsage[];
+    };
   };
   "GET /api/desk": { ok: Desk; failed: { state: "unreadable" | "unavailable"; error: string } };
   "PUT /api/desk": { ok: DeskReply; failed: DeskReply };
@@ -123,7 +141,13 @@ interface ApiRoutes {
   "GET /api/release": { ok: ReleaseView };
   "POST /api/release/watch": { ok: { enabled: boolean } };
   "GET /api/security/state": {
-    ok: { token_set: boolean; password_set: boolean; totp_enrolled: boolean; require_login: boolean; remote_images: boolean };
+    ok: {
+      token_set: boolean;
+      password_set: boolean;
+      totp_enrolled: boolean;
+      require_login: boolean;
+      remote_images: boolean;
+    };
   };
   "POST /api/security/totp/enroll": { ok: { uri: string; newly_minted: boolean } };
   "POST /api/security/totp/confirm": { ok: { confirmed: boolean } };
@@ -148,7 +172,9 @@ export interface ApiFailed<E> extends Response {
 type FailedOf<R> = R extends { failed: infer E } ? E : unknown;
 
 /** The answer to `route`. `if (r.ok)` tells which body `json()` reads. */
-export type ApiResponse<K extends ApiRoute> = ApiOk<ApiRoutes[K]["ok"]> | ApiFailed<FailedOf<ApiRoutes[K]>>;
+export type ApiResponse<K extends ApiRoute> =
+  | ApiOk<ApiRoutes[K]["ok"]>
+  | ApiFailed<FailedOf<ApiRoutes[K]>>;
 
 /** A refusal of `route`: an answer that is not `2xx`. */
 export type ApiRefusal<K extends ApiRoute> = ApiFailed<FailedOf<ApiRoutes[K]>>;
@@ -180,20 +206,29 @@ export class ReadDeadline extends Error {
 export const READ_DEADLINE_MS = 20000;
 
 /** The route that waits on purpose: a nudge waits up to 30 s for the peer to be ready. */
-export const ROUTE_DEADLINE_MS: Partial<Record<ApiRoute, number>> = { "POST /api/fleet/nudge": 40000 };
+export const ROUTE_DEADLINE_MS: Partial<Record<ApiRoute, number>> = {
+  "POST /api/fleet/nudge": 40000,
+};
 
 /** The method and the URL of `route` with `query`. Values are encoded; names are not. */
 export function apiRequest(route: ApiRoute, query?: Record<string, string | number>) {
   const space = route.indexOf(" ");
   const [path = ""] = route.slice(space + 1).split("?");
-  const pairs = Object.entries(query || {}).map(([name, value]) => `${name}=${encodeURIComponent(value)}`);
+  const pairs = Object.entries(query || {}).map(
+    ([name, value]) => `${name}=${encodeURIComponent(value)}`,
+  );
   return { method: route.slice(0, space), url: pairs.length ? `${path}?${pairs.join("&")}` : path };
 }
 
 // Reject with `ReadDeadline` when `work` has not settled in `ms`. The timer is
 // `setTimeout` (not `AbortSignal.timeout`) and is cleared as soon as `work`
 // settles, so a fast answer leaves no pending timer.
-function beforeDeadline<T>(work: Promise<T>, what: string, ms: number, onDeadline: () => void): Promise<T> {
+function beforeDeadline<T>(
+  work: Promise<T>,
+  what: string,
+  ms: number,
+  onDeadline: () => void,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       onDeadline();
@@ -229,7 +264,10 @@ function boundBodyReads(res: Response, what: string, ms: number, abort: () => vo
 /** Call `route`. A transport failure rejects, as `fetch` does; a refusal
  * resolves, and the caller reads `ok` and `status`. A request, or the read of
  * its body, with no answer by its deadline rejects with `ReadDeadline`. */
-export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Promise<ApiResponse<K>> {
+export function apiFetch<K extends ApiRoute>(
+  route: K,
+  init: ApiInit = {},
+): Promise<ApiResponse<K>> {
   const { query, deadlineMs, what: named, signal: callerSignal, ...rest } = init;
   const what = named ?? route;
   const { method, url } = apiRequest(route, query);
@@ -246,7 +284,9 @@ export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Prom
   }
   // The one unchecked step: the reply comes from the daemon of the same
   // build, whose handler `ApiRoutes` follows.
-  const sent = fetch(url, { ...rest, method, signal: controller.signal }) as Promise<ApiResponse<K>>;
+  const sent = fetch(url, { ...rest, method, signal: controller.signal }) as Promise<
+    ApiResponse<K>
+  >;
   // The caller's signal may outlive many requests: drop the listener once
   // this one settles, so it does not keep the controller alive.
   const forget = () => callerSignal?.removeEventListener("abort", abort);

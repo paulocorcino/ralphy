@@ -102,12 +102,20 @@ function canSwitchBranch(p: Project) {
 // Under a selected checkout (#407) the tooltip describes the WORKTREE the
 // switch will land in — its branch and its dirtiness from the listing — never
 // the primary's branch beside a worktree name.
-function branchChipTitle(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
+function branchChipTitle(
+  p: Project,
+  checkout: string | null | undefined,
+  listing: Listing | null | undefined,
+) {
   if (!canSwitchBranch(p)) return "Could not switch the branch: the project cannot be reached.";
   const dirty = chipDirty(p, checkout, listing);
   // The tooltip has room the chip does not: `<branch> · <worktree>`.
   const where = checkoutEntry(checkout, listing) ? ` · ${checkout}` : "";
-  return (dirty ? "Switch branch (uncommitted changes): " : "Switch branch: ") + chipLabel(p, checkout, listing) + where;
+  return (
+    (dirty ? "Switch branch (uncommitted changes): " : "Switch branch: ") +
+    chipLabel(p, checkout, listing) +
+    where
+  );
 }
 
 // The `worktree.list` entry of the selected checkout, or `null` when there is
@@ -131,7 +139,9 @@ function issueUrl(remoteUrl: string | null | undefined, number: number) {
 // `github.com` must BE the host (after an optional scheme and user), not a
 // part of another host's name or path.
 function githubRemote(remoteUrl: string | null | undefined) {
-  return (remoteUrl || "").match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+  return (remoteUrl || "").match(
+    /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/,
+  );
 }
 
 // Whether the remote is on GitHub: what the sidebar dot shows.
@@ -152,7 +162,11 @@ function hasWorktrees(listing: Listing | null | undefined) {
 // take (one path segment, not a flag), one a worktree already has, a
 // detached base (`HEAD`: no branch to cut from), or before the listing
 // ever answered.
-function worktreeCreateRow(listing: Pick<Listing, "worktrees"> | null | undefined, base: string, name: string) {
+function worktreeCreateRow(
+  listing: Pick<Listing, "worktrees"> | null | undefined,
+  base: string,
+  name: string,
+) {
   if (!listing || !Array.isArray(listing.worktrees)) return null;
   base = String(base || "");
   if (!base || base === "HEAD") return null;
@@ -206,7 +220,11 @@ function shapeProblem(name: string) {
 
 // Whether a worktree of the listing already has `name`.
 function takenProblem(listing: Pick<Listing, "worktrees"> | null | undefined, name: string) {
-  if (listing && Array.isArray(listing.worktrees) && listing.worktrees.some((w) => w && w.name === name)) {
+  if (
+    listing &&
+    Array.isArray(listing.worktrees) &&
+    listing.worktrees.some((w) => w && w.name === name)
+  ) {
     return `A worktree named “${name}” already exists.`;
   }
   return "";
@@ -214,8 +232,8 @@ function takenProblem(listing: Pick<Listing, "worktrees"> | null | undefined, na
 
 // What the create row's tooltip and the per-branch action say about
 // gitignored files: one sentence, here so the two cannot drift.
-const CARRY_OVER_NOTE = "Ignored files are copied only when worktree.copy or worktree.share in settings.json names them.";
-
+const CARRY_OVER_NOTE =
+  "Ignored files are copied only when worktree.copy or worktree.share in settings.json names them.";
 
 // The branch chip's text under a selected checkout (#406, ADR-0063 §4):
 // the WORKTREE's branch when the `worktree.list` entry is known (`HEAD`
@@ -225,7 +243,11 @@ const CARRY_OVER_NOTE = "Ignored files are copied only when worktree.copy or wor
 // the only hint), and the project's own branch with no selection. NEVER
 // the primary's branch under a selection — that would name a branch the
 // tree is not on.
-function chipLabel(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
+function chipLabel(
+  p: Project,
+  checkout: string | null | undefined,
+  listing: Listing | null | undefined,
+) {
   if (!checkout) return headLabel(p);
   const entry = checkoutEntry(checkout, listing);
   if (!entry) return checkout;
@@ -240,7 +262,11 @@ function chipIcon(checkout: string | null | undefined) {
 
 // The chip's dirty dot: the selected worktree's dirtiness when one is
 // selected (the tree the act lands in), the primary's otherwise (#407).
-function chipDirty(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
+function chipDirty(
+  p: Project,
+  checkout: string | null | undefined,
+  listing: Listing | null | undefined,
+) {
   if (!checkout) return !!p.dirty;
   const entry = checkoutEntry(checkout, listing);
   return !!entry && entry.dirty === true;
@@ -255,7 +281,13 @@ function chipDirty(p: Project, checkout: string | null | undefined, listing: Lis
 // asking), `working` beats the rest, an `unknown` (a green that aged out)
 // beats `done`. `null` when no session says anything — a vendor without
 // hooks, a shell console, a peer on an older build.
-const STATE_RANK: Record<string, number> = { silent: 5, waiting: 4, working: 3, unknown: 2, done: 1 };
+const STATE_RANK: Record<string, number> = {
+  silent: 5,
+  waiting: 4,
+  working: 3,
+  unknown: 2,
+  done: 1,
+};
 function agentStateOf(sessions: HostedSession[] | null | undefined) {
   let best: string | null = null;
   let bestRank = 0;
@@ -276,9 +308,13 @@ function agentStateOf(sessions: HostedSession[] | null | undefined) {
 // no state source on purpose, are the word `silent` with their reason as the
 // detail, so every place that draws a dot reads the block one way. A row
 // with no block, or no state, has no dot.
-function agentDotOf(block: AgentStateBlock | null | undefined): { state: string | null; detail?: string } {
+function agentDotOf(block: AgentStateBlock | null | undefined): {
+  state: string | null;
+  detail?: string;
+} {
   if (!block) return { state: null };
-  if (block.source === "silent" || block.source === "none") return { state: "silent", detail: block.reason };
+  if (block.source === "silent" || block.source === "none")
+    return { state: "silent", detail: block.reason };
   return { state: block.state ?? null, detail: block.detail };
 }
 
@@ -301,12 +337,13 @@ function projectDotOf(mine: HostedSession[]): { state: string; detail?: string }
 // The dot per worktree row: the sessions living in that checkout (`primary`
 // is the sessions with no checkout), folded by `agentStateOf`. `mine` is
 // the repo's own sessions — the caller has already matched the repo ref.
-function worktreeStates(rows: { name: string; primary: boolean }[] | null | undefined, mine: HostedSession[] | null | undefined) {
+function worktreeStates(
+  rows: { name: string; primary: boolean }[] | null | undefined,
+  mine: HostedSession[] | null | undefined,
+) {
   const out: Record<string, string> = {};
   for (const row of rows || []) {
-    const here = (mine || []).filter((s) =>
-      row.primary ? !s.checkout : s.checkout === row.name,
-    );
+    const here = (mine || []).filter((s) => (row.primary ? !s.checkout : s.checkout === row.name));
     const state = agentStateOf(here);
     if (state) out[row.name] = state;
   }
@@ -327,7 +364,10 @@ function checkoutAfter(checkout: string | null | undefined, reply: DaemonReply |
 // selected name is absent from a listing that ANSWERED — the directory is
 // gone whatever the remove reply said (`branch kept` is an error with the
 // directory gone). A `null` listing says nothing and keeps it.
-function checkoutAfterListing(checkout: string | null | undefined, listing: Listing | null | undefined) {
+function checkoutAfterListing(
+  checkout: string | null | undefined,
+  listing: Listing | null | undefined,
+) {
   if (!checkout) return null;
   if (!listing || !Array.isArray(listing.worktrees)) return checkout;
   return listing.worktrees.some((w) => w && w.name === checkout) ? checkout : null;

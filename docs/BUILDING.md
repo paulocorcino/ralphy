@@ -104,7 +104,13 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   through tsgolint. `TSGOLINT_VERSION` and `TSGOLINT_SHA256` in the workflow
   `env` pin it; `.github/scripts/fetch-tsgolint.sh` downloads the npm
   tarball of `@oxlint-tsgolint/linux-x64`, checks it, and oxlint finds the
-  binary through `OXLINT_TSGOLINT_PATH`.
+  binary through `OXLINT_TSGOLINT_PATH`. The job then runs `oxfmt --check`
+  over the same modules, with the settings in `.oxfmtrc.json` (width 100,
+  LF line ends). `OXFMT_VERSION` and `OXFMT_SHA256` in the workflow `env`
+  pin it, and `.github/scripts/fetch-oxfmt.sh` downloads the release
+  binary and checks it. A new oxfmt version can format some text in
+  another way, so each version raise comes with its own reformat commit,
+  which changes only the formatted files.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

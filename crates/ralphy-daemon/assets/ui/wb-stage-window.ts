@@ -63,7 +63,8 @@ export function createStageWindow(deps: StageWindowDeps) {
     return !!(win.offsetWidth || win.offsetHeight);
   }
   function restoreRect(win: HTMLElement) {
-    const inline = (prop: "left" | "top" | "width" | "height", fallback: number) => parseInt(win.style[prop], 10) || fallback;
+    const inline = (prop: "left" | "top" | "width" | "height", fallback: number) =>
+      parseInt(win.style[prop], 10) || fallback;
     const fromInline = () => ({
       left: inline("left", win.offsetLeft),
       top: inline("top", win.offsetTop),
@@ -242,7 +243,8 @@ export function createStageWindow(deps: StageWindowDeps) {
     // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
     const at = (w: HTMLElement, v: string) => parseInt(w.style.getPropertyValue(v), 10) || 0;
     const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].sort(
-      (a, b) => at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
+      (a, b) =>
+        at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
     if (cols.length) {
       for (const w of cols) focusWin(w);
@@ -283,7 +285,9 @@ export function createStageWindow(deps: StageWindowDeps) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll<HTMLElement>(".session-window.maximized, .session-window.column")) {
+    for (const win of st.querySelectorAll<HTMLElement>(
+      ".session-window.maximized, .session-window.column",
+    )) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -309,7 +313,9 @@ export function createStageWindow(deps: StageWindowDeps) {
     // Read the DOM, not `wins`: a window is on the stage from `buildChrome`'s
     // append (before `spawnWindow` registers it) to its removal. Fences count
     // too — ADR-0051 §2 sizes the plane to windows AND fences.
-    const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(restoreRect);
+    const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(
+      restoreRect,
+    );
     const ext = stageExtent(
       rects,
       { width: ws.clientWidth, height: ws.clientHeight },

@@ -75,7 +75,11 @@ function oneLine(text: string) {
   const trace = lines.findIndex((l) => /^\s*Stack backtrace:/.test(l));
   if (trace >= 0) lines = lines.slice(0, trace);
   const errorLine = lines.find((l) => l.startsWith("Error: "));
-  if (errorLine === undefined) return lines.map((l) => l.trim()).filter(Boolean).join(" ");
+  if (errorLine === undefined)
+    return lines
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join(" ");
   const pieces = [errorLine.slice("Error: ".length).trim()];
   for (const l of lines.slice(lines.indexOf(errorLine) + 1)) {
     const t = l.trim().replace(/^\d+: /, "");

@@ -120,7 +120,11 @@ export type Desk = {
  * The reply to a desk `PUT`: the desk after the changes, the changes it
  * refused one by one, or why it refused the whole batch (`state`, `error`).
  */
-export type DeskReply = Partial<Desk> & { refused?: { error: string }[]; state?: string; error?: string };
+export type DeskReply = Partial<Desk> & {
+  refused?: { error: string }[];
+  state?: string;
+  error?: string;
+};
 
 /** The three record types a desk change names. */
 export type DeskRecordType = "window" | "fence" | "note";
@@ -283,7 +287,10 @@ export type ConsoleOpts = {
  * number into a string, and a read gives the string.
  */
 export type Stacked = Omit<HTMLElement, "style"> & {
-  style: Omit<CSSStyleDeclaration, "zIndex"> & { get zIndex(): string; set zIndex(value: string | number) };
+  style: Omit<CSSStyleDeclaration, "zIndex"> & {
+    get zIndex(): string;
+    set zIndex(value: string | number);
+  };
 };
 
 /** The five closed-set fields of a note card's look (`applyLook`, `lookOf`). */

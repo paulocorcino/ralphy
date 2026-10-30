@@ -23,7 +23,13 @@ export function isRendered(kind: string): kind is RenderedKind {
  * and return the Mermaid holders still to draw. `uid` makes the holder ids
  * unique on the page.
  */
-export function renderBody(kind: RenderedKind, article: Element, content: string, uid: number, doc: Document): HTMLElement[] {
+export function renderBody(
+  kind: RenderedKind,
+  article: Element,
+  content: string,
+  uid: number,
+  doc: Document,
+): HTMLElement[] {
   switch (kind) {
     case "markdown":
       return markdownBody(article, content, uid, doc);

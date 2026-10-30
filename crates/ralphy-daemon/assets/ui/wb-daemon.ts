@@ -38,7 +38,12 @@ export type DaemonDeps = {
   messages: Messages;
 };
 
-export function createDaemon(window: Window, document: Document, location: Location, deps: DaemonDeps) {
+export function createDaemon(
+  window: Window,
+  document: Document,
+  location: Location,
+  deps: DaemonDeps,
+) {
   const { messages } = deps;
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
@@ -49,8 +54,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // is served over TLS (a dev-tunnel/reverse-proxy reaching a loopback daemon),
   // else `ws://` for a plain-http localhost bind. Hardcoding `ws://` would trip
   // the browser's mixed-content block on an https origin and kill every socket.
-  const WS_ORIGIN =
-    (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
+  const WS_ORIGIN = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
 
   // Which `workbench:action`s reach the daemon, and as which verb. The generic
   // `command` action carries its verb in the event detail (triage/push).
@@ -87,7 +91,15 @@ export function createDaemon(window: Window, document: Document, location: Locat
     } catch {}
   }
 
-  function encodeCommand({ id, verb, payload }: { id: number; verb: string; payload: CommandPayload }) {
+  function encodeCommand({
+    id,
+    verb,
+    payload,
+  }: {
+    id: number;
+    verb: string;
+    payload: CommandPayload;
+  }) {
     const body = new TextEncoder().encode(JSON.stringify({ id, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
@@ -122,7 +134,10 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // §2): a worktree NAME the daemon resolves under the repo's own root. Added
   // ONLY for a real name — with no selection the payload is byte-identical to
   // the pre-#406 one, so an older daemon never sees a key it does not know.
-  function withCheckout(payload: CommandPayload, checkout: string | null | undefined): CommandPayload {
+  function withCheckout(
+    payload: CommandPayload,
+    checkout: string | null | undefined,
+  ): CommandPayload {
     const out = { ...payload };
     if (checkout) out.checkout = String(checkout);
     return out;
@@ -427,13 +442,18 @@ export function createDaemon(window: Window, document: Document, location: Locat
   const presenceOpens: (() => void)[] = [];
   function reportPresence(report: PresenceReport) {
     if (!presenceSocket) return false;
-    return presenceSocket.sendIfOpen(encodeCommand({ id: 0, verb: "presence.report", payload: report }));
+    return presenceSocket.sendIfOpen(
+      encodeCommand({ id: 0, verb: "presence.report", payload: report }),
+    );
   }
   function onPresenceOpen(fn: () => void) {
     presenceOpens.push(fn);
   }
 
-  function subscribePresence(onPresence: (presence: Presence) => void, { onPush, onOpen }: PresenceHandlers = {}) {
+  function subscribePresence(
+    onPresence: (presence: Presence) => void,
+    { onPush, onOpen }: PresenceHandlers = {},
+  ) {
     const sub = persistentSocket("/ws", {
       onOpen: (_ws: WebSocket, reopened: boolean) => {
         onOpen?.(reopened);
@@ -509,7 +529,9 @@ export function createDaemon(window: Window, document: Document, location: Locat
         messages.flash(msg);
         sendWindow(window, "workbench:run-verb-failed", { message: msg });
       } else if (s.status === "exited") {
-        sendWindow(window, "workbench:run-verb-failed", { message: WBRun.exitNote(verb, s.code, finalLine()) });
+        sendWindow(window, "workbench:run-verb-failed", {
+          message: WBRun.exitNote(verb, s.code, finalLine()),
+        });
       }
     });
   });

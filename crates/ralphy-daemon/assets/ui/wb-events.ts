@@ -110,11 +110,18 @@ export function isWorkbenchActionName(v: unknown): v is WorkbenchActionName {
 /** Send, on `wb`, a gesture a popup posted. An action that is not a gesture
  * name is dropped: the answer is `false`. `fromWindow` is the popup, for a
  * gesture whose answer goes back to it. */
-export function forwardAction(wb: Window["WB"], action: unknown, detail: unknown, fromWindow?: Window): boolean {
+export function forwardAction(
+  wb: Window["WB"],
+  action: unknown,
+  detail: unknown,
+  fromWindow?: Window,
+): boolean {
   if (!isWorkbenchActionName(action)) return false;
   // The popup is a page of this build, and its own `WB.emit` checked the
   // detail against the action before it posted it.
-  const known = (typeof detail === "object" && detail ? detail : {}) as NonNullable<WorkbenchActions[WorkbenchActionName]>;
+  const known = (typeof detail === "object" && detail ? detail : {}) as NonNullable<
+    WorkbenchActions[WorkbenchActionName]
+  >;
   wb.emit(action, fromWindow ? { ...known, fromWindow } : known);
   return true;
 }

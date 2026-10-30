@@ -12,8 +12,15 @@ import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ScrollWatch } from "./wb-console-probe.ts";
 import { required } from "./wb-dom-need.ts";
 
-const { touchScrollLines, touchScrollTarget, touchGesture, touchCentroid, flingStep, selectionRow, FLING_MIN } =
-  WBConsoleInput;
+const {
+  touchScrollLines,
+  touchScrollTarget,
+  touchGesture,
+  touchCentroid,
+  flingStep,
+  selectionRow,
+  FLING_MIN,
+} = WBConsoleInput;
 
 // The finger, when exactly one is down; else null.
 function loneTouch(e: TouchEvent) {
@@ -105,7 +112,8 @@ export function wireTouch(deps: TouchDeps) {
     touchAccum -= whole;
     // Decided per flush, not per gesture: an app can take the mouse or drop
     // into the alternate buffer while a finger is still down.
-    if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
+    if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app")
+      wheelToApp(whole);
     else term.scrollLines(whole);
   };
   // One scroll step, timed for the scroll probe when there is one.

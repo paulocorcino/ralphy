@@ -101,13 +101,22 @@ export function runsStore(_deps: RunsStoreDeps) {
       } catch (err) {
         if (superseded(this, seq, slug)) return;
         // A transport failure is a read failure, not an idle project.
-        this.runsFailed(slug, WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"));
+        this.runsFailed(
+          slug,
+          WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"),
+        );
       }
     },
     // A good `runs.list`: the runs of `slug`, by replacement.
     runsListed(slug: string, reply: ReplyOf<"runs.list">, prevRuns: Run[]) {
-      this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
-      this.runsByProject[slug] = (reply.runs || []).map((d) => withKeptPlan(WBRun.fromSnapshot(d), prevRuns));
+      this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], {
+        ok: true,
+        value: true,
+        at: Date.now(),
+      });
+      this.runsByProject[slug] = (reply.runs || []).map((d) =>
+        withKeptPlan(WBRun.fromSnapshot(d), prevRuns),
+      );
       this.runsError = unreadableText(reply.unreadable || []);
       // Keep the selected run while it is still listed.
       this.currentRunId = keptRunId(this.projectRuns(), this.currentRunId);

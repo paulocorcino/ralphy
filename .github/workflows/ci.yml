@@ -29,6 +29,12 @@ env:
   # fails when the two differ.
   TSGOLINT_VERSION: "7.0.2005"
   TSGOLINT_SHA256: 3cd257574f2b3f0de69904ead10ca49397184e70cff481c905dd00cc4aa77554
+  # The oxfmt of the format check of the `ui-tests` job. The format command
+  # of AGENTS.md runs the same version through npx, and
+  # `ci_installs_the_pinned_oxfmt` fails when the two differ. A new version
+  # is its own reformat commit.
+  OXFMT_VERSION: "0.75.0"
+  OXFMT_SHA256: 6a111e38ab6edfe61b87deffbc95e461e3b7326d5d034bdee71ba92cdfd87641
 
 jobs:
   lint:
@@ -108,6 +114,13 @@ jobs:
         run: |
           ./.github/scripts/fetch-tsgolint.sh
           OXLINT_TSGOLINT_PATH="$PWD/tsgolint" ./oxlint-x86_64-unknown-linux-gnu --type-aware --deny-warnings crates/ralphy-daemon/assets/ui/*.ts
+
+      # The format of the modules, in .oxfmtrc.json. The release binary is
+      # pinned by version and checksum, as for oxlint.
+      - name: UI format (oxfmt)
+        run: |
+          ./.github/scripts/fetch-oxfmt.sh
+          ./oxfmt-x86_64-unknown-linux-gnu --check crates/ralphy-daemon/assets/ui/*.ts
 
   test:
     name: build · test (${{ matrix.os }})

@@ -32,7 +32,18 @@ export type NoteStageDeps = {
 };
 
 export function createNoteStage(deps: NoteStageDeps) {
-  const { buildCard, drafts, mountHome, loadInto, trackDormancy, onTopNow, putBack, flush, tearDownCard, isFragment } = deps;
+  const {
+    buildCard,
+    drafts,
+    mountHome,
+    loadInto,
+    trackDormancy,
+    onTopNow,
+    putBack,
+    flush,
+    tearDownCard,
+    isFragment,
+  } = deps;
 
   // A new card for a record: from a draft that came home when the note has
   // no file yet, else from a read of its file.

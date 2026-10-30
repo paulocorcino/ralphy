@@ -24,7 +24,10 @@ export type ViewerReadOnlyDeps = {
   detachClick: (rec: BytesRecord) => void;
   reloadFile: (rec: ViewerRecord) => unknown;
   isNarrow: (el: HTMLElement | undefined) => boolean;
-  watchNarrow: (rec: { el?: HTMLElement; ro?: ResizeObserver }, ed: MonacoEditor | MonacoDiffEditor) => void;
+  watchNarrow: (
+    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    ed: MonacoEditor | MonacoDiffEditor,
+  ) => void;
 };
 
 export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
@@ -90,7 +93,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     need(el, '[data-act="find"]').onclick = () => {
       const mod = (rec.ed as MonacoDiffEditor | undefined)?.getModifiedEditor();
       mod?.focus();
-      mod?.getAction("actions.find")?.run().catch((err: unknown) => console.error("[workbench] monaco find failed", err));
+      mod
+        ?.getAction("actions.find")
+        ?.run()
+        .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     rec.el = el;
     void mountDiff(rec, need(el, ".viewer-body"));
@@ -131,7 +137,11 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
-      setCaption(ev.currentTarget as HTMLElement, actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand", actual ? "Fit" : "Actual size");
+      setCaption(
+        ev.currentTarget as HTMLElement,
+        actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand",
+        actual ? "Fit" : "Actual size",
+      );
     };
     need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
     need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
@@ -153,7 +163,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
   function refusalText(reason: string) {
     if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
     // `detached.html` loads no `wb-fail.ts`.
-    return WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
+    return WBFail.failed(
+      { message: reason },
+      "Could not open the file: the daemon gave no reason.",
+    );
   }
 
   function buildRefused(rec: RefusedRecord) {

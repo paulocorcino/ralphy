@@ -9,7 +9,8 @@
    --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
 
-const { dragThreshold, dragBegins, pressRoute, forceSelectionKeys, holdMoveReport } = WBConsoleInput;
+const { dragThreshold, dragBegins, pressRoute, forceSelectionKeys, holdMoveReport } =
+  WBConsoleInput;
 
 // What the press rules read from the terminal, and nothing else.
 export type PressDeps = {
@@ -32,7 +33,10 @@ function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["win
   // §5), and so in the grid of a console tab (ADR-0037 §3d): xterm must not
   // send them to the child, and the document listener of the columns
   // (wb-consoles-tab.ts) takes them.
-  if (/^Arrow(Left|Right|Up|Down)$/.test(e.code) && !!body.closest(".session-window.column, .session-window.tab-grid")) {
+  if (
+    /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
+    !!body.closest(".session-window.column, .session-window.tab-grid")
+  ) {
     return true;
   }
   // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
@@ -60,7 +64,12 @@ export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
   // is stopped: xterm adds its `mouseup` listener to the document during the
   // replayed press, and the real release would report a second time.
   const replayed = new WeakSet<Event>();
-  const replay = (target: EventTarget | null, type: string, from: MouseEvent, keys: { altKey?: boolean; shiftKey?: boolean }) => {
+  const replay = (
+    target: EventTarget | null,
+    type: string,
+    from: MouseEvent,
+    keys: { altKey?: boolean; shiftKey?: boolean },
+  ) => {
     const ev = new MouseEvent(type, {
       bubbles: true,
       cancelable: true,
@@ -100,7 +109,12 @@ export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
         // The selection service is disabled under tracking, so it does not
         // extend an old selection; a new drag replaces it.
         term.clearSelection();
-        replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
+        replay(
+          e.target,
+          "mousedown",
+          e,
+          forceSelectionKeys(navigator.platform || navigator.userAgent),
+        );
       };
       const onUp = (u: MouseEvent) => {
         end();

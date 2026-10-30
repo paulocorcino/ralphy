@@ -18,7 +18,12 @@ import type { LanguageConfig, MonarchGrammar } from "./wb-monaco-grammars.ts";
 type MonacoUri = { readonly path: string };
 
 /** A span of a model's text. */
-export type MonacoRange = { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+export type MonacoRange = {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+};
 
 /** A Monaco text model. */
 export interface MonacoModel {
@@ -79,10 +84,19 @@ export interface MonacoEditor {
   focus(): void;
   dispose(): void;
   onDidChangeModelContent(listener: () => void): MonacoDisposable;
-  addAction(action: { id: string; label: string; keybindings: number[]; run: () => void }): MonacoDisposable;
+  addAction(action: {
+    id: string;
+    label: string;
+    keybindings: number[];
+    run: () => void;
+  }): MonacoDisposable;
   setSelection(range: MonacoRange): void;
   revealRangeInCenter(range: MonacoRange): void;
-  trigger(source: string, handlerId: string, payload: { searchString: string; isRegex: boolean; matchCase: boolean }): void;
+  trigger(
+    source: string,
+    handlerId: string,
+    payload: { searchString: string; isRegex: boolean; matchCase: boolean },
+  ): void;
   getAction(id: string): { run(): Promise<void> } | null;
 }
 
@@ -251,7 +265,10 @@ export const WBMonaco = (function () {
   }
   function disableJson(langs: Monaco["languages"]) {
     langs.json?.jsonDefaults?.setModeConfiguration(NO_PROVIDERS);
-    langs.json?.jsonDefaults?.setDiagnosticsOptions({ validate: false, schemaValidation: "ignore" });
+    langs.json?.jsonDefaults?.setDiagnosticsOptions({
+      validate: false,
+      schemaValidation: "ignore",
+    });
   }
   function disableCssAndHtml(langs: Monaco["languages"]) {
     langs.css?.cssDefaults?.setModeConfiguration(NO_PROVIDERS);
@@ -261,7 +278,11 @@ export const WBMonaco = (function () {
   function disableScripts(langs: Monaco["languages"]) {
     for (const d of [langs.typescript?.typescriptDefaults, langs.typescript?.javascriptDefaults]) {
       d?.setModeConfiguration(NO_PROVIDERS);
-      d?.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true });
+      d?.setDiagnosticsOptions({
+        noSemanticValidation: true,
+        noSyntaxValidation: true,
+        noSuggestionDiagnostics: true,
+      });
     }
   }
 
@@ -336,7 +357,10 @@ export const WBMonaco = (function () {
     };
   }
 
-  function create(container: HTMLElement, { value, path, uid, project, wordWrap, narrow }: CreateSpec) {
+  function create(
+    container: HTMLElement,
+    { value, path, uid, project, wordWrap, narrow }: CreateSpec,
+  ) {
     const monaco = window.monaco;
     const uri = monaco.Uri.file("/" + uid + "/" + project + "/" + path);
     return monaco.editor.create(container, {
@@ -351,7 +375,11 @@ export const WBMonaco = (function () {
   // one `onDidChangeModelContent`, no new model. The caller owns the model's
   // lifetime and MUST dispose this editor before it; an editor over a disposed
   // model throws on its next render.
-  function createOver(container: HTMLElement, model: MonacoModel, { wordWrap, narrow }: { wordWrap?: string; narrow: boolean }) {
+  function createOver(
+    container: HTMLElement,
+    model: MonacoModel,
+    { wordWrap, narrow }: { wordWrap?: string; narrow: boolean },
+  ) {
     const monaco = window.monaco;
     return monaco.editor.create(container, { model, ...editorOptions({ wordWrap, narrow }) });
   }
@@ -366,10 +394,18 @@ export const WBMonaco = (function () {
   // the editor's, so the same `gutterOptions` reach both sides.
   function createDiff(
     container: HTMLElement,
-    { original, modified, path, uid, project, narrow }: Omit<CreateSpec, "value" | "wordWrap"> & { original: string; modified: string },
+    {
+      original,
+      modified,
+      path,
+      uid,
+      project,
+      narrow,
+    }: Omit<CreateSpec, "value" | "wordWrap"> & { original: string; modified: string },
   ) {
     const monaco = window.monaco;
-    const at = (side: string) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
+    const at = (side: string) =>
+      monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
     const ed = monaco.editor.createDiffEditor(container, {
       ...gutterOptions(narrow),
       theme: "wb",
@@ -417,7 +453,6 @@ export const WBMonaco = (function () {
 
   return { ready, create, createOver, createDiff, gutterOptions, TOKENS };
 })();
-
 
 declare global {
   interface Window {

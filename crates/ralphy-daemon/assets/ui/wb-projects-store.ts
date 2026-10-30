@@ -49,7 +49,9 @@ function runHostVerb(verb: string, payload: Record<string, string>): Promise<str
         s = Object.assign({}, s, { buf: fed.rest });
         for (const event of fed.events) s = WBHosts.next(s, { type: "event", event });
       } else if (st.status === "exited") {
-        resolve(st.code === 0 ? null : s.failure?.message || `The command ended with code ${st.code}.`);
+        resolve(
+          st.code === 0 ? null : s.failure?.message || `The command ended with code ${st.code}.`,
+        );
       } else {
         resolve(WBFail.failed(st, "The daemon did not start the command."));
       }
@@ -75,7 +77,10 @@ function carriedDaemonName(prev: Project | undefined) {
 
 // `/api/fleet` is the ONLY source of this daemon's own environment label and
 // name; `mine` is its row of this daemon. The rows are written in place.
-function stampLocalRows(projects: Project[], mine: { environment?: string; os?: string; daemon_name?: string }) {
+function stampLocalRows(
+  projects: Project[],
+  mine: { environment?: string; os?: string; daemon_name?: string },
+) {
   for (const p of projects) {
     p.env = mine.environment || "";
     p.os = mine.os || "";
@@ -124,15 +129,23 @@ function peerFacts(x: FleetRepoRow) {
 
 // Why a wake did not leave the peer usable: the daemon's own sentence names
 // the environment and what is wrong.
-async function wakeRefusal(r: ApiResponse<"POST /api/fleet/nudge">, woke: { diagnosis?: string } | null) {
+async function wakeRefusal(
+  r: ApiResponse<"POST /api/fleet/nudge">,
+  woke: { diagnosis?: string } | null,
+) {
   const refusal = r.ok ? null : await r.json().catch(() => null);
-  return WBFail.failed({ message: woke?.diagnosis || refusal?.error }, "Could not wake the peer: the peer did not answer.");
+  return WBFail.failed(
+    { message: woke?.diagnosis || refusal?.error },
+    "Could not wake the peer: the peer did not answer.",
+  );
 }
 
 // Why a failed `/api/fleet` read failed: the daemon's own words when it
 // answered, else that it did not.
 function fleetFailReason(e: unknown) {
-  return String((e as Error)?.message || "").startsWith("the daemon") ? (e as Error).message : "the daemon did not answer";
+  return String((e as Error)?.message || "").startsWith("the daemon")
+    ? (e as Error).message
+    : "the daemon did not answer";
 }
 
 export function projectsStore(deps: ProjectsStoreDeps) {
@@ -244,7 +257,10 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       void this.loadAgents();
       // A push, a reopened socket or the tab coming back (the store
       // `connection`) asks to read these facts again.
-      window.addEventListener("workbench:repos-reread", (e) => void this.loadRepos({ git: e.detail.git }));
+      window.addEventListener(
+        "workbench:repos-reread",
+        (e) => void this.loadRepos({ git: e.detail.git }),
+      );
       window.addEventListener("workbench:sessions-reread", () => void this.refreshLive());
       // A peer pushes neither its reachability nor its sessions, so they are
       // read every 30 s while a peer is listed and the tab is visible
@@ -255,7 +271,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // A peer reads no git fact: the change set and the branch have their own
     // triggers.
     peerTick() {
-      if (!window.Alpine.store("connection").tabHidden() && this.fleetPeers.length) void this.loadRepos({ git: false });
+      if (!window.Alpine.store("connection").tabHidden() && this.fleetPeers.length)
+        void this.loadRepos({ git: false });
     },
     PEER_READ_MS: 30000,
     _peerTick: null as Timer,
@@ -327,7 +344,11 @@ export function projectsStore(deps: ProjectsStoreDeps) {
           this.setProjects(local.concat(this._fleetRows));
           this.shareProjectNames();
           this.reposError = "";
-          this.reposRead = WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
+          this.reposRead = WBFail.readFold(this.reposRead, {
+            ok: true,
+            value: true,
+            at: Date.now(),
+          });
           // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
           // per-peer timeout, and holding `reposLoading` open for that would make
           // a peer's absence stall the LOCAL sidebar's spinner and live dots.
@@ -344,7 +365,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         // answered: the live dots and the console menu come from them.
         void this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
-        if (git && this.openSlug) sendWindow(window, "workbench:changes-read", { ref: this.openSlug });
+        if (git && this.openSlug)
+          sendWindow(window, "workbench:changes-read", { ref: this.openSlug });
       }
     },
 
@@ -353,7 +375,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     reposFailed(reason: string) {
       this.reposRead = WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
       if (this.reposRead.goodAt) {
-        this.reposError = WBFail.notCurrent(this.reposRead, (ms) => window.Alpine.store("connection").fmtClock(ms));
+        this.reposError = WBFail.notCurrent(this.reposRead, (ms) =>
+          window.Alpine.store("connection").fmtClock(ms),
+        );
         return;
       }
       this.setProjects([]);
@@ -412,7 +436,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         } else {
           this.fleetPeers = [];
         }
-        this.fleetError = WBFail.notCurrent(this.fleetRead, (ms) => window.Alpine.store("connection").fmtClock(ms));
+        this.fleetError = WBFail.notCurrent(this.fleetRead, (ms) =>
+          window.Alpine.store("connection").fmtClock(ms),
+        );
       }
     },
     _fleetSeq: 0,
@@ -553,16 +579,18 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         }
         const sessions = await r.json();
         if (seq !== this._liveSeq) return;
-        this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
+        this.sessionsRead = WBFail.readFold(this.sessionsRead, {
+          ok: true,
+          value: true,
+          at: Date.now(),
+        });
         // The console menu's fold reads this (#304).
         this.liveSessions = sessions;
         // The console windows read their own row off the same poll (ADR-0059).
         window.WBConsole?.ingestSessions?.(sessions);
         for (const p of this.projects) {
           if (p.state === "offline") continue;
-          const mine = sessions.filter((s) =>
-            WBSessionRoute.matchesRepo(s, this.repoRef(p)),
-          );
+          const mine = sessions.filter((s) => WBSessionRoute.matchesRepo(s, this.repoRef(p)));
           const dot = WBProject.projectDotOf(mine);
           p.state = dot.state;
           p.dotDetail = dot.detail;
@@ -578,7 +606,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: false, reason, at: Date.now() });
     },
     sessionsError() {
-      return WBFail.notCurrent(this.sessionsRead, (ms) => window.Alpine.store("connection").fmtClock(ms));
+      return WBFail.notCurrent(this.sessionsRead, (ms) =>
+        window.Alpine.store("connection").fmtClock(ms),
+      );
     },
 
     // Every console on this daemon is its child, so the update's restart ends

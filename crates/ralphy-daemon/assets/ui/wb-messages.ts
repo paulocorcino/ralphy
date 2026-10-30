@@ -49,7 +49,13 @@ export function createMessages(window: MessagesWindow, document: Document) {
   // thread, and an automated browser dismisses it by default — every guarded
   // click would silently cancel.
   // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: ConfirmOptions) {
+  function askConfirm({
+    title,
+    message,
+    confirmLabel = "Confirm",
+    danger = false,
+    notice = false,
+  }: ConfirmOptions) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -118,7 +124,15 @@ export function createMessages(window: MessagesWindow, document: Document) {
   }
 
   // A message with an OK and nothing else (a verb's refusal, verbatim).
-  function askNotice({ title, message, danger = true }: { title: string; message: string; danger?: boolean }) {
+  function askNotice({
+    title,
+    message,
+    danger = true,
+  }: {
+    title: string;
+    message: string;
+    danger?: boolean;
+  }) {
     return askConfirm({ title, message, confirmLabel: "OK", danger, notice: true });
   }
 
@@ -133,7 +147,17 @@ export function createMessages(window: MessagesWindow, document: Document) {
   let toastEl: HTMLElement | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   const TOAST_MS = 6000;
-  function toast({ text, action, onAction, ms = TOAST_MS }: { text: string; action?: string; onAction?: () => void; ms?: number }) {
+  function toast({
+    text,
+    action,
+    onAction,
+    ms = TOAST_MS,
+  }: {
+    text: string;
+    action?: string;
+    onAction?: () => void;
+    ms?: number;
+  }) {
     dismissToast();
     const el = document.createElement("div");
     el.className = "wb-toast";

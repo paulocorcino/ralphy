@@ -50,10 +50,20 @@ export type ColumnFence = { id: string; name: string };
 export type ColumnGroup = { fence: ColumnFence | null; rows: ColumnRow[] };
 
 /** A console the list names: a member a detached fence's popup told us about. */
-export type DetachedMember = { id: string; agent: string | null; name?: string | null; repo?: string | null; kind: string | null };
+export type DetachedMember = {
+  id: string;
+  agent: string | null;
+  name?: string | null;
+  repo?: string | null;
+  kind: string | null;
+};
 
 /** A console the list is folded from: a window on this stage. */
-type RosterRow = DetachedMember & { state?: string | null; detail?: string | null; running?: boolean };
+type RosterRow = DetachedMember & {
+  state?: string | null;
+  detail?: string | null;
+  running?: boolean;
+};
 
 /** The input of `listFold`. */
 type ListFoldInput = {
@@ -77,9 +87,7 @@ type ExternalEvent = { type?: string; ids?: string[] } | null | undefined;
 type OpenResult = { ok: false; reason: string | null } | { ok: true; columns: Grid };
 
 /** The answer of `swap`. */
-type SwapResult =
-  | { ok: false }
-  | { ok: true; columns: Grid; ended: boolean; unmax: string | null };
+type SwapResult = { ok: false } | { ok: true; columns: Grid; ended: boolean; unmax: string | null };
 
 /** A console at its stage rect, for `fromRects`. */
 type StageItem = { id: string; rect?: Partial<Rect> | null };
@@ -111,7 +119,10 @@ export const WBColumns = (function () {
   }
 
   // [column, row] of `id`, or null.
-  function where(grid: readonly (readonly (string | null)[])[], id: string | null): [number, number] | null {
+  function where(
+    grid: readonly (readonly (string | null)[])[],
+    id: string | null,
+  ): [number, number] | null {
     for (const [c, col] of grid.entries()) {
       const r = col.indexOf(id);
       if (r >= 0) return [c, r];
@@ -127,7 +138,13 @@ export const WBColumns = (function () {
   // Open `id` next to `callerId`: "right" as a new column directly right of
   // the caller's column, "down" as a new row directly below the caller. An
   // empty grid is a lone maximized console: the caller is then the only one.
-  function open(grid: Grid, callerId: string, id: string, capValue: number, dir: string): OpenResult {
+  function open(
+    grid: Grid,
+    callerId: string,
+    id: string,
+    capValue: number,
+    dir: string,
+  ): OpenResult {
     const list = grid.length ? grid : [[callerId]];
     const ids = flat(list);
     if (ids.includes(id)) return { ok: false, reason: REASON_OPEN };
@@ -159,7 +176,15 @@ export const WBColumns = (function () {
     const at = where(list, atId);
     if (!at || id === atId) return { ok: false };
     const from = where(list, id);
-    const next = replaceAt(list, from ? [[at, id], [from, atId]] : [[at, id]]);
+    const next = replaceAt(
+      list,
+      from
+        ? [
+            [at, id],
+            [from, atId],
+          ]
+        : [[at, id]],
+    );
     return {
       ok: true,
       columns: next,
@@ -291,7 +316,12 @@ export const WBColumns = (function () {
   // a shorter column; "y" walks the rows of one column. Both wrap at the ends;
   // from outside the grid, a forward step takes the first console and a
   // backward step the last.
-  function focusMove(paintedList: Painted[], focusedId: string | null, axis: string, step: number): string | null {
+  function focusMove(
+    paintedList: Painted[],
+    focusedId: string | null,
+    axis: string,
+    step: number,
+  ): string | null {
     const cols: Grid = [];
     for (const p of paintedList) (cols[p.index] ||= []).push(p.id);
     const at = where(cols, focusedId);
@@ -321,7 +351,10 @@ export const WBColumns = (function () {
   // flat list of ids, stored before rows existed, reads as one row per
   // column. The FIRST stored id must be the desk's maximized console, or the
   // grid is ignored (ADR-0051 §8); then ids no longer on the desk drop.
-  function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined): Grid {
+  function fromStored(
+    stored: unknown,
+    desk: { id: string; max?: boolean }[] | null | undefined,
+  ): Grid {
     if (!Array.isArray(stored)) return [];
     const cols = storedColumns(stored);
     const records = desk || [];
@@ -384,7 +417,12 @@ export const WBColumns = (function () {
 
   // The row of a console on this page. `inGrid`: it is in the grid already.
   // `tabbed`: it is in its own tab, out of the stage.
-  function liveRow(r: RosterRow, inGrid: boolean, full: boolean | undefined, tabbed: boolean): ColumnRow {
+  function liveRow(
+    r: RosterRow,
+    inGrid: boolean,
+    full: boolean | undefined,
+    tabbed: boolean,
+  ): ColumnRow {
     const reason = rowReason(inGrid, full, tabbed);
     return {
       id: r.id,
@@ -404,7 +442,12 @@ export const WBColumns = (function () {
   // The row of the console that opened the list (ADR-0051 Â§5): named, never
   // opened or swapped.
   function selfRow(r: RosterRow): ColumnRow {
-    return { ...liveRow(r, false, false, false), enabled: false, reason: REASON_SELF, swappable: false };
+    return {
+      ...liveRow(r, false, false, false),
+      enabled: false,
+      reason: REASON_SELF,
+      swappable: false,
+    };
   }
 
   // The row of a console in a detached fence: named, never opened or swapped.
@@ -424,7 +467,16 @@ export const WBColumns = (function () {
     };
   }
 
-  function listFold({ rows, fences, membership, detached, columns, from, full, tabbed }: ListFoldInput): ColumnGroup[] {
+  function listFold({
+    rows,
+    fences,
+    membership,
+    detached,
+    columns,
+    from,
+    full,
+    tabbed,
+  }: ListFoldInput): ColumnGroup[] {
     const inColumns = idSet(columns);
     const inTabs = idSet(tabbed);
     // A console in no fence looks up `undefined`.
@@ -433,7 +485,8 @@ export const WBColumns = (function () {
     const loose: ColumnRow[] = [];
     for (const r of rows || []) {
       const into = byFence.get(fenceOfWin.get(r.id));
-      const row = r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
+      const row =
+        r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
       (into || loose).push(row);
     }
     addDetached(byFence, detached);
@@ -442,7 +495,10 @@ export const WBColumns = (function () {
 
   // The members of each detached fence join its rows, after its live ones.
   // A fence that is not listed takes none.
-  function addDetached(byFence: Map<string | undefined, ColumnRow[]>, detached: ListFoldInput["detached"]) {
+  function addDetached(
+    byFence: Map<string | undefined, ColumnRow[]>,
+    detached: ListFoldInput["detached"],
+  ) {
     for (const [fenceId, members] of Object.entries(detached || {})) {
       const into = byFence.get(fenceId);
       if (!into) continue;
@@ -452,7 +508,11 @@ export const WBColumns = (function () {
 
   // The groups of the list: the loose consoles first, then each fence with a
   // row, in the order of `fences`.
-  function listGroups(loose: ColumnRow[], fences: ListFoldInput["fences"], byFence: Map<string | undefined, ColumnRow[]>) {
+  function listGroups(
+    loose: ColumnRow[],
+    fences: ListFoldInput["fences"],
+    byFence: Map<string | undefined, ColumnRow[]>,
+  ) {
     const group = (fence: ColumnFence | null, rows: ColumnRow[]): ColumnGroup => ({ fence, rows });
     const groups: ColumnGroup[] = [];
     if (loose.length) groups.push(group(null, loose));
@@ -472,10 +532,19 @@ export const WBColumns = (function () {
   // The list with only the rows that match `query`, case-insensitive, against
   // the console name, the agent, the repo text and the fence name. A fence
   // whose name matches keeps all its rows. Groups left with no rows drop.
-  function filterGroups(groups: ColumnGroup[], query: string | null | undefined, repoText: (ref: string) => string) {
-    const q = String(query || "").trim().toLowerCase();
+  function filterGroups(
+    groups: ColumnGroup[],
+    query: string | null | undefined,
+    repoText: (ref: string) => string,
+  ) {
+    const q = String(query || "")
+      .trim()
+      .toLowerCase();
     if (!q) return groups;
-    const has = (text: string | null | undefined) => String(text || "").toLowerCase().includes(q);
+    const has = (text: string | null | undefined) =>
+      String(text || "")
+        .toLowerCase()
+        .includes(q);
     const out = [];
     for (const g of groups) {
       const rows = has(g.fence?.name)

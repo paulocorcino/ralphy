@@ -142,17 +142,20 @@ export function revalidateLevel(files: LevelFiles, rel: string) {
   const key = files.treeKey(rel);
   const before = JSON.stringify(cache.get(key) ?? null);
   const slug = files.$store.projects.openSlug;
-  return files.fetchTreeLevel(rel)
-    .then(() => {
-      // A project switch in flight: another project's tree.
-      if (slug !== files.$store.projects.openSlug || !files._tree) return;
-      if (JSON.stringify(cache.get(key) ?? null) === before) return;
-      const node = levelNode(files, rel);
-      if (!node) return;
-      return files.reconcileLevel(node, rel);
-    })
-    // A dropped read leaves the cached level on screen, but says so.
-    .catch((err: unknown) => files.treeWentStale(err));
+  return (
+    files
+      .fetchTreeLevel(rel)
+      .then(() => {
+        // A project switch in flight: another project's tree.
+        if (slug !== files.$store.projects.openSlug || !files._tree) return;
+        if (JSON.stringify(cache.get(key) ?? null) === before) return;
+        const node = levelNode(files, rel);
+        if (!node) return;
+        return files.reconcileLevel(node, rel);
+      })
+      // A dropped read leaves the cached level on screen, but says so.
+      .catch((err: unknown) => files.treeWentStale(err))
+  );
 }
 
 // Whether the rows under `node` already show `specs` (from `treeNodes`):

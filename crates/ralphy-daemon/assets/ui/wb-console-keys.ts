@@ -13,7 +13,15 @@ import type { WBView } from "./wb-client-view.ts";
 import type { TerminalDeps } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
 
-const { keyBarVisible, terminalInputMode, pasteOffered, pasteAfterRead, stepFont, clipboardContent, FONT_DEFAULT } = WBConsoleInput;
+const {
+  keyBarVisible,
+  terminalInputMode,
+  pasteOffered,
+  pasteAfterRead,
+  stepFont,
+  clipboardContent,
+  FONT_DEFAULT,
+} = WBConsoleInput;
 
 // What the key bar and the clipboard read from the console, and nothing else.
 export type ConsoleKeysDeps = {
@@ -32,7 +40,6 @@ export type ConsoleKeysDeps = {
 
 export function createConsoleKeys(deps: ConsoleKeysDeps) {
   const { window, document, viewStore, wins, focusWin } = deps;
-
 
   // Per browser profile (wb-settings.ts `scope: client`, stored by
   // `wb-client-view.ts`). Absent — the popup reads nothing — means auto.

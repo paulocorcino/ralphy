@@ -14,7 +14,17 @@
    `wireDiagramZoom` once.
 --------------------------------------------------------------------------- */
 import { dragBegins, dragThreshold } from "./wb-console-input.ts";
-import { clampPan, fitScale, fitView, minScale, panBy, pinchView, wheelFactor, zoomAt, ZOOM_STEP } from "./wb-diagram-zoom.ts";
+import {
+  clampPan,
+  fitScale,
+  fitView,
+  minScale,
+  panBy,
+  pinchView,
+  wheelFactor,
+  zoomAt,
+  ZOOM_STEP,
+} from "./wb-diagram-zoom.ts";
 import type { Pair, Point, Size, View } from "./wb-diagram-zoom.ts";
 
 type Picture = HTMLImageElement | SVGSVGElement;
@@ -170,7 +180,12 @@ type Controller = {
 
 // The view's state. `fitted` stays true until the operator zooms or pans, so a
 // window resize keeps a fitted picture fitted and leaves a zoomed one alone.
-function createController(surface: HTMLElement, stage: HTMLElement, size: Size, cap: number): Controller {
+function createController(
+  surface: HTMLElement,
+  stage: HTMLElement,
+  size: Size,
+  cap: number,
+): Controller {
   let view: View = { scale: 1, x: 0, y: 0 };
   let fitted = true;
   const box = (): Size => ({ w: surface.clientWidth, h: surface.clientHeight });
@@ -203,7 +218,12 @@ function createController(surface: HTMLElement, stage: HTMLElement, size: Size, 
 // two quick taps switch between the fit and the actual size. A press becomes
 // a drag only past the drag threshold, and the first drag move covers the
 // whole distance from where the press began (WORKBENCH-BUILD-GUIDE, Touch).
-function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: MouseEvent) => Point, close: () => void) {
+function attachGestures(
+  surface: HTMLElement,
+  ctl: Controller,
+  local: (ev: MouseEvent) => Point,
+  close: () => void,
+) {
   const points = new Map<number, Point>();
   let start: Point = { x: 0, y: 0 };
   let last: Point = start;
@@ -282,7 +302,13 @@ function trapTab(ev: KeyboardEvent, overlay: HTMLElement, bar: HTMLElement) {
 }
 
 function attachKeys(overlay: HTMLElement, bar: HTMLElement, actions: Record<string, () => void>) {
-  const keys: Record<string, string> = { Escape: "close", "+": "in", "=": "in", "-": "out", "0": "fit" };
+  const keys: Record<string, string> = {
+    Escape: "close",
+    "+": "in",
+    "=": "in",
+    "-": "out",
+    "0": "fit",
+  };
   overlay.addEventListener("keydown", (ev) => {
     if (ev.key === "Tab") return trapTab(ev, overlay, bar);
     const act = keys[ev.key];

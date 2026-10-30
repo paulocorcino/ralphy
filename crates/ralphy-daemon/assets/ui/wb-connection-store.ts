@@ -257,7 +257,11 @@ export function connectionStore(deps: ConnectionStoreDeps) {
           this.securityChanged({ policy: s.policy });
           // The login gate (wb-login.ts) and the restored view (app.ts) are
           // not the store's.
-          sendWindow(window, "workbench:auth-read", { authed: s.authed, password: s.password, policy: s.policy });
+          sendWindow(window, "workbench:auth-read", {
+            authed: s.authed,
+            password: s.password,
+            policy: s.policy,
+          });
         }
       } catch {
         // No restore: `authed` is still at its `true` default, and a restore
@@ -365,7 +369,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     changesCurrent(slug: string, current: boolean) {
       this.changesNotCurrent[slug] = !current;
     },
-    BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
+    BUILD_SKEW_LOCK:
+      "This page is older than Ralphy. Save your work, and the page loads the new version.",
     // The daemon runs another build than this page (ADR-0070 D6). With no
     // unsaved work the tab reloads. With unsaved work it waits: the notice
     // stays, only saving that work is allowed, and each heartbeat asks again.

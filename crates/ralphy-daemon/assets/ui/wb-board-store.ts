@@ -51,17 +51,27 @@ export function boardStore(_deps: BoardStoreDeps) {
       this.boardIssues[slug] = issues;
       this.boardLabels[slug] = labels;
       this.boardError[slug] = null;
-      this.boardRead[slug] = WBFail.readFold(this.boardRead[slug], { ok: true, value: true, at: Date.now() });
+      this.boardRead[slug] = WBFail.readFold(this.boardRead[slug], {
+        ok: true,
+        value: true,
+        at: Date.now(),
+      });
     },
 
     // A failed `board.list` (ADR-0070 D3). After a good read the cards stay,
     // under a banner that says they are not current; before one, there are no
     // cards and the banner says why. Moving a card is locked meanwhile.
     boardReadFailed(slug: string, msg: string) {
-      const read = WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
+      const read = WBFail.readFold(this.boardRead[slug], {
+        ok: false,
+        reason: msg,
+        at: Date.now(),
+      });
       this.boardRead[slug] = read;
       if (read.goodAt) {
-        this.boardError[slug] = WBFail.notCurrent(read, (ms) => window.Alpine.store("connection").fmtClock(ms));
+        this.boardError[slug] = WBFail.notCurrent(read, (ms) =>
+          window.Alpine.store("connection").fmtClock(ms),
+        );
         return;
       }
       this.boardIssues[slug] = [];

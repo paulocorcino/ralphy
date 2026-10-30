@@ -4,7 +4,13 @@
 
 // Verbatim in the menu's title attribute AND pinned by both test layers.
 /** One adapter of `GET /api/agents` (roster.rs). */
-export type RosterRow = { id: string; label?: string; accelerator?: string; available?: boolean; reason?: string | null };
+export type RosterRow = {
+  id: string;
+  label?: string;
+  accelerator?: string;
+  available?: boolean;
+  reason?: string | null;
+};
 /** A live session, as the menu counts it. */
 export type Session = { agent?: string; repo?: string };
 
@@ -35,9 +41,7 @@ function rowFor(
   // A count drawn from another repo would offer to reach a session with a
   // different working directory — a row that lies about what its click does.
   const scope = plain ? openSlug || "~" : openSlug;
-  const mine = (sessions || []).filter(
-    (s) => s && s.agent === kind && s.repo === scope,
-  );
+  const mine = (sessions || []).filter((s) => s && s.agent === kind && s.repo === scope);
   const needsRepo = !plain && !openSlug;
   const unavailable = !plain && available === false;
   const disabled = needsRepo || unavailable;
@@ -67,16 +71,7 @@ function menuRows({
   openSlug,
 }: { roster?: RosterRow[] | null; sessions?: Session[] | null; openSlug?: string | null } = {}) {
   const rows = (roster || []).map((r) =>
-    rowFor(
-      r.id,
-      r.label || r.id,
-      false,
-      r.accelerator,
-      r.available,
-      r.reason,
-      sessions,
-      openSlug,
-    ),
+    rowFor(r.id, r.label || r.id, false, r.accelerator, r.available, r.reason, sessions, openSlug),
   );
   // The plain shell is not a vendor adapter, so it never enters the daemon's
   // roster; the menu appends it last on digit 0.
@@ -101,7 +96,10 @@ function canLaunch(row: MenuRow | null | undefined, tryAnyway = false): boolean 
 
 // Whether a click on `row` launches, or is refused (`null`). The one intent
 // a row has: a launch.
-function consoleIntent(row: MenuRow | null | undefined, { tryAnyway = false }: { tryAnyway?: boolean } = {}) {
+function consoleIntent(
+  row: MenuRow | null | undefined,
+  { tryAnyway = false }: { tryAnyway?: boolean } = {},
+) {
   return canLaunch(row, tryAnyway) ? "launch" : null;
 }
 

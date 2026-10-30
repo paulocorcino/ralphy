@@ -88,7 +88,17 @@ export type CheckoutDeps = {
 };
 
 export function createCheckoutSwitcher(deps: CheckoutDeps) {
-  const { window, document, OPTS, wins, lastSessions, agentStateTitle, askConfirm, setWin, renderTitle } = deps;
+  const {
+    window,
+    document,
+    OPTS,
+    wins,
+    lastSessions,
+    agentStateTitle,
+    askConfirm,
+    setWin,
+    renderTitle,
+  } = deps;
 
   // ---- the title's worktree segment as a switcher (#412) --------------------
   //
@@ -134,15 +144,27 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     primaryDirty = false,
   ): CheckoutRow[] {
     const rows: TreeRow[] = [
-      { name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true },
+      {
+        name: "primary",
+        branch: String(primaryBranch || ""),
+        dirty: primaryDirty === true,
+        primary: true,
+      },
     ];
     for (const w of listing?.worktrees || []) rows.push(worktreeRow(w));
-    const states = sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
-    return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name, state: states[r.name] || null }));
+    const states =
+      sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
+    return rows.map((r) => ({
+      ...r,
+      current: (current ?? "primary") === r.name,
+      state: states[r.name] || null,
+    }));
   }
   function sessionsOfRepo(ref: string) {
     const route = WBSessionRoute;
-    return (lastSessions() || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
+    return (lastSessions() || []).filter(
+      (s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref),
+    );
   }
 
   // The checkout menu — ONE component, under the console's title segment and
@@ -175,7 +197,8 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       const create = document.createElement("button");
       create.type = "button";
       create.className = "session-checkout-item create";
-      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
+      create.innerHTML =
+        '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
       create.title = "Create a worktree and restart this console in it";
       create.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -187,7 +210,8 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     placeMenu(menu, anchor, host);
     host.append(menu);
     const away = (e: PointerEvent) => {
-      if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) closeCheckoutMenu();
+      if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node))
+        closeCheckoutMenu();
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeCheckoutMenu();
@@ -203,7 +227,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   }
   // The menu's row for one tree: its glyph, name, branch, agent state and
   // dirty flag, and a trash action when `onRemove` is given.
-  function checkoutItem(row: CheckoutRow, onPick: CheckoutMenuOptions["onPick"], onRemove: CheckoutMenuOptions["onRemove"]) {
+  function checkoutItem(
+    row: CheckoutRow,
+    onPick: CheckoutMenuOptions["onPick"],
+    onRemove: CheckoutMenuOptions["onRemove"],
+  ) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "session-checkout-item" + (row.current ? " current" : "");
@@ -335,7 +363,13 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // the base branch. The name gate is `WBProject.worktreeCreateRow`; a refusal
   // the daemon DID send (`error`) re-opens with the message under the field.
   // Resolves `{name, base}` or `null` on cancel.
-  function askWorktree({ base, branches, listing, error = "", name = "" }: WorktreeAsk): Promise<WorktreeAnswer> {
+  function askWorktree({
+    base,
+    branches,
+    listing,
+    error = "",
+    name = "",
+  }: WorktreeAsk): Promise<WorktreeAnswer> {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -398,7 +432,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       const problem = () =>
         WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
       const submit = () => {
-        const row = WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
+        const row = WBProject?.worktreeCreateRow?.(
+          listing || { worktrees: [] },
+          baseInput.value,
+          nameInput.value,
+        );
         if (!row) {
           err.textContent = problem() || "Choose a branch to start from.";
           err.hidden = false;
@@ -476,7 +514,13 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     let error = "";
     let name = "";
     for (;;) {
-      const ask = await askWorktree({ base, branches, listing: worktreeListings[repo], error, name });
+      const ask = await askWorktree({
+        base,
+        branches,
+        listing: worktreeListings[repo],
+        error,
+        name,
+      });
       if (!ask) return;
       name = ask.name;
       base = ask.base;
@@ -519,7 +563,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // The listing is read again, then the shell is told the worktree exists.
   function announceWorktree(repo: string, name: string, reply: { message?: unknown }) {
     ensureListing(repo, true);
-    WB.emit("worktree-created", { project: repo, name, message: typeof reply.message === "string" ? reply.message : "" });
+    WB.emit("worktree-created", {
+      project: repo,
+      name,
+      message: typeof reply.message === "string" ? reply.message : "",
+    });
   }
 
   return {

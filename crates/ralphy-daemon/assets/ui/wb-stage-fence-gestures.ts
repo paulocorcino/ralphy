@@ -10,7 +10,15 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { DIRS } from "./wb-stage-chrome.ts";
 import type { Gestures } from "./wb-stage-chrome.ts";
-import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, NoteCard, Point, Rect } from "./wb-types.d.ts";
+import type {
+  ConsoleWin,
+  DeskFence,
+  DeskWindowFields,
+  ExtentOpts,
+  NoteCard,
+  Point,
+  Rect,
+} from "./wb-types.d.ts";
 
 const { dragThreshold, dragBegins } = WBConsoleInput;
 const { FENCE_MIN, fenceMembership, fenceFits, fenceMoveDelta, resizeRect } = WBGeometry;
@@ -114,7 +122,12 @@ export function createFenceGestures(deps: FenceGestureDeps) {
       // keyed independently and `fenceMembership` sees one flat list.
       // A console in its own tab is carried too: its shadow is its place.
       const all = fenceWindows(st)
-        .map((w): Carried => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
+        .map((w): Carried => ({
+          el: w,
+          id: "w:" + w._deskId,
+          kind: "window",
+          rect: restoreRect(w),
+        }))
         .concat(
           [...st.querySelectorAll<NoteCard>(".note-card")].map((card): Carried => ({
             el: card,
@@ -230,7 +243,9 @@ export function createFenceGestures(deps: FenceGestureDeps) {
         // with one outcome. The cards go in ONE call for the same reason.
         for (const m of carried) {
           if (m.kind === "note") continue;
-          setWin(m.el, { rect: { ...m.rect, left: m.rect.left + delta.dx, top: m.rect.top + delta.dy } });
+          setWin(m.el, {
+            rect: { ...m.rect, left: m.rect.left + delta.dx, top: m.rect.top + delta.dy },
+          });
         }
         const cards = carried.filter((m) => m.kind === "note").map((m) => m.el);
         if (cards.length) window.WBNotes?.persistCards(cards);

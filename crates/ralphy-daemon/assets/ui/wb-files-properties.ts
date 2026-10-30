@@ -17,7 +17,10 @@ type Rows = {
 /** Show the properties of `node`; `null` is the empty space of the tree, which
  * is the project root, and its rel path is empty. */
 function showProperties(rows: Rows, node: WunderbaumNode | null) {
-  sendWindow(window, "workbench:properties-open", { path: rows.relPath(node), isFolder: rows.isFolder(node) });
+  sendWindow(window, "workbench:properties-open", {
+    path: rows.relPath(node),
+    isFolder: rows.isFolder(node),
+  });
 }
 
 /** The context menu row. It only reads, so the menu offers it everywhere,

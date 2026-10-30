@@ -29,7 +29,13 @@ type LedgerRead = {
 // `GET /api/usage` for one project and period. A failed read is an error,
 // never an empty ledger.
 async function readLedger(project: string, period: string): Promise<LedgerRead> {
-  const failed = { records: [], interactive: [], missing: [], daemonId: null, error: "Could not load the ledger: the daemon did not answer." };
+  const failed = {
+    records: [],
+    interactive: [],
+    missing: [],
+    daemonId: null,
+    error: "Could not load the ledger: the daemon did not answer.",
+  };
   try {
     const r = await apiFetch("GET /api/usage", { query: { project, period } });
     if (!r.ok) return failed;
@@ -86,7 +92,13 @@ export function wbSpend() {
     openSpend() {
       // Bootstrap's cash-stack: the strip renders `t.icon` as a class.
       sendWindow(window, "workbench:tab-open", {
-        tab: { id: "spend", kind: "spend", title: "Spend", icon: "bi bi-cash-stack", closable: true },
+        tab: {
+          id: "spend",
+          kind: "spend",
+          title: "Spend",
+          icon: "bi bi-cash-stack",
+          closable: true,
+        },
       });
       void this.loadSpend();
     },
@@ -101,7 +113,9 @@ export function wbSpend() {
       let doc: SpendDoc = null;
       let error = "";
       try {
-        const r = await apiFetch("GET /api/spend", { query: { project: slug, period: this.spendPeriod || "all" } });
+        const r = await apiFetch("GET /api/spend", {
+          query: { project: slug, period: this.spendPeriod || "all" },
+        });
         if (r.ok) doc = await r.json();
         else error = "Could not load spend: the daemon did not answer.";
       } catch {
@@ -181,7 +195,10 @@ export function wbSpend() {
       if (this.ledger.loading) return;
       if (this.ledger.slug === want) return;
       this.ledger = { ...this.ledger, loading: true, error: "" };
-      const { records, interactive, missing, daemonId, error } = await readLedger(want, this.spendPeriod || "all");
+      const { records, interactive, missing, daemonId, error } = await readLedger(
+        want,
+        this.spendPeriod || "all",
+      );
       // The operator switched projects while this was in flight.
       if ((this.$store.projects.openSlug || "") !== want) {
         this.ledger = { ...this.ledger, loading: false };

@@ -76,5 +76,7 @@ export function drawDiagram(win: MermaidWindow, id: string, source: string): Pro
   // here, before it reaches the page.
   return mermaid
     .render(id, source)
-    .then(({ svg }) => DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } }));
+    .then(({ svg }) =>
+      DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } }),
+    );
 }

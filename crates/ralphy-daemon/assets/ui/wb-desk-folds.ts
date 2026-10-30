@@ -72,7 +72,11 @@ export type FoldRecord = Pick<DeskRecord, "id" | "sessionId" | "checkout"> & {
   agent?: string | null;
   kind?: string | null;
 };
-export function reconcileDesk<S extends LiveSession, R extends FoldRecord = DeskRecord>({ layout, sessions, relaunchAgents = false }: ReconcileInput<S, R>) {
+export function reconcileDesk<S extends LiveSession, R extends FoldRecord = DeskRecord>({
+  layout,
+  sessions,
+  relaunchAgents = false,
+}: ReconcileInput<S, R>) {
   const live = sessions || [];
   const used = new Set<number>();
   const out: DeskVerdict<S, R>[] = [];
@@ -128,16 +132,17 @@ export function reconcileDesk<S extends LiveSession, R extends FoldRecord = Desk
       return;
     }
     // Widened to write: a `relaunch` or `placeholder` verdict becomes `attach`.
-    const waiting: { session: S | null; action: DeskVerdict<S, R>["action"] } | undefined = out.find(
-      ({ record, action }) =>
-        action !== "attach" &&
-        // An `adopt` entry pushed for an earlier session has no record.
-        record != null &&
-        record.repo === s.repo &&
-        record.agent === s.agent &&
-        record.kind === s.kind &&
-        (record.checkout ?? null) === (s.checkout ?? null),
-    );
+    const waiting: { session: S | null; action: DeskVerdict<S, R>["action"] } | undefined =
+      out.find(
+        ({ record, action }) =>
+          action !== "attach" &&
+          // An `adopt` entry pushed for an earlier session has no record.
+          record != null &&
+          record.repo === s.repo &&
+          record.agent === s.agent &&
+          record.kind === s.kind &&
+          (record.checkout ?? null) === (s.checkout ?? null),
+      );
     if (waiting) {
       waiting.session = s;
       waiting.action = "attach";
@@ -167,8 +172,7 @@ export function placeholderSession<S extends LiveSession>({
 }) {
   const shown = (s: S) =>
     held.some(
-      (h) =>
-        h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
+      (h) => h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
     );
   const verdict = reconcileDesk({
     layout,

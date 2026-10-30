@@ -48,7 +48,8 @@ function headGap(
   headWin: ConsoleWin | null | undefined,
   relaunching: (id: string) => boolean,
 ): "restore" | "wait" | null {
-  if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) return "restore";
+  if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column"))
+    return "restore";
   if (head && !headWin && relaunching(head)) return "wait";
   return null;
 }
@@ -61,7 +62,13 @@ function shouldRaise(opts: { raise?: boolean } | undefined, moved: boolean) {
 
 // After a paint, the focus goes back to the column that had it, or to the
 // last painted one, while the keys are free on the Consoles tab.
-function refocusAfterPaint(tabActive: boolean, columnIds: readonly (string | null)[], ids: string[], before: string | null, moved: boolean) {
+function refocusAfterPaint(
+  tabActive: boolean,
+  columnIds: readonly (string | null)[],
+  ids: string[],
+  before: string | null,
+  moved: boolean,
+) {
   if (!tabActive || !keysFree() || !columnIds.includes(before)) return;
   const want = WBColumns.focusAfter(ids, before);
   if (want && (want !== before || moved)) WBConsole.focusColumn(want);
@@ -147,7 +154,9 @@ export function wbColumns() {
     // that holds `fromId` (ADR-0037 §3d), else the stage's columns.
     menuGrid(fromId: string): { tab: string | null; grid: Grid } {
       const tab = this.$store.tabs.tabOf(fromId);
-      return tab ? { tab: tab.id, grid: tab.grid || [] } : { tab: null, grid: this.effectiveColumns(fromId) };
+      return tab
+        ? { tab: tab.id, grid: tab.grid || [] }
+        : { tab: null, grid: this.effectiveColumns(fromId) };
     },
     // The consoles of the console tabs, but the ones in `grid`: they are rows
     // of a list that opens from a tab.
@@ -172,7 +181,10 @@ export function wbColumns() {
     // that left the stage (closed, detached) leaves the list.
     paintColumns(opts?: { raise?: boolean }) {
       const byId = new Map(
-        [...document.querySelectorAll<ConsoleWin>("#stage .session-window")].map((w) => [w._deskId, w]),
+        [...document.querySelectorAll<ConsoleWin>("#stage .session-window")].map((w) => [
+          w._deskId,
+          w,
+        ]),
       );
       const head = this.columnIds()[0];
       const headWin = head ? byId.get(head) : null;
@@ -199,8 +211,18 @@ export function wbColumns() {
       // old z-index; raising the painted ones keeps it behind them.
       const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
-      WBConsole.applyColumns(painted, { unmax: null, raise: shouldRaise(opts, moved), persist: true });
-      refocusAfterPaint(this.$store.tabs.active === "consoles", this.columnIds(), ids, before, moved);
+      WBConsole.applyColumns(painted, {
+        unmax: null,
+        raise: shouldRaise(opts, moved),
+        persist: true,
+      });
+      refocusAfterPaint(
+        this.$store.tabs.active === "consoles",
+        this.columnIds(),
+        ids,
+        before,
+        moved,
+      );
     },
     // A fence detached to a popup takes its consoles out of the columns.
     leaveColumns(ids: string[]) {
@@ -208,7 +230,11 @@ export function wbColumns() {
       if (!r.changed) return;
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
+        unmax: r.unmax,
+        raise: true,
+        persist: true,
+      });
     },
     // Consoles whose records another client removed (`ids`, from the console
     // module after a desk read) leave the columns, then the stage. A session
@@ -221,7 +247,11 @@ export function wbColumns() {
         const cap = r.columns.length ? this.columnCap() : 1;
         this.setColumns(r.ended ? [] : r.columns);
         // Painted BEFORE the drops, so a lone survivor is maximized first.
-        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: null, raise: true, persist: true });
+        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
+          unmax: null,
+          raise: true,
+          persist: true,
+        });
       }
       for (const id of ids) WBConsole.dropClosedElsewhere(id);
       if (r.changed) this.paintColumns();
@@ -262,11 +292,15 @@ export function wbColumns() {
     // `owner/repo` without the environment: the operator already knows where
     // each console runs, and the list is about telling the consoles apart.
     columnRepoLabel(ref: string) {
-      const row = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === ref);
+      const row = this.$store.projects.projects.find(
+        (p) => this.$store.projects.repoRef(p) === ref,
+      );
       return row ? WBProject.projectName(row) : WBFleet.refLabel(ref);
     },
     columnView() {
-      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
+      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) =>
+        this.columnRepoLabel(ref),
+      );
     },
     columnRowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
@@ -327,7 +361,11 @@ export function wbColumns() {
     swapStage(r: { columns: Grid; ended: boolean; unmax: string | null }) {
       const cap = this.columnCap();
       this.setColumns(r.ended ? [] : r.columns);
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
+        unmax: r.unmax,
+        raise: true,
+        persist: true,
+      });
       this.paintColumns();
     },
     restoreColumn(id: string) {
@@ -335,7 +373,11 @@ export function wbColumns() {
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       // It may promote a lone survivor to the maximize.
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), {
+        unmax: r.unmax,
+        raise: true,
+        persist: true,
+      });
       this.paintColumns();
     },
     // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
@@ -346,7 +388,8 @@ export function wbColumns() {
       const first = ids[0];
       if (first === undefined) return;
       const old =
-        this.columnIds()[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
+        this.columnIds()[0] ??
+        document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
       const cap = ids.length >= 2 ? this.columnCap() : 1;
       this.setColumns(ids.length >= 2 ? grid : []);
       WBConsole.applyColumns(WBColumns.painted(grid, cap), {
@@ -461,7 +504,10 @@ export function wbColumns() {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];
         if (!move) return;
-        if (this.$store.modals.consoleShortcutsBlocked(WBColumns.flat(this.arrowGrid()).length >= 2)) return;
+        if (
+          this.$store.modals.consoleShortcutsBlocked(WBColumns.flat(this.arrowGrid()).length >= 2)
+        )
+          return;
         if (!this.arrowStep(move[0], move[1])) return;
         e.preventDefault();
       });

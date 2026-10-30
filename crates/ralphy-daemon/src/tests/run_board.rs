@@ -384,17 +384,19 @@ fn the_runs_feed_is_contained_in_the_markup() {
     );
     // `verbLockTitle` and `exitNote` are driven by `ui-tests/wb-runs.test.mjs`.
     // Both terminal frames, the refusal and the exit, go to the panel.
+    let daemon_js = squeeze(include_str!("../../assets/ui/wb-daemon.ts"));
     assert_eq!(
-        include_str!("../../assets/ui/wb-daemon.ts")
-            .matches(r#"sendWindow(window, "workbench:run-verb-failed", { message: "#)
+        daemon_js
+            .matches(r#"sendWindow(window,"workbench:run-verb-failed",{message:"#)
             .count(),
         2,
         "wb-daemon.ts must route a terminal verb frame to the panel (#331)"
     );
     assert!(
-        app_js.contains(
-            r#"addEventListener("workbench:run-verb-failed", (e) => this.runVerbFailed(e.detail.message));"#
-        ),
+        squeeze(&app_js).contains(concat!(
+            r#"addEventListener("workbench:run-verb-failed","#,
+            r#"(e)=>this.runVerbFailed(e.detail.message),);"#
+        )),
         "the Runs panel must hear a terminal verb frame (#331)"
     );
 }

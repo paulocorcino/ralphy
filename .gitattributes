@@ -9,3 +9,7 @@ crates/ralphy-daemon/assets/ui/vendor/** -text
 
 # The install script runs under sh and is served from main as it is.
 assets/install/install.sh text eol=lf
+
+# oxfmt writes LF (.oxfmtrc.json). Git stores LF, so a checkout with CRLF
+# would make the format check depend on the machine.
+crates/ralphy-daemon/assets/ui/*.ts text eol=lf

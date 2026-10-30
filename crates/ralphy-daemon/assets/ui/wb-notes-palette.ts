@@ -2,7 +2,17 @@
 // size, written into the file (ADR-0064 §8, amended 2026-09-22). `createNotes`
 // builds it with the card's names as typed deps; the text of each function is
 // the one it had in `wb-notes.ts`.
-import { FILLS, FONTS, INKS, SIZES, SWATCH_NAME, TONES, applyLook, lookOf, withStyle } from "./wb-notes-folds.ts";
+import {
+  FILLS,
+  FONTS,
+  INKS,
+  SIZES,
+  SWATCH_NAME,
+  TONES,
+  applyLook,
+  lookOf,
+  withStyle,
+} from "./wb-notes-folds.ts";
 import type { NoteCard, NoteLook } from "./wb-types.d.ts";
 
 /** What `createNotes` hands the palette: the card's and the editor's names. */
@@ -54,7 +64,11 @@ export function createNotePalette(deps: NotePaletteDeps) {
     document.removeEventListener("pointerdown", closePaletteOutside, true);
   }
   function closePaletteOutside(ev: PointerEvent) {
-    if (openPalette && !openPalette.contains(ev.target as Node | null) && !(ev.target as Element | null)?.closest?.(".note-tone")) {
+    if (
+      openPalette &&
+      !openPalette.contains(ev.target as Node | null) &&
+      !(ev.target as Element | null)?.closest?.(".note-tone")
+    ) {
       closePalette();
     }
   }
@@ -70,7 +84,13 @@ export function createNotePalette(deps: NotePaletteDeps) {
     // `text` turns the strip from swatches into CHIPS — a colour can be shown
     // as itself, a font and a size cannot, so those two rows name what they
     // offer and the font chips are drawn IN the font they name.
-    const row = (label: string, cls: string, names: string[], pick: (el: NoteCard, name: string) => void, text?: (name: string) => string) => {
+    const row = (
+      label: string,
+      cls: string,
+      names: string[],
+      pick: (el: NoteCard, name: string) => void,
+      text?: (name: string) => string,
+    ) => {
       const strip = document.createElement("div");
       strip.className = "note-swatches";
       const cap = document.createElement("span");

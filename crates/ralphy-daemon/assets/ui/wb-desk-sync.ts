@@ -9,7 +9,18 @@
 // `applyChange` is the daemon's `desk::apply` rule, in JavaScript. One table
 // of cases, `ui-tests/fixtures/api-desk--apply-cases.json`, runs on both
 // sides, so the two cannot drift apart.
-import type { Desk, DeskChange, DeskRecord, DeskFence, DeskNote, DeskRecordType, DeskWindowFields, DeskFenceFields, DeskNoteFields, Rect } from "./wb-types.d.ts";
+import type {
+  Desk,
+  DeskChange,
+  DeskRecord,
+  DeskFence,
+  DeskNote,
+  DeskRecordType,
+  DeskWindowFields,
+  DeskFenceFields,
+  DeskNoteFields,
+  Rect,
+} from "./wb-types.d.ts";
 
 // The desk this page draws: the served desk's four collections, each present.
 type DeskView = Required<Pick<Desk, "windows" | "fences" | "notes" | "checkouts">>;
@@ -30,7 +41,6 @@ type CreateChange = Extract<DeskChange, { op: "create" }>;
 type SetChange = Extract<DeskChange, { op: "set" }>;
 
 export const WBDeskSync = (function () {
-
   // The record types; each lives in the collection named by its plural.
   const TYPES = new Set(["window", "fence", "note"]);
 
@@ -41,7 +51,7 @@ export const WBDeskSync = (function () {
   // A served desk as the four collections, each a fresh array: a page never
   // mutates what the daemon sent.
   function deskOf(payload: ServedDesk): DeskView {
-    const list = <T,>(v: T[] | undefined) => (Array.isArray(v) ? v.slice() : []);
+    const list = <T>(v: T[] | undefined) => (Array.isArray(v) ? v.slice() : []);
     const map = payload?.checkouts;
     return {
       windows: list(payload?.windows),
@@ -178,7 +188,12 @@ export const WBDeskSync = (function () {
 
   // The list after a change of the record `id` at index `at` (-1: none has
   // the id), or null when nothing changed or the op changes no record.
-  function changedList(list: AnyRecord[], at: number, id: string | undefined, change: DeskChange): AnyRecord[] | null {
+  function changedList(
+    list: AnyRecord[],
+    at: number,
+    id: string | undefined,
+    change: DeskChange,
+  ): AnyRecord[] | null {
     if (change.op === "create") return createIn(list, at, change);
     if (change.op === "set") return setIn(list, at, change);
     if (change.op === "remove") return at < 0 ? null : list.filter((r) => r.id !== id);
@@ -189,7 +204,8 @@ export const WBDeskSync = (function () {
   // name it saw go.
   function applyCheckout(desk: DeskView, change: CheckoutChange) {
     const held = desk.checkouts[change.repo];
-    if (change.op === "checkout" ? held === change.name : held !== change.ifName) return { desk, changed: false };
+    if (change.op === "checkout" ? held === change.name : held !== change.ifName)
+      return { desk, changed: false };
     const checkouts = { ...desk.checkouts };
     if (change.op === "checkout") checkouts[change.repo] = change.name;
     else delete checkouts[change.repo];

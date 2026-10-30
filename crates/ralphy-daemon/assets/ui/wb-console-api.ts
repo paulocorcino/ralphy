@@ -61,7 +61,28 @@ export type ConsoleParts = {
 };
 
 export function buildConsoleApi(parts: ConsoleParts) {
-  const { records, feeds, title, popups, dormancy, stageWindow, columns, fenceFloor, detach, view, keys, fences, desk, spawn, placeholders, chrome, messages, stack, gestures, wins } = parts;
+  const {
+    records,
+    feeds,
+    title,
+    popups,
+    dormancy,
+    stageWindow,
+    columns,
+    fenceFloor,
+    detach,
+    view,
+    keys,
+    fences,
+    desk,
+    spawn,
+    placeholders,
+    chrome,
+    messages,
+    stack,
+    gestures,
+    wins,
+  } = parts;
   return {
     boot: desk.boot,
     open: spawn.open,
@@ -232,6 +253,5 @@ export function buildConsoleApi(parts: ConsoleParts) {
     dismissToast: messages.dismissToast,
     agentStateTitle: WBConsoleSession.agentStateTitle,
     renderNotes: fenceFloor.renderNotes,
-
   };
 }

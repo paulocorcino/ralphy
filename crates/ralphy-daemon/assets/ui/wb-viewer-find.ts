@@ -17,7 +17,9 @@ export type ViewerFind = ReturnType<typeof createViewerFind>;
 // Whether a text node of the article is visible text that a find may mark.
 function takesText(n: Node) {
   const parent = n.parentElement;
-  return !!n.nodeValue?.trim() && !!parent && !parent.closest("svg, script, style, button, [hidden]");
+  return (
+    !!n.nodeValue?.trim() && !!parent && !parent.closest("svg, script, style, button, [hidden]")
+  );
 }
 
 export function createViewerFind(deps: ViewerFindDeps) {
@@ -53,13 +55,24 @@ export function createViewerFind(deps: ViewerFindDeps) {
     requestAnimationFrame(() => {
       if (!alive(rec) || !rec.ed) return;
       const model = ed.getModel();
-      const hit = model?.findNextMatch?.(term, { lineNumber: 1, column: 1 }, false, false, null, false);
+      const hit = model?.findNextMatch?.(
+        term,
+        { lineNumber: 1, column: 1 },
+        false,
+        false,
+        null,
+        false,
+      );
       if (hit) {
         ed.setSelection(hit.range);
         ed.revealRangeInCenter(hit.range);
       }
       ed.focus();
-      ed.trigger("wb-file-search", "actions.find", { searchString: term, isRegex: false, matchCase: false });
+      ed.trigger("wb-file-search", "actions.find", {
+        searchString: term,
+        isRegex: false,
+        matchCase: false,
+      });
     });
   }
 

@@ -23,7 +23,14 @@ export function wbLogin() {
   return component([], {
     // `remember` is "keep me signed in" (ADR-0032 amendment 2026-09-16):
     // opt-in, reset on every log-off.
-    login: { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: false },
+    login: {
+      code: "",
+      digits: ["", "", "", "", "", ""],
+      password: "",
+      remember: false,
+      error: "",
+      passwordRequired: false,
+    },
 
     init() {
       // The daemon said whether the login asks for a password (the store
@@ -34,7 +41,14 @@ export function wbLogin() {
       // Localhost/Bearer have no login gate to drop to (#205).
       window.addEventListener("workbench:log-off", () => {
         if (this.$store.connection.security.policy === "session") {
-          this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
+          this.login = {
+            code: "",
+            digits: ["", "", "", "", "", ""],
+            password: "",
+            remember: false,
+            error: "",
+            passwordRequired: this.login.passwordRequired,
+          };
         }
       });
     },
