@@ -80,30 +80,36 @@ export function createNoteFile(deps: NoteFileDeps) {
     const pointing = !!el._notePointing;
     endRename(el);
     if (!record || !next) return;
-    if (pointing) {
-      // A whole rel path, not a file name: the card is being aimed somewhere
-      // else in the checkout, and the read decides whether there is a note
-      // there. Identity is `(repo, checkout, path)` (ADR-0064 §4) and this is
-      // the one gesture that could break it: two cards over one file would be
-      // two editors autosaving it, each overwriting the other with stale text
-      // and neither told.
-      const taken = (consoleHost?.notes?.() || []).find(
-        (n) =>
-          n.id !== record.id &&
-          n.repo === record.repo &&
-          (n.checkout ?? null) === (record.checkout ?? null) &&
-          n.path === next,
-      );
-      if (taken) {
-        paintState(el, "Another note already uses that file.");
-        return;
-      }
-      patch(record.id, { path: next });
-      paintPath(el, next);
-      el.classList.remove("missing");
-      loadInto(el, { ...record, path: next });
+    if (pointing) pointAt(el, record, next);
+    else renameFile(el, record, next);
+  }
+
+  // A whole rel path, not a file name: the card is being aimed somewhere
+  // else in the checkout, and the read decides whether there is a note
+  // there. Identity is `(repo, checkout, path)` (ADR-0064 §4) and this is
+  // the one gesture that could break it: two cards over one file would be
+  // two editors autosaving it, each overwriting the other with stale text
+  // and neither told.
+  function pointAt(el: NoteCard, record: NoteSource, next: string) {
+    const taken = (consoleHost?.notes?.() || []).find(
+      (n) =>
+        n.id !== record.id &&
+        n.repo === record.repo &&
+        (n.checkout ?? null) === (record.checkout ?? null) &&
+        n.path === next,
+    );
+    if (taken) {
+      paintState(el, "Another note already uses that file.");
       return;
     }
+    patch(record.id, { path: next });
+    paintPath(el, next);
+    el.classList.remove("missing");
+    loadInto(el, { ...record, path: next });
+  }
+
+  // A new file name for the note, in the same directory.
+  function renameFile(el: NoteCard, record: NoteSource, next: string) {
     if (!record.path || next === baseName(record.path)) return;
     // Always a `.note`: the verbs refuse anything else, and a note renamed out
     // of its extension would be a file nothing can open (ADR-0064 §5).

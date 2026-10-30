@@ -37,11 +37,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-notes-file.ts": {
-      "commitRename": [
-        14
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
       "addCard": [
         12
