@@ -338,8 +338,12 @@ export function noteNameOk(
 ) {
   const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
   if (!held || !record || record.id !== msg.noteId || record.path) return false;
-  const path = msg.path;
-  // Relative to the repo: no parent step, no root, no drive letter.
+  return isNotePath(msg.path);
+}
+
+// A path that names a note relative to the repo: no parent step, no root, no
+// drive letter.
+function isNotePath(path: unknown) {
   return (
     typeof path === "string" &&
     path.endsWith(".note") &&

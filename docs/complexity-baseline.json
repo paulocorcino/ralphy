@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-desk-folds.ts": {
-      "noteNameOk": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-desk-restore.ts": {
       "(anonymous)": [
         11
