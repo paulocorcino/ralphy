@@ -16,7 +16,10 @@ use crate::runner::{IssueResult, ResultStatus, NEEDS_HUMAN_REVIEW_LABEL};
 /// `worked` *before* the fallible evidence writes, so the result is always
 /// present in the report even if one of them errors out (errors propagate to
 /// the caller without a restore, exactly like the pre-extraction loop).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the closed issue with its plan and reports, one usage per phase, and the results list"
+)]
 pub(crate) fn close_and_record(
     cx: &IssueCtx,
     issue: &Issue,

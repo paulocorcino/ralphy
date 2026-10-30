@@ -10,7 +10,7 @@ use super::*;
 fn init_bare_remote(name: &str) -> PathBuf {
     let source = init_remote(&format!("{name}-src"));
     let dir = tmp(name);
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     git(
         &std::env::temp_dir(),
         &[
@@ -22,7 +22,7 @@ fn init_bare_remote(name: &str) -> PathBuf {
         ],
     )
     .unwrap();
-    let _ = std::fs::remove_dir_all(&source);
+    remove_scratch(&source);
     dir
 }
 
@@ -60,8 +60,8 @@ fn push_publishes_the_remotes_default_branch() {
         "the remote's main moved to the pushed commit"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -105,8 +105,8 @@ fn push_publishes_a_branch_with_no_upstream_and_sets_one() {
         })
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -121,8 +121,8 @@ fn push_of_a_level_branch_is_up_to_date() {
     assert_eq!(outcome, PushOutcome::UpToDate);
     assert_eq!(outcome.reason(), None, "nothing to push is not a refusal");
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -166,9 +166,9 @@ fn push_refuses_a_remote_that_moved_on() {
         "the rejected push never overwrote the other side's commit"
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&ours);
-    let _ = std::fs::remove_dir_all(&theirs);
+    remove_scratch(&remote);
+    remove_scratch(&ours);
+    remove_scratch(&theirs);
 }
 
 #[test]
@@ -186,8 +186,8 @@ fn push_from_a_detached_head_refuses() {
         outcome.reason()
     );
 
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
+    remove_scratch(&remote);
+    remove_scratch(&clone);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn push_without_a_remote_says_so() {
         outcome.reason()
     );
 
-    let _ = std::fs::remove_dir_all(&solo);
+    remove_scratch(&solo);
 }
 
 #[test]

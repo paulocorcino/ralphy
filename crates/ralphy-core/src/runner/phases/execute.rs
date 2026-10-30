@@ -177,7 +177,11 @@ fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(String,
         // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap
         // skips it.
         Outcome::Limit(None) if !stop_on_limit_exec => Some((synthetic_reset(), true)),
-        _ => None,
+        Outcome::Done
+        | Outcome::Blocked(_)
+        | Outcome::Timeout
+        | Outcome::Stuck
+        | Outcome::Limit(_) => None,
     }
 }
 

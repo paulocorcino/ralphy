@@ -33,6 +33,10 @@ pub(crate) fn prepare_branch(
 ) -> Result<(String, String, String)> {
     // Best-effort: make sure the base ref is up to date. A missing remote (e.g.
     // a local-only repo) is not fatal here — base existence is checked below.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a local-only repo has no remote to fetch, and the base ref is checked below"
+    )]
     let _ = repo.fetch_origin();
 
     // Precondition: a clean tree, checked before any mutation (our own `.gitignore`

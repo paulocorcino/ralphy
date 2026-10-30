@@ -252,6 +252,7 @@ pub fn record_gate_costs(project_root: &Path, measured: &[(Vec<String>, f64)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scratch::remove_scratch;
 
     const PLAN_OPEN: &str = "\
 # Plan for #45
@@ -409,7 +410,7 @@ pnpm run test:harness
         note_finish(&dir, cmd, PLAN_OPEN);
         assert_eq!(load(&dir).costs["pnpm run test:harness"], 500.0);
 
-        std::fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -428,7 +429,7 @@ pnpm run test:harness
         record_gate_costs(&dir, &[(argv, 90.0)]);
         assert_eq!(load(&dir).costs["pnpm run test:harness"], 167.4);
 
-        std::fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -457,7 +458,7 @@ sh -c \"cargo test -p ralphy-core\"
             "gate-recorded cost for a quoted verify line must be found by decide"
         );
 
-        std::fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 
     #[test]
@@ -466,6 +467,6 @@ sh -c \"cargo test -p ralphy-core\"
         std::fs::create_dir_all(&dir).unwrap(); // no .ralphy inside
         note_start(&dir, "pnpm run test:harness", PLAN_OPEN);
         assert!(!state_path(&dir).exists());
-        std::fs::remove_dir_all(&dir).ok();
+        remove_scratch(&dir);
     }
 }

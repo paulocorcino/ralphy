@@ -1,4 +1,5 @@
 use super::*;
+use crate::scratch::remove_scratch;
 use std::sync::Mutex;
 
 /// `RALPHY_USAGE_DIR` is process-global, so the tests that point it at a temp
@@ -124,7 +125,7 @@ fn append_then_project_total_round_trips() {
         std::process::id(),
         sample_record().issue
     ));
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     std::env::set_var("RALPHY_USAGE_DIR", &dir);
 
     let mut first = sample_record();
@@ -154,7 +155,7 @@ fn append_then_project_total_round_trips() {
     assert_eq!(total.cache_creation, 44);
 
     std::env::remove_var("RALPHY_USAGE_DIR");
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 /// Issue #269: the run-level `consolidate` line lands with `issue = 0`, counts
@@ -164,7 +165,7 @@ fn append_then_project_total_round_trips() {
 fn append_run_phase_records_a_run_level_consolidate_line() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("ralphy-ledger-runphase-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
     std::env::set_var("RALPHY_USAGE_DIR", &dir);
 
     let usage = Usage {
@@ -213,7 +214,7 @@ fn append_run_phase_records_a_run_level_consolidate_line() {
     assert_eq!(row.tokens.cache_read, 337_152);
 
     std::env::remove_var("RALPHY_USAGE_DIR");
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_scratch(&dir);
 }
 
 #[test]
