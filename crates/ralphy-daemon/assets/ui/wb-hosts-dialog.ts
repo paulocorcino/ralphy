@@ -27,6 +27,16 @@ type RemoveHost = {
 
 type HostPayload = { destination: string; identity?: string; name?: string; password?: string };
 
+// What an ended `host` run leads to, read from the state after its exit.
+// An add that saved the host (`done`) but ended non-zero (the tunnel is not
+// up) still made a row, so the list is read again and offers Edit.
+function afterHostVerb(verb: string, code: number | null | undefined, s: WBHosts.State): "reload" | "check" | "install" | null {
+  if (verb === "host.add" && (code === 0 || s.done)) return "reload";
+  if (verb === "host.install" && code === 0) return "check";
+  if (verb === "host.check" && code === 0 && WBHosts.wantsAutoInstall(s)) return "install";
+  return null;
+}
+
 export function hostsDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
@@ -248,12 +258,11 @@ export function hostsDialog() {
             for (const event of fed.events) this.addHostStep({ type: "event", event });
           } else if (st.status === "exited") {
             this.addHostStep({ type: "exit", verb, code: st.code });
+            const next = afterHostVerb(verb, st.code, this.addHost);
             // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
-            // An add that saved the host (`done`) but ended non-zero (the tunnel is not
-            // up) still made a row, so the list shows it and offers Edit.
-            if (verb === "host.add" && (st.code === 0 || this.addHost.done)) this.$store.projects.loadRepos();
-            if (verb === "host.install" && st.code === 0) this.addHostCheckAgain();
-            if (verb === "host.check" && st.code === 0 && WBHosts.wantsAutoInstall(this.addHost)) {
+            if (next === "reload") this.$store.projects.loadRepos();
+            else if (next === "check") this.addHostCheckAgain();
+            else if (next === "install") {
               this.addHostStep({ type: "auto-tried" });
               this.addHostInstall();
             }
