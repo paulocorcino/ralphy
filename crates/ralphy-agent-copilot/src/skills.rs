@@ -113,6 +113,7 @@ pub(crate) fn skills_load_violation(stdout: &str, required: &[String]) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cleanup::remove_scratch;
     use std::fs;
 
     const FIXTURE: &str = include_str!("../fixtures/skills-loaded-2026-07-20.jsonl");
@@ -128,7 +129,7 @@ mod tests {
     fn materialize_copilot_skills_extracts_required_skills() {
         let base =
             std::env::temp_dir().join(format!("ralphy-copilot-skills-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -151,7 +152,7 @@ mod tests {
             "the returned required set must name staged-plan: {names:?}"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     #[test]
@@ -161,7 +162,7 @@ mod tests {
         // skills and clobber their ignore. Reds if that ever changes.
         let base =
             std::env::temp_dir().join(format!("ralphy-copilot-userskill-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
         let ws = Workspace::new(&base);
 
@@ -191,7 +192,7 @@ mod tests {
             "gitignore: {gi:?}"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     /// The machine oracle for "the tree is clean afterwards": materializing must
@@ -216,7 +217,7 @@ mod tests {
 
         let base =
             std::env::temp_dir().join(format!("ralphy-copilot-clean-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
         fs::create_dir_all(&base).unwrap();
 
         git(&["init"], &base).expect("git init");
@@ -252,7 +253,7 @@ mod tests {
             "materializing must leave a clean tree, got: {porcelain:?}"
         );
 
-        let _ = fs::remove_dir_all(&base);
+        remove_scratch(&base);
     }
 
     /// The load-bearing invariant behind the whole D9 guard: `required` is built

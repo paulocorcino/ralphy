@@ -106,7 +106,9 @@ fn models_array(obj: &Value) -> Result<Vec<Value>> {
     let parsed: Value = serde_json::from_str(raw).context("parsing the nested `models` array")?;
     match parsed {
         Value::Array(v) => Ok(v),
-        _ => Err(anyhow!("`models` is not a JSON array")),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+            Err(anyhow!("`models` is not a JSON array"))
+        }
     }
 }
 
