@@ -112,14 +112,6 @@
         13
       ]
     },
-    "crates/ralphy-core/src/checkouts.rs": {
-      "add": [
-        13
-      ],
-      "parse_porcelain": [
-        15
-      ]
-    },
     "crates/ralphy-core/src/checkouts/carry.rs": {
       "unlink_in": [
         12
