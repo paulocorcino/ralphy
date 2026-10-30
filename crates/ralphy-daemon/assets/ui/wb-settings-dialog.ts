@@ -37,6 +37,16 @@ function saveClientSetting(settings: Record<string, unknown>, key: string, value
   }
 }
 
+// The project's resolved values over the dialog's fields: a key the schema
+// does not offer, and a null, leave the field as it is.
+function copyProjectConfig(settings: Record<string, unknown>, cfg: { [key: string]: JsonValue | undefined }) {
+  for (const k in cfg) {
+    // Never round-trip the MASKED secret: a save would persist the mask.
+    if (k === "events.token") continue;
+    if (cfg[k] !== null && k in settings) settings[k] = cfg[k];
+  }
+}
+
 // The run-lock-aware config Mutates; an empty/"unset" value clears the
 // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
 async function writeProjectSetting(
@@ -102,13 +112,7 @@ export function settingsDialog() {
                 "Could not read the settings: the daemon gave no reason.",
               );
             }
-            if (cfg && typeof cfg === "object") {
-              for (const k in cfg) {
-                // Never round-trip the MASKED secret: a save would persist the mask.
-                if (k === "events.token") continue;
-                if (cfg[k] !== null && k in this.settings) this.settings[k] = cfg[k];
-              }
-            }
+            if (cfg && typeof cfg === "object") copyProjectConfig(this.settings, cfg);
           })
           .catch(() => {
             this.settingsError = "Could not read the settings: the daemon did not answer";
