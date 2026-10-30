@@ -350,7 +350,9 @@ fn every_named_exit_stops_with_its_sentence() {
                     );
                 }
             }
-            other => panic!("exit {code} must be a named stop, got {other:?}"),
+            other @ (Outcome::Done | Outcome::Timeout | Outcome::Stuck | Outcome::Limit(_)) => {
+                panic!("exit {code} must be a named stop, got {other:?}")
+            }
         }
     }
     assert_eq!(classify_exit(Some(199)), ExitClass::Relaunch);
