@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-agent-opencode/src/events.rs": {
-      "parse_opencode_events": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
       "sepOf": [
         11
