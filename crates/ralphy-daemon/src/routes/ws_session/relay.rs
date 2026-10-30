@@ -4,15 +4,14 @@
 use std::ops::ControlFlow;
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{Message, WebSocket};
 use axum::http::StatusCode;
-use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::outbound::CONSOLE_QUEUE;
-use super::refuse::Refuser;
 use super::traffic::{Tab, Traffic};
+use super::upgrade::Opened;
 use super::SessionQuery;
 use crate::mux::{ChannelSender, Mode, Out, Permit, Writer, WriterClosed};
 use crate::peer;
@@ -176,18 +175,12 @@ pub(crate) struct PeerDial<'a> {
     pub(crate) me: peer::client::SelfRef<'a>,
 }
 
-/// Open `dial.query` on the peer that owns the session and bridge it to the
-/// browser. A refused dial is refused with the peer's diagnosis (`502` on a
-/// reattach); an HTTP refusal from the peer keeps its own status and body. A
-/// peer that announces its refusal in a frame needs nothing here: the frame is
-/// relayed like any other.
-pub(crate) async fn relay_to_peer(
-    ws: WebSocketUpgrade,
-    dial: PeerDial<'_>,
-    opening: Opening,
-    refuser: &Refuser,
-    shutdown: tokio::sync::watch::Receiver<bool>,
-) -> Response {
+/// Open `dial.query` on the peer that owns the session, for the browser
+/// socket to relay to. A refused dial is refused with the peer's diagnosis
+/// (`502` on a reattach); an HTTP refusal from the peer keeps its own status
+/// and body. A peer that announces its refusal in a frame needs nothing here:
+/// the frame is relayed like any other.
+pub(crate) async fn dial_peer(dial: PeerDial<'_>, opening: Opening) -> Opened {
     let PeerDial {
         peer,
         query: peer_query,
@@ -205,15 +198,15 @@ pub(crate) async fn relay_to_peer(
                 tab,
                 Instant::now(),
             );
-            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, traffic, shutdown))
+            Opened::Relay {
+                peer: Box::new(peer_socket),
+                traffic,
+            }
         }
-        Err(peer::client::SocketError::Peer(status)) => refuser.refuse(
-            ws,
-            StatusCode::BAD_GATEWAY,
-            status.diagnosis(&peer.environment),
-        ),
-        Err(peer::client::SocketError::Http { status, body }) => refuser.refuse(
-            ws,
+        Err(peer::client::SocketError::Peer(status)) => {
+            Opened::refused(StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
+        }
+        Err(peer::client::SocketError::Http { status, body }) => Opened::refused(
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
             body,
         ),

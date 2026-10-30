@@ -4,16 +4,15 @@
 use std::path::PathBuf;
 
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use super::join::hold;
 use super::peer_console::PeerConsole;
-use super::upgrade::{launch_record, Placement, Upgrade};
+use super::upgrade::{launch_record, Open, Opened, Placement};
 use super::SessionLabels;
 use crate::session;
 
-impl Upgrade {
-    pub(super) async fn console(mut self) -> Response {
+impl Open {
+    pub(super) async fn console(mut self) -> Opened {
         let command = self
             .query
             .command
@@ -34,7 +33,7 @@ impl Upgrade {
                 self.peer_console(&peer, &slug, &repo_ref, command, agent_label)
                     .await
             }
-            Some(Placement::UnknownDaemon(why)) => self.refuse(StatusCode::BAD_GATEWAY, why),
+            Some(Placement::UnknownDaemon(why)) => Opened::refused(StatusCode::BAD_GATEWAY, why),
         }
     }
 
@@ -45,7 +44,7 @@ impl Upgrade {
         repo_ref: &str,
         command: Option<String>,
         agent_label: String,
-    ) -> Response {
+    ) -> Opened {
         PeerConsole {
             sessions: self.sessions,
             query: &self.query,
@@ -60,18 +59,16 @@ impl Upgrade {
             tab: self.tab,
             who: self.who,
             record: self.record,
-            refuser: self.refuser,
-            shutdown: self.shutdown,
         }
-        .launch(self.ws)
+        .launch()
         .await
     }
 
-    async fn spawn_console(self, command: Option<String>, agent_label: String) -> Response {
+    async fn spawn_console(self, command: Option<String>, agent_label: String) -> Opened {
         let repo_path = match self.query.repo.as_deref() {
             Some(slug) => match self.registered_repo(slug, "a console session") {
                 Ok(path) => Some(PathBuf::from(path)),
-                Err(why) => return self.refuse(StatusCode::BAD_REQUEST, why),
+                Err(why) => return Opened::refused(StatusCode::BAD_REQUEST, why),
             },
             None => None,
         };
@@ -80,13 +77,7 @@ impl Upgrade {
         let repo_label = self.query.repo.clone().unwrap_or_else(|| "~".to_string());
         let (_claim, joined) = self.claim_and_join().await;
         if let Some(joined) = joined {
-            return joined.upgrade(
-                self.ws,
-                self.daemon_id,
-                self.tab,
-                &self.refuser,
-                self.shutdown,
-            );
+            return joined;
         }
         let spawned = self
             .sessions
@@ -109,12 +100,16 @@ impl Upgrade {
                     None,
                     &self.tab,
                 ));
-                let environment = self.environment.clone();
-                self.bridge(att, id, environment, SessionLabels::default())
+                Opened::Session {
+                    att,
+                    id,
+                    environment: self.environment,
+                    labels: SessionLabels::default(),
+                }
             }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a console session");
-                self.refuse(StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session")
+                Opened::refused(StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session")
             }
         }
     }

@@ -4,17 +4,14 @@
 use std::path::{Path, PathBuf};
 
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use super::gemini_root;
 use super::join::hold;
-use super::upgrade::{launch_record, Upgrade};
+use super::refuse::Refusal;
+use super::upgrade::{launch_record, Open, Opened};
 use super::SessionLabels;
 use crate::routes::blocking_read;
 use crate::{agent_state, auth, checkout, confine, registry, session};
-
-/// A launch refused before anything is written or spawned.
-type Refusal = (StatusCode, String);
 
 /// A launch whose repo, checkout and gates are settled: what is asked for and
 /// the directory the child runs in.
@@ -27,22 +24,22 @@ struct SettledLaunch {
     cwd: PathBuf,
 }
 
-impl Upgrade {
-    pub(super) async fn agent(self) -> Response {
+impl Open {
+    pub(super) async fn agent(self) -> Opened {
         let Some((agent_str, agent)) = self.requested_agent() else {
-            return self.refuse(StatusCode::BAD_REQUEST, "unknown agent");
+            return Opened::refused(StatusCode::BAD_REQUEST, "unknown agent");
         };
         let Some(repo) = self.query.repo.clone() else {
-            return self.refuse(StatusCode::BAD_REQUEST, "unknown repo");
+            return Opened::refused(StatusCode::BAD_REQUEST, "unknown repo");
         };
         let path = match self.registered_repo(&repo, "a session") {
             Ok(path) => path,
-            Err(why) => return self.refuse(StatusCode::BAD_REQUEST, why),
+            Err(why) => return Opened::refused(StatusCode::BAD_REQUEST, why),
         };
         let root = PathBuf::from(&path);
         let (checkout, cwd) = match self.settle_cwd(agent, &root).await {
             Ok(settled) => settled,
-            Err((status, why)) => return self.refuse(status, why),
+            Err(refusal) => return Opened::Refused(refusal),
         };
         let launch = SettledLaunch {
             agent_str,
@@ -74,7 +71,7 @@ impl Upgrade {
             .map_or_else(|| root.to_path_buf(), |c| c.dir(root));
         self.vendor_gate(agent, root, &cwd)
             .await
-            .map_err(|why| (StatusCode::BAD_REQUEST, why))?;
+            .map_err(|why| Refusal::refuse(StatusCode::BAD_REQUEST, why))?;
         Ok((checkout, cwd))
     }
 
@@ -95,8 +92,11 @@ impl Upgrade {
         .await;
         match resolved {
             Some(Ok(c)) => Ok(Some(c)),
-            Some(Err(_)) => Err((StatusCode::BAD_REQUEST, checkout::UNKNOWN.to_string())),
-            None => Err((StatusCode::INTERNAL_SERVER_ERROR, "unavailable".to_string())),
+            Some(Err(_)) => Err(Refusal::refuse(StatusCode::BAD_REQUEST, checkout::UNKNOWN)),
+            None => Err(Refusal::refuse(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "unavailable",
+            )),
         }
     }
 
@@ -130,7 +130,7 @@ impl Upgrade {
         Ok(())
     }
 
-    async fn spawn_agent(self, launch: SettledLaunch) -> Response {
+    async fn spawn_agent(self, launch: SettledLaunch) -> Opened {
         let SettledLaunch {
             agent_str,
             agent,
@@ -146,13 +146,7 @@ impl Upgrade {
         // that joins a live session burns no id and writes no file.
         let (_claim, joined) = self.claim_and_join().await;
         if let Some(joined) = joined {
-            return joined.upgrade(
-                self.ws,
-                self.daemon_id,
-                self.tab,
-                &self.refuser,
-                self.shutdown,
-            );
+            return joined;
         }
         let id = self.sessions.reserve_id();
         let status = match agent_state::state_source(agent) {
@@ -185,7 +179,10 @@ impl Upgrade {
             Ok(spec) => spec,
             Err(e) => {
                 tracing::warn!(error = %e, "failed to build a workbench session");
-                return self.refuse(StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session");
+                return Opened::refused(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to spawn session",
+                );
             }
         };
         // Lifted before the spec moves into the spawn: the bridge announces the name
@@ -218,12 +215,16 @@ impl Upgrade {
                     None,
                     &self.tab,
                 ));
-                let environment = self.environment.clone();
-                self.bridge(att, id, environment, labels)
+                Opened::Session {
+                    att,
+                    id,
+                    environment: self.environment,
+                    labels,
+                }
             }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a workbench session");
-                self.refuse(StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session")
+                Opened::refused(StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session")
             }
         }
     }

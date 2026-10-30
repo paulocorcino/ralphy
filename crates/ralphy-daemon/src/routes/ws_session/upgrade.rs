@@ -1,6 +1,7 @@
 //! The `/ws/session` handler: one route, four shapes (reattach, watch, agent
 //! launch, free-console launch), each local or relayed to the peer that owns
-//! the repo.
+//! the repo. The open is decided first, as an [`Opened`] value; only the
+//! handler turns that value into an upgrade or an HTTP status.
 
 use std::ops::ControlFlow;
 use std::path::PathBuf;
@@ -11,10 +12,10 @@ use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use super::join::{claim_for, Joined};
-use super::refuse::Refuser;
-use super::traffic::Tab;
-use super::{peer_session_query, relay_to_peer, session_ws, Opening, PeerDial};
+use super::join::{claim_for, join};
+use super::refuse::{Refusal, Refuser};
+use super::traffic::{Tab, Traffic};
+use super::{dial_peer, peer_session_query, peer_session_ws, session_ws, Opening, PeerDial};
 use super::{SessionHost, SessionLabels, SessionQuery};
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
 use crate::routes::read_peer_store;
@@ -64,24 +65,67 @@ pub(crate) async fn session_ws_upgrade(
     let ws = ws
         .max_message_size(crate::tree::MAX_COMMAND_BYTES)
         .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-    let upgrade = Upgrade::new(ws, query, host, who);
-    let upgrade = match upgrade.relay_unowned().await {
-        ControlFlow::Break(response) => return response,
-        ControlFlow::Continue(upgrade) => upgrade,
-    };
-    if let Some(id) = upgrade.query.id {
-        return upgrade.reattach(id);
+    let shutdown = host.shutdown.clone();
+    let open = Open::new(query, host, who);
+    let refuser = Refuser::new(
+        open.query.id,
+        &open.daemon_id,
+        &open.environment,
+        open.tab.clone(),
+    );
+    let (daemon_id, tab) = (open.daemon_id.clone(), open.tab.clone());
+    match open.decide().await {
+        Opened::Session {
+            att,
+            id,
+            environment,
+            labels,
+        } => ws.on_upgrade(move |socket| {
+            session_ws(
+                socket,
+                att,
+                id,
+                daemon_id,
+                environment,
+                labels,
+                tab,
+                shutdown,
+            )
+        }),
+        Opened::Relay { peer, traffic } => {
+            ws.on_upgrade(move |socket| peer_session_ws(socket, *peer, traffic, shutdown))
+        }
+        Opened::Refused(refusal) => refuser.answer(ws, refusal),
     }
-    if upgrade.query.console == Some(1) {
-        return upgrade.console().await;
-    }
-    upgrade.agent().await
 }
 
-/// One `/ws/session` request, read: the socket still to upgrade, the query,
-/// and the values every shape of the route needs.
-pub(super) struct Upgrade {
-    pub(super) ws: WebSocketUpgrade,
+/// How a console open was decided, before any socket exists.
+pub(crate) enum Opened {
+    /// Bridge the socket to the attachment `att` of session `id`.
+    Session {
+        att: session::Attachment,
+        id: session::SessionId,
+        environment: String,
+        labels: SessionLabels,
+    },
+    /// Relay the socket to the peer that accepted the open.
+    Relay {
+        peer: Box<peer::client::PeerSocket>,
+        traffic: Traffic,
+    },
+    /// Refuse the open.
+    Refused(Refusal),
+}
+
+impl Opened {
+    pub(crate) fn refused(status: StatusCode, message: impl Into<String>) -> Opened {
+        Opened::Refused(Refusal::refuse(status, message))
+    }
+}
+
+/// One `/ws/session` request, read: the query and the values every shape of
+/// the route needs to decide the open.
+pub(super) struct Open {
     pub(super) query: SessionQuery,
     pub(super) sessions: Arc<session::SessionManager>,
     pub(super) registry_path: PathBuf,
@@ -92,8 +136,6 @@ pub(super) struct Upgrade {
     pub(super) tab: Tab,
     pub(super) who: SocketAudit,
     pub(super) record: Option<String>,
-    pub(super) refuser: Refuser,
-    pub(super) shutdown: tokio::sync::watch::Receiver<bool>,
     /// The session `query.id` names, when this daemon hosts it.
     pub(super) locally_owned: Option<session::SessionInfo>,
 }
@@ -109,13 +151,8 @@ pub(super) enum Placement {
     UnknownDaemon(String),
 }
 
-impl Upgrade {
-    fn new(
-        ws: WebSocketUpgrade,
-        query: SessionQuery,
-        host: SessionHost,
-        who: SocketAudit,
-    ) -> Upgrade {
+impl Open {
+    pub(super) fn new(query: SessionQuery, host: SessionHost, who: SocketAudit) -> Open {
         let SessionHost {
             peers_dir,
             identity,
@@ -123,7 +160,7 @@ impl Upgrade {
             bound_port,
             sessions,
             registry_path,
-            shutdown,
+            shutdown: _,
         } = host;
         let tab = query.tab(who.device);
         let record = query.record().map(str::to_owned);
@@ -131,7 +168,6 @@ impl Upgrade {
             .as_ref()
             .map(|identity| identity.id.to_string())
             .unwrap_or_default();
-        let refuser = Refuser::new(query.id, &daemon_id, &environment, tab.clone());
         // A peer free console is the one composite-ref session hosted HERE. Match
         // both id and repo so an equal numeric id owned by the peer still proxies.
         let locally_owned = query.id.and_then(|id| {
@@ -143,8 +179,7 @@ impl Upgrade {
                     .unwrap_or(true)
             })
         });
-        Upgrade {
-            ws,
+        Open {
             query,
             sessions,
             registry_path,
@@ -155,37 +190,24 @@ impl Upgrade {
             tab,
             who,
             record,
-            refuser,
-            shutdown,
             locally_owned,
         }
     }
 
-    /// Refuse with `message`, as the [`Refuser`] of this request does.
-    pub(super) fn refuse(self, status: StatusCode, message: impl Into<String>) -> Response {
-        self.refuser.refuse(self.ws, status, message)
-    }
-
-    /// Bridge the upgraded socket to the attachment `att` of session `id`.
-    pub(super) fn bridge(
-        self,
-        att: session::Attachment,
-        id: session::SessionId,
-        environment: String,
-        labels: SessionLabels,
-    ) -> Response {
-        self.ws.on_upgrade(move |socket| {
-            session_ws(
-                socket,
-                att,
-                id,
-                self.daemon_id,
-                environment,
-                labels,
-                self.tab,
-                self.shutdown,
-            )
-        })
+    /// Decide the open: relayed, reattached, watched, joined, spawned or
+    /// refused. Nothing here upgrades the socket.
+    pub(super) async fn decide(self) -> Opened {
+        let open = match self.relay_unowned().await {
+            ControlFlow::Break(opened) => return opened,
+            ControlFlow::Continue(open) => open,
+        };
+        if let Some(id) = open.query.id {
+            return open.reattach(id);
+        }
+        if open.query.console == Some(1) {
+            return open.console().await;
+        }
+        open.agent().await
     }
 
     /// Where the repo of the query lives, or `None` when it names no repo. A
@@ -213,7 +235,7 @@ impl Upgrade {
 
     /// Relay a request for a repo that lives on another daemon. Any other
     /// request goes on, with a repo of this daemon rewritten to its slug.
-    async fn relay_unowned(mut self) -> ControlFlow<Response, Upgrade> {
+    async fn relay_unowned(mut self) -> ControlFlow<Opened, Open> {
         if self.query.console == Some(1) || self.locally_owned.is_some() {
             return ControlFlow::Continue(self);
         }
@@ -223,12 +245,12 @@ impl Upgrade {
                 ControlFlow::Break(self.relay(&peer, &slug).await)
             }
             Some(Placement::UnknownDaemon(why)) => {
-                ControlFlow::Break(self.refuse(StatusCode::BAD_GATEWAY, why))
+                ControlFlow::Break(Opened::refused(StatusCode::BAD_GATEWAY, why))
             }
         }
     }
 
-    async fn relay(self, peer: &peer::PeerDescriptor, slug: &str) -> Response {
+    async fn relay(self, peer: &peer::PeerDescriptor, slug: &str) -> Opened {
         let me = peer::client::SelfRef {
             port: self.bound_port,
             daemon_id: &self.daemon_id,
@@ -244,15 +266,15 @@ impl Upgrade {
             query: &peer_query,
             me,
         };
-        relay_to_peer(self.ws, dial, opening, &self.refuser, self.shutdown).await
+        dial_peer(dial, opening).await
     }
 
     /// Take the claim on the window record and join the live session that
     /// serves it. The claim is held until the caller drops it, which is after
     /// the spawn that does not join.
-    pub(super) async fn claim_and_join(&self) -> (Option<session::RecordClaim>, Option<Joined>) {
+    pub(super) async fn claim_and_join(&self) -> (Option<session::RecordClaim>, Option<Opened>) {
         let claim = claim_for(&self.sessions, &self.record).await;
-        let joined = Joined::find(
+        let joined = join(
             &self.sessions,
             claim.as_ref(),
             self.tab.holder.as_deref(),
@@ -333,6 +355,37 @@ mod tests {
 
     fn query(json: serde_json::Value) -> SessionQuery {
         serde_json::from_value(json).expect("a session query")
+    }
+
+    /// The open is decided before any socket exists: the decision is a value
+    /// the handler maps, so a reattach to an id nobody hosts is the not-found
+    /// refusal, with no upgrade to make it.
+    #[tokio::test]
+    async fn an_unknown_session_decides_not_found_without_a_socket() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let (_stop, shutdown) = tokio::sync::watch::channel(false);
+        let host = SessionHost {
+            peers_dir: dir.path().join("peers"),
+            identity: None,
+            environment: "Linux".to_string(),
+            bound_port: 0,
+            sessions: Arc::new(session::SessionManager::new()),
+            registry_path: dir.path().join("repos.json"),
+            shutdown,
+        };
+        let who = SocketAudit::of(Arc::new(crate::audit::Audit::in_dir(None)), None);
+        let opened = Open::new(query(serde_json::json!({"id": 999})), host, who)
+            .decide()
+            .await;
+        match opened {
+            Opened::Refused(Refusal::Refuse { status, message }) => {
+                assert_eq!(status, StatusCode::NOT_FOUND);
+                assert_eq!(message, "unknown session");
+            }
+            Opened::Refused(Refusal::Supersede { .. }) => panic!("decided superseded"),
+            Opened::Session { .. } => panic!("decided an attached session"),
+            Opened::Relay { .. } => panic!("decided a peer relay"),
+        }
     }
 
     #[test]

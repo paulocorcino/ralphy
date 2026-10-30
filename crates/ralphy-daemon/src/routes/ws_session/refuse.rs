@@ -31,6 +31,26 @@ pub(crate) const REFUSED: &str = "refused";
 /// newer socket already holds the writer slot (ADR-0079 D7).
 pub(crate) const SUPERSEDED: &str = "superseded";
 
+/// A console open the daemon refused, as it was decided: the handler turns
+/// it into the answer the client can read ([`Refuser::answer`]).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    /// Refuse with `message`. `status` is what a reattach answers; a new
+    /// launch upgrades and announces `message` instead.
+    Refuse { status: StatusCode, message: String },
+    /// A claim whose holder already holds the slot with a higher attempt.
+    Supersede { attempt: Option<u64> },
+}
+
+impl Refusal {
+    pub(crate) fn refuse(status: StatusCode, message: impl Into<String>) -> Refusal {
+        Refusal::Refuse {
+            status,
+            message: message.into(),
+        }
+    }
+}
+
 /// Refuses one `/ws/session` request in the way its client can read, and
 /// logs each refusal: a console that does not open is the failure the
 /// operator sees.
@@ -53,15 +73,17 @@ impl Refuser {
         }
     }
 
+    /// Answer the decided `refusal` on the socket still to upgrade.
+    pub(crate) fn answer(&self, ws: WebSocketUpgrade, refusal: Refusal) -> Response {
+        match refusal {
+            Refusal::Refuse { status, message } => self.refuse(ws, status, message),
+            Refusal::Supersede { attempt } => self.supersede(ws, attempt),
+        }
+    }
+
     /// Refuse with `message`. `status` is what a reattach answers; a new
     /// launch upgrades and announces `message` instead.
-    pub(crate) fn refuse(
-        &self,
-        ws: WebSocketUpgrade,
-        status: StatusCode,
-        message: impl Into<String>,
-    ) -> Response {
-        let message = message.into();
+    fn refuse(&self, ws: WebSocketUpgrade, status: StatusCode, message: String) -> Response {
         tracing::info!(
             status = status.as_u16(),
             reason = message.as_str(),
@@ -79,7 +101,7 @@ impl Refuser {
 
     /// Refuse a claim whose holder already holds the slot with a higher
     /// attempt, on a reattach and on a launch alike. Nobody is evicted.
-    pub(crate) fn supersede(&self, ws: WebSocketUpgrade, attempt: Option<u64>) -> Response {
+    fn supersede(&self, ws: WebSocketUpgrade, attempt: Option<u64>) -> Response {
         tracing::info!(
             reason = SUPERSEDED,
             launch = self.session.is_none(),

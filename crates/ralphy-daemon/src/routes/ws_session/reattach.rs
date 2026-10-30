@@ -2,15 +2,15 @@
 //! take-over, and a read-only watch.
 
 use axum::http::StatusCode;
-use axum::response::Response;
 
-use super::upgrade::Upgrade;
+use super::refuse::Refusal;
+use super::upgrade::{Open, Opened};
 use super::SessionLabels;
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord};
 use crate::session;
 
-impl Upgrade {
-    pub(super) fn reattach(self, id: session::SessionId) -> Response {
+impl Open {
+    pub(super) fn reattach(self, id: session::SessionId) -> Opened {
         let environment = self
             .locally_owned
             .as_ref()
@@ -36,26 +36,26 @@ impl Upgrade {
         self.attach(id, environment, labels)
     }
 
-    fn watch(self, id: session::SessionId, environment: String, labels: SessionLabels) -> Response {
+    fn watch(self, id: session::SessionId, environment: String, labels: SessionLabels) -> Opened {
         match self.sessions.watch(id, self.query.since) {
-            Ok(att) => self.bridge(att, id, environment, labels),
+            Ok(att) => Opened::Session {
+                att,
+                id,
+                environment,
+                labels,
+            },
             // `watch` never yields `Busy`; matching the variant keeps that a
             // compile-time fact rather than a comment.
             Err(session::AttachError::Unknown) => {
-                self.refuse(StatusCode::NOT_FOUND, "unknown session")
+                Opened::refused(StatusCode::NOT_FOUND, "unknown session")
             }
             Err(session::AttachError::Busy | session::AttachError::Superseded) => {
-                self.refuse(StatusCode::CONFLICT, "session busy")
+                Opened::refused(StatusCode::CONFLICT, "session busy")
             }
         }
     }
 
-    fn attach(
-        self,
-        id: session::SessionId,
-        environment: String,
-        labels: SessionLabels,
-    ) -> Response {
+    fn attach(self, id: session::SessionId, environment: String, labels: SessionLabels) -> Opened {
         let takeover = self.query.takeover == Some(1);
         let attached = self.sessions.attach_as(
             id,
@@ -69,15 +69,22 @@ impl Upgrade {
                 if takeover {
                     self.audit_takeover(id);
                 }
-                self.bridge(att, id, environment, labels)
+                Opened::Session {
+                    att,
+                    id,
+                    environment,
+                    labels,
+                }
             }
             Err(session::AttachError::Unknown) => {
-                self.refuse(StatusCode::NOT_FOUND, "unknown session")
+                Opened::refused(StatusCode::NOT_FOUND, "unknown session")
             }
-            Err(session::AttachError::Busy) => self.refuse(StatusCode::CONFLICT, "session busy"),
-            Err(session::AttachError::Superseded) => {
-                self.refuser.supersede(self.ws, self.query.attempt)
+            Err(session::AttachError::Busy) => {
+                Opened::refused(StatusCode::CONFLICT, "session busy")
             }
+            Err(session::AttachError::Superseded) => Opened::Refused(Refusal::Supersede {
+                attempt: self.query.attempt,
+            }),
         }
     }
 
