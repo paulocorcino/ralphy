@@ -495,6 +495,7 @@ export function createFences(deps: FenceDeps) {
     );
     members.forEach((win, i) => {
       const t = tiles[i];
+      if (!t) return;
       // The computed tile, written now: a read after the transition would
       // race a hidden tab and a convergence.
       setWin(win, { rect: { left: t.left, top: t.top, width: t.width, height: t.height } });

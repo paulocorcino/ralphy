@@ -168,7 +168,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     modalClosed(path: string) {
       const i = this._modalStack.findLastIndex((m) => m.path === path);
       if (i < 0) return;
-      const [{ opener }] = this._modalStack.splice(i, 1);
+      const opener = this._modalStack.splice(i, 1)[0]?.opener;
       if (opener?.isConnected) opener.focus();
     },
     // Accelerators are ignored while typing or while a modal is up.

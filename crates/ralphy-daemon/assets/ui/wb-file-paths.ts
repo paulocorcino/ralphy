@@ -45,12 +45,14 @@ function isNoteInNotesDir(rel: string) {
   // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
   // there and would be two different answers here.
   const parts = rel.split("/").filter((p) => p && p !== ".");
+  const [root, folder, name] = parts;
   return (
     parts.length === 3 &&
-    parts[0] === ".ralphy" &&
-    parts[1] === "notes" &&
-    parts[2].length > ".note".length &&
-    parts[2].endsWith(".note")
+    root === ".ralphy" &&
+    folder === "notes" &&
+    name !== undefined &&
+    name.length > ".note".length &&
+    name.endsWith(".note")
   );
 }
 

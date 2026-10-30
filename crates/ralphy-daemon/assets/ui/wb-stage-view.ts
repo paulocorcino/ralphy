@@ -381,10 +381,12 @@ export function createView(deps: ViewDeps) {
       const { dx, dy } = nudge();
       if (!dx && !dy) return; // leaving the band ENDS the loop
       // `nudge` answers zero without a viewport or a pointer, so both are here.
-      const ws = workspace()!;
+      const ws = workspace();
+      const pointer = last;
+      if (!ws || !pointer) return;
       ws.scrollLeft += dx;
       ws.scrollTop += dy;
-      place(last!);
+      place(pointer);
       panRaf = requestAnimationFrame(tick);
     };
     const follow = (pointer: Point) => {

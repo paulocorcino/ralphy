@@ -13,6 +13,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
 import type { Hit } from "./wb-file-search.ts";
+import type { TreeMemory } from "./wb-files-levels.ts";
 
 /** What a search step reads, writes or calls on the files component. */
 type SearchFiles = {
@@ -33,7 +34,7 @@ type SearchFiles = {
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   expandedRels(): string[];
-  treeMem(): void;
+  treeMem(): TreeMemory;
   useDaemonTree(): boolean;
   applyFileSearch(hits: Hit[], truncated: boolean, seq: number): Promise<void>;
   clearFileSearch(): Promise<void>;
@@ -91,10 +92,11 @@ export async function applySearch(files: SearchFiles, hits: Hit[], truncated: bo
   tree.enableUpdate(false);
   try {
     if (!(await expandHitDirs(files, tree, hits, seq))) return;
-    files._fileHits = WBFileSearch.hitMap(hits);
+    const fileHits = WBFileSearch.hitMap(hits);
+    files._fileHits = fileHits;
     // `autoExpand: false`: the extension would also open every MATCHED
     // folder, a burst of lazy loads.
-    tree.filterNodes((n: WunderbaumNode) => files._fileHits!.has(files.relPath(n)), {
+    tree.filterNodes((n: WunderbaumNode) => fileHits.has(files.relPath(n)), {
       mode: "hide",
       autoExpand: false,
       matchBranch: false,

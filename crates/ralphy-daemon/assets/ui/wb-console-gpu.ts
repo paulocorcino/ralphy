@@ -154,10 +154,10 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
           z: parseInt(w.style.zIndex, 10) || 0,
         })),
         GPU_BUDGET,
-      ).map((i) => list[i]),
+      ).flatMap((i) => list[i] ?? []),
     );
     for (const w of list) if (!keep.has(w)) w._term?.dropGpu();
-    for (const w of keep) w._term!.useGpu();
+    for (const w of keep) w._term?.useGpu();
   }
 
   return { trackDormancy, untrackDormancy, scheduleGpu, dormancyWatch };

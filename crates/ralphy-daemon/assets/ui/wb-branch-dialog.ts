@@ -160,8 +160,9 @@ export function wbBranchDialog() {
     // A held top match does nothing: it cannot be switched to.
     branchEnter() {
       const list = this.branchList();
-      if (list.length) {
-        if (!this.branchHeldBy(list[0])) this.switchBranch(list[0]);
+      const top = list[0];
+      if (top !== undefined) {
+        if (!this.branchHeldBy(top)) this.switchBranch(top);
       } else if (this.canCreateBranch()) this.createBranch();
     },
 
@@ -179,12 +180,12 @@ export function wbBranchDialog() {
         const slug = this.branchModal.slug;
         const checkout = this.$store.checkouts.checkoutOf(slug);
         const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        const prev = p ? p.branch : null;
+        const prev = p?.branch;
         if (p) this.$store.projects.setRowGit(p, { branch: name }); // optimistic — the chip updates immediately
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
         void this._mutateBranch("branch.switch", slug, name, () => {
-          if (p) this.$store.projects.setRowGit(p, { branch: prev! });
+          if (p) this.$store.projects.setRowGit(p, { branch: prev });
         });
       }
       this.closeBranchModal();
@@ -201,13 +202,13 @@ export function wbBranchDialog() {
       const slug = this.branchModal.slug;
       const checkout = this.$store.checkouts.checkoutOf(slug);
       const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-      const prevBranch = p ? p.branch : null;
-      const prevBranches = p ? [...(p.branches || [])] : null;
+      const prevBranch = p?.branch;
+      const prevBranches = p ? [...(p.branches || [])] : undefined;
       // A fresh branch is checked out onto.
       if (p) this.$store.projects.setRowGit(p, { branches: [...(p.branches || []), name], branch: name });
       window.WB.emit("branch-create", { project: slug, name, from, checkout });
       void this._mutateBranch("branch.create", slug, name, () => {
-        if (p) this.$store.projects.setRowGit(p, { branch: prevBranch!, branches: prevBranches! });
+        if (p) this.$store.projects.setRowGit(p, { branch: prevBranch, branches: prevBranches });
       });
       this.closeBranchModal();
     },

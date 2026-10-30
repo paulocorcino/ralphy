@@ -16,6 +16,7 @@ import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { sendDocument } from "./wb-events.ts";
 import { inTab } from "./wb-console-place.ts";
+import { required } from "./wb-dom-need.ts";
 import type { Gestures } from "./wb-stage-stack.ts";
 import type { ConsoleWin, DeskFence, DeskRecord, DeskWindowFields, Point, Presentation, Rect, Size } from "./wb-types.d.ts";
 
@@ -54,7 +55,7 @@ export type ChromeDeps = {
   // The elements under a gesture; shared with the fence gestures.
   gestures: Gestures;
   // The plane and the viewport; null before the page has them. A gesture and
-  // `buildChrome` run only on a page that has the stage, and read it with `!`.
+  // `buildChrome` run only on a page that has the stage, and read it with `required`.
   stage: () => HTMLElement | null;
   workspace: () => HTMLElement | null;
   // The fences on the stage, and the focused fence's id: the console and
@@ -185,7 +186,7 @@ export function createChrome(deps: ChromeDeps) {
       // `applyExtent({grow:true})` widens it, and a wheel or auto-pan mid-drag
       // shifts its origin under a cached rect.
       const place = (pointer: Point) => {
-        const st = stage()!;
+        const st = required(stage(), "the stage");
         const origin = st.getBoundingClientRect();
         const x = pointer.x - origin.left - offX;
         const y = pointer.y - origin.top - offY;
@@ -319,10 +320,10 @@ export function createChrome(deps: ChromeDeps) {
           win._lastTap = null;
           return;
         }
-        if (held) {
+        // `held` is set only by the timer, which exists only with a `span`.
+        if (held && span) {
           win._lastTap = null;
-          // `held` is set only by the timer, which exists only with a `span`.
-          startRename(win, span!);
+          startRename(win, span);
           return;
         }
         const tap = { t: up.timeStamp, x: up.clientX, y: up.clientY };
@@ -365,7 +366,7 @@ export function createChrome(deps: ChromeDeps) {
       // The STAGE is the bound (ADR-0051 §5). Captured ONCE: a live re-read
       // feeds back on itself — the extent this gesture grows becomes the bound
       // of its next move, inflating the window ~one margin per mousemove.
-      const st = stage()!;
+      const st = required(stage(), "the stage");
       const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
       const startY = e.clientY;
@@ -642,7 +643,7 @@ export function createChrome(deps: ChromeDeps) {
     const spawnMoved = placeWindow(win, rect);
     const bar = buildTitlebar(win, label, repo, desk);
     const body = appendBody(win, bar.titlebar);
-    stage()!.append(win);
+    required(stage(), "the stage").append(win);
     applyExtent();
     wireChromeEvents(win, bar);
     applyLock(win, !!desk?.locked);

@@ -29,6 +29,7 @@ import { sendWindow } from "./wb-events.ts";
 import { treeMenu } from "./wb-files-menu.ts";
 import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-search.ts";
 import type { TreeSub } from "./wb-files-mount.ts";
+import type { TreeMemory } from "./wb-files-levels.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { CanvasTab } from "./wb-shell-types.d.ts";
@@ -41,8 +42,10 @@ const logFailure = (what: string) => (err: unknown) => console.error(`[workbench
 // (ADR-0049 §1). A text tab re-reads with ITS encoding as the hint: the
 // encoding is sticky once opened, so a nudge never silently re-detects it.
 function freshBytes(t: CanvasTab, project: string): Promise<string | null | undefined> {
-  if (t.kind === "image") return WBDaemon.readImage(project, t.path!, undefined, t.checkout);
-  const payload = WBDaemon.withCheckout({ repo: project, path: t.path }, t.checkout);
+  const path = t.path;
+  if (path === undefined) return Promise.resolve(null);
+  if (t.kind === "image") return WBDaemon.readImage(project, path, undefined, t.checkout);
+  const payload = WBDaemon.withCheckout({ repo: project, path }, t.checkout);
   const enc = WBViewer.encodingOf?.(t.id)?.encoding;
   if (enc) payload.encoding = enc;
   return WBDaemon.observe("file.read", payload).then((reply) => (reply?.status === "ok" ? reply.content : null));
@@ -64,8 +67,9 @@ async function expandAncestors(tree: WunderbaumTree, rel: string, relPath: (n: W
 // A promise that settles when the reconcile of `rel` in flight finishes.
 function waitForLevel(waiters: Map<string, (() => void)[]>, rel: string) {
   return new Promise<void>((resolve) => {
-    if (!waiters.has(rel)) waiters.set(rel, []);
-    waiters.get(rel)!.push(resolve);
+    const list = waiters.get(rel) ?? [];
+    list.push(resolve);
+    waiters.set(rel, list);
   });
 }
 
@@ -120,12 +124,18 @@ export function wbFiles() {
     },
 
     // Lazily create the three tree-memory collections (see the note there).
-    treeMem() {
+    treeMem(): TreeMemory {
       this._treeCache ||= new Map();
       this._treeValidated ||= new Set();
       this._treeExpanded ||= new Map();
       // path → count (content) or `true` (name): what the filter predicate reads.
       this._fileHits ||= new Map();
+      return {
+        cache: this._treeCache,
+        validated: this._treeValidated,
+        expanded: this._treeExpanded,
+        hits: this._fileHits,
+      };
     },
 
     // One level, read fresh (wb-files-levels.ts).
@@ -195,7 +205,7 @@ export function wbFiles() {
       if (!down && this._filesPeerDown && this._filesPeerDown === this.$store.projects.openSlug && this._tree) {
         this.treeFresh();
         void this.revalidateLevel("");
-        this.rawTree()!.root.visit((n: WunderbaumNode) => {
+        this.rawTree()?.root.visit((n: WunderbaumNode) => {
           if (this.isFolder(n) && n.expanded) void this.revalidateLevel(this.relPath(n));
         });
       }

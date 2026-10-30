@@ -21,6 +21,9 @@
     // `explicit_any_matches_the_baseline` (crates/xtask/tests/ratchets/)
     // fails on a new one too.
     "typescript/no-explicit-any": "error",
+    // A value that may be missing gets a guard the compiler reads, not a `!`
+    // (#804).
+    "typescript/no-non-null-assertion": "error",
     // `scrim()` in app.ts keeps `this` as `self`: Alpine calls `x-effect` with
     // its own `this`, so the arrow-function fix does not apply there.
     "typescript/no-this-alias": "off",

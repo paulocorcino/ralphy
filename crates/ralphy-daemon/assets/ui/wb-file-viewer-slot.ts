@@ -3,6 +3,7 @@
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument } from "./wb-events.ts";
+import { need } from "./wb-dom-need.ts";
 import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
 import { isRendered } from "./wb-viewer-render.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
@@ -70,13 +71,13 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     const split = isSplit(slot, slotRec);
     for (const rec of map.values()) {
       const { on, display, gridColumn } = paneLayout(rec.id, id, split, slot?.id);
-      Object.assign(rec.el!.style, { display, gridColumn });
+      if (rec.el) Object.assign(rec.el.style, { display, gridColumn });
       rec.visible = on;
       if (on) showPane(rec);
     }
     if (!viewers) return;
     viewers.classList.toggle("split", split);
-    if (split) paintSplit(viewers, slot!, slotRec!);
+    if (split && slot && slotRec) paintSplit(viewers, slot, slotRec);
     else paintSingle(id);
   }
 
@@ -103,9 +104,9 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
   }
 
   function paintSplit(box: HTMLElement, slot: ViewerSlot, slotRec: ViewerRecord) {
-    ensureDivider();
+    ensureDivider(box);
     box.style.setProperty("--wb-split", ratioPct(slot.ratio));
-    if (slot.mirror) ensureMirror(slotRec);
+    if (slot.mirror) ensureMirror(slotRec, box);
     else closeMirror();
     if (slot.focus) {
       const target = focusTarget(slot, mirror, slotRec.ed as MonacoEditor | undefined);
@@ -113,14 +114,17 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     }
   }
 
-  const ratioPct = (ratio: number | null) => `${((Number.isFinite(ratio) ? ratio! : 0.5) * 100).toFixed(2)}%`;
+  const ratioPct = (ratio: number | null) =>
+    `${((typeof ratio === "number" && Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
 
-  function ensureMirror(rec: ViewerRecord) {
+  function ensureMirror(rec: ViewerRecord, box: HTMLElement) {
     if (mirror?.rec === rec) {
       mirror.el.style.display = "flex";
       return;
     }
     closeMirror();
+    const model = (rec.ed as MonacoEditor).getModel();
+    if (!model) return;
     const el = document.createElement("div");
     el.className = "viewer code-viewer mirror-viewer";
     el.dataset.mirrorOf = rec.id;
@@ -137,10 +141,10 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    el.querySelector<HTMLElement>('[data-act="mirror"]')!.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
-    viewers!.append(el);
+    need(el, '[data-act="mirror"]').onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
+    box.append(el);
     const holder: Mirror = { rec, el, ed: null, ro: undefined, saveKey: undefined };
-    const ed = WBMonaco.createOver(el.querySelector<HTMLElement>(".viewer-body")!, (rec.ed as MonacoEditor).getModel()!, {
+    const ed = WBMonaco.createOver(need(el, ".viewer-body"), model, {
       narrow: isNarrow(el),
     });
     // No content listener: the model is shared, so the pane's own listener
@@ -167,23 +171,23 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
   // the slot. Pointer-driven the way the desk's resize bands are
   // (`wb-console.ts`): every exit path drops all three listeners, and the
   // ratio is announced ONCE, on release, for the shell to keep.
-  function ensureDivider() {
+  function ensureDivider(box: HTMLElement) {
     if (divider) return;
     divider = document.createElement("div");
     divider.className = "viewers-divider";
     divider.innerHTML =
       '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
-    divider.querySelector<HTMLElement>(".slot-close")!.onclick = () => window.Alpine?.store("tabs")?.clearSlot();
+    need(divider, ".slot-close").onclick = () => window.Alpine?.store("tabs")?.clearSlot();
     divider.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;
       e.preventDefault();
       const pointerId = e.pointerId;
-      const box = viewers!.getBoundingClientRect();
+      const bounds = box.getBoundingClientRect();
       let ratio: number | null = null;
       const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
-        ratio = WBSplit.clampRatio(ev.clientX - box.left, box.width);
-        viewers!.style.setProperty("--wb-split", ratioPct(ratio));
+        ratio = WBSplit.clampRatio(ev.clientX - bounds.left, bounds.width);
+        box.style.setProperty("--wb-split", ratioPct(ratio));
       };
       const onUp = () => {
         document.removeEventListener("pointermove", onMove);
@@ -196,7 +200,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
     });
-    viewers!.append(divider);
+    box.append(divider);
   }
 
   // The canvas crossing the split's width floor is the shell's to re-decide:

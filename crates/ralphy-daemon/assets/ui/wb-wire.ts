@@ -27,7 +27,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // by accident of global scope.
   window.getShell = function getShell() {
     const root = document.querySelector<HTMLElement & { _x_dataStack?: Shell[] }>("[x-data]");
-    return root && root._x_dataStack ? root._x_dataStack[0] : null;
+    return root?._x_dataStack?.[0] ?? null;
   };
 
   // A viewer asked to detach → open the popup and close the tab.
@@ -106,7 +106,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     window.Alpine.store("tabs").openTab({
       project: desc.project,
       path: desc.path,
-      title: desc.path.split("/").pop()!,
+      title: desc.path.split("/").pop() ?? desc.path,
       ftype: desc.ftype,
       content: desc.content,
       checkout: desc.checkout ?? null,
@@ -358,8 +358,12 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   })();
 
   // Dismiss the context menu on any outside interaction.
-  document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"));
-  document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"), true);
+  const hideContextMenu = () => {
+    const menu = document.getElementById("ctxmenu");
+    if (menu) menu.style.display = "none";
+  };
+  document.addEventListener("click", hideContextMenu);
+  document.addEventListener("scroll", hideContextMenu, true);
 
   // `/` → the search on screen: FILES while a project is open, projects
   // otherwise.

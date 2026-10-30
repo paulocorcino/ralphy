@@ -108,7 +108,8 @@ function setOpen(card: HTMLElement, open: boolean) {
   const shown = new Set(shownColumns(table, open));
   const rows = card.querySelectorAll<HTMLElement>("tr.dbml-col");
   table.columns.forEach((column, i) => {
-    rows[i].hidden = !shown.has(column);
+    const row = rows[i];
+    if (row) row.hidden = !shown.has(column);
   });
   card.classList.toggle("dbml-open", open);
   const more = card.querySelector("button.dbml-more");

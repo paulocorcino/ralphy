@@ -149,7 +149,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   // rules. Three of them are this bundle's own additions, because upstream had
   // no rule at all: `[ ] ` on a plain line, `[text](url)` (commonmark ships an
   // input rule for an IMAGE and none for a link), and the `@@path` shorthand.
-  const MARKDOWN_HELP = [
+  const MARKDOWN_HELP: [string, string][] = [
     ["**bold**", "Bold"],
     ["*italic*", "Italic"],
     ["`code`", "Inline code"],

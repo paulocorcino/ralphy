@@ -151,7 +151,7 @@ export function createFenceList(deps: FenceListDeps) {
 
   // One fence's count readout and its columns button.
   function paintFenceCount(el: FenceElement, s: FenceSummary, away: Record<string, string[]>) {
-    const n = away[s.id] ? away[s.id].length : s.count;
+    const n = away[s.id]?.length ?? s.count;
     // Parenthesised: it trails the name field and reads as an aside to it.
     const count = el.querySelector<HTMLElement>(".fence-count");
     if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;

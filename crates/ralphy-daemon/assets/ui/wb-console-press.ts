@@ -77,7 +77,7 @@ export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
     });
     replayed.add(ev);
     // The press came from a node inside the terminal (the `contains` test).
-    target!.dispatchEvent(ev);
+    target?.dispatchEvent(ev);
   };
   body.addEventListener(
     "mousedown",

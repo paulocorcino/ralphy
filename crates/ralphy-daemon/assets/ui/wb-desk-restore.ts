@@ -250,7 +250,8 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
           const { record } = verdict;
           if (record && onPlane.has(record.id)) continue;
           if (record && away.has(record.id)) {
-            seedAway(record, away.get(record.id)!);
+            const fenceId = away.get(record.id);
+            if (fenceId !== undefined) seedAway(record, fenceId);
             continue;
           }
           dispatchVerdict(verdict, unheard, onPlane, pending);

@@ -16,6 +16,7 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { sendWindow } from "./wb-events.ts";
+import { required } from "./wb-dom-need.ts";
 
 export function wbLogin() {
   // It reads no `shell()` member.
@@ -62,7 +63,11 @@ export function wbLogin() {
     // box is spread. `login.code` is the joined string.
 
     _otpBoxes(el: HTMLElement) {
-      return el.closest(".login-otp")!.querySelectorAll("input");
+      return required(el.closest(".login-otp"), "the code boxes").querySelectorAll("input");
+    },
+
+    _otpFocusAt(boxes: NodeListOf<HTMLInputElement>, at: number) {
+      boxes[at]?.focus();
     },
 
     _otpSync() {
@@ -84,7 +89,7 @@ export function wbLogin() {
       this._otpSync();
       const boxes = this._otpBoxes(el);
       if (chars.length >= 6) this._otpAdvancePastLast(el);
-      else boxes[chars.length].focus();
+      else boxes[chars.length]?.focus();
     },
 
     otpInput(i: number, e: Event & { target: HTMLInputElement }) {
@@ -97,7 +102,7 @@ export function wbLogin() {
       this.login.digits[i] = v;
       this._otpSync();
       if (!v) return;
-      if (i < 5) this._otpBoxes(e.target)[i + 1].focus();
+      if (i < 5) this._otpBoxes(e.target)[i + 1]?.focus();
       else this._otpAdvancePastLast(e.target);
     },
 
@@ -107,13 +112,13 @@ export function wbLogin() {
         e.preventDefault();
         this.login.digits[i - 1] = "";
         this._otpSync();
-        boxes[i - 1].focus();
+        this._otpFocusAt(boxes, i - 1);
       } else if (e.key === "ArrowLeft" && i > 0) {
         e.preventDefault();
-        boxes[i - 1].focus();
+        this._otpFocusAt(boxes, i - 1);
       } else if (e.key === "ArrowRight" && i < 5) {
         e.preventDefault();
-        boxes[i + 1].focus();
+        this._otpFocusAt(boxes, i + 1);
       }
     },
 

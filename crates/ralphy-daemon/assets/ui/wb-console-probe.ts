@@ -57,8 +57,7 @@ export type ScrollProbeDeps = {
 
 // The value at fraction `q` of `sorted`, which is in ascending order.
 function quantile(sorted: number[], q: number) {
-  if (sorted.length === 0) return 0;
-  return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+  return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
 }
 
 // Rounds to a tenth of a millisecond: the record is read by a person.
@@ -81,7 +80,7 @@ export function frameFigures(gaps: number[], output: boolean[]) {
     slow_with_output: slowWithOutput,
     p50_ms: tenth(quantile(sorted, 0.5)),
     p95_ms: tenth(quantile(sorted, 0.95)),
-    max_ms: tenth(sorted.length ? sorted[sorted.length - 1] : 0),
+    max_ms: tenth(sorted.at(-1) ?? 0),
   };
 }
 

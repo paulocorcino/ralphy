@@ -247,7 +247,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         detail.append(summary, detailText);
         note.append(detail);
       }
-      detailText!.textContent = view.detail || "";
+      if (detailText) detailText.textContent = view.detail || "";
       detail.hidden = !view.detail;
     };
     const showPeer = () => {
@@ -307,7 +307,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
           return;
         }
         unheard = false;
-        if (turn === "attach") attach(session!);
+        if (turn === "attach" && session) attach(session);
         else if (turn === "relaunch") btn.click();
         else show({ text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`, detail: "", action: "relaunch" });
       } finally {
@@ -399,11 +399,12 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // stops here.
     async function wakeFirst() {
       text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;
-      const woke = typeof wakePeerNow() === "function" && (await wakePeerNow()!(daemon));
+      const wake = wakePeerNow();
+      const woke = typeof wake === "function" && (await wake(daemon));
       if (!win.isConnected) return false;
       if (!woke) {
         btn.disabled = false;
-        show(shown!);
+        if (shown) show(shown);
         showPeer();
         return false;
       }

@@ -34,7 +34,7 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
   }
   // Both diff sides read text, and a binary side closes the tab again: an
   // image or other binary path never reaches the diff.
-  const ftype = classify(entry.path.split("/").pop()!);
+  const ftype = classify(entry.path.split("/").pop() ?? entry.path);
   if (ftype === "image" || ftype === "binary") {
     openChangedBinary(store, project, entry, ftype);
     return;
@@ -106,7 +106,7 @@ function openChangedBinary(store: DiffTabs, project: string, entry: ChangeEntry,
     window.Alpine.store("modals").flash?.("This image was deleted, so there is nothing to show.");
     return;
   }
-  const title = path.split("/").pop()!;
+  const title = path.split("/").pop() ?? path;
   store.openTab({ project, path, title, ftype, checkout: window.Alpine.store("checkouts").checkoutOf(project) });
 }
 

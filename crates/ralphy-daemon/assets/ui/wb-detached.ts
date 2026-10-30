@@ -6,6 +6,7 @@ import { isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
 import { isFileDescriptor, isOpenRequest } from "./wb-file-viewer.ts";
 import { windowTitle } from "./wb-window-title.ts";
+import { required } from "./wb-dom-need.ts";
 
 /** A message this window sends the shell. */
 export type FilePopupMessage =
@@ -90,7 +91,7 @@ export function wireDetached(window: Window, document: Document) {
   // answer it. No opener, or a foreign one, means no file — and we say so
   // rather than rendering anything.
   const empty = (why: string) => {
-    document.getElementById("viewers")!.innerHTML =
+    required(document.getElementById("viewers"), "the viewers").innerHTML =
       '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };
   const shell = opener();

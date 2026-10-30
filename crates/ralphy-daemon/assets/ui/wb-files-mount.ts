@@ -15,6 +15,7 @@ import { propertiesKey } from "./wb-files-properties.ts";
 import { guardEmptySpace, treeDrop } from "./wb-files-upload.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
+import type { TreeMemory } from "./wb-files-levels.ts";
 
 /** The live `/ws/tree` subscription of the open project. */
 export type TreeSub = ReturnType<WBDaemonApi["subscribeTree"]>;
@@ -39,7 +40,7 @@ type MountFiles = {
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   nodeDetail(node: WunderbaumNode): WorkbenchNodeDetail;
-  treeMem(): void;
+  treeMem(): TreeMemory;
   treeKey(rel: string): string;
   useDaemonTree(): boolean;
   loadTreeLevel(rel: string): Promise<WunderbaumSource[]>;
@@ -61,10 +62,10 @@ export function mountTree(files: MountFiles) {
   const host = document.querySelector<HTMLElement>(".files-pane .wb-host");
   const project = files.$store.projects.projects.find((p) => files.$store.projects.repoRef(p) === files.$store.projects.openSlug);
   if (!host || !project) return;
-  files.treeMem();
+  const mem = files.treeMem();
   // Freshness is per-open: the watch that kept a level honest died with
   // the last close.
-  files._treeValidated!.clear();
+  mem.validated.clear();
   // The spinner is armed only when the root has to come off the daemon; a
   // re-open paints from memory in the same frame.
   files.treeError = "";
@@ -76,7 +77,7 @@ export function mountTree(files: MountFiles) {
   // A mount generation: a root read failing AFTER this tree was replaced
   // must not paint its error onto the fresh mount.
   const gen = (files._treeGen = (files._treeGen || 0) + 1);
-  files.treeLoading = files.useDaemonTree() && !files._treeCache!.has(files.treeKey(""));
+  files.treeLoading = files.useDaemonTree() && !mem.cache.has(files.treeKey(""));
 
   files._tree = new mar10.Wunderbaum({
     element: host,
@@ -110,7 +111,7 @@ export function mountTree(files: MountFiles) {
     // stops here too.
     beforeExpand: (e: WunderbaumExpandEvent) => {
       if (!e.flag || !files.openPeerDown() || e.node.children) return undefined;
-      return files._treeCache!.has(files.treeKey(files.relPath(e.node))) ? undefined : false;
+      return mem.cache.has(files.treeKey(files.relPath(e.node))) ? undefined : false;
     },
     // A level (re)loaded while a search is on carries no match marks, and
     // in `hide` mode an unmarked row is not painted.
@@ -210,12 +211,12 @@ function rememberExpansion(files: MountFiles) {
   // A restore expands nodes itself; recording a half-restored tree would
   // truncate the list being replayed.
   if (files._restoringExpansion || !files._tree || !files.$store.projects.openSlug) return;
-  files.treeMem();
+  const { expanded } = files.treeMem();
   const rels: string[] = [];
-  files.rawTree()!.root.visit((n: WunderbaumNode) => {
+  files.rawTree()?.root.visit((n: WunderbaumNode) => {
     if (files.isFolder(n) && n.expanded) rels.push(files.relPath(n));
   });
-  files._treeExpanded!.set(files.$store.projects.openSlug, rels);
+  expanded.set(files.$store.projects.openSlug, rels);
 }
 
 // Re-expand the folders this project was left with, shallow-first (a
@@ -223,15 +224,16 @@ function rememberExpansion(files: MountFiles) {
 // `_treeCache`; every expand still re-registers the daemon watch.
 async function restoreExpansion(files: MountFiles) {
   const slug = files.$store.projects.openSlug;
-  files.treeMem();
-  const rels = files._treeExpanded!.get(slug!) || [];
-  if (!rels.length || !files._tree) return;
+  const { expanded } = files.treeMem();
+  const rels = (slug && expanded.get(slug)) || [];
+  const tree = files.rawTree();
+  if (!rels.length || !tree) return;
   files._restoringExpansion = true;
   try {
     for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
       // A project switch mid-replay: this list no longer describes the tree.
       if (slug !== files.$store.projects.openSlug || !files._tree) return;
-      const node = files.rawTree()!.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
+      const node = tree.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
       if (node && !node.expanded) await node.setExpanded(true);
     }
   } finally {

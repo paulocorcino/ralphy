@@ -215,10 +215,10 @@ export const WBRun = {
   parseSteps(md: string | null | undefined) {
     const out: { text: string; status: string }[] = [];
     (md || "").split(/\r?\n/).forEach((ln) => {
-      const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
-      if (!m) return;
-      const status = stepStatus(m[1]);
-      out.push({ text: m[2].replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
+      const [, mark, text] = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/) ?? [];
+      if (mark === undefined || text === undefined) return;
+      const status = stepStatus(mark);
+      out.push({ text: text.replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
     });
     return out;
   },
@@ -329,8 +329,8 @@ export const WBRun = {
   headings(md: string | null | undefined) {
     const out: string[] = [];
     (md || "").split("\n").forEach((ln) => {
-      const m = ln.match(/^##\s+(.+?)\s*$/);
-      if (m) out.push(m[1]);
+      const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
+      if (heading !== undefined) out.push(heading);
     });
     return out;
   },
@@ -374,9 +374,9 @@ export const WBRun = {
     // `/\r?\n/` for the same reason as `parseSteps`: a CRLF plan.md would
     // otherwise return a body with a carriage return on every line.
     for (const ln of md.split(/\r?\n/)) {
-      const m = ln.match(/^##\s+(.+?)\s*$/);
-      if (m) {
-        const isTarget = m[1].trim().toLowerCase() === want;
+      const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
+      if (heading !== undefined) {
+        const isTarget = heading.trim().toLowerCase() === want;
         if (inSec && !isTarget) break;
         inSec = isTarget;
         continue; // drop the heading line; the panel chrome shows it
@@ -481,7 +481,7 @@ export const WBRun = {
   face(runid: string) {
     let h = 0;
     for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return this.FACES[h % this.FACES.length];
+    return this.FACES[h % this.FACES.length] ?? "";
   },
 
   // One `runs.list` document → the panel's run shape. `planMd` starts empty:

@@ -120,9 +120,10 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     const list = Array.isArray(els) ? els : [els];
     const moved = new Map(list.filter(Boolean).map((el) => [el.dataset.noteId, rectOf(el)]));
     if (!moved.size) return;
-    const next = (consoleHost?.notes?.() || []).map((n) =>
-      moved.has(n.id) ? { ...n, rect: moved.get(n.id)! } : n,
-    );
+    const next = (consoleHost?.notes?.() || []).map((n) => {
+      const rect = moved.get(n.id);
+      return rect ? { ...n, rect } : n;
+    });
     consoleHost?.saveNotes(next);
   }
 
@@ -550,18 +551,19 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // read, and the name is recorded. Otherwise the draft is mounted and
   // written under that name, so a re-attach never makes a second file.
   function mountHome(el: NoteCard, record: NoteSource, home: Home) {
-    if (!home.claim) return mountDraft(el, home.draft);
-    el._noteClaim = home.claim;
-    paintPath(el, home.claim);
+    const claim = home.claim;
+    if (!claim) return mountDraft(el, home.draft);
+    el._noteClaim = claim;
+    paintPath(el, claim);
     return window.WBDaemon.observe(
       "note.read",
-      window.WBDaemon.withCheckout({ repo: record.repo, path: home.claim }, record.checkout),
+      window.WBDaemon.withCheckout({ repo: record.repo, path: claim }, record.checkout),
     )
       .then((reply): Promise<NoteEditor | null | void> | null => {
         if (el._noteGone) return null;
         if (!WBFail.isError(reply)) {
           el._noteClaim = null;
-          patch(record.id, { path: home.claim! });
+          patch(record.id, { path: claim });
           el._noteSavedAt = Number(reply.modified) || null;
           return mountEditor(el, reply.markdown || "");
         }

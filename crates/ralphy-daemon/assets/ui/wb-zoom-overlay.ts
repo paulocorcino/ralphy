@@ -212,9 +212,9 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
   // Pointer capture makes the `pointerup` target the surface whatever was
   // under the finger, so the target of the press is the one that is read.
   let onGround = false;
-  const pair = (): Pair => {
+  const pair = (): Pair | null => {
     const [a, b] = [...points.values()];
-    return [a, b];
+    return a && b ? [a, b] : null;
   };
   const tap = (ev: PointerEvent) => {
     if (onGround) return close();
@@ -236,7 +236,8 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
     if (points.size === 2) {
       const prev = pair();
       points.set(ev.pointerId, now);
-      ctl.pinch(prev, pair());
+      const next = pair();
+      if (prev && next) ctl.pinch(prev, next);
       return;
     }
     points.set(ev.pointerId, now);
@@ -248,8 +249,9 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
   const release = (ev: PointerEvent) => {
     if (!points.delete(ev.pointerId)) return;
     // A finger that stays down after a pinch drags from where it is, and never taps.
-    if (points.size > 0) {
-      last = [...points.values()][0];
+    const remaining = [...points.values()][0];
+    if (remaining) {
+      last = remaining;
       moved = true;
     } else if (!moved && ev.type === "pointerup") tap(ev);
   };
@@ -270,7 +272,8 @@ function attachGestures(surface: HTMLElement, ctl: Controller, local: (ev: Mouse
 function trapTab(ev: KeyboardEvent, overlay: HTMLElement, bar: HTMLElement) {
   const buttons = [...bar.querySelectorAll<HTMLElement>("button")];
   const first = buttons[0];
-  const last = buttons[buttons.length - 1];
+  const last = buttons.at(-1);
+  if (!first || !last) return;
   const active = overlay.ownerDocument.activeElement;
   if (ev.shiftKey && (active === first || active === overlay)) last.focus();
   else if (!ev.shiftKey && active === last) first.focus();
@@ -286,7 +289,7 @@ function attachKeys(overlay: HTMLElement, bar: HTMLElement, actions: Record<stri
     if (!act) return;
     ev.preventDefault();
     ev.stopPropagation();
-    actions[act]();
+    actions[act]?.();
   });
 }
 
@@ -322,7 +325,7 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
   };
   bar.addEventListener("click", (ev) => {
     const act = (ev.target as Element).closest("[data-zoom]")?.getAttribute("data-zoom");
-    if (act) actions[act]();
+    if (act) actions[act]?.();
   });
   attachGestures(surface, ctl, local, close);
   attachKeys(overlay, bar, actions);

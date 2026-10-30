@@ -265,8 +265,8 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       focusWin(win);
       if (read) {
         void pasteAfterRead(win, pressed, read);
-      } else {
-        pressKey(win._term, name!);
+      } else if (name !== undefined) {
+        pressKey(win._term, name);
       }
       // Back to the terminal, inside the gesture, so an open keyboard stays up.
       win._term.term.focus();

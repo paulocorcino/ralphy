@@ -108,7 +108,8 @@ function isSep(c: string) {
 }
 
 function endsWithSep(text: string) {
-  return text.length > 0 && isSep(text[text.length - 1]);
+  const last = text.at(-1);
+  return last !== undefined && isSep(last);
 }
 
 function withSep(path: string, sep: string) {
@@ -126,12 +127,12 @@ function collapseDots(text: string) {
 // distro that has no peer.
 function mapWsl(text: string, peers: Peer[] | null | undefined) {
   const m = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)([\\/].*)?$/i.exec(text || "");
-  if (!m) return null;
-  const distro = m[1];
+  const distro = m?.[1];
+  if (!m || distro === undefined) return null;
   const rest = (m[2] || "/").replace(/\\/g, "/");
   const peer = (peers || []).find((p) => {
-    const env = /^WSL: (.+)$/i.exec(p.environment || "");
-    return env && env[1].toLowerCase() === distro.toLowerCase();
+    const named = /^WSL: (.+)$/i.exec(p.environment || "")?.[1];
+    return named !== undefined && named.toLowerCase() === distro.toLowerCase();
   });
   if (!peer) return { missing: distro };
   return { daemon: peer.daemon_id, path: rest };

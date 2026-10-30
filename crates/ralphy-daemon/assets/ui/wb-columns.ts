@@ -112,8 +112,8 @@ export const WBColumns = (function () {
 
   // [column, row] of `id`, or null.
   function where(grid: readonly (readonly (string | null)[])[], id: string | null): [number, number] | null {
-    for (let c = 0; c < grid.length; c++) {
-      const r = grid[c].indexOf(id);
+    for (const [c, col] of grid.entries()) {
+      const r = col.indexOf(id);
       if (r >= 0) return [c, r];
     }
     return null;
@@ -135,10 +135,18 @@ export const WBColumns = (function () {
     const at = where(list, callerId);
     if (!at) return { ok: false, reason: null };
     const [c, r] = at;
-    const next = list.map((col) => [...col]);
-    if (dir === "down") next[c].splice(r + 1, 0, id);
-    else next.splice(c + 1, 0, [id]);
+    const next = list.map((col, i) =>
+      dir === "down" && i === c ? [...col.slice(0, r + 1), id, ...col.slice(r + 1)] : [...col],
+    );
+    if (dir !== "down") next.splice(c + 1, 0, [id]);
     return { ok: true, columns: next };
+  }
+
+  // A copy of `grid` with the console at each `[column, row]` of `changes` replaced.
+  function replaceAt(grid: Grid, changes: [[number, number], string][]): Grid {
+    return grid.map((col, c) =>
+      col.map((cell, r) => changes.find(([at]) => at[0] === c && at[1] === r)?.[1] ?? cell),
+    );
   }
 
   // Put `id` in the row `atId` holds (ADR-0051 §5, swap). An `id` already in
@@ -151,9 +159,7 @@ export const WBColumns = (function () {
     const at = where(list, atId);
     if (!at || id === atId) return { ok: false };
     const from = where(list, id);
-    const next = list.map((col) => [...col]);
-    next[at[0]][at[1]] = id;
-    if (from) next[from[0]][from[1]] = atId;
+    const next = replaceAt(list, from ? [[at, id], [from, atId]] : [[at, id]]);
     return {
       ok: true,
       columns: next,
@@ -184,6 +190,12 @@ export const WBColumns = (function () {
     return { ...without(grid, [id]), unmax: id === flat(grid)[0] ? id : null };
   }
 
+  // The first console of `grid` when `ids` holds it, else null.
+  function firstIn(grid: Grid, ids: string[]) {
+    const head = flat(grid)[0];
+    return head !== undefined && ids.includes(head) ? head : null;
+  }
+
   // A change that came from outside this client, in the shape of `restore`.
   // `ended` (the session exited), `maximized` (another device maximized a
   // console) and `moved` (another client changed a rect or a fence) leave the
@@ -200,11 +212,10 @@ export const WBColumns = (function () {
     };
     if (event?.type !== "closed" && event?.type !== "detached") return same;
     const ids = event.ids || [];
-    const head = flat(grid)[0];
     if (!flat(grid).some((id) => ids.includes(id))) return same;
     return {
       ...without(grid, ids),
-      unmax: event.type === "detached" && ids.includes(head) ? head : null,
+      unmax: event.type === "detached" ? firstIn(grid, ids) : null,
       changed: true,
     };
   }
@@ -251,6 +262,7 @@ export const WBColumns = (function () {
       let bestOverlap = 0;
       for (const col of cols) {
         const a = col[0];
+        if (!a) continue;
         const overlap = Math.min(a.left + a.width, it.left + it.width) - Math.max(a.left, it.left);
         if (overlap > Math.min(a.width, it.width) / 2 && overlap > bestOverlap) {
           best = col;
@@ -280,18 +292,23 @@ export const WBColumns = (function () {
   // from outside the grid, a forward step takes the first console and a
   // backward step the last.
   function focusMove(paintedList: Painted[], focusedId: string | null, axis: string, step: number): string | null {
-    if (!paintedList.length) return null;
     const cols: Grid = [];
     for (const p of paintedList) (cols[p.index] ||= []).push(p.id);
     const at = where(cols, focusedId);
-    if (!at) return step > 0 ? paintedList[0].id : paintedList[paintedList.length - 1].id;
+    if (!at) return paintedList.at(step > 0 ? 0 : -1)?.id ?? null;
     const [c, r] = at;
-    if (axis === "y") {
-      const col = cols[c];
-      return col[(r + step + col.length) % col.length];
-    }
-    const to = cols[(c + step + cols.length) % cols.length];
-    return to[Math.min(r, to.length - 1)];
+    if (axis === "y") return wrapRow(cols[c], r + step);
+    return nearRow(cols[(c + step + cols.length) % cols.length], r);
+  }
+
+  // The id at row `n` of `col`, counting around its ends.
+  function wrapRow(col: readonly string[] | undefined, n: number) {
+    return col?.[(n + col.length) % col.length] ?? null;
+  }
+
+  // The id at row `r` of `col`, or at its last row when `col` is shorter.
+  function nearRow(col: readonly string[] | undefined, r: number) {
+    return col?.[Math.min(r, col.length - 1)] ?? null;
   }
 
   // The grid this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,

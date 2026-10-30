@@ -27,6 +27,7 @@ import { WBMonaco } from "./wb-monaco.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
+import { need, required } from "./wb-dom-need.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
@@ -328,27 +329,27 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    viewers!.append(el);
+    required(viewers, "the element that holds the panes").append(el);
     wireEncodingMenu(rec, el);
 
-    const saveBtn = el.querySelector<HTMLElement>('[data-act="save"]')!;
-    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
+    const saveBtn = need(el, '[data-act="save"]');
+    need(el, '[data-act="find"]').onclick = () => {
       (rec.ed as MonacoEditor | undefined)?.focus();
       (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run().catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
     saveBtn.onclick = () => save(rec);
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {
-      applyFresh(rec, rec.pendingDisk!);
+    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
+    need(el, '[data-act="disk"]').onclick = () => {
+      if (rec.pendingDisk !== undefined) applyFresh(rec, rec.pendingDisk);
       hideDiskBadge(rec);
     };
-    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
+    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
     rec.mirrorBtn = mirrorBtn;
-    void mountEditor(rec, el.querySelector<HTMLElement>(".viewer-body")!, {});
+    void mountEditor(rec, need(el, ".viewer-body"), {});
   }
 
   // A pane that opened refused now has bytes: rebuild it as the pane its
@@ -394,7 +395,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   }
 
   function setPathLabel(el: HTMLElement, rec: ViewerRecord) {
-    const span = el.querySelector<HTMLElement>(".viewer-path")!;
+    const span = need(el, ".viewer-path");
     const { dir, file, full } = pathLabel(rec);
     span.textContent = "";
     const d = document.createElement("span");
@@ -411,7 +412,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // pane hides, and the same words in `title`/`aria-label` for when it does.
   function setCaption(btn: HTMLElement, icon: string, caption: string) {
     btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
-    btn.querySelector(".vbtn-label")!.textContent = caption;
+    need(btn, ".vbtn-label").textContent = caption;
     btn.title = caption;
     btn.setAttribute("aria-label", caption);
   }
@@ -548,7 +549,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       // before touching the DOM, so a tab closed mid-boot mounts nothing.
       map.delete(id);
       disposeEditor(rec);
-      rec.el!.remove();
+      rec.el?.remove();
     },
 
     // Scroll an open markdown pane to a `#fragment`, once the bytes landed.

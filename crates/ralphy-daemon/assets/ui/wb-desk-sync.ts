@@ -202,7 +202,9 @@ export const WBDeskSync = (function () {
     if (at < 0) return list.concat([{ ...change.record }]);
     // A page that adopted a running console: only its session is news.
     if (change.type !== "window") return null;
-    const rec = { ...list[at] };
+    const base = list[at];
+    if (!base) return null;
+    const rec = { ...base };
     const r = change.record;
     const did = setFields("window", rec, {
       session: { sessionId: r.sessionId, daemonId: r.daemonId, environment: r.environment },
@@ -217,8 +219,9 @@ export const WBDeskSync = (function () {
   // changed.
   function setIn(list: AnyRecord[], at: number, change: SetChange): AnyRecord[] | null {
     // Deleted elsewhere: a change must not bring it back.
-    if (at < 0) return null;
-    const rec = { ...list[at] };
+    const base = list[at];
+    if (!base) return null;
+    const rec = { ...base };
     if (!setFields(change.type, rec, change.fields || {})) return null;
     const next = list.slice();
     next[at] = rec;
