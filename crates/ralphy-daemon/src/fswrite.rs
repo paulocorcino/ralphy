@@ -89,6 +89,30 @@ pub(crate) fn map_confine(e: ConfineError) -> WriteError {
     }
 }
 
+/// `kind` for a failed filesystem call. The wire names the kind only, because
+/// an OS error text can carry a path; the log keeps the cause.
+pub(crate) fn failed(kind: WriteError, what: &str, cause: &std::io::Error) -> WriteError {
+    if kind == WriteError::Io {
+        tracing::warn!(error = %cause, "{what} failed");
+    } else {
+        tracing::debug!(error = %cause, "{what} failed");
+    }
+    kind
+}
+
+/// The error of an `open` with `create_new`: an existing target is a conflict,
+/// anything else an I/O failure.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "ErrorKind is non_exhaustive, so a match needs a catch-all"
+)]
+fn create_new_failed(e: std::io::Error) -> WriteError {
+    match e.kind() {
+        std::io::ErrorKind::AlreadyExists => WriteError::Conflict,
+        _ => failed(WriteError::Io, "creating the file", &e),
+    }
+}
+
 /// Directories the Write path never has a legitimate reason to touch, refused
 /// wherever they appear in the target. Confinement bounds writes to the repo
 /// ROOT, and both of these live inside it: `.git` holds the history a workbench
@@ -171,11 +195,13 @@ pub(crate) fn confine_outside_protected(root: &Path, rel: &str) -> Result<PathBu
     }
     refuse_protected(rel)?;
     let target = confine::confine_write(root, rel).map_err(map_confine)?;
-    let canon_root = root.canonicalize().map_err(|_| WriteError::NotFound)?;
+    let canon_root = root
+        .canonicalize()
+        .map_err(|e| failed(WriteError::NotFound, "reading the repo root", &e))?;
     let resolved = target.canonicalize().unwrap_or_else(|_| target.clone());
-    let inside = resolved
-        .strip_prefix(&canon_root)
-        .map_err(|_| WriteError::Confined)?;
+    let Ok(inside) = resolved.strip_prefix(&canon_root) else {
+        return Err(WriteError::Confined);
+    };
     if !is_note_in_notes_dir(inside) && inside.components().any(|c| is_protected(c.as_os_str())) {
         return Err(WriteError::Confined);
     }
@@ -210,7 +236,7 @@ pub fn write_encoded(
     let path = confine_outside_protected(root, rel)?;
     let bytes = textcodec::encode(content, encoding, bom)
         .map_err(|char_index| WriteError::Unencodable { char_index })?;
-    std::fs::write(&path, bytes).map_err(|_| WriteError::Io)
+    std::fs::write(&path, bytes).map_err(|e| failed(WriteError::Io, "writing the file", &e))
 }
 
 /// [`write`]'s byte direction: `bytes` REPLACE the confined `rel`, through the
@@ -233,13 +259,18 @@ pub(crate) fn write_bytes(root: &Path, rel: &str, bytes: &[u8]) -> Result<(), Wr
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(".writing");
     let tmp = path.with_file_name(name);
-    std::fs::write(&tmp, bytes).map_err(|_| WriteError::Io)?;
+    std::fs::write(&tmp, bytes)
+        .map_err(|e| failed(WriteError::Io, "writing the temporary file", &e))?;
     match std::fs::rename(&tmp, &path) {
         Ok(()) => Ok(()),
         Err(_) => {
             // The rename is what makes this atomic; a failure leaves the old
             // file intact, and the half-written sibling must not be left on
             // the operator's tree.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the rename error is the one reported, and the sibling may be gone"
+            )]
             let _ = std::fs::remove_file(&tmp);
             Err(WriteError::Io)
         }
@@ -277,7 +308,7 @@ pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
         return Err(WriteError::Conflict);
     }
     if dir {
-        std::fs::create_dir(&path).map_err(|_| WriteError::Io)
+        std::fs::create_dir(&path).map_err(|e| failed(WriteError::Io, "creating the directory", &e))
     } else {
         // `create_new` refuses an existing file atomically (defence in depth over
         // the `exists()` pre-check, which races).
@@ -286,10 +317,7 @@ pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
             .create_new(true)
             .open(&path)
             .map(|_| ())
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::AlreadyExists => WriteError::Conflict,
-                _ => WriteError::Io,
-            })
+            .map_err(create_new_failed)
     }
 }
 
@@ -305,7 +333,7 @@ pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteErro
     if to.exists() {
         return Err(WriteError::Conflict);
     }
-    std::fs::rename(&from, &to).map_err(|_| WriteError::Io)
+    std::fs::rename(&from, &to).map_err(|e| failed(WriteError::Io, "renaming the path", &e))
 }
 
 /// Copy the confined `from_rel` to the confined `to_rel` (both under `root`),
@@ -319,7 +347,8 @@ pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteErro
 pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError> {
     let from = confine_outside_protected(root, from_rel)?;
     let to = confine_outside_protected(root, to_rel)?;
-    let meta = std::fs::symlink_metadata(&from).map_err(|_| WriteError::NotFound)?;
+    let meta = std::fs::symlink_metadata(&from)
+        .map_err(|e| failed(WriteError::NotFound, "reading the copy source", &e))?;
     if !meta.is_file() {
         return Err(WriteError::Confined);
     }
@@ -328,18 +357,16 @@ pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError>
     // race whose loss is the operator's file — and `duplicate` picks its name by
     // listing a directory a watcher is concurrently changing, so the window is
     // real. Same defence `create` already takes.
-    let mut src = std::fs::File::open(&from).map_err(|_| WriteError::Io)?;
+    let mut src = std::fs::File::open(&from)
+        .map_err(|e| failed(WriteError::Io, "opening the copy source", &e))?;
     let mut dst = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&to)
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::AlreadyExists => WriteError::Conflict,
-            _ => WriteError::Io,
-        })?;
+        .map_err(create_new_failed)?;
     std::io::copy(&mut src, &mut dst)
         .map(|_| ())
-        .map_err(|_| WriteError::Io)
+        .map_err(|e| failed(WriteError::Io, "copying the file", &e))
 }
 
 /// Delete the confined `rel` under `root`: a directory recursively
@@ -347,11 +374,13 @@ pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError>
 /// blast radius to the repo root; a missing target is `NotFound`.
 pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
     let path = confine_outside_protected(root, rel)?;
-    let meta = std::fs::symlink_metadata(&path).map_err(|_| WriteError::NotFound)?;
+    let meta = std::fs::symlink_metadata(&path)
+        .map_err(|e| failed(WriteError::NotFound, "reading the delete target", &e))?;
     if meta.is_dir() {
-        std::fs::remove_dir_all(&path).map_err(|_| WriteError::Io)
+        std::fs::remove_dir_all(&path)
+            .map_err(|e| failed(WriteError::Io, "deleting the directory", &e))
     } else {
-        std::fs::remove_file(&path).map_err(|_| WriteError::Io)
+        std::fs::remove_file(&path).map_err(|e| failed(WriteError::Io, "deleting the file", &e))
     }
 }
 
@@ -376,11 +405,12 @@ pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
 /// the one thing it must never grow is a recursive delete.
 pub fn discard_plan(root: &Path) -> Result<(), WriteError> {
     let path = root.join(".ralphy").join("plan.md");
-    let meta = std::fs::symlink_metadata(&path).map_err(|_| WriteError::NotFound)?;
+    let meta = std::fs::symlink_metadata(&path)
+        .map_err(|e| failed(WriteError::NotFound, "reading the plan file", &e))?;
     if !meta.is_file() {
         return Err(WriteError::Confined);
     }
-    std::fs::remove_file(&path).map_err(|_| WriteError::Io)
+    std::fs::remove_file(&path).map_err(|e| failed(WriteError::Io, "discarding the plan", &e))
 }
 
 #[cfg(test)]

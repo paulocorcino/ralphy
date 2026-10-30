@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::confine;
-use crate::fswrite::{self, ensure_dir, map_confine, WriteError};
+use crate::fswrite::{self, ensure_dir, failed, map_confine, WriteError};
 
 /// The landing directory of the parts.
 pub const DIR: &str = ".ralphy/uploads";
@@ -142,7 +142,7 @@ pub fn parse(payload: &serde_json::Value) -> Result<Part, UploadError> {
     }
     let data = data_encoding::BASE64
         .decode(encoded.as_bytes())
-        .map_err(|_| UploadError::Invalid)?;
+        .map_err(|e| confine::miss(UploadError::Invalid, "decoding an upload part", &e))?;
     if data.len() > PART_MAX {
         return Err(UploadError::TooLarge);
     }
@@ -237,9 +237,9 @@ fn append(file: &Path, data: &[u8]) -> Result<(), UploadError> {
         .create(true)
         .append(true)
         .open(file)
-        .map_err(|_| UploadError::Write(WriteError::Io))?;
+        .map_err(|e| UploadError::Write(failed(WriteError::Io, "opening the part file", &e)))?;
     out.write_all(data)
-        .map_err(|_| UploadError::Write(WriteError::Io))
+        .map_err(|e| UploadError::Write(failed(WriteError::Io, "writing the part file", &e)))
 }
 
 /// Delete each `.part` file of [`DIR`] that was last written before
@@ -299,7 +299,8 @@ fn place(
             (rel, target, Placed::Created)
         }
     };
-    std::fs::rename(part, &target).map_err(|_| UploadError::Write(WriteError::Io))?;
+    std::fs::rename(part, &target)
+        .map_err(|e| UploadError::Write(failed(WriteError::Io, "placing the upload", &e)))?;
     Ok((rel, placed))
 }
 

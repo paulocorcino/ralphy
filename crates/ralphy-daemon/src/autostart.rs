@@ -16,8 +16,14 @@
 // This module renders every backend, but the executor below is `#[cfg]`-split
 // so any single-platform build calls only one of them (the others are
 // exercised only from tests, which dead-code analysis ignores). The unused
-// arms are live on the other OSes — allow rather than lose them.
-#![allow(dead_code)]
+// arms are live on the other OSes — expect the dead code rather than lose them.
+#![cfg_attr(
+    any(windows, not(test)),
+    expect(
+        dead_code,
+        reason = "each build runs one platform's executor, so the other renderers are unused"
+    )
+)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcCommand;
@@ -444,7 +450,7 @@ pub fn powershell_flavor(path: Option<&str>) -> PowerShellFlavor {
 
 /// The uid that owns this process — the launchd `gui/<uid>` domain.
 #[cfg(unix)]
-#[allow(unsafe_code, reason = "FFI: libc::getuid")]
+#[expect(unsafe_code, reason = "FFI: libc::getuid")]
 fn current_uid() -> Option<u32> {
     // SAFETY: `getuid` takes no arguments, cannot fail, and touches no memory.
     Some(unsafe { libc::getuid() })

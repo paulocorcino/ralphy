@@ -21,7 +21,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::confine;
-use crate::fswrite::{ensure_dir, map_confine, WriteError};
+use crate::fswrite::{ensure_dir, failed, map_confine, WriteError};
 use crate::tree::{ImageType, MAX_IMAGE_BYTES};
 
 /// The run-state directory the drops live under — gitignored by `ralphy` on its
@@ -55,7 +55,7 @@ pub fn decode_image(base64: Option<&str>) -> Result<(ImageType, Vec<u8>), &'stat
     }
     let bytes = data_encoding::BASE64
         .decode(text.as_bytes())
-        .map_err(|_| "not an image")?;
+        .map_err(|e| confine::miss("not an image", "decoding the pasted image", &e))?;
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
         return Err("too large");
     }
@@ -96,7 +96,8 @@ pub fn write_image(root: &Path, kind: ImageType, bytes: &[u8]) -> Result<String,
         let path = confine::confine_write(root, &rel).map_err(map_confine)?;
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
-                file.write_all(bytes).map_err(|_| WriteError::Io)?;
+                file.write_all(bytes)
+                    .map_err(|e| failed(WriteError::Io, "writing the pasted image", &e))?;
                 return Ok(rel);
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,

@@ -125,7 +125,7 @@ impl Priced<'_> {
     pub(crate) fn issue(&self) -> Option<u64> {
         match self.source {
             Source::Ledger { issue } if issue > 0 => Some(issue),
-            _ => None,
+            Source::Ledger { .. } | Source::Interactive => None,
         }
     }
 }

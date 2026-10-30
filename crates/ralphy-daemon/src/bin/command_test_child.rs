@@ -37,7 +37,10 @@ fn main() {
     if let Ok(ms) = std::env::var("RALPHY_TEST_GRANDCHILD_MS") {
         let exe = std::env::current_exe().expect("locating this test child");
         // Not waited: the grandchild must outlive this child.
-        #[allow(clippy::zombie_processes)]
+        #[expect(
+            clippy::zombie_processes,
+            reason = "the grandchild must outlive this child, so nothing waits for it"
+        )]
         let _grandchild = std::process::Command::new(exe)
             .env_remove("RALPHY_TEST_GRANDCHILD_MS")
             .env("RALPHY_TEST_SLEEP_MS", ms)
@@ -132,10 +135,18 @@ fn main() {
         std::fs::write(&staged, "dispatch-done").expect("writing the done sentinel");
         std::fs::rename(&staged, &done_path).expect("publishing the done sentinel");
     }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a test helper child reports to its test by its exit code"
+    )]
     std::process::exit(code);
 }
 
 /// The `gemini prepare-root` stand-in described in the module docs. Never returns.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test helper child reports to its test by its exit code"
+)]
 fn prepare_root() {
     let cwd = std::env::current_dir().expect("reading the working directory");
     std::fs::write(cwd.join("prepare-root.ran"), "").expect("writing prepare-root.ran");

@@ -62,7 +62,7 @@ fn main() {
         .unwrap_or_default();
     println!("{CWD_MARKER}{cwd}");
     println!("READY");
-    let _ = std::io::stdout().flush();
+    flush_stdout();
 
     // Poll the terminal size every 50ms and print it on change, so a resize made
     // through the PTY master shows up in the captured stream.
@@ -75,7 +75,7 @@ fn main() {
                 if last != Some((cols, rows)) {
                     last = Some((cols, rows));
                     println!("{SIZE_MARKER} {cols}x{rows}");
-                    let _ = std::io::stdout().flush();
+                    flush_stdout();
                 }
             }
             std::thread::sleep(Duration::from_millis(50));
@@ -91,7 +91,11 @@ fn main() {
         };
         if byte == 0x03 {
             println!("INTERRUPTED:ETX");
-            let _ = std::io::stdout().flush();
+            flush_stdout();
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "a test helper child reports to its test by its exit code"
+            )]
             std::process::exit(130);
         }
         if !matches!(byte, b'\r' | b'\n') {
@@ -104,23 +108,37 @@ fn main() {
         let command = String::from_utf8_lossy(&line).into_owned();
         line.clear();
         match command.as_str() {
-            "quit" => std::process::exit(0),
+            "quit" => {
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "a test helper child reports to its test by its exit code"
+                )]
+                std::process::exit(0);
+            }
             "spawn-grandchild" => {
                 // A grandchild inheriting our stdout keeps the PTY slave open after
                 // we die, so a plain direct-child kill would leave the reader
                 // blocked — only a tree kill reaches EOF.
                 if let Ok(exe) = std::env::current_exe() {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "nothing waits for it, and a failed start times the test out"
+                    )]
                     let _ = std::process::Command::new(exe).arg("sleep").spawn();
                 }
             }
             "argv" => {
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 println!("{ARGV_MARKER}{}", args.join(" "));
-                let _ = std::io::stdout().flush();
+                flush_stdout();
             }
             other if other.starts_with("flood ") => {
                 let kib = other["flood ".len()..].trim().parse::<usize>().unwrap_or(0);
-                flood(kib);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a write error means the PTY is closed, and the test is over"
+                )]
+                let _ = flood(kib);
             }
             other if other.starts_with("osc52 ") => {
                 // Emit a clipboard-write escape the way a vendor TUI does, so a
@@ -130,7 +148,7 @@ fn main() {
                 // clear forms the UI must refuse.
                 let payload = other["osc52 ".len()..].trim();
                 print!("\x1b]52;c;{payload}\x07");
-                let _ = std::io::stdout().flush();
+                flush_stdout();
             }
             other if other.starts_with("env ") => {
                 let name = other["env ".len()..].trim();
@@ -138,14 +156,23 @@ fn main() {
                 // a test can tell "not set" from "the child never answered".
                 let value = std::env::var(name).unwrap_or_default();
                 println!("{ENV_MARKER}{name}={value}");
-                let _ = std::io::stdout().flush();
+                flush_stdout();
             }
             other => {
                 println!("{GOT_MARKER}{other}");
-                let _ = std::io::stdout().flush();
+                flush_stdout();
             }
         }
     }
+}
+
+/// Flush stdout. A failure means the PTY is closed, and then the test is over.
+fn flush_stdout() {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a flush error means the PTY is closed, and the test is over"
+    )]
+    let _ = std::io::stdout().flush();
 }
 
 /// Width of one flood line, in characters, before the line break.
@@ -165,7 +192,7 @@ fn flood_line(n: usize) -> String {
 
 /// Write about `kib` KiB of numbered lines. After every [`FLOOD_REDRAW_EVERY`]
 /// lines the cursor goes up three lines and those three are written again.
-fn flood(kib: usize) {
+fn flood(kib: usize) -> std::io::Result<()> {
     let target = kib * 1024;
     let mut written = 0usize;
     let mut n = 0usize;
@@ -183,17 +210,15 @@ fn flood(kib: usize) {
         }
         if chunk.len() >= 4096 {
             written += chunk.len();
-            if out.write_all(chunk.as_bytes()).is_err() {
-                return;
-            }
-            let _ = out.flush();
+            out.write_all(chunk.as_bytes())?;
+            out.flush()?;
             chunk.clear();
         }
     }
     written += chunk.len();
-    let _ = out.write_all(chunk.as_bytes());
-    let _ = writeln!(out, "FLOOD-DONE {written}");
-    let _ = out.flush();
+    out.write_all(chunk.as_bytes())?;
+    writeln!(out, "FLOOD-DONE {written}")?;
+    out.flush()
 }
 
 /// Put the tty in the raw-ish mode a real vendor TUI uses: no echo, no line
@@ -203,7 +228,7 @@ fn flood(kib: usize) {
 /// before it ever reached its stdin. `OPOST` is deliberately left on: the tests
 /// read the output as lines.
 #[cfg(unix)]
-#[allow(
+#[expect(
     unsafe_code,
     reason = "FFI: tcgetattr/tcsetattr on the test child's stdin"
 )]
@@ -227,7 +252,7 @@ fn configure_raw_input() {
 fn configure_raw_input() {}
 
 #[cfg(windows)]
-#[allow(
+#[expect(
     unsafe_code,
     reason = "FFI: GetConsoleMode/SetConsoleMode on the test child's stdin"
 )]

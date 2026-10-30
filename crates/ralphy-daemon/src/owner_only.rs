@@ -171,7 +171,7 @@ pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-#[allow(
+#[expect(
     unsafe_code,
     reason = "FFI: the Win32 security API that reads and writes a file's DACL"
 )]

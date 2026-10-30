@@ -169,12 +169,15 @@ pub fn read_with(
     hint: Option<&'static Encoding>,
     fallback: &'static Encoding,
 ) -> Result<Decoded, ReadError> {
-    let path = confine::confine(root, rel).map_err(|_| ReadError::NotFound)?;
-    let meta = std::fs::metadata(&path).map_err(|_| ReadError::NotFound)?;
+    let path = confine::confine(root, rel)
+        .map_err(|e| confine::miss(ReadError::NotFound, "confining the path", &e))?;
+    let meta = std::fs::metadata(&path)
+        .map_err(|e| confine::miss(ReadError::NotFound, "reading the file facts", &e))?;
     if meta.len() > MAX_READ_BYTES {
         return Err(ReadError::TooLarge);
     }
-    let bytes = std::fs::read(&path).map_err(|_| ReadError::NotFound)?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| confine::miss(ReadError::NotFound, "reading the file", &e))?;
     textcodec::decode(bytes, hint, fallback).ok_or(ReadError::Binary)
 }
 
@@ -340,12 +343,15 @@ pub fn read_image(root: &Path, rel: &str) -> Result<Image, ReadError> {
         .ok_or(ReadError::NotImage)?;
     let kind = ImageType::from_extension(ext).ok_or(ReadError::NotImage)?;
 
-    let path = confine::confine(root, rel).map_err(|_| ReadError::NotFound)?;
-    let meta = std::fs::metadata(&path).map_err(|_| ReadError::NotFound)?;
+    let path = confine::confine(root, rel)
+        .map_err(|e| confine::miss(ReadError::NotFound, "confining the path", &e))?;
+    let meta = std::fs::metadata(&path)
+        .map_err(|e| confine::miss(ReadError::NotFound, "reading the file facts", &e))?;
     if meta.len() > MAX_IMAGE_BYTES {
         return Err(ReadError::TooLarge);
     }
-    let bytes = std::fs::read(&path).map_err(|_| ReadError::NotFound)?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| confine::miss(ReadError::NotFound, "reading the file", &e))?;
     if !kind.matches(&bytes) {
         return Err(ReadError::NotImage);
     }
