@@ -56,26 +56,11 @@ impl RunClock for WallClock {
     }
 
     fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
-        // The 5-minute buffer is a wait policy (wake a little after the reset to
-        // avoid re-limiting), applied here rather than baked into `next_reset`.
-        let buffer = chrono::Duration::minutes(5);
-        // The adapter parsed *some* reset string, but this clock may not turn it
-        // into a wake time (a format the adapter accepts verbatim but `next_reset`
-        // does not). Rather than stop-and-abandon the limit (the old #145 fail-safe),
-        // fall back to the synthetic cadence — retry ~30 min out — so an unrecognised
-        // hint keeps trying until the reset lands, the run deadline cuts it, or a
-        // human interrupts. The 25-min floor in `synthetic_reset` prevents the
-        // 0-second hot-loop #145 was guarding against, so this stays safe.
-        let target = match next_reset(reset, Local::now())
-            .or_else(|| next_reset(&synthetic_reset(), Local::now()))
-        {
-            Some(t) => t + buffer,
+        let Some(target) = wake_target(reset) else {
             // Unreachable in practice: `synthetic_reset` is always RFC3339-parseable.
             // Keep the fail-safe stop rather than an `unwrap` if that ever changes.
-            None => {
-                info!(%reset, "reset hint unparseable and synthetic fallback failed — stopping");
-                return WaitOutcome::DeadlinePassed;
-            }
+            info!(%reset, "reset hint unparseable and synthetic fallback failed — stopping");
+            return WaitOutcome::DeadlinePassed;
         };
 
         if self.deadline_passed() {
@@ -87,19 +72,13 @@ impl RunClock for WallClock {
         // human decision, ADR-0030). The wait is bounded only by the operator's own
         // levers: the run deadline (below), the progress-aware cap in `execute_phase`
         // (two no-commit resumes abandon the issue, ADR-0003 D1), the cooperative
-        // stop checked at the top of the sleep loop below, and Ctrl-C. A
+        // stop checked at the top of the sleep loop in `sleep_until`, and Ctrl-C. A
         // garbage hint cannot park the run here because it never parses to a `target`
-        // in the first place (it falls to the ~30-min synthetic cadence above) — strict
-        // parsing, not a time cap, is the guard.
-        //
-        // A reset beyond the global deadline never sleeps — the deadline wins the
-        // moment it would pass.
-        if let Some(d) = self.deadline {
-            let until_target = (target - Local::now()).num_milliseconds().max(0) as u64;
-            if Instant::now() + Duration::from_millis(until_target) >= d {
-                info!(%reset, "reset lands beyond the run deadline — not waiting");
-                return WaitOutcome::DeadlinePassed;
-            }
+        // in the first place (it falls to the ~30-min synthetic cadence of
+        // `wake_target`) — strict parsing, not a time cap, is the guard.
+        if self.lands_beyond_deadline(target) {
+            info!(%reset, "reset lands beyond the run deadline — not waiting");
+            return WaitOutcome::DeadlinePassed;
         }
 
         // Emit the display `reset` as the wake time-of-day (`HH:MM`, buffer included),
@@ -112,6 +91,25 @@ impl RunClock for WallClock {
             reset,
             target.timestamp(),
         );
+        self.sleep_until(target)
+    }
+}
+
+impl WallClock {
+    /// Whether waking at `target` would pass the global deadline. A reset beyond
+    /// the global deadline never sleeps — the deadline wins the moment it would
+    /// pass.
+    fn lands_beyond_deadline(&self, target: DateTime<Local>) -> bool {
+        let Some(d) = self.deadline else {
+            return false;
+        };
+        let until_target = (target - Local::now()).num_milliseconds().max(0) as u64;
+        Instant::now() + Duration::from_millis(until_target) >= d
+    }
+
+    /// Sleep in 1 s steps until `target`, with a heartbeat each minute. The
+    /// operator's stop and the deadline end the sleep early.
+    fn sleep_until(&self, target: DateTime<Local>) -> WaitOutcome {
         let mut last_heartbeat = Instant::now();
         loop {
             // The operator's stop (docs/adr/0054). This wait is unbounded by
@@ -143,6 +141,24 @@ impl RunClock for WallClock {
     }
 }
 
+/// The wake time for a reset hint: the parsed reset plus the wait-policy buffer.
+/// `None` only when the synthetic fallback fails to parse too.
+fn wake_target(reset: &str) -> Option<DateTime<Local>> {
+    // The 5-minute buffer is a wait policy (wake a little after the reset to
+    // avoid re-limiting), applied here rather than baked into `next_reset`.
+    let buffer = chrono::Duration::minutes(5);
+    // The adapter parsed *some* reset string, but this clock may not turn it
+    // into a wake time (a format the adapter accepts verbatim but `next_reset`
+    // does not). Rather than stop-and-abandon the limit (the old #145 fail-safe),
+    // fall back to the synthetic cadence — retry ~30 min out — so an unrecognised
+    // hint keeps trying until the reset lands, the run deadline cuts it, or a
+    // human interrupts. The 25-min floor in `synthetic_reset` prevents the
+    // 0-second hot-loop #145 was guarding against, so this stays safe.
+    next_reset(reset, Local::now())
+        .or_else(|| next_reset(&synthetic_reset(), Local::now()))
+        .map(|t| t + buffer)
+}
+
 /// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
 /// one of: an absolute RFC3339 instant (`"2026-06-09T18:00:00Z"`, as some adapters
 /// emit), an absolute month-name date-time (`"Jun 10th, 2026 12:23 AM"`, as Codex
@@ -169,11 +185,8 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     // unlike the relative forms handled below. Try the whole hint, then its leading
     // token — the datetime may be trailed by prose ("…Z (in 3 hours)"). The relative
     // forms never parse as RFC3339 ("Fri"/"15:00" both fail), so this stays additive.
-    let leading = trimmed.split_whitespace().next().unwrap_or(trimmed);
-    for cand in [trimmed, leading.trim_end_matches('.')] {
-        if let Ok(dt) = DateTime::parse_from_rfc3339(cand) {
-            return Some(dt.with_timezone(&Local));
-        }
+    if let Some(dt) = parse_rfc3339_hint(trimmed) {
+        return Some(dt);
     }
 
     // An absolute month-name date-time carries its own date, like RFC3339 but in the
@@ -189,17 +202,8 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     // wall-clock time. Handled here because the weekday split below would treat the
     // leading "2026-07-12" as a weekday token and reject the whole hint (the gap that
     // made a real GLM reset unparseable and stopped the run instead of waiting).
-    for fmt in [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%dT%H:%M",
-    ] {
-        if let Ok(ndt) = NaiveDateTime::parse_from_str(trimmed, fmt) {
-            if let Some(dt) = ndt.and_local_timezone(Local).single() {
-                return Some(dt);
-            }
-        }
+    if let Some(dt) = parse_numeric_local_datetime(trimmed) {
+        return Some(dt);
     }
 
     // A bare 12-hour time ("6:13 PM") is relative: resolve to its next occurrence
@@ -209,6 +213,35 @@ fn next_reset(reset: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
         return next_occurrence(time, None, now);
     }
 
+    parse_weekday_time(trimmed, now)
+}
+
+/// An absolute RFC3339 instant, converted to local time: the whole hint, or its
+/// leading token when prose trails the datetime.
+fn parse_rfc3339_hint(trimmed: &str) -> Option<DateTime<Local>> {
+    let leading = trimmed.split_whitespace().next().unwrap_or(trimmed);
+    [trimmed, leading.trim_end_matches('.')]
+        .into_iter()
+        .find_map(|cand| DateTime::parse_from_rfc3339(cand).ok())
+        .map(|dt| dt.with_timezone(&Local))
+}
+
+/// A numeric ISO-like date-time with no zone, read as local wall-clock time.
+fn parse_numeric_local_datetime(trimmed: &str) -> Option<DateTime<Local>> {
+    [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M",
+    ]
+    .into_iter()
+    .find_map(|fmt| NaiveDateTime::parse_from_str(trimmed, fmt).ok())
+    .and_then(|ndt| ndt.and_local_timezone(Local).single())
+}
+
+/// A bare 24-hour `"HH:mm"` or a weekday-qualified `"Wkd HH:mm"`, resolved to
+/// its next occurrence after `now`.
+fn parse_weekday_time(trimmed: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
         Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
         // Use `trimmed` (trailing punctuation already stripped), not the raw
@@ -329,6 +362,24 @@ mod tests {
     /// Build a fixed `DateTime<Local>` for deterministic `next_reset` tests.
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
         Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
+    }
+
+    /// A reset that lands after the run deadline ends the wait before it
+    /// starts: the deadline is 3 s out, so a wait that slept toward it would
+    /// take at least 3 s.
+    #[test]
+    fn wait_for_reset_does_not_wait_for_a_reset_beyond_the_deadline() {
+        let clock = WallClock {
+            deadline: Some(Instant::now() + Duration::from_secs(3)),
+        };
+        let tomorrow = (Local::now() + chrono::Duration::days(1)).to_rfc3339();
+        let started = Instant::now();
+        assert_eq!(clock.wait_for_reset(&tomorrow), WaitOutcome::DeadlinePassed);
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
