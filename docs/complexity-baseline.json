@@ -294,14 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/capabilities.rs": {
-      "parse_diff": [
-        13
-      ],
-      "scan": [
-        13
-      ]
-    },
     "crates/xtask/src/oversized.rs": {
       "code_lines": [
         11
