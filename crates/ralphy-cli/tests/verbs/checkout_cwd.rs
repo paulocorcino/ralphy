@@ -52,12 +52,12 @@ fn stderr(out: &std::process::Output) -> String {
 /// A repo on `main` with `a.txt` = `one\n` (commit `init`), a `side` branch,
 /// and one linked worktree `wt-a` (on branch `wt-a`) made by the CLI.
 fn init_repo() -> (TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     let root = dir.path();
     run_git(root, &["init", "--quiet", "-b", "main"]);
     configure(root);
-    std::fs::write(root.join(".gitignore"), ".ralphy/\n").unwrap();
-    std::fs::write(root.join("a.txt"), "one\n").unwrap();
+    std::fs::write(root.join(".gitignore"), ".ralphy/\n").expect("writing a file");
+    std::fs::write(root.join("a.txt"), "one\n").expect("writing a file");
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "--quiet", "-m", "init"]);
     run_git(root, &["branch", "side"]);

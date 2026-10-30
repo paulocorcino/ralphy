@@ -28,7 +28,12 @@ fn unsupported_note(a: crate::CliAgent) -> String {
 fn plan_action(a: crate::CliAgent) -> ModelsAction {
     match a {
         crate::CliAgent::OpenCode => ModelsAction::Passthrough,
-        other => ModelsAction::Unsupported(unsupported_note(other)),
+        crate::CliAgent::Claude
+        | crate::CliAgent::Codex
+        | crate::CliAgent::Copilot
+        | crate::CliAgent::Cursor
+        | crate::CliAgent::Gemini
+        | crate::CliAgent::Kimi => ModelsAction::Unsupported(unsupported_note(a)),
     }
 }
 

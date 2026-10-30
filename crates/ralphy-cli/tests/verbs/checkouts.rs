@@ -17,13 +17,13 @@ use super::support::{git_output, ralphy, run_git, LockRow};
 /// and one workbench worktree `wt-a` under `.ralphy/worktrees/`, dirtied with
 /// an untracked file so the human form's suffix is exercised.
 fn init_repo() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("creating a temporary directory");
     let root = dir.path();
     run_git(root, &["init", "--quiet"]);
     run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["config", "user.name", "Test"]);
     run_git(root, &["commit", "--allow-empty", "--quiet", "-m", "init"]);
-    std::fs::create_dir_all(root.join(".ralphy/worktrees")).unwrap();
+    std::fs::create_dir_all(root.join(".ralphy/worktrees")).expect("creating a directory");
     run_git(
         root,
         &[
@@ -36,7 +36,8 @@ fn init_repo() -> tempfile::TempDir {
             "HEAD",
         ],
     );
-    std::fs::write(root.join(".ralphy/worktrees/wt-a/scratch.txt"), "dirty\n").unwrap();
+    std::fs::write(root.join(".ralphy/worktrees/wt-a/scratch.txt"), "dirty\n")
+        .expect("writing a file");
     dir
 }
 

@@ -9,7 +9,8 @@
     )
 )]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::FromArgMatches;
@@ -59,24 +60,15 @@ use cli::{Cli, Command, ConsolidateArgs, HookCommand};
 // `cli.rs`.
 pub(crate) use cli::CliAgent;
 
-fn main() -> Result<()> {
-    // `ssh` starts this binary as its askpass program, with the prompt as the
-    // only argument, during a host flow's password sign-in.
-    if let Some(env) = std::env::var_os(host::ASKPASS_ENV) {
-        let args: Vec<_> = std::env::args_os().skip(1).collect();
-        if let [prompt] = args.as_slice() {
-            if let Err(e) = host::askpass(&env.to_string_lossy(), &prompt.to_string_lossy()) {
-                eprintln!("{e:#}");
-                std::process::exit(1);
-            }
-            return Ok(());
-        }
+fn main() -> Result<ExitCode> {
+    if let Some(code) = askpass_exit_code() {
+        return Ok(code);
     }
     let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
     if starts_an_agent_outside_run(&cli.command) {
         run::strip_secret_tokens_from_env();
     }
-    match cli.command {
+    let outcome = match cli.command {
         Command::Run(args) => run::run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),
         Command::Models(args) => models::run(args),
@@ -88,7 +80,7 @@ fn main() -> Result<()> {
         Command::Hook(HookCommand::Status { vendor }) => hook::run_status_hook(vendor),
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
-        Command::Doctor(args) => doctor::run(&args),
+        Command::Doctor(args) => return doctor::run(&args),
         Command::Uninstall(args) => uninstall::run(&args),
         Command::Init(args) => init::run(&args),
         Command::Triage(args) => triage::run(&args),
@@ -105,6 +97,25 @@ fn main() -> Result<()> {
         Command::Gemini(cmd) => gemini::gemini(cmd),
         Command::Stop(args) => stop::stop(args),
         Command::Update(args) => update::run(&args),
+    };
+    outcome.map(|()| ExitCode::SUCCESS)
+}
+
+/// `ssh` starts this binary as its askpass program, with the prompt as the
+/// only argument, during a host flow's password sign-in. `None` when this
+/// process is not that program.
+fn askpass_exit_code() -> Option<ExitCode> {
+    let env = std::env::var_os(host::ASKPASS_ENV)?;
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let [prompt] = args.as_slice() else {
+        return None;
+    };
+    match host::askpass(&env.to_string_lossy(), &prompt.to_string_lossy()) {
+        Ok(()) => Some(ExitCode::SUCCESS),
+        Err(e) => {
+            eprintln!("{e:#}");
+            Some(ExitCode::FAILURE)
+        }
     }
 }
 
@@ -201,8 +212,14 @@ fn consolidate_with_agent(
 /// `loose_notes` first.
 ///
 /// Callers are responsible for clearing `ANTHROPIC_API_KEY` (the subscription-quota
-/// sentinel) before this runs — `run` already does so up front, `consolidate` does
-/// it just before calling.
+/// sentinel) before this runs — `run` and `consolidate` both do so as their first
+/// statement.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the agent, the workspace, the run folder, the model, the effort, the time \
+              limit and the notes are seven separate facts, and the end-of-run caller is \
+              in another module"
+)]
 fn run_consolidation(
     agent: CliAgent,
     ws: &Workspace,
@@ -215,7 +232,8 @@ fn run_consolidation(
     use anyhow::{bail, Context};
     use ralphy_core::knowledge;
 
-    std::fs::create_dir_all(run_dir).ok();
+    std::fs::create_dir_all(run_dir)
+        .with_context(|| format!("creating the run folder {}", run_dir.display()))?;
 
     // The curated file before the session, to verify the session produced one.
     let before = std::fs::read_to_string(ws.knowledge_file()).ok();
@@ -245,7 +263,7 @@ fn run_consolidation(
     let folded = match knowledge::validate_knowledge(&after) {
         Ok(folded) => folded,
         Err(e) => {
-            let _ = std::fs::write(run_dir.join("KNOWLEDGE.rejected.md"), &after);
+            keep_rejected_knowledge(run_dir, &after);
             let restore = match &before {
                 Some(b) => std::fs::write(ws.knowledge_file(), b),
                 None => std::fs::remove_file(ws.knowledge_file()),
@@ -274,6 +292,15 @@ fn run_consolidation(
     Ok((archived, usage))
 }
 
+/// Keep the output the structural gate rejected beside the log, for inspection.
+/// The caller reports the rejection itself, so a failed copy is only logged.
+fn keep_rejected_knowledge(run_dir: &Path, rejected: &str) {
+    let path = run_dir.join("KNOWLEDGE.rejected.md");
+    if let Err(e) = std::fs::write(&path, rejected) {
+        warn!(path = %path.display(), error = %e, "could not keep the rejected KNOWLEDGE.md");
+    }
+}
+
 /// `ralphy consolidate`: run a one-shot agent session that curates the loose
 /// knowledge notes into `KNOWLEDGE.md`, then archive the consumed notes under
 /// `knowledge/raw/`. The session's only deliverable is the curated file — the
@@ -281,6 +308,14 @@ fn run_consolidation(
 /// or no-op session leaves the notes loose for a retry.
 fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
     use ralphy_core::knowledge;
+
+    // Same subscription-quota sentinel as `run` (see the comment there).
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this is the first statement of the command on the main thread, so no \
+                  other thread exists to read the environment while it changes"
+    )]
+    std::env::set_var("ANTHROPIC_API_KEY", "");
 
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let ws = Workspace::new(&repo_root);
@@ -302,9 +337,6 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
 
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let run_dir = ws.run_dir(&stamp);
-
-    // Same subscription-quota sentinel as `run` (see the comment there).
-    std::env::set_var("ANTHROPIC_API_KEY", "");
 
     // An explicit `--model`/`--effort` wins; otherwise fall back to the vendor's
     // default pairing (opus/medium for Claude, the adapter's own for the rest).

@@ -3,13 +3,13 @@ use std::path::Path;
 
 fn jsonl_snapshot(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     std::fs::read_dir(dir)
-        .unwrap()
+        .expect("reading a directory")
         .flatten()
         .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
         .map(|entry| {
             (
                 entry.file_name().to_string_lossy().to_string(),
-                std::fs::read(entry.path()).unwrap(),
+                std::fs::read(entry.path()).expect("reading a file"),
             )
         })
         .collect()
@@ -29,7 +29,7 @@ fn run_recovery(usage: &Path, stores: &Path) -> std::process::Output {
         .env("RALPHY_KIMI_CODE_DIR", missing("kimi-code"))
         .env("RALPHY_OPENCODE_DB", missing("opencode.db"))
         .output()
-        .unwrap()
+        .expect("running ralphy")
 }
 
 #[test]

@@ -129,18 +129,18 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
         // Captured before the fold: an idle reap also clears `degraded`, and the
         // edge below would otherwise read that clear as a recovery and push
         // "API recovered, resuming" about a child Ralphy just killed.
-        let reaped = match event {
-            RunEvent::IdleReaped { idle_minutes } => Some(idle_minutes),
-            _ => None,
+        let reaped = if let RunEvent::IdleReaped { idle_minutes } = event {
+            Some(idle_minutes)
+        } else {
+            None
         };
         // A `waiting` agent is a push (ADR-0059 §2); `working`/`done` fold
         // into the card. Edge-triggered by the adapter already (it emits on a
         // change), so one event is one buzz.
-        let waiting = match &event {
-            RunEvent::AgentState { state, detail, .. } if state == "waiting" => {
-                Some(detail.clone())
-            }
-            _ => None,
+        let waiting = if let RunEvent::AgentState { state, detail, .. } = &event {
+            (state == "waiting").then(|| detail.clone())
+        } else {
+            None
         };
         // Detect the sleep edge per applied event, not once per drained batch: a
         // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain

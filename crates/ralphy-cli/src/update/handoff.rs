@@ -49,6 +49,11 @@ pub(super) fn run(daemon_pid: u32, channel: Channel, force: bool) -> Result<()> 
             log.record(&format!("error: {e:#}"));
             // The daemon that read stderr has exited. Returning the error would
             // print it into a closed pipe; the log already holds it.
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "returning the error would print it into a closed pipe, and the \
+                          exit status must be 1 without that line"
+            )]
             std::process::exit(1);
         }
     }
@@ -418,6 +423,10 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-handoff-{}-{tag}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
@@ -437,6 +446,10 @@ mod tests {
             "new"
         );
         assert!(!parked.exists());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
     }
 

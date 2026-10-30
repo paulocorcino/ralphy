@@ -259,6 +259,10 @@ mod tests {
     fn scratch(tag: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("ralphy-user-path-{}-{tag}", std::process::id()));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
@@ -270,7 +274,11 @@ mod tests {
         let zdot = Path::new("/z");
         let xdg = Path::new("/x");
         let p = |s: &str| PathBuf::from(s);
-        #[allow(clippy::type_complexity)]
+        #[expect(
+            clippy::type_complexity,
+            reason = "a table row is the shell, two configured folders, the files present and \
+                      the files expected"
+        )]
         let rows: &[(
             Option<&str>,
             Option<&Path>,
@@ -401,6 +409,10 @@ mod tests {
             format!("export EDITOR=vi\n\n{block}"),
             "a second install must not add a second block"
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -427,6 +439,10 @@ mod tests {
             "stderr: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
         let _ = std::fs::remove_dir_all(&home);
     }
 
