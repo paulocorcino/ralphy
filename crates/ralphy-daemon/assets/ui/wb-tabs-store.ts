@@ -41,6 +41,13 @@ export type TabsStoreDeps = {
   detached: DetachedFiles;
 };
 
+// A file tab of the open project at `from` or under it. A diff tab keeps its
+// path: it shows a version, not the file.
+function movedBy(t: CanvasTab, from: string, openSlug: string | null): t is CanvasTab & { path: string; project: string } {
+  if (t.kind === "diff" || t.project !== openSlug) return false;
+  return t.path === from || !!t.path?.startsWith(`${from}/`);
+}
+
 // `deps` is the shape every store takes; the tabs tell the operator through
 // the store `modals`, as they did from `shell()`.
 export function tabsStore(deps: TabsStoreDeps) {
@@ -327,8 +334,7 @@ export function tabsStore(deps: TabsStoreDeps) {
     repathTabs(from: string, to: string) {
       // Snapshot: the collision branch CLOSES a tab, which mutates `this.tabs`.
       for (const t of [...this.tabs]) {
-        if (t.kind === "diff" || t.project !== window.Alpine.store("projects").openSlug) continue;
-        if (t.path !== from && !t.path?.startsWith(`${from}/`)) continue;
+        if (!movedBy(t, from, window.Alpine.store("projects").openSlug)) continue;
         const newPath = to + t.path.slice(from.length);
         const newId = fileTabId(t.project, newPath, t.checkout);
         if (this.tabs.some((x) => x.id === newId)) {
@@ -338,15 +344,21 @@ export function tabsStore(deps: TabsStoreDeps) {
           continue;
         }
         window.WBViewer?.repath(t.id, { id: newId, path: newPath });
-        if (this.active === t.id) this.showTab(newId);
-        if (this.slot?.kind === "pin" && this.slot.id === t.id) this.slot = { kind: "pin", id: newId };
-        if (this.lastLeft === t.id) this.lastLeft = newId;
+        this.renameTabId(t.id, newId);
         t.path = newPath;
         t.id = newId;
       }
       // The viewer's own "what is shown" is keyed by id too.
       window.Alpine.nextTick(() => this.syncViewer());
       this.persistView();
+    },
+
+    // The places that name a tab by id follow its new id: the active tab,
+    // the pinned slot and the last tab on the left.
+    renameTabId(oldId: string, newId: string) {
+      if (this.active === oldId) this.showTab(newId);
+      if (this.slot?.kind === "pin" && this.slot.id === oldId) this.slot = { kind: "pin", id: newId };
+      if (this.lastLeft === oldId) this.lastLeft = newId;
     },
 
     // --- opening a Changes row into a diff tab ----------------------------

@@ -182,6 +182,29 @@ test("a folder move re-paths every tab under it and the active one, and closes a
   }
 });
 
+test("a move leaves a diff tab and a tab of another project on their path, and the last tab on the left follows its file", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.state.$store.tabs.tabs.push(
+      { id: "diff:o/r:a.js", kind: "diff", title: "a.js", path: "a.js", project: "o/r", closable: true, checkout: null },
+      { id: "file:x/y:a.js", kind: "code", title: "a.js", path: "a.js", project: "x/y", closable: true, checkout: null },
+    );
+    sh.state.$store.tabs.activate("consoles");
+    sh.state.$store.tabs.lastLeft = A;
+    sh.state.$store.tabs.repathTabs("a.js", "z.js");
+    const paths = sh.state.$store.tabs.tabs.filter((t) => t.path).map((t) => [t.id, t.path]);
+    assert.deepEqual(paths, [
+      ["file:o/r:z.js", "z.js"],
+      ["diff:o/r:a.js", "a.js"],
+      ["file:x/y:a.js", "a.js"],
+    ]);
+    assert.equal(sh.state.$store.tabs.lastLeft, "file:o/r:z.js");
+  } finally {
+    await sh.restore();
+  }
+});
+
 test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
   const sh = slotShell();
   try {
