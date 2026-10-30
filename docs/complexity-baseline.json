@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-proc-util/src/cursor.rs": {
-      "locate_cursor_with": [
-        13
-      ]
-    },
     "crates/ralphy-proc-util/src/lib.rs": {
       "tree_to_kill": [
         11

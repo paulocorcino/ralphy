@@ -28,29 +28,28 @@ pub fn locate_cursor_with(
     home: Option<PathBuf>,
     localappdata: Option<PathBuf>,
 ) -> Option<PathBuf> {
-    if let Some(found) =
-        crate::locate_program_with(NAMES[0], path_var.clone(), pathext.clone(), home.clone())
-    {
-        return Some(found);
-    }
-    // `%LOCALAPPDATA%\cursor-agent\` holds `.cmd` + `.ps1` shims for both names.
-    if let Some(root) = localappdata.as_ref().map(|p| p.join("cursor-agent")) {
-        for name in NAMES {
-            let cand = root.join(format!("{name}.cmd"));
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    // Cursor's own CI recipe names this third location.
-    if let Some(bin) = home.as_ref().map(|h| h.join(".cursor").join("bin")) {
-        for cand in [bin.join("cursor-agent.cmd"), bin.join("cursor-agent")] {
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    crate::locate_program_with(NAMES[1], path_var, pathext, home)
+    crate::locate_program_with(NAMES[0], path_var.clone(), pathext.clone(), home.clone())
+        .or_else(|| localappdata.as_deref().and_then(local_app_data_shim))
+        .or_else(|| home.as_deref().and_then(cursor_home_bin))
+        .or_else(|| crate::locate_program_with(NAMES[1], path_var, pathext, home))
+}
+
+/// `%LOCALAPPDATA%\cursor-agent\` holds `.cmd` + `.ps1` shims for both names;
+/// the first `.cmd` that exists, in [`NAMES`] order.
+fn local_app_data_shim(localappdata: &Path) -> Option<PathBuf> {
+    let root = localappdata.join("cursor-agent");
+    NAMES
+        .iter()
+        .map(|name| root.join(format!("{name}.cmd")))
+        .find(|cand| cand.is_file())
+}
+
+/// `~/.cursor/bin`, the third location Cursor's own CI recipe names.
+fn cursor_home_bin(home: &Path) -> Option<PathBuf> {
+    let bin = home.join(".cursor").join("bin");
+    [bin.join("cursor-agent.cmd"), bin.join("cursor-agent")]
+        .into_iter()
+        .find(|cand| cand.is_file())
 }
 
 /// Locate the Cursor CLI against the real environment. `None` means the vendor is
