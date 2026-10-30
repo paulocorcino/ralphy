@@ -631,10 +631,18 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   // ---- creating, closing, rendering ---------------------------------------------
 
+  // The desk's note records and fence records; none where a test has no host.
+  function deskNotes() {
+    return consoleHost?.notes?.() || [];
+  }
+  function deskFences() {
+    return consoleHost?.fenceRecords?.() || [];
+  }
+
   // One rule for both ways a card is born: the cap refuses, it does not evict
   // (see `saveNotes`); the new record lands at the end of the desk's list.
   function addCard(fields: { repo: string; checkout: string | null; path: string }, { viewport, offset }: NewNote) {
-    const records = consoleHost?.notes?.() || [];
+    const records = deskNotes();
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       ...fields,
@@ -642,7 +650,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
         viewport || { width: 0, height: 0 },
         offset || { left: 0, top: 0 },
         records.length,
-        consoleHost?.fenceRecords?.() || [],
+        deskFences(),
       ),
       locked: false,
       ts: Date.now(),
@@ -736,8 +744,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   function render() {
     const st = stage();
     if (!st) return;
-    const records = consoleHost?.notes?.() || [];
-    const fences = consoleHost?.fenceRecords?.() || [];
+    const records = deskNotes();
+    const fences = deskFences();
     const nodes = cardNodes(st);
     const seen = new Set<string>();
     for (const record of records) {

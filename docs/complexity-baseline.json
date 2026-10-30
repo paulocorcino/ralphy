@@ -15,14 +15,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
-      "addCard": [
-        12
-      ],
-      "render": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-projects-store.ts": {
       "(anonymous)": [
         11
