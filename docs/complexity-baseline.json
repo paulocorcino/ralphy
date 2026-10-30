@@ -9,11 +9,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-files-search.ts": {
-      "applySearch": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-files.ts": {
       "duplicateNode": [
         15
