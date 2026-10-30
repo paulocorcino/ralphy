@@ -163,42 +163,7 @@ export function createNoteEditor(deps: NoteEditorDeps) {
       window.WBDaemon.withCheckout({ repo: record.repo, path: record.path }, record.checkout),
     )
       .then((reply) => {
-        if (WBFail.isError(reply)) {
-          const reason = WBFail.message(reply, "Could not read the file.");
-          // A file that is not ours is not a missing note — it is someone
-          // else's file under our extension (ADR-0064 §11). The card goes and
-          // the shell says so; keeping it would put an editor over bytes and
-          // the first autosave would overwrite them.
-          if (reason === "not a note") {
-            consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
-            render();
-            sendDocument(document, "workbench:open-request", {
-              project: record.repo!,
-              path: record.path!,
-              checkout: record.checkout ?? null,
-              as: "bytes",
-            });
-            return null;
-          }
-          // The reason in the footer, beside the path that footer already
-          // shows — and the whole of it on hover, because `.note-state` is a
-          // narrow box and "not found" alone is the half that matters.
-          const said = WBFail.why(reply, "the file could not be read");
-          paintMissing(el, said, `${record.path} — ${said}`);
-          // An editor over what the card still holds — the unsaved text if
-          // there is any, and an empty document if the read is all this card
-          // ever had. Typing in it makes the card dirty, and a dirty card
-          // writes its file back. Without this the missing state is a dead
-          // end: a red line where the note was and no way to put it back.
-          if (el._noteEditor) return null;
-          // The line is repainted AFTER the mount: mounting an editor ends by
-          // clearing the footer, and the card would go translucent while
-          // saying nothing about why.
-          return mountEditor(el, el._noteMarkdown || dress(el, "")).then((mounted) => {
-            paintMissing(el, said, `${record.path} — ${said}`);
-            return mounted;
-          });
-        }
+        if (WBFail.isError(reply)) return readRefused(el, record, reply);
         el.classList.remove("missing");
         // After a reload the card remembers no save of its own, and this is
         // the only place the answer exists (`note.read` carries it).
@@ -209,6 +174,45 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         paintMissing(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         return null;
       });
+  }
+
+  // A `note.read` the daemon refused: a file that is not a note leaves the
+  // stage, any other refusal is a missing file the card keeps.
+  function readRefused(el: NoteCard, record: NoteSource, reply: ReplyOf<"note.read">) {
+    const reason = WBFail.message(reply, "Could not read the file.");
+    // A file that is not ours is not a missing note — it is someone
+    // else's file under our extension (ADR-0064 §11). The card goes and
+    // the shell says so; keeping it would put an editor over bytes and
+    // the first autosave would overwrite them.
+    if (reason === "not a note") {
+      consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
+      render();
+      sendDocument(document, "workbench:open-request", {
+        project: record.repo!,
+        path: record.path!,
+        checkout: record.checkout ?? null,
+        as: "bytes",
+      });
+      return null;
+    }
+    // The reason in the footer, beside the path that footer already
+    // shows — and the whole of it on hover, because `.note-state` is a
+    // narrow box and "not found" alone is the half that matters.
+    const said = WBFail.why(reply, "the file could not be read");
+    paintMissing(el, said, `${record.path} — ${said}`);
+    // An editor over what the card still holds — the unsaved text if
+    // there is any, and an empty document if the read is all this card
+    // ever had. Typing in it makes the card dirty, and a dirty card
+    // writes its file back. Without this the missing state is a dead
+    // end: a red line where the note was and no way to put it back.
+    if (el._noteEditor) return null;
+    // The line is repainted AFTER the mount: mounting an editor ends by
+    // clearing the footer, and the card would go translucent while
+    // saying nothing about why.
+    return mountEditor(el, el._noteMarkdown || dress(el, "")).then((mounted) => {
+      paintMissing(el, said, `${record.path} — ${said}`);
+      return mounted;
+    });
   }
 
   // The card says its file is gone — in the FOOTER, and in the dashed border
