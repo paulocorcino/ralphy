@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/daemon/register.rs": {
-      "migrate_side_stores": [
-        13
-      ]
-    },
     "crates/ralphy-cli/src/events/emitter.rs": {
       "public_ip": [
         14
