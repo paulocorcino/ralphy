@@ -117,7 +117,7 @@ fn the_explorer_opens_a_note_as_a_card() {
         );
     }
     assert!(
-        file.contains("messages?.askConfirm({"),
+        squeeze(file).contains("messages?.askConfirm({"),
         "deleting a note's FILE must ask first (ADR-0064 §11)"
     );
     // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment

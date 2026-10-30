@@ -105,7 +105,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // The DEFAULT is the whole guard: a caller that omits the option — the
     // fold's own tests, a later call site — must get the parked placeholder.
     assert!(
-        folds.contains("relaunchAgents=false}"),
+        folds.contains("relaunchAgents=false,}"),
         "an omitted `relaunchAgents` must default to false, never to launching"
     );
     // The relaunch verdict must ask for the record's OWN kind. `{ console:
