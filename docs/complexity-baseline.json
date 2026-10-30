@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-agent-cursor/src/outcome.rs": {
-      "collect_tool_results": [
-        13
-      ]
-    },
     "crates/ralphy-agent-gemini/src/revocation.rs": {
       "inspect_admin_tier": [
         13
