@@ -12,6 +12,14 @@ import { WBFail } from "./wb-fail.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
 
+/** The collections `treeMem` creates on the files component. */
+export type TreeMemory = {
+  cache: Map<string, TreeEntry[]>;
+  validated: Set<string>;
+  expanded: Map<string, string[]>;
+  hits: Map<string, number | true>;
+};
+
 /** What a level step reads, writes or calls on the files component. */
 type LevelFiles = {
   $store: AlpineMagics["$store"];
@@ -22,7 +30,7 @@ type LevelFiles = {
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
   fileIcon(title: string): string;
-  treeMem(): void;
+  treeMem(): TreeMemory;
   treeKey(rel: string): string;
   treeFresh(): void;
   treeWentStale(err: unknown): void;
@@ -41,13 +49,13 @@ type LevelFiles = {
 // changed. Nothing is cached on the daemon (ADR-0036); the revalidation
 // is not optional, since the watch is dropped when the project closes.
 export function loadTreeLevel(files: LevelFiles, rel: string): Promise<WunderbaumSource[]> {
-  files.treeMem();
+  const { cache, validated } = files.treeMem();
   const key = files.treeKey(rel);
-  const hit = files._treeCache!.get(key);
+  const hit = cache.get(key);
   if (!hit) return files.fetchTreeLevel(rel);
   // Revalidate once per level per open, deferred so the paint happens first.
-  if (!files._treeValidated!.has(key)) {
-    files._treeValidated!.add(key);
+  if (!validated.has(key)) {
+    validated.add(key);
     setTimeout(() => files.revalidateLevel(rel), 0);
   }
   return Promise.resolve(treeNodes(files, hit));
@@ -58,7 +66,7 @@ export function loadTreeLevel(files: LevelFiles, rel: string): Promise<Wunderbau
 // does NOT resolve `[]`, which is the real statement "no entries" every
 // caller acts on by replacing what is on screen.
 export function fetchTreeLevel(files: LevelFiles, rel: string): Promise<WunderbaumSource[]> {
-  files.treeMem();
+  const { cache, validated } = files.treeMem();
   const key = files.treeKey(rel);
   const payload = WBDaemon.withCheckout(
     { repo: files.$store.projects.openSlug, path: rel },
@@ -70,8 +78,8 @@ export function fetchTreeLevel(files: LevelFiles, rel: string): Promise<Wunderba
     }
     files.treeFresh();
     files.pruneTreeCache(rel, reply.entries);
-    files._treeCache!.set(key, reply.entries);
-    files._treeValidated!.add(key);
+    cache.set(key, reply.entries);
+    validated.add(key);
     return treeNodes(files, reply.entries);
   });
 }
@@ -81,28 +89,28 @@ export function fetchTreeLevel(files: LevelFiles, rel: string): Promise<Wunderba
 // directory would inherit the old one's children. A name no longer among
 // the subdirectories cannot have children, so its remembered subtree goes.
 export function pruneTreeCache(files: LevelFiles, rel: string, entries: TreeEntry[]) {
-  files.treeMem();
+  const { cache, validated } = files.treeMem();
   const dirs = new Set(entries.filter((en) => en.dir).map((en) => en.name));
   // The keys DESCENDING from `rel`; its own key (empty `child`) is what
   // this listing replaces.
   const prefix = files.treeKey(rel === "" ? "" : `${rel}/`);
-  for (const key of [...files._treeCache!.keys()]) {
+  for (const key of [...cache.keys()]) {
     if (!key.startsWith(prefix)) continue;
     const child = key.slice(prefix.length).split("/")[0];
     if (!child || dirs.has(child)) continue;
-    files._treeCache!.delete(key);
-    files._treeValidated!.delete(key);
+    cache.delete(key);
+    validated.delete(key);
   }
 }
 
 // Mark every cached level BELOW `rel` as not validated, so the next
 // `loadTreeLevel` of each paints from the cache and re-reads it.
 export function forgetValidatedBelow(files: LevelFiles, rel: string) {
-  files.treeMem();
+  const { validated } = files.treeMem();
   const prefix = files.treeKey(rel === "" ? "" : `${rel}/`);
   const own = files.treeKey(rel);
-  for (const key of [...files._treeValidated!]) {
-    if (key !== own && key.startsWith(prefix)) files._treeValidated!.delete(key);
+  for (const key of [...validated]) {
+    if (key !== own && key.startsWith(prefix)) validated.delete(key);
   }
 }
 
@@ -120,20 +128,26 @@ function treeNodes(files: LevelFiles, entries: TreeEntry[]): WunderbaumSource[] 
   });
 }
 
+// The node whose children are the level `rel`: the root for "", else its folder.
+function levelNode(files: LevelFiles, rel: string): WunderbaumNode | null {
+  if (rel !== "") return files.findFolderByRel(rel);
+  return files.rawTree()?.root ?? null;
+}
+
 // Re-read a level painted from cache and reconcile ONLY if the directory
 // changed: the common case costs one read and zero DOM work.
 export function revalidateLevel(files: LevelFiles, rel: string) {
   if (!files._tree || !files.useDaemonTree()) return Promise.resolve();
-  files.treeMem();
+  const { cache } = files.treeMem();
   const key = files.treeKey(rel);
-  const before = JSON.stringify(files._treeCache!.get(key) ?? null);
+  const before = JSON.stringify(cache.get(key) ?? null);
   const slug = files.$store.projects.openSlug;
   return files.fetchTreeLevel(rel)
     .then(() => {
       // A project switch in flight: another project's tree.
       if (slug !== files.$store.projects.openSlug || !files._tree) return;
-      if (JSON.stringify(files._treeCache!.get(key) ?? null) === before) return;
-      const node = rel === "" ? files.rawTree()!.root : files.findFolderByRel(rel);
+      if (JSON.stringify(cache.get(key) ?? null) === before) return;
+      const node = levelNode(files, rel);
       if (!node) return;
       return files.reconcileLevel(node, rel);
     })

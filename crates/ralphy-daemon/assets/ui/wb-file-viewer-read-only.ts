@@ -3,6 +3,7 @@
 // saves.
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBFail } from "./wb-fail.ts";
+import { need, required } from "./wb-dom-need.ts";
 import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
@@ -30,6 +31,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
   const { window, document, viewers, messages, alive, setPathLabel, setCaption } = deps;
   const { detachBtnHtml, detachClick, reloadFile, isNarrow, watchNarrow } = deps;
 
+  const holder = () => required(viewers, "the element that holds the panes");
+
   // --- a diff tab (read-only, two-sided) ----------------------------------
   function mountDiff(rec: BytesRecord, container: HTMLElement) {
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
@@ -39,9 +42,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         rec.mounting = false;
         // Same record-identity liveness rule as mountEditor: a diff tab closed
         // inside the boot window must mount nothing on its detached container.
-        if (!monaco || !alive(rec)) return;
+        // A diff record always carries its HEAD side; half a diff would read as "no changes".
+        if (!monaco || !alive(rec) || rec.original === undefined) return;
         const ed = WBMonaco.createDiff(container, {
-          original: rec.original!,
+          original: rec.original,
           modified: rec.content,
           path: rec.path,
           uid: rec.uid,
@@ -81,15 +85,15 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    viewers!.append(el);
+    holder().append(el);
 
-    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
+    need(el, '[data-act="find"]').onclick = () => {
       const mod = (rec.ed as MonacoDiffEditor | undefined)?.getModifiedEditor();
       mod?.focus();
       mod?.getAction("actions.find")?.run().catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     rec.el = el;
-    void mountDiff(rec, el.querySelector<HTMLElement>(".viewer-body")!);
+    void mountDiff(rec, need(el, ".viewer-body"));
   }
 
   // --- an image tab (read-only) -------------------------------------------
@@ -112,10 +116,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       </div>
       <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
     setPathLabel(el, rec);
-    viewers!.append(el);
+    holder().append(el);
 
-    const img = el.querySelector<HTMLImageElement>(".img-canvas")!;
-    const meta = el.querySelector(".img-meta")!;
+    const img = need<HTMLImageElement>(el, ".img-canvas");
+    const meta = need(el, ".img-meta");
     // The intrinsic size is only known once the bytes decode, and a decode
     // failure is worth saying out loud: the daemon verified the type, so a
     // browser that still cannot paint it means an unsupported/corrupt file.
@@ -123,14 +127,14 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     img.onerror = () => (meta.textContent = "Image could not be displayed.");
     img.src = rec.content;
 
-    el.querySelector<HTMLElement>('[data-act="zoom"]')!.onclick = (ev: MouseEvent) => {
+    need(el, '[data-act="zoom"]').onclick = (ev: MouseEvent) => {
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
       setCaption(ev.currentTarget as HTMLElement, actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand", actual ? "Fit" : "Actual size");
     };
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
+    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
+    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
   }
 
@@ -170,13 +174,13 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         <p class="refused-hint"></p>
       </div>`;
     setPathLabel(el, rec);
-    el.querySelector(".refused-text")!.textContent = refusalText(rec.refused);
+    need(el, ".refused-text").textContent = refusalText(rec.refused);
     if (rec.refused === "binary") {
-      el.querySelector(".refused-hint")!.textContent =
+      need(el, ".refused-hint").textContent =
         "This file may be text in an older encoding. Set the fallback encoding in “Settings”, or reopen the file with another encoding.";
     }
-    viewers!.append(el);
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
+    holder().append(el);
+    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
     rec.el = el;
   }
 

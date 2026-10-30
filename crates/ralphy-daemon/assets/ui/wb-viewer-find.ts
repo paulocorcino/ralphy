@@ -1,5 +1,6 @@
 // The viewer's find: the find bar of a rendered pane, and the find a code
 // editor opens seeded with a term (a content-search open).
+import { inPane } from "./wb-dom-need.ts";
 import { prepareFind } from "./wb-viewer-render.ts";
 import type { MonacoEditor } from "./wb-monaco.ts";
 import type { ViewerRecord } from "./wb-file-viewer.ts";
@@ -13,6 +14,12 @@ export type ViewerFindDeps = {
 
 export type ViewerFind = ReturnType<typeof createViewerFind>;
 
+// Whether a text node of the article is visible text that a find may mark.
+function takesText(n: Node) {
+  const parent = n.parentElement;
+  return !!n.nodeValue?.trim() && !!parent && !parent.closest("svg, script, style, button, [hidden]");
+}
+
 export function createViewerFind(deps: ViewerFindDeps) {
   const { document, alive } = deps;
 
@@ -22,7 +29,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
       const t = document.createTextNode(mk.textContent);
       mk.replaceWith(t);
     });
-    rec.el!.querySelector(".md-body")!.normalize();
+    inPane(rec, ".md-body").normalize();
     rec.hits = [];
     rec.hitIdx = -1;
   }
@@ -68,18 +75,15 @@ export function createViewerFind(deps: ViewerFindDeps) {
 
   function mdSearch(rec: ViewerRecord, term: string) {
     clearHits(rec);
-    const count = rec.el!.querySelector(".md-find-count")!;
-    const article = rec.el!.querySelector(".md-body")!;
+    const count = inPane(rec, ".md-find-count");
+    const article = inPane(rec, ".md-body");
     prepareFind(rec.kind, article, term);
     if (!term) {
       count.textContent = "";
       return;
     }
     const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) =>
-        n.nodeValue!.trim() && !n.parentElement!.closest("svg, script, style, button, [hidden]")
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT,
+      acceptNode: (n) => (takesText(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
     });
     const targets: Text[] = [];
     let node;
@@ -87,7 +91,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
     const needle = term.toLowerCase();
     const hits: HTMLElement[] = [];
     for (const text of targets) {
-      const val = text.nodeValue!;
+      const val = text.data;
       const lower = val.toLowerCase();
       let idx = lower.indexOf(needle);
       if (idx < 0) continue;
@@ -113,20 +117,23 @@ export function createViewerFind(deps: ViewerFindDeps) {
   }
 
   function mdSearchStep(rec: ViewerRecord, dir: number) {
-    if (!rec.hits || !rec.hits.length) return;
-    if (rec.hitIdx! >= 0) rec.hits[rec.hitIdx!]?.classList.remove("current");
-    rec.hitIdx = (rec.hitIdx! + dir + rec.hits.length) % rec.hits.length;
-    const mk = rec.hits[rec.hitIdx];
+    const hits = rec.hits;
+    if (!hits || !hits.length) return;
+    const before = rec.hitIdx ?? -1;
+    if (before >= 0) hits[before]?.classList.remove("current");
+    const idx = (before + dir + hits.length) % hits.length;
+    rec.hitIdx = idx;
+    const mk = hits[idx];
     if (!mk) return;
     mk.classList.add("current");
     mk.scrollIntoView({ block: "center", behavior: "smooth" });
-    rec.el!.querySelector(".md-find-count")!.textContent = `${rec.hitIdx + 1}/${rec.hits.length}`;
+    inPane(rec, ".md-find-count").textContent = `${idx + 1}/${hits.length}`;
   }
 
   function mdSearchClose(rec: ViewerRecord) {
     mdSearch(rec, "");
-    rec.el!.querySelector(".md-find")!.classList.remove("open");
-    rec.el!.querySelector<HTMLInputElement>(".md-find-input")!.value = "";
+    inPane(rec, ".md-find").classList.remove("open");
+    inPane<HTMLInputElement>(rec, ".md-find-input").value = "";
   }
 
   return { findInEditor, findInMarkdown, mdSearch, mdSearchStep, mdSearchClose };
