@@ -153,6 +153,15 @@ The count does not see code that is joined onto fewer lines. `cargo fmt` in
 the gate stops this in Rust. The TypeScript has no formatter in the gate, so
 joined lines there are found in review.
 
+*Amendment (2026-10-30): one limit of 500 for every language.* A
+TypeScript file may have 500 lines of code, as a Rust or HTML file does;
+the 700 of item 1 is gone. One limit is one rule to remember, and a
+workbench module of 500 lines is still one an agent reads whole. The
+rest of §7 does not change, so an old large file keeps its size and may
+not grow. Measured on `86f5b3b1` with `cargo run -p xtask -- oversized`:
+eight workbench modules are over the new limit, from `wb-files.ts` (687
+lines of code) to `wb-dbml.ts` (516).
+
 ## Consequences
 
 - The series is N small, reviewable, behaviour-preserving PRs that a human

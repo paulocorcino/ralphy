@@ -138,8 +138,8 @@ ubiquitous language, and each crate is roughly one bounded context.
   the gate; do not plan a change around a size. An inline
   `#[cfg(test)] mod tests { … }` block over 500 lines fails an `xtask` test;
   its message says how to move it. On a pull request, a source file over its
-  limit may not grow: 500 lines of code in Rust, 700 in TypeScript, test
-  code included, comment and blank lines not counted. A new file over the
+  limit may not grow: 500 lines of code in Rust, TypeScript and HTML,
+  test code included, comment and blank lines not counted. A new file over the
   limit fails, and so does a file that grows past it or an old large file
   that grows; an old large file may shrink. The local form:
 

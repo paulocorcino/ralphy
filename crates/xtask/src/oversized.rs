@@ -1,7 +1,7 @@
-//! `oversized` holds the size of every source file (ADR-0022 §7). A Rust
-//! file may have [`Lang::Rust`]'s limit of lines of code, a TypeScript file
-//! [`Lang::TypeScript`]'s, and an HTML file [`Lang::Html`]'s. With no argument it lists the files over
-//! their limit. With `--base <rev>` it fails when a file over its limit is
+//! `oversized` holds the size of every source file (ADR-0022 §7). A Rust,
+//! TypeScript or HTML file may have [`LIMIT`] lines of code. With no argument
+//! it lists the files over the limit. With `--base <rev>` it fails when a
+//! file over the limit is
 //! larger than at `<rev>`: an old large file may shrink but never grow, and a
 //! new file, or a file that grows past the limit, is split. The pull-request
 //! job runs it against the base branch, so no list of large files is kept by
@@ -42,26 +42,19 @@ impl Lang {
             None
         }
     }
-
-    /// Lines of code a file may have. Rust: the split threshold of ADR-0022
-    /// §5. TypeScript: the module size of ADR-0073 (its 2026-10-11
-    /// amendment), so an agent can read a workbench module whole. HTML: the
-    /// page and each part of the workbench (ADR-0080 D9).
-    fn limit(self) -> usize {
-        match self {
-            Lang::Rust | Lang::Html => 500,
-            Lang::TypeScript => 700,
-        }
-    }
 }
 
-/// A file over its limit, by its path from the repo root with `/`
+/// Lines of code a source file may have, in every language: the split
+/// threshold of ADR-0022 §5, which its 2026-10-30 amendment applies to
+/// TypeScript and HTML too.
+const LIMIT: usize = 500;
+
+/// A file over the limit, by its path from the repo root with `/`
 /// separators.
 #[derive(Debug)]
 struct Oversized {
     path: String,
     lines: usize,
-    limit: usize,
 }
 
 pub fn oversized_cmd(args: &[String]) -> Result<()> {
@@ -74,7 +67,7 @@ pub fn oversized_cmd(args: &[String]) -> Result<()> {
     let over = measure(&root)?;
     let Some(base) = base else {
         for file in &over {
-            println!("{}\t{}\t{}", file.path, file.lines, file.limit);
+            println!("{}\t{}\t{LIMIT}", file.path, file.lines);
         }
         return Ok(());
     };
@@ -99,7 +92,7 @@ pub fn oversized_cmd(args: &[String]) -> Result<()> {
     )
 }
 
-/// Every source file under `crates/` that is over its limit, sorted by path.
+/// Every source file under `crates/` that is over the limit, sorted by path.
 fn measure(root: &Path) -> Result<Vec<Oversized>> {
     let mut files = Vec::new();
     collect_sources(&root.join("crates"), &mut files)?;
@@ -108,11 +101,10 @@ fn measure(root: &Path) -> Result<Vec<Oversized>> {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         let lines = lines_of_code(lang, &text);
-        if lines > lang.limit() {
+        if lines > LIMIT {
             over.push(Oversized {
                 path: rel_path(root, &path)?,
                 lines,
-                limit: lang.limit(),
             });
         }
     }
@@ -120,14 +112,14 @@ fn measure(root: &Path) -> Result<Vec<Oversized>> {
     Ok(over)
 }
 
-/// The error for a file over its limit that has more lines of code than the
+/// The error for a file over the limit that has more lines of code than the
 /// `before` it had at the base. A file the base does not have, under its
 /// path, has 0 lines there.
 fn growth_error(file: &Oversized, before: usize) -> Option<String> {
     (file.lines > before).then(|| {
         format!(
-            "{}: {before} -> {} lines of code, over the limit of {}",
-            file.path, file.lines, file.limit
+            "{}: {before} -> {} lines of code, over the limit of {LIMIT}",
+            file.path, file.lines
         )
     })
 }
@@ -294,19 +286,37 @@ mod tests {
     }
 
     #[test]
-    fn each_language_has_its_limit() {
-        assert_eq!(Lang::of("lib.rs").map(Lang::limit), Some(500));
-        assert_eq!(Lang::of("wb-desk.ts").map(Lang::limit), Some(700));
-        assert_eq!(Lang::of("globals.d.ts").map(Lang::limit), Some(700));
-        assert_eq!(Lang::of("app.js"), None);
-    }
-
-    #[test]
-    fn html_has_a_limit_of_500_code_lines() {
-        assert_eq!(Lang::of("index.html").map(Lang::limit), Some(500));
+    fn every_language_has_a_limit_of_500_code_lines() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root = dir.path();
+        for (rel, lines, line) in [
+            ("crates/a/src/big.rs", 501, "let a = 1;\n"),
+            ("crates/a/src/fits.rs", 500, "let a = 1;\n"),
+            ("crates/ui/big.ts", 501, "const a = 1;\n"),
+            ("crates/ui/fits.ts", 500, "const a = 1;\n"),
+            ("crates/ui/globals.d.ts", 501, "declare const a: 1;\n"),
+            ("crates/ui/big.part.html", 501, "<p>x</p>\n"),
+            ("crates/ui/fits.html", 500, "<p>x</p>\n"),
+            ("crates/ui/app.js", 501, "const a = 1;\n"),
+        ] {
+            let path = root.join(rel);
+            let parent = path.parent().expect("a relative path with a parent");
+            std::fs::create_dir_all(parent).expect("create the parent");
+            std::fs::write(&path, line.repeat(lines)).expect("write the file");
+        }
+        let over: Vec<String> = measure(root)
+            .expect("measure")
+            .into_iter()
+            .map(|file| file.path)
+            .collect();
         assert_eq!(
-            Lang::of("wb-hosts-dialog.part.html").map(Lang::limit),
-            Some(500)
+            over,
+            [
+                "crates/a/src/big.rs",
+                "crates/ui/big.part.html",
+                "crates/ui/big.ts",
+                "crates/ui/globals.d.ts",
+            ]
         );
     }
 
@@ -352,7 +362,6 @@ of three lines -->
         let file = Oversized {
             path: "crates/a/ui/index.html".to_string(),
             lines: lines_of_code(Lang::Html, &page(501)),
-            limit: 500,
         };
         assert_eq!(file.lines, 501);
         let grown = growth_since(&file, &page(500)).expect("it grew by one code line");
@@ -368,7 +377,6 @@ of three lines -->
         let file = Oversized {
             path: "crates/a/src/big.rs".to_string(),
             lines: 900,
-            limit: 500,
         };
         assert_eq!(growth_error(&file, 900), None, "the same size");
         assert_eq!(growth_error(&file, 950), None, "it shrank");
