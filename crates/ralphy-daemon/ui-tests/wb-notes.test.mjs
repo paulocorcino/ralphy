@@ -392,6 +392,20 @@ test("the card on top is put back before its card leaves the stage", () => {
   assert.equal(card._noteShadow, null);
 });
 
+test("in a fence's popup, a card the desk does not hold floats on the record it was handed", () => {
+  const record = { id: "o", repo: "r", path: "a.note", rect: RECT };
+  const { notes } = onStage({ records: [] });
+  notes.mountDetached(record);
+  const real = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  try {
+    assert.equal(notes.keepOnTop("o"), true);
+  } finally {
+    globalThis.getComputedStyle = real;
+  }
+  assert.equal(notes.cardEl("o").classList.contains("on-top"), true);
+});
+
 test("a render builds no card for a note whose fence is in a popup", () => {
   const home = { id: "home", repo: "r", path: "a.note", rect: { left: 500, top: 500, width: 10, height: 10 } };
   const away = { id: "away", repo: "r", path: "b.note", rect: RECT };
