@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/host/checks.rs": {
-      "parse_facts": [
-        12
-      ]
-    },
     "crates/ralphy-cli/src/host/install.rs": {
       "install": [
         11
