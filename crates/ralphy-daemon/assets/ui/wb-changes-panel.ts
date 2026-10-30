@@ -22,6 +22,7 @@
 import { component } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
+import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-types.d.ts";
 
 export function wbChanges() {
@@ -150,11 +151,7 @@ export function wbChanges() {
         this._reportCurrent(slug);
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
-        const branch = WBChanges.headBranch(sync);
-        const p = this.$store.checkouts.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        if (p && branch !== null && p.branch !== branch) this.$store.projects.setRowGit(p, { branch });
-        const head = WBChanges.headOf(sync);
-        if (p && head !== null) this.$store.projects.setRowGit(p, { head });
+        if (!this.$store.checkouts.checkoutOf(slug)) primaryReadMovesRow(this.$store.projects, slug, sync);
       } catch {
         if (seq === this._syncSeq) {
           this.syncFailed(slug, "the daemon did not answer");
@@ -500,4 +497,15 @@ export function wbChanges() {
       this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
     },
   });
+}
+
+// A sync read of the primary tree of `slug` moves the branch and the head of
+// its project row.
+function primaryReadMovesRow(projects: ProjectsStore, slug: string, sync: Sync) {
+  const p = projects.projects.find((x) => projects.repoRef(x) === slug);
+  if (!p) return;
+  const branch = WBChanges.headBranch(sync);
+  if (branch !== null && p.branch !== branch) projects.setRowGit(p, { branch });
+  const head = WBChanges.headOf(sync);
+  if (head !== null) projects.setRowGit(p, { head });
 }
