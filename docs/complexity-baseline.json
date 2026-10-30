@@ -76,11 +76,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-spend-panel.ts": {
-      "loadLedger": [
-        14
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-spend.ts": {
       "state": [
         13
