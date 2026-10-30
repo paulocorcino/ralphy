@@ -108,7 +108,8 @@ fn the_explorer_opens_a_note_as_a_card() {
     // records: an automated browser dismisses them by default, which turns
     // a guarded click into a silently cancelled one.
     let stage = include_str!("../../assets/ui/wb-notes-stage.ts");
-    for js in [notes, stage, file] {
+    let chrome = include_str!("../../assets/ui/wb-notes-chrome.ts");
+    for js in [notes, stage, file, chrome] {
         assert!(
             !js.contains("window.confirm(") && !js.contains("window.prompt("),
             "a note's file actions must use the workbench's own dialog and field"
