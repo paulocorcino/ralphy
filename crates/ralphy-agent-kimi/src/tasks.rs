@@ -136,7 +136,7 @@ pub fn consolidate_knowledge(
 ) -> Result<Usage> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
-    std::fs::create_dir_all(run_dir).ok();
+    std::fs::create_dir_all(run_dir).context("creating the run directory")?;
     let model = resolve_init_kimi_model(model);
 
     info!(%model, "consolidating knowledge with kimi");
