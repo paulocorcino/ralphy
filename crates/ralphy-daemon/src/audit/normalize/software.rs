@@ -130,6 +130,15 @@ pub(super) fn browser(
     ua: &str,
     os: Option<Os>,
 ) -> (Option<Field<Browser>>, Option<String>) {
+    match browser_from_brands(brands) {
+        Some((b, v)) => (field(b, Source::Hint), Some(major_minor(v))),
+        None => browser_from_ua(ua, os),
+    }
+}
+
+/// A browser the client hints name, with its version: a named brand first,
+/// then Chromium.
+fn browser_from_brands(brands: &[(String, String)]) -> Option<(Browser, &String)> {
     let named = |name: &str| match name {
         "Microsoft Edge" => Some(Browser::Edge),
         "Google Chrome" => Some(Browser::Chrome),
@@ -137,7 +146,7 @@ pub(super) fn browser(
         "Samsung Internet" => Some(Browser::Samsung),
         _ => None,
     };
-    if let Some((b, v)) = brands
+    brands
         .iter()
         .find_map(|(n, v)| named(n).map(|b| (b, v)))
         .or_else(|| {
@@ -146,9 +155,10 @@ pub(super) fn browser(
                 .find(|(n, _)| n == "Chromium")
                 .map(|(_, v)| (Browser::Chromium, v))
         })
-    {
-        return (field(b, Source::Hint), Some(major_minor(v)));
-    }
+}
+
+/// The browser that the user agent string names, when no hint named one.
+fn browser_from_ua(ua: &str, os: Option<Os>) -> (Option<Field<Browser>>, Option<String>) {
     const TOKENS: &[(&str, Browser)] = &[
         ("EdgiOS/", Browser::Edge),
         ("EdgA/", Browser::Edge),
