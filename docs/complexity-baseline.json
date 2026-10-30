@@ -44,11 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/ui/presenter.rs": {
-      "run": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
       "sepOf": [
         11
