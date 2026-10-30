@@ -20,6 +20,7 @@ import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
+import type { BoardLabel } from "./wb-kanban.ts";
 import type { BoardIssue, BoardRow, ReadyPlan, RunPill, Timer } from "./wb-shell-types.d.ts";
 
 export function wbBoard() {
@@ -195,28 +196,15 @@ export function wbBoard() {
       // must never delay the rows.
       this.loadPlan(this.$store.projects.openSlug);
       try {
-        const reply = await Promise.race([
-          window.WBDaemon.observe("board.list", { repo: slug }),
-          new Promise<never>((_, rej) =>
-            setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
-          ),
-        ]);
+        const reply = await boardFold(slug, this.BOARD_FOLD_TIMEOUT_MS);
         if (WBFail.isError(reply)) {
           const msg = WBFail.failed(reply, "Could not load the board.");
           this.$store.board.boardReadFailed(slug, msg);
           this.$store.modals.flash(msg);
           return;
         }
-        const board = reply.board || {};
-        const issues = (board.issues || []).map((r) => this.boardRowToIssue(r));
-        // A Map, so a label named `constructor` reads as missing. A blank
-        // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
-        const colors = new Map<string, string>();
-        for (const l of board.labels || []) {
-          if (!l.color) continue;
-          colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
-        }
-        this.$store.board.boardReadOk(slug, issues, colors);
+        const fold = readFold(reply.board, (r) => this.boardRowToIssue(r));
+        this.$store.board.boardReadOk(slug, fold.issues, fold.colors);
         // Fold rows carry `body: ""`: re-merge the open drawer's detail or it
         // goes blank on every refresh.
         if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
@@ -266,7 +254,7 @@ export function wbBoard() {
         reason: row.reason ?? row.state_reason ?? null,
         labels: row.labels || [],
         assignees: row.assignees || [],
-        blockedBy: row.blocked_by || row.blockedBy || [],
+        blockedBy: rowBlockers(row),
         created: row.created || "",
         updated: row.updated || "",
         body: "",
@@ -383,11 +371,11 @@ export function wbBoard() {
           fail(WBFail.failed(reply, "Could not load the issue."));
           return;
         }
-        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
+        const detail = shownIssue(reply);
+        if (!detail) {
           fail("Could not load the issue.");
           return;
         }
-        const detail = reply.issue;
         if (stale()) return;
         if (!this.$store.board.issueDetailRead(slug!, number, detail)) return;
         // Success owns the banner too: this one may land second.
@@ -524,4 +512,42 @@ export function wbBoard() {
       this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
     },
   });
+}
+
+// The `board.list` reply for the repo `slug`, or a rejection after `timeoutMs`.
+function boardFold(slug: string, timeoutMs: number) {
+  return Promise.race([
+    window.WBDaemon.observe("board.list", { repo: slug }),
+    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("board fold timed out")), timeoutMs)),
+  ]);
+}
+
+// The issues of a board fold, in the shape that `toIssue` makes, and the
+// colors of its labels.
+function readFold<T>(board: DaemonReplies["board.list"]["board"], toIssue: (row: BoardRow) => T) {
+  const b = board || {};
+  return { issues: (b.issues || []).map(toIssue), colors: labelColors(b.labels) };
+}
+
+// The repo's label colors by label name. A Map, so a label named
+// `constructor` reads as missing. A blank color is skipped: a bare "#" is
+// truthy and masks `labelColor`'s fallback.
+function labelColors(labels: BoardLabel[] | undefined) {
+  const colors = new Map<string, string>();
+  for (const l of labels || []) {
+    if (!l.color) continue;
+    colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
+  }
+  return colors;
+}
+
+// The issues that block a fold row, under either name the fold uses.
+function rowBlockers(row: BoardRow) {
+  return row.blocked_by || row.blockedBy || [];
+}
+
+// The issue of an `issue.show` reply, or null when the reply carries none.
+function shownIssue(reply: ReplyOf<"issue.show">) {
+  if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") return null;
+  return reply.issue;
 }

@@ -1,17 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-board.ts": {
-      "boardRowToIssue": [
-        11
-      ],
-      "loadBoard": [
-        15
-      ],
-      "loadIssueDetail": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-changes-panel.ts": {
       "loadSync": [
         13
