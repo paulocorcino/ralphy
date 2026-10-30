@@ -370,6 +370,25 @@ function refocusAfterPaint(tabActive: boolean, columnIds: readonly (string | nul
   if (want && (want !== before || moved)) WBConsole.focusColumn(want);
 }
 
+// `setColumns` writes only a change, and an ignored grid meets an empty one:
+// the restored grid `next` is written back when it differs from the stored
+// `raw`. A flat list stored before rows is written back as a grid.
+function writeBackColumns(raw: unknown, next: Grid) {
+  if (next.length && JSON.stringify(raw) !== JSON.stringify(next)) {
+    window.WBView?.patch({ columns: WBColumns.toStored(next) });
+  }
+  if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
+}
+
+// The number of columns a paint shows: the measured cap when a console leads
+// the columns, else 1. Null while the consoles tab is hidden: it measures 0
+// wide, which reads as a cap of 1, so the painted columns stay as they are
+// until the tab shows again.
+function paintCap(lead: string | undefined, columnCap: () => number) {
+  if (lead && !WBConsole.columnMeasure().viewport) return null;
+  return lead ? columnCap() : 1;
+}
+
 export function wbColumns() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
@@ -421,12 +440,7 @@ export function wbColumns() {
       const raw = stored?.columns ?? null;
       const next = WBColumns.fromStored(raw, WBConsole.deskRecords());
       this.setColumns(next);
-      // `setColumns` writes only a change; an ignored grid meets an empty one.
-      // A flat list stored before rows is written back as a grid.
-      if (next.length && JSON.stringify(raw) !== JSON.stringify(next)) {
-        window.WBView?.patch({ columns: WBColumns.toStored(next) });
-      }
-      if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
+      writeBackColumns(raw, next);
       if (next.length) this.paintColumns({ raise: true });
     },
     effectiveColumns(fromId: string): Grid {
@@ -475,11 +489,8 @@ export function wbColumns() {
       // The KEPT grid is stored, never the painted slice: a console the cap
       // hides comes back when the cap grows again.
       this.setColumns(keptIds.length >= 2 ? kept : []);
-      const left = columnLead(this.columnIds());
-      // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
-      // the painted columns as they are until the tab shows again.
-      if (left && !WBConsole.columnMeasure().viewport) return;
-      const cap = left ? this.columnCap() : 1;
+      const cap = paintCap(columnLead(this.columnIds()), () => this.columnCap());
+      if (cap === null) return;
       const before = WBConsole.focusedId();
       const painted = WBColumns.painted(this.columns, cap);
       const ids = painted.map((p) => p.id);

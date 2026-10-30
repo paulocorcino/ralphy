@@ -1,14 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-consoles-tab.ts": {
-      "paintColumns": [
-        12
-      ],
-      "restoreColumns": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-daemon.ts": {
       "onMessage": [
         13
