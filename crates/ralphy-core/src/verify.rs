@@ -14,7 +14,7 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -125,14 +125,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     let started = Instant::now();
     // An empty argv cannot be run; treat it as a spawn failure so the gate stops.
     let Some((program, rest)) = argv.split_first() else {
-        return CommandOutcome {
-            argv: argv.to_vec(),
-            exit_code: None,
-            timed_out: false,
-            spawn_failed: true,
-            output_tail: "empty command".into(),
-            secs: 0.0,
-        };
+        return spawn_failure(argv, "empty command".into());
     };
 
     // Resolve the program so the gate's no-shell argv spawn (ADR-0011) still finds
@@ -155,16 +148,7 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     ralphy_proc_util::no_window(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => {
-            return CommandOutcome {
-                argv: argv.to_vec(),
-                exit_code: None,
-                timed_out: false,
-                spawn_failed: true,
-                output_tail: format!("failed to spawn `{program}`: {e}"),
-                secs: 0.0,
-            };
-        }
+        Err(e) => return spawn_failure(argv, format!("failed to spawn `{program}`: {e}")),
     };
 
     // Drain stdout+stderr concurrently so neither pipe can fill and wedge the
@@ -176,46 +160,10 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
     let stderr = child.stderr.take();
     let (tx_out, rx_out) = mpsc::channel::<Vec<u8>>();
     let (tx_err, rx_err) = mpsc::channel::<Vec<u8>>();
-    let out_handle = stdout.map(|mut s| {
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = s.read_to_end(&mut buf);
-            let _ = tx_out.send(buf);
-        })
-    });
-    let err_handle = stderr.map(|mut s| {
-        thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = s.read_to_end(&mut buf);
-            let _ = tx_err.send(buf);
-        })
-    });
+    let out_handle = stdout.map(|s| drain(s, tx_out));
+    let err_handle = stderr.map(|s| drain(s, tx_err));
 
-    let mut timed_out = false;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                // The operator's stop (docs/adr/0054). The gate is the run's OTHER
-                // long-lived child — a full test suite here is routinely minutes —
-                // so without this check a stop would be swallowed until
-                // `verify_timeout` elapsed, which is the one wait an operator
-                // watching a Stop button will not forgive.
-                //
-                // Reported as `timed_out` because [`CommandOutcome`] has no third
-                // state and a stopped gate genuinely did not pass. Nothing
-                // downstream misreads it: the run is unwinding on a `StopReason`
-                // by the time this outcome is folded, so the gate's verdict never
-                // becomes the reason the run halted.
-                if crate::stop::requested() || Instant::now() >= deadline {
-                    timed_out = true;
-                    break None;
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => break None,
-        }
-    };
+    let (status, timed_out) = wait_until(&mut child, deadline);
 
     // Teardown BEFORE collection, on every path: kill the whole tree — not just
     // the direct `sh`/`bash` — so a descendant that inherited the pipes (a dev
@@ -249,6 +197,60 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         spawn_failed: false,
         output_tail: tail(&combined),
         secs: started.elapsed().as_secs_f64(),
+    }
+}
+
+/// The outcome of a command that never ran: an empty argv or a failed spawn.
+fn spawn_failure(argv: &[String], output_tail: String) -> CommandOutcome {
+    CommandOutcome {
+        argv: argv.to_vec(),
+        exit_code: None,
+        timed_out: false,
+        spawn_failed: true,
+        output_tail,
+        secs: 0.0,
+    }
+}
+
+/// Read one of the child's pipes to its end on a thread of its own, and send
+/// the bytes over `tx`.
+fn drain<R: Read + Send + 'static>(
+    mut pipe: R,
+    tx: mpsc::Sender<Vec<u8>>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = pipe.read_to_end(&mut buf);
+        let _ = tx.send(buf);
+    })
+}
+
+/// Poll the child until it exits, the operator stops the run, or `deadline`
+/// passes. Returns its exit status (`None` when it did not exit or the poll
+/// failed) and whether the wait was cut short.
+fn wait_until(child: &mut Child, deadline: Instant) -> (Option<ExitStatus>, bool) {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return (Some(status), false),
+            Ok(None) => {
+                // The operator's stop (docs/adr/0054). The gate is the run's OTHER
+                // long-lived child — a full test suite here is routinely minutes —
+                // so without this check a stop would be swallowed until
+                // `verify_timeout` elapsed, which is the one wait an operator
+                // watching a Stop button will not forgive.
+                //
+                // Reported as `timed_out` because [`CommandOutcome`] has no third
+                // state and a stopped gate genuinely did not pass. Nothing
+                // downstream misreads it: the run is unwinding on a `StopReason`
+                // by the time this outcome is folded, so the gate's verdict never
+                // becomes the reason the run halted.
+                if crate::stop::requested() || Instant::now() >= deadline {
+                    return (None, true);
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return (None, false),
+        }
     }
 }
 
