@@ -294,14 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/release_cmds.rs": {
-      "bump_cmd": [
-        15
-      ],
-      "changelog_cmd": [
-        14
-      ]
-    },
     "crates/xtask/src/ui_copy.rs": {
       "to_markdown": [
         15

@@ -67,23 +67,13 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
     let Some(version) = version else {
         bail!("nothing to do: pass --check, --pending or --release <version>");
     };
-    let date = match date {
-        Some(d) => d,
-        None => today(),
-    };
+    let date = date.unwrap_or_else(today);
     let out = out.unwrap_or_else(|| root.join("target/changelog"));
 
     let history_path = root.join("changelog.json");
     let mut history = load_history(&history_path)?;
-    // Folding a version twice is not idempotent, it is destructive: the first
-    // fold consumed the fragments, so the second one folds an empty set over a
-    // good record and the entries are gone with their sources. A retried CI
-    // step or a corrected --date is enough to reach it.
-    if !force && history.releases.iter().any(|r| r.version == version) {
-        bail!(
-            "{version} is already in the record and its fragments were consumed by that fold; \
-             re-run with --force only to replace what it recorded"
-        );
+    if !force {
+        refuse_a_second_fold(&history, &version)?;
     }
     fold(&mut history, &version, &date, entries);
     let record = history
@@ -99,16 +89,7 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
     let changelog_path = root.join("CHANGELOG.md");
     atomic_write(&changelog_path, render_changelog(&history).as_bytes())?;
 
-    std::fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
-    std::fs::write(out.join("notes.md"), render_notes(&record))
-        .with_context(|| format!("writing the notes into {}", out.display()))?;
-    // A plain file rather than stdout: the release workflow reads it with `cat`,
-    // and the runner has no JSON tooling guaranteed on every platform.
-    std::fs::write(
-        out.join("announce"),
-        if record.announce { "yes\n" } else { "no\n" },
-    )
-    .with_context(|| format!("writing the announce flag into {}", out.display()))?;
+    write_release_body(&out, &render_notes(&record), record.announce)?;
 
     // The fragments are consumed: their content now lives in the history, and
     // leaving them would fold them into the next release as well.
@@ -117,17 +98,51 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
     println!(
         "{version} folded: {} user-visible {}, announce={}",
         record.entries.len(),
-        if record.entries.len() == 1 {
-            "entry"
-        } else {
-            "entries"
-        },
+        entry_noun(record.entries.len()),
         record.announce
     );
     println!("  {}", changelog_path.display());
     println!("  {}", history_path.display());
     println!("  {}", out.join("notes.md").display());
     Ok(())
+}
+
+/// Folding a version twice is not idempotent, it is destructive: the first
+/// fold consumed the fragments, so the second one folds an empty set over a
+/// good record and the entries are gone with their sources. A retried CI
+/// step or a corrected --date is enough to reach it.
+fn refuse_a_second_fold(history: &crate::changelog::History, version: &str) -> Result<()> {
+    if history.releases.iter().any(|r| r.version == version) {
+        bail!(
+            "{version} is already in the record and its fragments were consumed by that fold; \
+             re-run with --force only to replace what it recorded"
+        );
+    }
+    Ok(())
+}
+
+/// The release body the release workflow publishes: `notes.md` and the
+/// `announce` flag in `out`.
+fn write_release_body(out: &Path, notes: &str, announce: bool) -> Result<()> {
+    std::fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
+    std::fs::write(out.join("notes.md"), notes)
+        .with_context(|| format!("writing the notes into {}", out.display()))?;
+    // A plain file rather than stdout: the release workflow reads it with `cat`,
+    // and the runner has no JSON tooling guaranteed on every platform.
+    std::fs::write(
+        out.join("announce"),
+        if announce { "yes\n" } else { "no\n" },
+    )
+    .with_context(|| format!("writing the announce flag into {}", out.display()))?;
+    Ok(())
+}
+
+fn entry_noun(count: usize) -> &'static str {
+    if count == 1 {
+        "entry"
+    } else {
+        "entries"
+    }
 }
 
 /// Render the release body for a version already in the record — what the
@@ -162,14 +177,7 @@ fn write_notes(root: &Path, wanted: &str, out: &Path) -> Result<()> {
         }
     };
 
-    std::fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
-    std::fs::write(out.join("notes.md"), body)
-        .with_context(|| format!("writing the notes into {}", out.display()))?;
-    std::fs::write(
-        out.join("announce"),
-        if announce { "yes\n" } else { "no\n" },
-    )
-    .with_context(|| format!("writing the announce flag into {}", out.display()))?;
+    write_release_body(out, &body, announce)?;
     println!(
         "{wanted}: notes written to {}, announce={announce}",
         out.display()
@@ -278,44 +286,12 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
     semver::Version::parse(&version)
         .with_context(|| format!("`{version}` is not a version Cargo will accept"))?;
 
+    let staged = stage_bumps(&root, &version)?;
     let mut moved = Vec::new();
-    let crates_dir = root.join("crates");
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&crates_dir)
-        .with_context(|| format!("reading {}", crates_dir.display()))?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.is_dir())
-        .collect();
-    dirs.sort();
-
-    // Staged, not written as we go: a failure halfway through used to leave the
-    // workspace half-bumped with no way back.
-    let mut staged: Vec<(PathBuf, String)> = Vec::new();
-    for dir in dirs {
-        let manifest = dir.join("Cargo.toml");
-        let Ok(text) = std::fs::read_to_string(&manifest) else {
-            continue;
-        };
-        // `publish = false` marks the out-of-band tooling, which is pinned at
-        // 0.0.0 on purpose and does not ride the release train.
-        if text.contains("publish = false") {
-            continue;
-        }
-        let Some(replaced) = replace_package_version(&text, &version) else {
-            continue;
-        };
-        if replaced != text {
-            staged.push((manifest, replaced));
-            moved.push(
-                dir.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("?")
-                    .to_string(),
-            );
-        }
-    }
-    for (manifest, text) in staged {
+    for (name, manifest, text) in staged {
         std::fs::write(&manifest, text)
             .with_context(|| format!("writing {}", manifest.display()))?;
+        moved.push(name);
     }
 
     if moved.is_empty() {
@@ -329,6 +305,50 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
         println!("run `cargo check --workspace` to move Cargo.lock with them");
     }
     Ok(())
+}
+
+/// The crates under `<root>/crates` that move to `version`, in directory
+/// order: each crate's name, its manifest, and the manifest's new text.
+fn stage_bumps(root: &Path, version: &str) -> Result<Vec<(String, PathBuf, String)>> {
+    let crates_dir = root.join("crates");
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(&crates_dir)
+        .with_context(|| format!("reading {}", crates_dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .collect();
+    dirs.sort();
+
+    // Staged, not written as we go: a failure halfway through used to leave the
+    // workspace half-bumped with no way back.
+    let mut staged = Vec::new();
+    for dir in dirs {
+        let manifest = dir.join("Cargo.toml");
+        if let Some(replaced) = bumped_manifest(&manifest, version) {
+            let name = dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+                .to_string();
+            staged.push((name, manifest, replaced));
+        }
+    }
+    Ok(staged)
+}
+
+/// The new text of the manifest at `manifest` with its package at `version`.
+/// `None` when the file cannot be read, does not ride the release train, has
+/// no version line, or already reads `version`.
+fn bumped_manifest(manifest: &Path, version: &str) -> Option<String> {
+    let Ok(text) = std::fs::read_to_string(manifest) else {
+        return None;
+    };
+    // `publish = false` marks the out-of-band tooling, which is pinned at
+    // 0.0.0 on purpose and does not ride the release train.
+    if text.contains("publish = false") {
+        return None;
+    }
+    let replaced = replace_package_version(&text, version)?;
+    (replaced != text).then_some(replaced)
 }
 
 /// Replace the `[package]` version line — the first bare `version = "..."` in
