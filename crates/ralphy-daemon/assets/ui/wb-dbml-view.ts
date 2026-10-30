@@ -22,8 +22,8 @@ import { groupTables } from "./wb-dbml-groups.ts";
 import type { DbmlColumn, DbmlEndpoint, DbmlRef, DbmlSchema, DbmlTable } from "./wb-dbml.ts";
 // The two modules import each other; both use the other only inside a function
 // that runs after both have loaded.
-import { drawDiagram, slugOf } from "./wb-viewer-render.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { openZoom } from "./wb-zoom-overlay.ts";
 
 type Ctx = {

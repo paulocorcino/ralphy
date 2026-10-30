@@ -3,9 +3,10 @@
 // body itself is `wb-viewer-render.ts`.
 import { sendDocument } from "./wb-events.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
-import { drawDiagram, isRendered, renderBody, slugOf } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
+import { isRendered, renderBody } from "./wb-viewer-render.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import type { MonacoEditor } from "./wb-monaco.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";

@@ -40,7 +40,7 @@ import { createViewerReadOnly } from "./wb-file-viewer-read-only.ts";
 import type { ViewerMarkdown } from "./wb-viewer-markdown.ts";
 import type { ReopenBytes } from "./wb-viewer-save.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 
 /**
  * One open file pane. `open` fills the first group; the rest appear as the

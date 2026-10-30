@@ -3,7 +3,8 @@
 // heading that a `#fragment` link names.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isRendered, renderBody, slugOf } from "../assets/ui/wb-viewer-render.ts";
+import { slugOf } from "../assets/ui/wb-dbml-draw.ts";
+import { isRendered, renderBody } from "../assets/ui/wb-viewer-render.ts";
 
 test("isRendered names the kinds the rendered pane shows", () => {
   // [kind, shown by the rendered pane]

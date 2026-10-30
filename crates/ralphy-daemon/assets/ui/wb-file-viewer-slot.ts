@@ -8,7 +8,7 @@ import { isRendered } from "./wb-viewer-render.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 
 /** The mirror: a second editor over a pane's model, in a `.viewer` of its own. */
 type Mirror = {

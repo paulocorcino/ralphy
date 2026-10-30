@@ -158,8 +158,8 @@ fn vendored_crepe_states_its_recipe() {
             include_str!("../../vendor-build/crepe/entry.js"),
         ),
         (
-            "wb-viewer-render.ts",
-            include_str!("../../assets/ui/wb-viewer-render.ts"),
+            "wb-dbml-draw.ts",
+            include_str!("../../assets/ui/wb-dbml-draw.ts"),
         ),
     ] {
         assert!(
