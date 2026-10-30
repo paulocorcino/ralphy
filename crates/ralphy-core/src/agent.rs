@@ -22,7 +22,7 @@ pub trait Agent {
     fn plan(&self, issue: &Issue, ws: &Workspace) -> Result<Plan>;
 
     /// Carry out the plan, committing onto the workspace's current branch.
-    /// Returns the domain [`Outcome`] paired with the phase's token [`crate::Usage`]
+    /// Returns the domain [`crate::Outcome`] paired with the phase's token [`crate::Usage`]
     /// in an [`Execution`] (ADR-0008 D4).
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution>;
 }
