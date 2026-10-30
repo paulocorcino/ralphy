@@ -14,7 +14,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
 import type { ConsoleTerm, ConsoleWin, DeskRecord, DeskSessionFields, DeskWindowFields, ExtentOpts, Presentation, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";

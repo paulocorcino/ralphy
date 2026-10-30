@@ -18,7 +18,7 @@ import { inTab } from "./wb-console-place.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
 
 const { keyboardInset } = WBConsoleInput;

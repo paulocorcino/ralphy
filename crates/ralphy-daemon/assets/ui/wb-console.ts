@@ -47,7 +47,7 @@ import { WBView } from "./wb-client-view.ts";
 import { createMessages } from "./wb-messages.ts";
 import { buildConsoleApi } from "./wb-console-api.ts";
 import { createScrollProbe } from "./wb-console-probe.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleOpts, ConsoleWin, DeskChange, DeskFence } from "./wb-types.d.ts";
 

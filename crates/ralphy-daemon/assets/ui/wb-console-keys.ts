@@ -10,7 +10,7 @@
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { touchInput } from "./wb-viewport.ts";
 import type { WBView } from "./wb-client-view.ts";
-import type { TerminalDeps } from "./wb-console-terminal.ts";
+import type { TerminalDeps } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
 
 const { keyBarVisible, terminalInputMode, pasteOffered, pasteAfterRead, stepFont, clipboardContent, FONT_DEFAULT } = WBConsoleInput;

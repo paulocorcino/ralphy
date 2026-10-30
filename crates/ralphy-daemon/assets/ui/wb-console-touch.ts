@@ -8,7 +8,7 @@
    terminal; the folds it applies are `wb-console-input.ts` (#621).
 --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ScrollWatch } from "./wb-console-probe.ts";
 
 const { touchScrollLines, touchScrollTarget, touchGesture, touchCentroid, flingStep, selectionRow, FLING_MIN } =

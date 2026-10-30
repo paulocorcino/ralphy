@@ -21,7 +21,7 @@ import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-desk-popups.ts
 import type { DetachReason } from "./wb-console-session.ts";
 import type { FenceList } from "./wb-stage-fence-list.ts";
 import type { DetachMessage } from "./wb-detach-link.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleWin, DeskFence, DeskNote, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
 const { fenceMembership, fenceOf } = WBGeometry;

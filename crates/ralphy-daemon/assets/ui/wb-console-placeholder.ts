@@ -14,7 +14,7 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
 import type { ConsoleWin, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";

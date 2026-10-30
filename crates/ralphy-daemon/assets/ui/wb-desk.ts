@@ -29,7 +29,7 @@ import type { WBDeskSync } from "./wb-desk-sync.ts";
 import type { WBView } from "./wb-client-view.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { OpenerLink } from "./wb-desk-detach.ts";
-import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { PopupRegistry } from "./wb-desk-popups.ts";
 import type { ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, ExtentOpts, NoteCard, Presentation, Rect, SpawnCarry } from "./wb-types.d.ts";
 
