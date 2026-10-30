@@ -112,11 +112,6 @@
         13
       ]
     },
-    "crates/ralphy-core/src/runner/phases/execute.rs": {
-      "execute_phase": [
-        11
-      ]
-    },
     "crates/ralphy-core/src/sync.rs": {
       "pull": [
         11
