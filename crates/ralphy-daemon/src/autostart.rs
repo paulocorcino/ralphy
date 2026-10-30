@@ -16,15 +16,13 @@
 // This module renders every backend, but the executor below is `#[cfg]`-split
 // so any single-platform build calls only one of them (the others are
 // exercised only from tests, which dead-code analysis ignores). The unused
-// arms are live on the other OSes — expect the dead code rather than lose them.
-// A Linux test build still leaves `argv_succeeds` unused: only the Windows and
-// launchd probes call it. A macOS test build gets no clippy run.
-#![cfg_attr(
-    any(windows, target_os = "linux", not(test)),
-    expect(
-        dead_code,
-        reason = "each build runs one platform's executor, so the other renderers are unused"
-    )
+// arms are live on the other OSes: expect the dead code rather than lose them.
+// Every build leaves one helper unused, with or without `cfg(test)`: Windows
+// and macOS never call `unit_path`, Linux never calls `argv_succeeds`, and the
+// tests call only the `pub` items. So the expectation is met on all three OSes.
+#![expect(
+    dead_code,
+    reason = "each platform's build leaves the helpers of the other platforms unused"
 )]
 
 use std::path::{Path, PathBuf};

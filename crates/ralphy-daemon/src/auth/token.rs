@@ -104,8 +104,9 @@ pub fn effective_token() -> Result<Option<String>> {
 /// into the [`super::AuthPolicy`] (mirrors `strip_events_token_from_env`, ADR-0019).
 #[expect(
     clippy::disallowed_methods,
-    reason = "it runs once on the boot path, before the daemon starts any child, and it is \
-              the only guard for the children that skip the per-spawn secret removal"
+    reason = "it removes the token from the daemon's own environment once, on the boot path, \
+              for every child started after it, and it is the only guard for the children \
+              that skip the per-spawn secret removal"
 )]
 pub fn strip_token_from_env() {
     std::env::remove_var(TOKEN_ENV);
