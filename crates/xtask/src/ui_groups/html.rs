@@ -291,21 +291,28 @@ fn read_tag(cs: &[char], i: usize, line: &mut usize) -> (String, Vec<Attr>, bool
             i += 2;
             break;
         }
-        let attr_line = *line;
-        let (attr, after_name) = attr_name(cs, i);
-        let (value, after_value) = attr_value(cs, after_name, line);
-        i = after_value;
-        if attr.is_empty() {
-            i += 1;
-        } else {
-            attrs.push(Attr {
-                name: attr,
-                value,
-                line: attr_line,
-            });
-        }
+        let (attr, next) = read_attr(cs, i, line);
+        attrs.extend(attr);
+        i = next;
     }
     (name, attrs, self_closing, i)
+}
+
+/// The attribute at `i`, on the line it starts on, and the index after it.
+/// `None` when no name starts at `i`: the character there is skipped.
+fn read_attr(cs: &[char], i: usize, line: &mut usize) -> (Option<Attr>, usize) {
+    let attr_line = *line;
+    let (name, after_name) = attr_name(cs, i);
+    let (value, after_value) = attr_value(cs, after_name, line);
+    if name.is_empty() {
+        return (None, after_value + 1);
+    }
+    let attr = Attr {
+        name,
+        value,
+        line: attr_line,
+    };
+    (Some(attr), after_value)
 }
 
 /// The tag name at `i`, made of ASCII letters, digits and `-`, in lowercase,

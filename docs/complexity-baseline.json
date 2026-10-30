@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/ui_groups/html.rs": {
-      "read_tag": [
-        13
-      ]
-    },
     "crates/xtask/src/ui_groups/report.rs": {
       "render": [
         14
