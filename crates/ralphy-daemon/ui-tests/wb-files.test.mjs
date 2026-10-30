@@ -773,6 +773,36 @@ test("a re-list keeps the scroll offset and the selection, unless a reveal lande
   assert.equal(tree.element.scrollTop, 0);
 });
 
+// A reconcile asked for while one of the same level runs.
+test("a reconcile asked for during a pass waits for the level, which is read once more", async () => {
+  const disk = { "": [{ title: "x.txt" }] };
+  const tree = fakeTree(disk);
+  await tree.open();
+  const { s } = reconcileFiles(tree, disk);
+  const passes = [];
+  let finish;
+  s._reconcileOnce = (node, rel) => {
+    passes.push(rel);
+    return passes.length === 1 ? new Promise((resolve, reject) => (finish = { resolve, reject })) : Promise.resolve();
+  };
+  const first = s.reconcileLevel(tree.root, "");
+  let settled = false;
+  const second = s.reconcileLevel(tree.root, "").then(() => (settled = true));
+  await Promise.resolve();
+  assert.equal(settled, false, "the second caller waits for the pass in flight");
+  finish.resolve();
+  await Promise.all([first, second]);
+  assert.deepEqual(passes, ["", ""], "the level is read once more, and only once");
+
+  // A pass that throws still settles every caller that waits on it.
+  passes.length = 0;
+  const failing = s.reconcileLevel(tree.root, "").catch((e) => e.message);
+  const waiting = s.reconcileLevel(tree.root, "").then(() => "settled");
+  finish.reject(new Error("socket dropped"));
+  assert.deepEqual(await Promise.all([failing, waiting]), ["socket dropped", "settled"]);
+  assert.deepEqual(passes, [""], "a pass that threw is not run again");
+});
+
 test("a full path takes the separator of the root it is joined onto", () => {
   const rows = [
     ["C:\\Dev\\r", "src/a.txt", "C:\\Dev\\r\\src\\a.txt"],

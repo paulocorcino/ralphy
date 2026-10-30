@@ -35,6 +35,21 @@ import type { Group } from "./wb-fleet.ts";
 /** What a failed read hands back: a thrown error, or whatever a socket rejected with. */
 type Failure = { message?: string } | null | undefined;
 
+// A promise that settles when the reconcile of `rel` in flight finishes.
+function waitForLevel(waiters: Map<string, (() => void)[]>, rel: string) {
+  return new Promise<void>((resolve) => {
+    if (!waiters.has(rel)) waiters.set(rel, []);
+    waiters.get(rel)!.push(resolve);
+  });
+}
+
+// Settle the callers waiting on `rel`. Drained by SPLICE: waiters arriving
+// during a nested re-run land on THIS list and are drained here once.
+function releaseWaiters(waiters: Map<string, (() => void)[]>, rel: string) {
+  const list = waiters.get(rel);
+  if (list?.length) for (const r of list.splice(0)) r();
+}
+
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["checkoutChipClick"], {
@@ -340,10 +355,7 @@ export function wbFiles() {
       // pass is about to tear down.
       if (this._reconciling.has(rel)) {
         this._reconcilePending.add(rel);
-        return new Promise((resolve) => {
-          if (!this._reconcileWaiters!.has(rel)) this._reconcileWaiters!.set(rel, []);
-          this._reconcileWaiters!.get(rel)!.push(resolve);
-        });
+        return waitForLevel(this._reconcileWaiters, rel);
       }
       this._reconciling.add(rel);
       // The drain is in an OUTER `finally`: `WBDaemon.observe` REJECTS on a
@@ -361,10 +373,7 @@ export function wbFiles() {
       } finally {
         // A pass that threw never consumed its pending flag.
         this._reconcilePending.delete(rel);
-        // Drain by SPLICE: waiters arriving during the nested re-run land on
-        // THIS list and are drained here once.
-        const waiters = this._reconcileWaiters.get(rel);
-        if (waiters?.length) for (const r of waiters.splice(0)) r();
+        releaseWaiters(this._reconcileWaiters, rel);
       }
     },
 

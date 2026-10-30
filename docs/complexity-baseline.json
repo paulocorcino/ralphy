@@ -2,9 +2,6 @@
   "ceiling": 15,
   "functions": {
     "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-      "reconcileLevel": [
-        12
-      ],
       "refreshOpenViewers": [
         12
       ],
