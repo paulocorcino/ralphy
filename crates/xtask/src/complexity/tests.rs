@@ -101,16 +101,6 @@ fn the_near_list_holds_seven_to_ten_in_the_changed_files() {
 }
 
 #[test]
-fn ci_installs_the_pinned_oxlint() {
-    let ci =
-        std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).expect("read ci.yml");
-    assert!(
-        ci.contains(&format!("OXLINT_VERSION: \"{OXLINT_VERSION}\"")),
-        "ci.yml must pin oxlint {OXLINT_VERSION}"
-    );
-}
-
-#[test]
 fn a_listed_function_over_the_ceiling_fails() {
     let current = table([score("a.rs", "run", 51), score("a.rs", "load", 50)].iter());
     assert_eq!(

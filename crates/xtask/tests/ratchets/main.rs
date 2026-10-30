@@ -22,6 +22,10 @@
 //! The peer reply pin is not a count. It ties the page types that read a
 //! reply a peer daemon wrote to the peer protocol version (#653), through the
 //! same lexer, so a comment or a layout change does not move it.
+//!
+//! The complexity exceptions ratchet counts the lines that let a function
+//! over the complexity limit pass, in Rust and in the workbench. The tool pin
+//! ties the oxlint of CI to the oxlint command of `AGENTS.md`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -35,8 +39,10 @@ use regex::Regex;
 #[path = "../../src/ui_copy/lex.rs"]
 mod lex;
 
+mod complexity_exceptions;
 mod peer_reply_pin;
 mod rust_coupling;
+mod tool_pins;
 mod ts_scan;
 mod type_escapes;
 mod workbench_coupling;
