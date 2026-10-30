@@ -88,9 +88,9 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // Alpine calls this once, when `main.ts` registers the store. `main.ts`
     // builds `WBDaemon` and `WBConsole` first.
     init() {
-      this.probeSession();
+      void this.probeSession();
       this.subscribePresence();
-      this.loadIdentity();
+      void this.loadIdentity();
       // The board's two time-driven refresh triggers (#301), registered ONCE;
       // the predicate (wb-kanban.ts) decides.
       document.addEventListener("visibilitychange", () => {
@@ -224,7 +224,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:desk-reread");
       sendWindow(window, "workbench:attention-reread");
       sendWindow(window, "workbench:board-refresh", { trigger: "reopen" });
-      if (window.Alpine.store("projects").openSlug) window.Alpine.store("runs").hydrateRuns();
+      if (window.Alpine.store("projects").openSlug) void window.Alpine.store("runs").hydrateRuns();
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
@@ -321,7 +321,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:desk-reread");
       sendWindow(window, "workbench:attention-reread");
       // Not only with the Runs panel open: the runs lock the writes.
-      window.Alpine.store("runs").hydrateRuns();
+      void window.Alpine.store("runs").hydrateRuns();
       this.rereadOpenPanels();
       this.resumeSockets();
       sendWindow(window, "workbench:release-reread");

@@ -105,7 +105,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   function retryDeskLoad() {
     if (currentDeskFailure()) return;
     setTimeout(() => {
-      reloadDesk().then(() => {
+      void reloadDesk().then(() => {
         if (isDeskLoaded()) restoreDesk();
         else retryDeskLoad();
       });

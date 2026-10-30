@@ -78,8 +78,8 @@ export function wbChanges() {
     refreshChanges() {
       if (!this.sideOpen || this.sideView !== "changes" || !this.$store.projects.openSlug) return;
       if (document.visibilityState !== "visible") return;
-      this.loadChanges(this.$store.projects.openSlug);
-      this.loadSync(this.$store.projects.openSlug);
+      void this.loadChanges(this.$store.projects.openSlug);
+      void this.loadSync(this.$store.projects.openSlug);
     },
 
     // The open project's change count (#307) via `changes.list`: reloads on
@@ -194,7 +194,7 @@ export function wbChanges() {
       } finally {
         this.syncBusy = null;
       }
-      this.loadSync(slug);
+      void this.loadSync(slug);
     },
 
     // Fast-forward from the upstream. A successful pull moves the working tree,
@@ -221,8 +221,8 @@ export function wbChanges() {
       } finally {
         this.syncBusy = null;
       }
-      this.loadSync(slug);
-      if (moved) this.loadChanges(slug);
+      void this.loadSync(slug);
+      if (moved) void this.loadChanges(slug);
     },
 
     // Publish the branch (#320). The OPERATOR's click is the whole consent (no
@@ -248,7 +248,7 @@ export function wbChanges() {
       } finally {
         this.syncBusy = null;
       }
-      this.loadSync(slug);
+      void this.loadSync(slug);
     },
 
     _changesSub: null as Subscription | null, // the run-completion nudge subscription for the open project (#310)
@@ -261,8 +261,8 @@ export function wbChanges() {
         // Optional-chained: a frame without wb-changes.ts must not throw
         // inside `onmessage`.
         if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
-          this.loadChanges(this.$store.projects.openSlug);
-          this.loadSync(this.$store.projects.openSlug);
+          void this.loadChanges(this.$store.projects.openSlug);
+          void this.loadSync(this.$store.projects.openSlug);
         }
       });
     },
@@ -282,21 +282,21 @@ export function wbChanges() {
         this.commitMsg = "";
         this.commitMsgSlug = slug;
       }
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         this.destroyChangesSub();
         this.mountChangesSub();
-        if (this.$store.projects.openSlug) this.loadChanges(this.$store.projects.openSlug);
-        if (this.$store.projects.openSlug) this.loadSync(this.$store.projects.openSlug);
+        if (this.$store.projects.openSlug) void this.loadChanges(this.$store.projects.openSlug);
+        if (this.$store.projects.openSlug) void this.loadSync(this.$store.projects.openSlug);
       });
     },
     // On `workbench:head-moved` (the files' socket heard `head.dirty`): re-read
     // what the branch drives: the chip, the sync row and the Changes count.
     gitFollowHead(ref: string) {
-      this.loadChanges(ref);
-      this.loadSync(ref);
+      void this.loadChanges(ref);
+      void this.loadSync(ref);
       // Under a selection the chip reads the worktree's branch from the
       // listing, not `p.branch`.
-      if (this.$store.checkouts.checkoutOf(ref)) this.$store.checkouts.ensureWorktreeListing(ref, true);
+      if (this.$store.checkouts.checkoutOf(ref)) void this.$store.checkouts.ensureWorktreeListing(ref, true);
     },
 
     // --- the rows and the commit box -----------------------------------------
@@ -376,8 +376,8 @@ export function wbChanges() {
         // A transport throw is NOT a refusal: the repo never answered.
         this._changesRefused("Could not stage: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     async unstagePaths(slug: string, paths: string[]) {
@@ -396,8 +396,8 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not unstage: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
@@ -428,8 +428,8 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not discard: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     async commitStaged(slug: string) {
@@ -454,8 +454,8 @@ export function wbChanges() {
       } catch {
         this._changesRefused("Could not commit: the daemon did not answer.");
       }
-      this.loadChanges(slug);
-      this.loadSync(slug);
+      void this.loadChanges(slug);
+      void this.loadSync(slug);
     },
 
     // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
@@ -479,8 +479,8 @@ export function wbChanges() {
       // The page asks for a read of one project's change set and branch: the
       // sidebar refresh, a branch act, a new or restored checkout.
       window.addEventListener("workbench:changes-read", (e) => {
-        this.loadChanges(e.detail.ref);
-        this.loadSync(e.detail.ref);
+        void this.loadChanges(e.detail.ref);
+        void this.loadSync(e.detail.ref);
       });
       // A new checkout of `ref`: another tree's change set is not this tree's
       // "last value" (ADR-0070 D3), so its reads start over.

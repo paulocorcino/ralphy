@@ -37,7 +37,7 @@ export function addProjectDialog() {
     openAddProject() {
       this.addProjectStep({ type: "open" });
       this.addProjectList(0);
-      this.$nextTick(() => this.$refs.addProjectFolder?.focus());
+      void this.$nextTick(() => this.$refs.addProjectFolder?.focus());
     },
     // Closing does not cancel an add in flight: the list reloads when it ends.
     closeAddProject() {
@@ -97,7 +97,7 @@ export function addProjectDialog() {
       }
       if (ev.key === "Enter") {
         ev.preventDefault();
-        if (WBAddProject.enterAdds(this.addProject)) this.addProjectSubmit();
+        if (WBAddProject.enterAdds(this.addProject)) void this.addProjectSubmit();
       }
     },
     // Ask the daemon for the folder list after `delay` ms. Each request has a
@@ -112,7 +112,7 @@ export function addProjectDialog() {
         this._addProjectSlow = setTimeout(() => this.addProjectStep({ type: "slow", seq }), 300);
         window.WBDaemon.observe("dir.list", payload)
           .then((reply) => this.addProjectStep({ type: "reply", seq, reply }))
-          .catch((e) => this.addProjectStep({ type: "reply", seq, reply: { status: "error", message: String(e.message || e) } }));
+          .catch((e: unknown) => this.addProjectStep({ type: "reply", seq, reply: { status: "error", message: e instanceof Error && e.message ? e.message : String(e) } }));
       }, delay);
     },
     async addProjectSubmit() {
@@ -130,7 +130,7 @@ export function addProjectDialog() {
           type: "addFailed",
           message: WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),
         });
-        this.$store.projects.loadRepos({ git: false });
+        void this.$store.projects.loadRepos({ git: false });
         return;
       }
       const stillOpen = this.addProject.open;
@@ -144,7 +144,7 @@ export function addProjectDialog() {
     selectAddedProject(ref: string | undefined) {
       if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) return;
       if (this.$store.projects.openSlug !== ref) this.toggle(ref as string);
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         const head = document.querySelector<HTMLElement>("li.project.open .project-head");
         if (!head) return;
         head.scrollIntoView({ block: "nearest" });

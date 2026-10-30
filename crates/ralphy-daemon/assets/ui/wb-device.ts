@@ -266,9 +266,9 @@ export const WBDevice = (function () {
     }
     const quiet = (left = RETRIES) => send(left).catch(() => {});
     win.document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
-      if (e.detail && e.detail.action === "login") quiet();
+      if (e.detail && e.detail.action === "login") void quiet();
     });
-    quiet();
+    void quiet();
   }
 
   return { collect, report };

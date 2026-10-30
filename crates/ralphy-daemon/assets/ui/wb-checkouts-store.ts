@@ -64,7 +64,7 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
       window.WBDaemon?.onUnknownCheckout?.((repo, name) => repo != null && this.checkoutGone(repo, name));
-      window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
+      void window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
       // A branch refusal names an act against the project that WAS open.
       window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
     },
@@ -181,7 +181,7 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       this.checkouts = window.WBConsole?.checkouts?.() || {};
       if (open) sendWindow(window, "workbench:checkout-changed");
       if (open) {
-        this.ensureWorktreeListing(open);
+        void this.ensureWorktreeListing(open);
         // The desk can land AFTER the open's own reads: re-read under the
         // restored selection, only when it differs (two git spawns otherwise).
         if (this.checkoutOf(open) !== before) {

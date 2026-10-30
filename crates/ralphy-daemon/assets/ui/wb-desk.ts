@@ -228,7 +228,7 @@ export function createDesk(deps: DeskDeps) {
     const body = sync.nextBatch();
     if (!body) return;
     flushing = true;
-    deskSink
+    void deskSink
       .put(JSON.stringify(body))
       .catch(() => ({ kind: "network" }))
       .then((out) => {
@@ -376,7 +376,7 @@ export function createDesk(deps: DeskDeps) {
       return;
     }
     recordChecks.add(win);
-    readSessions()
+    void readSessions()
       .catch(() => null)
       .then((read) => {
         recordChecks.delete(win);

@@ -96,7 +96,7 @@ export function wbConsoleMenus() {
     },
     openConsoleRun() {
       this.consoleRunOpen = true;
-      this.$nextTick(() => this.$refs.consoleRun?.focus());
+      void this.$nextTick(() => this.$refs.consoleRun?.focus());
     },
     // Cancel keeps the menu open: Esc undoes only the field.
     closeConsoleRun() {
@@ -178,7 +178,7 @@ export function wbConsoleMenus() {
       }
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       // AFTER the tab is laid out: a `display:none` tab measures 0.
-      this.$nextTick(() => WBConsole.reveal(id));
+      void this.$nextTick(() => WBConsole.reveal(id));
     },
 
     // The note cap, stated before the click — `fenceAtCap`'s shape, and for
@@ -208,7 +208,7 @@ export function wbConsoleMenus() {
       this.noteMenu = false;
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
       // measures a 0×0 viewport and every card would land at the origin.
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         const ws = document.getElementById("workspace");
         window.WBNotes.create({
           repo: slug,
@@ -225,7 +225,7 @@ export function wbConsoleMenus() {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
-      this.$nextTick(() => window.WBNotes.jump(id));
+      void this.$nextTick(() => window.WBNotes.jump(id));
     },
     // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
     // The menu closes on the way on top so the card is in view; putting back
@@ -240,7 +240,7 @@ export function wbConsoleMenus() {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // As `jumpNote`: a `display:none` tab measures a 0×0 viewport.
-      this.$nextTick(() => window.WBNotes.keepOnTop(n.id));
+      void this.$nextTick(() => window.WBNotes.keepOnTop(n.id));
     },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.
@@ -254,7 +254,7 @@ export function wbConsoleMenus() {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.fenceMenu = false;
       // As `revealWindow`: a `display:none` tab measures 0.
-      this.$nextTick(() => WBConsole.jumpToFence(id));
+      void this.$nextTick(() => WBConsole.jumpToFence(id));
     },
     // Alt+Shift+F<n> → the n-th fence, up to F12 (the fence cap). MEASURED
     // (Chromium 148): Alt+Shift+F10/F11/F12 all reach the document —

@@ -194,7 +194,7 @@ export function wbBoard() {
       this._boardLoadedAt = Date.now();
       // The ready plan rides every board trigger. NOT awaited: a plan read
       // must never delay the rows.
-      this.loadPlan(this.$store.projects.openSlug);
+      void this.loadPlan(this.$store.projects.openSlug);
       try {
         const reply = await boardFold(slug, this.BOARD_FOLD_TIMEOUT_MS);
         if (WBFail.isError(reply)) {
@@ -207,7 +207,7 @@ export function wbBoard() {
         this.$store.board.boardReadOk(slug, fold.issues, fold.colors);
         // Fold rows carry `body: ""`: re-merge the open drawer's detail or it
         // goes blank on every refresh.
-        if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
+        if (this.kanbanSel != null) void this.loadIssueDetail(this.kanbanSel);
       } catch {
         this.$store.board.boardReadFailed(slug, "Could not load the board.");
         this.$store.modals.flash("Could not load the board.");
@@ -218,7 +218,7 @@ export function wbBoard() {
         // by the recursive call before it awaits, so this settles.
         if (this._boardPending || this.$store.projects.openSlug !== slug) {
           this._boardPending = false;
-          if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
+          if (this.$store.projects.openSlug && this.kanbanOpen) void this.loadBoard();
         }
       }
     },
@@ -233,7 +233,7 @@ export function wbBoard() {
         docVisible: document.visibilityState === "visible",
         focused: document.hasFocus(),
       });
-      if (ok) this.loadBoard();
+      if (ok) void this.loadBoard();
     },
     // The board head's refresh control.
     refreshBoard() {
@@ -344,7 +344,7 @@ export function wbBoard() {
     openIssue(number: number) {
       this.kanbanSel = number;
       // `issue.show` merges body + comments + blockers into the cached row.
-      this.loadIssueDetail(number);
+      void this.loadIssueDetail(number);
     },
 
     async loadIssueDetail(number: number) {
@@ -424,7 +424,7 @@ export function wbBoard() {
     toggleLabelMenu() {
       this.labelMenuOpen = !this.labelMenuOpen;
       if (!this.labelMenuOpen) return;
-      this.$nextTick(() =>
+      void this.$nextTick(() =>
         document.querySelector(".kd-label-menu")?.scrollIntoView({ block: "nearest", inline: "nearest" }),
       );
     },
@@ -443,7 +443,7 @@ export function wbBoard() {
       this.$store.board.issueLabelsSet(slug!, iss.number, has ? prev.filter((l) => l !== label) : [...prev, label]);
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
-      (async () => {
+      void (async () => {
         try {
           const reply = await window.WBDaemon.observe("label.set", {
             repo: slug,
@@ -486,9 +486,9 @@ export function wbBoard() {
     // store `runs` hear the same event.
     boardFollowProject() {
       this.kanbanSel = null;
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
-        if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
+        if (this.$store.projects.openSlug && this.kanbanOpen) void this.loadBoard();
       });
     },
 
@@ -502,7 +502,7 @@ export function wbBoard() {
       // project.
       window.addEventListener("workbench:board-opened", () => {
         this.kanbanSel = null;
-        this.loadBoard();
+        void this.loadBoard();
       });
       // A trail node of the Runs panel (#301) opens that issue's detail.
       window.addEventListener("workbench:issue-open", (e) => this.openIssue(e.detail.issue));

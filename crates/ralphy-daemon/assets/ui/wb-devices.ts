@@ -209,7 +209,7 @@ export function devices() {
     raw: "",
     eventsError: "",
     init() {
-      this.load();
+      void this.load();
     },
     async load() {
       this.error = "";

@@ -79,8 +79,8 @@ export function wirePaste(deps: PasteDeps) {
           term.focus();
         })
         // The socket closed with no reply: say what the browser saw.
-        .catch((err: { message?: string } | null | undefined) => {
-          const why = (err && err.message) || "connection unavailable";
+        .catch((err: unknown) => {
+          const why = (err instanceof Error && err.message) || "connection unavailable";
           term.write(`\r\n[paste refused — ${why}]\r\n`);
         });
     };

@@ -70,10 +70,10 @@ export function wbBranchDialog() {
         worktrees: {},
       };
       this.branchOpen = true;
-      this.loadBranches(ref);
+      void this.loadBranches(ref);
       // The chip's dirty dot and the `current` seed above read the listing.
-      this.$store.checkouts.ensureWorktreeListing(ref);
-      this.$nextTick(() => {
+      void this.$store.checkouts.ensureWorktreeListing(ref);
+      void this.$nextTick(() => {
         this.$refs.branchFilter?.focus();
       });
     },
@@ -174,7 +174,7 @@ export function wbBranchDialog() {
         if (p) this.$store.projects.setRowGit(p, { branch: name }); // optimistic — the chip updates immediately
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
-        this._mutateBranch("branch.switch", slug, name, () => {
+        void this._mutateBranch("branch.switch", slug, name, () => {
           if (p) this.$store.projects.setRowGit(p, { branch: prev! });
         });
       }
@@ -197,7 +197,7 @@ export function wbBranchDialog() {
       // A fresh branch is checked out onto.
       if (p) this.$store.projects.setRowGit(p, { branches: [...(p.branches || []), name], branch: name });
       window.WB.emit("branch-create", { project: slug, name, from, checkout });
-      this._mutateBranch("branch.create", slug, name, () => {
+      void this._mutateBranch("branch.create", slug, name, () => {
         if (p) this.$store.projects.setRowGit(p, { branch: prevBranch!, branches: prevBranches! });
       });
       this.closeBranchModal();
@@ -249,7 +249,7 @@ export function wbBranchDialog() {
       const ck = this.$store.checkouts.checkoutOf(slug);
       if (ck && WBProject.checkoutAfterListing(ck, listing) === null) this.$store.checkouts.checkoutGone(slug, ck);
       const kept = !listing || listing.worktrees.some((x) => x && x.name === name);
-      if (failure && kept) window.WBConsole.askNotice({ title: `Could not delete worktree ${name}`, message: failure });
+      if (failure && kept) void window.WBConsole.askNotice({ title: `Could not delete worktree ${name}`, message: failure });
       else this.$store.modals.flash(failure || `Worktree ${name} deleted`);
     },
 
@@ -282,7 +282,7 @@ export function wbBranchDialog() {
       } finally {
         // Re-read the listing on every path (an unconfirmed switch may have
         // landed); a moved HEAD also changes the working tree and sync row.
-        this.$store.checkouts.ensureWorktreeListing(slug, true);
+        void this.$store.checkouts.ensureWorktreeListing(slug, true);
         if (slug) sendWindow(window, "workbench:changes-read", { ref: slug });
       }
     },

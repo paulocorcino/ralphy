@@ -185,7 +185,7 @@ export function createSpawn(deps: SpawnDeps) {
         btn.className = "session-reconnect";
         btn.addEventListener("click", (e: MouseEvent) => {
           e.stopPropagation();
-          if (btn.dataset.act === "wake") wakePeerNow()?.(peerDaemon);
+          if (btn.dataset.act === "wake") void wakePeerNow()?.(peerDaemon);
           else readFleetNow()?.();
         });
         strip.append(text, detail, btn);
@@ -386,13 +386,13 @@ export function createSpawn(deps: SpawnDeps) {
             checkout:
               checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
           };
-      spawnOrMissing(fresh, label, repo, carry);
+      void spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     };
     win._relaunchIn = relaunchIn;
     restartBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
-      restartWin(win);
+      void restartWin(win);
     });
     // The switcher needs the repo's listing; one read per ref, cached.
     if (kind === "agent") ensureListing(repo);
@@ -485,7 +485,7 @@ export function createSpawn(deps: SpawnDeps) {
   function adoptOrphan(win: ConsoleWin) {
     if (!win.isConnected || !win._deskUnrecorded) return;
     // A fresh read first: the record may have landed without a push here.
-    reloadDesk().then(() => {
+    void reloadDesk().then(() => {
       if (!win.isConnected || !win._deskUnrecorded) return;
       if (currentDesk().some((r) => r.id === win._deskId)) return;
       recordLeft(win);

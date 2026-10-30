@@ -251,7 +251,7 @@ export function wbColumns() {
       this.columnFilter = "";
       this.closeMenus();
       this.columnMenu = !was;
-      if (this.columnMenu) this.$nextTick(() => this.$refs.columnFilter?.focus());
+      if (this.columnMenu) void this.$nextTick(() => this.$refs.columnFilter?.focus());
     },
     columnFilterShown() {
       return this.columnGroups.reduce((n, g) => n + g.rows.length, 0) >= WBColumns.FILTER_MIN;

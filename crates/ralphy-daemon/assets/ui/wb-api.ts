@@ -204,9 +204,9 @@ function beforeDeadline<T>(work: Promise<T>, what: string, ms: number, onDeadlin
         clearTimeout(timer);
         resolve(v);
       },
-      (e) => {
+      (e: unknown) => {
         clearTimeout(timer);
-        reject(e);
+        reject(e instanceof Error ? e : new Error(String(e)));
       },
     );
   });
