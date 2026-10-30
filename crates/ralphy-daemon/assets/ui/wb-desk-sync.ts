@@ -171,18 +171,18 @@ export const WBDeskSync = (function () {
     const list: AnyRecord[] = desk[key];
     const id = op === "create" ? change.record?.id : change.id;
     const at = list.findIndex((r) => r.id === id);
-    let next;
-    if (op === "create") {
-      next = createIn(list, at, change);
-    } else if (op === "set") {
-      next = setIn(list, at, change);
-    } else if (op === "remove") {
-      next = at < 0 ? null : list.filter((r) => r.id !== id);
-    } else {
-      return unchanged;
-    }
+    const next = changedList(list, at, id, change);
     if (!next) return unchanged;
     return { desk: { ...desk, [key]: next }, changed: true };
+  }
+
+  // The list after a change of the record `id` at index `at` (-1: none has
+  // the id), or null when nothing changed or the op changes no record.
+  function changedList(list: AnyRecord[], at: number, id: string | undefined, change: DeskChange): AnyRecord[] | null {
+    if (change.op === "create") return createIn(list, at, change);
+    if (change.op === "set") return setIn(list, at, change);
+    if (change.op === "remove") return at < 0 ? null : list.filter((r) => r.id !== id);
+    return null;
   }
 
   // A checkout selects a tree for one project; a checkout-clear clears the
