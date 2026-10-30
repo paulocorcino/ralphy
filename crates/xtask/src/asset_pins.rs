@@ -295,26 +295,27 @@ fn raw_literals(fragment: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == 'r' {
-            if let Some((body, next)) = raw_string(&bytes, i) {
-                if !body.is_empty() {
-                    out.push(body);
-                }
-                i = next;
-                continue;
-            }
-        }
-        if bytes[i] != '"' {
+        let Some((lit, next)) = literal_at(&bytes, i) else {
             i += 1;
             continue;
-        }
-        let (lit, next) = plain_string(&bytes, i);
-        i = next;
+        };
         if !lit.is_empty() {
             out.push(lit);
         }
+        i = next;
     }
     out
+}
+
+/// The string literal that opens at `at`, raw or plain: its body, and the
+/// index after it. `None` when no literal opens there, which includes an `r`
+/// that opens no raw string.
+fn literal_at(bytes: &[char], at: usize) -> Option<(String, usize)> {
+    match bytes[at] {
+        'r' => raw_string(bytes, at),
+        '"' => Some(plain_string(bytes, at)),
+        _ => None,
+    }
 }
 
 /// A raw string that opens at the `r` at `at`: its body, and the index after
@@ -419,6 +420,12 @@ fn squeeze(s: &str) -> String {
 /// compare that also happens to count is normalized — the normalization is what
 /// decides whether it survives a reformat, which is the question being asked.
 fn classify(stmt: &str) -> Option<Shape> {
+    shape_by_call(stmt).or_else(|| contains_shape(stmt))
+}
+
+/// The shapes that a call in the statement decides on its own: a normalized
+/// compare, a count, a scoped slice, a script order.
+fn shape_by_call(stmt: &str) -> Option<Shape> {
     if stmt.contains("split_whitespace()") || stmt.contains("strip_css_comments(") {
         return Some(Shape::Normalized);
     }
@@ -435,6 +442,12 @@ fn classify(stmt: &str) -> Option<Shape> {
     if stmt.contains("assert!(") && (stmt.contains("_tag <") || stmt.contains("_at <")) {
         return Some(Shape::ScriptOrder);
     }
+    None
+}
+
+/// The shape of an assertion over `.contains(`: negative when its receiver is
+/// negated, identifier otherwise. `None` for any other statement.
+fn contains_shape(stmt: &str) -> Option<Shape> {
     if !stmt.contains(".contains(") {
         return None;
     }

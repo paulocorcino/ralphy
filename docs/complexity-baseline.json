@@ -294,14 +294,6 @@
         11
       ]
     },
-    "crates/xtask/src/asset_pins.rs": {
-      "classify": [
-        15
-      ],
-      "raw_literals": [
-        14
-      ]
-    },
     "crates/xtask/src/capabilities.rs": {
       "parse_diff": [
         13
