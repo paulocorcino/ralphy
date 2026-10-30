@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-usage-scan/src/opencode.rs": {
-      "read_opencode": [
-        12
-      ]
-    },
     "crates/xtask/src/asset_pins.rs": {
       "classify": [
         15
