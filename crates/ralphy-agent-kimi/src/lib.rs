@@ -1,6 +1,6 @@
 //! The Kimi CLI adapter: drives headless `kimi -p` behind the core [`Agent`] contract.
 //! Everything Kimi-specific — the binary, the model flag, the headless invocation,
-//! the `stream-json` final-text parser, and the signal→[`Outcome`] mapping — is
+//! the `stream-json` final-text parser, and the signal→[`ralphy_core::Outcome`] mapping — is
 //! confined here. See docs/adr/0028.
 //!
 //! Like the Codex and OpenCode adapters (and unlike Claude's live PTY session),
@@ -8,7 +8,7 @@
 //! `kimi -p <charter>` with the charter on argv, and completion is detected from
 //! the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the final
 //! assistant message in Kimi's `stream-json` stream, the process exit code, and a
-//! HEAD-diff commit check — mapped onto the same core [`Outcome`].
+//! HEAD-diff commit check — mapped onto the same core [`ralphy_core::Outcome`].
 //!
 //! This is the walking-skeleton slice (ADR-0028): exit 75 maps to
 //! `Outcome::Limit(None)` and `--stop-on-limit` is forced for Kimi (D9, #153);
@@ -69,7 +69,7 @@ fn write_exec_charter(ws: &Workspace) -> Result<PathBuf> {
 }
 
 /// Drives the `kimi` CLI. `model` is the operator override (else
-/// [`DEFAULT_KIMI_MODEL`]); `plan_effort`/`exec_effort` accept the neutral Effort
+/// `DEFAULT_KIMI_MODEL`); `plan_effort`/`exec_effort` accept the neutral Effort
 /// word at the CLI and are a documented no-op here (ADR-0044 D4) — Kimi has no
 /// level axis; `run_dir` is where the captured logs live; `max_minutes_per_issue`
 /// is the per-issue wall budget, clamped to `run_deadline` when the run carries a

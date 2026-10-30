@@ -125,7 +125,7 @@ pub fn draft_issues(
 ///
 /// The consolidation session's tokens are captured the same way `plan`/`execute`
 /// are — snapshot the `wire` session tree around the call (appeared-over-grew) and
-/// [`fold_wire_usage`] the delta — so the run-level `consolidate` ledger line
+/// `fold_wire_usage` the delta — so the run-level `consolidate` ledger line
 /// carries real usage (ADR-0008 D9/D10, issue #276).
 pub fn consolidate_knowledge(
     ws: &Workspace,
