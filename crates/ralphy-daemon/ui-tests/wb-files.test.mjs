@@ -849,3 +849,35 @@ test("every other key, and Alt+Enter with no row, is left to the tree", () => {
   assert.equal(options.keydown({ node: undefined, event: { key: "Enter", altKey: true } }), undefined);
   assert.deepEqual(sent.filter((e) => e.type === "workbench:properties-open"), []);
 });
+
+// `duplicateNode` over a folder that holds `names`; the copies it asks for.
+async function duplicate(rel, names) {
+  const { scope: s } = loadComponent("wbFiles", { magics: { $refs: {}, $nextTick: (f) => f() } });
+  const real = globalThis.WBDaemon;
+  const writes = [];
+  globalThis.WBDaemon = {
+    observe: async () => ({ status: "ok", entries: names.map((name) => ({ name })) }),
+    write: async (verb, payload) => {
+      writes.push([verb, payload.path, payload.to]);
+      return { status: "ok" };
+    },
+    withCheckout: (payload) => ({ ...payload }),
+  };
+  s.$store.projects.setOpen("o/r");
+  s.relPath = () => rel;
+  s.onTreeDirty = async () => {};
+  s.revealRel = async () => null;
+  try {
+    await s.duplicateNode({});
+  } finally {
+    globalThis.WBDaemon = real;
+  }
+  return writes;
+}
+
+test("a duplicate lands beside its file under the first copy name the folder does not hold", async () => {
+  assert.deepEqual(await duplicate("docs/a.txt", ["a.txt", "a copy.txt"]), [["file.copy", "docs/a.txt", "docs/a copy 2.txt"]]);
+  assert.deepEqual(await duplicate("plan.md", ["plan.md"]), [["file.copy", "plan.md", "plan copy.md"]]);
+  // A leading dot is the whole name of a dotfile, not an extension.
+  assert.deepEqual(await duplicate("cfg/.env", [".env"]), [["file.copy", "cfg/.env", "cfg/.env copy"]]);
+});
