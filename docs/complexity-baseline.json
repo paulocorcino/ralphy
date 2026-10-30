@@ -337,14 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/routes/api_desk.rs": {
-      "desk_history_restore_route": [
-        11
-      ],
-      "desk_put_route": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/src/routes/api_sessions.rs": {
       "close_session_route": [
         14
