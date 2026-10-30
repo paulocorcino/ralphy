@@ -7,11 +7,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { ReadDeadline } from "../assets/ui/wb-api.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS, resumeDecision } from "../assets/ui/wb-resume.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
 function fixture(name) {
@@ -199,13 +200,11 @@ test("observe sends its command over HTTP and opens no socket", async () => {
 });
 
 test("observe fans out an unknown checkout to the registered listeners, after the reply", async () => {
-  const { d, restore } = loadWithFetch((cmd) =>
-    cmd.payload.checkout === "gone"
-      ? { status: "error", message: "unknown checkout" }
-      : cmd.payload.checkout === "missing-file"
-        ? { status: "error", reason: "not found" }
-        : { status: "ok", entries: [] },
-  );
+  const { d, restore } = loadWithFetch((cmd) => {
+    if (cmd.payload.checkout === "gone") return { status: "error", message: "unknown checkout" };
+    if (cmd.payload.checkout === "missing-file") return { status: "error", reason: "not found" };
+    return { status: "ok", entries: [] };
+  });
   try {
     const seen = [];
     d.onUnknownCheckout((repo, name) => seen.push([repo, name]));
@@ -351,7 +350,7 @@ function treeSocket(checkout, onHead, onFailed) {
   const withFakes = (fn) => {
     const realSetTimeout = globalThis.setTimeout;
     const realClearTimeout = globalThis.clearTimeout;
-    globalThis.setTimeout = (fn, ms) => timers.push({ fn, ms }) - 1;
+    globalThis.setTimeout = (callback, ms) => timers.push({ fn: callback, ms }) - 1;
     globalThis.clearTimeout = (id) => {
       if (timers[id]) timers[id].fn = () => {};
     };

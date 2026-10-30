@@ -146,8 +146,8 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         }
         return editor;
       })
-      .catch((err: Error) => {
-        paintState(el, "Could not start the editor: " + String(err?.message || err));
+      .catch((err: unknown) => {
+        paintState(el, "Could not start the editor: " + String(err instanceof Error && err.message ? err.message : err));
         return null;
       });
   }
@@ -170,8 +170,8 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         el._noteSavedAt = Number(reply.modified) || null;
         return mountEditor(el, reply.markdown || "");
       })
-      .catch((err: Error) => {
-        paintMissing(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
+      .catch((err: unknown) => {
+        paintMissing(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer."));
         return null;
       });
   }
@@ -281,7 +281,7 @@ export function createNoteEditor(deps: NoteEditorDeps) {
     clearTimeout(el._noteTimer);
     el._noteTimer = setTimeout(() => {
       el._noteTimer = null;
-      flush(el);
+      void flush(el);
     }, SAVE_AFTER_MS);
   }
 
@@ -387,10 +387,10 @@ export function createNoteEditor(deps: NoteEditorDeps) {
             if (!el._noteDirty) paintState(el, "");
           }, 1200);
         })
-        .catch((err: Error) => {
+        .catch((err: unknown) => {
           el._noteInFlight = false;
           el.classList.add("danger");
-          paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
+          paintState(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer."));
         });
     });
   }
@@ -430,11 +430,11 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         paintPath(el, path);
         return path;
       })
-      .catch((err: Error) => {
+      .catch((err: unknown) => {
         // A dropped socket mid-probe must not leave the card unable to ever
         // name itself: clear the memo and say why.
         el._noteNaming = null;
-        paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
+        paintState(el, WBFail.cause({ message: err instanceof Error ? err.message : undefined }, "The daemon did not answer."));
         return null;
       });
     return el._noteNaming;

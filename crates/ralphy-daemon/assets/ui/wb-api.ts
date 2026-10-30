@@ -204,9 +204,9 @@ function beforeDeadline<T>(work: Promise<T>, what: string, ms: number, onDeadlin
         clearTimeout(timer);
         resolve(v);
       },
-      (e) => {
+      (e: unknown) => {
         clearTimeout(timer);
-        reject(e);
+        reject(e instanceof Error ? e : new Error(String(e)));
       },
     );
   });
@@ -281,7 +281,7 @@ export function socketFrame<T>(bytes: Uint8Array): T {
   // that reads a peer's reply fails `peer_reply_types_are_pinned_to_the_protocol_version`
   // (crates/xtask/tests/ratchets/) until the version is raised, or until
   // each change is a new field declared optional (#653).
-  return JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as T;
 }
 
 // The checks that narrow data from outside, shared by the modules that read it.

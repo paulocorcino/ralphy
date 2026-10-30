@@ -105,14 +105,14 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
     for (const r of next) {
       const old = was.get(r.id);
       if (!old) {
-        changes.push({ op: "create", type, record: r } as DeskChange);
+        changes.push({ op: "create", type, record: r });
         continue;
       }
       const a = SET_FIELDS[type](old);
       const b = SET_FIELDS[type](r);
       const fields: { [field: string]: JsonValue | undefined } = {};
       for (const k of Object.keys(b)) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
-      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields } as DeskChange);
+      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields });
     }
     if (!changes.length) return;
     for (const c of changes) sync.emit(c);

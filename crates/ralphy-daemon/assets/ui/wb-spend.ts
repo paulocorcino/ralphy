@@ -170,7 +170,7 @@ function tiles(doc: SpendDoc) {
 // NOTHING here reaches for one: the board fold spawns a CLI that makes tracker
 // calls, and a cost page must never pay it.
 function deliveryRows(doc: SpendDoc, issues: TitledIssue[] | null | undefined) {
-  const titles = new Map();
+  const titles = new Map<number, string>();
   for (const i of issues || []) {
     if (i && i.number != null) titles.set(i.number, i.title || "");
   }
@@ -442,7 +442,7 @@ const LEDGER_CAP = 500;
 // a column".
 const NONE = "—";
 
-function text(value: unknown): string {
+function text(value: string | number | boolean | null | undefined): string {
   return value === undefined || value === null || value === "" ? NONE : String(value);
 }
 

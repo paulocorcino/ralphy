@@ -328,9 +328,9 @@ test("nothing outside the two components names their state", () => {
   // The page without the two parts: one is left out by the helper, the other
   // is cut out of the text it put in.
   const columns = readFileSync(join(UI, PARTS.wbColumns), "utf8");
-  const page = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
-  assert.ok(page.includes(columns), "the page holds the columns part");
-  const outside = withoutComments(page.replace(columns, ""));
+  const html = assembledPage("index.html", { skip: PARTS.wbConsoleMenus });
+  assert.ok(html.includes(columns), "the page holds the columns part");
+  const outside = withoutComments(html.replace(columns, ""));
   for (const name of ["agentMenu", "toggleAgentMenu", "consoleRunText", "fenceItems", "noteItems", "columnMenu", "columnView", "consoleCount", "stageW"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }

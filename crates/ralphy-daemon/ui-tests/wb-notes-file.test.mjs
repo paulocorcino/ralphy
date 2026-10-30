@@ -13,7 +13,10 @@ function card(id, value, pointing) {
     dataset: { noteId: id },
     _notePointing: pointing,
     classList: { remove() {} },
-    querySelector: (sel) => (sel === ".note-rename" ? field : sel === ".note-path" ? path : null),
+    querySelector: (sel) => {
+      if (sel === ".note-rename") return field;
+      return sel === ".note-path" ? path : null;
+    },
   };
 }
 

@@ -22,8 +22,8 @@ import { groupTables } from "./wb-dbml-groups.ts";
 import type { DbmlColumn, DbmlEndpoint, DbmlRef, DbmlSchema, DbmlTable } from "./wb-dbml.ts";
 // The two modules import each other; both use the other only inside a function
 // that runs after both have loaded.
-import { drawDiagram, slugOf } from "./wb-viewer-render.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { openZoom } from "./wb-zoom-overlay.ts";
 
 type Ctx = {
@@ -158,7 +158,7 @@ function cardHead(ctx: Ctx, table: DbmlTable) {
   return head;
 }
 
-function card(ctx: Ctx, table: DbmlTable) {
+function buildCard(ctx: Ctx, table: DbmlTable) {
   const { doc } = ctx;
   const box = el(doc, "div", "dbml-card");
   box.dataset.table = table.name;
@@ -307,7 +307,7 @@ function groupSection(ctx: Ctx, group: { label: string; tables: DbmlTable[] }) {
   const head = el(doc, "div", "dbml-group-head");
   head.append(el(doc, "h2", "", group.label), pickAll);
   const grid = el(doc, "div", "dbml-grid");
-  for (const table of group.tables) grid.append(card(ctx, table));
+  for (const table of group.tables) grid.append(buildCard(ctx, table));
   section.append(head, grid);
   return section;
 }

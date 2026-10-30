@@ -6,7 +6,7 @@ import { WBFail } from "./wb-fail.ts";
 import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 
 /** What `createViewer` hands the read-only panes. */
 export type ViewerReadOnlyDeps = {
@@ -52,7 +52,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         watchNarrow(rec, ed);
         if (rec.visible) ed.layout();
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         // No `<pre>` degrade here: two texts side by side have no honest
         // single-pane fallback, and one of them rendered alone would read as
         // "no changes". Say it failed and close the tab (#311).
@@ -86,10 +86,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
       const mod = (rec.ed as MonacoDiffEditor | undefined)?.getModifiedEditor();
       mod?.focus();
-      mod?.getAction("actions.find")?.run();
+      mod?.getAction("actions.find")?.run().catch((err: unknown) => console.error("[workbench] monaco find failed", err));
     };
     rec.el = el;
-    mountDiff(rec, el.querySelector<HTMLElement>(".viewer-body")!);
+    void mountDiff(rec, el.querySelector<HTMLElement>(".viewer-body")!);
   }
 
   // --- an image tab (read-only) -------------------------------------------

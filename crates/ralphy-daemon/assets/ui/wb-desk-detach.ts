@@ -271,7 +271,7 @@ export function createDetach(deps: DetachDeps) {
   // the desk has loaded. `recordNoteName` refuses a record that already has
   // its path, so this is safe to repeat.
   function replayNoteNames(id: string, members: NonNullable<DetachMessage["members"]>) {
-    whenDeskLoaded().then(() => {
+    void whenDeskLoaded().then(() => {
       for (const x of members) {
         if (x?.kind === "note" && typeof x.path === "string") {
           recordNoteName(id, { noteId: x.id, path: x.path });
@@ -482,7 +482,7 @@ export function createDetach(deps: DetachDeps) {
       // The snapshot keeps no session id, so a member relaunched in the
       // popup comes home as a placeholder. `_revive` attaches it to the
       // session that runs now and never launches one.
-      spawnPlaceholder(member)._revive!();
+      void spawnPlaceholder(member)._revive!();
     }
   }
 

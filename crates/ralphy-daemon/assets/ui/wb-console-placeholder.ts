@@ -259,7 +259,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       // The fleet may call the peer available while its session list timed
       // out: a held box asks the list itself, and never waits for `wasOffline`.
       if (unheard && available) {
-        askHeld();
+        void askHeld();
         return;
       }
       if (!available) wasOffline = true;
@@ -326,7 +326,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // A placeholder restored for a recorded worktree asks whether that tree is
     // still there (no spawn), so the box says "gone" on load, not on the click.
     else if (record.checkout) {
-      checkoutStillThere(record.repo, record.checkout).then((there) => {
+      void checkoutStillThere(record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
       });
     }
@@ -369,7 +369,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       const session = await check();
       if (session && win.isConnected) attach(session);
     };
-    btn.addEventListener("click", async (e: MouseEvent) => {
+    const onRelaunchClick = async (e: MouseEvent) => {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
@@ -390,6 +390,9 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         return;
       }
       relaunchHere();
+    };
+    btn.addEventListener("click", (e: MouseEvent) => {
+      void onRelaunchClick(e);
     });
     // The store's wake answers when the peer is usable, and reports its own
     // failure; the box then says again what it said. False when the click
@@ -415,7 +418,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       const carry = deskOf(win);
       markRelaunch(carry.id, () => drop(true));
       if (missing) carry.checkout = null;
-      spawnOrMissing(
+      void spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
         record.agent,
         record.repo,

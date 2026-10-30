@@ -76,12 +76,12 @@ function oneLine(text: string) {
   if (trace >= 0) lines = lines.slice(0, trace);
   const at = lines.findIndex((l) => l.startsWith("Error: "));
   if (at < 0) return lines.map((l) => l.trim()).filter(Boolean).join(" ");
-  const parts = [lines[at].slice("Error: ".length).trim()];
+  const pieces = [lines[at].slice("Error: ".length).trim()];
   for (const l of lines.slice(at + 1)) {
     const t = l.trim().replace(/^\d+: /, "");
-    if (t && t !== "Caused by:") parts.push(t);
+    if (t && t !== "Caused by:") pieces.push(t);
   }
-  return parts.join(": ");
+  return pieces.join(": ");
 }
 
 // [cause, ...remedies] for a reply, or null when it says nothing. A cause
@@ -94,8 +94,8 @@ function parts(reply: Reply): Parts | null {
   if (Object.hasOwn(CAUSE, raw)) return { cause: CAUSE[raw], rest: [] };
   if (isSentence(raw) && !raw.startsWith("Error: ")) return { sentence: raw };
   const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /, "");
-  const [cause, ...rest] = text.split(" — ").map(bare).filter(Boolean);
-  return cause ? { cause, rest } : null;
+  const [head, ...rest] = text.split(" — ").map(bare).filter(Boolean);
+  return head ? { cause: head, rest } : null;
 }
 
 const tail = (rest: string[]) => rest.map((r) => ` ${capital(r)}.`).join("");
@@ -129,7 +129,7 @@ function why(reply: Reply, fallback: string) {
 }
 
 // One line of a success report (`warning: …`) as a sentence.
-function sentence(line: unknown) {
+function sentence(line: string | null | undefined) {
   const t = bare(String(line || ""));
   return t ? `${capital(t)}.` : "";
 }

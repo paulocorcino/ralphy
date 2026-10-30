@@ -131,7 +131,7 @@ export function settingsDialog() {
     deskHistory: { loaded: false, rows: [] as DeskRow[], error: "" },
     showSettingsSection(id: string) {
       this.settingsSection = id;
-      if (id === "desk-history") this.loadDeskHistory();
+      if (id === "desk-history") void this.loadDeskHistory();
     },
     async loadDeskHistory() {
       this.deskHistory.error = "";

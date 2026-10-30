@@ -51,6 +51,13 @@ function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
   );
 }
 
+// Why `name` cannot be a single directory entry, or "" when it can.
+function nameProblem(name: string) {
+  if (!name) return "name is required";
+  if (/[\\/]/.test(name)) return "name cannot contain / or \\";
+  return name === "." || name === ".." ? "name cannot be . or .." : "";
+}
+
 // `deps` is the shape every store takes; the store is where the door's flash
 // and confirm end, so it never calls the door.
 export function modalsStore(_deps: ModalsStoreDeps) {
@@ -233,13 +240,7 @@ export function modalsStore(_deps: ModalsStoreDeps) {
     // says *which* character was wrong.
     promptSubmit() {
       const name = this.promptModal.value.trim();
-      const bad = !name
-        ? "name is required"
-        : /[\\/]/.test(name)
-          ? "name cannot contain / or \\"
-          : name === "." || name === ".."
-            ? "name cannot be . or .."
-            : "";
+      const bad = nameProblem(name);
       if (bad) {
         this.promptModal.error = bad;
         return;

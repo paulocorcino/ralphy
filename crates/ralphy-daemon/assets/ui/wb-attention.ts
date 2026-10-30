@@ -243,12 +243,16 @@ export function wbAttention() {
 
     init() {
       this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
-      this.read();
-      this.readTelegram();
+      void this.read();
+      void this.readTelegram();
       this._link = consoleLinkOf(window.location.search);
       if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
-      window.addEventListener("workbench:attention-reread", () => this.read());
-      window.addEventListener("workbench:logged-in", () => this.read());
+      window.addEventListener("workbench:attention-reread", () => {
+        void this.read();
+      });
+      window.addEventListener("workbench:logged-in", () => {
+        void this.read();
+      });
       window.addEventListener("workbench:menus-close", () => this.close());
       document.addEventListener("focusin", (e) => this.focused(e.target));
       window.setInterval(() => {
@@ -366,7 +370,7 @@ export function wbAttention() {
       const was = this.open;
       sendWindow(window, "workbench:menus-close");
       this.open = !was;
-      if (this.open) this.readTelegram();
+      if (this.open) void this.readTelegram();
     },
     close() {
       this.open = false;
@@ -415,7 +419,7 @@ export function wbAttention() {
       if (!win?._deskId) return;
       for (const request of this.requests) {
         const session = sessionOf(request, this.$store.projects.liveSessions);
-        if (request.kind === "console-done" && session?.record === win._deskId) this.finish(request);
+        if (request.kind === "console-done" && session?.record === win._deskId) void this.finish(request);
       }
     },
     // Dismiss `request` with nothing said when the daemon refuses: the row
@@ -444,7 +448,7 @@ export function wbAttention() {
     // own tab when it has one, else the Consoles tab, panned to it.
     goTo(request: AttentionRequest) {
       this.open = false;
-      if (request.kind === "console-done") this.finish(request);
+      if (request.kind === "console-done") void this.finish(request);
       const id = sessionOf(request, this.$store.projects.liveSessions)?.record;
       if (id) this.reveal(id);
     },
@@ -457,7 +461,7 @@ export function wbAttention() {
         return;
       }
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
-      this.$nextTick(() => WBConsole.reveal(id));
+      void this.$nextTick(() => WBConsole.reveal(id));
     },
   });
 }

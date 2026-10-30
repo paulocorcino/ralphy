@@ -239,17 +239,18 @@ export const WBSessionRoute = (function () {
   // `since` is sent only on a reattach: a launch opens a new terminal.
   function requestOpts(
     req: SessionRequest,
-    holder: string,
+    holderId: string,
     gzip = false,
     attempt?: number,
     since?: number,
   ): SessionUrlOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null)
-      return { id: req.id, since, repo, takeover: req.takeover, watch: req.watch, holder, gzip, attempt };
-    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder, gzip, attempt };
+      return { id: req.id, since, repo, takeover: req.takeover, watch: req.watch, holder: holderId, gzip, attempt };
+    if (req.console)
+      return { console: true, repo, command: req.command, record: req.record, holder: holderId, gzip, attempt };
     const { agent, checkout, name, record } = req;
-    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder, gzip, attempt };
+    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder: holderId, gzip, attempt };
   }
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.

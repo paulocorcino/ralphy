@@ -66,7 +66,7 @@ export function wirePaste(deps: PasteDeps) {
     const reader = new FileReader();
     reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
     reader.onload = () => {
-      const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
+      const base64 = (typeof reader.result === "string" ? reader.result : "").replace(/^data:[^,]*,/, "");
       daemon
         .write("image.write", { repo: currentRepoNow(), base64 })
         .then((reply) => {
@@ -79,8 +79,8 @@ export function wirePaste(deps: PasteDeps) {
           term.focus();
         })
         // The socket closed with no reply: say what the browser saw.
-        .catch((err: { message?: string } | null | undefined) => {
-          const why = (err && err.message) || "connection unavailable";
+        .catch((err: unknown) => {
+          const why = (err instanceof Error && err.message) || "connection unavailable";
           term.write(`\r\n[paste refused — ${why}]\r\n`);
         });
     };

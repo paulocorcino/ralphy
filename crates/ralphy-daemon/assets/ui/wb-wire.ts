@@ -237,13 +237,13 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
           return send({ ...rest, encoding: "utf-8" });
         });
       };
-      send(payload);
+      void send(payload);
     }
 
     // A console's switcher cut a worktree: re-read the listing, flash what the
     // add had to say.
     function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
-      window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
+      void window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
       if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
     }
 
@@ -298,9 +298,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       }
     }
 
-    document.addEventListener("workbench:action", async (e) => {
+    async function runAction(d: WorkbenchAction) {
       if (!daemonBacked()) return;
-      const d = e.detail;
       const aim = actionTarget(d);
       if (!aim) return;
       switch (d.action) {
@@ -321,9 +320,40 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         case "delete":
           await actDelete(d, aim);
           break;
-        default:
+        case "branch-create":
+        case "branch-switch":
+        case "command":
+        case "console-close":
+        case "console-open":
+        case "console-restart":
+        case "console-switch-checkout":
+        case "copy-path":
+        case "detach":
+        case "detach-blocked":
+        case "fence-detach":
+        case "fence-detach-blocked":
+        case "fence-detach-refused":
+        case "fence-focus":
+        case "fence-reattach":
+        case "fence-remove-refused":
+        case "issue-label-change":
+        case "kanban-toggle":
+        case "login":
+        case "logoff":
+        case "open":
+        case "open-diff":
+        case "open-refused":
+        case "reload":
+        case "run-issue-focus":
+        case "run-start":
+        case "setting-change":
+          // The other gestures change nothing on the daemon's tree.
           break;
       }
+    }
+
+    document.addEventListener("workbench:action", (e) => {
+      runAction(e.detail).catch(() => flash("Could not finish that action."));
     });
   })();
 

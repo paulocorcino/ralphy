@@ -214,7 +214,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (!repo) return;
       if (this.active !== "consoles") this.activate("consoles");
       const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
-      window.Alpine.nextTick(() =>
+      void window.Alpine.nextTick(() =>
         window.WBNotes.openFromExplorer({
           repo,
           checkout: tree,
@@ -313,13 +313,13 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.tabs.push({ id, kind: ftype, title, path, project, icon: tabIcon(ftype), closable: true, checkout: ck });
       this.showTab(id);
       this.persistView();
-      window.Alpine.nextTick(() => {
+      void window.Alpine.nextTick(() => {
         // A re-attach passes bytes in; a fresh open reads `file.read`.
         const bytes: Promise<TabBody> =
           content != null
             ? Promise.resolve({ content, encoding, bom })
             : this.fetchContent(project, path, ftype, ck);
-        bytes.then((body) => {
+        void bytes.then((body) => {
           if (body == null) return; // nothing to show: fetchContent closed the tab
           WBViewer.open({
             id,
@@ -360,7 +360,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         t.id = newId;
       }
       // The viewer's own "what is shown" is keyed by id too.
-      window.Alpine.nextTick(() => this.syncViewer());
+      void window.Alpine.nextTick(() => this.syncViewer());
       this.persistView();
     },
 
@@ -409,7 +409,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.showTab(id);
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend") sendWindow(window, "workbench:spend-shown");
-      window.Alpine.nextTick(() => {
+      void window.Alpine.nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.
         if (id === "consoles") window.WBConsole?.refitAll?.();
@@ -454,7 +454,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.syncLater();
     },
     syncLater() {
-      window.Alpine.nextTick(() => this.syncViewer());
+      void window.Alpine.nextTick(() => this.syncViewer());
       this.persistView();
     },
     // Whether the canvas is wide enough for two panes right now: the tab menu
@@ -485,7 +485,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         this.activate(next.id);
       } else {
         // A background close can still be the slot's pane: repaint.
-        window.Alpine.nextTick(() => this.syncViewer());
+        void window.Alpine.nextTick(() => this.syncViewer());
       }
       this.persistView();
     },

@@ -104,6 +104,12 @@ export type PlanStep = { text: string; status: string };
 type PlanVerdict = { infeasible: boolean; needsSplit: boolean };
 
 /** The run agent's state of a snapshot, or null when it has none. */
+// The status of a plan step from the mark inside its `[ ]`.
+function stepStatus(mark: string) {
+  if (mark === " ") return "open";
+  return mark === "!" ? "noticed" : "checked";
+}
+
 function agentOf(doc: RunSnapshot): Run["agentState"] {
   return doc.phase?.agent || null;
 }
@@ -211,7 +217,7 @@ export const WBRun = {
     (md || "").split(/\r?\n/).forEach((ln) => {
       const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
       if (!m) return;
-      const status = m[1] === " " ? "open" : m[1] === "!" ? "noticed" : "checked";
+      const status = stepStatus(m[1]);
       out.push({ text: m[2].replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
     });
     return out;

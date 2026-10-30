@@ -56,7 +56,7 @@ export function shell() {
       window.addEventListener("workbench:logged-in", () => {
         // `/api/desk` is gated too: unread AND unwritable until re-read (#327);
         // the selected checkouts ride it (#406).
-        window.WBConsole?.afterLogin()?.then(() => {
+        void window.WBConsole?.afterLogin()?.then(() => {
           this.$store.checkouts.adoptDeskCheckouts();
           this.syncDeskFailure();
         });
@@ -71,12 +71,12 @@ export function shell() {
       // nudges the board (#301); the predicate coalesces it.
       window.addEventListener("workbench:runs-dirty", () => {
         if (this.$store.connection.tabHidden()) return;
-        this.$store.runs.hydrateRuns();
+        void this.$store.runs.hydrateRuns();
         sendWindow(window, "workbench:board-refresh", { trigger: "runs" });
       });
       // The Alpine store `checkouts` hears `unknown checkout` and copies the
       // desk's checkouts once the boot desk lands (wb-checkouts-store.ts).
-      window.WBConsole?.whenDeskLoaded?.().then(() => {
+      void window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.syncDeskFailure();
       });
       // A flush can be the read that finds the desk unreadable; no push says so.
@@ -95,7 +95,7 @@ export function shell() {
     rereadDesk() {
       const read = window.WBConsole?.reloadDesk?.();
       if (!read?.then) return;
-      read.then(() => {
+      void read.then(() => {
         this.syncDeskFailure();
         this.$store.checkouts.adoptDeskCheckouts();
       });
@@ -107,15 +107,16 @@ export function shell() {
     startNewDesk() {
       window.WBConsole?.startNewDesk?.()
         .then(() => this.syncDeskFailure())
-        .catch((e) => {
-          const why = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
+        .catch((e: unknown) => {
+          const message = e instanceof Error ? e.message : "";
+          const why = message.startsWith("the daemon") ? message : "the daemon did not answer";
           this.$store.modals.flash(`Could not start a new desk: ${why}.`);
         });
     },
 
     // --- the open project -------------------------------------------------
     // The fact itself is the Alpine store `projects` (wb-projects-store.ts).
-    toggle(ref: string, row?: Project) {
+    toggle(ref: string, _row?: Project) {
       const previous = this.$store.projects.openSlug;
       // A row on a host that cannot answer stays closed. The click still wakes
       // a sleeping host: that is the act the operator asked for.
@@ -127,9 +128,9 @@ export function shell() {
       const slug = this.$store.projects.openSlug;
       // NOT awaited: the accordion must not sit behind a cold WSL boot.
       if (slug === ref) this.$store.projects.wakePeerFor(ref);
-      this.$store.projects.loadAgents(slug);
+      void this.$store.projects.loadAgents(slug);
       // The chip's `<branch> · <name>` needs the listing (#406).
-      if (slug === ref) this.$store.checkouts.ensureWorktreeListing(ref);
+      if (slug === ref) void this.$store.checkouts.ensureWorktreeListing(ref);
       sendWindow(window, "workbench:spend-refresh");
       this.projectChanged(previous);
     },
@@ -194,7 +195,7 @@ export function shell() {
           this.$store.projects.setOpen(null);
           this.projectChanged(ref);
         }
-        this.$store.projects.loadRepos();
+        void this.$store.projects.loadRepos();
       } catch {
         this.$store.modals.flash("remove unavailable: no daemon");
       }
@@ -282,7 +283,7 @@ export function shell() {
       // `/` must never focus an input the Changes view is hiding (#317).
       this.sideView = "projects";
       this.sideOpen = true;
-      this.$nextTick(() => this.$refs.projectSearch?.focus());
+      void this.$nextTick(() => this.$refs.projectSearch?.focus());
     },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
@@ -293,7 +294,7 @@ export function shell() {
         // `nowMs` is as stale as the panel has been closed; re-anchor before
         // the first paint.
         this.nowMs = Date.now();
-        this.$store.runs.hydrateRuns();
+        void this.$store.runs.hydrateRuns();
       }
     },
     toggleKanban() {

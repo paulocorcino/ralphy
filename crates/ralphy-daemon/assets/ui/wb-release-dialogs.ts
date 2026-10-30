@@ -50,7 +50,7 @@ export function releaseDialogs() {
     },
     // `ralphy update` in a terminal restarts only this daemon, so only its own
     // consoles close.
-    get releaseConsoleWarning() {
+    get releaseConsoleWarning(): string {
       const n = this.$store.projects.localSessions().length;
       if (!n) return "";
       if (n === 1) return "1 console is open. The update closes it and stops the agent in it.";
@@ -71,7 +71,7 @@ export function releaseDialogs() {
       this.whatsNewOpen = true;
       this.$store.release.markReleaseSeen();
       // The warning counts the consoles open now, not at the last poll.
-      this.$store.projects.refreshLive();
+      void this.$store.projects.refreshLive();
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;
@@ -101,7 +101,7 @@ export function releaseDialogs() {
       this.relUpdate = { phase: "confirm", code: "", needCode, consoles, peers, peerConsoles, error: "" };
     },
     // The line about the WSL peers in the update question.
-    get updatePeerText() {
+    get updatePeerText(): string {
       const u = this.relUpdate;
       if (!u.peers || !u.peers.length) return "";
       const names = u.peers.join(", ");
@@ -129,7 +129,7 @@ export function releaseDialogs() {
         return;
       }
       this.relUpdate = { ...u, phase: "restarting", code: "" };
-      this.awaitNewBuild(this.$store.release.release.current);
+      void this.awaitNewBuild(this.$store.release.release.current);
     },
     // The line under the question when the daemon refused or the update failed.
     updateRefusal(result: { ok: boolean; status?: number; retryAfter?: string | null; message?: string }) {

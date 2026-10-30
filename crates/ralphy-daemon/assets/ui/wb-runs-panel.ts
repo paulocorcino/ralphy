@@ -66,7 +66,7 @@ export function wbRuns() {
       // reset the section dropdown to the new run's first non-Steps heading
       this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
       // each run has its own plan; the viewer follows the selection.
-      this.loadRunPlan();
+      void this.loadRunPlan();
     },
 
     // The attention list's "Open the run" (wb-attention.ts): open the run's
@@ -75,10 +75,10 @@ export function wbRuns() {
     // paint, so the run is chosen after that.
     openRun(repo: string, runid: string) {
       if (this.$store.projects.openSlug !== repo) this.toggle(repo);
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         this.$store.runs.setCurrentRun(runid);
         this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
-        this.loadRunPlan();
+        void this.loadRunPlan();
         if (!this.runsOpen) this.toggleRuns();
       });
     },
@@ -160,11 +160,11 @@ export function wbRuns() {
       if (!hit) return;
       this.$store.runs.setCurrentRun(hit.runid);
       this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
-      this.loadRunPlan();
+      void this.loadRunPlan();
       // `toggleRuns()` would CLOSE an already-open panel — only open it.
       if (!this.runsOpen) this.toggleRuns();
       this.trailFocus = number;
-      this.$nextTick(() =>
+      void this.$nextTick(() =>
         document
           .querySelector('.trail-node[data-issue="' + number + '"]')
           ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
@@ -368,7 +368,7 @@ export function wbRuns() {
     runsPanelFollowProject() {
       this.trailFocus = null;
       this.verbError = "";
-      this.$nextTick(() => {
+      void this.$nextTick(() => {
         this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
       });
     },
@@ -379,7 +379,7 @@ export function wbRuns() {
       // A read of the open project's runs was kept. Only while showing: a
       // whole-plan `file.read` nobody can see is cost.
       window.addEventListener("workbench:runs-read", () => {
-        if (this.runsOpen) this.loadRunPlan();
+        if (this.runsOpen) void this.loadRunPlan();
       });
       // The panel closed (`toggleRuns`): the board-arrival marker goes.
       window.addEventListener("workbench:runs-closed", () => (this.trailFocus = null));

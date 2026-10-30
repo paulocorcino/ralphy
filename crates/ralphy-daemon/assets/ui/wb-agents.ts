@@ -17,6 +17,11 @@ function shownReason(reason: string | null | undefined): string {
   return !reason || reason === "not installed here" ? NOT_INSTALLED : reason;
 }
 
+function rowTitle(needsRepo: boolean, unavailable: boolean, reason: string | null | undefined) {
+  if (needsRepo) return NEEDS_REPO;
+  return unavailable ? shownReason(reason) : "";
+}
+
 function rowFor(
   kind: string,
   label: string,
@@ -44,7 +49,7 @@ function rowFor(
     disabled,
     needsRepo,
     unavailable,
-    title: needsRepo ? NEEDS_REPO : unavailable ? shownReason(reason) : "",
+    title: rowTitle(needsRepo, unavailable, reason),
     tryAnyway: unavailable && !needsRepo,
     // How many of this row's consoles are already open in this repo. A
     // READOUT only: the menu is "New console", so every row's click launches
@@ -109,7 +114,8 @@ function runRows(roster: RosterRow[] | null | undefined) {
   }));
 }
 
-function rosterState(roster: unknown, repo: string | null | undefined) {
+// A peer's body reaches here as it came, so a body that is no array is read as empty.
+function rosterState(roster: RosterRow[] | null | undefined, repo: string | null | undefined) {
   const rows: RosterRow[] = Array.isArray(roster) ? roster.slice() : [];
   return { repo: repo || null, roster: rows, agents: runRows(rows) };
 }

@@ -43,7 +43,7 @@ type MountFiles = {
   treeKey(rel: string): string;
   useDaemonTree(): boolean;
   loadTreeLevel(rel: string): Promise<WunderbaumSource[]>;
-  treeWentStale(err: { message?: string } | null | undefined): void;
+  treeWentStale(err: unknown): void;
   openPeerDown(): unknown;
   openFile(node: WunderbaumNode): void;
   onTreeDirty(rel: string): unknown;
@@ -98,9 +98,9 @@ export function mountTree(files: MountFiles) {
     // the failure. A rethrow drew an "Error (…)" row inside the folder.
     // The footer says why; the folder closes, because it shows nothing.
     lazyLoad: (e: WunderbaumEvent) =>
-      WBReadRetry.patiently(() => files.loadTreeLevel(files.relPath(e.node))).catch((err) => {
+      WBReadRetry.patiently(() => files.loadTreeLevel(files.relPath(e.node))).catch((err: unknown) => {
         files.treeWentStale(err);
-        if (WBFleet.refDaemon(files.$store.projects.openSlug || "")) files.$store.projects.readFleetNow();
+        if (WBFleet.refDaemon(files.$store.projects.openSlug || "")) void files.$store.projects.readFleetNow();
         setTimeout(() => e.node.setExpanded(false));
         return false;
       }),
@@ -136,7 +136,7 @@ export function mountTree(files: MountFiles) {
       if (gen !== files._treeGen) return;
       files.treeLoading = false;
       if (e.error) files.treeError = "Could not read the files of this project.";
-      else restoreExpansion(files);
+      else void restoreExpansion(files);
     },
     edit: {
       trigger: ["F2", "macEnter"],

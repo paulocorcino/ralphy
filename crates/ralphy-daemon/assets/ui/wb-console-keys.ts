@@ -86,6 +86,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       doc.body.append(ta);
       try {
         ta.select();
+        // oxlint-disable-next-line typescript/no-deprecated -- the only copy path where `navigator.clipboard` is missing or refuses (an insecure origin, an unfocused window)
         doc.execCommand("copy");
       } catch {}
       ta.remove();

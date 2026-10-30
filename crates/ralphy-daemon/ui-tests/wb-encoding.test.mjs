@@ -7,6 +7,8 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { loadComponent, loadShell } from "./harness.mjs";
+import { createViewer } from "../assets/ui/wb-file-viewer.ts";
+import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 // app.ts names its siblings bare (`WBDaemon`, `WBViewer`), which the browser
 // resolves through `window` and Node through `globalThis`: mirror the fakes
@@ -50,7 +52,7 @@ function shellWith(reply) {
     externalChange() {},
     encodingOf: (id) => viewer.encodings?.[id] ?? null,
     saveDone: (id) => (viewer.lastAck = { id, ok: true }),
-    saveFailed: (id, reason, reply) => (viewer.lastAck = { id, ok: false, reason, reply }),
+    saveFailed: (id, reason, answer) => (viewer.lastAck = { id, ok: false, reason, reply: answer }),
     jumpTo() {},
     find() {},
   };
@@ -189,8 +191,6 @@ test("a refusal the operator declines to repair leaves the pane unsaved", async 
 // The record behind a pane is the fold: what it carries into a save and a
 // detach descriptor, and what a refusal does to it. The DOM here is a fake
 // that accepts any structure and answers each selector with one node of its own.
-import { createViewer } from "../assets/ui/wb-file-viewer.ts";
-import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };
 

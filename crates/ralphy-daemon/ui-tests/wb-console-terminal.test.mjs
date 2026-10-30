@@ -278,11 +278,11 @@ test("detachSocket retires a socket: no handler is left, an open socket says why
   };
   const handlers = (ws) => [ws.onclose, ws.onmessage, ws.onopen, ws.onerror];
 
-  const open = socket(1);
-  detachSocket(open, "reconnect");
-  assert.deepEqual(handlers(open), [null, null, null, null]);
-  assert.deepEqual(open.sent, [encodeDetach("reconnect")]);
-  assert.equal(open.closed, true);
+  const connected = socket(1);
+  detachSocket(connected, "reconnect");
+  assert.deepEqual(handlers(connected), [null, null, null, null]);
+  assert.deepEqual(connected.sent, [encodeDetach("reconnect")]);
+  assert.equal(connected.closed, true);
 
   // A socket still connecting cannot send: it only closes.
   const connecting = socket(0);

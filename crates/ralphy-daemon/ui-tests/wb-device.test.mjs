@@ -6,8 +6,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 import { WBDevice } from "../assets/ui/wb-device.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 function fixture(name) {
   return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));

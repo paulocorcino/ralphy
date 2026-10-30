@@ -27,7 +27,7 @@ function load() {
 }
 
 test("create builds its own model and hands it to one editor", () => {
-  const { WBMonaco, calls } = load();
+  const { calls } = load();
   const container = {};
   WBMonaco.create(container, { value: "x", path: "a.js", uid: 1, project: "p", narrow: false });
   assert.equal(calls.createModel.length, 1);
@@ -40,7 +40,7 @@ test("create builds its own model and hands it to one editor", () => {
 // owns. No model is created — the oracle `wb_monaco_308.py` counts models per
 // open pane, and a mirror must not move it.
 test("createOver puts a second editor over the SAME model and creates none", () => {
-  const { WBMonaco, calls } = load();
+  const { calls } = load();
   const model = { value: "shared" };
   const ed = WBMonaco.createOver({}, model, { narrow: false });
   assert.equal(calls.createModel.length, 0);
@@ -50,7 +50,7 @@ test("createOver puts a second editor over the SAME model and creates none", () 
 });
 
 test("createOver renders with the same options as create, gutter included", () => {
-  const { WBMonaco, calls } = load();
+  const { calls } = load();
   WBMonaco.create({}, { value: "x", path: "a.js", uid: 1, project: "p", narrow: true, wordWrap: "on" });
   WBMonaco.createOver({}, calls.createModel[0], { narrow: true, wordWrap: "on" });
   const [own, over] = calls.create.map((c) => c.opts);

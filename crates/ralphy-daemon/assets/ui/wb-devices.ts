@@ -119,12 +119,12 @@ export function deviceName(d: Device) {
   return parts.length ? parts.join(" · ") : "A device that sent no facts yet";
 }
 
-export function rows(reply: { devices?: Device[] }, when: (at: string) => string) {
+export function rows(reply: { devices?: Device[] }, formatAt: (at: string) => string) {
   return (reply.devices || []).map((d) => ({
     device: d.device,
     this: d.this === true,
     name: deviceName(d),
-    detail: [d.model, d.gpu, d.ip, `last seen ${when(d.last_seen)}`, d.events === 1 ? "1 event" : `${d.events} events`]
+    detail: [d.model, d.gpu, d.ip, `last seen ${formatAt(d.last_seen)}`, d.events === 1 ? "1 event" : `${d.events} events`]
       .filter(Boolean)
       .join(" · "),
   }));
@@ -164,7 +164,7 @@ export function eventLine(e: AuditEvent) {
 // Newest first. Lines in a row that say the same thing from the same
 // address are one row with a count, at the time of the newest; the log
 // file keeps each line.
-export function eventRows(reply: { events?: AuditEvent[] }, when: (at: string) => string) {
+export function eventRows(reply: { events?: AuditEvent[] }, formatAt: (at: string) => string) {
   const out: { when: string; text: string; ip: string; line: string; count: number }[] = [];
   for (const e of reply.events || []) {
     const text = eventLine(e);
@@ -175,9 +175,9 @@ export function eventRows(reply: { events?: AuditEvent[] }, when: (at: string) =
       last.text = `${text} · ${last.count} times`;
       continue;
     }
-    out.push({ when: when(e.at), text, ip, line: text, count: 1 });
+    out.push({ when: formatAt(e.at), text, ip, line: text, count: 1 });
   }
-  return out.map(({ when, text, ip }) => ({ when, text, ip }));
+  return out.map(({ when: at, text, ip }) => ({ when: at, text, ip }));
 }
 
 function when(at: string) {
@@ -209,7 +209,7 @@ export function devices() {
     raw: "",
     eventsError: "",
     init() {
-      this.load();
+      void this.load();
     },
     async load() {
       this.error = "";

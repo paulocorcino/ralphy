@@ -3,9 +3,10 @@
 // body itself is `wb-viewer-render.ts`.
 import { sendDocument } from "./wb-events.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
-import { drawDiagram, isRendered, renderBody, slugOf } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
+import { isRendered, renderBody } from "./wb-viewer-render.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
-import type { MermaidWindow } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import type { MonacoEditor } from "./wb-monaco.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
@@ -298,9 +299,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       // `drawDiagram` returns the SVG already sanitized.
       drawDiagram(window, holder.id + "-svg", holder.dataset.src!)
         .then((svg) => (holder.innerHTML = svg))
-        .catch((err) => {
+        .catch((err: unknown) => {
           holder.classList.add("mermaid-error");
-          holder.textContent = "Mermaid error: " + (err?.message || err);
+          holder.textContent = "Mermaid error: " + String(err instanceof Error && err.message ? err.message : err);
         });
     });
   }

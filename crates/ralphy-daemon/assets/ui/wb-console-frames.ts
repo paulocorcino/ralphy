@@ -127,12 +127,12 @@ export function frameQueue(
     waiting = [];
     // The first of the decode and the timer ends the wait; the other is dropped.
     let ended = false;
-    const end = (event: SocketEvent) => {
+    const end = (settled: SocketEvent) => {
       if (ended) return;
       ended = true;
       clearTimeout(timer);
       try {
-        apply(event);
+        apply(settled);
       } finally {
         drain();
       }

@@ -248,7 +248,7 @@ export function createDormancy(deps: DormancyDeps) {
       hiddenAt = 0;
       notePage(false);
       resumeAll(isStale(hiddenMs));
-      revivePlaceholders();
+      void revivePlaceholders();
     });
     // A page that closes, or that iOS freezes, may fire only this one.
     window.addEventListener("pagehide", () => notePage(true));
@@ -256,7 +256,7 @@ export function createDormancy(deps: DormancyDeps) {
     // so the restore this would catch cannot happen here.
     window.addEventListener("online", () => {
       resumeAll(true);
-      revivePlaceholders();
+      void revivePlaceholders();
       // Desk changes kept while the link was down go now.
       if (sync.hasPending()) scheduleDeskFlush(0);
     });

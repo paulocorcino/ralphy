@@ -280,7 +280,7 @@ export function loadShell(opts = {}) {
 // components share one page; without it the other `opts` go to a new
 // `loadShell`.
 export function loadComponent(alpineName, opts = {}) {
-  const { state: shell, window, document } = opts.from || loadShell(opts);
+  const { state: shellState, window, document } = opts.from || loadShell(opts);
   const factory = MODULE_COMPONENTS[alpineName];
   if (typeof factory !== "function") {
     throw new Error(`no Alpine component ${alpineName} in MODULE_COMPONENTS`);
@@ -290,22 +290,25 @@ export function loadComponent(alpineName, opts = {}) {
   const data = factory();
   const uses = new Set(data.uses);
   for (const name of uses) {
-    if (!(name in shell)) throw new Error(`${alpineName} lists ${name} in uses, and shell() has no such member`);
+    if (!(name in shellState)) throw new Error(`${alpineName} lists ${name} in uses, and shell() has no such member`);
   }
-  const magics = Object.assign({ $store: storeView(alpineName, shell.$store) }, opts.magics);
+  const magics = Object.assign({ $store: storeView(alpineName, shellState.$store) }, opts.magics);
   const own = (k) => Object.prototype.hasOwnProperty.call(data, k);
 
   // Alpine's merged scope: the component first, then `shell()`.
   const full = new Proxy(
     {},
     {
-      get: (_, k, receiver) => (own(k) ? Reflect.get(data, k, receiver) : k in magics ? magics[k] : shell[k]),
+      get: (_, k, receiver) => {
+        if (own(k)) return Reflect.get(data, k, receiver);
+        return k in magics ? magics[k] : shellState[k];
+      },
       set: (_, k, v) => {
         if (own(k)) data[k] = v;
-        else shell[k] = v;
+        else shellState[k] = v;
         return true;
       },
-      has: (_, k) => own(k) || k in magics || k in shell,
+      has: (_, k) => own(k) || k in magics || k in shellState,
     },
   );
 
@@ -317,8 +320,8 @@ export function loadComponent(alpineName, opts = {}) {
         if (own(k)) return Reflect.get(data, k, receiver);
         if (k in magics) return magics[k];
         if (uses.has(k)) {
-          const v = shell[k];
-          return typeof v === "function" ? (...args) => shell[k].apply(full, args) : readOnly(alpineName, v, k);
+          const v = shellState[k];
+          return typeof v === "function" ? (...args) => shellState[k].apply(full, args) : readOnly(alpineName, v, k);
         }
         throw new ReferenceError(`${alpineName} reads ${k}, which is neither its own nor in its uses list`);
       },
@@ -333,7 +336,7 @@ export function loadComponent(alpineName, opts = {}) {
       has: (_, k) => own(k) || k in magics || uses.has(k),
     },
   );
-  return { scope, data, shell, window, document };
+  return { scope, data, shell: shellState, window, document };
 }
 
 // `value` seen through a Proxy that reads as the value and refuses every write,

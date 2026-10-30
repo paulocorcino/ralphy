@@ -47,7 +47,8 @@ export type CheckoutMenuOptions = {
   host: HTMLElement;
   rows: CheckoutRow[];
   onPick: (row: CheckoutRow) => void;
-  onRemove?: (row: CheckoutRow) => void;
+  // A Promise is allowed: the menu starts it and does not wait.
+  onRemove?: (row: CheckoutRow) => void | Promise<void>;
   onCreate?: () => void;
 };
 
@@ -196,6 +197,10 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     openMenu = { anchor, el: menu, away, key };
     return menu;
   }
+  function checkoutGlyph(row: CheckoutRow) {
+    if (row.current) return "bi bi-check2";
+    return row.primary ? "bi bi-house-door" : "bi bi-folder2";
+  }
   // The menu's row for one tree: its glyph, name, branch, agent state and
   // dirty flag, and a trash action when `onRemove` is given.
   function checkoutItem(row: CheckoutRow, onPick: CheckoutMenuOptions["onPick"], onRemove: CheckoutMenuOptions["onRemove"]) {
@@ -203,7 +208,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     item.type = "button";
     item.className = "session-checkout-item" + (row.current ? " current" : "");
     const glyph = document.createElement("i");
-    glyph.className = row.current ? "bi bi-check2" : row.primary ? "bi bi-house-door" : "bi bi-folder2";
+    glyph.className = checkoutGlyph(row);
     const name = document.createElement("span");
     name.className = "session-checkout-name";
     name.textContent = row.name;
@@ -239,7 +244,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   }
   // The trash action of a worktree row. A span, not a button: a button inside
   // a button is not HTML, and the browser would hoist it out of the row.
-  function removeAction(row: CheckoutRow, onRemove: (row: CheckoutRow) => void) {
+  function removeAction(row: CheckoutRow, onRemove: NonNullable<CheckoutMenuOptions["onRemove"]>) {
     const trash = document.createElement("span");
     trash.setAttribute("role", "button");
     trash.tabIndex = 0;
@@ -250,7 +255,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     trash.addEventListener("click", (e) => {
       e.stopPropagation();
       closeCheckoutMenu();
-      onRemove(row);
+      void onRemove(row);
     });
     return trash;
   }
@@ -274,8 +279,12 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       anchor,
       host: win,
       rows: checkoutMenuRows(worktreeListings[ref], win._deskCheckout ?? null, sessionsOfRepo(ref)),
-      onPick: (row) => switchCheckout(win, row.primary ? null : row.name),
-      onCreate: () => createWorktreeFor(win),
+      onPick: (row) => {
+        void switchCheckout(win, row.primary ? null : row.name);
+      },
+      onCreate: () => {
+        void createWorktreeFor(win);
+      },
     });
   }
 

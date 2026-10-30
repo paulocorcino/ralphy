@@ -36,6 +36,11 @@ export type StageWindowDeps = {
   refreshCover: () => void;
 };
 
+function lockTitle(own: boolean, held: boolean) {
+  if (held) return "Locked by its fence. Unlock the fence first.";
+  return own ? "Unlock" : "Lock in place";
+}
+
 export function createStageWindow(deps: StageWindowDeps) {
   const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover } = deps;
 
@@ -179,7 +184,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     const held = !own && heldByFence(win);
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-    btn.title = held ? "Locked by its fence. Unlock the fence first." : own ? "Unlock" : "Lock in place";
+    btn.title = lockTitle(own, held);
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
@@ -198,7 +203,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     focusWin(win);
     // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
     // move the top layer without a round trip through the exit.
-    win.requestFullscreen().catch((err) => {
+    win.requestFullscreen().catch((err: unknown) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
       console.warn("fullscreen refused", err);

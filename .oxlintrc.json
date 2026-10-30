@@ -1,6 +1,6 @@
 {
   // Lints the workbench JS: crates/ralphy-daemon/assets/ui and ui-tests.
-  "plugins": ["eslint", "unicorn", "oxc", "typescript"],
+  "plugins": ["eslint", "unicorn", "oxc", "typescript", "import"],
   "categories": { "correctness": "error" },
   "env": { "browser": true, "es2024": true },
   "ignorePatterns": ["**/vendor/**"],
@@ -27,7 +27,48 @@
     // A function may score 10 (ADR-0081). `modified` counts a `switch` once.
     // An exception is a `// oxlint-disable-next-line complexity -- <reason>`
     // line, counted by `complexity_exceptions_do_not_grow`.
-    "complexity": ["error", { "max": 10, "variant": "modified" }]
+    "complexity": ["error", { "max": 10, "variant": "modified" }],
+    // The rules of #803. The `typescript/` rules that read the types run only
+    // with `--type-aware` (tsgolint), on the modules: the command is in AGENTS.md.
+    // A Promise is awaited, voided or caught.
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/await-thenable": "error",
+    "typescript/return-await": ["error", "in-try-catch"],
+    "typescript/require-await": "error",
+    // A value is used as the type it has.
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/require-array-sort-compare": "error",
+    "typescript/no-deprecated": "error",
+    "typescript/unbound-method": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/consistent-type-exports": "error",
+    // Imports and the shape of the code.
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-self-import": "error",
+    "import/first": "error",
+    // An import names the file with its `.ts` extension, as tsconfig.json
+    // explains.
+    "import/extensions": ["error", "always"],
+    "no-shadow": "error",
+    "max-depth": ["error", { "max": 3 }],
+    "no-nested-ternary": "error",
+    "no-else-return": ["error", { "allowElseIf": false }],
+    "prefer-arrow-callback": "error"
   },
   "overrides": [
     // Test code is not measured for complexity (ADR-0081 D3).

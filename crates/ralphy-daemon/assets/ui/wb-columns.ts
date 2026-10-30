@@ -231,6 +231,11 @@ export const WBColumns = (function () {
   // column whose FIRST console it overlaps by more than half the narrower
   // width, the largest overlap winning; otherwise it starts a column. Only the
   // first console is compared, so a staircase does not chain into one column.
+  function compareIds(a: string, b: string) {
+    if (a < b) return -1;
+    return a > b ? 1 : 0;
+  }
+
   function fromRects(items: StageItem[] | null | undefined): Grid {
     const box = (r: Partial<Rect> | null | undefined) => ({
       left: Number(r?.left) || 0,
@@ -239,7 +244,7 @@ export const WBColumns = (function () {
     });
     const list = (items || [])
       .map((it) => ({ id: it.id, ...box(it.rect) }))
-      .sort((a, b) => a.left - b.left || a.top - b.top || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      .sort((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
     const cols = [];
     for (const it of list) {
       let best = null;
@@ -354,16 +359,16 @@ export const WBColumns = (function () {
   }
 
   // The reason a console on this page cannot be opened as a column, or null.
-  function rowReason(open: boolean, full: boolean | undefined, tabbed: boolean) {
+  function rowReason(inGrid: boolean, full: boolean | undefined, tabbed: boolean) {
     if (tabbed) return REASON_TAB;
-    if (open) return REASON_OPEN;
+    if (inGrid) return REASON_OPEN;
     return full ? REASON_FULL : null;
   }
 
-  // The row of a console on this page. `open`: it is in the grid already.
+  // The row of a console on this page. `inGrid`: it is in the grid already.
   // `tabbed`: it is in its own tab, out of the stage.
-  function liveRow(r: RosterRow, open: boolean, full: boolean | undefined, tabbed: boolean): ColumnRow {
-    const reason = rowReason(open, full, tabbed);
+  function liveRow(r: RosterRow, inGrid: boolean, full: boolean | undefined, tabbed: boolean): ColumnRow {
+    const reason = rowReason(inGrid, full, tabbed);
     return {
       id: r.id,
       agent: r.agent,

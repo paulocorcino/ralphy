@@ -66,9 +66,9 @@ export function searchNow(files: SearchFiles): Promise<void> {
       }
       return files.applyFileSearch(reply.hits, !!reply.truncated, seq);
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       if (seq !== files.fileSearch.seq) return;
-      files.fileSearch.note = WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
+      files.fileSearch.note = WBFail.failed({ message: err instanceof Error ? err.message : undefined }, "Could not search: the daemon did not answer.");
     });
 }
 

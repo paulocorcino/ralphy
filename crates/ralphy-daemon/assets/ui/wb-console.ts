@@ -325,7 +325,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The scroll probe asks the daemon on the first terminal; a release answers
   // that it has none (ADR-0084 D3).
   const scrollProbe = createScrollProbe({
-    send: (records) => window.WBDaemon.observe("probe.scroll", { records }),
+    send: (batch) => window.WBDaemon.observe("probe.scroll", { records: batch }),
     now: () => performance.now(),
     requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
   });

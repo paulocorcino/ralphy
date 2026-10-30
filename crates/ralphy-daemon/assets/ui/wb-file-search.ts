@@ -31,7 +31,7 @@ function verbFor(mode: string): "tree.grep" | "tree.find" {
 
 // Trimmed and at least MIN_CHARS: below that the daemon answers empty anyway,
 // so the client does not spend a socket to learn it.
-function worthSearching(query: unknown): boolean {
+function worthSearching(query: string | null | undefined): boolean {
   return String(query ?? "").trim().length >= MIN_CHARS;
 }
 

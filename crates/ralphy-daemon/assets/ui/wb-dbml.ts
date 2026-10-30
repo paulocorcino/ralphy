@@ -160,10 +160,15 @@ function typeEnd(s: string, start: number) {
   return i;
 }
 
+function closerOf(opener: string) {
+  if (opener === "(") return ")";
+  return opener === "[" ? "]" : "";
+}
+
 // The index after the `(…)` or `[…]` group that starts at `i`, or after the
 // one character there when no group starts.
 function skipGroup(s: string, i: number) {
-  const closer = s[i] === "(" ? ")" : s[i] === "[" ? "]" : "";
+  const closer = closerOf(s[i]);
   if (!closer) return i + 1;
   const close = s.indexOf(closer, i);
   return close < 0 ? s.length : close + 1;

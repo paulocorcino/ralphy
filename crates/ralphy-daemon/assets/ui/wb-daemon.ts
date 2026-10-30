@@ -23,7 +23,7 @@ import type { PresenceReport } from "./wb-presence.ts";
 type SocketHandlers = {
   /** `reopened` is false on the first open only. */
   onOpen?: (ws: WebSocket, reopened: boolean) => void;
-  onMessage: (ev: MessageEvent) => void;
+  onMessage: (ev: MessageEvent<ArrayBuffer>) => void;
 };
 
 /** What the presence socket's owner hears besides the heartbeat. */
@@ -102,7 +102,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
     const ws = new WebSocket(WS_ORIGIN + "/ws/command");
     ws.binaryType = "arraybuffer";
     ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
-    ws.onmessage = (ev) => {
+    ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
       const a = new Uint8Array(ev.data);
       if (a[0] !== TAG_COMMAND) return;
       let frame: { payload: SpawnStatus };
@@ -275,7 +275,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
   }
 
   // Decode a `[0x02][JSON]` command frame, or `null` for anything else.
-  function commandFrame(ev: MessageEvent): PushFrame | null {
+  function commandFrame(ev: MessageEvent<ArrayBuffer>): PushFrame | null {
     const a = new Uint8Array(ev.data);
     if (a[0] !== TAG_COMMAND) return null;
     try {
@@ -329,7 +329,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
           replay();
         }
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         const f = commandFrame(ev);
         if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
         const p = f.payload || {};
@@ -381,7 +381,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
         if (reopened) onDirty();
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         if (commandFrame(ev)?.verb === "runs.dirty") onDirty();
       },
     });
@@ -403,7 +403,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
       onOpen: (_ws: WebSocket, reopened: boolean) => {
         if (reopened) onFrame({ verb: "changes.dirty", payload: { repo } });
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         const frame = commandFrame(ev);
         if (frame) onFrame(frame);
       },
@@ -440,7 +440,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         onOpen?.(reopened);
         for (const fn of presenceOpens) fn();
       },
-      onMessage: (ev: MessageEvent) => {
+      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_COMMAND) {
           const f = commandFrame(ev);

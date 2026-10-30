@@ -153,12 +153,12 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
   function detachedMembers() {
     const out: Record<string, string[]> = {};
     for (const id of detached) {
-      const entry = fencePopups.get(id);
-      const live = (entry?.members || []).map((m) => m.id).filter(Boolean);
+      const popup = fencePopups.get(id);
+      const live = (popup?.members || []).map((m) => m.id).filter(Boolean);
       // `adopted` is what lets an EMPTY live list mean empty: the popup answered
       // and holds nothing. Without it the fallback below would re-persist the
       // very consoles the operator just closed in there.
-      out[id] = entry?.adopted || live.length ? live : (entry?.memberIds || []).slice();
+      out[id] = popup?.adopted || live.length ? live : (popup?.memberIds || []).slice();
     }
     return out;
   }
