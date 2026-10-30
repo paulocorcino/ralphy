@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/audit/normalize.rs": {
-      "normalize": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/src/audit/normalize/hardware.rs": {
       "gpu": [
         14
