@@ -1,14 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
-      "sepOf": [
-        11
-      ],
-      "target": [
-        13
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-board.ts": {
       "boardRowToIssue": [
         11
