@@ -133,6 +133,10 @@ pub fn diagnose_repo(
 /// `out_path`, which this function reads, validates against the schema, and
 /// returns. It NEVER publishes to GitHub — that is the cli's job after the dev
 /// confirms. Mirrors [`diagnose_repo`]'s settings/auth/timeout handling.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn draft_issues(
     repo: &Path,
     out_path: &Path,
@@ -190,6 +194,10 @@ pub fn draft_issues(
 /// its [`TriageDraft`] JSON to `out_path`, which this function reads and validates.
 /// It NEVER publishes to GitHub — the cli applies the verdicts after the operator
 /// confirms. Mirrors [`draft_issues`]'s settings/auth/timeout handling.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "public entry point called by the composition root with one value per setting"
+)]
 pub fn triage_issues(
     repo: &Path,
     out_path: &Path,

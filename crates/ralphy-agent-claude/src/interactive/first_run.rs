@@ -29,6 +29,10 @@ pub(super) fn ensure_interactive_session_ready(repo_root: &Path) {
     let key = repo_root.to_string_lossy().replace('\\', "/");
     let updated = with_onboarding_completed(with_workspace_trusted(root, &key));
     if let Ok(s) = serde_json::to_string_pretty(&updated) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the pre-cleared first-run gates are a convenience; the session still starts"
+        )]
         let _ = std::fs::write(&cfg_path, s);
     }
 }

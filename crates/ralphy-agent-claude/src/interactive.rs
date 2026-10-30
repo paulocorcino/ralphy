@@ -18,6 +18,7 @@ use tracing::info;
 
 use crate::api_watch::{ApiWatch, ApiWatchAction};
 use crate::auth::{is_claude_auth_error, transcript_limit, CLAUDE_AUTH_ERROR_MSG};
+use crate::cleanup::remove_stale_file;
 use crate::headless::classify_outcome;
 use crate::plan::materialize_plugin;
 use crate::usage::{latest_transcript_text, latest_transcript_text_since};
@@ -98,8 +99,8 @@ impl ClaudeAgent {
             return self.execute_headless(plan, ws);
         }
 
-        std::fs::create_dir_all(&self.run_dir).ok();
-        std::fs::create_dir_all(ws.ralphy_dir()).ok();
+        std::fs::create_dir_all(&self.run_dir).context("creating the run directory")?;
+        std::fs::create_dir_all(ws.ralphy_dir()).context("creating the .ralphy directory")?;
 
         // The live session reads the charter from disk (the headless copy keeps
         // the binary self-contained).
@@ -130,7 +131,7 @@ impl ClaudeAgent {
         // 2026-07-24).
         let exec_effort = self.resolve_exec_effort(plan);
         let flag_file = self.run_dir.join("status.flag");
-        let _ = std::fs::remove_file(&flag_file);
+        remove_stale_file(&flag_file);
         // The agent-state tail (ADR-0059 §3): the hooks append, the watcher
         // thread folds and emits transitions for as long as the child runs.
         let status = crate::status::Watcher::start(&self.run_dir)?;
@@ -189,7 +190,7 @@ impl ClaudeAgent {
         // `return`/`?` between `spawn` and `kill`.
         let mut respawned = false;
         let outcome = loop {
-            let _ = std::fs::remove_file(&flag_file);
+            remove_stale_file(&flag_file);
             // One gate per child: it reads only the lines written after its spawn.
             let mut proof = ProofWait::new(
                 status.path().to_path_buf(),
@@ -210,6 +211,10 @@ impl ClaudeAgent {
             );
             // Reclaim: kill the tree and drop the session (closes the ConPTY).
             // Unconditional so the child never outlives us on error paths.
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the child may have exited already, and the tree is reclaimed"
+            )]
             let _ = session.kill();
             match respawn_step(end?, &mut respawned) {
                 RespawnStep::Done(o) => break o,
@@ -366,11 +371,19 @@ impl<'a> SessionPump<'a> {
     fn drain(&mut self, session: &mut PtySession) {
         while let Ok(chunk) = self.rx.try_recv() {
             if scan_dsr_request(&mut self.dsr_carry, &chunk) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a closed terminal ends the session on the next poll"
+                )]
                 let _ = session.write_all(CURSOR_POSITION_REPLY);
             }
             self.login_watch.feed(&chunk);
             self.api_watch.feed(&chunk);
             if let Some(f) = self.log.as_mut() {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "the transcript log is a copy for the operator, not the run"
+                )]
                 let _ = f.write_all(&chunk);
             }
         }
@@ -441,7 +454,11 @@ fn classify_exit(
     let stopped = matches!(exit, SessionExit::Stopped);
     let limit_transcript = match exit {
         SessionExit::Limit(t) => Some(t),
-        _ => None,
+        SessionExit::Flag
+        | SessionExit::Stopped
+        | SessionExit::TimedOut
+        | SessionExit::ChildExited
+        | SessionExit::Respawn => None,
     };
 
     let flag = std::fs::read_to_string(flag_file).ok();
