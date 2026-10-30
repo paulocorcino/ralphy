@@ -99,7 +99,7 @@ fn main() -> Result<()> {
                  capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]\n  \
                  vendor-lock <out>\n  \
                  oversized [--base <rev>]\n  \
-                 complexity --check | --bless [--base <rev>] [--oxlint <program>]"
+                 complexity --check [--base <rev>]"
             );
             std::process::exit(2);
         }

@@ -18,8 +18,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
-  # The oxlint of the `ui-tests` and `complexity` jobs. The `complexity` xtask
-  # runs the same version through npx locally, and its test
+  # The oxlint of the `ui-tests` job. The oxlint command of AGENTS.md runs
+  # the same version through npx locally, and the ratchet
   # `ci_installs_the_pinned_oxlint` fails when the two differ.
   OXLINT_VERSION: "1.85.0"
   OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
@@ -419,11 +419,10 @@ jobs:
 
   complexity:
     name: no function grows past its complexity limit
-    # Fails when a production function scores over 10 and docs/complexity-
-    # baseline.json does not list it, or a listed function scores higher or
-    # lower than its entry (ADR-0081). Rust is scored by its cognitive
-    # complexity, read from the source text; TypeScript by oxlint's
-    # complexity rule.
+    # Fails when a Rust production function scores over 10 and has no
+    # `// complexity-exception: <reason>` marker (ADR-0081). The score is its
+    # cognitive complexity, read from the source text. The TypeScript limit is
+    # oxlint's `complexity` rule, which the `ui-tests` job runs.
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -442,8 +441,5 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Download oxlint
-        run: ./.github/scripts/fetch-oxlint.sh
-
-      - name: No function over its complexity limit grows
-        run: cargo run -q -p xtask -- complexity --check --oxlint ./oxlint-x86_64-unknown-linux-gnu
+      - name: No Rust function over its complexity limit
+        run: cargo run -q -p xtask -- complexity --check
