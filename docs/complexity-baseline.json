@@ -1,20 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-console-checkout.ts": {
-      "askWorktree": [
-        12
-      ],
-      "checkoutMenu": [
-        14
-      ],
-      "checkoutMenuRows": [
-        12
-      ],
-      "createWorktreeFor": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-feeds.ts": {
       "ingestFleet": [
         12
