@@ -44,14 +44,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/telegram/notifier.rs": {
-      "on_event": [
-        12
-      ],
-      "on_tick": [
-        15
-      ]
-    },
     "crates/ralphy-cli/src/triage.rs": {
       "apply_triage": [
         15
