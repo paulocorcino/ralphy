@@ -233,6 +233,21 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     key("font-down", "A−", "Smaller text");
     key("font-up", "A+", "Larger text");
 
+    // A key of the bar other than paste, on the console's terminal `term`.
+    function pressKey(term: ConsoleTerm, name: string) {
+      if (name === "keyboard") {
+        toggleKeyboard(term.term.textarea);
+      } else if (name === "copy") {
+        writeClipboard(term.term.getSelection(), term.term);
+      } else if (name === "select") {
+        term.setSelecting(!term.selecting);
+      } else if (name === "font-up" || name === "font-down") {
+        setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
+      } else {
+        term.sendKey(name);
+      }
+    }
+
     bar.addEventListener("click", (e: MouseEvent) => {
       const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-key]");
       if (!btn) return;
@@ -249,16 +264,8 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       focusWin(win);
       if (read) {
         void pasteAfterRead(win, pressed, read);
-      } else if (name === "keyboard") {
-        toggleKeyboard(win._term.term.textarea);
-      } else if (name === "copy") {
-        writeClipboard(win._term.term.getSelection(), win._term.term);
-      } else if (name === "select") {
-        win._term.setSelecting(!win._term.selecting);
-      } else if (name === "font-up" || name === "font-down") {
-        setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
       } else {
-        win._term.sendKey(name!);
+        pressKey(win._term, name!);
       }
       // Back to the terminal, inside the gesture, so an open keyboard stays up.
       win._term.term.focus();

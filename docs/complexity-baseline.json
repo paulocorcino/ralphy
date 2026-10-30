@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-daemon/assets/ui/wb-console-keys.ts": {
-      "(anonymous)": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-placeholder.ts": {
       "(anonymous)": [
         15,
