@@ -337,11 +337,6 @@
         11
       ]
     },
-    "crates/ralphy-daemon/src/tree/search.rs": {
-      "find": [
-        12
-      ]
-    },
     "crates/ralphy-daemon/src/watch.rs": {
       "watch": [
         14
