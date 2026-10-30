@@ -186,8 +186,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // restore, the console name,
                 // the input folds, the key bar, the feeds, the dormancy, the window birth and the
                 // placeholder, and they import the window state; the terminal imports its touch
-                // gesture and its paste; the title imports the worktree switcher and the fences
-                // import the fence gestures; the entry
+                // gesture and its paste; the title imports the worktree switcher, the fences
+                // import the fence gestures and the chrome the window gestures; the entry
                 // imports the console, the door for operator messages, and the z stack and
                 // the gestures. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -219,6 +219,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-detach.js",
                 "wb-stage-view.js",
                 "wb-stage-chrome.js",
+                "wb-stage-window-gestures.js",
                 "wb-desk-popups.js",
                 "wb-desk-records.js",
                 "wb-desk-restore.js",

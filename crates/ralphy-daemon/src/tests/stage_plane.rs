@@ -10,13 +10,14 @@ use super::*;
 /// consult.
 #[test]
 fn shell_drags_only_past_a_threshold() {
-    // The console, its fence list, its window chrome and its fences, as one
-    // text: the window gestures live in the chrome, the fence gestures in the
-    // fences, the fence records in the fence list.
+    // The console, its fence list, its window chrome and gestures and its
+    // fences, as one text: the window gestures live in their own module, the
+    // fence gestures in the fences, the fence records in the fence list.
     let js = &[
         include_str!("../../assets/ui/wb-console.ts"),
         include_str!("../../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
     ]
@@ -91,11 +92,13 @@ fn shell_drags_only_past_a_threshold() {
 /// gestures themselves by `tests/browser/console/wb_console_touch.py`.
 #[test]
 fn titlebar_touch_double_taps_and_holds() {
-    // The console, its window chrome and its title, as one text: the titlebar lives in the
-    // chrome, the name's double-click in the title.
+    // The console, its window chrome, its window gestures and its title, as one text: the
+    // titlebar lives in the chrome, its touch gestures in the window gestures, the name's
+    // double-click in the title.
     let js = &[
         include_str!("../../assets/ui/wb-console.ts"),
         include_str!("../../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
         include_str!("../../assets/ui/wb-console-title.ts"),
     ]
     .concat();
@@ -182,12 +185,14 @@ fn shell_has_no_clamp_and_carries_the_stage() {
 /// here, each inside the function that must hold it.
 #[test]
 fn shell_navigates_the_plane() {
-    // The console, its window chrome, its fences and its view, as one text:
-    // the plane lives in the console, the window drag in the chrome, the
-    // fence drag in the fences, the reveal, the pan and the wheel in the view.
+    // The console, its window chrome and gestures, its fences and its view, as
+    // one text: the plane lives in the console, the window drag in the window
+    // gestures, the fence drag in the fences, the reveal, the pan and the wheel
+    // in the view.
     let js = &[
         include_str!("../../assets/ui/wb-console.ts"),
         include_str!("../../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-view.ts"),

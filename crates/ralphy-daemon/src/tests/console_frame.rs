@@ -17,13 +17,14 @@ use super::*;
 /// and CSS that no node test runs, so it fails here or nowhere.
 #[test]
 fn a_console_can_take_the_whole_screen() {
-    // The console, its window chrome and its view, as one text: the full-screen state lives
-    // in the console, its button and the gesture guards in the chrome, the registration of
-    // the browser's event in the view.
+    // The console, its window chrome, its window gestures and its view, as one text: the
+    // full-screen state lives in the console, its button in the chrome, the gesture guards
+    // in the window gestures, the registration of the browser's event in the view.
     let js = &[
         include_str!("../../assets/ui/wb-console.ts"),
         include_str!("../../assets/ui/wb-stage-window.ts"),
         include_str!("../../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-view.ts"),
     ]
     .concat();
