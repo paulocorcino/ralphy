@@ -152,11 +152,7 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     async ensureWorktreeListing(ref: string | null | undefined, force = false) {
       if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
       const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
-      let listing: Listing | null = null;
-      try {
-        const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
-        if (reply && reply.status === "ok") listing = reply.checkouts || null;
-      } catch {}
+      const listing = await readWorktreeListing(ref);
       if (seq !== this._listingSeq) return; // superseded → the newer read owns it
       if (listing || force) this._storeListing(ref, listing);
     },
@@ -197,3 +193,15 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
 }
 
 export type CheckoutsStore = ReturnType<typeof checkoutsStore>;
+
+// The worktree listing of `ref` from `worktree.list`, or null when the read
+// fails or the reply has none.
+async function readWorktreeListing(ref: string): Promise<Listing | null> {
+  try {
+    const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
+    if (reply && reply.status === "ok") return reply.checkouts || null;
+  } catch {
+    // A transport error reads as no listing, as a refusal does.
+  }
+  return null;
+}
