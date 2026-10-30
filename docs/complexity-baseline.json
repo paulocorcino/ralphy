@@ -1,14 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-agent-gemini/src/revocation.rs": {
-      "inspect_admin_tier": [
-        13
-      ],
-      "strip_ansi": [
-        12
-      ]
-    },
     "crates/ralphy-agent-gemini/src/root.rs": {
       "session_stems": [
         11
