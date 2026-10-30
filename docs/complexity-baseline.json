@@ -81,14 +81,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-fences.ts": {
-      "arrangeFence": [
-        12
-      ],
-      "detachFence": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
       "repathTabs": [
         14

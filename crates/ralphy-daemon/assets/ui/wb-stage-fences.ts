@@ -338,17 +338,7 @@ export function createFences(deps: FenceDeps) {
 
   function detachFence(id: string) {
     const out = detachFold(popups.detachedIds(), { type: "detach", fenceId: id });
-    for (const effect of out.effects) {
-      if (effect.type === "focus") {
-        focusDetached(id);
-        return;
-      }
-      if (effect.type === "refuse") {
-        fenceNotice(id, `Maximum of ${DETACH_MAX} detached fences`);
-        WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
-        return; // the registry is NOT committed
-      }
-    }
+    if (detachEnded(id, out.effects)) return;
     if (!out.effects.some((e) => e.type === "open")) return;
 
     const st = stage();
@@ -403,6 +393,23 @@ export function createFences(deps: FenceDeps) {
     applyExtent();
     refreshFenceChrome();
     WB.emit("fence-detach", { fence: id });
+  }
+
+  // A detach the fold ends here: the fence is already in a popup (raise it),
+  // or the cap refuses one more. Neither commits the registry.
+  function detachEnded(id: string, effects: ReturnType<typeof detachFold>["effects"]) {
+    for (const effect of effects) {
+      if (effect.type === "focus") {
+        focusDetached(id);
+        return true;
+      }
+      if (effect.type === "refuse") {
+        fenceNotice(id, `Maximum of ${DETACH_MAX} detached fences`);
+        WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
+        return true;
+      }
+    }
+    return false;
   }
 
   // Raising a popup that already holds this fence — the ONLY way to raise
@@ -472,7 +479,7 @@ export function createFences(deps: FenceDeps) {
       .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
-    const headH = el.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
+    const headH = fenceHeadHeight(el);
     const tiles = tileIntoRect(
       {
         left: rect.left,
@@ -498,11 +505,7 @@ export function createFences(deps: FenceDeps) {
       focusWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
-    // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
-    // way to scroll away from a full bleed whose titlebar is covered.
-    for (const win of wins) {
-      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
-    }
+    raiseFullBleeds();
     // AFTER the 0.24s tiling transition: an immediate fold would measure the
     // pre-arrange boxes.
     setTimeout(() => {
@@ -514,6 +517,18 @@ export function createFences(deps: FenceDeps) {
       refreshFenceChrome();
       applyExtent();
     }, 300);
+  }
+
+  // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
+  // way to scroll away from a full bleed whose titlebar is covered.
+  function raiseFullBleeds() {
+    for (const win of wins) {
+      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
+    }
+  }
+
+  function fenceHeadHeight(el: HTMLElement) {
+    return el.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
   }
 
   return { buildFence, startFenceMove, startFenceResize, arrangeFence, detachFence };
