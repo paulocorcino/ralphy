@@ -294,11 +294,6 @@
         11
       ]
     },
-    "crates/ralphy-proc-util/src/lib.rs": {
-      "tree_to_kill": [
-        11
-      ]
-    },
     "crates/ralphy-pty/src/bin/demo.rs": {
       "main": [
         13
