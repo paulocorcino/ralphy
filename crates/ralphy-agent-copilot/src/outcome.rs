@@ -28,35 +28,34 @@ use crate::CopilotAgent;
 /// The LAST qualifying record wins. Robust to a truncated/empty stream: lines that
 /// don't parse as JSON are skipped, so a partial last line never panics.
 pub(crate) fn copilot_final_text(stdout: &str) -> String {
-    let mut final_text: Option<String> = None;
-    for line in stdout.lines() {
-        let Ok(obj) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if obj.get("ephemeral").and_then(Value::as_bool) == Some(true) {
-            continue;
-        }
-        if obj.get("type").and_then(Value::as_str) != Some("assistant.message") {
-            continue;
-        }
-        let data = match obj.get("data") {
-            Some(d) => d,
-            None => continue,
-        };
-        let toolless = data
-            .get("toolRequests")
-            .and_then(Value::as_array)
-            .map(|a| a.is_empty())
-            .unwrap_or(false);
-        if !toolless {
-            continue;
-        }
-        let Some(text) = data.get("content").and_then(Value::as_str) else {
-            continue;
-        };
-        final_text = Some(text.to_string());
+    stdout
+        .lines()
+        .rev()
+        .find_map(toolless_assistant_text)
+        .unwrap_or_default()
+}
+
+/// The `content` of one durable `assistant.message` record whose
+/// `toolRequests` is present and empty, or `None` for any other line.
+fn toolless_assistant_text(line: &str) -> Option<String> {
+    let obj = serde_json::from_str::<Value>(line).ok()?;
+    if obj.get("ephemeral").and_then(Value::as_bool) == Some(true) {
+        return None;
     }
-    final_text.unwrap_or_default()
+    if obj.get("type").and_then(Value::as_str) != Some("assistant.message") {
+        return None;
+    }
+    let data = obj.get("data")?;
+    let toolless = data
+        .get("toolRequests")
+        .and_then(Value::as_array)
+        .is_some_and(|a| a.is_empty());
+    if !toolless {
+        return None;
+    }
+    data.get("content")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 /// Extract Copilot's [`CompletionSignals`] from a call's raw end state and delegate

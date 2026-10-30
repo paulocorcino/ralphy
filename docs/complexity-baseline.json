@@ -1,11 +1,6 @@
 {
   "ceiling": 15,
   "functions": {
-    "crates/ralphy-agent-copilot/src/outcome.rs": {
-      "copilot_final_text": [
-        13
-      ]
-    },
     "crates/ralphy-agent-cursor/src/outcome.rs": {
       "collect_tool_results": [
         13
