@@ -112,11 +112,6 @@
         13
       ]
     },
-    "crates/ralphy-core/src/runner/phases/close.rs": {
-      "close_and_record": [
-        14
-      ]
-    },
     "crates/ralphy-core/src/runner/phases/execute.rs": {
       "execute_phase": [
         11

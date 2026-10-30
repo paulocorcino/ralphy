@@ -94,40 +94,59 @@ pub(crate) fn close_and_record(
     // (the close proceeds anyway after the one bounce); a missing or empty
     // handoff stays a graceful no-op.
     if let Some(plan_md) = plan_md {
-        // Capture the raw plan at close (before the next issue's `plan()` overwrites
-        // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
-        crate::emit::plan_closed(issue.number, &plan_md);
-        if !verdicts.is_empty() {
-            cx.tracker
-                .write_evidence(issue.number, &issue.body, &verdicts)?;
-        } else {
-            warn!(
-                number = issue.number,
-                "no acceptance ledger in the plan — no evidence comment written"
-            );
-        }
-        if let Some(report) = handoff::close_report(&plan_md) {
-            cx.tracker.comment(issue.number, &report)?;
-        }
-        if let Some(note) = handoff::knowledge_note(&plan_md) {
-            write_knowledge(cx.ws, issue, &cx.cfg.stamp, &note);
-        } else if handoff::has_handoff(&plan_md) {
-            warn!(
-                number = issue.number,
-                "handoff present but no `Environment facts & traps` / \
-                 `Commands that work` blocks — no knowledge note cached"
-            );
-        }
-        match handoff::knowledge_used(&plan_md) {
-            Some(citations) => record_citations(cx.ws, issue, &cx.cfg.stamp, citations),
-            None if handoff::has_handoff(&plan_md) => warn!(
-                number = issue.number,
-                "handoff present but no `Knowledge used` block — \
-                 hit-rate signal lost for this close"
-            ),
-            None => {}
-        }
+        publish_plan_record(cx, issue, &plan_md, &verdicts)?;
     }
 
     Ok(())
+}
+
+/// Publish what a closed issue's plan leaves behind: the closed plan event,
+/// the acceptance evidence, the session handoff report, and the knowledge note
+/// with its citations.
+fn publish_plan_record(
+    cx: &IssueCtx,
+    issue: &Issue,
+    plan_md: &str,
+    verdicts: &[acceptance::Verdict],
+) -> Result<()> {
+    // Capture the raw plan at close (before the next issue's `plan()` overwrites
+    // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
+    crate::emit::plan_closed(issue.number, plan_md);
+    if !verdicts.is_empty() {
+        cx.tracker
+            .write_evidence(issue.number, &issue.body, verdicts)?;
+    } else {
+        warn!(
+            number = issue.number,
+            "no acceptance ledger in the plan — no evidence comment written"
+        );
+    }
+    if let Some(report) = handoff::close_report(plan_md) {
+        cx.tracker.comment(issue.number, &report)?;
+    }
+    record_knowledge(cx, issue, plan_md);
+    Ok(())
+}
+
+/// Cache the plan's knowledge note and record its `Knowledge used` citations.
+/// A handoff that carries neither block is warned about, never an error.
+fn record_knowledge(cx: &IssueCtx, issue: &Issue, plan_md: &str) {
+    if let Some(note) = handoff::knowledge_note(plan_md) {
+        write_knowledge(cx.ws, issue, &cx.cfg.stamp, &note);
+    } else if handoff::has_handoff(plan_md) {
+        warn!(
+            number = issue.number,
+            "handoff present but no `Environment facts & traps` / \
+             `Commands that work` blocks — no knowledge note cached"
+        );
+    }
+    match handoff::knowledge_used(plan_md) {
+        Some(citations) => record_citations(cx.ws, issue, &cx.cfg.stamp, citations),
+        None if handoff::has_handoff(plan_md) => warn!(
+            number = issue.number,
+            "handoff present but no `Knowledge used` block — \
+             hit-rate signal lost for this close"
+        ),
+        None => {}
+    }
 }
