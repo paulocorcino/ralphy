@@ -724,6 +724,24 @@ test("spawn runs on a channel and opens no socket", () => {
   assert.equal(seen.length, 3);
 });
 
+test("a command whose page socket misses the handshake deadline runs nothing", () => {
+  const { d, sockets, timers, open, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  const seen = [];
+  withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st.status)));
+  // The handshake deadline passes with the page socket still connecting.
+  withFakes(() => {
+    for (const t of timers) if (t.ms === 8000) t.fn();
+  });
+  runRetries();
+  open(sockets[sockets.length - 1]);
+  const spawnOpens = sockets.flatMap((s) =>
+    s.sent.filter((f) => f.verb === "channel.open" && f.payload.kind === "spawn"),
+  );
+  assert.equal(spawnOpens.length, 0, "a late socket does not run the command");
+  assert.deepEqual(seen, []);
+});
+
 test("a command whose socket was lost is not run again on the next socket", () => {
   const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
   withFakes(() => d.subscribePresence(() => {}));

@@ -385,20 +385,25 @@ export function createDaemon(
   // reply's `payload` (which carries `status`) to `onStatus`. The channel ends
   // on the terminal `exited`/`error`, or when the daemon or the socket ends
   // it. A socket that ends mid-run ends the command: the next socket does not
-  // run the verb again.
+  // run the verb again. A page socket that does not open within the handshake
+  // deadline runs nothing, as a command socket whose handshake failed did.
   function spawn(verb: string, payload: CommandPayload, onStatus: (st: SpawnStatus) => void) {
     const id = nextId++;
     let over = false;
     let left = false;
     let leave: (() => void) | null = null;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const finish = () => {
       over = true;
       left = true;
+      clearTimeout(deadline);
       leave?.();
     };
+    deadline = setTimeout(finish, CONNECT_TIMEOUT_MS);
     leave = page.join({
       onOpen: (channels: PageChannels) => {
         if (over) return;
+        clearTimeout(deadline);
         const ch = channels.open("spawn", { command: { id, verb, payload } });
         ch.onFrame = (inner: Uint8Array) => {
           if (over || inner[0] !== TAG_COMMAND) return;
