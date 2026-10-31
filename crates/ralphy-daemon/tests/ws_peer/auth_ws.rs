@@ -96,7 +96,7 @@ async fn bearer_policy_gates_the_ws_upgrade() {
             assert_eq!(p.name, Some("anvil".into()));
             assert_eq!(p.avatar, Some("🐙".into()));
         }
-        frame @ (Frame::Terminal { .. } | Frame::Command(_)) => {
+        frame @ (Frame::Terminal { .. } | Frame::Command(_) | Frame::Channel { .. }) => {
             panic!("expected a presence frame, got {frame:?}")
         }
     }

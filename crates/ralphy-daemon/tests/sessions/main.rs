@@ -54,7 +54,7 @@ async fn refused(url: &str) -> serde_json::Value {
                     assert!(payload.is_none(), "exactly one refusal frame");
                     payload = Some(cmd.payload);
                 }
-                frame @ (Frame::Terminal { .. } | Frame::Presence(_)) => {
+                frame @ (Frame::Terminal { .. } | Frame::Presence(_) | Frame::Channel { .. }) => {
                     panic!("a refusal carries no other frame; got {frame:?}")
                 }
             }

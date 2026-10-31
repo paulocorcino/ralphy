@@ -4,9 +4,7 @@
 
 use std::path::Path;
 
-use axum::extract::ws::WebSocket;
-
-use super::{collect_config, not_answered, send_command, store_dir, stream, CommandCtx};
+use super::{collect_config, not_answered, store_dir, stream, CommandCtx, Wire};
 use crate::dispatch::{self, Verb};
 use crate::protocol::Command;
 
@@ -66,20 +64,14 @@ pub(super) async fn host_reply(
 }
 
 /// Spawn a Spawn host verb and stream its run. A refusal is one error frame.
-pub(super) async fn spawn_host(
-    socket: &mut WebSocket,
-    cmd: &Command,
-    verb: Verb,
-    ctx: &CommandCtx,
-    shutdown: &mut tokio::sync::watch::Receiver<bool>,
-) {
+pub(super) async fn spawn_host(wire: &mut Wire, cmd: &Command, verb: Verb, ctx: &CommandCtx) {
     let store_dir = store_dir(&ctx.peers_dir);
     let store_dir = store_dir.as_path();
     let daemon_id = ctx.daemon_id.as_deref();
     let (password, argv) = match check(cmd, verb, ctx.secret_ok) {
         Ok(checked) => checked,
         Err(reply) => {
-            send_command(socket, cmd.id, &cmd.verb, reply).await;
+            wire.reply(cmd.id, &cmd.verb, reply).await;
             return;
         }
     };
@@ -106,11 +98,11 @@ pub(super) async fn spawn_host(
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a host command");
             let reply = serde_json::json!({ "status": "error", "message": "spawn failed" });
-            send_command(socket, cmd.id, &cmd.verb, reply).await;
+            wire.reply(cmd.id, &cmd.verb, reply).await;
             return;
         }
     };
-    stream::stream_child(socket, cmd.id, &cmd.verb, child, shutdown, || {}).await;
+    stream::stream_child(wire, cmd.id, &cmd.verb, child, || {}).await;
 }
 
 /// Run a Query or Mutate host verb to its end. A Query's JSON stdout goes

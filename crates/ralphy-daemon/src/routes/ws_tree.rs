@@ -7,9 +7,11 @@ use std::sync::Arc;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::routing::get;
 use axum::Router;
+use futures_util::StreamExt;
 
-use super::send_command;
+use super::send_command_on;
 use super::RouterShared;
+use crate::mux::{ChannelSender, Mode, Writer};
 use crate::watch;
 
 mod conn;
@@ -64,13 +66,17 @@ pub(crate) struct TreeHost {
 /// and a per-connection alias map turns the nudge back into the operator's
 /// coordinates: `tree.dirty { repo, path: <operator rel>, checkout: <name> }`.
 pub(crate) async fn tree_ws(
-    mut socket: WebSocket,
+    socket: WebSocket,
     host: TreeHost,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     run_exits: tokio::sync::broadcast::Sender<String>,
 ) {
     let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
-    let mut conn = TreeConn::new(host, nudge_tx);
+    let (sink, mut incoming_frames) = socket.split();
+    // Channel 0 is the socket itself: its frames leave whole and bare.
+    let writer = Writer::start(sink, Mode::Plain);
+    let out = writer.channel(0);
+    let mut conn = TreeConn::new(host, nudge_tx, out.clone());
     // The run-completion nudge bus (#310): daemon-wide, held by NO watch, so it
     // needs no subscription verb and adds nothing to the teardown. Every
     // connection relays every nudge; the browser filters by its open repo.
@@ -80,36 +86,41 @@ pub(crate) async fn tree_ws(
     loop {
         tokio::select! {
             _ = shutdown.changed() => break,
-            incoming = socket.recv() => match incoming {
-                Some(Ok(Message::Binary(bytes))) => conn.on_frame(&mut socket, &bytes).await,
+            incoming = incoming_frames.next() => match incoming {
+                Some(Ok(Message::Binary(bytes))) => conn.on_frame(&bytes).await,
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 Some(Ok(_)) => {}
             },
-            nudge = nudge_rx.recv() => conn.push_nudge(&mut socket, nudge).await,
+            nudge = nudge_rx.recv() => conn.push_nudge(nudge).await,
             exited = run_exits_rx.recv(), if exits_open => {
-                exits_open = relay_run_exit(&mut socket, exited).await;
+                exits_open = relay_run_exit(&out, exited).await;
             }
         }
     }
 
     conn.teardown();
+    // A client that reads nothing keeps the writer blocked in the socket
+    // send, so the writer is stopped here, not left to the dropped handle.
+    writer.abort();
+}
+
+/// Queue one push on the connection's channel. A closed writer means the
+/// socket is gone, and the loop's read side ends the connection.
+async fn push_command(out: &ChannelSender, verb: &str, payload: serde_json::Value) {
+    if send_command_on(out, 0, verb, payload).await.is_err() {
+        tracing::debug!(verb, "tree push dropped: the socket writer is closed");
+    }
 }
 
 /// Relay one run-exit nudge as `changes.dirty`. Returns whether the broadcast is
 /// still open.
 async fn relay_run_exit(
-    socket: &mut WebSocket,
+    out: &ChannelSender,
     exited: Result<String, tokio::sync::broadcast::error::RecvError>,
 ) -> bool {
     match exited {
         Ok(repo) => {
-            send_command(
-                socket,
-                0,
-                "changes.dirty",
-                serde_json::json!({ "repo": repo }),
-            )
-            .await;
+            push_command(out, "changes.dirty", serde_json::json!({ "repo": repo })).await;
             true
         }
         // Skipped nudges are free: the browser's re-read is idempotent.

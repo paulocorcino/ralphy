@@ -41,6 +41,7 @@ pub mod epoch;
 pub mod fleet;
 pub mod fswrite;
 pub mod identity;
+mod mux;
 pub mod note;
 pub mod owner_only;
 pub mod password;

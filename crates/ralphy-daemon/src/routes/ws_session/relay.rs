@@ -2,17 +2,18 @@
 //! and the byte-for-byte bridge between the browser and the peer socket.
 
 use std::ops::ControlFlow;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{Message, WebSocket};
 use axum::http::StatusCode;
-use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
-use super::refuse::Refuser;
+use super::outbound::CONSOLE_QUEUE;
 use super::traffic::{Tab, Traffic};
+use super::upgrade::Opened;
 use super::SessionQuery;
+use crate::mux::{ChannelSender, Mode, Out, Permit, Writer, WriterClosed};
 use crate::peer;
 use crate::protocol::{self, Frame};
 use crate::routes::audit_layer::{ConsoleRecord, SocketAudit};
@@ -22,6 +23,13 @@ use crate::session;
 /// The `end` of a relayed socket the peer closed: why it closed is in the
 /// peer's own log line.
 const PEER_CLOSED: &str = "peer-closed";
+
+/// How long the relay waits for the browser to take its Close. Past it the
+/// writer is stopped and the socket dropped.
+const CLOSE_WINDOW: Duration = Duration::from_secs(5);
+
+/// Whether the relay goes on. `Break(true)`: send the browser a Close first.
+type Flow = ControlFlow<bool>;
 
 pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     if let Some(id) = query.id {
@@ -167,18 +175,12 @@ pub(crate) struct PeerDial<'a> {
     pub(crate) me: peer::client::SelfRef<'a>,
 }
 
-/// Open `dial.query` on the peer that owns the session and bridge it to the
-/// browser. A refused dial is refused with the peer's diagnosis (`502` on a
-/// reattach); an HTTP refusal from the peer keeps its own status and body. A
-/// peer that announces its refusal in a frame needs nothing here: the frame is
-/// relayed like any other.
-pub(crate) async fn relay_to_peer(
-    ws: WebSocketUpgrade,
-    dial: PeerDial<'_>,
-    opening: Opening,
-    refuser: &Refuser,
-    shutdown: tokio::sync::watch::Receiver<bool>,
-) -> Response {
+/// Open `dial.query` on the peer that owns the session, for the browser
+/// socket to relay to. A refused dial is refused with the peer's diagnosis
+/// (`502` on a reattach); an HTTP refusal from the peer keeps its own status
+/// and body. A peer that announces its refusal in a frame needs nothing here:
+/// the frame is relayed like any other.
+pub(crate) async fn dial_peer(dial: PeerDial<'_>, opening: Opening) -> Opened {
     let PeerDial {
         peer,
         query: peer_query,
@@ -196,15 +198,15 @@ pub(crate) async fn relay_to_peer(
                 tab,
                 Instant::now(),
             );
-            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, traffic, shutdown))
+            Opened::Relay {
+                peer: Box::new(peer_socket),
+                traffic,
+            }
         }
-        Err(peer::client::SocketError::Peer(status)) => refuser.refuse(
-            ws,
-            StatusCode::BAD_GATEWAY,
-            status.diagnosis(&peer.environment),
-        ),
-        Err(peer::client::SocketError::Http { status, body }) => refuser.refuse(
-            ws,
+        Err(peer::client::SocketError::Peer(status)) => {
+            Opened::refused(StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
+        }
+        Err(peer::client::SocketError::Http { status, body }) => Opened::refused(
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
             body,
         ),
@@ -215,31 +217,42 @@ pub(crate) async fn relay_to_peer(
 /// frame to tell the replay from live output (see [`Traffic::peer_frame`]).
 /// The peer forwards its own pings to the browser and the browser's pongs come
 /// back here, so the round trip timed here is the browser's leg only.
+///
+/// The browser side sends through the socket's writer and is read on its
+/// own (ADR-0082 D5): a message from the peer waits in `held` for room in
+/// the writer, and the peer is not read while it waits, so a slow browser
+/// slows the peer as a blocking send did.
 pub(crate) async fn peer_session_ws(
-    mut browser: WebSocket,
+    browser: WebSocket,
     mut peer: peer::client::PeerSocket,
     mut traffic: Traffic,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
+    let (sink, mut from_browser) = browser.split();
+    let writer = Writer::start(sink, Mode::Plain);
+    let out = writer.channel_with_depth(0, CONSOLE_QUEUE);
+    let mut held: Option<Out> = None;
     let mut end = None;
-    loop {
-        tokio::select! {
+    let close = loop {
+        let flow = tokio::select! {
             _ = shutdown.changed() => {
                 end = Some(session::EndReason::DaemonShutdown.as_wire());
-                break;
+                ControlFlow::Break(false)
             }
-            incoming = browser.recv() => {
-                if to_peer(incoming, &mut peer, &mut traffic).await.is_break() {
-                    break;
-                }
+            incoming = from_browser.next() => to_peer(incoming, &mut peer, &mut traffic).await,
+            permit = out.reserve(), if held.is_some() => hand_on(permit, &mut held),
+            incoming = peer.next(), if held.is_none() => {
+                to_browser(incoming, &mut held, &mut traffic, &mut end)
             }
-            incoming = peer.next() => {
-                if to_browser(incoming, &mut browser, &mut traffic, &mut end).await.is_break() {
-                    break;
-                }
-            }
+        };
+        if let ControlFlow::Break(close) = flow {
+            break close;
         }
+    };
+    if close {
+        close_browser(&out, &writer).await;
     }
+    writer.abort();
     traffic.log(end, Instant::now());
 }
 
@@ -248,60 +261,86 @@ async fn to_peer(
     incoming: Option<Result<Message, axum::Error>>,
     peer: &mut peer::client::PeerSocket,
     traffic: &mut Traffic,
-) -> ControlFlow<()> {
+) -> Flow {
     let Some(Ok(message)) = incoming else {
         close_peer_session(peer).await;
-        return ControlFlow::Break(());
+        return ControlFlow::Break(false);
     };
     match from_browser(message, traffic) {
         Step::Send(outbound) => {
             if peer.send(outbound).await.is_err() {
-                return ControlFlow::Break(());
+                return ControlFlow::Break(false);
             }
             ControlFlow::Continue(())
         }
         Step::Skip => ControlFlow::Continue(()),
         Step::Close => {
             close_peer_session(peer).await;
-            ControlFlow::Break(())
+            ControlFlow::Break(false)
         }
     }
 }
 
-/// Relay one read of the peer socket to the browser. `Break` ends the relay.
-async fn to_browser(
+/// Take one read of the peer socket for the browser into `held`. `Break`
+/// ends the relay.
+fn to_browser(
     incoming: Option<
         Result<tokio_tungstenite::tungstenite::Message, tokio_tungstenite::tungstenite::Error>,
     >,
-    browser: &mut WebSocket,
+    held: &mut Option<Out>,
     traffic: &mut Traffic,
     end: &mut Option<&'static str>,
-) -> ControlFlow<()> {
+) -> Flow {
     let Some(Ok(message)) = incoming else {
-        close_browser(browser).await;
-        return ControlFlow::Break(());
+        return ControlFlow::Break(true);
     };
     match from_peer(message, traffic, end) {
         Step::Send(outbound) => {
-            if browser.send(outbound).await.is_err() {
-                return ControlFlow::Break(());
-            }
+            *held = for_writer(outbound);
             ControlFlow::Continue(())
         }
         Step::Skip => ControlFlow::Continue(()),
-        Step::Close => {
-            close_browser(browser).await;
-            ControlFlow::Break(())
-        }
+        Step::Close => ControlFlow::Break(true),
     }
 }
 
-async fn close_browser(browser: &mut WebSocket) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the browser may already be gone"
-    )]
-    let _ = browser.send(Message::Close(None)).await;
+/// The writer's item for a message the relay passes to the browser.
+fn for_writer(message: Message) -> Option<Out> {
+    match message {
+        Message::Binary(bytes) => Some(Out::Frame(Vec::from(bytes))),
+        Message::Ping(bytes) => Some(Out::Ping(Vec::from(bytes))),
+        Message::Pong(bytes) => Some(Out::Pong(Vec::from(bytes))),
+        Message::Close(_) => Some(Out::Close),
+        // `from_peer` drops every text frame.
+        Message::Text(_) => None,
+    }
+}
+
+/// Hand the held message to the writer. A writer that has ended means the
+/// browser is gone: the relay ends without a Close.
+fn hand_on(permit: Result<Permit, WriterClosed>, held: &mut Option<Out>) -> Flow {
+    match permit {
+        Ok(permit) => {
+            if let Some(out) = held.take() {
+                permit.put(out);
+            }
+            ControlFlow::Continue(())
+        }
+        Err(WriterClosed) => ControlFlow::Break(false),
+    }
+}
+
+async fn close_browser(out: &ChannelSender, writer: &Writer) {
+    let closed = async {
+        out.put(Out::Close).await?;
+        writer.ended().await;
+        Ok(())
+    };
+    match tokio::time::timeout(CLOSE_WINDOW, closed).await {
+        // Closed, or the browser was already gone.
+        Ok(Ok(()) | Err(WriterClosed)) => {}
+        Err(_) => tracing::debug!("the browser did not take the close in time"),
+    }
 }
 
 /// What the relay does with one frame it read.

@@ -17,14 +17,17 @@ mod registry_verbs;
 mod stream;
 #[cfg(test)]
 mod tests;
+mod wire;
 
 pub(crate) use host::host_refusal;
 pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
+pub(crate) use wire::Wire;
 
 use super::audit_layer::SocketAudit;
-use super::{read_peer_store, send_command};
+use super::{read_peer_store, send_command_on};
 use super::{request_may_carry_a_secret, RouterShared};
+use crate::mux::Out;
 use crate::protocol::{Command, Frame};
 use crate::{dispatch, fleet, peer, protocol, registry, session};
 
@@ -145,7 +148,7 @@ fn for_peer(cmd: &Command, slug: &str) -> Command {
 pub(crate) async fn command_ws(
     mut socket: WebSocket,
     ctx: CommandCtx,
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
     run_exits: tokio::sync::broadcast::Sender<String>,
     bound_port: u16,
     who: SocketAudit,
@@ -153,23 +156,38 @@ pub(crate) async fn command_ws(
     let Some(cmd) = read_first_command(&mut socket).await else {
         return;
     };
+    let mut wire = Wire::start(socket, shutdown);
+    serve_command(&mut wire, cmd, ctx, run_exits, bound_port, who).await;
+    wire.finish().await;
+}
+
+/// Answer `cmd` on `wire`; every path returns to [`command_ws`], which closes.
+async fn serve_command(
+    wire: &mut Wire,
+    cmd: Command,
+    ctx: CommandCtx,
+    run_exits: tokio::sync::broadcast::Sender<String>,
+    bound_port: u16,
+    who: SocketAudit,
+) {
     let verb = match answer_one(&ctx, &cmd, &who).await {
         Answer::Reply(reply) => {
-            send_command(&mut socket, cmd.id, &cmd.verb, reply).await;
+            wire.reply(cmd.id, &cmd.verb, reply).await;
             return;
         }
         Answer::Stream(verb) => verb,
     };
     let daemon_id = ctx.daemon_id.as_deref();
     if verb.is_host() {
-        host::spawn_host(&mut socket, &cmd, verb, &ctx, &mut shutdown).await;
+        host::spawn_host(wire, &cmd, verb, &ctx).await;
         return;
     }
     let (descriptors, _) = read_peer_store(ctx.peers_dir.clone()).await;
     let slug = match fleet::route(repo_ref(&cmd), daemon_id.unwrap_or(""), &descriptors) {
         fleet::Route::Local { slug } => slug.to_string(),
         fleet::Route::UnknownDaemon { daemon_id } => {
-            send_command(&mut socket, cmd.id, &cmd.verb, unknown_daemon(daemon_id)).await;
+            wire.reply(cmd.id, &cmd.verb, unknown_daemon(daemon_id))
+                .await;
             return;
         }
         fleet::Route::Peer { peer, slug } => {
@@ -177,14 +195,14 @@ pub(crate) async fn command_ws(
                 port: bound_port,
                 daemon_id: daemon_id.unwrap_or(""),
             };
-            proxy_peer_command(&mut socket, peer, for_peer(&cmd, slug), &mut shutdown, me).await;
+            proxy_peer_command(wire, peer, for_peer(&cmd, slug), me).await;
             return;
         }
     };
     let child = match spawn_local(&cmd, verb, &slug, &ctx.registry_path, daemon_id) {
         Ok(child) => child,
         Err(reply) => {
-            send_command(&mut socket, cmd.id, &cmd.verb, reply).await;
+            wire.reply(cmd.id, &cmd.verb, reply).await;
             return;
         }
     };
@@ -193,20 +211,13 @@ pub(crate) async fn command_ws(
     // outlives the process has no nudge to send — the browser's reconnect
     // catch-up read covers that one). A send with no `/ws/tree` subscriber is
     // `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
-    stream::stream_child(
-        &mut socket,
-        cmd.id,
-        &cmd.verb,
-        child,
-        &mut shutdown,
-        move || {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a nudge nobody hears is a no-op"
-            )]
-            let _ = run_exits.send(slug);
-        },
-    )
+    stream::stream_child(wire, cmd.id, &cmd.verb, child, move || {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a nudge nobody hears is a no-op"
+        )]
+        let _ = run_exits.send(slug);
+    })
     .await;
 }
 
@@ -357,10 +368,9 @@ async fn relay_to_peer(peer: &peer::PeerDescriptor, command: &Command) -> serde_
 }
 
 pub(crate) async fn proxy_peer_command(
-    browser: &mut WebSocket,
+    browser: &mut Wire,
     descriptor: &peer::PeerDescriptor,
     command: Command,
-    shutdown: &mut tokio::sync::watch::Receiver<bool>,
     me: peer::client::SelfRef<'_>,
 ) {
     let Some(mut peer_socket) = open_peer(browser, descriptor, &command, me).await else {
@@ -369,26 +379,26 @@ pub(crate) async fn proxy_peer_command(
 
     loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
-            incoming = browser.recv() => {
+            _ = browser.shutdown.changed() => break,
+            incoming = browser.from_browser.next() => {
                 let _ = incoming;
                 break;
             }
             incoming = peer_socket.next() => {
                 let Some(Ok(message)) = incoming else {
-                    send_command(
-                        browser,
-                        command.id,
-                        &command.verb,
-                        serde_json::json!({
-                            "status": "error",
-                            "message": fleet::peer_unreachable(
-                                descriptor,
-                                "the peer command socket closed before a terminal frame"
-                            ),
-                        }),
-                    )
-                    .await;
+                    browser
+                        .reply(
+                            command.id,
+                            &command.verb,
+                            serde_json::json!({
+                                "status": "error",
+                                "message": fleet::peer_unreachable(
+                                    descriptor,
+                                    "the peer command socket closed before a terminal frame"
+                                ),
+                            }),
+                        )
+                        .await;
                     break;
                 };
                 if forward_peer_message(browser, message, command.id).await.is_break() {
@@ -402,7 +412,7 @@ pub(crate) async fn proxy_peer_command(
 /// Open the peer's command socket and send it `command`. `None` once the
 /// browser has the one error frame that says why it failed.
 async fn open_peer(
-    browser: &mut WebSocket,
+    browser: &Wire,
     descriptor: &peer::PeerDescriptor,
     command: &Command,
     me: peer::client::SelfRef<'_>,
@@ -410,16 +420,11 @@ async fn open_peer(
     let mut peer_socket = match peer::client::command(descriptor, me).await {
         Ok(socket) => socket,
         Err(peer::client::SocketError::Peer(status)) => {
-            send_command(
-                browser,
-                command.id,
-                &command.verb,
-                serde_json::json!({
-                    "status": "error",
-                    "message": status.diagnosis(&descriptor.environment),
-                }),
-            )
-            .await;
+            let reply = serde_json::json!({
+                "status": "error",
+                "message": status.diagnosis(&descriptor.environment),
+            });
+            browser.reply(command.id, &command.verb, reply).await;
             return None;
         }
         Err(peer::client::SocketError::Http { status, body }) => {
@@ -428,16 +433,11 @@ async fn open_peer(
             } else {
                 body
             };
-            send_command(
-                browser,
-                command.id,
-                &command.verb,
-                serde_json::json!({
-                    "status": "error",
-                    "message": fleet::peer_unreachable(descriptor, &detail),
-                }),
-            )
-            .await;
+            let reply = serde_json::json!({
+                "status": "error",
+                "message": fleet::peer_unreachable(descriptor, &detail),
+            });
+            browser.reply(command.id, &command.verb, reply).await;
             return None;
         }
     };
@@ -448,19 +448,14 @@ async fn open_peer(
         .await
         .is_err()
     {
-        send_command(
-            browser,
-            command.id,
-            &command.verb,
-            serde_json::json!({
-                "status": "error",
-                "message": fleet::peer_unreachable(
-                    descriptor,
-                    "the peer command socket closed before accepting the command"
-                ),
-            }),
-        )
-        .await;
+        let reply = serde_json::json!({
+            "status": "error",
+            "message": fleet::peer_unreachable(
+                descriptor,
+                "the peer command socket closed before accepting the command"
+            ),
+        });
+        browser.reply(command.id, &command.verb, reply).await;
         return None;
     }
     Some(peer_socket)
@@ -469,23 +464,23 @@ async fn open_peer(
 /// Forward one peer frame to the browser. `Break` when the browser did not
 /// take it, or after the terminal reply to command `id`.
 async fn forward_peer_message(
-    browser: &mut WebSocket,
+    browser: &Wire,
     message: tokio_tungstenite::tungstenite::Message,
     id: u64,
 ) -> ControlFlow<()> {
     let sent = match message {
         tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
             let terminal = is_terminal_reply(&bytes, id);
-            if browser.send(Message::Binary(bytes)).await.is_err() || terminal {
+            if browser.out.send(Vec::from(bytes)).await.is_err() || terminal {
                 return ControlFlow::Break(());
             }
             return ControlFlow::Continue(());
         }
         tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
-            browser.send(Message::Ping(bytes)).await
+            browser.out.put(Out::Ping(Vec::from(bytes))).await
         }
         tokio_tungstenite::tungstenite::Message::Pong(bytes) => {
-            browser.send(Message::Pong(bytes)).await
+            browser.out.put(Out::Pong(Vec::from(bytes))).await
         }
         tokio_tungstenite::tungstenite::Message::Close(_)
         | tokio_tungstenite::tungstenite::Message::Text(_)

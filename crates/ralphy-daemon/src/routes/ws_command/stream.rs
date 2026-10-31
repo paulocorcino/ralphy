@@ -4,12 +4,13 @@
 use std::io::Read;
 use std::time::Duration;
 
-use axum::extract::ws::WebSocket;
+use futures_util::StreamExt;
 use tokio::sync::mpsc;
 use tokio::task::{JoinError, JoinHandle};
 
-use super::send_command;
+use super::{send_command_on, Wire};
 use crate::dispatch;
+use crate::mux::WriterClosed;
 
 /// Decoded output chunks that may wait for the browser. Each chunk is one read
 /// of at most 8 KB, so one run buffers at most about 512 KB; past that the
@@ -22,25 +23,28 @@ const OUTPUT_CHANNEL_CAP: usize = 64;
 const SEND_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Send one output chunk; `false` when the socket did not take it within
-/// [`SEND_DEADLINE`].
-async fn relay_chunk(socket: &mut WebSocket, id: u64, verb: &str, chunk: String) -> bool {
-    let frame = send_command(
-        socket,
+/// [`SEND_DEADLINE`], or is closed.
+async fn relay_chunk(wire: &Wire, id: u64, verb: &str, chunk: String) -> bool {
+    let frame = send_command_on(
+        &wire.out,
         id,
         verb,
         serde_json::json!({ "status": "output", "chunk": chunk }),
     );
-    if tokio::time::timeout(SEND_DEADLINE, frame).await.is_ok() {
-        return true;
+    match tokio::time::timeout(SEND_DEADLINE, frame).await {
+        Ok(Ok(())) => true,
+        Ok(Err(WriterClosed)) => false,
+        Err(_) => {
+            tracing::warn!(
+                verb,
+                "the browser did not take a run's output; the run continues unshown"
+            );
+            false
+        }
     }
-    tracing::warn!(
-        verb,
-        "the browser did not take a run's output; the run continues unshown"
-    );
-    false
 }
 
-/// Relay `child` on `socket`: the `spawned` ack, each output chunk, then the
+/// Relay `child` on `wire`: the `spawned` ack, each output chunk, then the
 /// exit code. `on_exit` runs once the child has exited, whether or not the
 /// socket is still served.
 ///
@@ -54,19 +58,17 @@ async fn relay_chunk(socket: &mut WebSocket, id: u64, verb: &str, chunk: String)
 /// regardless of client presence, so a disconnect never stalls the child on a
 /// full pipe. Do not await it on a teardown arm.
 pub(super) async fn stream_child(
-    socket: &mut WebSocket,
+    wire: &mut Wire,
     id: u64,
     verb: &str,
     mut child: Box<dyn dispatch::Child>,
-    shutdown: &mut tokio::sync::watch::Receiver<bool>,
     on_exit: impl FnOnce() + Send + 'static,
 ) {
     let pid = child.pid();
     // Take the merged output reader BEFORE `child` moves into the wait task, so
     // the drain and the wait run concurrently (each owns its half).
     let output = child.take_output();
-    send_command(
-        socket,
+    wire.reply(
         id,
         verb,
         serde_json::json!({ "status": "spawned", "pid": pid }),
@@ -87,9 +89,9 @@ pub(super) async fn stream_child(
     loop {
         tokio::select! {
             // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
-            _ = shutdown.changed() => break,
+            _ = wire.shutdown.changed() => break,
             // Client closed or errored: same — abandon the wait, never kill.
-            incoming = socket.recv() => {
+            incoming = wire.from_browser.next() => {
                 let _ = incoming;
                 break;
             }
@@ -97,7 +99,7 @@ pub(super) async fn stream_child(
             chunk = rx.recv(), if output_open => {
                 match chunk {
                     Some(chunk) => {
-                        if !relay_chunk(socket, id, verb, chunk).await {
+                        if !relay_chunk(wire, id, verb, chunk).await {
                             break;
                         }
                     }
@@ -108,7 +110,7 @@ pub(super) async fn stream_child(
             }
             // The run exited: flush remaining output before the exit frame.
             joined = &mut wait => {
-                flush_and_report(socket, id, verb, &mut rx, joined).await;
+                flush_and_report(wire, id, verb, &mut rx, joined).await;
                 break;
             }
         }
@@ -155,20 +157,19 @@ fn spawn_wait(
 /// the wait for each next chunk: an idle gap (or channel close) ends
 /// the flush and we always emit `exited`, never wedging the handler.
 async fn flush_and_report(
-    socket: &mut WebSocket,
+    wire: &Wire,
     id: u64,
     verb: &str,
     rx: &mut mpsc::Receiver<String>,
     joined: Result<anyhow::Result<Option<i32>>, JoinError>,
 ) {
     while let Ok(Some(chunk)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-        if !relay_chunk(socket, id, verb, chunk).await {
+        if !relay_chunk(wire, id, verb, chunk).await {
             return;
         }
     }
     let code = joined.ok().and_then(|r| r.ok()).flatten();
-    send_command(
-        socket,
+    wire.reply(
         id,
         verb,
         serde_json::json!({ "status": "exited", "code": code }),

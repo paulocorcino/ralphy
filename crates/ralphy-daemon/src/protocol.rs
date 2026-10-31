@@ -1,12 +1,14 @@
 //! The daemon↔UI wire codec: a transport-agnostic tagged framing over one
 //! duplex connection (docs/adr/0032 §4/§5). Byte 0 is a channel tag; the rest
-//! is the channel's payload. Three channels are multiplexed over the single
+//! is the channel's payload. Four tags are multiplexed over the single
 //! connection:
 //!
 //! - `Terminal` — high-volume raw bytes for a session's PTY: `[0x01][session
 //!   u64 BE][raw bytes]`. Raw, not JSON: base64-in-JSON would bloat it.
 //! - `Command` — a structured request/response verb: `[0x02][JSON]`.
 //! - `Presence` — the daemon's liveness heartbeat: `[0x03][JSON]`.
+//! - `Channel` — one piece of an inner frame on a numbered channel:
+//!   `[0x04][channel u32 BE][flags u8][piece]` (see [`cut`] and [`Joiner`]).
 //!
 //! This module knows nothing about the transport carrying a frame — it turns a
 //! [`Frame`] into a `Vec<u8>` and back, and the caller rides that byte string
@@ -15,12 +17,17 @@
 
 use serde::{Deserialize, Serialize};
 
+mod channel;
+pub use channel::{cut, ChannelError, Joiner, MAX_PIECE};
+
 /// Leading byte of a raw-PTY frame.
 pub const TAG_TERMINAL: u8 = 0x01;
 /// Leading byte of a structured command frame.
 pub const TAG_COMMAND: u8 = 0x02;
 /// Leading byte of a presence-heartbeat frame.
 pub const TAG_PRESENCE: u8 = 0x03;
+/// Leading byte of a channel frame.
+pub const TAG_CHANNEL: u8 = 0x04;
 
 /// A single multiplexed frame. `PartialEq` (not `Eq`): `Command.payload` is a
 /// `serde_json::Value`, which is not `Eq`.
@@ -32,6 +39,13 @@ pub enum Frame {
     Command(Command),
     /// The daemon's liveness heartbeat.
     Presence(Presence),
+    /// One piece of an inner frame on channel `channel`; `more` is set when
+    /// another piece of the same inner frame follows.
+    Channel {
+        channel: u32,
+        more: bool,
+        piece: Vec<u8>,
+    },
 }
 
 /// A structured command with a correlation `id` for request/response pairing and
@@ -69,6 +83,11 @@ pub enum FrameError {
     ShortTerminal,
     /// A structured frame whose JSON payload did not parse.
     BadJson(String),
+    /// A channel frame with fewer than 5 bytes after the tag (no room for the
+    /// channel id and the flags).
+    ShortChannel,
+    /// A channel frame the channel layer refuses.
+    Channel(ChannelError),
 }
 
 impl std::fmt::Display for FrameError {
@@ -80,6 +99,10 @@ impl std::fmt::Display for FrameError {
                 write!(f, "terminal frame too short for an 8-byte session id")
             }
             FrameError::BadJson(msg) => write!(f, "malformed frame JSON: {msg}"),
+            FrameError::ShortChannel => {
+                write!(f, "channel frame too short for a channel id and flags")
+            }
+            FrameError::Channel(err) => err.fmt(f),
         }
     }
 }
@@ -98,6 +121,11 @@ pub fn encode(frame: &Frame) -> Vec<u8> {
         }
         Frame::Command(cmd) => encode_json(TAG_COMMAND, cmd),
         Frame::Presence(p) => encode_json(TAG_PRESENCE, p),
+        Frame::Channel {
+            channel,
+            more,
+            piece,
+        } => channel::encode(*channel, *more, piece),
     }
 }
 
@@ -129,6 +157,7 @@ pub fn decode(bytes: &[u8]) -> Result<Frame, FrameError> {
         TAG_PRESENCE => serde_json::from_slice(rest)
             .map(Frame::Presence)
             .map_err(|e| FrameError::BadJson(e.to_string())),
+        TAG_CHANNEL => channel::decode(rest),
         other => Err(FrameError::UnknownTag(other)),
     }
 }

@@ -6,11 +6,15 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
+use futures_util::StreamExt;
 use tokio::sync::broadcast::error::RecvError;
 
-use super::outbound::{announce_end, open, resync, send_output, send_size, Opening};
+use super::outbound::{
+    announce_end, hand_on, open, resync, send_output, send_size, Opening, Outbox,
+};
 use super::traffic::{Tab, Traffic};
 use super::SessionLabels;
+use crate::mux::Out;
 use crate::protocol::{Command, Frame};
 use crate::{protocol, session};
 
@@ -94,12 +98,18 @@ fn silent_if_err<T, E>(sent: Result<T, E>) -> Flow {
 /// daemon open for minutes after the browser behind it vanished, and that leg
 /// would hold the writer slot against the client's own reattach.
 /// `tab` is the browser tab that opened the socket.
+///
+/// INPUT IS NEVER HELD BEHIND OUTPUT (ADR-0082 D5): the frames for the client
+/// wait in an [`Outbox`] and go to the socket's writer when it has room, so
+/// the loop keeps reading the client while a slow link takes the output. The
+/// session's output is read only once the outbox is empty, so a slow client
+/// still slows the reading of output, as a blocking send did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the socket, the attachment, the session identity and the tab, one parameter each"
 )]
 pub(crate) async fn session_ws(
-    mut socket: WebSocket,
+    socket: WebSocket,
     mut attach: session::Attachment,
     id: session::SessionId,
     daemon_id: String,
@@ -124,14 +134,10 @@ pub(crate) async fn session_ws(
     let gzip = tab.gzip;
     let mut traffic = Traffic::local(id, tab, Instant::now());
 
+    let (sink, mut from_client) = socket.split();
+    let mut outbox = Outbox::start(sink);
     let opening = Opening::new(id, daemon_id, environment, &labels, gzip);
-    if open(&mut socket, id, &opening, &mut attach, &mut traffic)
-        .await
-        .is_err()
-    {
-        traffic.log(None, Instant::now());
-        return;
-    }
+    open(&mut outbox, id, &opening, &mut attach, &mut traffic);
     // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
     // bytes, so a NAT/proxy idle-timeout silently drops it. The pongs the pings
     // earn are what `heard` counts (see LIVENESS above).
@@ -156,15 +162,18 @@ pub(crate) async fn session_ws(
                 evict.reason().unwrap_or(session::EndReason::ChildExited),
             )),
             _ = ping.tick() => {
-                on_ping(&mut socket, &mut traffic, &liveness, heard, &mut ping_seq).await
+                on_ping(&mut outbox, &mut traffic, &liveness, heard, &mut ping_seq)
             }
             changed = attach.size.changed(), if sizes => {
-                on_size(changed, &mut socket, id, &mut attach, &mut sizes).await
+                on_size(changed, &mut outbox, id, &mut attach, &mut sizes)
             }
-            recv = attach.rx.recv() => {
-                on_output(recv, &mut socket, id, &opening, &mut attach, &mut traffic).await
+            recv = attach.rx.recv(), if outbox.queued.is_empty() => {
+                on_output(recv, &mut outbox, id, &opening, &mut attach, &mut traffic)
             }
-            incoming = socket.recv() => {
+            permit = outbox.out.reserve(), if !outbox.queued.is_empty() => {
+                silent_if_err(hand_on(permit, &mut outbox.queued))
+            }
+            incoming = from_client.next() => {
                 on_client(incoming, &mut heard, &attach, &mut traffic)
             }
         };
@@ -172,11 +181,13 @@ pub(crate) async fn session_ws(
             break end;
         }
     };
-    // `None` announces nothing, and so does the early `return` above: the socket
-    // is already gone there.
+    // `None` announces nothing: the socket is already gone there.
     if let Some(reason) = end {
-        announce_end(&mut socket, id, &opening, &mut attach, &mut traffic, reason).await;
+        announce_end(&mut outbox, id, &opening, &mut attach, &mut traffic, reason).await;
     }
+    // The socket is dropped here, as the bridge dropped it before it had a
+    // writer: whatever the writer still holds is not sent.
+    outbox.writer.abort();
     traffic.log(end.map(|r| r.as_wire()), Instant::now());
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
@@ -184,9 +195,10 @@ pub(crate) async fn session_ws(
 }
 
 /// Silent, not announced: a client that is in fact alive reads the drop as a
-/// flaky link and reattaches (issue #334).
-async fn on_ping(
-    socket: &mut WebSocket,
+/// flaky link and reattaches (issue #334). The ping goes before the frames
+/// that wait in the outbox, so its round trip times the link, not the queue.
+fn on_ping(
+    outbox: &mut Outbox,
     traffic: &mut Traffic,
     liveness: &Liveness,
     heard: Instant,
@@ -198,13 +210,14 @@ async fn on_ping(
     *ping_seq += 1;
     let payload = ping_seq.to_le_bytes();
     traffic.ping_sent(&payload, Instant::now());
-    silent_if_err(socket.send(Message::Ping(payload.to_vec().into())).await)
+    outbox.queued.push_front(Out::Ping(payload.to_vec()));
+    ControlFlow::Continue(())
 }
 
 /// A new session size goes to the client. A closed size sender stops the arm.
-async fn on_size(
+fn on_size(
     changed: Result<(), tokio::sync::watch::error::RecvError>,
-    socket: &mut WebSocket,
+    outbox: &mut Outbox,
     id: session::SessionId,
     attach: &mut session::Attachment,
     sizes: &mut bool,
@@ -214,23 +227,28 @@ async fn on_size(
         return ControlFlow::Continue(());
     }
     let size = *attach.size.borrow_and_update();
-    silent_if_err(send_size(socket, id, size).await)
+    send_size(outbox, id, size);
+    ControlFlow::Continue(())
 }
 
 /// One turn of the live output stream. A lag sends the screen again.
-async fn on_output(
+fn on_output(
     recv: Result<Vec<u8>, RecvError>,
-    socket: &mut WebSocket,
+    outbox: &mut Outbox,
     id: session::SessionId,
     opening: &Opening,
     attach: &mut session::Attachment,
     traffic: &mut Traffic,
 ) -> Flow {
     match recv {
-        Ok(bytes) => silent_if_err(send_output(socket, id, bytes, traffic).await),
+        Ok(bytes) => {
+            send_output(outbox, id, bytes, traffic);
+            ControlFlow::Continue(())
+        }
         Err(RecvError::Lagged(skipped)) => {
             traffic.lagged(skipped);
-            silent_if_err(resync(socket, id, opening, attach, traffic).await)
+            resync(outbox, id, opening, attach, traffic);
+            ControlFlow::Continue(())
         }
         Err(RecvError::Closed) => ControlFlow::Break(Some(session::EndReason::ChildExited)),
     }

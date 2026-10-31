@@ -7,6 +7,8 @@ use axum::extract::ws::WebSocketUpgrade;
 use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite;
 
+mod input;
+
 /// A console whose child has exited: the eviction is signalled and the
 /// attachment's output stream is the test's own, holding `chunks`, so the
 /// client receives exactly these and nothing the shell prints.
@@ -162,7 +164,7 @@ async fn read_until_close(
                 assert_eq!(cmd.payload["reason"], "child-exited");
                 seen.ended_after = Some(seen.received.len());
             }
-            Frame::Command(_) | Frame::Presence(_) => {}
+            Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. } => {}
         }
         tokio::time::sleep(pause).await;
     }
@@ -263,7 +265,9 @@ fn size_of(frame: &Frame) -> Option<(u64, u64)> {
         Frame::Command(cmd) if cmd.verb == SESSION_SIZE => {
             Some((cmd.payload["rows"].as_u64()?, cmd.payload["cols"].as_u64()?))
         }
-        Frame::Command(_) | Frame::Terminal { .. } | Frame::Presence(_) => None,
+        Frame::Command(_) | Frame::Terminal { .. } | Frame::Presence(_) | Frame::Channel { .. } => {
+            None
+        }
     }
 }
 
@@ -310,7 +314,7 @@ async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
     assert_eq!(size_of(&next_frame(&mut client).await), Some((24, 80)));
     match next_frame(&mut client).await {
         Frame::Terminal { data, .. } => assert_eq!(data, b"REPLAY"),
-        other @ (Frame::Command(_) | Frame::Presence(_)) => {
+        other @ (Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. }) => {
             panic!("the replay follows the size: {other:?}")
         }
     }
@@ -485,7 +489,7 @@ async fn a_lagged_receiver_sends_the_screen_again_from_a_new_offset() {
     while live.len() < tail.snapshot.len() {
         match next_frame(&mut client).await {
             Frame::Terminal { data, .. } => live.extend(data),
-            other @ (Frame::Command(_) | Frame::Presence(_)) => {
+            other @ (Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. }) => {
                 panic!("only live output follows: {other:?}")
             }
         }
