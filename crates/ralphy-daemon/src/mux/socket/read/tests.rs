@@ -43,24 +43,34 @@ fn ctx() -> Ctx {
     }
 }
 
+/// The channels a test reader holds open already, made on its writer.
+type Channels = Box<dyn FnOnce(&Writer) -> Vec<(u32, Channel)> + Send>;
+
 /// Serve one socket whose reader holds `STUCK` and `ECHO` open already.
 fn reader_route() -> Router {
-    let once = Arc::new(Mutex::new(Some(())));
+    route_with(Box::new(|writer: &Writer| {
+        vec![(STUCK, stuck()), (ECHO, echoing(writer.channel(ECHO)))]
+    }))
+}
+
+/// Serve one socket whose reader holds the `channels` open already.
+fn route_with(channels: Channels) -> Router {
+    let once = Arc::new(Mutex::new(Some(channels)));
     Router::new().route(
         "/ws",
         get(move |ws: WebSocketUpgrade| {
             let first = once.lock().unwrap().take();
             async move {
-                first.expect("the test connects once");
+                let channels = first.expect("the test connects once");
                 ws.on_upgrade(|socket| async move {
                     let (sink, stream) = socket.split();
                     let writer = Writer::start(sink);
                     let control = writer.channel(0);
-                    let echo = writer.channel(ECHO);
+                    let open = channels(&writer);
                     let page = PageEntry::open(crate::presence_board::Shared::default());
                     let login = Login::now(crate::auth::AuthState::localhost());
                     let mut reader = Reader::new(writer, control, page, ctx(), login);
-                    for (id, channel) in [(STUCK, stuck()), (ECHO, echoing(echo))] {
+                    for (id, channel) in open {
                         let joiner = Joiner::default();
                         let page_closed = PageClosed::default();
                         reader.open.insert(
@@ -101,9 +111,13 @@ fn echoing(out: ChannelSender) -> Channel {
 }
 
 async fn connect() -> Ws {
+    connect_to(reader_route()).await
+}
+
+async fn connect_to(route: Router) -> Ws {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    tokio::spawn(async move { axum::serve(listener, reader_route()).await });
+    tokio::spawn(async move { axum::serve(listener, route).await });
     let (ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
         .await
         .unwrap();
@@ -153,4 +167,30 @@ async fn a_full_inbound_queue_ends_only_its_channel() {
     let (closed, echoed) = read_both(&mut ws).await;
     assert_eq!(closed.as_deref(), Some("overflow"));
     assert_eq!(echoed.as_deref(), Some(&b"still read"[..]));
+}
+
+/// The page sends a frame and closes the socket at once (#834): the kind
+/// reads the frame before it ends, as on `channel.close`.
+#[tokio::test]
+async fn a_socket_the_page_closes_lets_each_channel_read_its_last_frames() {
+    const LAST: u32 = 3;
+    let (read_tx, read_rx) = tokio::sync::oneshot::channel();
+    let route = route_with(Box::new(move |_: &Writer| {
+        let recording = Channel::spawn(|mut frames: mpsc::Receiver<Vec<u8>>| async move {
+            let mut read = Vec::new();
+            while let Some(frame) = frames.recv().await {
+                read.push(frame);
+            }
+            read_tx.send(read).unwrap();
+        });
+        vec![(LAST, recording)]
+    }));
+    let mut ws = connect_to(route).await;
+    send_on(&mut ws, LAST, b"detach").await;
+    ws.close(None).await.unwrap();
+    let read = tokio::time::timeout(Duration::from_secs(5), read_rx)
+        .await
+        .expect("the kind ends once it read its input")
+        .expect("the kind is not stopped before it reads");
+    assert_eq!(read, [b"detach".to_vec()]);
 }

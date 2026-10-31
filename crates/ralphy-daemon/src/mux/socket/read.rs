@@ -77,9 +77,10 @@ pub(super) async fn read(
             Message::Text(_) | Message::Ping(_) | Message::Pong(_) => true,
         };
         if !go {
-            return;
+            break;
         }
     }
+    reader.close_all();
 }
 
 /// End the socket for a bare frame past its cap. Always `false`.
@@ -303,6 +304,16 @@ impl Reader {
             .send(kinds::closed_frame(id, reason))
             .await
             .is_ok()
+    }
+
+    /// The socket ended: each channel reads what the page sent before the
+    /// end and ends, as on `channel.close`. A socket stopped from outside
+    /// drops the reader instead, and its channels stop at once.
+    fn close_all(&mut self) {
+        for (_, open) in self.open.drain() {
+            open.page_closed.set();
+            open.channel.close();
+        }
     }
 
     /// Forget the channels whose kind ended by itself.
