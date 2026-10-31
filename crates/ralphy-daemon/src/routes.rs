@@ -72,6 +72,8 @@ pub(crate) type AgentLocator = Arc<dyn Fn(session::Agent) -> Option<PathBuf> + S
 pub(crate) struct RouterDependencies {
     pub(crate) auth: Arc<auth::AuthState>,
     pub(crate) roster_locator: AgentLocator,
+    /// Tracks the page sockets, so the stop of `serve` can wait for them.
+    pub(crate) page_sockets: crate::mux::Sockets,
 }
 
 /// The values the route areas share, built once per router. Each area's
@@ -113,6 +115,8 @@ pub(crate) struct RouterShared {
     /// writes it, `GET /api/telegram` and the attention tick read it
     /// (ADR-0085 D14).
     pub(crate) telegram_claim: crate::telegram_state::SharedClaim,
+    /// Gives each page socket the hold the stop of `serve` waits for.
+    pub(crate) page_sockets: crate::mux::Sockets,
 }
 
 #[expect(
@@ -132,6 +136,7 @@ pub(crate) fn router_with_roster(
     let RouterDependencies {
         auth,
         roster_locator,
+        page_sockets,
     } = dependencies;
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
@@ -231,6 +236,7 @@ pub(crate) fn router_with_roster(
         audit: audit.clone(),
         presence: Default::default(),
         telegram_claim: Default::default(),
+        page_sockets,
     };
     Router::new()
         .merge(read_routes(&shared))

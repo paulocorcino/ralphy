@@ -237,6 +237,12 @@ export function createDaemon(
     let lastResumeAt = 0;
     let connectingSince = 0;
     let handshakeMs: number | null = null;
+    // The page's read of its session, given before the first socket. The
+    // daemon mints the device cookie only on that read, and reads the device
+    // once, at the upgrade (#834): the first socket waits for the read, or
+    // for the handshake deadline. `null` once the wait began.
+    let sessionRead: Promise<unknown> | null = null;
+    let waitingForSession = false;
     const greet = (user: SocketUser, state: { opened: boolean }, layer: PageChannels) => {
       const reopened = state.opened;
       state.opened = true;
@@ -251,7 +257,22 @@ export function createDaemon(
       channels = null;
       layer?.socketLost();
     };
+    const waitForSession = (read: Promise<unknown>) => {
+      sessionRead = null;
+      waitingForSession = true;
+      const go = () => {
+        if (!waitingForSession) return;
+        waitingForSession = false;
+        if (users.size && !ws) connect();
+      };
+      void read.then(go, go);
+      setTimeout(go, CONNECT_TIMEOUT_MS);
+    };
     const connect = () => {
+      if (sessionRead) {
+        waitForSession(sessionRead);
+        return;
+      }
       const sock = new WebSocket(WS_ORIGIN + "/ws");
       ws = sock;
       connectingSince = Date.now();
@@ -288,9 +309,17 @@ export function createDaemon(
       join: (user: SocketUser) => {
         const state = { opened: false };
         users.set(user, state);
-        if (!ws) connect();
-        else if (channels) greet(user, state, channels);
+        if (ws) {
+          if (channels) greet(user, state, channels);
+        } else if (!waitingForSession) {
+          connect();
+        }
         return () => leave(user);
+      },
+      // Hold the first socket until `read`, the page's read of its session,
+      // settles. A page that already opened a socket ignores it.
+      afterSessionRead: (read: Promise<unknown>) => {
+        if (connectingSince === 0 && !waitingForSession) sessionRead = read;
       },
       // Send a bare frame on channel 0 if the socket is open; `false` means
       // the frame was not sent, and the caller's open hook re-sends its state.
@@ -310,6 +339,8 @@ export function createDaemon(
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
+        // The daemon reads the frames sent before the close (#834).
+        for (const user of [...users.keys()]) user.onResume?.();
         const old = ws;
         detachSocket(old);
         lose();
@@ -408,6 +439,7 @@ export function createDaemon(
           handlers.onClosed(reason);
         };
       },
+      onResume: () => handlers.onResume?.(),
     });
     const opened: ConsoleChannel = {
       get readyState() {
@@ -540,6 +572,7 @@ export function createDaemon(
     // Resume the page socket: a stale one is replaced, and each console's
     // channel ends with it, so the console opens one on the new socket.
     resumePage: page.resume,
+    afterSessionRead: page.afterSessionRead,
     reportPresence,
     onPresenceOpen,
     pageHandshakeMs: page.handshakeMs,

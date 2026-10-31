@@ -262,3 +262,25 @@ Compliance: the unit test `a_flooding_channel_delays_another_by_one_piece`
 `one_flooding_console_delays_another_channel_by_one_piece` (phase B), the
 ratchet `websocket_sites_match_the_baseline` at 1, and the browser check
 `wb_one_socket_740.py`.
+
+## Amendment (2026-10-31): how a channel and a socket end
+
+**A channel the page closes reads what came before the close.** The page
+sends a console's `detach`, and then `channel.close`, at once. On
+`channel.close` the daemon closes only the kind's input: the kind reads the
+frames the page sent before the close, sees its input end, and ends. A kind
+still running one second later is stopped. The daemon sends no
+`channel.closed` for a close the page asked for. Before this, the close
+stopped the kind at once, and the `detach`, keys and a resize sent just
+before it were lost (#834). A socket that ends ends its channels the same
+way. A socket the daemon stops itself (its stop, 45 s of silence) stops
+its channels at once. On a resume, the page lets each console send
+`detach {reason: "reconnect"}` on the old socket before it closes it.
+
+**The daemon's stop waits for its page sockets.** axum 0.8.9's graceful
+shutdown does not wait for an upgraded socket. Each page socket keeps a hold
+while it runs, and the daemon's stop waits for every hold, up to the
+socket's own shutdown wait (2 s) plus one second, before it drops the
+runtime. A console's `session-end {reason: "daemon-shutdown"}` reaches the
+page. Checked by the unit test `the_process_stop_waits_for_an_open_page_socket`.
+

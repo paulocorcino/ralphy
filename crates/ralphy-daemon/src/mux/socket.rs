@@ -39,7 +39,7 @@ pub(crate) const MAX_MESSAGE: usize = protocol::MAX_PIECE + CHANNEL_HEADER;
 /// channels can send their last frames. It bounds how long a page that reads
 /// nothing holds the stop, and stays shorter than the 5 s a channel's own end
 /// waits for its frames, so a shutdown is never held for that long.
-const SHUTDOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+pub(crate) const SHUTDOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// What one page socket serves from.
 pub(crate) struct Page {
@@ -51,6 +51,8 @@ pub(crate) struct Page {
     pub(crate) board: presence_board::Shared,
     pub(crate) ctx: Ctx,
     pub(crate) login: Login,
+    /// Kept until the socket ends, so the daemon's stop waits for it.
+    pub(crate) held: super::Hold,
 }
 
 /// The login a page socket was let in under: the session epoch and the name
@@ -118,6 +120,7 @@ async fn serve_with(socket: WebSocket, page: Page, liveness: Liveness) {
         board,
         ctx,
         login,
+        held,
     } = page;
     let (sink, stream) = socket.split();
     let writer = Writer::start(sink);
@@ -173,6 +176,8 @@ async fn serve_with(socket: WebSocket, page: Page, liveness: Liveness) {
     // writer is stopped here, not left to the dropped handle.
     reader.abort();
     writer.abort();
+    // Last: the daemon's stop waits for this socket until here.
+    drop(held);
 }
 
 /// On shutdown, keep the reader up to `SHUTDOWN_WAIT`. Each channel ends on

@@ -227,8 +227,9 @@ impl Attached {
         }
     }
 
-    /// One inner frame the page sent on the channel. The page's own close
-    /// stops this task, so a closed inbound queue only ends the loop.
+    /// One inner frame the page sent on the channel. The inbound queue ends
+    /// when the page closes the channel, after the frames it sent before the
+    /// close, so the leave its `detach` named is read first.
     fn on_frame(&mut self, frame: Option<Vec<u8>>) -> Flow {
         let Some(bytes) = frame else {
             return ControlFlow::Break(None);

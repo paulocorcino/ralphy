@@ -201,6 +201,7 @@ pub(crate) fn presence_routes(s: &RouterShared) -> Router {
         watchers: s.watchers.clone(),
         run_exits: s.run_exits.clone(),
         auth: s.auth.clone(),
+        sockets: s.page_sockets.clone(),
     };
     Router::new().route(
         "/ws",
@@ -233,6 +234,7 @@ struct PageShared {
     watchers: Arc<crate::watch::WatcherManager>,
     run_exits: broadcast::Sender<String>,
     auth: Arc<crate::auth::AuthState>,
+    sockets: mux::Sockets,
 }
 
 impl PageShared {
@@ -259,6 +261,7 @@ impl PageShared {
                 run_exits: self.run_exits.clone(),
             },
             login: mux::Login::of(self.auth.clone(), login),
+            held: self.sockets.hold(),
         }
     }
 }

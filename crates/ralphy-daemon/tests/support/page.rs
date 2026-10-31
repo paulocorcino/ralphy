@@ -181,16 +181,22 @@ impl Channel {
 
     /// Close channel 1 with `channel.close`, then the socket with `frame`.
     pub async fn close(&mut self, frame: Option<CloseFrame>) -> Result<(), tungstenite::Error> {
-        if !self.open_on_send {
-            let payload = serde_json::json!({ "channel": CHANNEL });
-            let close = bare(&Frame::Command(Command {
-                id: 0,
-                verb: "channel.close".to_string(),
-                payload,
-            }));
-            self.ws.send(close).await?;
-        }
+        self.close_channel().await?;
         self.ws.close(frame).await
+    }
+
+    /// Close channel 1 with `channel.close`; the socket stays open.
+    pub async fn close_channel(&mut self) -> Result<(), tungstenite::Error> {
+        if self.open_on_send {
+            return Ok(());
+        }
+        let payload = serde_json::json!({ "channel": CHANNEL });
+        let close = bare(&Frame::Command(Command {
+            id: 0,
+            verb: "channel.close".to_string(),
+            payload,
+        }));
+        self.ws.send(close).await
     }
 
     /// The `reason` of the daemon's `channel.closed` for channel 1, once

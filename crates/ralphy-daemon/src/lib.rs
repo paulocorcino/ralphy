@@ -183,6 +183,33 @@ pub fn router(
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
 ) -> Router {
+    router_tracking(
+        identity,
+        registry_path,
+        usage_dir,
+        stores,
+        start,
+        shutdown,
+        auth,
+        mux::Sockets::default(),
+    )
+}
+
+/// [`router`], whose page sockets `page_sockets` tracks.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments of the public `router`, and the page sockets of `serve`"
+)]
+pub(crate) fn router_tracking(
+    identity: Option<identity::Identity>,
+    registry_path: PathBuf,
+    usage_dir: PathBuf,
+    stores: StorePaths,
+    start: Instant,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+    auth: Arc<auth::AuthState>,
+    page_sockets: mux::Sockets,
+) -> Router {
     router_with_roster(
         identity,
         registry_path,
@@ -193,6 +220,7 @@ pub fn router(
         RouterDependencies {
             auth,
             roster_locator: Arc::new(session::Agent::locate_program),
+            page_sockets,
         },
     )
 }

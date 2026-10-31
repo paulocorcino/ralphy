@@ -568,3 +568,43 @@ async fn a_reattach_as_the_same_holder_reclaims_its_own_slot() {
 
     http_request(port, "POST", &format!("/api/sessions/close?id={id}")).await;
 }
+
+/// A page sends its last keys and closes the console channel at once
+/// (#834). The console reads the keys before it ends, and the daemon sends
+/// no `channel.closed`: the page asked for the close.
+#[tokio::test]
+async fn keys_sent_just_before_a_channel_close_reach_the_console() {
+    let dir = tempfile::tempdir().unwrap();
+    let (port, _shutdown) = start_daemon(dir.path()).await;
+
+    let mut ws = page::console(
+        port,
+        json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
+    ws.send(terminal(b"first\r")).await.unwrap();
+    read_until(&mut ws, "GOT:first", true).await;
+    let (_, body) = http_request(port, "GET", "/api/sessions").await;
+    let list: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    ws.send(terminal(b"last\r")).await.unwrap();
+    ws.close_channel().await.unwrap();
+    let closed = tokio::time::timeout(Duration::from_millis(1500), async {
+        while let Some(message) = ws.next().await {
+            if matches!(message, Ok(Message::Close(_))) {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(
+        closed.is_err(),
+        "no channel.closed: {:?}",
+        ws.closed_reason()
+    );
+
+    let mut again = page::console(port, json!({ "id": id })).await;
+    read_until(&mut again, "GOT:last", false).await;
+    http_request(port, "POST", &format!("/api/sessions/close?id={id}")).await;
+}

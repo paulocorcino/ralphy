@@ -211,6 +211,11 @@ def main():
             # measured, 7 passes in 14 runs without this wait.
             page.wait_for_function(NEW_SOCKET_OPEN, timeout=10000)
             before_close = len(traffic_lines(log_path))
+            # The tab closes as a user closes it: its `pagehide` runs, and the
+            # console says `hidden` before the socket ends. `browser.close()`
+            # alone runs no page handler (Playwright, measured 2026-10-31), so
+            # the line said `dropped`.
+            page.close()
             browser.close()
         check(
             "D3 closing the page logs the traffic line of the open console channel",
