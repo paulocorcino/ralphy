@@ -34,6 +34,7 @@ import "./wb-console-gpu.test.mjs";
 import "./wb-console-fit.test.mjs";
 import "./wb-console-probe.test.mjs";
 import "./wb-console-frames.test.mjs";
+import "./wb-channels.test.mjs";
 import "./wb-console-input.test.mjs";
 import "./wb-console-keys.test.mjs";
 import "./wb-console-touch.test.mjs";
