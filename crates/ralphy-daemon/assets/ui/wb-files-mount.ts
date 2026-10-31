@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------------------
    The mount and the teardown of the FILES tree (`mountTree` and `destroyTree`
-   of wb-files.ts): the Wunderbaum options, the `/ws/tree` subscription, the
+   of wb-files.ts): the Wunderbaum options, the `tree` channel, the
    context-menu listener of the host, and the memory of the expanded folders
    that a mount puts back.
 
@@ -17,7 +17,7 @@ import type { AlpineMagics } from "./wb-alpine.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
 import type { TreeMemory } from "./wb-files-levels.ts";
 
-/** The live `/ws/tree` subscription of the open project. */
+/** The `tree` channel of the page socket for the open project. */
 export type TreeSub = ReturnType<WBDaemonApi["subscribeTree"]>;
 
 /** What a mount or a teardown reads, writes or calls on the files component. */
@@ -175,7 +175,7 @@ export function mountTree(files: MountFiles) {
     dnd: treeDrop(files),
   });
 
-  // One `/ws/tree` subscription per open project; the root is always
+  // One `tree` channel of the page socket per open project; the root is always
   // watched. A `tree.dirty` push refetches only the affected subtree; a
   // `head.dirty` push re-reads the branch.
   if (files.useDaemonTree() && window.WBDaemon?.subscribeTree) {

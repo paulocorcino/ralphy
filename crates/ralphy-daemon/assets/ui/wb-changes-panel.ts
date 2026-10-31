@@ -28,7 +28,7 @@ import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-ty
 export function wbChanges() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["sideOpen", "sideView", "checkoutChipClick"], {
-    // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
+    // The slow backstop: the `changes.dirty` nudge (#310) only reports what a RUN
     // did; an operator's own editor produces no event. Two git subprocesses per
     // minute, only while the panel is open and the tab in front.
     CHANGES_POLL_MS: 50000,
@@ -508,7 +508,7 @@ export function wbChanges() {
       window.addEventListener("workbench:project-changed", (e) =>
         this.gitFollowProject(e.detail.slug),
       );
-      // The open checkout's HEAD moved (the files' `/ws/tree` socket says so).
+      // The open checkout's HEAD moved (the files' `tree` channel says so).
       window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
       // The page asks for a read of one project's change set and branch: the
       // sidebar refresh, a branch act, a new or restored checkout.

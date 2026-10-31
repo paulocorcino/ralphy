@@ -19,20 +19,25 @@ F  uncover: console 1 is maximized and console 2, under it, gets a larger
    was covered; `uncover_sizes` counts the sizes it printed when console 1
    was restored and the cover went.
 C  reconnect of the same terminal after `flood 600` (the page reattaches a
-   socket and keeps its xterm): `reconnect`. Then a reconnect while the child
+   console channel and keeps its xterm): `reconnect`. Then a reconnect while the child
    writes `flood 300`: `reconnect_busy`. The wake (D) compares with the screen
    after it.
 D  wake: console 1 is covered until it sleeps, then uncovered, so it gets a
    NEW terminal: `wake` (and `screen_equal_after_wake`).
 E  reload: the page loads again and reattaches: `reattach`.
-G  drop: a new page routes its session sockets through Playwright, and the
-   route of console 1 is closed, as a dropped link closes it. The page
-   reconnects on its own: `drop` holds `resume` (`open.resume` of the
-   reconnect), `since`, `replay_bytes` (the first terminal frame of the
-   reconnect, 0 when there was none), `screen_equal`, `strip_shown` (the
-   window showed its "connection lost" strip), `strip_gone` (the strip went
-   when the socket opened) and `notice_in_terminal` (the terminal text holds
-   the old notice; expected false).
+G  drop: a new page routes its page socket `/ws` through Playwright, and
+   that route is closed, as a dropped link closes it. Every console channel
+   ends with the socket. The page reconnects on its own: `drop` holds
+   `resume` (`open.resume` of console 1's reconnect), `since`,
+   `replay_bytes` (the first terminal frame of the reconnect, 0 when there
+   was none), `screen_equal`, `strip_shown` (the window showed its
+   "connection lost" strip), `strip_gone` (the strip went when the channel
+   opened) and `notice_in_terminal` (the terminal text holds the old notice;
+   expected false).
+
+Each console is a `console` channel of the page socket `/ws`. The check reads
+each channel from the frames the page sends and gets (`PageSockets` of
+`wb_one_socket_740.py`): "socket" below names one console channel.
 
 Each of `reconnect`, `wake` and `reattach` holds `replay_bytes`, `first_frame_ms`
 (from the creation of the socket to its first terminal frame), `screen_equal`
@@ -77,6 +82,7 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from wb_one_socket_740 import PageSockets, as_bytes
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -141,7 +147,7 @@ STATE = """(id) => { const w = __W(id); return !w ? null : {
 
 facts: dict = {}
 errors: list = []
-sockets: list = []  # every /ws/session socket the page opened, in order
+seen = PageSockets()  # every console channel the page opened, in order
 
 
 def wait_listening(base, timeout=25):
@@ -246,40 +252,6 @@ def traffic_lines(log_path):
         if "console socket traffic" in line:
             out.append({k: parse_value(v) for k, v in FIELD.findall(line)})
     return out
-
-
-def on_websocket(ws):
-    if "/ws/session" not in ws.url:
-        return
-    m = re.search(r"[?&]id=(\d+)", ws.url)
-    since = re.search(r"[?&]since=(\d+)", ws.url)
-    rec = {
-        "n": len(sockets),
-        "session": int(m.group(1)) if m else None,
-        "since": int(since.group(1)) if since else None,
-        "t0": time.time(),
-        "first_frame_ms": None,
-        "first_frame_bytes": None,
-        "open": None,
-    }
-    sockets.append(rec)
-
-    def frame(payload):
-        data = payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode("latin-1", "replace")
-        if not data:
-            return
-        if data[0] == 0x01 and rec["first_frame_ms"] is None:
-            rec["first_frame_ms"] = round((time.time() - rec["t0"]) * 1000, 1)
-            rec["first_frame_bytes"] = len(data) - 9
-        elif data[0] == 0x02 and rec["open"] is None:
-            try:
-                msg = json.loads(bytes(data[1:]).decode("utf-8"))
-            except Exception:
-                return
-            if msg.get("verb") == "session-open":
-                rec["open"] = msg.get("payload")
-
-    ws.on("framereceived", frame)
 
 
 def wait_for(page, js, timeout_s, arg=None):
@@ -408,7 +380,7 @@ def session_of(page, wid):
 
 
 def sockets_of(session):
-    return [s for s in sockets if s["session"] == session]
+    return seen.consoles_of(session)
 
 
 def new_socket(page, session, known, timeout=10):
@@ -538,48 +510,43 @@ def scenario_e(page):
 
 
 def scenario_g(browser):
-    """A dropped link: the route of console 1 is closed, and both sides of the
-    socket close, as a link that drops closes them."""
+    """A dropped link: the route of the page socket is closed, and both sides
+    of the socket close, as a link that drops closes them."""
+    routed = PageSockets()
     routes = []
 
     def route(ws):
-        rec = {"url": ws.url, "ws": ws, "open": None, "replay_bytes": None}
-        routes.append(rec)
+        sock = routed.opened(ws.url)
+        routes.append(ws)
         server = ws.connect_to_server()
 
         def from_server(message):
             ws.send(message)
-            data = message if isinstance(message, (bytes, bytearray)) else message.encode("utf-8")
-            if not data:
-                return
-            if data[0] == 0x02 and rec["open"] is None:
-                try:
-                    msg = json.loads(bytes(data[1:]).decode("utf-8"))
-                except ValueError:
-                    return
-                if msg.get("verb") == "session-open":
-                    rec["open"] = msg.get("payload") or {}
-            elif data[0] == 0x01 and (rec["open"] or {}).get("replay") is True and rec["replay_bytes"] is None:
-                rec["replay_bytes"] = len(data) - FRAME_HEADER
+            routed.received(sock, as_bytes(message))
+
+        def from_page(message):
+            server.send(message)
+            routed.sent(sock, as_bytes(message))
 
         server.on_message(from_server)
+        ws.on_message(from_page)
 
     context = browser.new_context(viewport=dict(VIEW))
     page = context.new_page()
     page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
-    page.route_web_socket(re.compile(r"/ws/session"), route)
+    page.route_web_socket(re.compile(r"/ws(\?|$)"), route)
     try:
         page.goto(BASE)
         if not boot(page):
             raise RuntimeError("the consoles did not start in the drop page")
         session = session_of(page, "w-1")
-        mine = lambda: [r for r in routes if re.search(rf"[?&]id={session}(&|$)", r["url"])]
-        if not mine():
-            raise RuntimeError("no routed socket for console 1")
+        mine = lambda: routed.consoles_of(session)
+        if not mine() or not routes:
+            raise RuntimeError("no routed console channel for console 1")
         before = settle(page, "w-1")
         known = len(mine())
         has_strip = "!!__W('w-1').querySelector('.session-link-lost')"
-        mine()[-1]["ws"].close(code=4000, reason="drop")
+        routes[-1].close(code=4000, reason="drop")
         shown = wait_for(page, f"() => {has_strip}", 5)
         deadline = time.time() + 15
         while time.time() < deadline and not (len(mine()) > known and mine()[known]["open"] is not None):
@@ -589,14 +556,12 @@ def scenario_g(browser):
         rec = mine()[known]
         gone = wait_for(page, f"() => !{has_strip}", 5)
         page.wait_for_timeout(600)
-        rec["replay_bytes"] = rec["replay_bytes"] or 0
         after = settle(page, "w-1")
-        since = re.search(r"[?&]since=(\d+)", rec["url"])
         facts["drop"] = {
             "resume": rec["open"].get("resume") is True,
             "open": rec["open"],
-            "since": int(since.group(1)) if since else None,
-            "replay_bytes": rec["replay_bytes"],
+            "since": rec["since"],
+            "replay_bytes": rec["replay_bytes"] or 0,
             "screen_equal": after == before,
             "strip_shown": shown,
             "strip_gone": gone,
@@ -654,7 +619,7 @@ def run(args):
             browser = p.chromium.launch(args=["--disable-webgl", "--disable-gpu"])
             page = browser.new_context(viewport=dict(VIEW)).new_page()
             page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
-            page.on("websocket", on_websocket)
+            seen.attach(page)
             page.goto(BASE)
             if not boot(page):
                 errors.append("the consoles did not start")
@@ -717,6 +682,7 @@ def main():
         sys.exit(2)
     names = DEFAULT_ASSERTS + [n for n in args.asserts if n not in DEFAULT_ASSERTS]
     failed = [name for name in names if not ASSERTS[name](facts)]
+    print(f"{len(names) - len(failed)}/{len(names)} asserts passed")
     if failed:
         print("failed asserts: " + ", ".join(failed), file=sys.stderr)
         sys.exit(1)

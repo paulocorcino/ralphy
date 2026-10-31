@@ -29,9 +29,10 @@ Scenario 6   `--kb-inset` shrinks a maximized console and the terminal refits
 Scenario 7   a watcher's tap is refused and pulses the parked strip, exactly as a
              watcher's keystroke is
 Scenario 8   the Ctrl latch folds the next character into a control code
-Scenario 9   a resume opens a new socket when the caller says the link is stale,
-             leaves a live one alone when it does not, and never revives a window
-             whose session has ended
+Scenario 9   a resume replaces the page socket when the caller says the link is
+             stale, and the console opens a new channel on it at once (no
+             backoff wait); it leaves a live socket alone when the caller does
+             not, and never revives a window whose session has ended
 Scenario 10  ^C reaches the child as ETX
 Scenario 11  a one-finger drag scrolls the TERMINAL, not the canvas — the
              defect this file was extended for. Note the split oracle: a
@@ -89,6 +90,7 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from wb_one_socket_740 import PageSockets, pump
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -516,6 +518,8 @@ def main():
             # ---- a desktop profile: fine pointer, no touch screen -------------
             ctx = browser.new_context(viewport={"width": 1440, "height": 900})
             page = ctx.new_page()
+            # The console channels of the page socket `/ws`, read from its frames.
+            seen = PageSockets().attach(page)
             page.goto(BASE, wait_until="domcontentloaded")
             page.wait_for_timeout(1200)
 
@@ -834,11 +838,13 @@ def main():
 
             # --- Scenario 9: coming back from a suspend -------------------------
             page.wait_for_timeout(1500)
+            # A console holds its channel from its first connect; a channel
+            # that ended reads CLOSED (3).
             ended_count = page.evaluate(
                 "() => [...document.querySelectorAll('.session-window')]"
-                ".filter((w) => w._term && w._term.ws === null).length"
+                ".filter((w) => w._term && (!w._term.ws || w._term.ws.readyState === 3)).length"
             )
-            info("9 windows whose socket is already gone", str(ended_count))
+            info("9 windows whose console channel is already gone", str(ended_count))
             before_ws = page.evaluate(
                 "() => { const w = document.querySelectorAll('.session-window')[0];"
                 " window.__ws0 = w._term.ws; return !!w._term.ws; }"
@@ -854,15 +860,34 @@ def main():
                 ),
                 f"woke={woke}",
             )
-            woke = page.evaluate("() => window.WBConsole.resumeAll(true)")
-            page.wait_for_timeout(1500)
+            # `resumeAll` replaces the page socket first, and each console sends
+            # one new `channel.open` on it with its byte count, so the consoles'
+            # own `resume` finds that open waiting and wakes nothing. The claim
+            # is the wait: the first backoff is 1000 ms, so an open within
+            # 900 ms of the call did not wait it out.
+            first = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term.sessionId")
+            known_sockets = len(seen.sockets)
+            known_channels = len(seen.channels)
+            called = time.time()
+            page.evaluate("() => window.WBConsole.resumeAll(true)")
+            pump(
+                page,
+                lambda: any(c["session"] == first and c["socket"] >= known_sockets for c in seen.channels[known_channels:]),
+                3,
+            )
+            fresh = [c for c in seen.channels[known_channels:] if c["session"] == first]
+            page.wait_for_timeout(600)
             check(
                 "9 …and a stale one replaces the socket rather than waiting out the backoff",
-                woke >= 1
+                len(seen.sockets) == known_sockets + 1
+                and len(fresh) == 1
+                and fresh[0]["socket"] == known_sockets
+                and isinstance(fresh[0]["since"], int)
+                and fresh[0]["t0"] - called < 0.9
                 and page.evaluate(
                     "() => document.querySelectorAll('.session-window')[0]._term.ws !== window.__ws0"
                 ),
-                f"woke={woke}",
+                f"sockets={len(seen.sockets) - known_sockets} opens={[(c['socket'], c['since'], round(c['t0'] - called, 2)) for c in fresh]}",
             )
             check(
                 "9 …bringing the session's scrollback back with it",

@@ -3,15 +3,19 @@ acceptance.
 
 A file tab hides the Consoles tab with `visibility: hidden`, so the observer
 still reports every console as visible. Before this check, no console slept
-while a file tab was shown, and each one kept its `/ws/session` socket open.
+while a file tab was shown, and each one kept its console open.
+
+Each console is a `console` channel of the page socket `/ws`. The check reads
+the channel opens and closes from the frames the page sends and gets
+(`PageSockets` of `wb_one_socket_740.py`).
 
 One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR`, so the
 operator's own desk and login policy are untouched. PORT 7738. The daemon and
 fixture helpers are `wb_columns_473.py`'s. The desk holds 2 plain consoles,
 side by side, both inside the viewport.
 
-G1  with a file tab shown, after the dormant delay + 5 s, both console sockets are closed
-G2  back on the Consoles tab, each console opens a new `/ws/session` within 10 s
+G1  with a file tab shown, after the dormant delay + 5 s, both console channels are closed
+G2  back on the Consoles tab, each console opens a new console channel within 10 s
 G3  each console shows again the marker line typed into it before the tab was hidden
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
@@ -28,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "columns"))
 import wb_columns_473 as T  # noqa: E402  the daemon and fixture helpers
+from wb_one_socket_740 import PageSockets  # noqa: E402  the console channels of the page socket
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -95,15 +100,8 @@ def main():
     write_desk(daemon_dir, slug)
     proc = T.launch(daemon_dir)
     errors = []
-    # Every `/ws/session` socket the page opened: [url, closed].
-    sockets = []
-
-    def on_socket(ws):
-        if "/ws/session" not in ws.url:
-            return
-        rec = [ws.url, False]
-        sockets.append(rec)
-        ws.on("close", lambda _ws: rec.__setitem__(1, True))
+    # Every console channel the page opened.
+    seen = PageSockets()
 
     try:
         if not T.wait_listening(BASE):
@@ -113,7 +111,7 @@ def main():
             browser = p.chromium.launch(args=["--disable-gpu"])
             page = browser.new_page(viewport=dict(VIEW))
             page.on("pageerror", lambda e: errors.append(str(e)))
-            page.on("websocket", on_socket)
+            seen.attach(page)
             page.goto(BASE)
             T.boot(page, want=len(IDS))
             page.wait_for_function(
@@ -136,24 +134,26 @@ def main():
                 f"() => {TABS}.openTab({{ project: '{slug}', path: 'README.md', title: 'README.md', ftype: 'markdown' }})"
             )
             page.wait_for_function(f"() => {TABS}.active !== 'consoles'", timeout=10000)
-            live = [s for s in sockets if not s[1]]
+            live = seen.live()
             pump(page, DORMANT_AFTER_MS + 5000)
-            still = [s[0] for s in live if not s[1]]
+            still = [c["session"] for c in live if not c["closed"]]
             asleep = page.evaluate("(ids) => ids.map((id) => !!__W(id)?._dormant)", IDS)
             check(
-                "G1 both console sockets close while a file tab is shown",
+                "G1 both console channels close while a file tab is shown",
                 len(live) >= len(IDS) and not still and all(asleep),
                 f"open-before={len(live)} still-open={still} dormant={asleep}",
             )
 
             # G2 ---------------------------------------------------------------
-            known = len(sockets)
+            known = len(seen.channels)
             page.evaluate(f"() => {TABS}.activate('consoles')")
-            fresh = wait_until(page, lambda: len([s for s in sockets[known:] if not s[1]]) >= len(IDS), 10000)
+            fresh = wait_until(
+                page, lambda: len([c for c in seen.channels[known:] if not c["closed"]]) >= len(IDS), 10000
+            )
             check(
                 "G2 both consoles reconnect within 10 s",
                 fresh,
-                f"new={[s[0] for s in sockets[known:]]}",
+                f"new={[c['session'] for c in seen.channels[known:]]}",
             )
 
             # G3 ---------------------------------------------------------------

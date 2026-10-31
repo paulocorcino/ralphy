@@ -3,8 +3,8 @@
 
    The browser's `workbench:action` seam is verb-agnostic; this adapter maps the
    actions that reach the daemon (`ACTION_TO_VERB`) to a `Command {id, verb,
-   payload}`. A verb that streams (a Spawn call) drives one `/ws/command`
-   socket per call; a command with one reply (`observe`, `write`, `readImage`)
+   payload}`. A verb that streams (a Spawn call) runs on a `spawn` channel of
+   the page's one socket; a command with one reply (`observe`, `write`, `readImage`)
    goes over `POST /api/command`. The client
    never composes a command line — it sends closed-enum params and the daemon's
    verb registry (dispatch.rs) builds the argv. Raw `status:"output"` chunks feed
@@ -16,15 +16,14 @@ import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import { sendWindow } from "./wb-events.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import { pageChannels } from "./wb-channels.ts";
+import type { Channel, ChannelSocket, CloseReason, PageChannels } from "./wb-channels.ts";
+import { createSubscriptions } from "./wb-daemon-subscriptions.ts";
+import type { SocketUser } from "./wb-daemon-subscriptions.ts";
+import type { ConsoleChannel, ConsoleHandlers } from "./wb-console-terminal-types.d.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { PresenceReport } from "./wb-presence.ts";
-
-/** What a persistent socket's owner hears: each open, and each frame. */
-type SocketHandlers = {
-  /** `reopened` is false on the first open only. */
-  onOpen?: (ws: WebSocket, reopened: boolean) => void;
-  onMessage: (ev: MessageEvent<ArrayBuffer>) => void;
-};
+import type { SessionPayload } from "./wb-session-route.ts";
 
 /** What the presence socket's owner hears besides the heartbeat. */
 type PresenceHandlers = {
@@ -37,6 +36,22 @@ export type DaemonDeps = {
   /** The page's door for operator messages: a verb that could not start is flashed. */
   messages: Messages;
 };
+
+// The channel layer's view of a WebSocket. `WebSocket.send` takes only bytes
+// on an `ArrayBuffer`; every frame the layer makes is on one, and any other
+// frame is copied onto one.
+function channelSocket(sock: WebSocket): ChannelSocket {
+  return {
+    get readyState() {
+      return sock.readyState;
+    },
+    send: (data: Uint8Array) => sock.send(onArrayBuffer(data) ? data : data.slice()),
+  };
+}
+
+function onArrayBuffer(bytes: Uint8Array): bytes is Uint8Array<ArrayBuffer> {
+  return bytes.buffer instanceof ArrayBuffer;
+}
 
 export function createDaemon(
   window: Window,
@@ -65,6 +80,9 @@ export function createDaemon(
   // How long a command waits for its one reply: `dispatch::REPLY_DEADLINE`
   // (60 s) of the daemon, plus the 5 s margin of `relay_to_peer` for a peer.
   const COMMAND_DEADLINE_MS = 70000;
+
+  // The wait before a lost page socket is opened again.
+  const RECONNECT_MS = 3000;
 
   // Fail a handshake that has not opened by the deadline. `close()` on a
   // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
@@ -105,29 +123,6 @@ export function createDaemon(
     out[0] = TAG_COMMAND;
     out.set(body, 1);
     return out;
-  }
-
-  // Open a fresh `/ws/command`, fire the verb, and stream each reply's `payload`
-  // (which carries `status`) to `onStatus`; close on the terminal `exited`/`error`.
-  function spawn(verb: string, payload: CommandPayload, onStatus: (st: SpawnStatus) => void) {
-    const id = nextId++;
-    const ws = new WebSocket(WS_ORIGIN + "/ws/command");
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
-    ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
-      const a = new Uint8Array(ev.data);
-      if (a[0] !== TAG_COMMAND) return;
-      let frame: { payload: SpawnStatus };
-      try {
-        frame = socketFrame(a);
-      } catch {
-        return;
-      }
-      const status = frame.payload;
-      onStatus(status);
-      if (status.status === "exited" || status.status === "error") ws.close();
-    };
-    return id;
   }
 
   // The optional `checkout` argument of a repo-scoped verb (#406, ADR-0063
@@ -219,232 +214,231 @@ export function createDaemon(
     return observe(verb, payload);
   }
 
-  // ONE persistent socket on `path`, the reconnect loop every subscription below
-  // shares. Reconnects on `close` ONLY — the spec guarantees `error` is always
-  // followed by `close`, so scheduling on both would double the backoff into a
-  // storm. One fixed 3s timer per drop, no exponential backoff: one socket each.
-  // `onOpen(ws, reopened)` runs on every open; `reopened` is false on the FIRST
-  // open only and stays true across a resume, so a caller's catch-up read rides
-  // the reconnect with no second code path.
-  function persistentSocket(path: string, { onOpen, onMessage }: SocketHandlers) {
-    let closed = false;
+  // The page's presence reports (wb-presence.ts) ride the page socket:
+  // `reportPresence` sends one when it is open, and each open runs the
+  // `onPresenceOpen` hooks, so a new socket hears the page at once.
+  const presenceOpens: (() => void)[] = [];
+
+  // The page's ONE socket on `/ws` (ADR-0082): presence and the daemon's
+  // pushes are channel 0, and each subscription has a channel of its own
+  // (wb-channels.ts). The first user opens it, and it closes when the last
+  // one leaves. Reconnects on `close` ONLY — the spec guarantees `error` is
+  // always followed by `close`, so scheduling on both would double the backoff
+  // into a storm. One fixed 3s timer per drop, no exponential backoff.
+  // A new socket starts with no channel on the daemon, so every open runs
+  // each user's `onOpen` again, with `reopened` true after its first open: a
+  // caller's catch-up read rides the reconnect with no second code path.
+  function persistentSocket() {
+    const users = new Map<SocketUser, { opened: boolean }>();
     let ws: WebSocket | null = null;
-    let opened = false;
-    let live = false;
+    // The channel layer of the open socket; `null` while it is not open.
+    let channels: PageChannels | null = null;
     let timer: number | null = null;
     let lastResumeAt = 0;
     let connectingSince = 0;
+    let handshakeMs: number | null = null;
+    const greet = (user: SocketUser, state: { opened: boolean }, layer: PageChannels) => {
+      const reopened = state.opened;
+      state.opened = true;
+      user.onOpen(layer, reopened);
+    };
+    const bare = (bytes: Uint8Array) => {
+      for (const user of [...users.keys()]) user.onBare?.(bytes);
+    };
+    // The channels of a socket that ended are over; the next open opens them again.
+    const lose = () => {
+      const layer = channels;
+      channels = null;
+      layer?.socketLost();
+    };
     const connect = () => {
-      if (closed) return;
-      const sock = new WebSocket(WS_ORIGIN + path);
+      const sock = new WebSocket(WS_ORIGIN + "/ws");
       ws = sock;
-      live = false;
       connectingSince = Date.now();
       armHandshakeDeadline(sock);
       sock.binaryType = "arraybuffer";
       sock.onopen = () => {
-        live = true;
-        const reopened = opened;
-        opened = true;
-        onOpen?.(sock, reopened);
+        handshakeMs = Date.now() - connectingSince;
+        const layer = pageChannels(channelSocket(sock), bare);
+        channels = layer;
+        for (const [user, state] of [...users]) greet(user, state, layer);
+        for (const fn of presenceOpens) fn();
       };
-      sock.onmessage = onMessage;
+      sock.onmessage = (ev: MessageEvent<ArrayBuffer>) =>
+        channels?.receive(new Uint8Array(ev.data));
       sock.onclose = () => {
-        live = false;
-        if (!closed) timer = setTimeout(connect, 3000);
+        lose();
+        // The last user left as its channel ended: no user, no socket. A
+        // timer here would open a second socket beside the one the next
+        // user opens.
+        if (ws !== sock) return;
+        timer = setTimeout(connect, RECONNECT_MS);
       };
     };
-    connect();
+    const leave = (user: SocketUser) => {
+      if (!users.delete(user) || users.size) return;
+      clearTimeout(timer);
+      timer = null;
+      lose();
+      detachSocket(ws);
+      ws = null;
+    };
     return {
-      // Send on the current socket if it is open; `false` means the frame was
-      // not sent, and the caller's `onOpen` is what re-sends its state.
+      // Add a user; it returns the user's leave.
+      join: (user: SocketUser) => {
+        const state = { opened: false };
+        users.set(user, state);
+        if (!ws) connect();
+        else if (channels) greet(user, state, channels);
+        return () => leave(user);
+      },
+      // Send a bare frame on channel 0 if the socket is open; `false` means
+      // the frame was not sent, and the caller's open hook re-sends its state.
       sendIfOpen: (frame: Uint8Array<ArrayBuffer>) => {
-        if (!live || !ws) return false;
+        if (!channels || !ws) return false;
         ws.send(frame);
         return true;
       },
       resume: (stale: boolean) => {
-        if (closed) return false;
+        if (!ws) return false;
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
-        const rs = ws ? ws.readyState : null;
         const connectingMs = now - connectingSince;
-        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
+        if (resumeDecision({ readyState: ws.readyState, stale, connectingMs }) === "none") {
+          return false;
+        }
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
-        detachSocket(ws);
-        connect();
+        const old = ws;
+        detachSocket(old);
+        lose();
+        // A console that reopens as its channel ends joins inside `lose`. When
+        // it was the only user, its leave cleared `ws` and its join opened the
+        // next socket; a second one here would open the console twice.
+        if (ws === old) connect();
         return true;
       },
-      close: () => {
-        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
-        closed = true;
-        clearTimeout(timer);
-        try {
-          if (ws) ws.close();
-        } catch {}
-      },
+      // The milliseconds from the construction of the last socket that opened
+      // to its `open`, or `null` before the first open.
+      handshakeMs: () => handshakeMs,
     };
   }
+  const page = persistentSocket();
 
   // Decode a `[0x02][JSON]` command frame, or `null` for anything else.
-  function commandFrame(ev: MessageEvent<ArrayBuffer>): PushFrame | null {
-    const a = new Uint8Array(ev.data);
-    if (a[0] !== TAG_COMMAND) return null;
+  function commandFrame(bytes: Uint8Array): PushFrame | null {
+    if (bytes[0] !== TAG_COMMAND) return null;
     try {
-      return socketFrame<PushFrame>(a);
+      return socketFrame<PushFrame>(bytes);
     } catch {
       return null;
     }
   }
 
-  // Open ONE persistent `/ws/tree` subscription for a project (#196, ADR-0036 §4):
-  // `watch`/`unwatch` a rel dir as the tree expands/collapses, and invoke
-  // `onDirty(relPath)` for each `tree.dirty` push. Returns the control handle; the
-  // caller closes it when the project closes (the daemon tears the watcher down on
-  // the last release).
-  // A subscription is bound to ONE checkout (#406): every watch carries it and
-  // a `tree.dirty` for another tree of the same repo is not this tree's news —
-  // the caller remounts the tree (and this subscription) when the selection
-  // changes, so the filter only ever drops a frame from a stale watch.
-  // The same socket holds the checkout's HEAD (`head.watch`): a branch switch or
-  // a commit made anywhere pushes `head.dirty`, and `onHead()` re-reads the
-  // branch. The socket's close releases that hold with the tree's.
-  // The held dirs are STATE, not a queue: a new socket starts empty on the
-  // daemon, so every open sends `head.watch` and each held `watch` again, and a
-  // RE-open re-reads each held dir and the branch once — whatever changed while
-  // the socket was down was never pushed (#484).
-  // A `tree.failed` push says the daemon could not watch a dir of this tree:
-  // `onFailed(reason)`. A reopen holds every dir again: `onFailed(null)`.
-  function subscribeTree(
-    repo: string,
-    onDirty: (path: string) => void,
-    checkout: string | null | undefined,
-    onHead: (() => void) | undefined,
-    onFailed: ((reason: string | null) => void) | undefined,
-  ) {
-    const held = new Set<string>();
-    const frame = (verb: string, path: string) =>
-      encodeCommand({ id: 0, verb, payload: withCheckout({ repo, path: path || "" }, checkout) });
-    // Re-reads each held dir and the branch: a reopen does it, and so does a
-    // tab that becomes visible or logs in (ADR-0070 D2 events 3, 4).
-    const replay = () => {
-      for (const path of held) onDirty(path);
-      onHead?.();
+  const { subscribeTree, subscribeRuns, subscribeChanges } = createSubscriptions({
+    page,
+    encodeCommand,
+    withCheckout,
+    commandFrame,
+    reopenMs: RECONNECT_MS,
+  });
+
+  // Fire the verb on a `spawn` channel of the page socket and stream each
+  // reply's `payload` (which carries `status`) to `onStatus`. The channel ends
+  // on the terminal `exited`/`error`, or when the daemon or the socket ends
+  // it. A socket that ends mid-run ends the command: the next socket does not
+  // run the verb again. A page socket that does not open within the handshake
+  // deadline runs nothing, as a command socket whose handshake failed did.
+  function spawn(verb: string, payload: CommandPayload, onStatus: (st: SpawnStatus) => void) {
+    const id = nextId++;
+    let over = false;
+    let left = false;
+    let leave: (() => void) | null = null;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      over = true;
+      left = true;
+      clearTimeout(deadline);
+      leave?.();
     };
-    const sub = persistentSocket("/ws/tree", {
-      onOpen: (ws: WebSocket, reopened: boolean) => {
-        if (onHead) ws.send(frame("head.watch", ""));
-        for (const path of held) ws.send(frame("watch", path));
-        if (reopened) {
-          // A new socket holds every dir again, so a failed watch is cleared.
-          onFailed?.(null);
-          replay();
-        }
-      },
-      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
-        const f = commandFrame(ev);
-        if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
-        const p = f.payload || {};
-        if ((p.checkout || null) !== (checkout || null)) return;
-        treePush(f.verb, p);
+    deadline = setTimeout(finish, CONNECT_TIMEOUT_MS);
+    leave = page.join({
+      onOpen: (channels: PageChannels) => {
+        if (over) return;
+        clearTimeout(deadline);
+        const ch = channels.open("spawn", { command: { id, verb, payload } });
+        ch.onFrame = (inner: Uint8Array) => {
+          if (over || inner[0] !== TAG_COMMAND) return;
+          let status: SpawnStatus;
+          try {
+            status = socketFrame<{ payload: SpawnStatus }>(inner).payload;
+          } catch {
+            return;
+          }
+          onStatus(status);
+          if (status.status === "exited" || status.status === "error") finish();
+        };
+        ch.onClosed = finish;
       },
     });
-    // A push of this checkout's tree: a dir it could not watch, a moved HEAD,
-    // or a changed dir.
-    function treePush(verb: string, p: PushPayload) {
-      if (verb === "tree.failed") onFailed?.(p.reason || "");
-      else if (verb === "head.dirty") onHead?.();
-      else onDirty(p.path || "");
-    }
-    return {
-      watch: (path: string) => {
-        const rel = path || "";
-        if (held.has(rel)) return;
-        held.add(rel);
-        sub.sendIfOpen(frame("watch", rel));
+    if (over && !left) finish();
+    return id;
+  }
+
+  // A console's channel on the page socket (ADR-0082 D3): one channel per
+  // call, with `payload` as its open. It opens when the page socket does, at
+  // once when it is open. The console decides when to open another, and
+  // with which byte count: a lost socket ends this channel with
+  // `socket-lost`, and the next socket does not open it again.
+  function openConsole(payload: SessionPayload, handlers: ConsoleHandlers) {
+    let channel: Channel | null = null;
+    let over = false;
+    let leave: (() => void) | null = null;
+    // The console leaves the page socket when its channel ends, so the next
+    // socket does not open it again.
+    leave = page.join({
+      onOpen: (channels: PageChannels) => {
+        const ch = channels.open("console", payload);
+        channel = ch;
+        ch.onFrame = handlers.onFrame;
+        ch.onClosed = (reason: CloseReason) => {
+          over = true;
+          leave?.();
+          handlers.onClosed(reason);
+        };
       },
-      // While disconnected the set is all there is to change: the next socket
-      // never learns the dir.
-      unwatch: (path: string) => {
-        const rel = path || "";
-        if (!held.delete(rel)) return;
-        sub.sendIfOpen(frame("unwatch", rel));
+    });
+    const opened: ConsoleChannel = {
+      get readyState() {
+        if (over) return 3;
+        if (!channel) return 0;
+        return channel.readyState === "open" ? 1 : 3;
       },
-      replay,
-      resume: sub.resume,
-      close: sub.close,
+      send: (inner: Uint8Array) => channel?.send(inner) ?? false,
+      close: () => {
+        if (over) return;
+        over = true;
+        channel?.close();
+        leave?.();
+      },
     };
+    return opened;
   }
 
-  // Open ONE persistent `/ws/tree` run-snapshot subscription for a project (#300,
-  // ADR-0047 §9): `runs.watch` holds the repo's `.ralphy/runstate` dir and each
-  // `runs.dirty` push invokes `onDirty()`, which re-reads `runs.list`. A snapshot
-  // is STATE, so the read is idempotent — hence the extra `onDirty()` on every
-  // RE-open, the catch-up read that recovers a daemon restart with no operator
-  // action. The FIRST open deliberately skips it: a subscription is only ever
-  // mounted by a caller that reads the same snapshot itself in the same tick, so
-  // catching up there re-read state nobody had yet missed — and this read spawns
-  // a CLI, so the duplicate was the dominant cost of opening a project. Catching
-  // up is for what arrived while we were DISCONNECTED, which the first connection
-  // has no window for.
-  function subscribeRuns(repo: string, onDirty: () => void) {
-    const sub = persistentSocket("/ws/tree", {
-      onOpen: (ws: WebSocket, reopened: boolean) => {
-        ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
-        if (reopened) onDirty();
-      },
-      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
-        if (commandFrame(ev)?.verb === "runs.dirty") onDirty();
-      },
-    });
-    return { resume: sub.resume, close: sub.close };
-  }
-
-  // Open ONE persistent `/ws/tree` run-completion subscription for a project
-  // (#310, ADR-0036 amendment). Unlike `subscribeRuns` this sends NO watch frame:
-  // `changes.dirty` is not watcher-fed, so every connection receives every nudge
-  // and the repo filter is the caller's (`WBChanges.shouldReload`). Each decoded
-  // frame is handed over whole — a RE-open synthesizes one for this repo as the
-  // catch-up read that recovers a daemon restart. The first open skips it for the
-  // reason given on `subscribeRuns`: the mounting caller reads `changes.list` and
-  // `sync.status` itself, and each of those spawns the `ralphy` CLI, which spawns
-  // `git` — so the synthetic frame doubled the two most expensive reads of
-  // opening a project.
-  function subscribeChanges(repo: string, onFrame: (frame: PushFrame) => void) {
-    const sub = persistentSocket("/ws/tree", {
-      onOpen: (_ws: WebSocket, reopened: boolean) => {
-        if (reopened) onFrame({ verb: "changes.dirty", payload: { repo } });
-      },
-      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
-        const frame = commandFrame(ev);
-        if (frame) onFrame(frame);
-      },
-    });
-    return { resume: sub.resume, close: sub.close };
-  }
-
-  // Open ONE persistent `/ws` presence subscription (#204): the daemon pushes a
+  // Presence on channel 0 of the page socket (#204): the daemon pushes a
   // `[0x03][JSON]` heartbeat every ~2s carrying `{name, avatar, uptime_secs}`.
   // Invoke `onPresence(payload)` per tick; the reconnect re-lights the topbar
-  // after a daemon restart without a page reload. The heartbeat this socket
-  // carries IS the shell's staleness signal, so a resume here is what re-arms
-  // the probe every other resume depends on.
-  // The same socket carries the daemon's pushes for the shown facts it owns
+  // after a daemon restart without a page reload. The heartbeat IS the shell's
+  // staleness signal, so a resume here is what re-arms the probe every other
+  // resume depends on.
+  // Channel 0 carries the daemon's pushes for the shown facts it owns
   // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`,
-  // `attention.dirty`; ADR-0070 D2, ADR-0085 D10): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
-  // `onOpen(reopened)`, so a reopen reads again what a lost push would have said.
-  // The page's presence reports (wb-presence.ts) ride the same socket:
-  // `reportPresence` sends one when it is open, and each open runs the
-  // `onPresenceOpen` hooks, so a new socket hears the page at once.
-  let presenceSocket: { sendIfOpen: (frame: Uint8Array<ArrayBuffer>) => boolean } | null = null;
-  const presenceOpens: (() => void)[] = [];
+  // `attention.dirty`; ADR-0070 D2, ADR-0085 D10): each `[0x02]` frame goes to
+  // `onPush(verb, payload)`, and every open to `onOpen(reopened)`, so a reopen
+  // reads again what a lost push would have said.
   function reportPresence(report: PresenceReport) {
-    if (!presenceSocket) return false;
-    return presenceSocket.sendIfOpen(
-      encodeCommand({ id: 0, verb: "presence.report", payload: report }),
-    );
+    return page.sendIfOpen(encodeCommand({ id: 0, verb: "presence.report", payload: report }));
   }
   function onPresenceOpen(fn: () => void) {
     presenceOpens.push(fn);
@@ -454,26 +448,21 @@ export function createDaemon(
     onPresence: (presence: Presence) => void,
     { onPush, onOpen }: PresenceHandlers = {},
   ) {
-    const sub = persistentSocket("/ws", {
-      onOpen: (_ws: WebSocket, reopened: boolean) => {
-        onOpen?.(reopened);
-        for (const fn of presenceOpens) fn();
-      },
-      onMessage: (ev: MessageEvent<ArrayBuffer>) => {
-        const a = new Uint8Array(ev.data);
-        if (a[0] === TAG_COMMAND) {
-          const f = commandFrame(ev);
+    const leave = page.join({
+      onOpen: (_channels: PageChannels, reopened: boolean) => onOpen?.(reopened),
+      onBare: (bytes: Uint8Array) => {
+        if (bytes[0] === TAG_COMMAND) {
+          const f = commandFrame(bytes);
           if (f?.verb) onPush?.(f.verb, f.payload || {});
           return;
         }
-        if (a[0] !== TAG_PRESENCE) return;
+        if (bytes[0] !== TAG_PRESENCE) return;
         try {
-          onPresence(socketFrame<Presence>(a));
+          onPresence(socketFrame<Presence>(bytes));
         } catch {}
       },
     });
-    presenceSocket = sub;
-    return { resume: sub.resume, close: sub.close };
+    return { resume: page.resume, close: leave };
   }
 
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
@@ -547,8 +536,13 @@ export function createDaemon(
     subscribeRuns,
     subscribeChanges,
     subscribePresence,
+    openConsole,
+    // Resume the page socket: a stale one is replaced, and each console's
+    // channel ends with it, so the console opens one on the new socket.
+    resumePage: page.resume,
     reportPresence,
     onPresenceOpen,
+    pageHandshakeMs: page.handshakeMs,
     resumeDecision,
     detachSocket,
     RESUME_DEBOUNCE_MS,

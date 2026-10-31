@@ -17,6 +17,10 @@ Scenario 4   parked A re-claims with one click and drives the child again,
              with NO `page.reload()` anywhere in the scenario
 Scenario 5   `window.confirm` is never called across the whole run
 
+Each console is a `console` channel of the page socket `/ws`. The counts are
+of console channels and of the frames the consoles sent on them, read inside
+the page (`CONSOLE_SPY` of `wb_one_socket_740.py`).
+
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
@@ -35,6 +39,7 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from wb_one_socket_740 import CONSOLE_SPY
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -160,53 +165,22 @@ def http(method, path, body=None):
 
 
 # Every context wraps `WebSocket` before any page script runs, and also counts
-# outgoing terminal/resize frames and spies on `window.confirm` — the three
-# oracles this issue's ACs turn on: no client-initiated storm, keystrokes that
-# actually leave the browser, and no modal anywhere on the path.
-WS_SPY = """
+# the terminal/resize frames the consoles send and spies on `window.confirm` —
+# the three oracles this issue's ACs turn on: no client-initiated storm,
+# keystrokes that actually leave the browser, and no modal anywhere on the path.
+# The text of a terminal frame is kept, not just a count: xterm reports its OWN
+# terminal-protocol frames (cursor-position reports, DECSET 1004 focus in/out)
+# as a terminal frame, as a real keystroke is, so a raw count bumps on a DOM
+# focus change alone. A keystroke is matched by the text it carries.
+WS_SPY = (
+    CONSOLE_SPY
+    + """
 (() => {
-  const Native = window.WebSocket;
-  window.__wsCount = { created: 0, closed: 0 };
-  window.__wsUrls = [];
-  window.__wsSent = { term: 0, cmd: 0 };
-  // Content, not just a count: xterm reports its OWN terminal-protocol frames
-  // (cursor-position reports, DECSET 1004 focus in/out) over the identical
-  // TAG_TERMINAL channel as a real keystroke, so a raw count bumps on a
-  // DOM focus change alone. Match a keystroke by the text it carries.
-  window.__wsSentTermText = [];
   window.__confirmCalls = [];
   window.confirm = (m) => { window.__confirmCalls.push(String(m)); return false; };
-  function Spy(url, protocols) {
-    const sock = protocols === undefined ? new Native(url) : new Native(url, protocols);
-    if (String(url).includes('/ws/session')) {
-      window.__wsCount.created += 1;
-      window.__wsUrls.push(String(url));
-      sock.addEventListener('close', () => { window.__wsCount.closed += 1; });
-      const nsend = sock.send.bind(sock);
-      sock.send = (d) => {
-        try {
-          const u = new Uint8Array(d);
-          const t = u[0];
-          if (t === 1) {
-            window.__wsSent.term += 1;
-            window.__wsSentTermText.push(new TextDecoder().decode(u.subarray(9)));
-          } else if (t === 2) window.__wsSent.cmd += 1;
-        } catch {}
-        return nsend(d);
-      };
-    }
-    return sock;
-  }
-  Spy.prototype = Native.prototype;
-  // The client reads `WebSocket.OPEN`; without these the readyState guards in
-  // wb-console.ts compare against `undefined` and every send is dropped.
-  Spy.CONNECTING = Native.CONNECTING;
-  Spy.OPEN = Native.OPEN;
-  Spy.CLOSING = Native.CLOSING;
-  Spy.CLOSED = Native.CLOSED;
-  window.WebSocket = Spy;
 })();
 """
+)
 
 
 def new_context(browser):
@@ -241,12 +215,12 @@ def confirm_calls(page):
     return page.evaluate("() => window.__confirmCalls")
 
 
-def urls(page):
-    return page.evaluate("() => window.__wsUrls.slice()")
+def opens(page):
+    return page.evaluate("() => window.__wsOpens.slice()")
 
 
-def takeover_urls(page):
-    return [u for u in urls(page) if "takeover=1" in u]
+def takeover_opens(page):
+    return [o for o in opens(page) if o.get("takeover") == 1]
 
 
 def screen(page, i=0):
@@ -485,7 +459,7 @@ def main():
                 take_over_count == 1,
                 f"got={take_over_count}",
             )
-            check("…and B has sent no takeover yet", takeover_urls(page_b) == [])
+            check("…and B has sent no takeover yet", takeover_opens(page_b) == [])
 
             type_line(page_a, 0, "replay-once")
             check(
@@ -497,11 +471,11 @@ def main():
             page_b.locator('[data-act="take-over"]').click()
             page_b.wait_for_timeout(2500)
             check(
-                "B's take-over click is the FIRST takeover=1 URL",
-                len(takeover_urls(page_b)) == 1,
-                f"got={takeover_urls(page_b)}",
+                "B's take-over click is the FIRST `takeover: 1` open",
+                len(takeover_opens(page_b)) == 1,
+                f"got={takeover_opens(page_b)}",
             )
-            check("…A never sent a takeover of its own", takeover_urls(page_a) == [])
+            check("…A never sent a takeover of its own", takeover_opens(page_a) == [])
             check("…B is no longer parked", parked(page_b) == 0)
             check("…and A is now parked", parked(page_a) == 1)
             check(
@@ -551,9 +525,9 @@ def main():
             page_a.wait_for_timeout(2500)
             check("A is no longer parked after re-claiming", parked(page_a) == 0)
             check(
-                "…via exactly one takeover=1 URL",
-                len(takeover_urls(page_a)) == 1,
-                f"got={takeover_urls(page_a)}",
+                "…via exactly one `takeover: 1` open",
+                len(takeover_opens(page_a)) == 1,
+                f"got={takeover_opens(page_a)}",
             )
             check("…and B parks in turn", parked(page_b) == 1)
 

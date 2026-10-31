@@ -31,7 +31,6 @@ function load() {
 }
 
 test("a handshake that never opens is closed at the deadline, and nothing else is", async () => {
-  const d = load();
   const realSetTimeout = globalThis.setTimeout;
   const timers = [];
   globalThis.setTimeout = (fn, ms) => timers.push({ fn, ms });
@@ -46,22 +45,25 @@ test("a handshake that never opens is closed at the deadline, and nothing else i
       this.closes += 1;
     }
   };
+  // Two pages: the socket of the second opens in time.
   try {
-    d.subscribePresence(() => {});
-    d.subscribeRuns("r", () => {});
-    d.subscribeChanges("r", () => {});
+    for (const d of [load(), load()]) {
+      d.subscribePresence(() => {});
+      d.subscribeRuns("r", () => {});
+      d.subscribeChanges("r", () => {});
+    }
   } finally {
     globalThis.setTimeout = realSetTimeout;
     delete globalThis.WebSocket;
   }
-  assert.equal(sockets.length, 3);
-  const deadlines = timers.filter((t) => t.ms === d.CONNECT_TIMEOUT_MS);
-  assert.equal(deadlines.length, 3, "every subscription arms a handshake deadline");
-  sockets[1].readyState = 1; // this one opened in time
+  assert.equal(sockets.length, 2, "one socket per page");
+  const deadlines = timers.filter((t) => t.ms === CONNECT_TIMEOUT_MS);
+  assert.equal(deadlines.length, 2, "one handshake deadline per page socket");
+  sockets[1].readyState = 1;
   for (const t of deadlines) t.fn();
   assert.deepEqual(
     sockets.map((s) => s.closes),
-    [1, 0, 1],
+    [1, 0],
   );
 });
 
@@ -324,29 +326,72 @@ test("a reply after the deadline neither resolves the read nor fans out", async 
   }
 });
 
-// --- subscribeTree: the tree socket also holds the checkout's HEAD ---------
+// --- the page socket: one `/ws` socket, a channel per subscription ---------
 
-// Timers are captured, never run: the handshake deadline and the 3s retry are
-// fired by hand, so no test waits on a real clock.
-function treeSocket(checkout, onHead, onFailed) {
+// A frame the page sent, read: a bare `[0x02][JSON]` frame is channel 0, and a
+// `[0x04][channel u32][flags][0x02][JSON]` frame is on its channel. Every frame
+// here is small, so a frame is one piece.
+function readSent(bytes) {
+  if (bytes[0] === 0x04) {
+    const channel = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(1);
+    return { channel, ...JSON.parse(new TextDecoder().decode(bytes.subarray(7))) };
+  }
+  return { channel: 0, ...JSON.parse(new TextDecoder().decode(bytes.subarray(1))) };
+}
+
+function commandBytes(obj) {
+  const body = new TextEncoder().encode(JSON.stringify(obj));
+  const out = new Uint8Array(1 + body.length);
+  out[0] = 0x02;
+  out.set(body, 1);
+  return out;
+}
+
+// The one channel frame that carries `inner` on `channel`.
+function onChannel(channel, inner) {
+  const out = new Uint8Array(6 + inner.length);
+  out[0] = 0x04;
+  new DataView(out.buffer).setUint32(1, channel);
+  out.set(inner, 6);
+  return out;
+}
+
+// The id the page gave its channel of `kind` on socket `s`.
+function channelOf(s, kind) {
+  const opens = s.sent.filter((f) => f.channel === 0 && f.verb === "channel.open" && f.payload.kind === kind);
+  assert.equal(opens.length, 1, `one ${kind} channel on the socket`);
+  return opens[0].payload.channel;
+}
+
+// The verbs sent on the channel of `kind`, with their path.
+const sentOn = (s, kind = "tree") => {
+  const id = channelOf(s, kind);
+  return s.sent.filter((f) => f.channel === id).map((f) => [f.verb, f.payload.path]);
+};
+
+// The daemon door with fake sockets and timers. Timers are captured, never
+// run: the handshake deadline and the 3s retry are fired by hand, so no test
+// waits on a real clock.
+function pageSockets() {
   const d = load();
   const sockets = [];
   const timers = [];
   const FakeSocket = class {
-    constructor() {
+    constructor(url) {
+      this.url = url;
       this.sent = [];
       this.readyState = 0;
       sockets.push(this);
     }
     send(bytes) {
-      this.sent.push(JSON.parse(new TextDecoder().decode(bytes.subarray(1))));
+      this.sent.push(readSent(bytes));
     }
     close() {
       this.readyState = 3;
     }
   };
-  // Every socket is created with the fakes in place: the first one here, and a
-  // reconnect inside `withFakes` below.
+  // Every socket is created with the fakes in place: a subscription, and a
+  // reconnect.
   const withFakes = (fn) => {
     const realSetTimeout = globalThis.setTimeout;
     const realClearTimeout = globalThis.clearTimeout;
@@ -363,22 +408,15 @@ function treeSocket(checkout, onHead, onFailed) {
       delete globalThis.WebSocket;
     }
   };
-  const dirty = [];
-  const sub = withFakes(() =>
-    d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead, onFailed),
-  );
-  const ws = sockets[0];
   const open = (s) => {
     s.readyState = 1;
     s.onopen();
   };
-  open(ws);
-  const push = (verb, payload) => {
-    const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
-    const out = new Uint8Array(1 + body.length);
-    out[0] = 0x02;
-    out.set(body, 1);
-    ws.onmessage({ data: out.buffer });
+  // A push of the daemon: bare on channel 0, or on the channel of `kind`.
+  const push = (s, kind, verb, payload) => {
+    const inner = commandBytes({ id: 0, verb, payload });
+    const bytes = kind ? onChannel(channelOf(s, kind), inner) : inner;
+    s.onmessage({ data: bytes.buffer });
   };
   // Drop the socket the way the browser does, then run whatever retry it armed.
   const drop = (s) =>
@@ -390,16 +428,113 @@ function treeSocket(checkout, onHead, onFailed) {
     withFakes(() => {
       for (const t of timers.splice(0)) if (t.ms === 3000) t.fn();
     });
-  return { d, sub, ws, sockets, dirty, push, open, drop, runRetries, withFakes };
+  return { d, sockets, timers, open, push, drop, runRetries, withFakes };
 }
 
-const sentOn = (s) => s.sent.map((f) => [f.verb, f.payload.path]);
+function treeSocket(checkout, onHead, onFailed) {
+  const page = pageSockets();
+  const dirty = [];
+  const sub = page.withFakes(() =>
+    page.d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead, onFailed),
+  );
+  const ws = page.sockets[0];
+  page.open(ws);
+  const push = (verb, payload) => page.push(ws, "tree", verb, payload);
+  return { ...page, sub, ws, dirty, push };
+}
+
+test("one socket carries presence, tree, runs and changes", () => {
+  const { d, sockets, open, push, withFakes } = pageSockets();
+  const beats = [];
+  const runs = [];
+  const changes = [];
+  withFakes(() => {
+    d.subscribePresence((p) => beats.push(p));
+    d.subscribeTree("o/r", () => {}, null, undefined, undefined);
+    d.subscribeRuns("o/r", () => runs.push("dirty"));
+    d.subscribeChanges("o/r", (f) => changes.push(f.verb));
+  });
+  assert.equal(sockets.length, 1, "one WebSocket in total");
+  assert.equal(sockets[0].url, "ws://127.0.0.1:7431/ws");
+  open(sockets[0]);
+  const ids = ["tree", "runs", "changes"].map((kind) => channelOf(sockets[0], kind));
+  assert.equal(new Set(ids).size, 3, "a channel each");
+  assert.deepEqual(sentOn(sockets[0], "runs"), [["runs.watch", ""]]);
+  const beat = new Uint8Array([0x03, ...new TextEncoder().encode(JSON.stringify({ uptime_secs: 2 }))]);
+  sockets[0].onmessage({ data: beat.buffer });
+  push(sockets[0], "runs", "runs.dirty", { repo: "o/r" });
+  push(sockets[0], "changes", "changes.dirty", { repo: "o/r" });
+  assert.deepEqual(beats, [{ uptime_secs: 2 }]);
+  assert.deepEqual(runs, ["dirty"]);
+  assert.deepEqual(changes, ["changes.dirty"]);
+});
+
+test("a reopened socket re-sends the watches and reads once", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  const dirty = [];
+  let runReads = 0;
+  const sub = withFakes(() => {
+    d.subscribePresence(() => {});
+    d.subscribeRuns("o/r", () => (runReads += 1));
+    return d.subscribeTree("o/r", (rel) => dirty.push(rel), null, undefined, undefined);
+  });
+  open(sockets[0]);
+  sub.watch("");
+  sub.watch("src");
+  assert.deepEqual(dirty, []);
+  drop(sockets[0]);
+  runRetries();
+  assert.equal(sockets.length, 2, "one socket comes back, not one per subscription");
+  open(sockets[1]);
+  assert.deepEqual(sentOn(sockets[1]), [
+    ["watch", ""],
+    ["watch", "src"],
+  ]);
+  assert.deepEqual(sentOn(sockets[1], "runs"), [["runs.watch", ""]]);
+  assert.deepEqual(dirty, ["", "src"], "each held dir is read once");
+  assert.equal(runReads, 1);
+});
+
+test("a tree push on its channel reaches onDirty", () => {
+  const { d, sockets, open, push, withFakes } = pageSockets();
+  const dirty = [];
+  withFakes(() => {
+    d.subscribeRuns("o/r", () => {});
+    d.subscribeTree("o/r", (rel) => dirty.push(rel), null, undefined, undefined);
+  });
+  open(sockets[0]);
+  push(sockets[0], "tree", "tree.dirty", { repo: "o/r", path: "src" });
+  assert.deepEqual(dirty, ["src"]);
+  // NEGATIVE CONTROLS: the same push bare on channel 0, or on another
+  // channel, is not the tree's.
+  push(sockets[0], null, "tree.dirty", { repo: "o/r", path: "lib" });
+  push(sockets[0], "runs", "tree.dirty", { repo: "o/r", path: "lib" });
+  assert.deepEqual(dirty, ["src"]);
+});
+
+test("the page socket keeps the time its handshake took", () => {
+  const { d, sockets, open, withFakes } = pageSockets();
+  const realNow = Date.now;
+  let now = 1000;
+  Date.now = () => now;
+  try {
+    assert.equal(d.pageHandshakeMs(), null, "no socket opened yet");
+    withFakes(() => d.subscribePresence(() => {}));
+    now = 1240;
+    open(sockets[0]);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(d.pageHandshakeMs(), 240);
+});
+
 
 test("subscribeTree holds the checkout's HEAD and routes head.dirty to onHead", () => {
   let heads = 0;
   const { ws, dirty, push } = treeSocket("wt-a", () => (heads += 1));
+  const tree = channelOf(ws, "tree");
   assert.deepEqual(
-    ws.sent.map((f) => [f.verb, f.payload]),
+    ws.sent.filter((f) => f.channel === tree).map((f) => [f.verb, f.payload]),
     [["head.watch", { repo: "o/r", path: "", checkout: "wt-a" }]],
   );
   push("head.dirty", { repo: "o/r", checkout: "wt-a" });
@@ -415,7 +550,7 @@ test("subscribeTree holds the checkout's HEAD and routes head.dirty to onHead", 
 
 test("subscribeTree without onHead sends no head.watch", () => {
   const { ws, push } = treeSocket(null, undefined);
-  assert.deepEqual(ws.sent, []);
+  assert.deepEqual(sentOn(ws), []);
   assert.doesNotThrow(() => push("head.dirty", { repo: "o/r" }));
 });
 
@@ -459,7 +594,7 @@ test("the tree socket reopens after a drop and holds the same dirs again", () =>
   // While disconnected only the held set changes; nothing is sent.
   sub.unwatch("src");
   sub.watch("lib");
-  assert.equal(ws.sent.length, 5);
+  assert.equal(sentOn(ws).length, 5);
   assert.equal(sockets.length, 1, "the retry waits for its timer");
   runRetries();
   assert.equal(sockets.length, 2);
@@ -492,6 +627,54 @@ test("a closed tree subscription never reopens", () => {
   drop(ws);
   runRetries();
   assert.equal(sockets.length, 1);
+});
+
+// The ids of every channel of `kind` the page opened on socket `s`, in order.
+function channelsOf(s, kind) {
+  return s.sent
+    .filter((f) => f.channel === 0 && f.verb === "channel.open" && f.payload.kind === kind)
+    .map((f) => f.payload.channel);
+}
+
+// The daemon ends channel `id` of socket `s` with `reason`.
+function closeChannel(page, s, id, reason) {
+  const bytes = commandBytes({ id: 0, verb: "channel.closed", payload: { channel: id, reason } });
+  page.withFakes(() => s.onmessage({ data: bytes.buffer }));
+}
+
+test("a tree channel the daemon closes is opened again after 3 s with its watches", () => {
+  const page = treeSocket(null, undefined);
+  const { sub, ws, dirty, runRetries } = page;
+  sub.watch("");
+  sub.watch("src");
+  const [first] = channelsOf(ws, "tree");
+  closeChannel(page, ws, first, "refused");
+  assert.equal(channelsOf(ws, "tree").length, 1, "the open waits for its timer");
+  runRetries();
+  const ids = channelsOf(ws, "tree");
+  assert.equal(ids.length, 2, "one new tree channel on the same socket");
+  const resent = ws.sent.filter((f) => f.channel === ids[1]).map((f) => [f.verb, f.payload.path]);
+  assert.deepEqual(resent, [
+    ["watch", ""],
+    ["watch", "src"],
+  ]);
+  assert.deepEqual(dirty, ["", "src"], "each held dir is read once");
+});
+
+test("a reopened tree channel the daemon closes again waits for the next socket", () => {
+  const page = treeSocket(null, undefined);
+  const { sub, ws, sockets, open, drop, runRetries } = page;
+  sub.watch("src");
+  closeChannel(page, ws, channelsOf(ws, "tree")[0], "refused");
+  runRetries();
+  const opens = channelsOf(ws, "tree");
+  closeChannel(page, ws, opens[opens.length - 1], "overflow");
+  runRetries();
+  assert.deepEqual(channelsOf(ws, "tree"), opens, "no open after the second close");
+  drop(ws);
+  runRetries();
+  open(sockets[1]);
+  assert.deepEqual(sentOn(sockets[1]), [["watch", "src"]], "the next socket opens it again");
 });
 
 test("resume(true) replaces an open tree socket and the new one replays the held set", () => {
@@ -552,6 +735,91 @@ test("subscribePresence hands a command frame to onPush and each open to onOpen"
   assert.deepEqual(opens, [false]);
 });
 
+test("spawn runs on a channel and opens no socket", () => {
+  const { d, sockets, open, push, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const seen = [];
+  const id = withFakes(() =>
+    d.spawn("run", { repo: "o/r", agent: "claude" }, (st) => seen.push(st)),
+  );
+  assert.equal(sockets.length, 1, "the command opens no WebSocket of its own");
+  const opens = sockets[0].sent.filter((f) => f.verb === "channel.open");
+  assert.equal(opens.length, 1);
+  assert.equal(opens[0].channel, 0);
+  assert.equal(opens[0].payload.kind, "spawn");
+  assert.deepEqual(opens[0].payload.command, {
+    id,
+    verb: "run",
+    payload: { repo: "o/r", agent: "claude" },
+  });
+  push(sockets[0], "spawn", "run", { status: "spawned", pid: 7 });
+  push(sockets[0], "spawn", "run", { status: "output", chunk: "hello" });
+  push(sockets[0], "spawn", "run", { status: "exited", code: 0 });
+  assert.deepEqual(
+    seen.map((s) => s.status),
+    ["spawned", "output", "exited"],
+  );
+  assert.equal(seen[1].chunk, "hello");
+  // The run ended with `exited`: a late frame on the channel is not heard,
+  // and the verb is not sent again.
+  push(sockets[0], "spawn", "run", { status: "output", chunk: "late" });
+  assert.equal(seen.length, 3);
+  // NEGATIVE CONTROL: the same frame bare on channel 0 is not the command's.
+  const other = withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st)));
+  assert.notEqual(other, id);
+  push(sockets[0], null, "run", { status: "output", chunk: "bare" });
+  assert.equal(seen.length, 3);
+});
+
+test("a command on an open page socket outlives the handshake deadline", () => {
+  const { d, sockets, timers, open, push, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const seen = [];
+  withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st.status)));
+  push(sockets[0], "spawn", "run", { status: "spawned", pid: 7 });
+  // A run longer than the handshake deadline keeps streaming.
+  withFakes(() => {
+    for (const t of timers) if (t.ms === 8000) t.fn();
+  });
+  push(sockets[0], "spawn", "run", { status: "output", chunk: "late" });
+  push(sockets[0], "spawn", "run", { status: "exited", code: 0 });
+  assert.deepEqual(seen, ["spawned", "output", "exited"]);
+});
+
+test("a command whose page socket misses the handshake deadline runs nothing", () => {
+  const { d, sockets, timers, open, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  const seen = [];
+  withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st.status)));
+  // The handshake deadline passes with the page socket still connecting.
+  withFakes(() => {
+    for (const t of timers) if (t.ms === 8000) t.fn();
+  });
+  runRetries();
+  open(sockets[sockets.length - 1]);
+  const spawnOpens = sockets.flatMap((s) =>
+    s.sent.filter((f) => f.verb === "channel.open" && f.payload.kind === "spawn"),
+  );
+  assert.equal(spawnOpens.length, 0, "a late socket does not run the command");
+  assert.deepEqual(seen, []);
+});
+
+test("a command whose socket was lost is not run again on the next socket", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const seen = [];
+  withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st.status)));
+  drop(sockets[0]);
+  runRetries();
+  open(sockets[1]);
+  const opens = sockets[1].sent.filter((f) => f.verb === "channel.open" && f.payload.kind === "spawn");
+  assert.deepEqual(opens, [], "a new socket does not run the verb again");
+  assert.deepEqual(seen, []);
+});
+
 test("an observe past its deadline reports a stall naming the verb", async () => {
   const stalls = [];
   forgetStalls();
@@ -573,4 +841,99 @@ test("an observe past its deadline reports a stall naming the verb", async () =>
   } finally {
     s.restore();
   }
+});
+
+// ADR-0082 D3: a console is a `console` channel of the page socket. Its open
+// waits for the socket, and carries the payload the console built.
+test("openConsole opens a console channel with its payload once the page socket opens", () => {
+  const { d, sockets, open, withFakes } = pageSockets();
+  const frames = [];
+  const channel = withFakes(() =>
+    d.openConsole({ id: 5, since: 40, holder: "h1" }, {
+      onFrame: (inner) => frames.push([...inner]),
+      onClosed: () => assert.fail("the channel is not closed"),
+    }),
+  );
+  assert.equal(sockets.length, 1, "the console opens the page socket, no socket of its own");
+  assert.equal(sockets[0].url, "ws://127.0.0.1:7431/ws");
+  assert.equal(channel.readyState, 0, "the open waits for the page socket");
+  open(sockets[0]);
+  const opens = sockets[0].sent.filter((f) => f.verb === "channel.open");
+  assert.equal(opens.length, 1);
+  const { channel: id, kind, ...payload } = opens[0].payload;
+  assert.equal(kind, "console");
+  assert.deepEqual(payload, { id: 5, since: 40, holder: "h1" });
+  assert.equal(channel.readyState, 1);
+  sockets[0].onmessage({ data: onChannel(id, new Uint8Array([0x01, 7])).buffer });
+  assert.deepEqual(frames, [[0x01, 7]]);
+  assert.equal(channel.send(commandBytes({ id: 0, verb: "resize", payload: { rows: 9, cols: 9 } })), true);
+  assert.deepEqual([sockets[0].sent.at(-1).channel, sockets[0].sent.at(-1).verb], [id, "resize"]);
+});
+
+// The console decides when to open again, and with which byte count: the
+// next socket does not open its channel by itself.
+test("a lost page socket ends a console channel once, and the next socket does not open it again", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const ends = [];
+  const channel = withFakes(() =>
+    d.openConsole({ id: 5 }, { onFrame() {}, onClosed: (reason) => ends.push(reason) }),
+  );
+  drop(sockets[0]);
+  assert.deepEqual(ends, ["socket-lost"]);
+  assert.equal(channel.readyState, 3);
+  runRetries();
+  open(sockets[1]);
+  assert.deepEqual(
+    sockets[1].sent.filter((f) => f.verb === "channel.open"),
+    [],
+    "the new socket opens no console channel",
+  );
+  assert.deepEqual(ends, ["socket-lost"]);
+});
+
+// A console alone on the page socket leaves it when its channel ends. The
+// socket then stays closed until a user joins: a second socket would open
+// every waiting channel twice.
+test("a page socket that a drop left with no user does not reconnect", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.openConsole({ id: 5 }, { onFrame() {}, onClosed() {} }));
+  open(sockets[0]);
+  drop(sockets[0]);
+  runRetries();
+  assert.equal(sockets.length, 1, "no user, no socket");
+  const again = withFakes(() => d.openConsole({ id: 5, since: 9 }, { onFrame() {}, onClosed() {} }));
+  runRetries();
+  assert.equal(sockets.length, 2, "the next open makes one socket");
+  open(sockets[1]);
+  assert.equal(again.readyState, 1);
+  assert.equal(sockets[1].sent.filter((f) => f.verb === "channel.open").length, 1);
+});
+
+// A resume ends the console's channel, and a console that reopens on
+// `socket-lost` joins the page socket again inside that end. The resume
+// leaves one socket: a second one would open the console twice.
+test("a resume of a socket whose only user is a console makes one socket and opens the console once", () => {
+  const { d, sockets, open, withFakes } = pageSockets();
+  const reopen = (since) =>
+    d.openConsole({ id: 5, since }, {
+      onFrame() {},
+      onClosed: (reason) => {
+        if (reason === "socket-lost") reopen(since + 1);
+      },
+    });
+  withFakes(() => reopen(0));
+  open(sockets[0]);
+  assert.equal(
+    withFakes(() => d.resumePage(true)),
+    true,
+  );
+  assert.equal(sockets.length, 2, "one new socket");
+  for (const s of sockets.slice(1)) if (s.readyState === 0) open(s);
+  const opens = sockets.slice(1).flatMap((s) => s.sent.filter((f) => f.verb === "channel.open"));
+  assert.deepEqual(
+    opens.map((f) => [f.payload.kind, f.payload.since]),
+    [["console", 1]],
+  );
 });

@@ -19,13 +19,15 @@
    With no `session-size` (a peer of an older build) a watcher fits as before.
    --------------------------------------------------------------------------- */
 import { encodeResize } from "./wb-console-session.ts";
+import type { ConsoleChannel } from "./wb-console-terminal-types.d.ts";
 
 export type FitDeps = {
   term: XtermTerminal;
   body: HTMLElement;
   fitAddon: XtermFitAddon;
-  // The socket now, or null before the first one.
-  socket: () => WebSocket | null;
+  // The console's channel now, or null before the first one. Its
+  // `readyState` takes the WebSocket numbers.
+  socket: () => ConsoleChannel | null;
   // Whether a full-bleed console covers this one. Absent: never covered.
   covered?: () => boolean;
   // Whether this console has the focus. A focused console always sizes.
@@ -38,7 +40,7 @@ export function createFit({ term, body, fitAddon, socket, covered, focused, watc
   let frame: number | null = null;
   // A request was skipped: the next allowed fit runs it.
   let pending = false;
-  // The PTY has not been told a size since the socket opened.
+  // The PTY has not been told a size since the channel opened.
   let owed = false;
   let disposed = false;
   // The last session size the daemon sent; null before the first one.
@@ -111,7 +113,7 @@ export function createFit({ term, body, fitAddon, socket, covered, focused, watc
     uncovered: () => {
       if (pending) request();
     },
-    // The socket opened: tell the PTY the size now, or when the rule allows it.
+    // The channel opened: tell the PTY the size now, or when the rule allows it.
     opened() {
       owed = true;
       fitNow();

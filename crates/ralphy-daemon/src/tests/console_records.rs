@@ -305,9 +305,10 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         "the console close must keep its closeUrl call in wb-console-spawn.ts"
     );
     for pin in [
-        r#"connect({ id: currentSessionId, repo: currentRepo"#,
+        r#"connect({ id: s.currentSessionId, repo: s.currentRepo"#,
+        r#"return { id: s.currentSessionId, repo: s.currentRepo, watch: s.watching }"#,
         r#"c.verb === "session-open""#,
-        "WBSessionRoute.url(",
+        "WBSessionRoute.openPayload(",
         "WBSessionRoute.announcement(",
     ] {
         assert!(console.contains(pin), "the console must keep {pin}");

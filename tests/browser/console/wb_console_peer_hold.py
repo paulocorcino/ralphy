@@ -4,27 +4,25 @@ dial the peer again until the fleet says the peer is back.
 Two REAL daemons and the TCP proxy of `wb_console_peer_unanswered.py`: its
 `down()` cuts every live connection, as a dead `ssh -L` does.
 
-The page reaches the console sockets through a WebSocket route that closes
-the page side cleanly, with 1000, when the daemon drops the socket: a proxy in
-the path can do that. On a direct localhost socket Chromium reports the same
-drop as `1005, wasClean=false`, which hid the case. Measured 2026-10-05 from a
-browser behind dev tunnels: two consoles of a peer that left the network
-printed "[session closed]" at once and never tried again; this route gives the
-same result on the code before the fix. `RALPHY_TEST_DIRECT=1` runs without the
-route.
+Each console is a `console` channel of the page socket `/ws`, and the proxy
+sits between the local daemon and the peer, so the page socket stays up while
+the peer link is cut. The check reads the opens of the channels from the frames
+of the page (`PageSockets` of `wb_one_socket_740.py`). Measured 2026-10-05 from a browser behind dev tunnels:
+two consoles of a peer that left the network printed "[session closed]" at once
+and never tried again.
 
 Scenario 1  two plain consoles run on the peer
 Scenario 2  the link drops: each window shows one line that names the peer's
             state, with "Try again" and the daemon's diagnosis behind a closed
             "Details"; the terminal keeps its text
 Scenario 3  the link stays down for HOLD_S (180 s, past the old give-up):
-            no window opens a socket, none prints "[session closed]", and
+            no window opens a console channel, none prints "[session closed]", and
             each still holds its session
 Scenario 4  the link comes back and the fleet is read: every window attaches
             to its own session again, the line goes, nothing is launched
 Scenario 5  zero `pageerror` events over the whole pass
 
-Before the fix, scenario 3 opened a socket per window every 1 to 15 s, and
+Before the fix, scenario 3 opened a channel per window every 1 to 15 s, and
 each one failed. After 11 failed opens (`MAX_FAILED_REOPENS` is 10) the window
 gave up with "[session closed]", 120 to about 156 s after the drop with the
 1-2-4-8-15 s backoff and its 30% jitter, and it did not come back with the
@@ -38,7 +36,6 @@ Run: python tests/browser/console/wb_console_peer_hold.py   (exit 0 = all pass)
 """
 
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +46,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 import wb_console_peer_unanswered as base
+from wb_one_socket_740 import PageSockets
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -173,14 +171,7 @@ def main():
             page = browser.new_page(viewport={"width": 1500, "height": 950})
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
-            sockets = []
-            page.on("websocket", lambda ws: sockets.append(ws.url) if "/ws/session" in ws.url else None)
-            if os.environ.get("RALPHY_TEST_DIRECT") != "1":
-
-                def via_proxy(ws):
-                    server = ws.connect_to_server()
-                    server.on_close(lambda code, reason: ws.close(code=1000, reason="proxy"))
-                page.route_web_socket(re.compile(r"/ws/session"), via_proxy)
+            seen = PageSockets().attach(page)
             page.goto(f"http://127.0.0.1:{base.LOCAL_PORT}/", wait_until="domcontentloaded")
             page.wait_for_function("() => !!window.WBConsole", timeout=10000)
             page.wait_for_function(
@@ -194,7 +185,11 @@ def main():
                 page.wait_for_timeout(300)
             wins = wait_for(page, lambda ws: len(ws) == N and all(w["session"] for w in ws), 30)
             owned = {w["id"]: w["session"] for w in wins}
-            check(f"{N} consoles run on the peer", len(owned) == N and all(owned.values()), f"wins={owned}")
+            check(
+                f"{N} consoles run on the peer",
+                len(owned) == N and all(owned.values()) and len(seen.opens()) == N,
+                f"wins={owned} opens={len(seen.opens())}",
+            )
 
             # --- scenario 2 ----------------------------------------------------
             # The peer's own handshake names its environment, not the descriptor.
@@ -219,12 +214,12 @@ def main():
             page.screenshot(path=str(base.SHOT_DIR / "console-peer-hold.png"))
 
             # --- scenario 3 ----------------------------------------------------
-            before = len(sockets)
+            before = len(seen.channels)
             page.wait_for_timeout(HOLD_S * 1000)
             check(
-                f"for {HOLD_S} s with the peer down, no window opens a socket",
-                len(sockets) == before,
-                f"sockets={len(sockets) - before}",
+                f"for {HOLD_S} s with the peer down, no window opens a console channel",
+                len(seen.channels) == before,
+                f"opens={len(seen.channels) - before}",
             )
             wins = windows(page)
             check(
@@ -235,7 +230,7 @@ def main():
             )
 
             # --- scenario 4 ----------------------------------------------------
-            before = len(sockets)
+            before = len(seen.channels)
             proxy.up()
             base.fleet_read(page)
             wins = wait_for(
@@ -243,7 +238,7 @@ def main():
                 lambda ws: {w["id"]: w["session"] for w in ws} == owned and all(w["open"] and not w["hold"] for w in ws),
                 25,
             )
-            reopened = sockets[before:]
+            reopened = seen.opens(before)
             check(
                 "the link back, every window attaches to its own session",
                 {w["id"]: w["session"] for w in wins} == owned and all(w["open"] and not w["hold"] for w in wins),
@@ -251,8 +246,8 @@ def main():
             )
             check(
                 "…once each, and nothing is launched",
-                len(reopened) == N and not any("console=1" in u for u in reopened),
-                f"sockets={reopened}",
+                len(reopened) == N and not any(o.get("console") == 1 for o in reopened),
+                f"opens={reopened}",
             )
 
             browser.close()

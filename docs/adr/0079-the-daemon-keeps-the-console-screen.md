@@ -192,6 +192,11 @@ queue for a slow link. Every console waits 15 s before it sleeps, on every
 link. The verdict returns when ADR-0082 D6 measures the handshake of the one
 socket of the page.
 
+Amended on 2026-10-31 (#740): **the verdict is back.** The page now holds one
+socket (ADR-0082), so its handshake has no browser queue in it. `dormantAfterMs`
+reads the handshake of that socket: 750 ms or more is a slow link and a covered
+console waits 120 s, less than 750 ms (or no socket yet) is 15 s.
+
 **D11. #581 item 5 is decided by the size of the compressed snapshot on
 wake.** If the compressed snapshot on wake, measured by the closing stage of
 #689, is at most 64 KiB, item 5 is dropped: a dormant console keeps no bytes
@@ -338,8 +343,9 @@ bridge) and `tests/peer_session_query.rs` (the relay). Browser checks are in `te
   queued frame that throws does not stop the later frames or whenIdle`), and
   the browser check
   `wb_console_gzip_689.py`.
-- D10: suspended (see its amendment); checked by the `wb-console-gpu`
-  ui-test `dormantAfterMs is 15 s on every link`.
+- D10: checked by the `wb-console-gpu` ui-tests `a slow page socket
+  handshake keeps a console awake 120 s` and `a fast page socket handshake
+  keeps the 15 s delay`.
 - D11: not checked by code: a measure. `wb_console_screen_689.py` writes
   `wake_gzip_bytes`; the decision and its number are in D11.
 - D12: checked by `crates/ralphy-daemon/src/session/manager/tests.rs`

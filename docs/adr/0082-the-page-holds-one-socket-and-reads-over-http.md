@@ -142,18 +142,28 @@ until it reloads (ADR-0070 D6).
 
 ## Compliance
 
-- D1: `crates/ralphy-daemon/tests/command_http.rs` (the route answers a command with one reply, refuses a Spawn verb, and caps the body); `websocket_sites_match_the_baseline` in `crates/xtask/tests/ratchets/`, a ratchet on the `new WebSocket(` sites in `crates/ralphy-daemon/assets/ui/` (3 on 2026-10-16), which goes to 1 when D3 ships; `crates/ralphy-daemon/ui-tests/wb-daemon.test.mjs` (`observe`, `write` and `readImage` send their command over HTTP and open no socket).
+- D1: `crates/ralphy-daemon/tests/command_http.rs` (the route answers a command with one reply, refuses a Spawn verb, and caps the body); `websocket_sites_match_the_baseline` in `crates/xtask/tests/ratchets/`, a ratchet on the `new WebSocket(` sites in `crates/ralphy-daemon/assets/ui/` (3 on 2026-10-16, and 1 since D3 shipped: `persistentSocket` in `wb-daemon.ts`); `crates/ralphy-daemon/ui-tests/wb-daemon.test.mjs` (`observe`, `write` and `readImage` send their command over HTTP and open no socket).
 - D2: `crates/ralphy-daemon/ui-tests/wb-api.test.mjs` and `wb-daemon.test.mjs` (a read or a command with no answer settles with `ReadDeadline` at its deadline, and a late reply changes nothing), and the decode deadline test in `wb-console-frames.test.mjs`.
-- D3: the same ratchet as D1, at 1; and the browser check
-  `tests/browser/wb_one_socket_740.py` (one page, one socket, with consoles,
-  a subscription and a spawned command open).
-- D4: the browser check `wb_one_socket_740.py` (a dropped link, one socket,
-  one open per awake console); a resume over a real dropped link also needs
-  a check in `tests/browser/console/`.
+- D3: the same ratchet as D1, at 1; the ui-tests `wb-channels.test.mjs`
+  (framing, pieces, ids and the channel table) and `wb-daemon.test.mjs`
+  (`one socket carries presence, tree, runs and changes`, `spawn runs on a
+  channel and opens no socket`, `openConsole opens a console channel with its
+  payload once the page socket opens`); and the browser check
+  `tests/browser/console/wb_one_socket_740.py` (one page, one socket, with
+  consoles, a subscription and a spawned command open).
+- D4: the ui-tests `wb-daemon.test.mjs` (`a reopened socket re-sends the
+  watches and reads once`) and `wb-console-terminal.test.mjs` (`a reopened
+  page socket resumes every console by its byte count`); and the browser
+  check `wb_one_socket_740.py` (a dropped link, one socket, one open per
+  awake console). A resume over a real dropped link also needs a check in
+  `tests/browser/console/`.
 - D5: the daemon test `a_flooding_channel_delays_another_by_one_piece` (the
   fair writer), and the integration test
   `one_flooding_console_delays_another_channel_by_one_piece`.
-- D6: not checked by code: manual, reviewed in the PR.
+- D6: the `wb-console-gpu` ui-tests `a slow page socket handshake keeps a
+  console awake 120 s` and `a fast page socket handshake keeps the 15 s
+  delay`, and `wb-daemon.test.mjs` (`the page socket keeps the time its
+  handshake took`).
 - D7: not checked by code: manual, reviewed in the PR.
 - D8: not checked by code: manual, reviewed in the PR.
 

@@ -214,13 +214,46 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
 });
 
 // --- dormantAfterMs: how long a covered window waits before it sleeps ------
-// The slow-link verdict is suspended (ADR-0079 D10): no handshake changes the
-// wait. The GPU module has no way to receive a handshake time any more, so the
-// rows only show that the value is the same however the socket was slow.
+// The delay reads the handshake of the page's one socket (`WBDaemon`): a
+// handshake of 750 ms or more is a slow link, and a reattach costs more there.
 
-test("dormantAfterMs is 15 s on every link", () => {
-  for (const handshakeMs of [100, 750, 5000]) {
-    assert.equal(dormantAfterMs(handshakeMs), 15000, `handshake ${handshakeMs} ms`);
+// Run `body` with a page whose socket reports `handshakeMs`; `undefined` is a
+// page with no `WBDaemon` at all.
+function withPageHandshake(handshakeMs, body) {
+  const had = Object.hasOwn(globalThis, "WBDaemon");
+  const before = globalThis.WBDaemon;
+  if (handshakeMs === undefined) delete globalThis.WBDaemon;
+  else globalThis.WBDaemon = { pageHandshakeMs: () => handshakeMs };
+  try {
+    body();
+  } finally {
+    if (had) globalThis.WBDaemon = before;
+    else delete globalThis.WBDaemon;
+  }
+}
+
+test("a slow page socket handshake keeps a console awake 120 s", () => {
+  // [case, handshake ms]
+  const rows = [
+    ["a slow link", 800],
+    ["at the threshold", 750],
+    ["a very slow link", 5000],
+  ];
+  for (const [name, handshakeMs] of rows) {
+    withPageHandshake(handshakeMs, () => assert.equal(dormantAfterMs(), 120000, name));
+  }
+});
+
+test("a fast page socket handshake keeps the 15 s delay", () => {
+  // [case, handshake ms]
+  const rows = [
+    ["a fast link", 200],
+    ["just under the threshold", 749],
+    ["no socket opened yet", null],
+    ["no page client", undefined],
+  ];
+  for (const [name, handshakeMs] of rows) {
+    withPageHandshake(handshakeMs, () => assert.equal(dormantAfterMs(), 15000, name));
   }
   assert.equal(DORMANT_AFTER_MS, 15000);
 });

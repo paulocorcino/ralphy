@@ -22,7 +22,7 @@ Scenario 4  daemon restarted → reload → the agent console waits as a
 Scenario 5  daemon stopped, `git worktree remove --force wt-a` by hand,
             daemon relaunched → reload → the placeholder reads
             `worktree wt-a no longer exists`, its button `relaunch in
-            primary`, no `/ws/session?agent=` socket was opened
+            primary`, no console channel with an `agent` was opened
 Scenario 6  click it → a console on the primary: title without wt-a, CWD is
             the fixture root, the record's checkout is cleared
 Scenario 7  no page errors
@@ -49,6 +49,9 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "console"))
+from wb_one_socket_740 import PageSockets  # noqa: E402  the console channels of the page socket
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -358,8 +361,9 @@ def main():
             page = ctx.new_page()
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
-            launches = []
-            page.on("websocket", lambda ws: launches.append(ws.url) if "agent=" in ws.url else None)
+            # Each console is a `console` channel of the page socket `/ws`.
+            seen = PageSockets().attach(page)
+            mark = 0
             page.goto(BASE)
             wait_shell(page)
 
@@ -388,7 +392,7 @@ def main():
             stop(proc)
             proc = launch(daemon_dir)
             check("the daemon restarted on the same port", wait_listening(BASE))
-            launches.clear()
+            mark = len(seen.channels)
             page.reload()
             wait_shell(page)
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
@@ -397,7 +401,8 @@ def main():
             page.wait_for_timeout(600)
             note = ph.locator(".session-offline p").inner_text().strip()
             check("…still saying `not running` (the worktree is there)", note == "This agent console is not running.", f"got={note!r}")
-            check("no agent socket was opened by the reload", not launches, f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("no agent console was opened by the reload", not launches, f"got={launches!r}")
             recs = desk_records(page)
             check("the restored record still carries wt-a", bool(recs) and recs[0].get("checkout") == "wt-a", f"got={recs!r}")
             ph.locator(".session-reconnect").click()
@@ -407,7 +412,8 @@ def main():
             check("…the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("…and its CWD: line is the worktree again", ".ralphy/worktrees/wt-a" in buf, f"buffer={buf[:200]!r}")
-            check("one launch socket, carrying checkout=wt-a", len(launches) == 1 and "checkout=wt-a" in launches[0], f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("one launch, carrying checkout=wt-a", len(launches) == 1 and launches[0].get("checkout") == "wt-a", f"got={launches!r}")
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             check("screenshot written", os.path.exists(os.path.join(SHOT_DIR, SHOT)))
 
@@ -417,7 +423,7 @@ def main():
             check("wt-a is gone from disk", not wt.exists())
             proc = launch(daemon_dir)
             check("the daemon relaunched", wait_listening(BASE))
-            launches.clear()
+            mark = len(seen.channels)
             page.reload()
             wait_shell(page)
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
@@ -427,7 +433,8 @@ def main():
             check("the placeholder names the missing worktree", note == "Worktree wt-a no longer exists.", f"got={note!r}")
             label = ph.locator(".session-reconnect").inner_text().strip()
             check("its one button reads `relaunch in primary`", label == "Relaunch in primary", f"got={label!r}")
-            check("no agent socket was opened", not launches, f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("no agent console was opened", not launches, f"got={launches!r}")
 
             # --- scenario 6: relaunch in primary, by that label ------------------
             ph.locator(".session-reconnect").click()
@@ -437,7 +444,8 @@ def main():
             check("…the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("…and its CWD: line is the primary tree", ".ralphy/worktrees" not in buf and "CWD:" in buf, f"buffer={buf[:200]!r}")
-            check("the launch socket carries no checkout", len(launches) == 1 and "checkout=" not in launches[0], f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("the launch carries no checkout", len(launches) == 1 and "checkout" not in launches[0], f"got={launches!r}")
             recs = desk_records(page)
             check("the record's checkout is cleared", bool(recs) and "checkout" not in recs[0], f"got={recs!r}")
 

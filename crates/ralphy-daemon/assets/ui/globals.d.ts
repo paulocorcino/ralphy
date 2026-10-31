@@ -12,7 +12,7 @@ type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue | undefined };
 
-/** The `payload` of a `/ws/command` command: the verb's arguments. */
+/** The `payload` of a command: the verb's arguments. */
 type CommandPayload = {
   repo?: string | null;
   checkout?: string;
@@ -25,7 +25,7 @@ interface Array<T> {
   filter(predicate: BooleanConstructor): Exclude<T, false | 0 | "" | null | undefined>[];
 }
 
-/** A `/ws/command` reply: `status` is "ok" or the reason it is not. A refusal
+/** A command reply: `status` is "ok" or the reason it is not. A refusal
  * says why in `message` or `reason`. */
 type DaemonReply = { status: string; message?: string; reason?: string };
 

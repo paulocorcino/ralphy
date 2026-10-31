@@ -148,13 +148,16 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       window.WBConsole?.resumeAll?.(true);
     },
 
-    // Bring the long-lived subscriptions back after a suspend. Each decides for
-    // itself (`resumeDecision`) and debounces.
+    // Bring the long-lived subscriptions back after a suspend. Presence, the
+    // tree, the runs and the changes share the page's one socket, so one
+    // resume of it brings them all back; it decides for itself
+    // (`resumeDecision`) and debounces.
     resumeSockets(stale?: boolean) {
       const verdict = stale === undefined ? this.socketsAreStale() : stale;
-      window.Alpine.store("runs")._runsSub?.resume?.(verdict);
       this._presenceSub?.resume?.(verdict);
-      // The files' `/ws/tree` socket (wb-files.ts).
+      // The files and the Changes view hear it (wb-files.ts,
+      // wb-changes-panel.ts). Their resume is the page socket's too, and its
+      // debounce makes the three calls one.
       sendWindow(window, "workbench:sockets-resume", { stale: verdict });
     },
 

@@ -4,17 +4,19 @@ One REAL daemon on a scratch `RALPHY_DAEMON_DIR` (the operator's own desk and
 login policy are untouched), with `RALPHY_DAEMON_AGENT_OVERRIDE` set to
 `session_test_child`. The desk holds one console.
 
+The console is a `console` channel of the page socket `/ws`
+(`PageSockets` of `wb_one_socket_740.py` reads the channels from the frames).
 The page's `DecompressionStream` is wrapped so that each decode ends 1.5 s
-late. Every `/ws/session` socket is routed through Playwright. On a socket
+late. The page socket is routed through Playwright. On a console channel
 whose `session-open` says `replay_encoding: "gzip"`, the route forwards the
 replay frame, and the check then sends two live frames of its own (`MARK-A`,
-`MARK-B`) on that socket, so both arrive while the replay is still decoding.
+`MARK-B`) on that channel, so both arrive while the replay is still decoding.
 A send made inside the route's message handler did not reach the page,
 and a listener the page adds does not see a frame the route sends
 (Playwright sync API, measured 2026-10-12). So the marks go out from the
 main loop, and the page's clock is read right after the sends.
 
-1  The page asked for gzip (`gzip=1` in the socket URL).
+1  The page asked for gzip (`gzip: 1` in the console's channel open).
 2  The reattach's `session-open` says the replay is gzip.
 3  The page decoded it (the wrapper counted a decode).
 4  The marks were sent before the decode ended.
@@ -23,7 +25,7 @@ main loop, and the page's clock is read right after the sends.
    replay, in order.
    The writes are counted, not the rows: a snapshot repaints from the top of
    the screen, so rows alone do not show the order.
-6  The daemon's traffic line for that socket has `replay_raw_bytes` larger
+6  The daemon's traffic line for that channel has `replay_raw_bytes` larger
    than `replay_bytes`.
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
@@ -32,7 +34,6 @@ doubles as the orchestrator on this host).
 Run: python tests/browser/console/wb_console_gzip_689.py   (exit 0 = all pass)
 """
 
-import json
 import os
 import re
 import subprocess
@@ -43,6 +44,7 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from wb_one_socket_740 import PageSockets, as_bytes, channel_frame
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -54,7 +56,6 @@ EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 
 TAG_TERMINAL = 0x01
-TAG_COMMAND = 0x02
 
 # Each decode ends 1.5 s after its stream starts; `__decodedAt` is when.
 SLOW_DECODE = """(() => {
@@ -97,9 +98,10 @@ WRITES = """() => {
 }"""
 
 results = []
-# Every routed socket: its URL, its `session-open` payload, the session id
-# bytes of its gzip replay once that went out, and its route.
-routed = []
+# The page sockets and console channels, read from the routed frames.
+seen = PageSockets()
+# The route of each page socket, in order.
+sockets = []
 
 
 def check(name, ok, detail=""):
@@ -204,30 +206,25 @@ def traffic_lines(log_path):
 
 
 def route(ws):
-    rec = {"url": ws.url, "open": None, "replay_of": None, "ws": ws}
-    routed.append(rec)
+    """Forward the page socket, and read its console channels."""
+    sock = seen.opened(ws.url)
+    sockets.append(ws)
     server = ws.connect_to_server()
 
     def from_server(message):
         ws.send(message)
-        data = message if isinstance(message, (bytes, bytearray)) else message.encode("utf-8")
-        if not data:
-            return
-        if data[0] == TAG_COMMAND and rec["open"] is None:
-            try:
-                msg = json.loads(bytes(data[1:]).decode("utf-8"))
-            except ValueError:
-                return
-            if msg.get("verb") == "session-open":
-                rec["open"] = msg.get("payload") or {}
-        elif (
-            data[0] == TAG_TERMINAL
-            and rec["replay_of"] is None
-            and (rec["open"] or {}).get("replay_encoding") == "gzip"
-        ):
-            rec["replay_of"] = bytes(data[1:9])
+        seen.received(sock, as_bytes(message))
+
+    def from_page(message):
+        server.send(message)
+        seen.sent(sock, as_bytes(message))
 
     server.on_message(from_server)
+    ws.on_message(from_page)
+
+
+def gzip_replayed(channel):
+    return (channel["open"] or {}).get("replay_encoding") == "gzip" and channel["replay_session"] is not None
 
 
 def terminal_frame(session, text):
@@ -257,15 +254,15 @@ def main():
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             page = browser.new_page(viewport={"width": 1400, "height": 900})
             page.add_init_script(SLOW_DECODE)
-            page.route_web_socket(re.compile(r"/ws/session"), route)
+            page.route_web_socket(re.compile(r"/ws(\?|$)"), route)
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
             page.evaluate("() => Alpine.store('tabs').activate('consoles')")
             page.wait_for_function("() => !!document.querySelector('#stage .session-window')", timeout=20000)
             page.evaluate(HELPERS)
             page.wait_for_function("() => __W()?._term?.term?.cols > 0 && __W()._term.sessionId != null", timeout=20000)
-            first = routed[0]["url"] if routed else None
-            check("1 the page asks for gzip", first and "gzip=1" in first, f"url={first}")
+            first = seen.channels[0]["payload"] if seen.channels else None
+            check("1 the page asks for gzip", first and first.get("gzip") == 1, f"open={first}")
 
             page.evaluate("() => __W().querySelector('.xterm-helper-textarea').focus()")
             page.keyboard.type("HELLO-689")
@@ -278,23 +275,24 @@ def main():
             # matches the session's bytes, so the reconnect gets the snapshot,
             # not a resume of the bytes it missed.
             page.evaluate("() => __W()._term.term.write('')")
-            known = len(routed)
+            known = len(seen.channels)
             if not page.evaluate("() => __W()._term.resume(true)"):
                 check("the terminal reconnects", False)
                 sys.exit(1)
             # Playwright delivers socket events only while the page is being waited on.
             deadline = time.time() + 15
-            while time.time() < deadline and not (len(routed) > known and routed[known]["replay_of"]):
+            while time.time() < deadline and not (len(seen.channels) > known and gzip_replayed(seen.channels[known])):
                 page.wait_for_timeout(20)
-            rec = routed[known] if len(routed) > known else None
+            rec = seen.channels[known] if len(seen.channels) > known else None
             check(
                 "2 the reattach's session-open says gzip",
                 rec and (rec["open"] or {}).get("replay_encoding") == "gzip",
                 f"open={rec and rec['open']}",
             )
-            if rec and rec["replay_of"]:
-                rec["ws"].send(terminal_frame(rec["replay_of"], "\r\nMARK-A\r\n"))
-                rec["ws"].send(terminal_frame(rec["replay_of"], "MARK-B\r\n"))
+            if rec and gzip_replayed(rec):
+                ws = sockets[rec["socket"]]
+                ws.send(channel_frame(rec["id"], terminal_frame(rec["replay_session"], "\r\nMARK-A\r\n")))
+                ws.send(channel_frame(rec["id"], terminal_frame(rec["replay_session"], "MARK-B\r\n")))
             sent_at = page.evaluate("() => performance.now()")
             wait_for(page, "() => window.__decodedAt != null && window.__writes.includes('MARK-B')")
             page.wait_for_timeout(300)
@@ -316,7 +314,7 @@ def main():
             page.close()
             browser.close()
 
-        # The reattach socket logs its traffic line when it closes.
+        # The reattach channel logs its traffic line when it closes.
         line = None
         deadline = time.time() + 15
         while time.time() < deadline and line is None:

@@ -21,7 +21,11 @@ Scenario 6  the next reload with the link up: five windows on the same five
             sessions, nothing adopted in a cascade
 Scenario 7  zero `pageerror` events over the whole pass
 
-Before the fix, scenario 2 launched all five consoles again (`console=1`), and
+Each console is a `console` channel of the page socket `/ws`. A launch is an
+open with `console: 1`; the check reads the opens from the frames of the page
+(`PageSockets` of `wb_one_socket_740.py`).
+
+Before the fix, scenario 2 launched all five consoles again, and
 a peer without the record join (every release up to rc.38) started a second
 PTY for each. `RALPHY_TEST_PEER_EXE=<path to an older ralphy>` runs the peer
 from another build; the checks are the same.
@@ -47,6 +51,8 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+from wb_one_socket_740 import PageSockets
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -248,6 +254,11 @@ def wait_for(page, pred, timeout):
     return got
 
 
+def launched(seen, mark=0):
+    """The plain launches (`console: 1`) among the opens after the first `mark`."""
+    return [o for o in seen.opens(mark) if o.get("console") == 1]
+
+
 def reload(page):
     page.reload(wait_until="domcontentloaded")
     page.wait_for_function("() => !!window.WBConsole", timeout=10000)
@@ -324,11 +335,7 @@ def main():
             page = browser.new_page(viewport={"width": 1500, "height": 950})
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
-            launches = []
-            page.on(
-                "websocket",
-                lambda ws: launches.append(ws.url) if "/ws/session" in ws.url and "console=1" in ws.url else None,
-            )
+            seen = PageSockets().attach(page)
             page.goto(f"http://127.0.0.1:{LOCAL_PORT}/", wait_until="domcontentloaded")
             page.wait_for_function("() => !!window.WBConsole", timeout=10000)
             page.wait_for_function(
@@ -345,10 +352,14 @@ def main():
             page.wait_for_timeout(2500)
             first = peer_ptys()
             owned = {w["id"]: w["session"] for w in wins}
-            check(f"{N} consoles run on the peer", len(first) == N and len(owned) == N, f"ptys={first} wins={owned}")
+            check(
+                f"{N} consoles run on the peer",
+                len(first) == N and len(owned) == N and len(launched(seen)) == N,
+                f"ptys={first} wins={owned} launches={len(launched(seen))}",
+            )
 
             # --- scenario 2 ----------------------------------------------------
-            launches.clear()
+            mark = len(seen.channels)
             proxy.down()
             reload(page)
             wins = wait_for(page, lambda ws: len(ws) == N and all(w["placeholder"] for w in ws), 15)
@@ -357,6 +368,7 @@ def main():
                 len(wins) == N and all(w["placeholder"] for w in wins),
                 f"wins={[(w['session'], w['placeholder'], w['text']) for w in wins]}",
             )
+            launches = launched(seen, mark)
             check("…and launches nothing", not launches, f"launches={launches}")
             check("…and the peer keeps its PTYs", peer_ptys() == first, f"ptys={peer_ptys()}")
 
@@ -369,11 +381,12 @@ def main():
                 {w["id"]: w["session"] for w in wins} == owned,
                 f"wins={[(w['id'], w['session'], w['text']) for w in wins]}",
             )
+            launches = launched(seen, mark)
             check("…without a launch", not launches, f"launches={launches}")
             check("…and the peer still has the same PTYs", peer_ptys() == first, f"ptys={peer_ptys()}")
 
             # --- scenario 4 ----------------------------------------------------
-            launches.clear()
+            mark = len(seen.channels)
             proxy.mute_list = True
             reload(page)
             # Two fleet reads that call the peer reachable: each box asks the
@@ -388,6 +401,7 @@ def main():
                 len(wins) == N and all(w["placeholder"] and w["text"].endswith("does not answer.") for w in wins),
                 f"wins={[(w['session'], w['placeholder'], w['text']) for w in wins]}",
             )
+            launches = launched(seen, mark)
             check("…and launch nothing", not launches, f"launches={launches}")
             # The operator's click asks the list too, and does not launch on it.
             # A DOM click: the cascade covers the first box's button, and this
@@ -395,6 +409,7 @@ def main():
             page.evaluate("() => document.querySelector('.session-window.placeholder .session-reconnect').click()")
             page.wait_for_timeout(4000)
             wins = windows(page)
+            launches = launched(seen, mark)
             check(
                 "a click on Try again while the list is silent launches nothing",
                 not launches and all(w["placeholder"] for w in wins),
@@ -403,6 +418,7 @@ def main():
             proxy.mute_list = False
             fleet_read(page)
             wins = wait_for(page, lambda ws: {w["id"]: w["session"] for w in ws} == owned, 25)
+            launches = launched(seen, mark)
             check(
                 "the list answers again: every window attaches to its own session",
                 {w["id"]: w["session"] for w in wins} == owned and not launches,
@@ -410,13 +426,14 @@ def main():
             )
 
             # --- scenario 5 ----------------------------------------------------
-            launches.clear()
+            mark = len(seen.channels)
             proxy.down()
             reload(page)
             page.wait_for_timeout(1500)
             proxy.up()
             fleet_read(page)
             wins = wait_for(page, lambda ws: {w["id"]: w["session"] for w in ws} == owned, 25)
+            launches = launched(seen, mark)
             check("the link back during the restore launches nothing", not launches, f"launches={launches}")
             check("…and the peer still has the same PTYs", peer_ptys() == first, f"ptys={peer_ptys()}")
 

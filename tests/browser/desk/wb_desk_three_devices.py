@@ -37,6 +37,9 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import wb_desk_double_launch as base  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "console"))
+from wb_one_socket_740 import CONSOLE_SPY, DROP_PAGE_SOCKET  # noqa: E402  the page socket, and how to drop it
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 PORT = 7433
@@ -106,8 +109,11 @@ class Daemon:
         base.stop(self.proc)
 
 
-def device(browser, width=1400, height=900):
+def device(browser, width=1400, height=900, spy=False):
     ctx = browser.new_context(viewport={"width": width, "height": height})
+    if spy:
+        # Keeps the page sockets, so a check can drop one (`DROP_PAGE_SOCKET`).
+        ctx.add_init_script(CONSOLE_SPY)
     page = ctx.new_page()
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
@@ -161,7 +167,7 @@ def scenario_1(browser):
     print("\n--- scenario 1: a reconnect does not undo a move ---")
     with Daemon() as d:
         put_changes([{"op": "create", "type": "window", "record": window_record("w-1", d.slug)}])
-        phone_ctx, phone = device(browser)
+        phone_ctx, phone = device(browser, spy=True)
         pc_ctx, pc = device(browser)
         pc.wait_for_timeout(4000)
         drag_window(pc, "w-1", 300)
@@ -169,12 +175,16 @@ def scenario_1(browser):
         moved = left_of(pc, "w-1")
         check("the PC's move reaches the daemon", near(record_of("w-1")["rect"]["left"], moved), f"pc={moved}")
         check("the phone shows the move without a reload", near(left_of(phone, "w-1"), moved), f"phone={left_of(phone, 'w-1')}")
-        phone.evaluate(f"() => ({WIN})('w-1')._term.ws.close()")
+        # The desk rides the page socket `/ws`, which a console channel closing
+        # leaves up: the phone's own socket is the one dropped.
+        sockets_before = phone.evaluate("() => window.__pageSockets.length")
+        phone.evaluate(DROP_PAGE_SOCKET)
         phone.wait_for_timeout(5000)
+        sockets_after = phone.evaluate("() => window.__pageSockets.length")
         check(
             "after the phone reconnects the move stays",
-            near(record_of("w-1")["rect"]["left"], moved),
-            f"daemon={record_of('w-1')['rect']['left']} moved={moved}",
+            sockets_after > sockets_before and near(record_of("w-1")["rect"]["left"], moved),
+            f"daemon={record_of('w-1')['rect']['left']} moved={moved} page-sockets={sockets_before}->{sockets_after}",
         )
         phone_ctx.close()
         pc_ctx.close()

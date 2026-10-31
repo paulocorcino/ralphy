@@ -1,28 +1,24 @@
 /* ---------------------------------------------------------------------------
-   The retirement of a session socket of the console's terminal
-   (`wb-console-terminal.ts`): the detach announcement, and the close that
-   leaves no handler behind.
+   The retirement of a console channel of the console's terminal
+   (`wb-console-terminal.ts`): the detach announcement, and the close.
    --------------------------------------------------------------------------- */
 import { encodeDetach } from "./wb-console-session.ts";
 import type { DetachReason } from "./wb-console-session.ts";
+import type { ConsoleChannel } from "./wb-console-terminal-types.d.ts";
 
-// Announce `reason` on an open socket. A socket still connecting cannot send.
-export function announceDetach(ws: WebSocket | null, reason: DetachReason | undefined) {
+// Announce `reason` on an open channel. A channel that waits for the page
+// socket cannot send.
+export function announceDetach(ws: ConsoleChannel | null, reason: DetachReason | undefined) {
   if (reason && ws && ws.readyState === 1) ws.send(encodeDetach(reason));
 }
 
-// Retire a socket so its pending events cannot reach us. `onmessage` matters
-// as much as `onclose`: a frame still queued lands AFTER this returns, when
-// `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
-// its own in the node harness and the popup.
-export function detachSocket(ws: WebSocket | null, reason: DetachReason | undefined) {
+// Retire a channel. Its close ends its frames and calls no handler
+// (`openConsole`); a frame that was still decoding finds a channel that is
+// no longer the link's, and is dropped there.
+export function detachSocket(ws: ConsoleChannel | null, reason: DetachReason | undefined) {
   if (!ws) return;
-  ws.onclose = null;
-  ws.onmessage = null;
-  ws.onopen = null;
-  ws.onerror = null;
   try {
     announceDetach(ws, reason);
-    if (ws.readyState <= 1) ws.close();
-  } catch {}
+    ws.close();
+  } catch {} // a page socket that fails a send is closing, and its close ends the channel
 }

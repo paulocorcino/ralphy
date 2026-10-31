@@ -190,7 +190,7 @@ test("returning to the tab reads the release view again", () => {
   ]);
 });
 
-test("resumeSockets resumes the file tree socket with the others", () => {
+test("resumeSockets resumes the page socket once, and tells the panels", () => {
   const resumed = [];
   const { state } = loadShell({
     window: { dispatchEvent: (e) => resumed.push([e.type, e.detail.stale]) },
@@ -199,10 +199,10 @@ test("resumeSockets resumes the file tree socket with the others", () => {
   state.$store.runs._runsSub = { resume: (stale) => resumed.push(["_runsSub", stale]) };
   store._presenceSub = { resume: (stale) => resumed.push(["_presenceSub", stale]) };
   store.resumeSockets(true);
-  // The file tree's socket is the files' (wb-files.test.mjs hears the event),
-  // and the changes socket is the Changes view's (wb-changes-panel.test.mjs).
+  // The runs ride the page socket that presence resumes: no resume of
+  // their own. The files (wb-files.test.mjs) and the Changes view
+  // (wb-changes-panel.test.mjs) hear the event.
   assert.deepEqual(resumed, [
-    ["_runsSub", true],
     ["_presenceSub", true],
     ["workbench:sockets-resume", true],
   ]);

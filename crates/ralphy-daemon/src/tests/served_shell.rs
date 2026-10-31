@@ -291,7 +291,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         // The replay gate, and the write callback that is the ONLY correct
         // way to clear it — reverting to a bare `term.write(event.bytes)`
         // reintroduces the clipboard clobber with every other pin still green.
-        "replaying = connOpts.id != null",
+        "s.replaying = connOpts.id != null",
         // Whose clipboard it is: not every attached window's.
         "if (replaying || watching) return true;",
         // Ctrl+Insert, and NOT Ctrl+Shift+C (the DevTools accelerator).
@@ -304,10 +304,10 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     }
     // The write callback that clears the replay gate once the replayed bytes
     // are written. Whitespace is dropped so a reformat keeps it green; the
-    // declaration `let replaying = false;` does not match it.
+    // field `replaying: false,` does not match it.
     let flat: String = js.split_whitespace().collect();
     assert!(
-        flat.contains("term.write(event.bytes,replaying?()=>{replaying=false;}:undefined"),
+        flat.contains("term.write(event.bytes,s.replaying?()=>{s.replaying=false;}:undefined"),
         "the terminal must clear the replay gate in the replay's write callback"
     );
     // The read property. The clipboard is read only inside an operator's
