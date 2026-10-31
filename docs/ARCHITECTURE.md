@@ -84,7 +84,7 @@ flowchart LR
 | Browser workbench | daemon | Synchronous HTTP and WebSocket, through the verb registry ([ADR-0036](./adr/0036-workbench-daemon-integration-protocol.md)): reads over HTTP, and one socket per page, `/ws`, with a channel for each console, subscription and streamed verb ([ADR-0082](./adr/0082-the-page-holds-one-socket-and-reads-over-http.md)) |
 | Daemon | CLI children, peers, consoles | Spawns `ralphy` for anything that interprets or changes a repo ([ADR-0032](./adr/0032-daemon-mode-supervised-launcher.md), ADR-0036 §3) |
 | Run | daemon | **Asynchronous only**: run snapshot, stop sentinel, run lock, ledger ([ADR-0047](./adr/0047-run-state-snapshot-channel.md), [ADR-0054](./adr/0054-cooperative-run-stop.md)) |
-| Peer daemon | daemon | Synchronous, versioned peer protocol ([ADR-0052](./adr/0052-local-fleet-federation.md), [ADR-0067](./adr/0067-peers-on-other-machines-through-ssh.md)) |
+| Peer daemon | daemon | Synchronous, versioned peer protocol; the consoles and spawn verbs of a peer go over channels of the peer's page socket `/ws` ([ADR-0052](./adr/0052-local-fleet-federation.md), [ADR-0067](./adr/0067-peers-on-other-machines-through-ssh.md)) |
 | Console CLI | daemon | A byte stream on a PTY; lives and dies with the daemon |
 
 Inside the browser workbench, the first-party script is TypeScript
@@ -282,7 +282,7 @@ boundary.
 | Workbench → audit log | **Device facts** the page reports about itself | A fixed shape with a size cap (`routes/api_audit.rs`); facts are recorded with source `client` and no access decision reads them | ADR-0074 |
 | Workbench → scroll probe file (developer build only) | **Scroll probe** records the page reports about its own scrolls | A fixed shape of numbers and closed values (`probe.rs`); served only in a build with the `scroll-probe` feature; no access decision reads a record | ADR-0084 |
 | Workbench → repo | Verbs from the browser | The verb registry and argv shape checks (`dispatch.rs`, `dispatch/argv.rs`); path confinement (`confine.rs`, `fswrite.rs`) | ADR-0036 |
-| Peer daemon → daemon | Verbs and sessions from a peer | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
+| Peer daemon → daemon | Verbs and sessions from a peer, over channels of its page socket `/ws` | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
 | Agent in a squad → daemon (planned) | Letters and squad tool calls over MCP | A console token per agent console, scoped to its fence, required on loopback too | ADR-0076 |
 | Forge → prompt | Issue body, comments, attachments | The label gate; the comment trust filter (`ralphy-core/src/github/comments.rs`); the charters | ADR-0032 (H), ADR-0072 D5 |
 | Agent → repo and forge | Tool calls of the vendor CLI | The guard hook (`ralphy-cli/src/guard.rs`) or the vendor's deny policy; the verify gate | ADR-0072 D6, ADR-0011, the adapter's ADR |

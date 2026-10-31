@@ -492,7 +492,7 @@ function peerFilesShell(state) {
 // The options `mountTree` gives Wunderbaum, from a stand-in that keeps them.
 function mountedTreeOptions(s, window, document) {
   let options = null;
-  // No `/ws/tree` subscription: this checks the tree's own options.
+  // No tree channel: this checks the tree's own options.
   window.WBDaemon = {};
   const realMar10 = globalThis.mar10;
   globalThis.mar10 = {

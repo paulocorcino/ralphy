@@ -181,7 +181,7 @@ rewrite of its directives.
 request bodies, WebSocket messages, file sizes and item counts. A library
 default is not a decision. The transport cap is derived from the largest
 legitimate payload, not written as a free number: the base64 size of
-`MAX_IMAGE_BYTES` plus 64 KiB. It applies to `/ws/command`, `/ws/session`
+`MAX_IMAGE_BYTES` plus 64 KiB. It applies to a frame of a channel of `/ws`
 and the HTTP routes that carry a command, so a larger content cap raises
 the transport cap with it. A general rate limit and per-request timeouts
 are out of scope, by the non-goal on denial of service; the login throttle
@@ -408,9 +408,9 @@ surface.
 - D11: checked. One cap, `MAX_COMMAND_BYTES` in
   `crates/ralphy-daemon/src/tree.rs` (the base64 size of a 4 MiB image plus
   64 KiB, `max_command_bytes_is_derived_from_the_image_cap`), applies to
-  `/ws/command`, every `/ws/session` upgrade (the peer relay included) and
-  `/api/peer/command`. A larger command closes the socket
-  (`a_message_over_the_cap_closes_the_socket`) or is answered `413`
+  a frame of any channel of `/ws` (the peer relay included) and
+  `/api/peer/command`. A larger frame is refused
+  (`a_joined_frame_past_the_cap_is_refused`) and a larger body is answered `413`
   (`peer_command_refuses_a_body_over_the_cap`); a 4 MiB paste still passes
   (`a_4_mib_image_paste_still_replies`, `peer_command_takes_a_4_mib_image`).
   A file upload (ADR-0036, amendment of 2026-10-19) sends parts of at most
@@ -418,9 +418,9 @@ surface.
   `files.upload_max_mb` (default 25), and the daemon never reads it above
   1024.
   Measured before the fix: `/api/peer/command` answered `413` to a forwarded
-  4 MiB `image.write` under axum's 2 MB default. Accepted: `/ws` and
-  `/ws/tree` keep the tungstenite default; the browser sends them only
-  small control frames.
+  4 MiB `image.write` under axum's 2 MB default. Accepted: the socket `/ws`
+  keeps the cap of the frame reader (`mux::MAX_MESSAGE`); a bare frame has
+  a smaller one.
 - D12: checked by `.github/workflows/security.yml` (cargo-deny, gitleaks,
   zizmor, dependency review, osv-scanner) and `.github/workflows/codeql.yml`.
   `crates/ralphy-daemon/assets/ui/vendor/manifest.json` records the

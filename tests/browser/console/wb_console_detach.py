@@ -13,7 +13,7 @@ other one is off the viewport and sleeps.
 
 D1  the console off the viewport sleeps, and the `dormant` line names its session
 D2  a resume with a stale verdict reopens the awake console: `reconnect`
-D3  closing the page closes the last socket with a bare Close: `client-closed`
+D3  closing the page ends the open console channels: each logs its traffic line
 D4  no line of this pass says `dropped`
 
 A second browser loads the same desk, now with a session in each record. It
@@ -142,6 +142,15 @@ def wait_for_end(log_path, end, timeout):
     return False
 
 
+def wait_for_lines(log_path, count, timeout):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if len(traffic_lines(log_path)) > count:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def main():
     T.build()
     daemon_dir = tempfile.mkdtemp(prefix="wbdetach_daemon_")
@@ -197,14 +206,15 @@ def main():
             check("no page errors", not errors, str(errors[:3]))
 
             # D3 ---------------------------------------------------------------
-            # The resume opens a NEW socket. Closed while it still connects, it
-            # ends `dropped` (no Close frame), and closed before it exists, it
-            # logs nothing: measured, 7 passes in 14 runs without this wait.
+            # The resume opens a NEW channel. Closed while it still connects, it
+            # ends `dropped`, and closed before it exists, it logs nothing:
+            # measured, 7 passes in 14 runs without this wait.
             page.wait_for_function(NEW_SOCKET_OPEN, timeout=10000)
+            before_close = len(traffic_lines(log_path))
             browser.close()
         check(
-            "D3 closing the page says client-closed",
-            wait_for_end(log_path, "client-closed", 10),
+            "D3 closing the page logs the traffic line of the open console channel",
+            wait_for_lines(log_path, before_close, 10),
             str(ends(log_path)),
         )
         check("D4 no line says dropped", "dropped" not in ends(log_path), str(ends(log_path)))

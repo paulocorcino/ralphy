@@ -7,7 +7,7 @@ Scenario 1  each engine (Chromium, Firefox, WebKit) gets its own device cookie
 Scenario 2  a reload of the same page writes no second `device_facts` line
 Scenario 3  a request that changes state writes an `action` line with the
             device, and a login with a wrong code writes `login_failed`
-Scenario 4  a command on the command socket that changes state writes a
+Scenario 4  a command over HTTP that changes state writes a
             `command` line with the device
 Scenario 5  Settings → Devices lists the three devices, marks this one, and
             shows its activity, the command included
@@ -169,17 +169,12 @@ def main():
             )
 
             # ── 4. a command that changes state ───────────────────────────
-            # The frame is the protocol's command tag (0x02) and its JSON.
+            # The body is the command as JSON; the route answers one reply.
             chromium.evaluate(
-                """() => new Promise((resolve) => {
-                    const ws = new WebSocket(`ws://${location.host}/ws/command`);
-                    ws.binaryType = "arraybuffer";
-                    ws.onopen = () => {
-                        const json = JSON.stringify({id: 1, verb: "branch.switch", payload: {repo: "nope", name: "main"}});
-                        ws.send(new Uint8Array([2, ...new TextEncoder().encode(json)]));
-                    };
-                    ws.onclose = () => resolve();
-                    ws.onerror = () => resolve();
+                """() => fetch('/api/command', {
+                    method: 'POST',
+                    headers: {'content-type': 'application/json'},
+                    body: JSON.stringify({id: 1, verb: "branch.switch", payload: {repo: "nope", name: "main"}}),
                 })"""
             )
             cmds = wait_lines(daemon_dir, lambda l: l.get("event") == "command")
