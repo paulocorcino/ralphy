@@ -8,13 +8,7 @@ use super::*;
 /// `session_test_child` found on `PATH`, so the check reads the version
 /// `2.1.312` and runs the exec form; the hook program does not exist, so the
 /// check fails. Returns the port, the console's status file and its socket.
-async fn silent_console(
-    dir: &std::path::Path,
-) -> (
-    u16,
-    std::path::PathBuf,
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-) {
+async fn silent_console(dir: &std::path::Path) -> (u16, std::path::PathBuf, crate::page::Channel) {
     let bin = dir.join("bin");
     std::fs::create_dir_all(&bin).expect("create the test directory");
     let claude = bin.join(format!("claude{}", std::env::consts::EXE_SUFFIX));
@@ -36,10 +30,11 @@ async fn silent_console(
     assert!(cause.contains("no-such-ralphy"), "{cause}");
 
     let (port, store) = start_daemon(dir).await;
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fstatelab&agent=claude");
-    let (ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("a claude console launches");
+    let ws = crate::page::console(
+        port,
+        serde_json::json!({ "repo": "owner/statelab", "agent": "claude" }),
+    )
+    .await;
     let status = store.join("sessions").join("1.agent-status.jsonl");
     (port, status, ws)
 }

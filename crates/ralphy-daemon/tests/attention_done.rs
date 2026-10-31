@@ -13,6 +13,9 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
+#[path = "support/page.rs"]
+pub mod page;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -20,10 +23,6 @@ use ralphy_daemon::auth::AuthState;
 use ralphy_daemon::desk::{self, DeskRecord, DeskRect, DeskStore};
 use ralphy_daemon::{registry, router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 const SLUG: &str = "owner/attention";
 const RECORD: &str = "w-1";
@@ -111,8 +110,8 @@ fn append(status: &Path, line: &str) {
 /// A daemon over `dir/home` (registered as `SLUG`) whose desk holds the
 /// window `RECORD` with the done mark on, and a Claude console launched for
 /// that record. Returns the port, the console's status file, the desk file and
-/// the socket that keeps the console attached.
-async fn marked_console(dir: &Path) -> (u16, PathBuf, PathBuf, Ws) {
+/// the channel that keeps the console attached.
+async fn marked_console(dir: &Path) -> (u16, PathBuf, PathBuf, page::Channel) {
     let store = dir.join("store");
     std::fs::create_dir_all(&store).expect("create the store");
     std::env::set_var("RALPHY_DAEMON_DIR", &store);
@@ -166,13 +165,11 @@ async fn marked_console(dir: &Path) -> (u16, PathBuf, PathBuf, Ws) {
         axum::serve(listener, app).await.expect("the daemon serves");
     });
 
-    let url = format!(
-        "ws://127.0.0.1:{port}/ws/session?repo=owner%2Fattention&agent=claude&record={RECORD}"
-    );
-    let request = url.into_client_request().expect("a websocket request");
-    let (console, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .expect("a claude console launches");
+    let console = page::console(
+        port,
+        serde_json::json!({ "repo": SLUG, "agent": "claude", "record": RECORD }),
+    )
+    .await;
     let status = store.join("sessions").join("1.agent-status.jsonl");
     let deadline = Instant::now() + Duration::from_secs(10);
     while !status.is_file() {
