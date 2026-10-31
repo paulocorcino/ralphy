@@ -17,7 +17,7 @@ use crate::watch;
 mod conn;
 mod frame;
 mod peer_poll;
-use conn::TreeConn;
+pub(crate) use conn::TreeConn;
 pub(crate) use peer_poll::*;
 
 /// What the daemon lends to one `/ws/tree` connection: the watchers, the stores
@@ -114,7 +114,7 @@ async fn push_command(out: &ChannelSender, verb: &str, payload: serde_json::Valu
 
 /// Relay one run-exit nudge as `changes.dirty`. Returns whether the broadcast is
 /// still open.
-async fn relay_run_exit(
+pub(crate) async fn relay_run_exit(
     out: &ChannelSender,
     exited: Result<String, tokio::sync::broadcast::error::RecvError>,
 ) -> bool {
