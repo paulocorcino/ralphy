@@ -171,3 +171,40 @@ fn ran_in(text: &str, repo: &std::path::Path) -> bool {
                 .is_ok_and(|got| got == want)
         })
 }
+
+/// Every reply to command `id` on a spawn channel, until the channel ends.
+async fn ask_until_the_end(
+    port: u16,
+    id: u64,
+    verb: &str,
+    payload: serde_json::Value,
+) -> Vec<Command> {
+    let mut ws = page::command(port).await;
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id,
+            verb: verb.to_string(),
+            payload,
+        }))
+        .into(),
+    ))
+    .await
+    .expect("the frame is sent");
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut replies = Vec::new();
+        while let Some(message) = ws.next().await {
+            let Message::Binary(bytes) = message.expect("the websocket frame arrives") else {
+                continue;
+            };
+            if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
+                if reply.id == id {
+                    replies.push(reply);
+                }
+            }
+        }
+        replies
+    })
+    .await
+    .expect("the spawn channel did not end")
+}

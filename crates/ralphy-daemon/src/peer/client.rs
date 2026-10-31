@@ -432,14 +432,6 @@ pub async fn post_json_timeout(
     send(d, "POST", path, Some(body), response_timeout).await
 }
 
-/// Probe the peer protocol, then open its authenticated command socket.
-pub async fn command(
-    d: &PeerDescriptor,
-    me: SelfRef<'_>,
-) -> std::result::Result<PeerSocket, SocketError> {
-    websocket(d, "/ws/command", "command", me).await
-}
-
 async fn websocket(
     d: &PeerDescriptor,
     path: &str,

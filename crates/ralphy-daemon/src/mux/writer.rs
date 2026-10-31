@@ -46,8 +46,6 @@ pub(crate) enum Out {
     Frame(Vec<u8>),
     /// A WebSocket Ping with this payload, sent whole.
     Ping(Vec<u8>),
-    /// A WebSocket Pong with this payload, sent whole.
-    Pong(Vec<u8>),
     /// A WebSocket Close. The writer sends nothing after it and ends.
     Close,
     /// Sends nothing. The writer answers on this when every item queued
@@ -217,7 +215,6 @@ impl Queue {
         self.pieces = match out {
             Out::Frame(inner) => self.frame_messages(inner, mode),
             Out::Ping(payload) => VecDeque::from([Message::Ping(payload.into())]),
-            Out::Pong(payload) => VecDeque::from([Message::Pong(payload.into())]),
             Out::Close => VecDeque::from([Message::Close(None)]),
             // The item is loaded only when the messages before it are sent.
             Out::Sent(answer) => {
