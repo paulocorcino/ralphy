@@ -3,10 +3,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use futures_util::SinkExt;
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::registry;
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::support::{close, connect, next_inner, open, send_on, serve_with, Daemon, Ws};
 
@@ -175,19 +173,19 @@ async fn a_changes_channel_pushes_changes_dirty_on_a_run_exit() {
     // and the run needs a connection of its own.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let url = format!("ws://127.0.0.1:{}/ws/command", daemon.port);
-    let (mut commands, _resp) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("connect to /ws/command");
-    let run = Frame::Command(Command {
+    let run = Command {
         id: 1,
         verb: "run".to_string(),
         payload: serde_json::json!({ "repo": SLUG, "agent": "claude", "branchMode": "new" }),
-    });
-    commands
-        .send(Message::Binary(protocol::encode(&run).into()))
-        .await
-        .expect("send the run command");
+    };
+    let mut runner = connect(&daemon).await;
+    open(
+        &mut runner,
+        1,
+        "spawn",
+        serde_json::json!({ "command": run }),
+    )
+    .await;
 
     let pushed = next_push(&mut ws, 4, "changes.dirty", Duration::from_secs(15)).await;
 
