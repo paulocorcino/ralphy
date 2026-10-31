@@ -1,4 +1,5 @@
 //! Repo commands proxy through the local daemon and execute on the owning peer.
+//! The tests send each command on a `spawn` channel of the page socket.
 
 #![expect(
     clippy::disallowed_methods,
@@ -9,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
@@ -18,6 +18,8 @@ use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
+#[path = "../support/page.rs"]
+pub mod page;
 mod spawn_verbs;
 
 const A_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -88,9 +90,7 @@ fn descriptor(id: &str, port: u16) -> PeerDescriptor {
 }
 
 async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serde_json::Value {
-    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
-        .await
-        .expect("the websocket connects");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -119,9 +119,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
 }
 
 async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> Vec<Command> {
-    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
-        .await
-        .expect("the websocket connects");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
