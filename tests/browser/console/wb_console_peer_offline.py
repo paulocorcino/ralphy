@@ -45,6 +45,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from wb_console_peer_unanswered import PROTOCOL  # the peer protocol of the daemon under test
+from wb_one_socket_740 import PageSockets  # the console channels of the page socket
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -265,8 +266,8 @@ def main():
             page = browser.new_page(viewport={"width": 1400, "height": 900})
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
-            sockets = []
-            page.on("websocket", lambda ws: sockets.append(ws.url) if "/ws/session" in ws.url else None)
+            # Each console is a `console` channel of the page socket `/ws`.
+            seen = PageSockets().attach(page)
             page.goto(BASE, wait_until="domcontentloaded")
             page.wait_for_function("() => !!window.WBConsole", timeout=8000)
             page.wait_for_function(
@@ -324,7 +325,7 @@ def main():
 
             # --- scenario 4: the peer answers again ---------------------------
             stub = start_peer_stub(peer_port)
-            before = len(sockets)
+            before = len(seen.channels)
             page.evaluate(f"() => Alpine.store('projects').loadRepos({{ git: false }})")
             wins = wait_for(
                 page,
@@ -339,11 +340,11 @@ def main():
                 agent.get("text") == f"{PEER_ENV} is back." and agent.get("button") == "Relaunch",
                 f"win={agent}",
             )
-            launched = sockets[before:]
+            launched = seen.opens(before)
             check(
                 "the plain console launched again by itself, once",
-                len(launched) == 1 and "console=1" in launched[0],
-                f"sockets={launched}",
+                len(launched) == 1 and launched[0].get("console") == 1,
+                f"opens={launched}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "console-peer-back.png"))
 
@@ -353,10 +354,14 @@ def main():
                 plain.get("placeholder") and plain.get("button") == "Try again",
                 f"win={plain}",
             )
-            after = len(sockets)
+            after = len(seen.channels)
             page.evaluate(f"() => Alpine.store('projects').loadRepos({{ git: false }})")
             page.wait_for_timeout(3000)
-            check("a second fleet read launches nothing", len(sockets) == after, f"sockets={sockets[after:]}")
+            check(
+                "a second fleet read launches nothing",
+                len(seen.channels) == after,
+                f"opens={seen.opens(after)}",
+            )
 
             browser.close()
             # --- scenario 6 ----------------------------------------------------

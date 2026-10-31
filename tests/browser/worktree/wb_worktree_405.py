@@ -16,7 +16,7 @@ Scenario 3  `new worktree…` opens the prompt: base select defaults to `main`
             and lists `taken`; the note names the carry-over keys
 Scenario 4  name `wt-new` + "Create & restart" → the console restarts with
             title `claude · wt-new · …` and CWD inside wt-new; ONE relaunch
-            socket carrying `checkout=wt-new`; the record reads wt-new;
+            console channel opened with `checkout: wt-new`; the record reads wt-new;
             `<fixture>/.ralphy/worktrees/wt-new` exists;
             `git config branch.wt-new.base` is `main`; the shell's listing
             shows the new worktree; the Files selection stays unset
@@ -51,6 +51,9 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "console"))
+from wb_one_socket_740 import PageSockets, as_bytes, command_of  # noqa: E402  the console channels of the page socket
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -392,10 +395,18 @@ def main():
             page = ctx.new_page()
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
-            launches = []
-            page.on("websocket", lambda ws: launches.append(ws.url) if "agent=" in ws.url else None)
-            commands = []
-            page.on("websocket", lambda ws: commands.append(ws) if ws.url.endswith("/ws/command") else None)
+            # Each console is a `console` channel of the page socket `/ws`; a
+            # command is a bare frame on the same socket.
+            seen = PageSockets().attach(page)
+            worktree_verbs = []
+
+            def watch_commands(ws):
+                ws.on(
+                    "framesent",
+                    lambda message: worktree_verbs.append((command_of(as_bytes(message)) or {}).get("verb")),
+                )
+
+            page.on("websocket", watch_commands)
             page.goto(BASE)
             wait_shell(page)
 
@@ -426,7 +437,7 @@ def main():
             check("the note names the carry-over keys and the restart", st and CARRY_NOTE in st["note"] and "restarts" in st["note"], f"got={st!r}")
 
             # --- scenario 4: create wt-new → the console restarts inside -----------
-            launches.clear()
+            mark = len(seen.channels)
             page.fill(PROMPT + " input.prompt-input", "wt-new")
             page.click(PROMPT + " .btn.accent")
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=title_of("wt-new"), timeout=30000)
@@ -434,7 +445,8 @@ def main():
             check("…the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("…and its CWD: line is the new worktree", ".ralphy/worktrees/wt-new" in buf, f"buffer={buf[:200]!r}")
-            check("one relaunch socket, carrying checkout=wt-new", len(launches) == 1 and "checkout=wt-new" in launches[0], f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("one relaunch, carrying checkout=wt-new", len(launches) == 1 and launches[0].get("checkout") == "wt-new", f"got={launches!r}")
             recs = desk_records(page)
             check("the record reads checkout wt-new", bool(recs) and recs[0].get("checkout") == "wt-new", f"got={recs!r}")
             check("the worktree directory exists on disk", wt_new.is_dir(), str(wt_new))
@@ -469,12 +481,13 @@ def main():
             # --- scenario 6: the prompt's own gate ---------------------------------
             open_prompt(page)
             # Counted AFTER the prompt opened: opening it reads `branch.list`.
-            before = len(commands)
+            before = sum(1 for v in worktree_verbs if str(v).startswith("worktree."))
             page.type(PROMPT + " input.prompt-input", "a/b c")
             page.wait_for_timeout(300)
             st = page.evaluate(PROMPT_STATE)
             check("the mask keeps a refused character out of the field, with no message", st is not None and st["name"] == "abc" and st["error"] == "", f"got={st!r}")
-            check("…and no command socket was opened for it", len(commands) == before, f"opened={len(commands) - before}")
+            sent = sum(1 for v in worktree_verbs if str(v).startswith("worktree.")) - before
+            check("…and no worktree command was sent for it", sent == 0, f"sent={sent}")
             page.keyboard.press("Escape")
             page.wait_for_function(f"() => !({PROMPT_OPEN})()", timeout=5000)
             check("nothing was created for the separator name", not (fixture / ".ralphy" / "worktrees" / "a").exists())

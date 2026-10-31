@@ -220,6 +220,15 @@ class PageSockets:
         for rec in sock["by_id"].values():
             rec["closed"] = True
 
+    def opens(self, mark=0):
+        """The open payloads of the console channels opened after the first
+        `mark` (take `mark = len(seen.channels)` to start a window)."""
+        return [c["payload"] for c in self.channels[mark:]]
+
+    def launches(self, mark=0):
+        """The opens after the first `mark` that launch an agent: they name an `agent`."""
+        return [o for o in self.opens(mark) if "agent" in o]
+
     def consoles_of(self, session):
         return [c for c in self.channels if c["session"] == session]
 

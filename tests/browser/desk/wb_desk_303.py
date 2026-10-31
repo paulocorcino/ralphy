@@ -20,8 +20,8 @@ Scenario 6   the desk store's shape, a browser reload restoring both windows to
              their exact rects (one maximized), and a close forgetting its record
 Scenario 7   a DAEMON restart: the free console relaunches itself, the agent
              console waits as a placeholder, and no agent session is launched
-Scenario 8   one click on the placeholder opens `/ws/session?repo=…&agent=gemini`
-             and reuses the record's id and rectangle
+Scenario 8   one click on the placeholder opens a console channel for the repo
+             and `agent: gemini` and reuses the record's id and rectangle
 Scenario 9   a REFUSED `/api/sessions` (500, then aborted) restores nothing, opens
              no socket, and leaves the saved desk intact
 Scenario 10  the relaunch-on-load opt-in, flipped through the real Settings modal:
@@ -30,6 +30,11 @@ Scenario 10  the relaunch-on-load opt-in, flipped through the real Settings moda
 Scenario 11  a placeholder whose console runs by now (another device started it)
              attaches to that session on Relaunch and on resume, never launching a
              second one; with nothing live, Relaunch still launches
+
+Each console is a `console` channel of the page socket `/ws`. The check reads
+the opens of the channels from the frames of the page (`PageSockets` of
+`tests/browser/console/wb_one_socket_740.py`): a launch names no session `id`,
+an attach does.
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -46,11 +51,13 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "console"))
+from wb_one_socket_740 import PageSockets  # noqa: E402  the console channels of the page socket
 
 # The Windows console's default codepage (cp1252 here) cannot encode the glyphs
 # this script prints in its detail strings; force utf-8 stdout so a PASSING
@@ -70,19 +77,9 @@ TABS = "Alpine.store('tabs')"
 results = []
 
 
-def session_socket(url):
-    """Whether `url` is a `/ws/session` socket."""
-    return urllib.parse.urlparse(url).path.endswith("/ws/session")
-
-
-def attach_id(url):
-    """The session id a `/ws/session` socket attaches to, or None for a
-    launch or another socket. Read from the query, so the order of its keys
-    does not matter."""
-    if not session_socket(url):
-        return None
-    ids = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("id")
-    return int(ids[0]) if ids else None
+def launches_of(opens):
+    """The opens that launch a session: they name no session `id`."""
+    return [o for o in opens if o.get("id") is None]
 
 
 def check(name, ok, detail=""):
@@ -470,6 +467,7 @@ def main():
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             ctx = browser.new_context(viewport={"width": 1400, "height": 900})
             page = ctx.new_page()
+            seen = PageSockets().attach(page)
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
 
@@ -690,8 +688,7 @@ def main():
                 f"got={[r['id'] for r in records]}",
             )
 
-            reload_sockets = []
-            page.on("websocket", lambda ws: reload_sockets.append(ws.url))
+            mark = len(seen.channels)
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_function(
@@ -721,23 +718,23 @@ def main():
                 "() => [...document.querySelectorAll('.session-window')]"
                 ".map((w) => w._term?.sessionId ?? w._dormantSession ?? w._wantsSession ?? null)"
             )
-            launches = [u for u in reload_sockets if session_socket(u) and attach_id(u) is None]
+            launches = launches_of(seen.opens(mark))
             check(
                 "…still attached to their live sessions, not relaunched",
                 held == [r["sessionId"] for r in records]
                 and not launches
-                and any(attach_id(u) == records[1]["sessionId"] for u in reload_sockets),
+                and any(o.get("id") == records[1]["sessionId"] for o in seen.opens(mark)),
                 f"held={held} records={[r['sessionId'] for r in records]} launches={launches}",
             )
             # Read last before it shows, after a second more: a console that
             # wakes late while still covered is caught too.
             page.wait_for_timeout(1000)
             asleep = page.evaluate("() => document.querySelectorAll('.session-window')[0].classList.contains('dormant')")
-            early = [u for u in reload_sockets if attach_id(u) == records[0]["sessionId"]]
+            early = [o for o in seen.opens(mark) if o.get("id") == records[0]["sessionId"]]
             check(
                 "…and the console under the maximized one comes back asleep, with no socket yet",
                 asleep is True and not early,
-                f"dormant={asleep} sockets={early}",
+                f"dormant={asleep} opens={early}",
             )
             # …and it still knows the box to un-maximize to, after the round trip.
             page.locator(".session-window").nth(1).locator(".session-max").click()
@@ -754,12 +751,12 @@ def main():
             except Exception:
                 pass
             woke = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term?.sessionId ?? null")
-            launches = [u for u in reload_sockets if session_socket(u) and attach_id(u) is None]
+            launches = launches_of(seen.opens(mark))
             check(
                 "…and the console under it wakes on its own session when it shows",
                 woke == records[0]["sessionId"]
                 and not launches
-                and any(attach_id(u) == records[0]["sessionId"] for u in reload_sockets),
+                and any(o.get("id") == records[0]["sessionId"] for o in seen.opens(mark)),
                 f"woke={woke} record={records[0]['sessionId']} launches={launches}",
             )
 
@@ -832,8 +829,7 @@ def main():
                 f"got={live_after_restart}",
             )
 
-            sockets = []
-            page.on("websocket", lambda ws: sockets.append(ws.url))
+            reboot_mark = len(seen.channels)
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_function(
@@ -890,15 +886,12 @@ def main():
                 all(s["kind"] != "agent" for s in sessions),
                 f"got={sessions}",
             )
-            # `/ws` is the daemon's control channel, always opened; only
-            # `/ws/session` sockets launch or attach a PTY.
-            session_sockets = [u for u in sockets if "/ws/session" in u]
+            # Only a console channel launches or attaches a PTY.
+            booted = seen.opens(reboot_mark)
             check(
-                "…and opened exactly one session socket, for the free console",
-                len(session_sockets) == 1
-                and "console=1" in session_sockets[0]
-                and "agent=" not in session_sockets[0],
-                f"sockets={sockets}",
+                "…and opened exactly one console channel, for the free console",
+                len(booted) == 1 and booted[0].get("console") == 1 and "agent" not in booted[0],
+                f"opens={booted}",
             )
             check(
                 "the relaunched console is a NEW session, under the SAME window id",
@@ -914,8 +907,8 @@ def main():
             page.wait_for_timeout(1800)
             check(
                 "clicking reconnect opens the agent's session socket",
-                any("agent=gemini" in u and f"repo={slug}" in u for u in sockets),
-                f"sockets={sockets}",
+                any(o.get("agent") == "gemini" and o.get("repo") == slug for o in seen.opens(reboot_mark)),
+                f"opens={seen.opens(reboot_mark)}",
             )
             check(
                 "…replacing the placeholder with a console window",
@@ -946,7 +939,7 @@ def main():
                         lambda route: route.fulfill(status=500, body="nope"),
                     )
                     what = "a 500"
-                mark = [u for u in sockets if "/ws/session" in u]
+                mark = len(seen.channels)
                 page.reload()
                 page.wait_for_selector("[x-data]", timeout=8000)
                 page.wait_for_timeout(1500)
@@ -955,11 +948,11 @@ def main():
                     page.locator(".session-window").count() == 0,
                     f"got={page.locator('.session-window').count()}",
                 )
-                opened = [u for u in sockets if "/ws/session" in u]
+                opened = seen.opens(mark)
                 check(
-                    "…and opens no session socket at all",
-                    opened == mark,
-                    f"new={opened[len(mark):]}",
+                    "…and opens no console channel at all",
+                    not opened,
+                    f"new={opened}",
                 )
                 check(
                     "…leaving the saved desk intact for the next load",
@@ -973,7 +966,7 @@ def main():
             # can claim, so the verdict is unambiguous: a placeholder with the
             # toggle off, a real launch with it on. Gemini cannot prepare its
             # configuration root in this fixture, so that launch is refused by
-            # the daemon before any gemini CLI starts — the SOCKET is the evidence, and
+            # the daemon before any gemini CLI starts — the OPEN is the evidence, and
             # nothing is spent proving it.
             replace_windows(
                 page,
@@ -1012,14 +1005,14 @@ def main():
             )
             page.locator(".settings-modal .modal-x").click()
 
-            mark = [u for u in sockets if "/ws/session" in u]
+            mark = len(seen.channels)
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_timeout(2000)
-            launched = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            launched = seen.opens(mark)
             check(
                 "with the opt-in on, loading the page launches the agent console",
-                any("agent=gemini" in u for u in launched),
+                any(o.get("agent") == "gemini" for o in launched),
                 f"new={launched}",
             )
             check(
@@ -1034,17 +1027,17 @@ def main():
             page.locator(".settings-navitem", has_text="Consoles").click()
             page.locator(".settings-content .set-row", has_text="Relaunch agent consoles on load").locator(".set-check").click()
             page.locator(".settings-modal .modal-x").click()
-            mark = [u for u in sockets if "/ws/session" in u]
+            mark = len(seen.channels)
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_timeout(1500)
-            # Scoped to AGENT sockets: a live shell session is attached on every
-            # load, so "no session socket at all" would be a false red here.
-            after = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            # Scoped to AGENT opens: a live shell session is attached on every
+            # load, so "no console channel at all" would be a false red here.
+            after = seen.opens(mark)
             check(
                 "turning it back off parks the agent console again",
                 page.locator(".session-window.placeholder").count() == 1
-                and not any("agent=" in u for u in after),
+                and not any("agent" in o for o in after),
                 f"new={after}",
             )
 
@@ -1070,15 +1063,15 @@ def main():
                 route.fulfill(status=200, content_type="application/json", body=json.dumps([other]))
 
             page.route("**/api/sessions", serve_live)
-            mark = [u for u in sockets if "/ws/session" in u]
+            mark = len(seen.channels)
             # Another console window overlaps this box; the click is the evidence,
             # not the hit test.
             ph.locator(".session-reconnect").dispatch_event("click")
             page.wait_for_timeout(1500)
-            new = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            new = seen.opens(mark)
             check(
                 "Relaunch attaches to the session another device started",
-                any("id=777" in u for u in new) and not any("agent=" in u for u in new),
+                any(o.get("id") == 777 for o in new) and not any("agent" in o for o in new),
                 f"new={new}",
             )
             check(
@@ -1098,13 +1091,13 @@ def main():
                 f"got={page.locator('.session-window.placeholder').count()}",
             )
             page.route("**/api/sessions", serve_live)
-            mark = [u for u in sockets if "/ws/session" in u]
+            mark = len(seen.channels)
             page.evaluate("() => window.dispatchEvent(new Event('online'))")
             page.wait_for_timeout(1500)
-            new = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            new = seen.opens(mark)
             check(
                 "a resume attaches it with no click",
-                any("id=777" in u for u in new) and not any("agent=" in u for u in new),
+                any(o.get("id") == 777 for o in new) and not any("agent" in o for o in new),
                 f"new={new}",
             )
             check(
@@ -1118,13 +1111,13 @@ def main():
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_timeout(1500)
-            mark = [u for u in sockets if "/ws/session" in u]
+            mark = len(seen.channels)
             page.locator(".session-window.placeholder .session-reconnect").dispatch_event("click")
             page.wait_for_timeout(1500)
-            new = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            new = seen.opens(mark)
             check(
                 "with nothing live, Relaunch launches the agent",
-                any("agent=gemini" in u for u in new),
+                any(o.get("agent") == "gemini" for o in new),
                 f"new={new}",
             )
 

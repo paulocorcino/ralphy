@@ -24,7 +24,7 @@ Scenario 4  open the menu: rows primary (current) + wt-a · wt-a; Escape
 Scenario 5  pick `wt-a`, cancel the confirm → nothing changes
 Scenario 6  pick `wt-a`, confirm → the desk record reads wt-a, the console
             relaunches: title `claude · wt-a · …`, CWD inside wt-a, the
-            launch socket carries `checkout=wt-a`; the Files selection is
+            launch carries `checkout: wt-a`; the Files selection is
             still unset; screenshot HERE
 Scenario 7  switch back to `primary` → title without wt-a, CWD is the root
 Scenario 8  a plain shell console never gets a switcher
@@ -51,6 +51,9 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "console"))
+from wb_one_socket_740 import PageSockets  # noqa: E402  the console channels of the page socket
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -361,8 +364,9 @@ def main():
             page = ctx.new_page()
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
-            launches = []
-            page.on("websocket", lambda ws: launches.append(ws.url) if "agent=" in ws.url else None)
+            # Each console is a `console` channel of the page socket `/ws`.
+            seen = PageSockets().attach(page)
+            mark = 0
             page.goto(BASE)
             wait_shell(page)
 
@@ -417,7 +421,7 @@ def main():
             check("picking the current entry asks nothing", not page.evaluate(CONFIRM_OPEN) and not page.evaluate(MENU_OPEN))
 
             # --- scenario 5: cancel ----------------------------------------------
-            launches.clear()
+            mark = len(seen.channels)
             page.evaluate(f"() => ({SWITCHER})().click()")
             page.wait_for_function(MENU_OPEN, timeout=5000)
             click_menu_row(page, "wt-a")
@@ -426,6 +430,7 @@ def main():
             page.keyboard.press("Escape")
             page.wait_for_function(f"() => !({CONFIRM_OPEN})()", timeout=5000)
             page.wait_for_timeout(300)
+            launches = seen.launches(mark)
             check("cancelling changes nothing: same title, no launch", page.evaluate(TITLES) == [primary_sw_title] and not launches, f"got={page.evaluate(TITLES)!r} launches={launches!r}")
             recs = desk_records(page)
             check("…and the record has no checkout", bool(recs) and "checkout" not in recs[0], f"got={recs!r}")
@@ -441,7 +446,8 @@ def main():
             check("…the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("…and its CWD: line is the worktree", ".ralphy/worktrees/wt-a" in buf, f"buffer={buf[:200]!r}")
-            check("one launch socket, carrying checkout=wt-a", len(launches) == 1 and "checkout=wt-a" in launches[0], f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("one launch, carrying checkout=wt-a", len(launches) == 1 and launches[0].get("checkout") == "wt-a", f"got={launches!r}")
             recs = desk_records(page)
             check("the record reads checkout wt-a", bool(recs) and recs[0].get("checkout") == "wt-a", f"got={recs!r}")
             rows = sessions()
@@ -455,7 +461,7 @@ def main():
             check("screenshot written", os.path.exists(os.path.join(SHOT_DIR, SHOT)))
 
             # --- scenario 7: back to primary -------------------------------------
-            launches.clear()
+            mark = len(seen.channels)
             click_menu_row(page, "primary")
             page.wait_for_function(CONFIRM_OPEN, timeout=5000)
             page.locator(CONFIRM).click()
@@ -463,7 +469,8 @@ def main():
             check("…the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("back on the primary: CWD is the fixture root", ".ralphy/worktrees" not in buf and "CWD:" in buf, f"buffer={buf[:200]!r}")
-            check("the launch socket carries no checkout", len(launches) == 1 and "checkout=" not in launches[0], f"got={launches!r}")
+            launches = seen.launches(mark)
+            check("the launch carries no checkout", len(launches) == 1 and "checkout" not in launches[0], f"got={launches!r}")
             recs = desk_records(page)
             check("the record's checkout is cleared", bool(recs) and "checkout" not in recs[0], f"got={recs!r}")
 
