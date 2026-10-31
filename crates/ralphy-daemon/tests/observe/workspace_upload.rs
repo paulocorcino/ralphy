@@ -1,6 +1,7 @@
-//! `file.upload` over the real `/ws/command` wire (ADR-0036 amendment
-//! 2026-10-19): parts land in `.ralphy/uploads/`, the last part moves the file
-//! to its target, and a worktree is refused like every other Write.
+//! `file.upload` through the `round_trip` helper of `workspace_write.rs`
+//! (ADR-0036 amendment 2026-10-19): parts land in `.ralphy/uploads/`, the
+//! last part moves the file to its target, and a worktree is refused like
+//! every other Write.
 
 use super::workspace_write::{round_trip, serve_repo, serve_worktree_repo};
 

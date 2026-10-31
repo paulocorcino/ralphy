@@ -1,7 +1,8 @@
-//! `file.stat` and `tree.size` over the real `/ws/command` wire (ADR-0036,
-//! amendment 2026-10-15): the facts of one path and the size of one folder
-//! answer on the requesting `id`, with ZERO `status:"spawned"` frames. The
-//! seeded repos are the ones of `observe_read.rs`.
+//! `file.stat` and `tree.size` through the `round_trip` helper of
+//! `observe_read.rs` (ADR-0036, amendment 2026-10-15): the facts of one path
+//! and the size of one folder answer on the requesting `id`, with ZERO
+//! `status:"spawned"` frames. The seeded repos are the ones of
+//! `observe_read.rs`.
 
 use serde_json::{json, Value};
 

@@ -6,17 +6,18 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::page;
+
 const LIVE_RUNID: &str = "01TESTRUNIDTESTRUNIDTE";
 
 /// Bind a daemon over a temp repo whose `.ralphy/runstate/` holds one live-pid
-/// document, one dead-pid document and one malformed file. Returns the
-/// `ws://…/ws/command` URL and the repo slug.
-async fn serve_repo() -> (String, String) {
+/// document, one dead-pid document and one malformed file. Returns the port of
+/// the page socket and the repo slug.
+async fn serve_repo() -> (u16, String) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     let runstate = dir.path().join(".ralphy").join("runstate");
     std::fs::create_dir_all(&runstate).expect("create the test directory");
@@ -80,23 +81,18 @@ async fn serve_repo() -> (String, String) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-    )
+    (port, slug.to_string())
 }
 
-/// Send one `Command` and collect every reply frame on `id` until the socket
-/// closes, returning `(replies, spawned_count)`.
+/// Send one `Command` on a `spawn` channel and collect every reply frame on
+/// `id` until the channel closes, returning `(replies, spawned_count)`.
 async fn round_trip(
-    url: &str,
+    port: u16,
     id: u64,
     verb: &str,
     payload: serde_json::Value,
 ) -> (Vec<serde_json::Value>, usize) {
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -130,14 +126,14 @@ async fn round_trip(
         (replies, spawned)
     })
     .await
-    .expect("the reply must arrive and the socket close within 10s")
+    .expect("the reply must arrive and the channel close within 10s")
 }
 
 #[tokio::test]
 async fn runs_list_answers_on_id_without_spawn() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let (replies, spawned) =
-        round_trip(&url, 1, "runs.list", serde_json::json!({ "repo": slug })).await;
+        round_trip(port, 1, "runs.list", serde_json::json!({ "repo": slug })).await;
 
     assert_eq!(replies.len(), 1, "exactly one reply on the id");
     assert_eq!(spawned, 0, "an Observe read must never spawn");
