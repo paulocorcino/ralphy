@@ -4,7 +4,6 @@
 use std::io::Read;
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use tokio::sync::mpsc;
 use tokio::task::{JoinError, JoinHandle};
 
@@ -88,13 +87,9 @@ pub(super) async fn stream_child(
     let mut output_open = true;
     loop {
         tokio::select! {
-            // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
-            _ = wire.shutdown.changed() => break,
-            // Client closed or errored: same — abandon the wait, never kill.
-            incoming = wire.from_browser.next() => {
-                let _ = incoming;
-                break;
-            }
+            // Daemon shutdown, or the client closed or errored: stop serving
+            // this socket, but LEAVE the run alive. Abandon the wait, never kill.
+            () = wire.gone() => break,
             // A live output chunk: forward it into the UI log pane.
             chunk = rx.recv(), if output_open => {
                 match chunk {

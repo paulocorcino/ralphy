@@ -219,15 +219,7 @@ async fn close_on_peer(peer: &peer::PeerDescriptor, id: u64) -> Response {
 
 /// `/ws/session`, `/api/sessions` and `/api/sessions/close`.
 pub(crate) fn session_routes(s: &RouterShared) -> Router {
-    let host = SessionHost {
-        peers_dir: s.peers_dir.clone(),
-        identity: s.identity.clone(),
-        environment: s.environment.clone(),
-        bound_port: s.bound_port,
-        sessions: s.sessions.clone(),
-        registry_path: s.registry_path.clone(),
-        shutdown: s.shutdown.clone(),
-    };
+    let host = SessionHost::of(s);
     Router::new()
         .route(
             "/ws/session",

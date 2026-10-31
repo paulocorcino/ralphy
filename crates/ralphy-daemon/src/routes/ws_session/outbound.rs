@@ -43,7 +43,9 @@ const GZIP: &str = "gzip";
 /// on one at a time when the writer has room, and keeps reading input while
 /// they wait (ADR-0082 D5).
 pub(super) struct Outbox {
-    pub(super) writer: Writer,
+    /// The writer this outbox owns; `None` on a channel of a page socket,
+    /// whose writer the socket owns.
+    pub(super) writer: Option<Writer>,
     pub(super) out: ChannelSender,
     pub(super) queued: VecDeque<Out>,
 }
@@ -54,7 +56,16 @@ impl Outbox {
         let writer = Writer::start(sink, Mode::Plain);
         let out = writer.channel_with_depth(0, CONSOLE_QUEUE);
         Outbox {
-            writer,
+            writer: Some(writer),
+            out,
+            queued: VecDeque::new(),
+        }
+    }
+
+    /// An outbox on the queue `out` of a writer the page socket owns.
+    pub(super) fn on(out: ChannelSender) -> Outbox {
+        Outbox {
+            writer: None,
             out,
             queued: VecDeque::new(),
         }
@@ -126,7 +137,9 @@ impl Opening {
     }
 }
 
-/// Name a deliberate end to the client, then close the socket.
+/// Name a deliberate end to the client, then close the socket when the
+/// outbox owns its writer. A channel of a page socket closes nothing: the
+/// socket stays open for its other channels.
 ///
 /// ANNOUNCEMENT-BEFORE-CLOSE INVARIANT (issue #334), to hold on every return
 /// path: a deliberate end is named in a DATA frame first, and only then does
@@ -166,8 +179,10 @@ pub(super) async fn announce_end(
             "environment": opening.environment,
         });
         send_command_on(&outbox.out, 0, "session-end", end).await?;
-        outbox.out.put(Out::Close).await?;
-        outbox.writer.ended().await;
+        if let Some(writer) = &outbox.writer {
+            outbox.out.put(Out::Close).await?;
+            writer.ended().await;
+        }
         Ok(())
     };
     match tokio::time::timeout(END_WINDOW, farewell).await {

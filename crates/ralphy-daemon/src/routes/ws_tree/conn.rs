@@ -20,7 +20,7 @@ use crate::{checkout, fleet, peer, registry, watch};
 
 type Key = (String, String);
 
-pub(super) struct TreeConn {
+pub(crate) struct TreeConn {
     watchers: Arc<watch::WatcherManager>,
     registry_path: PathBuf,
     peers_dir: PathBuf,
@@ -50,7 +50,7 @@ pub(super) struct TreeConn {
 }
 
 impl TreeConn {
-    pub(super) fn new(
+    pub(crate) fn new(
         host: TreeHost,
         nudge_tx: UnboundedSender<(String, String)>,
         out: ChannelSender,
@@ -75,7 +75,7 @@ impl TreeConn {
         }
     }
 
-    pub(super) async fn on_frame(&mut self, bytes: &[u8]) {
+    pub(crate) async fn on_frame(&mut self, bytes: &[u8]) {
         let Ok(Frame::Command(cmd)) = protocol::decode(bytes) else {
             return;
         };
@@ -90,7 +90,7 @@ impl TreeConn {
 
     /// A repo's broadcast carries every watched dir; push only the ones THIS
     /// connection subscribed to.
-    pub(super) async fn push_nudge(&self, nudge: Option<(String, String)>) {
+    pub(crate) async fn push_nudge(&self, nudge: Option<(String, String)>) {
         let Some((repo, rel)) = nudge else {
             return;
         };
@@ -104,17 +104,19 @@ impl TreeConn {
 
     /// TEARDOWN: release every held dir (the last release tears the watcher
     /// down) and abort the forwarders (their broadcast receivers may otherwise
-    /// outlive us if another connection keeps the repo alive).
-    pub(super) fn teardown(self) {
-        for (repo, rel) in &self.watched {
+    /// outlive us if another connection keeps the repo alive). Calling it
+    /// again releases nothing: the connection drops what it releases.
+    pub(crate) fn teardown(&mut self) {
+        let watched = std::mem::take(&mut self.watched);
+        for (repo, rel) in &watched {
             if !self.peer_pollers.contains_key(repo) {
                 self.watchers.unwatch(repo, rel);
             }
         }
-        for forwarder in self.forwarders.into_values() {
+        for forwarder in std::mem::take(&mut self.forwarders).into_values() {
             forwarder.abort();
         }
-        for poller in self.peer_pollers.into_values() {
+        for poller in std::mem::take(&mut self.peer_pollers).into_values() {
             close_peer_tree_poller(poller);
         }
     }
@@ -254,6 +256,14 @@ impl TreeConn {
                 f.abort();
             }
         }
+    }
+}
+
+/// A connection whose task is aborted, as a channel's is when the page closes
+/// it, still releases what it holds.
+impl Drop for TreeConn {
+    fn drop(&mut self) {
+        self.teardown();
     }
 }
 

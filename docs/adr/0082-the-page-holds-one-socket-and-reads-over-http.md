@@ -187,8 +187,23 @@ today's `/ws`. Two verbs control the other channels, both on channel 0. The
 page sends `channel.open {channel, kind, ...}` and `channel.close {channel}`.
 The daemon sends `channel.closed {channel, reason}` when it ends a channel
 itself. The page picks each id: a u32 of 1 or more, never reused on one
-socket. A duplicate id or an unknown id gets `channel.closed` with the reason
-`"refused"`. Rejected: ids that the daemon picks. They add one round trip
+socket. The `reason` is one of four words:
+
+- `"refused"`: the daemon did not serve the open or the piece. This covers a
+  duplicate id, an unknown id, an unknown kind, an open that its kind cannot
+  serve, an open when 256 channels are already open on the socket, and a
+  piece with an unknown flag. The socket stays open, except for an open
+  that comes after the login changed (a logout, a new token, a change of the
+  login policy): the daemon then ends the whole socket, and the page
+  connects again through the login check.
+- `"too-large"`: the pieces the page sent on the channel join to a frame
+  past the cap.
+- `"done"`: the kind finished its work, such as a spawned command that ended
+  or a console session that ended.
+- `"overflow"`: the page sent the channel more frames than its kind had
+  taken and its queue holds; only that channel ends.
+
+Rejected: ids that the daemon picks. They add one round trip
 before a console can resume.
 
 **Kinds (D3).** The set is closed: the Rust enum

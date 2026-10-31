@@ -169,3 +169,18 @@ pub(crate) struct SessionHost {
     /// and never closes the session.
     pub(crate) shutdown: tokio::sync::watch::Receiver<bool>,
 }
+
+impl SessionHost {
+    /// The session host of the router's shared values.
+    pub(crate) fn of(s: &super::RouterShared) -> SessionHost {
+        SessionHost {
+            peers_dir: s.peers_dir.clone(),
+            identity: s.identity.clone(),
+            environment: s.environment.clone(),
+            bound_port: s.bound_port,
+            sessions: s.sessions.clone(),
+            registry_path: s.registry_path.clone(),
+            shutdown: s.shutdown.clone(),
+        }
+    }
+}

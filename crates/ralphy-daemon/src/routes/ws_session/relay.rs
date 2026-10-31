@@ -10,7 +10,9 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::outbound::CONSOLE_QUEUE;
-use super::traffic::{Tab, Traffic};
+use super::traffic::Tab;
+// The console channel of a peer's session logs the same traffic line.
+pub(crate) use super::traffic::Traffic;
 use super::upgrade::Opened;
 use super::SessionQuery;
 use crate::mux::{ChannelSender, Mode, Out, Permit, Writer, WriterClosed};
@@ -22,7 +24,7 @@ use crate::session;
 
 /// The `end` of a relayed socket the peer closed: why it closed is in the
 /// peer's own log line.
-const PEER_CLOSED: &str = "peer-closed";
+pub(crate) const PEER_CLOSED: &str = "peer-closed";
 
 /// How long the relay waits for the browser to take its Close. Past it the
 /// writer is stopped and the socket dropped.
@@ -318,7 +320,7 @@ fn for_writer(message: Message) -> Option<Out> {
 
 /// Hand the held message to the writer. A writer that has ended means the
 /// browser is gone: the relay ends without a Close.
-fn hand_on(permit: Result<Permit, WriterClosed>, held: &mut Option<Out>) -> Flow {
+pub(crate) fn hand_on(permit: Result<Permit, WriterClosed>, held: &mut Option<Out>) -> Flow {
     match permit {
         Ok(permit) => {
             if let Some(out) = held.take() {

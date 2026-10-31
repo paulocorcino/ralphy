@@ -65,16 +65,14 @@ pub(crate) async fn session_ws_upgrade(
     let ws = ws
         .max_message_size(crate::tree::MAX_COMMAND_BYTES)
         .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-    let shutdown = host.shutdown.clone();
-    let open = Open::new(query, host, who);
-    let refuser = Refuser::new(
-        open.query.id,
-        &open.daemon_id,
-        &open.environment,
-        open.tab.clone(),
-    );
-    let (daemon_id, tab) = (open.daemon_id.clone(), open.tab.clone());
-    match open.decide().await {
+    let Decided {
+        opened,
+        refuser,
+        daemon_id,
+        tab,
+        shutdown,
+    } = Decided::of(query, host, who).await;
+    match opened {
         Opened::Session {
             att,
             id,
@@ -96,6 +94,37 @@ pub(crate) async fn session_ws_upgrade(
             ws.on_upgrade(move |socket| peer_session_ws(socket, *peer, traffic, shutdown))
         }
         Opened::Refused(refusal) => refuser.answer(ws, refusal),
+    }
+}
+
+/// A console open, decided, and what answering it needs on any socket.
+pub(super) struct Decided {
+    pub(super) opened: Opened,
+    pub(super) refuser: Refuser,
+    pub(super) daemon_id: String,
+    pub(super) tab: Tab,
+    pub(super) shutdown: tokio::sync::watch::Receiver<bool>,
+}
+
+impl Decided {
+    /// Decide the open that `query` asks for.
+    pub(super) async fn of(query: SessionQuery, host: SessionHost, who: SocketAudit) -> Decided {
+        let shutdown = host.shutdown.clone();
+        let open = Open::new(query, host, who);
+        let refuser = Refuser::new(
+            open.query.id,
+            &open.daemon_id,
+            &open.environment,
+            open.tab.clone(),
+        );
+        let (daemon_id, tab) = (open.daemon_id.clone(), open.tab.clone());
+        Decided {
+            opened: open.decide().await,
+            refuser,
+            daemon_id,
+            tab,
+            shutdown,
+        }
     }
 }
 

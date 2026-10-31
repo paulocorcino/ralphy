@@ -161,8 +161,8 @@ pub(crate) async fn command_ws(
     wire.finish().await;
 }
 
-/// Answer `cmd` on `wire`; every path returns to [`command_ws`], which closes.
-async fn serve_command(
+/// Answer `cmd` on `wire`; every path returns to the caller, which closes.
+pub(crate) async fn serve_command(
     wire: &mut Wire,
     cmd: Command,
     ctx: CommandCtx,
@@ -379,11 +379,7 @@ pub(crate) async fn proxy_peer_command(
 
     loop {
         tokio::select! {
-            _ = browser.shutdown.changed() => break,
-            incoming = browser.from_browser.next() => {
-                let _ = incoming;
-                break;
-            }
+            () = browser.gone() => break,
             incoming = peer_socket.next() => {
                 let Some(Ok(message)) = incoming else {
                     browser

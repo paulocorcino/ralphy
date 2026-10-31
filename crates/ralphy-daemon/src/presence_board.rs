@@ -21,9 +21,10 @@ pub(crate) const WINDOW: Duration = Duration::from_secs(5 * 60);
 /// host and a port: a DNS name has at most 253 bytes.
 pub(crate) const MAX_ORIGIN_BYTES: usize = 256;
 
-/// The largest message `/ws` reads: one report, whose origin is the only
-/// field of free length (ADR-0072 D11). The rest is three short fields and
-/// the frame's JSON.
+/// The largest bare frame `/ws` reads, other than a `channel.open` (which
+/// has its own cap): one report, whose origin is the only field of free
+/// length (ADR-0072 D11). The rest is three short fields and the frame's
+/// JSON. A channel frame is capped apart, at one piece and its header.
 pub(crate) const MAX_REPORT_BYTES: usize = MAX_ORIGIN_BYTES + 256;
 
 /// The board, shared by the `/ws` sockets and the attention tick.
