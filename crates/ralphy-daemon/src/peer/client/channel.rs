@@ -17,6 +17,11 @@ use crate::protocol::{self, Command, Frame, Joiner};
 /// The id of the one channel this client opens on each socket.
 const CHANNEL: u32 = 1;
 
+/// How long [`PeerChannel::close`] may take. A peer that stops reading would
+/// otherwise hold the close until the OS gives up on the TCP connection, and
+/// the caller (a relay's drop, a spawn verb) would wait for it.
+const CLOSE_WITHIN: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// A channel open on a peer's page socket.
 pub struct PeerChannel {
     socket: PeerSocket,
@@ -156,8 +161,18 @@ impl PeerChannel {
     }
 
     /// End the channel and the socket: `channel.close`, the socket's Close,
-    /// then the TCP shutdown. A peer already gone is not an error.
+    /// then the TCP shutdown. A peer already gone is not an error. A peer
+    /// that does not read gets a few seconds, then the close is dropped.
     pub async fn close(&mut self) {
+        if tokio::time::timeout(CLOSE_WITHIN, self.close_steps())
+            .await
+            .is_err()
+        {
+            tracing::debug!("a peer page socket did not take its close in time");
+        }
+    }
+
+    async fn close_steps(&mut self) {
         let channel = serde_json::json!({ "channel": CHANNEL });
         if let Err(error) = self.socket.send(bare("channel.close", channel)).await {
             tracing::debug!(%error, "a peer page socket was gone before its channel closed");

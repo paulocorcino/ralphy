@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 
 use super::traffic::Tab;
 // The console channel of a peer's session logs the same traffic line.
-pub(crate) use super::traffic::Traffic;
+pub(crate) use super::traffic::{Traffic, SESSION_OPEN};
 use super::upgrade::Opened;
 use super::{PeerRelay, SessionQuery};
 use crate::mux::{Out, Permit, WriterClosed};

@@ -15,7 +15,7 @@ use super::{CloseReason, Opening};
 use crate::mux::Out;
 use crate::peer::client::{PeerChannel, PeerEvent};
 use crate::protocol::{self, Frame};
-use crate::routes::{hand_on, PeerRelay, PendingRecord, Traffic, PEER_CLOSED};
+use crate::routes::{hand_on, PeerRelay, PendingRecord, Traffic, PEER_CLOSED, SESSION_OPEN};
 
 /// Whether the relay goes on. `Break(Some(reason))`: the channel ends with
 /// `channel.closed` and `reason`; `Break(None)`: the page socket has gone,
@@ -39,7 +39,7 @@ pub(super) async fn open(
         answer: Answer {
             traffic,
             record,
-            framed: false,
+            opened: false,
             refused: false,
             end: None,
         },
@@ -63,10 +63,10 @@ struct Relay {
 /// What the relay learned from the peer so far.
 struct Answer {
     traffic: Traffic,
-    /// The audit line still due: it is written on the peer's first frame.
+    /// The audit line still due: it is written on the peer's `session-open`.
     record: Option<PendingRecord>,
-    /// Whether the peer sent a frame on the channel.
-    framed: bool,
+    /// Whether the peer sent a `session-open` on the channel.
+    opened: bool,
     /// Whether the peer refused the open.
     refused: bool,
     /// The end this daemon saw, if it saw one.
@@ -125,9 +125,11 @@ impl Answer {
         match event {
             PeerEvent::Frame(bytes) => {
                 self.traffic.peer_frame(&bytes);
-                self.framed = true;
-                if let Some(record) = self.record.take() {
-                    record.write();
+                if is_session_open(&bytes) {
+                    self.opened = true;
+                    if let Some(record) = self.record.take() {
+                        record.write();
+                    }
                 }
                 *held = Some(Out::Frame(bytes));
                 ControlFlow::Continue(())
@@ -138,15 +140,22 @@ impl Answer {
     }
 
     /// The reason of the page's channel when the peer's ended with `reason`:
-    /// a refusal before any frame is a refused open, any other end is done.
+    /// a refusal before any `session-open` is a refused open, any other end
+    /// is done. The `session-end` that announces a refusal is a frame, but it
+    /// does not open the console.
     fn ended(&mut self, reason: &str) -> CloseReason {
         self.end = Some(PEER_CLOSED);
-        if !self.framed && reason == CloseReason::Refused.as_wire() {
+        if !self.opened && reason == CloseReason::Refused.as_wire() {
             self.refused = true;
             return CloseReason::Refused;
         }
         CloseReason::Done
     }
+}
+
+/// Whether the inner frame `bytes` is the peer's `session-open`.
+fn is_session_open(bytes: &[u8]) -> bool {
+    matches!(protocol::decode(bytes), Ok(Frame::Command(command)) if command.verb == SESSION_OPEN)
 }
 
 /// The relay's flow when the hand-on to the page's queue ended it: the page
