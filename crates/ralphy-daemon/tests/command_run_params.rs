@@ -17,9 +17,11 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
+#[path = "support/page.rs"]
+pub mod page;
+
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
@@ -56,10 +58,7 @@ async fn run_command_argv_reaches_the_child() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
 
     // The modal's chosen params ride the payload; the daemon composes the argv.
     ws.send(Message::Binary(
@@ -126,9 +125,7 @@ async fn run_command_argv_reaches_the_child() {
     // nothing. Only a real child echoing its argv proves the vendor survived the
     // whole path — `spawn_argv`'s unit test alone cannot, since the enum it is
     // exhaustive over is the very thing that was missing the variant.
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("reconnecting to /ws/command for the kimi run");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 2,
