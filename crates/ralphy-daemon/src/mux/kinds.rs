@@ -13,6 +13,7 @@ mod spawn;
 mod tree;
 
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, mpsc};
@@ -176,6 +177,23 @@ pub(crate) struct Opening {
     pub(crate) out: ChannelSender,
     /// Channel 0, where the channel's `channel.closed` goes.
     pub(crate) control: ChannelSender,
+    /// Set when the page closes the channel.
+    pub(crate) page_closed: PageClosed,
+}
+
+/// Whether the page closed a channel. The kind's end then sends no
+/// `channel.closed`: the daemon sends one only for an end it decides.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PageClosed(Arc<AtomicBool>);
+
+impl PageClosed {
+    pub(crate) fn set(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    fn is_set(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
 }
 
 impl Opening {
@@ -189,7 +207,11 @@ impl Opening {
             payload,
             out,
             control,
+            page_closed,
         } = self;
+        if page_closed.is_set() {
+            return;
+        }
         // The writer visits channel 0 first in each turn, so a `channel.closed`
         // queued at once could leave before the channel's last frame.
         match tokio::time::timeout(END_WAIT, out.sent()).await {
@@ -223,8 +245,14 @@ pub(crate) enum Taken {
 #[derive(Debug)]
 pub(crate) struct Channel {
     inbound: mpsc::Sender<Vec<u8>>,
-    task: AbortHandle,
+    /// `None` once [`Channel::close`] handed the stop to its bounded wait.
+    task: Option<AbortHandle>,
 }
+
+/// How long a kind may run on after the page closed its channel, to read
+/// the frames the page sent before the close (a console's `detach`, the
+/// last keys) and end by itself (#834).
+const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl Channel {
     /// Run `serve` as the channel's task. `serve` gets the inner frames the
@@ -235,7 +263,25 @@ impl Channel {
     {
         let (inbound, frames) = mpsc::channel(INBOUND_FRAMES);
         let task = tokio::spawn(serve(frames)).abort_handle();
-        Channel { inbound, task }
+        Channel {
+            inbound,
+            task: Some(task),
+        }
+    }
+
+    /// The page closed the channel. The kind reads the frames queued before
+    /// the close, then sees its input end and ends; a kind still running
+    /// after `CLOSE_WAIT` is stopped.
+    pub(crate) fn close(mut self) {
+        let Some(task) = self.task.take() else {
+            return;
+        };
+        // Dropping the channel drops the only sender of the kind's input.
+        drop(self);
+        tokio::spawn(async move {
+            tokio::time::sleep(CLOSE_WAIT).await;
+            task.abort();
+        });
     }
 
     /// Hand one inner frame from the page to the kind; never waits.
@@ -255,7 +301,9 @@ impl Channel {
 
 impl Drop for Channel {
     fn drop(&mut self) {
-        self.task.abort();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
     }
 }
 
@@ -280,6 +328,52 @@ pub(crate) fn open(kind: ChannelKind, opening: Opening, ctx: &Ctx) -> Result<Cha
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On this one-thread runtime the kind's task has not run yet when the
+    /// page closes the channel: it reads the frame sent before the close,
+    /// then sees its input end (#834).
+    #[tokio::test]
+    async fn a_closed_channel_reads_the_frames_sent_before_the_close() {
+        let (read_tx, read_rx) = tokio::sync::oneshot::channel();
+        let channel = Channel::spawn(move |mut frames| async move {
+            let mut read = Vec::new();
+            while let Some(frame) = frames.recv().await {
+                read.push(frame);
+            }
+            read_tx.send(read).unwrap();
+        });
+        assert_eq!(channel.take(b"detach".to_vec()), Taken::Yes);
+        channel.close();
+        let read = tokio::time::timeout(CLOSE_WAIT / 2, read_rx)
+            .await
+            .expect("the kind ends once it read its input")
+            .expect("the kind is not stopped before it reads");
+        assert_eq!(read, [b"detach".to_vec()]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_kind_still_running_after_the_close_wait_is_stopped() {
+        let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+        let channel = Channel::spawn(move |_frames| async move {
+            // Dropped, and so sent, only when the task is stopped.
+            let _stopped = stopped_tx;
+            std::future::pending::<()>().await;
+        });
+        channel.close();
+        tokio::time::sleep(CLOSE_WAIT / 2).await;
+        tokio::task::yield_now().await;
+        let mut stopped_rx = stopped_rx;
+        assert_eq!(
+            stopped_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty),
+            "still running within the wait"
+        );
+        let stopped = tokio::time::timeout(CLOSE_WAIT, stopped_rx).await;
+        assert!(
+            matches!(stopped, Ok(Err(_))),
+            "stopped after the wait: {stopped:?}"
+        );
+    }
 
     #[test]
     fn every_kind_is_read_from_its_name() {

@@ -62,7 +62,15 @@ fn reader_route() -> Router {
                     let mut reader = Reader::new(writer, control, page, ctx(), login);
                     for (id, channel) in [(STUCK, stuck()), (ECHO, echoing(echo))] {
                         let joiner = Joiner::default();
-                        reader.open.insert(id, Open { joiner, channel });
+                        let page_closed = PageClosed::default();
+                        reader.open.insert(
+                            id,
+                            Open {
+                                joiner,
+                                channel,
+                                page_closed,
+                            },
+                        );
                         reader.used.insert(id);
                     }
                     let (heard, _heard_rx) = watch::channel(Instant::now());

@@ -22,7 +22,7 @@ use tokio::time::Instant;
 
 use super::page::PageEntry;
 use super::Login;
-use crate::mux::kinds::{self, Channel, CloseReason, Ctx, Opening, Request, Taken};
+use crate::mux::kinds::{self, Channel, CloseReason, Ctx, Opening, PageClosed, Request, Taken};
 use crate::mux::{ChannelSender, Writer};
 use crate::presence_board::MAX_REPORT_BYTES;
 use crate::protocol::{self, ChannelError, Command, Frame, FrameError, Joiner};
@@ -45,6 +45,7 @@ const REFUSAL_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 struct Open {
     joiner: Joiner,
     channel: Channel,
+    page_closed: PageClosed,
 }
 
 /// The reading side of one page socket.
@@ -191,26 +192,37 @@ impl Reader {
             Some(depth) => self.writer.channel_with_depth(id, depth),
             None => self.writer.channel(id),
         };
+        let page_closed = PageClosed::default();
         let opening = Opening {
             channel: id,
             payload: request.payload,
             out,
             control: self.control.clone(),
+            page_closed: page_closed.clone(),
         };
         match kinds::open(kind, opening, &self.ctx) {
             Ok(channel) => {
                 let joiner = Joiner::default();
-                self.open.insert(id, Open { joiner, channel });
+                let open = Open {
+                    joiner,
+                    channel,
+                    page_closed,
+                };
+                self.open.insert(id, open);
                 true
             }
             Err(reason) => self.answer(id, reason).await,
         }
     }
 
-    /// The page closed a channel: its kind stops, and the id stays used.
+    /// The page closed a channel: its kind reads what the page sent before
+    /// the close and ends, and the id stays used.
     fn on_close(&mut self, payload: &serde_json::Value) {
         if let Some(id) = kinds::channel_id(payload) {
-            self.open.remove(&id);
+            if let Some(open) = self.open.remove(&id) {
+                open.page_closed.set();
+                open.channel.close();
+            }
             self.used.insert(id);
         }
     }

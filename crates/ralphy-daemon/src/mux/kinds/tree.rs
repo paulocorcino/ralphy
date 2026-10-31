@@ -37,7 +37,7 @@ fn serve_channel(opening: Opening, host: TreeHost) -> Channel {
 
 /// Run one connection until the page closes the channel. The connection
 /// releases its watches when it is dropped, so a task that is stopped from
-/// outside, as closing the channel does, releases them too.
+/// outside, as the end of the socket does, releases them too.
 async fn serve(mut frames: mpsc::Receiver<Vec<u8>>, host: TreeHost, out: ChannelSender) {
     let (nudge_tx, mut nudge_rx) = mpsc::unbounded_channel::<(String, String)>();
     let mut conn = TreeConn::new(host, nudge_tx, out);
