@@ -29,8 +29,13 @@ async fn root_serves_vendored_xterm() {
         "wb-console-terminal.js must construct a real xterm terminal"
     );
     assert!(
-        terminal.contains("/ws/session"),
-        "wb-console-terminal.js must open the session WebSocket"
+        terminal.contains("openConsole"),
+        "wb-console-terminal.js must open the console's channel of the page socket"
+    );
+    let daemon = body_string(get_local("/wb-daemon.js").await).await;
+    assert!(
+        daemon.contains(r#"channels.open("console", payload)"#),
+        "wb-daemon.js must open a console channel with the console's open payload"
     );
 }
 

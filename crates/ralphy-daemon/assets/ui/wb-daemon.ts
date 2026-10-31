@@ -17,9 +17,17 @@ import { WBRun } from "./wb-runs.ts";
 import { sendWindow } from "./wb-events.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import { pageChannels } from "./wb-channels.ts";
-import type { Channel, ChannelKind, ChannelSocket, PageChannels } from "./wb-channels.ts";
+import type {
+  Channel,
+  ChannelKind,
+  ChannelSocket,
+  CloseReason,
+  PageChannels,
+} from "./wb-channels.ts";
+import type { ConsoleChannel, ConsoleHandlers } from "./wb-console-terminal-types.d.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { PresenceReport } from "./wb-presence.ts";
+import type { SessionPayload } from "./wb-session-route.ts";
 
 /** One user of the page socket: presence, or a subscription with its channel. */
 type SocketUser = {
@@ -278,6 +286,10 @@ export function createDaemon(
         channels?.receive(new Uint8Array(ev.data));
       sock.onclose = () => {
         lose();
+        // The last user left as its channel ended: no user, no socket. A
+        // timer here would open a second socket beside the one the next
+        // user opens.
+        if (ws !== sock) return;
         timer = setTimeout(connect, 3000);
       };
     };
@@ -400,6 +412,46 @@ export function createDaemon(
     });
     if (over && !left) finish();
     return id;
+  }
+
+  // A console's channel on the page socket (ADR-0082 D3): one channel per
+  // call, with `payload` as its open. It opens when the page socket does, at
+  // once when it is open. The console decides when to open another, and
+  // with which byte count: a lost socket ends this channel with
+  // `socket-lost`, and the next socket does not open it again.
+  function openConsole(payload: SessionPayload, handlers: ConsoleHandlers) {
+    let channel: Channel | null = null;
+    let over = false;
+    let leave: (() => void) | null = null;
+    // The console leaves the page socket when its channel ends, so the next
+    // socket does not open it again.
+    leave = page.join({
+      onOpen: (channels: PageChannels) => {
+        const ch = channels.open("console", payload);
+        channel = ch;
+        ch.onFrame = handlers.onFrame;
+        ch.onClosed = (reason: CloseReason) => {
+          over = true;
+          leave?.();
+          handlers.onClosed(reason);
+        };
+      },
+    });
+    const opened: ConsoleChannel = {
+      get readyState() {
+        if (over) return 3;
+        if (!channel) return 0;
+        return channel.readyState === "open" ? 1 : 3;
+      },
+      send: (inner: Uint8Array) => channel?.send(inner) ?? false,
+      close: () => {
+        if (over) return;
+        over = true;
+        channel?.close();
+        leave?.();
+      },
+    };
+    return opened;
   }
 
   // Open ONE `tree` channel for a project (#196, ADR-0036 §4):
@@ -634,6 +686,10 @@ export function createDaemon(
     subscribeRuns,
     subscribeChanges,
     subscribePresence,
+    openConsole,
+    // Resume the page socket: a stale one is replaced, and each console's
+    // channel ends with it, so the console opens one on the new socket.
+    resumePage: page.resume,
     reportPresence,
     onPresenceOpen,
     pageHandshakeMs: page.handshakeMs,

@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   What one message of the session socket says (`/ws/session`).
+   What one frame of a console's channel says.
 
    `readSocketEvent(bytes)` folds the bytes of one message into a closed
    `SocketEvent`. The terminal module matches it exhaustively and does the

@@ -72,9 +72,6 @@ export function createConsole(
     [stage(), tabsPane()].flatMap((el) =>
       el ? [...el.querySelectorAll<ConsoleWin>(".session-window")] : [],
     );
-  // Scheme-match the session socket to the page (see wb-daemon.ts WS_ORIGIN):
-  // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
-  const WS_ORIGIN = (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
   // Injection point, read once per instance. `main.ts` passes only the door
   // for operator messages (every other default below is the shell's
   // behaviour); `detached-fence-main.ts` overrides all five,
@@ -329,7 +326,8 @@ export function createConsole(
   });
   const { attachTerminal } = createTerminal({
     window,
-    WS_ORIGIN,
+    // Read at each connect: the entry module makes `WBDaemon` after the consoles.
+    openConsole: (payload, handlers) => window.WBDaemon.openConsole(payload, handlers),
     fontSize,
     stage,
     workspace,

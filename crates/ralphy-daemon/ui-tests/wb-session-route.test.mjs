@@ -11,76 +11,84 @@ function load() {
 
 const OPEN = { sessionId: 1, daemonId: "d", environment: "Windows" };
 
-test("url appends the checkout only on a new agent launch that names one", () => {
-  const { url } = load();
-  assert.equal(
-    url("ws://h", { repo: "o/r", agent: "claude", checkout: "wt-a" }),
-    "ws://h/ws/session?repo=o%2Fr&agent=claude&checkout=wt-a",
-  );
-  // No checkout — byte-identical to the launch URL of today.
-  const bare = "ws://h/ws/session?repo=o%2Fr&agent=claude";
-  assert.equal(url("ws://h", { repo: "o/r", agent: "claude" }), bare);
-  assert.equal(url("ws://h", { repo: "o/r", agent: "claude", checkout: null }), bare);
-  assert.equal(url("ws://h", { repo: "o/r", agent: "claude", checkout: "" }), bare);
+test("the open payload carries the checkout only on a new agent launch that names one", () => {
+  const { openPayload } = load();
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", checkout: "wt-a" }), {
+    repo: "o/r",
+    agent: "claude",
+    checkout: "wt-a",
+  });
+  // No checkout: no key, as a launch without one sends today.
+  const bare = { repo: "o/r", agent: "claude" };
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude" }), bare);
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", checkout: null }), bare);
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", checkout: "" }), bare);
   // A reattach names a record the daemon already owns — never a checkout.
-  const reattach = url("ws://h", { id: 3, repo: "o/r", checkout: "wt-a" });
-  assert.equal(reattach, "ws://h/ws/session?id=3&repo=o%2Fr");
-  assert.ok(!reattach.includes("checkout"));
+  assert.deepEqual(openPayload({ id: 3, repo: "o/r", checkout: "wt-a" }), { id: 3, repo: "o/r" });
   // The free console never takes one either.
-  assert.ok(!url("ws://h", { console: true, repo: "o/r", checkout: "wt-a" }).includes("checkout"));
+  assert.ok(!("checkout" in openPayload({ console: true, repo: "o/r", checkout: "wt-a" })));
 });
 
 test("requestOpts builds each kind of connect, and never sends null as a value", () => {
-  const { url, requestOpts } = load();
-  const at = (req) => url("ws://h", requestOpts(req, "h1"));
+  const { openPayload, requestOpts } = load();
+  const at = (req) => openPayload(requestOpts(req, "h1"));
   const rows = [
-    [{ repo: "o/r", agent: "claude", checkout: "wt-a", record: "r1" }, "repo=o%2Fr&agent=claude&checkout=wt-a&record=r1&holder=h1"],
-    [{ repo: null, agent: "claude" }, "repo=&agent=claude&holder=h1"],
-    [{ id: 3, repo: null, watch: true }, "id=3&watch=1"],
-    [{ id: 3, repo: "o/r", takeover: true }, "id=3&repo=o%2Fr&takeover=1&holder=h1"],
-    [{ console: true, repo: null, command: "ls" }, "console=1&command=ls&holder=h1"],
+    [
+      { repo: "o/r", agent: "claude", checkout: "wt-a", record: "r1" },
+      { repo: "o/r", agent: "claude", checkout: "wt-a", record: "r1", holder: "h1" },
+    ],
+    [{ repo: null, agent: "claude" }, { repo: "", agent: "claude", holder: "h1" }],
+    [{ id: 3, repo: null, watch: true }, { id: 3, watch: 1 }],
+    [{ id: 3, repo: "o/r", takeover: true }, { id: 3, repo: "o/r", takeover: 1, holder: "h1" }],
+    [{ console: true, repo: null, command: "ls" }, { console: 1, command: "ls", holder: "h1" }],
   ];
-  for (const [req, query] of rows) assert.equal(at(req), "ws://h/ws/session?" + query, JSON.stringify(req));
+  for (const [req, payload] of rows) assert.deepEqual(at(req), payload, JSON.stringify(req));
 });
 
 // The daemon's `peer_session_query_forwards_the_link_the_browser_reported`
-// test reads these same keys.
-test("url sends the network the browser reports, and nothing when it reports none", () => {
-  const { url } = load();
+// test reads these same keys. The daemon reads them as strings.
+test("the open payload carries the network the browser reports, and nothing when it reports none", () => {
+  const { openPayload } = load();
   const link = { effectiveType: "4g", rtt: 100, downlink: 1.75 };
-  assert.equal(url("ws://h", { id: 3, link }), "ws://h/ws/session?id=3&net=4g&net_rtt=100&net_down=1.75");
-  assert.equal(
-    url("ws://h", { repo: "o/r", agent: "claude", holder: "h1", link }),
-    "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1&net=4g&net_rtt=100&net_down=1.75",
-  );
-  assert.equal(url("ws://h", { console: true, link: { rtt: 0 } }), "ws://h/ws/session?console=1&net_rtt=0");
+  const net = { net: "4g", net_rtt: "100", net_down: "1.75" };
+  assert.deepEqual(openPayload({ id: 3, link }), { id: 3, ...net });
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", holder: "h1", link }), {
+    repo: "o/r",
+    agent: "claude",
+    holder: "h1",
+    ...net,
+  });
+  assert.deepEqual(openPayload({ console: true, link: { rtt: 0 } }), { console: 1, net_rtt: "0" });
   // Safari, and values the daemon would not read.
-  assert.equal(url("ws://h", { id: 3 }), "ws://h/ws/session?id=3");
-  assert.equal(url("ws://h", { id: 3, link: {} }), "ws://h/ws/session?id=3");
-  assert.equal(
-    url("ws://h", { id: 3, link: { effectiveType: "wifi", rtt: 1.5, downlink: Number.NaN } }),
-    "ws://h/ws/session?id=3",
+  assert.deepEqual(openPayload({ id: 3 }), { id: 3 });
+  assert.deepEqual(openPayload({ id: 3, link: {} }), { id: 3 });
+  assert.deepEqual(
+    openPayload({ id: 3, link: { effectiveType: "wifi", rtt: 1.5, downlink: Number.NaN } }),
+    { id: 3 },
   );
 });
 
-test("url sends the console name only on a new agent launch", () => {
-  const { url } = load();
-  assert.equal(
-    url("ws://h", { repo: "o/r", agent: "claude", name: "fincal #1" }),
-    "ws://h/ws/session?repo=o%2Fr&agent=claude&name=fincal%20%231",
-  );
-  assert.equal(
-    url("ws://h", { repo: "o/r", agent: "claude", checkout: "wt-a", name: "fincal #1" }),
-    "ws://h/ws/session?repo=o%2Fr&agent=claude&checkout=wt-a&name=fincal%20%231",
-  );
-  const bare = "ws://h/ws/session?repo=o%2Fr&agent=claude";
-  assert.equal(url("ws://h", { repo: "o/r", agent: "claude" }), bare);
-  assert.equal(url("ws://h", { repo: "o/r", agent: "claude", name: "" }), bare);
-  assert.equal(url("ws://h", { repo: "o/r", agent: "claude", name: null }), bare);
+test("the open payload carries the console name only on a new agent launch", () => {
+  const { openPayload } = load();
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", name: "fincal #1" }), {
+    repo: "o/r",
+    agent: "claude",
+    name: "fincal #1",
+  });
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", checkout: "wt-a", name: "fincal #1" }), {
+    repo: "o/r",
+    agent: "claude",
+    checkout: "wt-a",
+    name: "fincal #1",
+  });
+  const bare = { repo: "o/r", agent: "claude" };
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude" }), bare);
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", name: "" }), bare);
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", name: null }), bare);
   // A reattach names a session that already has its name; the free console
   // has no vendor to hand one to.
-  assert.ok(!url("ws://h", { id: 3, repo: "o/r", name: "x" }).includes("name="));
-  assert.ok(!url("ws://h", { console: true, repo: "o/r", name: "x" }).includes("name="));
+  assert.ok(!("name" in openPayload({ id: 3, repo: "o/r", name: "x" })));
+  assert.ok(!("name" in openPayload({ console: true, repo: "o/r", name: "x" })));
 });
 
 test("announcement folds the checkout and keeps the prior when a payload omits it", () => {
@@ -96,50 +104,48 @@ test("announcement folds the checkout and keeps the prior when a payload omits i
   assert.equal(announcement(OPEN, { checkout: null }).checkout, null);
 });
 
-// The startup command rides ONLY the free-console launch, encoded so a space
-// or an `&` in `btop --utf-force` survives the query string. A reattach never
-// carries it: the daemon's record owns what the session runs.
-test("the console launch carries its startup command, encoded; a reattach never does", () => {
-  const { url } = load();
-  assert.equal(
-    url("ws://h", { console: true, repo: "o/r", command: "htop -d 5" }),
-    "ws://h/ws/session?console=1&repo=o%2Fr&command=htop%20-d%205",
-  );
-  assert.equal(
-    url("ws://h", { console: true, command: "btop" }),
-    "ws://h/ws/session?console=1&command=btop",
+// The startup command rides ONLY the free-console launch, whole: `btop
+// --utf-force` keeps its space. A reattach never carries it: the daemon's
+// record owns what the session runs.
+test("the console launch carries its startup command; a reattach never does", () => {
+  const { openPayload } = load();
+  assert.deepEqual(openPayload({ console: true, repo: "o/r", command: "htop -d 5" }), {
+    console: 1,
+    repo: "o/r",
+    command: "htop -d 5",
+  });
+  assert.deepEqual(
+    openPayload({ console: true, command: "btop" }),
+    { console: 1, command: "btop" },
     "a repo-less console still takes the command",
   );
-  assert.ok(!url("ws://h", { console: true, repo: "o/r" }).includes("command"));
-  assert.ok(!url("ws://h", { id: 4, repo: "o/r", command: "htop" }).includes("command"));
+  assert.ok(!("command" in openPayload({ console: true, repo: "o/r" })));
+  assert.ok(!("command" in openPayload({ id: 4, repo: "o/r", command: "htop" })));
 });
 
 // ADR-0051 §9 amendment 2026-09-22: every claim of the writer slot names the
 // tab's holder, so this tab's reattach can reclaim a slot its own half-open
 // socket still holds. A watcher claims nothing and names nothing, and a
-// malformed holder is dropped rather than spliced into the query.
-test("url names the holder on every claim of the writer slot, never on a watch", () => {
-  const { url } = load();
+// malformed holder is left out.
+test("the open payload names the holder on every claim of the writer slot, never on a watch", () => {
+  const { openPayload } = load();
   const h = "0f3a-tab_B";
-  assert.equal(
-    url("ws://h", { id: 3, repo: "o/r", holder: h }),
-    "ws://h/ws/session?id=3&repo=o%2Fr&holder=0f3a-tab_B",
-  );
-  assert.equal(
-    url("ws://h", { id: 3, takeover: true, holder: h }),
-    "ws://h/ws/session?id=3&takeover=1&holder=0f3a-tab_B",
-  );
-  assert.equal(
-    url("ws://h", { repo: "o/r", agent: "claude", checkout: "wt-a", holder: h }),
-    "ws://h/ws/session?repo=o%2Fr&agent=claude&checkout=wt-a&holder=0f3a-tab_B",
-  );
-  assert.equal(
-    url("ws://h", { console: true, command: "btop", holder: h }),
-    "ws://h/ws/session?console=1&command=btop&holder=0f3a-tab_B",
-  );
-  assert.equal(url("ws://h", { id: 3, watch: true, holder: h }), "ws://h/ws/session?id=3&watch=1");
+  assert.deepEqual(openPayload({ id: 3, repo: "o/r", holder: h }), { id: 3, repo: "o/r", holder: h });
+  assert.deepEqual(openPayload({ id: 3, takeover: true, holder: h }), { id: 3, takeover: 1, holder: h });
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", checkout: "wt-a", holder: h }), {
+    repo: "o/r",
+    agent: "claude",
+    checkout: "wt-a",
+    holder: h,
+  });
+  assert.deepEqual(openPayload({ console: true, command: "btop", holder: h }), {
+    console: 1,
+    command: "btop",
+    holder: h,
+  });
+  assert.deepEqual(openPayload({ id: 3, watch: true, holder: h }), { id: 3, watch: 1 });
   for (const bad of ["", "a&takeover=1", "x".repeat(65), 7, null, undefined]) {
-    assert.equal(url("ws://h", { id: 3, holder: bad }), "ws://h/ws/session?id=3", String(bad));
+    assert.deepEqual(openPayload({ id: 3, holder: bad }), { id: 3 }, String(bad));
   }
 });
 
@@ -182,7 +188,7 @@ test("holder still names the tab when storage is absent or throws", () => {
 });
 
 // ADR-0079 D7: the attempt orders the claims of one tab, so it only grows,
-// across a reload too, and rides on the url beside the holder.
+// across a reload too, and rides in the open payload beside the holder.
 test("nextAttempt only grows and survives a reload in sessionStorage", () => {
   const { nextAttempt } = load();
   const storage = memoryStorage({ "ralphy.attempt": "41" });
@@ -224,29 +230,34 @@ test("two windows that copied one storage order their attempts by the clock", as
   assert.ok(Number.isSafeInteger(nextAttempt(opener)));
 });
 
-test("the attempt is on the url only beside a holder", () => {
-  const { url, requestOpts } = load();
-  const at = (req, holder) => url("ws://h", requestOpts(req, holder, false, 9));
-  assert.equal(at({ id: 3, repo: "o/r" }, "h1"), "ws://h/ws/session?id=3&repo=o%2Fr&holder=h1&attempt=9");
-  assert.equal(at({ console: true }, "h1"), "ws://h/ws/session?console=1&holder=h1&attempt=9");
-  assert.equal(at({ repo: "o/r", agent: "claude" }, "h1"), "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1&attempt=9");
-  // A watcher claims nothing; its url still ends with `watch=1`.
-  assert.equal(at({ id: 3, watch: true }, "h1"), "ws://h/ws/session?id=3&watch=1");
-  assert.equal(at({ id: 3 }, "a&b"), "ws://h/ws/session?id=3", "no holder, no attempt");
-  assert.equal(url("ws://h", { id: 3, holder: "h1", attempt: -1 }), "ws://h/ws/session?id=3&holder=h1");
+test("the attempt is in the open payload only beside a holder", () => {
+  const { openPayload, requestOpts } = load();
+  const at = (req, holder) => openPayload(requestOpts(req, holder, false, 9));
+  assert.deepEqual(at({ id: 3, repo: "o/r" }, "h1"), { id: 3, repo: "o/r", holder: "h1", attempt: 9 });
+  assert.deepEqual(at({ console: true }, "h1"), { console: 1, holder: "h1", attempt: 9 });
+  assert.deepEqual(at({ repo: "o/r", agent: "claude" }, "h1"), {
+    repo: "o/r",
+    agent: "claude",
+    holder: "h1",
+    attempt: 9,
+  });
+  // A watcher claims nothing.
+  assert.deepEqual(at({ id: 3, watch: true }, "h1"), { id: 3, watch: 1 });
+  assert.deepEqual(at({ id: 3 }, "a&b"), { id: 3 }, "no holder, no attempt");
+  assert.deepEqual(openPayload({ id: 3, holder: "h1", attempt: -1 }), { id: 3, holder: "h1" });
 });
 
 // ADR-0079 D8: the byte count the terminal shows rides only on a reattach.
-test("since is on the url of a reattach only, and a watch url still ends with watch=1", () => {
-  const { url, requestOpts } = load();
-  const at = (req) => url("ws://h", requestOpts(req, "h1", false, undefined, 4096));
-  assert.equal(at({ id: 3, repo: "o/r" }), "ws://h/ws/session?id=3&repo=o%2Fr&since=4096&holder=h1");
-  assert.equal(at({ id: 3, watch: true }), "ws://h/ws/session?id=3&since=4096&watch=1");
-  assert.equal(at({ console: true }), "ws://h/ws/session?console=1&holder=h1", "a launch opens a new terminal");
-  assert.equal(at({ repo: "o/r", agent: "claude" }), "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1");
-  assert.equal(url("ws://h", { id: 3, since: 0 }), "ws://h/ws/session?id=3&since=0");
-  assert.equal(url("ws://h", { id: 3, since: -1 }), "ws://h/ws/session?id=3");
-  assert.equal(url("ws://h", { id: 3, since: 1.5 }), "ws://h/ws/session?id=3");
+test("since is in the open payload of a reattach only, a watch's included", () => {
+  const { openPayload, requestOpts } = load();
+  const at = (req) => openPayload(requestOpts(req, "h1", false, undefined, 4096));
+  assert.deepEqual(at({ id: 3, repo: "o/r" }), { id: 3, repo: "o/r", since: 4096, holder: "h1" });
+  assert.deepEqual(at({ id: 3, watch: true }), { id: 3, since: 4096, watch: 1 });
+  assert.deepEqual(at({ console: true }), { console: 1, holder: "h1" }, "a launch opens a new terminal");
+  assert.deepEqual(at({ repo: "o/r", agent: "claude" }), { repo: "o/r", agent: "claude", holder: "h1" });
+  assert.deepEqual(openPayload({ id: 3, since: 0 }), { id: 3, since: 0 });
+  assert.deepEqual(openPayload({ id: 3, since: -1 }), { id: 3 });
+  assert.deepEqual(openPayload({ id: 3, since: 1.5 }), { id: 3 });
 });
 
 test("tabAttempt raises the tab's counter on every call", () => {
@@ -269,13 +280,11 @@ test("tabHolder mints one well-formed holder per document and keeps it", () => {
 const PEER_REPO = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/shared";
 
 test("every id reconnect and close retains the composite repo", () => {
-  const { url, closeUrl } = load();
-  const plain = url("ws://local", { id: 7, repo: PEER_REPO });
-  const watch = url("ws://local", { id: 7, repo: PEER_REPO, watch: true });
-  const takeover = url("ws://local", { id: 7, repo: PEER_REPO, takeover: true });
-  for (const value of [plain, watch, takeover]) {
-    assert.match(value, /repo=01ARZ3NDEKTSV4RRFFQ69G5FAW%2Fowner%2Fshared/);
-  }
+  const { openPayload, closeUrl } = load();
+  const plain = openPayload({ id: 7, repo: PEER_REPO });
+  const watch = openPayload({ id: 7, repo: PEER_REPO, watch: true });
+  const takeover = openPayload({ id: 7, repo: PEER_REPO, takeover: true });
+  for (const payload of [plain, watch, takeover]) assert.equal(payload.repo, PEER_REPO);
   assert.equal(
     closeUrl(7, PEER_REPO),
     "/api/sessions/close?id=7&repo=01ARZ3NDEKTSV4RRFFQ69G5FAW%2Fowner%2Fshared",
@@ -329,25 +338,24 @@ test("a failed peer close keeps the window available for retry", () => {
   assert.equal(closeSucceeded(502), false);
 });
 
-test("url names the window record on a new launch only", () => {
-  const { url } = load();
+test("the open payload names the window record on a new launch only", () => {
+  const { openPayload } = load();
   // The daemon keeps one session per record, so both launch shapes carry it.
-  assert.equal(
-    url("ws://h", { console: true, repo: "o/r", record: "w-a_1" }),
-    "ws://h/ws/session?console=1&repo=o%2Fr&record=w-a_1",
-  );
-  assert.equal(
-    url("ws://h", { repo: "o/r", agent: "claude", record: "w-a_1" }),
-    "ws://h/ws/session?repo=o%2Fr&agent=claude&record=w-a_1",
-  );
+  assert.deepEqual(openPayload({ console: true, repo: "o/r", record: "w-a_1" }), {
+    console: 1,
+    repo: "o/r",
+    record: "w-a_1",
+  });
+  assert.deepEqual(openPayload({ repo: "o/r", agent: "claude", record: "w-a_1" }), {
+    repo: "o/r",
+    agent: "claude",
+    record: "w-a_1",
+  });
   // A reattach names its session already.
-  assert.equal(url("ws://h", { id: 3, repo: "o/r", record: "w-a_1" }), "ws://h/ws/session?id=3&repo=o%2Fr");
-  // A malformed record is left out, never spliced into the query.
+  assert.deepEqual(openPayload({ id: 3, repo: "o/r", record: "w-a_1" }), { id: 3, repo: "o/r" });
+  // A malformed record is left out.
   for (const bad of ["", "w&takeover=1", "x".repeat(65), null]) {
-    assert.equal(
-      url("ws://h", { console: true, repo: "o/r", record: bad }),
-      "ws://h/ws/session?console=1&repo=o%2Fr",
-    );
+    assert.deepEqual(openPayload({ console: true, repo: "o/r", record: bad }), { console: 1, repo: "o/r" });
   }
 });
 

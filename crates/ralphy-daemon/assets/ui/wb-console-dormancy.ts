@@ -2,8 +2,8 @@
    The console's dormancy: sleep, wake, the cover rule and the resume.
 
    `createDormancy(deps)` sleeps a window off the viewport and wakes it on
-   return, keeps the covered rule, and resumes every socket when the page
-   comes back from a suspend. Building it registers no listener: `listen()`
+   return, keeps the covered rule, and resumes the page socket and every
+   console when the page comes back from a suspend. Building it registers no listener: `listen()`
    sets the focus hook and registers the page listeners, and the console
    calls it once, after its desk. `changed` tells the page that the window
    set changed. It reads the
@@ -93,7 +93,12 @@ export function createDormancy(deps: DormancyDeps) {
     return hiddenMs > RESUME_HIDDEN_MS;
   }
 
+  // The page socket first: the consoles' channels ride it (ADR-0082 D4). A
+  // stale socket is replaced, each channel ends with it, and its console
+  // opens one on the new socket with its byte count; the consoles' own
+  // resume below then finds that open waiting and leaves it.
   function resumeAll(stale: boolean) {
+    window.WBDaemon?.resumePage(stale);
     let woke = 0;
     for (const w of wins) {
       // A placeholder has no terminal, and a window whose session ended latches

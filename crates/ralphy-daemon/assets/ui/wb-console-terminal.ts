@@ -1,19 +1,20 @@
 /* ---------------------------------------------------------------------------
    The console's terminal: xterm.js in a window body, wired to its session
-   over `/ws/session` (ADR-0075 phase 5).
+   over a `console` channel of the page socket (ADR-0075 phase 5, ADR-0082
+   D3).
 
    `createTerminal(deps)` returns `attachTerminal`, `detachSocket` and
    `announceDetach` for one console (ADR-0075 D7). They read the console only
    through `deps`, and `TerminalDeps` lists every read, so `tsc` refuses a
    read outside it. `wb-console.ts` creates one per console and keeps the
    font size, the plane and the clipboard. Each `attachTerminal` call keeps
-   the state of its own terminal and socket; the session is the daemon's.
-   The socket link (connect, reconnect, close, input while down) is
+   the state of its own terminal and channel; the session is the daemon's.
+   The link (connect, reconnect, close, input while down) is
    `wb-console-terminal-link.ts`. The touch gesture is `wb-console-touch.ts`;
    the image paste, OSC 52 and the right button are `wb-console-paste.ts`; the
    GPU addon is `terminalGpu` in `wb-console-gpu.ts` (#621). `TerminalDeps` and
    `TerminalOpts` are `wb-console-terminal-types.d.ts`; the retirement of a
-   socket is `wb-console-terminal-socket.ts`.
+   channel is `wb-console-terminal-socket.ts`.
    --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
@@ -67,7 +68,7 @@ function showScrollbarWhileNeeded(term: XtermTerminal) {
 export function createTerminal(deps: TerminalDeps) {
   const {
     window,
-    WS_ORIGIN,
+    openConsole,
     fontSize,
     stage,
     workspace,
@@ -76,7 +77,7 @@ export function createTerminal(deps: TerminalDeps) {
     readClipboard,
   } = deps;
 
-  // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
+  // Attach a real xterm.js terminal into `body`, wired to a PTY over its channel.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
   // (a NEW free-console launch — home dir when `repo` absent), or
   // {id[, takeover][, watch]} (a REATTACH; `watch` is read-only). Returns a
@@ -145,7 +146,7 @@ export function createTerminal(deps: TerminalDeps) {
     });
     const { fit, dispose: stopFit } = sizing;
 
-    // The state of the socket link, and the functions that change it:
+    // The state of the link, and the functions that change it:
     // wb-console-terminal-link.ts. The terminal reads the state below.
     const linkState: TerminalLinkState = {
       ws: null,
@@ -175,7 +176,7 @@ export function createTerminal(deps: TerminalDeps) {
       currentDaemonId: null,
       currentEnvironment: null,
     };
-    const link = createLink(linkState, { term, opts, WS_ORIGIN, sizing, stopFit, probe });
+    const link = createLink(linkState, { term, opts, openConsole, sizing, stopFit, probe });
 
     // Output is written through this wrapper. A write that is not session
     // output (a notice of this page) forgets the byte count.
@@ -283,16 +284,16 @@ export function createTerminal(deps: TerminalDeps) {
       takeOver: link.takeOver,
       // A fleet read arrived: see `peerRefresh` in wb-console-terminal-link.ts.
       peerRefresh: link.peerRefresh,
-      // The page went hidden, or is visible again. The socket stays open;
+      // The page went hidden, or is visible again. The channel stays open;
       // only the daemon's log reads this.
       notePage(hidden: boolean) {
         const ws = linkState.ws;
         if (!ws || ws.readyState !== 1) return;
         try {
           ws.send(hidden ? encodeDetach("hidden") : encodeShown());
-        } catch {} // a socket that fails here is closing, and its close tells
+        } catch {} // a page socket that fails here is closing, and its close tells
       },
-      // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
+      // `reason` (see `encodeDetach`) tells the daemon why the channel closes.
       dispose(reason: DetachReason) {
         link.leave();
         stopFit();

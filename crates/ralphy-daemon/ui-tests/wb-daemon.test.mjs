@@ -760,3 +760,71 @@ test("an observe past its deadline reports a stall naming the verb", async () =>
     s.restore();
   }
 });
+
+// ADR-0082 D3: a console is a `console` channel of the page socket. Its open
+// waits for the socket, and carries the payload the console built.
+test("openConsole opens a console channel with its payload once the page socket opens", () => {
+  const { d, sockets, open, withFakes } = pageSockets();
+  const frames = [];
+  const channel = withFakes(() =>
+    d.openConsole({ id: 5, since: 40, holder: "h1" }, {
+      onFrame: (inner) => frames.push([...inner]),
+      onClosed: () => assert.fail("the channel is not closed"),
+    }),
+  );
+  assert.equal(sockets.length, 1, "the console opens the page socket, no socket of its own");
+  assert.equal(sockets[0].url, "ws://127.0.0.1:7431/ws");
+  assert.equal(channel.readyState, 0, "the open waits for the page socket");
+  open(sockets[0]);
+  const opens = sockets[0].sent.filter((f) => f.verb === "channel.open");
+  assert.equal(opens.length, 1);
+  const { channel: id, kind, ...payload } = opens[0].payload;
+  assert.equal(kind, "console");
+  assert.deepEqual(payload, { id: 5, since: 40, holder: "h1" });
+  assert.equal(channel.readyState, 1);
+  sockets[0].onmessage({ data: onChannel(id, new Uint8Array([0x01, 7])).buffer });
+  assert.deepEqual(frames, [[0x01, 7]]);
+  assert.equal(channel.send(commandBytes({ id: 0, verb: "resize", payload: { rows: 9, cols: 9 } })), true);
+  assert.deepEqual([sockets[0].sent.at(-1).channel, sockets[0].sent.at(-1).verb], [id, "resize"]);
+});
+
+// The console decides when to open again, and with which byte count: the
+// next socket does not open its channel by itself.
+test("a lost page socket ends a console channel once, and the next socket does not open it again", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const ends = [];
+  const channel = withFakes(() =>
+    d.openConsole({ id: 5 }, { onFrame() {}, onClosed: (reason) => ends.push(reason) }),
+  );
+  drop(sockets[0]);
+  assert.deepEqual(ends, ["socket-lost"]);
+  assert.equal(channel.readyState, 3);
+  runRetries();
+  open(sockets[1]);
+  assert.deepEqual(
+    sockets[1].sent.filter((f) => f.verb === "channel.open"),
+    [],
+    "the new socket opens no console channel",
+  );
+  assert.deepEqual(ends, ["socket-lost"]);
+});
+
+// A console alone on the page socket leaves it when its channel ends. The
+// socket then stays closed until a user joins: a second socket would open
+// every waiting channel twice.
+test("a page socket that a drop left with no user does not reconnect", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.openConsole({ id: 5 }, { onFrame() {}, onClosed() {} }));
+  open(sockets[0]);
+  drop(sockets[0]);
+  runRetries();
+  assert.equal(sockets.length, 1, "no user, no socket");
+  const again = withFakes(() => d.openConsole({ id: 5, since: 9 }, { onFrame() {}, onClosed() {} }));
+  runRetries();
+  assert.equal(sockets.length, 2, "the next open makes one socket");
+  open(sockets[1]);
+  assert.equal(again.readyState, 1);
+  assert.equal(sockets[1].sent.filter((f) => f.verb === "channel.open").length, 1);
+});

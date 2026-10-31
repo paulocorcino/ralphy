@@ -1,8 +1,9 @@
 /* ---------------------------------------------------------------------------
-   The socket link of one console's terminal (`wb-console-terminal.ts`): the
-   connect, the close path, the backoff and the resume, and the input while
-   the socket is down. The session is the daemon's, and a dropped socket
-   reattaches to the same id (ADR-0079 D8).
+   The link of one console's terminal (`wb-console-terminal.ts`): its
+   `console` channel of the page socket (ADR-0082 D3), the connect, the close
+   path, the backoff and the resume, and the input while the channel is down.
+   The session is the daemon's, and a dropped channel reattaches to the same
+   id with the count of the bytes the terminal shows (ADR-0079 D8).
 
    `createLink(state, env)` works on one `TerminalLinkState`. The terminal
    makes that state and reads it for its input and its output; only this
@@ -12,28 +13,35 @@ import * as WBConsoleSession from "./wb-console-session.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { frameQueue } from "./wb-console-frames.ts";
 import { reportStall } from "./wb-stall.ts";
-import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import { resumeDecision, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import { announceDetach, detachSocket } from "./wb-console-terminal-socket.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
 import type { FramePayload, SocketEvent } from "./wb-console-frames.ts";
+import type { CloseReason } from "./wb-channels.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { ScrollWatch } from "./wb-console-probe.ts";
 import type { createFit } from "./wb-console-fit.ts";
-import type { LinkState, TerminalOpts } from "./wb-console-terminal-types.d.ts";
+import type {
+  ConsoleChannel,
+  LinkState,
+  TerminalDeps,
+  TerminalOpts,
+} from "./wb-console-terminal-types.d.ts";
 
 const { endNotice, reconnectDecision, peerGate } = WBConsoleSession;
 
 const RECONNECT_BASE = 1000;
 const RECONNECT_MAX = 15000;
 
-// The state of one terminal's socket link. The terminal makes it, and the
+// The state of one terminal's link. The terminal makes it, and the
 // functions of `createLink` change it.
 export type TerminalLinkState = {
-  // The current socket.
-  ws: WebSocket | null;
-  opened: boolean; // has the CURRENT socket opened
-  everOpened: boolean; // has ANY socket of this window opened
+  // The current channel. Named for the socket it replaced: the browser
+  // checks read `ws.readyState`, and the channel keeps its numbers.
+  ws: ConsoleChannel | null;
+  opened: boolean; // has the CURRENT channel had its `session-open`
+  everOpened: boolean; // has ANY channel of this window had one
   // True on EVERY path into the watcher role (the park below, or `{id,
   // watch}` from the start). The `term.onData` gate reads this flag.
   watching: boolean;
@@ -65,7 +73,7 @@ export type TerminalLinkState = {
   // id and print a second "[session closed]".
   ended: boolean;
   lastResumeAt: number;
-  // True while the fleet calls this window's peer down: no socket, no timer.
+  // True while the fleet calls this window's peer down: no channel, no timer.
   // The session lives on the peer, so a hold never gives up.
   held: boolean;
   linkLost: boolean;
@@ -81,7 +89,7 @@ export type TerminalLinkState = {
 export type TerminalLinkEnv = {
   term: XtermTerminal;
   opts: TerminalOpts;
-  WS_ORIGIN: string;
+  openConsole: TerminalDeps["openConsole"];
   sizing: ReturnType<typeof createFit>;
   stopFit: () => void;
   probe: ScrollWatch | undefined;
@@ -95,7 +103,7 @@ function offsetOf(payload: FramePayload | undefined): number | null {
 }
 
 export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
-  const { term, opts, WS_ORIGIN, sizing, stopFit, probe } = env;
+  const { term, opts, openConsole, sizing, stopFit, probe } = env;
 
   const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
   function link(state: LinkState) {
@@ -121,18 +129,49 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     s.retryDelay = 0;
     s.failedReopens = 0;
     if (typeof opts.onPeerBack === "function") opts.onPeerBack();
-    connect({ id: s.currentSessionId, repo: s.currentRepo, watch: s.watching });
+    connect(again());
   }
 
   function giveUp() {
     s.ended = true;
     link("back");
-    // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
-    // window is closed.
+    // Stop observing so a terminal with no channel doesn't keep firing fit()
+    // until the window is closed.
     stopFit();
     term.write("\r\n" + endNotice(s.announced, s.refusal) + "\r\n");
     void reportStall("console-gave-up", s.announced ?? "closed", 0);
     if (typeof opts.onEnded === "function") opts.onEnded(s.announced, s.refusal);
+  }
+
+  // The link is down and the session may still run. A lost page socket: the
+  // open is sent at once, and it waits for the page's next socket, so each
+  // console sends one open when that socket opens (ADR-0082 D4). Any other
+  // end waits out the backoff.
+  function retry(ended: CloseReason) {
+    if (s.retryDelay === 0) {
+      link("lost");
+      // The fleet may already know why; its answer can hold this window.
+      if (typeof opts.readFleet === "function") opts.readFleet();
+    }
+    if (ended === "socket-lost") connect(again());
+    else scheduleReconnect();
+  }
+
+  // The request of a reconnect: the same session, in the same role.
+  function again(): SessionRequest {
+    return { id: s.currentSessionId, repo: s.currentRepo, watch: s.watching };
+  }
+
+  // The first `session-open` of a channel: the channel holds the session.
+  function channelOpened() {
+    s.opened = true;
+    s.everOpened = true;
+    s.retryDelay = 0;
+    s.failedReopens = 0;
+    s.firstConnect = false;
+    link("back");
+    // Never xterm's default 80×24: only a size the body measured.
+    sizing.opened();
   }
 
   function scheduleReconnect() {
@@ -140,7 +179,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     const wait = s.retryDelay + Math.random() * 0.3 * s.retryDelay; // jitter
     s.retryTimer = setTimeout(() => {
       s.retryTimer = null;
-      connect({ id: s.currentSessionId, repo: s.currentRepo, watch: s.watching });
+      connect(again());
     }, wait);
   }
 
@@ -155,42 +194,24 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     s.replayNext = false;
     // A terminal that no `session-open` of this window has written to yet.
     let fresh = s.firstConnect;
-    const holder = WBSessionRoute.tabHolder();
     const request = WBSessionRoute.requestOpts(
       connOpts,
-      holder,
+      WBSessionRoute.tabHolder(),
       WBSessionRoute.canGunzip(),
       WBSessionRoute.tabAttempt(),
       s.shown ?? undefined,
     );
-    const socket = new WebSocket(
-      WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }),
-    );
-    s.ws = socket;
-    socket.binaryType = "arraybuffer";
+    const fields = WBSessionRoute.openPayload({ ...request, link: WBSessionRoute.tabLink() });
     s.connectingSince = Date.now();
-    // `close()` on a CONNECTING socket fires `onclose` with `opened` false:
-    // the ordinary failed-reopen path, backoff and give-up count included.
-    const handshake = socket;
-    setTimeout(() => {
-      if (handshake.readyState !== 0) return;
-      try {
-        handshake.close();
-      } catch {}
-    }, CONNECT_TIMEOUT_MS);
-    socket.onopen = () => {
-      s.opened = true;
-      s.everOpened = true;
-      s.retryDelay = 0;
-      s.failedReopens = 0;
-      s.firstConnect = false;
-      link("back");
-      // Never xterm's default 80×24: only a size the body measured.
-      sizing.opened();
-    };
+    // The channel this connect opens. A frame or a close of a channel the
+    // link no longer holds is dropped. The page socket has the one handshake
+    // deadline, so a channel has none.
+    let channel: ConsoleChannel | null = null;
     // The daemon's `session-open`: who owns the session, what the terminal
-    // shows of it, and whether this window only watches.
+    // shows of it, and whether this window only watches. The first one is
+    // the channel's open.
     function takeOpen(event: Extract<SocketEvent, { kind: "open" }>) {
+      if (!s.opened) channelOpened();
       const resumed = event.payload?.resume === true;
       // A resume writes only the missing bytes after what the terminal
       // shows. Any other replay repaints the screen, so the terminal is
@@ -198,7 +219,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       if (!fresh && !resumed) term.reset();
       fresh = false;
       // HERE, not in `onPark`: the reset above would wipe a line written
-      // before the socket opened.
+      // before the channel opened.
       if (s.watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");
       const owner = WBSessionRoute.announcement(
         {
@@ -226,8 +247,8 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       if (typeof opts.onPark === "function") opts.onPark("joined");
     }
     const frames = frameQueue((event) => {
-      // A replay decoded after its socket was retired belongs to no one.
-      if (s.leaving || s.ws !== socket) return;
+      // A replay decoded after its channel was retired belongs to no one.
+      if (s.leaving || s.ws !== channel) return;
       switch (event.kind) {
         case "output":
           if (s.currentSessionId == null) {
@@ -276,11 +297,8 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
         }
       }
     });
-    socket.onmessage = (ev: MessageEvent<ArrayBuffer>) => frames.take(new Uint8Array(ev.data));
-    // Swallow the error event; onclose drives recovery in every case.
-    socket.onerror = () => {};
-    const closed = () => {
-      if (s.leaving || s.switching || s.ws !== socket) return;
+    const closed = (reason: CloseReason) => {
+      if (s.leaving || s.switching || s.ws !== channel) return;
       if (!s.opened) s.failedReopens += 1;
       const decision = reconnectDecision({
         everOpened: s.everOpened,
@@ -301,15 +319,10 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
           return;
         case "connect":
         case "reconnect":
-          if (s.retryDelay === 0) {
-            link("lost");
-            // The fleet may already know why; its answer can hold this window.
-            if (typeof opts.readFleet === "function") opts.readFleet();
-          }
-          scheduleReconnect();
+          retry(reason);
       }
     };
-    // Park ONCE, immediately. A watch socket that itself drops falls back
+    // Park ONCE, immediately. A watch channel that itself drops falls back
     // to the backoff, so a refused watch cannot busy-loop.
     function parkAsWatcher() {
       if (s.watching) {
@@ -322,14 +335,18 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       if (typeof opts.onPark === "function") opts.onPark(s.announced);
       connect({ id: s.currentSessionId, repo: s.currentRepo, watch: true });
     }
-    // After the frames that wait behind a replay decode: a `session-end`
-    // among them names the reason this close is read with.
-    socket.onclose = () => frames.whenIdle(closed);
+    // The close is read after the frames that wait behind a replay decode:
+    // a `session-end` among them names the reason it is read with.
+    channel = openConsole(fields, {
+      onFrame: (inner) => frames.take(inner),
+      onClosed: (reason) => frames.whenIdle(() => closed(reason)),
+    });
+    s.ws = channel;
   }
 
-  // A key typed while the socket is down is not sent. The link strip says
+  // A key typed while the channel is down is not sent. The link strip says
   // so, and the reconnect comes now instead of after the backoff (#751).
-  // A CONNECTING socket is already the reconnect.
+  // A channel that waits for the page socket is already the reconnect.
   function inputWhileDown() {
     if (s.leaving || s.ended || s.held || s.currentSessionId == null) return;
     link("lost");
@@ -340,7 +357,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     reconnectNow();
   }
 
-  // Reattach now: a pending backoff is dropped, else the old socket is.
+  // Reattach now: a pending backoff is dropped, else the old channel is.
   function reconnectNow() {
     if (s.retryTimer) {
       clearTimeout(s.retryTimer);
@@ -348,7 +365,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     } else {
       detachSocket(s.ws, "reconnect");
     }
-    connect({ id: s.currentSessionId, repo: s.currentRepo, watch: s.watching });
+    connect(again());
   }
 
   // The page came back from a suspend (or the network did). Returns whether
@@ -378,7 +395,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
   }
 
   // The ONLY place in this module that sets `takeover` — from the parked
-  // banner's button. `switching` makes the current socket's onclose a no-op.
+  // banner's button. `switching` makes the current channel's close a no-op.
   function takeOver() {
     if (s.currentSessionId == null) return;
     s.switching = true;
@@ -386,10 +403,10 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       clearTimeout(s.retryTimer);
       s.retryTimer = null;
     }
-    // Detach EVERY handler before closing: the events land AFTER this
-    // returns, when `switching` is false again and `ws` names the new
-    // socket. A queued `session-end` would otherwise attach a stale reason
-    // to the NEW connection and turn its next drop into a give-up.
+    // The old channel is closed before the new one opens: a frame of it
+    // decoded later finds that `ws` names the new channel, and is dropped.
+    // A queued `session-end` would otherwise attach a stale reason to the
+    // NEW connection and turn its next drop into a give-up.
     detachSocket(s.ws, "reconnect");
     s.watching = false;
     s.announced = null;
@@ -432,7 +449,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
   }
 
   // The second half: `reason` (see `encodeDetach`) tells the daemon why the
-  // socket closes.
+  // channel closes.
   function closeSocket(reason: DetachReason) {
     const ws = s.ws;
     if (ws && ws.readyState <= 1) {

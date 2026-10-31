@@ -9,14 +9,16 @@ import type { SessionRequest } from "./wb-session-route.ts";
 import type { FramePayload } from "./wb-console-frames.ts";
 import type { ScrollProbe } from "./wb-console-probe.ts";
 import type { Group } from "./wb-fleet.ts";
+import type { WBDaemonApi } from "./wb-daemon.ts";
+import type { CloseReason } from "./wb-channels.ts";
 
 // What the terminal reads from the console, and nothing else.
 export type TerminalDeps = {
   // The console's page: `WBDaemon` (the image paste) and `getShell` (whether
   // the shell's key listener exists).
   window: Pick<Window, "WBDaemon" | "getShell">;
-  // The session socket's origin, scheme-matched to the page.
-  WS_ORIGIN: string;
+  // Opens the console's channel on the page socket (`WBDaemon.openConsole`).
+  openConsole: WBDaemonApi["openConsole"];
   // The stored font size, read when a terminal is made.
   fontSize: () => number;
   // The plane and the viewport; null before the page has them.
@@ -31,11 +33,30 @@ export type TerminalDeps = {
   scrollProbe?: ScrollProbe;
 };
 
+/** What a console hears on its channel (`openConsole`). */
+export type ConsoleHandlers = {
+  /** One whole frame of the console's session. */
+  onFrame: (inner: Uint8Array) => void;
+  /** The daemon ended the channel, or the page socket under it ended. */
+  onClosed: (reason: CloseReason) => void;
+};
+
+/** One console's channel of the page socket. `readyState` takes the numbers
+ * of the WebSocket a console had before (ADR-0082 D3): 0 while the page
+ * socket is not open, 1 open, 3 closed. */
+export type ConsoleChannel = {
+  readonly readyState: 0 | 1 | 3;
+  /** Send one frame of the session; `false` when the channel is not open. */
+  send(inner: Uint8Array): boolean;
+  /** End the channel: the daemon is told, and `onClosed` is not called. */
+  close(): void;
+};
+
 // What a clipboard read gives: an image, or else text (`clipboardContent`).
 type ClipboardRead = { image?: Blob; text?: string };
 
-// The link of a window that had a socket: "lost" while it reconnects, "back"
-// when a socket opens again or the window stops trying.
+// The link of a window that had a channel: "lost" while it reconnects,
+// "back" when a channel opens again or the window stops trying.
 export type LinkState = "lost" | "back";
 
 // What `attachTerminal` is built with, and what the chrome hands back to

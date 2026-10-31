@@ -1,13 +1,13 @@
 /* Pure browser-session ownership rules, shared by the shell and Node coverage. */
-// What a `/ws/session` url is built from: a reattach (`id`), a free console,
-// or an agent launch.
+// What the open of a console channel is built from: a reattach (`id`), a
+// free console, or an agent launch.
 // `gzip`: the page can decode a gzip replay, so it asks for one.
 // `attempt`: the tab's number for this connect, sent beside the holder.
 // `since`: on a reattach, the count of the session's output bytes the
 // terminal shows.
 // `link`: the network the browser reports, for the daemon's traffic log.
-type SessionUrlOpts = { link?: LinkFacts } & (ReattachUrlOpts | ConsoleUrlOpts | LaunchUrlOpts);
-type ReattachUrlOpts = {
+type SessionOpenOpts = { link?: LinkFacts } & (ReattachOpts | ConsoleOpts | LaunchOpts);
+type ReattachOpts = {
   id: number;
   since?: number;
   repo?: string;
@@ -17,7 +17,7 @@ type ReattachUrlOpts = {
   gzip?: boolean;
   attempt?: number;
 };
-type ConsoleUrlOpts = {
+type ConsoleOpts = {
   id?: null;
   console: true;
   repo?: string;
@@ -27,7 +27,7 @@ type ConsoleUrlOpts = {
   gzip?: boolean;
   attempt?: number;
 };
-type LaunchUrlOpts = {
+type LaunchOpts = {
   id?: null;
   console?: false;
   repo: string;
@@ -43,6 +43,10 @@ type LaunchUrlOpts = {
 // The members of `navigator.connection` the daemon's traffic log records.
 // Safari has no `navigator.connection`, and then nothing is sent.
 export type LinkFacts = { effectiveType?: string; rtt?: number; downlink?: number };
+
+// The open payload of a console channel: the fields of the daemon's session
+// query (`SessionQuery`), each with the type it reads. `1` is a flag that is on.
+export type SessionPayload = { [field: string]: string | number };
 
 // What one connect of a terminal asks for, before it is one of the shapes
 // above: `id` set is a reattach, `console` a free console, else an agent launch.
@@ -161,63 +165,61 @@ export const WBSessionRoute = (function () {
     return nextAttempt(storage);
   }
 
-  function url(origin: string, opts: SessionUrlOpts) {
-    // First, so the rest of the query reads as it did before the key.
-    const value = origin + "/ws/session?" + (opts.gzip ? "gzip=1&" : "");
-    return value + kindQuery(opts) + linkParam(opts.link);
+  // The open payload of one console channel (ADR-0082 D3). A field the daemon
+  // would not read is left out.
+  function openPayload(opts: SessionOpenOpts): SessionPayload {
+    return { ...(opts.gzip ? { gzip: 1 } : {}), ...kindFields(opts), ...linkFields(opts.link) };
   }
 
-  // The part of the query that each kind of connect reads.
-  function kindQuery(opts: SessionUrlOpts) {
-    if (opts.id != null) return reattachQuery(opts);
-    if (opts.console) return consoleQuery(opts);
-    return launchQuery(opts);
+  // The fields that each kind of connect reads.
+  function kindFields(opts: SessionOpenOpts) {
+    if (opts.id != null) return reattachFields(opts);
+    if (opts.console) return consoleFields(opts);
+    return launchFields(opts);
   }
 
-  function reattachQuery(opts: ReattachUrlOpts) {
-    let value = "id=" + encodeURIComponent(opts.id);
-    if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
+  function reattachFields(opts: ReattachOpts): SessionPayload {
+    const out: SessionPayload = { id: opts.id };
+    if (opts.repo) out.repo = opts.repo;
     if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0)
-      value += "&since=" + opts.since;
-    if (opts.takeover) value += "&takeover=1";
+      out.since = opts.since;
+    if (opts.takeover) out.takeover = 1;
     // A watcher claims nothing, so it names no holder.
-    if (opts.watch) return value + "&watch=1";
-    return value + holderParam(opts.holder, opts.attempt);
+    if (opts.watch) return { ...out, watch: 1 };
+    return { ...out, ...holderFields(opts.holder, opts.attempt) };
   }
 
-  function consoleQuery(opts: ConsoleUrlOpts) {
-    let value = "console=1";
-    if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
+  function consoleFields(opts: ConsoleOpts): SessionPayload {
+    const out: SessionPayload = { console: 1 };
+    if (opts.repo) out.repo = opts.repo;
     // The startup command (the shell runs it and the session ends with it).
-    if (opts.command) value += "&command=" + encodeURIComponent(opts.command);
-    return value + recordParam(opts.record) + holderParam(opts.holder, opts.attempt);
+    if (opts.command) out.command = opts.command;
+    return { ...out, ...recordFields(opts.record), ...holderFields(opts.holder, opts.attempt) };
   }
 
-  function launchQuery(opts: LaunchUrlOpts) {
-    let value =
-      "repo=" + encodeURIComponent(opts.repo) + "&agent=" + encodeURIComponent(opts.agent);
+  function launchFields(opts: LaunchOpts): SessionPayload {
+    const out: SessionPayload = { repo: opts.repo, agent: opts.agent };
     // A worktree NAME, sent only on a new agent launch — a reattach's record
     // owns it (ADR-0063 §3).
-    if (opts.checkout) value += "&checkout=" + encodeURIComponent(opts.checkout);
+    if (opts.checkout) out.checkout = opts.checkout;
     // The console name: the daemon folds it into Claude's session name.
-    if (typeof opts.name === "string" && opts.name)
-      value += "&name=" + encodeURIComponent(opts.name);
-    return value + recordParam(opts.record) + holderParam(opts.holder, opts.attempt);
+    if (typeof opts.name === "string" && opts.name) out.name = opts.name;
+    return { ...out, ...recordFields(opts.record), ...holderFields(opts.holder, opts.attempt) };
   }
 
-  // Only the values the daemon reads; any other value is not sent.
+  // Only the values the daemon reads; any other value is not sent. The
+  // daemon reads the three as strings, so a bad one is absent there.
   const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/;
-  function linkParam(link: LinkFacts | undefined) {
-    if (!link) return "";
-    let value = "";
+  function linkFields(link: LinkFacts | undefined): SessionPayload {
+    const out: SessionPayload = {};
+    if (!link) return out;
     const { effectiveType, rtt, downlink } = link;
     if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType))
-      value += "&net=" + effectiveType;
-    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0)
-      value += "&net_rtt=" + rtt;
+      out.net = effectiveType;
+    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) out.net_rtt = String(rtt);
     if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0)
-      value += "&net_down=" + downlink;
-    return value;
+      out.net_down = String(downlink);
+    return out;
   }
 
   // The network this browser reports now, read at each connect.
@@ -236,7 +238,7 @@ export const WBSessionRoute = (function () {
     return typeof DecompressionStream === "function";
   }
 
-  // The url options of one connect, in the shape its kind reads. An agent
+  // The open options of one connect, in the shape its kind reads. An agent
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
   // `since` is sent only on a reattach: a launch opens a new terminal.
@@ -246,7 +248,7 @@ export const WBSessionRoute = (function () {
     gzip = false,
     attempt?: number,
     since?: number,
-  ): SessionUrlOpts {
+  ): SessionOpenOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null)
       return {
@@ -284,16 +286,16 @@ export const WBSessionRoute = (function () {
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
   // Validated like the holder, as the daemon validates both.
-  function recordParam(r: string | undefined) {
-    return typeof r === "string" && HOLDER_RE.test(r) ? "&record=" + r : "";
+  function recordFields(r: string | undefined): SessionPayload {
+    return typeof r === "string" && HOLDER_RE.test(r) ? { record: r } : {};
   }
 
   // The attempt rides only with a holder: it orders the claims of one holder.
-  function holderParam(h: string | undefined, attempt?: number) {
-    if (typeof h !== "string" || !HOLDER_RE.test(h)) return "";
-    const n =
-      Number.isSafeInteger(attempt) && attempt != null && attempt >= 0 ? "&attempt=" + attempt : "";
-    return "&holder=" + h + n;
+  function holderFields(h: string | undefined, attempt?: number): SessionPayload {
+    if (typeof h !== "string" || !HOLDER_RE.test(h)) return {};
+    if (Number.isSafeInteger(attempt) && attempt != null && attempt >= 0)
+      return { holder: h, attempt };
+    return { holder: h };
   }
 
   function closeUrl(id: number, repo: string) {
@@ -347,7 +349,7 @@ export const WBSessionRoute = (function () {
   }
 
   return {
-    url,
+    openPayload,
     requestOpts,
     canGunzip,
     tabLink,
