@@ -4,8 +4,9 @@
 //!
 //! The page picks each channel id, a u32 of 1 or more, and never uses one
 //! twice on a socket. An open of an id already used, a piece on an id never
-//! opened, an unknown kind and a piece with an unknown flag are all answered
-//! with `channel.closed {reason: "refused"}`; the socket stays open.
+//! opened, an unknown kind, an open past the cap of open channels and a piece
+//! with an unknown flag are all answered with
+//! `channel.closed {reason: "refused"}`; the socket stays open.
 
 use std::collections::{HashMap, HashSet};
 
@@ -25,6 +26,11 @@ use crate::protocol::{self, ChannelError, Command, Frame, FrameError, Joiner};
 /// `/ws/session` query, and a repo ref or a startup command can pass the
 /// cap of a presence report.
 const MAX_OPEN_BYTES: usize = 4 * 1024;
+
+/// How many channels one socket may hold open at once. A page opens a few
+/// channels per console and tree; the cap bounds the table and the tasks a
+/// socket can make (ADR-0072 D11, item counts).
+const MAX_CHANNELS: usize = 256;
 
 /// One open channel: the pieces of the inner frame still due, and its kind.
 struct Open {
@@ -158,6 +164,9 @@ impl Reader {
         let Some(kind) = request.kind else {
             return self.answer(id, CloseReason::Refused).await;
         };
+        if self.open.len() >= MAX_CHANNELS {
+            return self.answer(id, CloseReason::Refused).await;
+        }
         let out = match kind.queue_depth() {
             Some(depth) => self.writer.channel_with_depth(id, depth),
             None => self.writer.channel(id),

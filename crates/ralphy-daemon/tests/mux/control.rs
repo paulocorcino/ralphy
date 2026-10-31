@@ -105,6 +105,30 @@ async fn an_open_of_an_unknown_kind_is_refused() {
     assert_eq!(closed_reason(&mut ws, 4).await, "refused");
 }
 
+/// A socket holds 256 open channels. The next open is refused and the socket
+/// stays open; a close frees a place for a new id.
+#[tokio::test]
+async fn an_open_past_the_cap_of_open_channels_is_refused() {
+    const CAP: u32 = 256;
+    let daemon = serve().await;
+    let mut ws = connect(&daemon).await;
+    for id in 1..=CAP {
+        open(&mut ws, id, "changes", serde_json::json!({})).await;
+    }
+    open(&mut ws, CAP + 1, "changes", serde_json::json!({})).await;
+    // A `changes` channel stays open and sends nothing, so the first
+    // `channel.closed` is the refusal of the open past the cap.
+    assert_eq!(closed_reason(&mut ws, u64::from(CAP) + 1).await, "refused");
+    assert_still_open(&mut ws).await;
+
+    close(&mut ws, 1).await;
+    open(&mut ws, CAP + 2, "changes", serde_json::json!({})).await;
+    open(&mut ws, CAP + 3, "changes", serde_json::json!({})).await;
+    // The place the close freed took the first open and only the second is
+    // refused.
+    assert_eq!(closed_reason(&mut ws, u64::from(CAP) + 3).await, "refused");
+}
+
 /// A bare frame is a presence report or a control verb, both small: one past
 /// the report cap ends the socket, as the cap of the socket did before it
 /// took channel frames. A piece of the same size is within its own cap.
