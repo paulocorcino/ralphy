@@ -724,6 +724,22 @@ test("spawn runs on a channel and opens no socket", () => {
   assert.equal(seen.length, 3);
 });
 
+test("a command on an open page socket outlives the handshake deadline", () => {
+  const { d, sockets, timers, open, push, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const seen = [];
+  withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st.status)));
+  push(sockets[0], "spawn", "run", { status: "spawned", pid: 7 });
+  // A run longer than the handshake deadline keeps streaming.
+  withFakes(() => {
+    for (const t of timers) if (t.ms === 8000) t.fn();
+  });
+  push(sockets[0], "spawn", "run", { status: "output", chunk: "late" });
+  push(sockets[0], "spawn", "run", { status: "exited", code: 0 });
+  assert.deepEqual(seen, ["spawned", "output", "exited"]);
+});
+
 test("a command whose page socket misses the handshake deadline runs nothing", () => {
   const { d, sockets, timers, open, runRetries, withFakes } = pageSockets();
   withFakes(() => d.subscribePresence(() => {}));
