@@ -465,6 +465,37 @@ pub(crate) async fn security_remote_images_route(
     }
 }
 
+/// The `POST /api/security/logins/revoke` body: the login ID to revoke.
+#[derive(serde::Deserialize)]
+pub(crate) struct RevokeLoginForm {
+    pub(crate) login: String,
+}
+
+/// `POST /api/security/logins/revoke`: put one login on the revoked-login
+/// list, so its cookies are refused from the next request on, and push
+/// `logins.dirty`. A malformed ID is a `400`; a failed write is a `500` and
+/// changes nothing. No step-up: a revoke only takes access away. A login may
+/// revoke itself.
+pub(crate) async fn security_logins_revoke_route(
+    state: Arc<auth::AuthState>,
+    pushes: tokio::sync::broadcast::Sender<super::Push>,
+    Form(form): Form<RevokeLoginForm>,
+) -> Response {
+    let Some(login) = cookie::LoginId::parse(&form.login) else {
+        return (StatusCode::BAD_REQUEST, "not a login ID").into_response();
+    };
+    match state.revoke_login(login, now_unix()) {
+        Ok(()) => {
+            super::push(&pushes, super::Push::Logins);
+            Json(serde_json::json!({ "revoked": true })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to write the revoked-login list");
+            (StatusCode::INTERNAL_SERVER_ERROR, "revoke failed").into_response()
+        }
+    }
+}
+
 /// The one answer to a store that cannot be resolved, shared by every mutation
 /// that needs the directory BEFORE it can decide anything.
 fn store_unavailable(e: anyhow::Error) -> Response {
@@ -571,6 +602,16 @@ pub(crate) fn security_routes(s: &RouterShared) -> Router {
             post({
                 let auth = auth.clone();
                 move |form: Form<RemoteImagesForm>| security_remote_images_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/logins/revoke",
+            post({
+                let auth = auth.clone();
+                let pushes = s.pushes.clone();
+                move |form: Form<RevokeLoginForm>| {
+                    security_logins_revoke_route(auth.clone(), pushes.clone(), form)
+                }
             }),
         )
 }

@@ -25,6 +25,7 @@ use subtle::ConstantTimeEq;
 use crate::{cookie, epoch, password, totp};
 
 mod policy;
+mod revoked;
 mod throttle;
 mod token;
 
@@ -34,6 +35,7 @@ pub use policy::{
     set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, LoginOutcome,
     Requirements,
 };
+pub use revoked::{revoked_logins_path_in, RevokedLogins};
 use throttle::LoginThrottle;
 pub use token::{
     effective_token, effective_token_from, ensure_token_at, env_token, generate_token, load_token,
@@ -55,6 +57,9 @@ pub struct SessionAuth {
     /// The live session epoch mixed into every cookie (ADR-0032 amendment §B):
     /// bumping it invalidates all outstanding cookies at once.
     pub epoch: epoch::SessionEpoch,
+    /// The revoked-login list, shared with the [`AuthState`] that revokes: a
+    /// cookie of a login on it is refused.
+    pub revoked: RevokedLogins,
 }
 
 impl SessionAuth {
@@ -65,10 +70,17 @@ impl SessionAuth {
     }
 
     /// The login ID of a valid, unexpired session cookie in a `Cookie:` header,
-    /// signed by this daemon's token at the current epoch; `None` otherwise.
+    /// signed by this daemon's token at the current epoch, of a login that was
+    /// not revoked; `None` otherwise.
     pub fn cookie_login(&self, cookie_header: Option<&str>, now: u64) -> Option<cookie::LoginId> {
+        self.live_claims(cookie_header, now).map(|c| c.login)
+    }
+
+    /// The claims of a cookie that [`cookie_login`](Self::cookie_login) accepts.
+    fn live_claims(&self, cookie_header: Option<&str>, now: u64) -> Option<cookie::Claims> {
         let value = cookie::from_cookie_header(cookie_header)?;
-        cookie::verify_claims(&self.token, self.epoch.get(), &value, now).map(|c| c.login)
+        let claims = cookie::verify_claims(&self.token, self.epoch.get(), &value, now)?;
+        (!self.revoked.contains(&claims.login)).then_some(claims)
     }
 
     /// Attempt a login with anti-replay (amendment §D). The TOTP `code` must match
@@ -138,8 +150,7 @@ impl SessionAuth {
         cookie_header: Option<&str>,
         now: u64,
     ) -> Option<(String, cookie::SessionKind)> {
-        let value = cookie::from_cookie_header(cookie_header)?;
-        let claims = cookie::verify_claims(&self.token, self.epoch.get(), &value, now)?;
+        let claims = self.live_claims(cookie_header, now)?;
         let new_exp = cookie::slide_exp(claims.kind, claims.iat, now);
         if new_exp.saturating_sub(claims.exp) < claims.kind.slide_min_secs() {
             return None;
@@ -272,6 +283,14 @@ pub struct AuthState {
     /// `boot`; a detached temp path for `localhost`/`fixed` so tests never touch
     /// the global store.
     last_step_path: PathBuf,
+    /// The revoked-login list, shared with any `Session` policy inside.
+    revoked: RevokedLogins,
+    /// The file of the list: the real store under `boot`, a detached temp
+    /// path for `localhost`/`fixed`, as `last_step_path` is.
+    revoked_path: PathBuf,
+    /// Held across the read, change and write of a revoke, so two revokes at
+    /// once do not lose one.
+    revoke_lock: Mutex<()>,
     throttle: Mutex<LoginThrottle>,
     /// Every host spelling that names this daemon: derived from the bind, plus
     /// whatever the operator declared. See [`allowed_host_set`].
@@ -297,14 +316,17 @@ impl AuthState {
         epoch: epoch::SessionEpoch,
         declared_hosts: &[String],
     ) -> Result<Arc<AuthState>> {
-        let last_step_path = totp::last_step_path_in(&store_dir()?);
+        let dir = store_dir()?;
         let state = AuthState {
             policy: RwLock::new(AuthPolicy::Localhost),
             bind_ip: bound_addr.ip(),
             bound_addr,
             boot_token: token,
             epoch,
-            last_step_path,
+            last_step_path: totp::last_step_path_in(&dir),
+            revoked: RevokedLogins::default(),
+            revoked_path: revoked_logins_path_in(&dir),
+            revoke_lock: Mutex::new(()),
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bound_addr.ip(), declared_hosts),
             declared_hosts: declared_host_set(declared_hosts),
@@ -325,6 +347,9 @@ impl AuthState {
             boot_token: None,
             epoch: epoch::SessionEpoch::in_memory_detached(),
             last_step_path: detached_last_step_path(),
+            revoked: RevokedLogins::default(),
+            revoked_path: detached_revoked_path(),
+            revoke_lock: Mutex::new(()),
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind_ip, &[]),
             declared_hosts: Vec::new(),
@@ -335,8 +360,14 @@ impl AuthState {
     /// Wrap a fixed, pre-built policy (tests that drive a specific `Session`/
     /// `Bearer` policy through the router). Rebuild is a no-op relative to the
     /// given policy — it is not recomputed from disk.
+    /// A `Session` policy keeps its own revoked-login list: a revoke on this
+    /// state changes that list.
     pub fn fixed(policy: AuthPolicy, epoch: epoch::SessionEpoch) -> Arc<AuthState> {
         let bind_ip = IpAddr::from([127, 0, 0, 1]);
+        let revoked = match &policy {
+            AuthPolicy::Session(s) => s.revoked.clone(),
+            AuthPolicy::Localhost | AuthPolicy::Bearer(_) => RevokedLogins::default(),
+        };
         Arc::new(AuthState {
             policy: RwLock::new(policy),
             bind_ip,
@@ -344,6 +375,9 @@ impl AuthState {
             boot_token: None,
             epoch,
             last_step_path: detached_last_step_path(),
+            revoked,
+            revoked_path: detached_revoked_path(),
+            revoke_lock: Mutex::new(()),
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind_ip, &[]),
             declared_hosts: Vec::new(),
@@ -457,16 +491,21 @@ impl AuthState {
     }
 
     /// Recompute the policy from disk (seed, password, require-login flag, token)
-    /// and swap it in, and re-read the remote-images flag. Called after any
-    /// security mutation so the gate takes effect immediately. The signing key is the on-disk token if present (so a re-mint
-    /// wins), else the boot token.
+    /// and swap it in, and re-read the remote-images flag and the revoked-login
+    /// list. Called after any security mutation so the gate takes effect
+    /// immediately. The signing key is the on-disk token if present (so a
+    /// re-mint wins), else the boot token.
     pub fn rebuild(&self) -> Result<()> {
         let dir = store_dir()?;
         let token = load_token_from(&token_path_in(&dir))?.or_else(|| self.boot_token.clone());
         let seed = totp::load_seed_from(&totp::seed_path_in(&dir))?;
         let pw = password::load_from(&password::password_path_in(&dir))?;
         let require_login = require_login_enabled_in(&dir);
-        let next = compute_policy(
+        self.revoked.replace(revoked::load(
+            &self.revoked_path,
+            crate::routes::now_unix(),
+        )?);
+        let next = policy::compute_policy_with(
             self.bind_ip,
             token,
             seed,
@@ -475,7 +514,10 @@ impl AuthState {
                 login: require_login,
                 token: require_token_enabled_in(&dir)?,
             },
-            self.epoch.clone(),
+            policy::Shared {
+                epoch: self.epoch.clone(),
+                revoked: self.revoked.clone(),
+            },
         )?;
         *self.policy.write().expect("auth policy lock poisoned") = next;
         self.remote_images
@@ -486,6 +528,25 @@ impl AuthState {
     /// Whether the operator opted into remote images (the CSP `img-src https:`).
     pub fn remote_images(&self) -> bool {
         self.remote_images.load(Ordering::Relaxed)
+    }
+
+    /// Revoke one login: put `login` on the revoked-login list until no cookie
+    /// of it can still be valid, write the list, and refuse that login's
+    /// cookies from the next check on. The list is not changed when the write
+    /// fails.
+    pub fn revoke_login(&self, login: cookie::LoginId, now: u64) -> Result<()> {
+        let _held = self.revoke_lock.lock().expect("revoke lock poisoned");
+        let entries = revoked::load(&self.revoked_path, now)?;
+        let cap = now.saturating_add(cookie::REMEMBERED_ABSOLUTE_TTL_SECS);
+        let entries = revoked::add(entries, login, cap, now);
+        revoked::write(&self.revoked_path, &entries)?;
+        self.revoked.replace(entries);
+        Ok(())
+    }
+
+    /// Whether `login` was revoked.
+    pub fn login_revoked(&self, login: &cookie::LoginId) -> bool {
+        self.revoked.contains(login)
     }
 
     /// Invalidate every outstanding session cookie (bump the epoch). Real
@@ -518,12 +579,22 @@ impl AuthState {
 /// tests and the frictionless `Localhost`/`fixed` states never write the real
 /// global store (mirrors [`epoch::SessionEpoch::in_memory_detached`]).
 fn detached_last_step_path() -> PathBuf {
-    // In its own directory: `record_step` makes the parent owner-only, and on
-    // Linux the shared temp dir belongs to root, so a chmod there fails and the
-    // step is never recorded.
+    detached_store_file("ralphy-laststep", "daemon-totp-laststep")
+}
+
+/// A unique throwaway path for a detached auth state's revoked-login list.
+fn detached_revoked_path() -> PathBuf {
+    detached_store_file("ralphy-revoked", "daemon-revoked-logins")
+}
+
+/// `file` in a new directory `<prefix>-<ulid>` of the temp dir.
+fn detached_store_file(prefix: &str, file: &str) -> PathBuf {
+    // In its own directory: a write makes the parent owner-only, and on Linux
+    // the shared temp dir belongs to root, so a chmod there fails and the file
+    // is never written.
     std::env::temp_dir()
-        .join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
-        .join("daemon-totp-laststep")
+        .join(format!("{prefix}-{}", ulid::Ulid::new()))
+        .join(file)
 }
 
 /// Constant-time byte equality: length-checked, then `subtle` compares the

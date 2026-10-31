@@ -217,6 +217,7 @@ async fn the_guard_hands_the_login_id_to_the_request() {
         totp: rfc_seed(),
         password: None,
         epoch: session_epoch.clone(),
+        revoked: auth::RevokedLogins::default(),
     }));
     let state = auth::AuthState::fixed(policy, session_epoch.clone());
     let probe = |req: Request<Body>| async move {
@@ -250,6 +251,61 @@ async fn the_guard_hands_the_login_id_to_the_request() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(body_text(resp).await, login.to_string());
+}
+
+/// After a revoke, the guard refuses the cookie of the revoked login and still
+/// lets in the cookie of another login.
+#[tokio::test]
+async fn a_revoked_login_is_refused_and_another_is_not() {
+    let session_epoch = epoch::SessionEpoch::in_memory_detached();
+    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
+        token: "tok".to_string(),
+        totp: rfc_seed(),
+        password: None,
+        epoch: session_epoch.clone(),
+        revoked: auth::RevokedLogins::default(),
+    }));
+    let state = auth::AuthState::fixed(policy, session_epoch.clone());
+    let app = Router::new()
+        .route("/api/probe", axum::routing::get(|| async { "in" }))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_auth,
+        ));
+    let now = now_unix();
+    let cookie_of = |login| {
+        let value = cookie::sign(
+            "tok",
+            session_epoch.get(),
+            cookie::SessionKind::Standard,
+            now,
+            now + 600,
+            login,
+        );
+        format!("ralphy_session={value}")
+    };
+    let status = |cookie: String| {
+        let app = app.clone();
+        async move {
+            app.oneshot(
+                Request::builder()
+                    .uri("/api/probe")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+        }
+    };
+    let (revoked, other) = (cookie::LoginId::mint(), cookie::LoginId::mint());
+    assert_eq!(status(cookie_of(revoked)).await, StatusCode::OK);
+
+    state.revoke_login(revoked, now).expect("revoke the login");
+
+    assert_eq!(status(cookie_of(revoked)).await, StatusCode::UNAUTHORIZED);
+    assert_eq!(status(cookie_of(other)).await, StatusCode::OK);
 }
 
 /// A successful login answers with the login ID it minted, the same one its

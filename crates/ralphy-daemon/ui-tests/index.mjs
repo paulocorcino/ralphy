@@ -40,6 +40,7 @@ import "./wb-console-keys.test.mjs";
 import "./wb-console-touch.test.mjs";
 import "./wb-console-feeds.test.mjs";
 import "./wb-attention.test.mjs";
+import "./wb-login-notice.test.mjs";
 import "./wb-presence.test.mjs";
 import "./wb-console-dormancy.test.mjs";
 import "./wb-console-name.test.mjs";

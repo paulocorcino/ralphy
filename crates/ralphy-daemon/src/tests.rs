@@ -89,6 +89,7 @@ fn session_router_at(registry_path: PathBuf, token: &str) -> Router {
         totp: rfc_seed(),
         password: None,
         epoch: session_epoch.clone(),
+        revoked: auth::RevokedLogins::default(),
     }));
     let id = identity::Identity {
         id: ulid::Ulid::nil(),

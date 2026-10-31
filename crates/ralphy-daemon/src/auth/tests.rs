@@ -12,6 +12,9 @@ fn state_for(bind: IpAddr, port: u16, declared: &[&str]) -> AuthState {
         boot_token: None,
         epoch: epoch::SessionEpoch::in_memory_detached(),
         last_step_path: detached_last_step_path(),
+        revoked: RevokedLogins::default(),
+        revoked_path: detached_revoked_path(),
+        revoke_lock: Mutex::new(()),
         throttle: Mutex::new(LoginThrottle::new()),
         allowed_hosts: allowed_host_set(bind, &declared),
         declared_hosts: declared_host_set(&declared),
@@ -176,6 +179,7 @@ pub(super) fn session_over(token: &str) -> AuthPolicy {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     }))
 }
 
@@ -186,6 +190,7 @@ fn session_login_and_cookie_valid() {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     };
     // T=59 → RFC vector code 287082 mints a cookie that then validates.
     let cookie = s
@@ -209,6 +214,7 @@ fn session_login_requires_password_when_set() {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: Some(password::Hash::hash_password("pw")),
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     };
     assert!(
         s.login("287082", Some("pw"), 59).is_some(),
@@ -235,6 +241,7 @@ fn a_bumped_epoch_invalidates_a_live_session_cookie() {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: ep.clone(),
+        revoked: RevokedLogins::default(),
     };
     let cookie = s.login("287082", None, 59).expect("valid login");
     let header = format!("{}={cookie}", cookie::COOKIE_NAME);
@@ -253,6 +260,7 @@ fn login_checked_rejects_a_replayed_step() {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     };
     // T=59 → step 1 (59/30), RFC code 287082.
     let out = s.login_checked("287082", None, cookie::SessionKind::Standard, 59, None);
@@ -291,6 +299,7 @@ fn slide_cookie_reissues_only_past_the_hysteresis() {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     };
     // Log in at T=59 to mint a real cookie (iat=59).
     let cookie = s.login("287082", None, 59).expect("login");
@@ -315,6 +324,7 @@ fn a_remembered_login_mints_a_remembered_cookie_with_its_own_hysteresis() {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     };
     let out = s.login_checked("287082", None, cookie::SessionKind::Remembered, 59, None);
     let (cookie, kind) = match out {
@@ -354,6 +364,7 @@ fn rfc_session() -> SessionAuth {
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),
+        revoked: RevokedLogins::default(),
     }
 }
 

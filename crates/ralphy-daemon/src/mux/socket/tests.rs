@@ -149,6 +149,7 @@ async fn a_lagged_push_receiver_sends_every_push_once() {
     assert_eq!(count(&commands, "repos.dirty"), 1, "got: {verbs:?}");
     assert_eq!(count(&commands, "peers.dirty"), 1, "got: {verbs:?}");
     assert_eq!(count(&commands, "attention.dirty"), 1, "got: {verbs:?}");
+    assert_eq!(count(&commands, "logins.dirty"), 1, "got: {verbs:?}");
     let desk_tabs: Vec<&serde_json::Value> = commands
         .iter()
         .filter(|c| c.verb == "desk.dirty")
@@ -192,6 +193,71 @@ async fn a_closed_sessions_channel_keeps_the_heartbeat() {
 #[tokio::test]
 async fn a_closed_pushes_channel_keeps_the_heartbeat() {
     a_closed_channel_keeps_the_heartbeat(false).await;
+}
+
+/// Send `channel.open` for `channel` of a kind no channel has: the daemon
+/// refuses it.
+async fn open_unknown_kind(ws: &mut Ws, channel: u32) {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message as Wire;
+    let frame = Frame::Command(Command {
+        id: 0,
+        verb: "channel.open".to_string(),
+        payload: serde_json::json!({ "channel": channel, "kind": "no-such-kind" }),
+    });
+    ws.send(Wire::Binary(protocol::encode(&frame).into()))
+        .await
+        .unwrap();
+}
+
+/// The `channel.closed` reasons in `commands`, by channel.
+fn closed(commands: &[Command]) -> Vec<(u64, String)> {
+    commands
+        .iter()
+        .filter(|c| c.verb == "channel.closed")
+        .map(|c| {
+            let channel = c.payload["channel"].as_u64().unwrap();
+            (channel, c.payload["reason"].as_str().unwrap().to_string())
+        })
+        .collect()
+}
+
+/// A page socket let in under a login ends at its next `channel.open` once
+/// that login is revoked. Before the revoke, a refused open leaves the
+/// socket open.
+#[tokio::test]
+async fn a_revoked_login_opens_no_channel() {
+    let (_sessions_tx, sessions) = broadcast::channel(4);
+    let (_pushes_tx, pushes) = broadcast::channel(4);
+    let (_stop, shutdown) = watch::channel(false);
+    let auth = crate::auth::AuthState::localhost();
+    let login = crate::cookie::LoginId::mint();
+    let mut served = page(
+        sessions,
+        pushes,
+        presence_board::Shared::default(),
+        shutdown,
+    );
+    served.login = Login::of(auth.clone(), Some(login));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = one_page(served, None);
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
+        .await
+        .unwrap();
+
+    open_unknown_kind(&mut ws, 1).await;
+    let (commands, _, ended) = read_for(&mut ws, Duration::from_millis(500)).await;
+    assert_eq!(closed(&commands), [(1, "refused".to_string())]);
+    assert!(!ended, "before the revoke the socket stays open");
+
+    auth.revoke_login(login, crate::routes::now_unix())
+        .expect("revoke the login");
+    open_unknown_kind(&mut ws, 2).await;
+    let (commands, _, ended) = read_for(&mut ws, Duration::from_secs(5)).await;
+    assert_eq!(closed(&commands), [(2, "refused".to_string())]);
+    assert!(ended, "after the revoke the open ends the socket");
 }
 
 /// The board's answer within `within`: whether the operator is present.
