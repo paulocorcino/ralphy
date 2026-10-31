@@ -12,10 +12,12 @@ use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use axum::http::HeaderMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use crate::cookie::LoginId;
 use crate::device::{self, DeviceId, DeviceKey};
 use crate::owner_only;
+use crate::routes::Push;
 
 /// Lines older than this are removed (D3).
 pub const RETENTION_SECS: i64 = 90 * 24 * 3600;
@@ -32,7 +34,7 @@ pub fn log_path_in(dir: &Path) -> PathBuf {
 }
 
 /// What an event records (D4).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
     LoginOk,
@@ -49,6 +51,12 @@ pub enum EventKind {
     /// A console reattach that asked to take the writer slot (amendment
     /// 2026-10-05).
     ConsoleTakeover,
+    /// A login used from a device other than the one that signed in: one
+    /// line for each pair of login and device (#717).
+    LoginOtherDevice,
+    /// The operator said a `login_other_device` pair was their own use: one
+    /// line for each pair, which then is no longer a notice (#717).
+    LoginNoticeDismissed,
 }
 
 /// Who sent the request.
@@ -156,6 +164,10 @@ pub struct Event {
     pub event: EventKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    /// The login ID of the session that sent the request, on every line
+    /// written under a login, and on `login_ok` the login it started.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub login: Option<String>,
     pub actor: Actor,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<LoginFailure>,
@@ -169,6 +181,10 @@ pub struct Event {
     /// On `command`: the verb, never its arguments (D12).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verb: Option<String>,
+    /// On `login_other_device`: what the login did from the other device,
+    /// `console_launch` or the verb.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub did: Option<String>,
     /// On `command`: the project the verb names, as the caller sent it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
@@ -218,12 +234,14 @@ impl Event {
             at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             event,
             device: device.map(|d| d.to_string()),
+            login: None,
             actor,
             reason: None,
             method: None,
             path: None,
             status: None,
             verb: None,
+            did: None,
             repo: None,
             ip: None,
             server: None,
@@ -245,10 +263,13 @@ impl Event {
 pub struct Audit {
     dir: Option<PathBuf>,
     key: OnceLock<Option<DeviceKey>>,
-    /// Serializes appends and prunes; holds the day of the last prune.
-    writer: Mutex<Option<i64>>,
+    /// Serializes appends and prunes.
+    writer: Mutex<Writer>,
     /// The last normalized facts of each device since the daemon started.
     last_facts: Mutex<HashMap<DeviceId, normalize::Normalized>>,
+    /// Where a change of the login notices is told: `logins.dirty`. `None`
+    /// pushes nothing.
+    pushes: Option<tokio::sync::broadcast::Sender<Push>>,
 }
 
 impl Audit {
@@ -258,8 +279,21 @@ impl Audit {
         Audit {
             dir,
             key: OnceLock::new(),
-            writer: Mutex::new(None),
+            writer: Mutex::new(Writer::default()),
             last_facts: Mutex::new(HashMap::new()),
+            pushes: None,
+        }
+    }
+
+    /// This log, telling each change of the login notices on `pushes`.
+    pub(crate) fn with_pushes(mut self, pushes: tokio::sync::broadcast::Sender<Push>) -> Audit {
+        self.pushes = Some(pushes);
+        self
+    }
+
+    fn push_logins(&self) {
+        if let Some(pushes) = &self.pushes {
+            crate::routes::push(pushes, Push::Logins);
         }
     }
 
@@ -323,25 +357,146 @@ impl Audit {
 
     /// Append `event`. A failed write is logged and never fails the request.
     pub fn record(&self, event: &Event) {
+        self.write(event, None);
+    }
+
+    /// Append `event`, a line written when a login did `did`: a console
+    /// launch or a verb that changes state. When the line's login signed in
+    /// from another device, and this pair of login and device is new, a
+    /// `login_other_device` line follows it.
+    pub fn record_use(&self, event: &Event, did: &str) {
+        self.write(event, Some(did));
+    }
+
+    fn write(&self, event: &Event, did: Option<&str>) {
         let Some(dir) = &self.dir else { return };
-        if let Err(e) = self.append(dir, event) {
-            tracing::warn!(error = format!("{e:#}"), "audit log write failed");
+        match self.append(dir, event, did) {
+            Ok(true) => self.push_logins(),
+            Ok(false) => {}
+            Err(e) => tracing::warn!(error = format!("{e:#}"), "audit log write failed"),
         }
     }
 
-    fn append(&self, dir: &Path, event: &Event) -> Result<()> {
-        let mut line = serde_json::to_vec(event).context("encoding an audit line")?;
-        line.push(b'\n');
+    /// Append `event`, then the report it causes; `true` when a
+    /// `login_other_device` line was written.
+    fn append(&self, dir: &Path, event: &Event, did: Option<&str>) -> Result<bool> {
         let path = log_path_in(dir);
-        let now = chrono::Utc::now().timestamp();
-        let mut last_prune_day = self.writer.lock().expect("audit writer lock poisoned");
-        if *last_prune_day != Some(now / 86_400) {
-            prune(&path, now)?;
-            *last_prune_day = Some(now / 86_400);
-        }
+        // The report is decided and written under this lock, so two uses by
+        // one new pair write one line.
+        let mut writer = self.writer.lock().expect("audit writer lock poisoned");
+        writer.prune_if_due(&path)?;
         owner_only::create_owner_only_dir(dir)?;
-        owner_only::append_owner_only(&path, &line)
+        writer.append(&path, event)?;
+        match did {
+            Some(did) => writer.report_other_device(&path, event, did),
+            None => Ok(false),
+        }
     }
+
+    /// Write a `login_notice_dismissed` line for the pair of `login` and
+    /// `device`, unless the log already has one, and push `logins.dirty`
+    /// when it writes. With the log off, nothing is written.
+    pub(crate) fn dismiss_notice(
+        &self,
+        login: &LoginId,
+        device: Option<&str>,
+        actor: Actor,
+    ) -> Result<()> {
+        let Some(dir) = &self.dir else { return Ok(()) };
+        let path = log_path_in(dir);
+        let login = login.to_string();
+        {
+            // Decided and written under the lock, so two dismissals of one
+            // pair write one line.
+            let mut writer = self.writer.lock().expect("audit writer lock poisoned");
+            writer.prune_if_due(&path)?;
+            if writer.book(&path)?.dismissed(&login, device) {
+                return Ok(());
+            }
+            let mut event = Event::new(EventKind::LoginNoticeDismissed, None, actor);
+            event.device = device.map(str::to_string);
+            event.login = Some(login);
+            owner_only::create_owner_only_dir(dir)?;
+            writer.append(&path, &event)?;
+        }
+        self.push_logins();
+        Ok(())
+    }
+}
+
+/// What the audit writer keeps between appends.
+#[derive(Default)]
+struct Writer {
+    /// The day of the last prune.
+    last_prune_day: Option<i64>,
+    /// Read from the log the first time a login uses the daemon after a
+    /// start or a prune.
+    logins: Option<logins::Logins>,
+}
+
+impl Writer {
+    /// Prune the log at `path` once a day.
+    fn prune_if_due(&mut self, path: &Path) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        if self.last_prune_day != Some(now / 86_400) {
+            prune(path, now)?;
+            self.last_prune_day = Some(now / 86_400);
+            // A prune may remove the lines the book was read from.
+            self.logins = None;
+        }
+        Ok(())
+    }
+
+    /// Append `event` and keep the book, when it is read, in step.
+    fn append(&mut self, path: &Path, event: &Event) -> Result<()> {
+        append_line(path, event)?;
+        if let Some(book) = self.logins.as_mut() {
+            book.note(event);
+        }
+        Ok(())
+    }
+
+    /// The login book, read from the log at `path` the first time.
+    fn book(&mut self, path: &Path) -> Result<&mut logins::Logins> {
+        Ok(match self.logins {
+            Some(ref mut book) => book,
+            None => self.logins.insert(logins::Logins::read(path)?),
+        })
+    }
+
+    /// Append a `login_other_device` line when `event`, written when its
+    /// login did `did`, is the first use of a new pair of login and device;
+    /// `true` when it did.
+    fn report_other_device(&mut self, path: &Path, event: &Event, did: &str) -> Result<bool> {
+        let Some(login) = event.login.as_deref() else {
+            return Ok(false);
+        };
+        if !self
+            .book(path)?
+            .first_use_elsewhere(login, event.device.as_deref())
+        {
+            return Ok(false);
+        }
+        let mut notice = Event::new(EventKind::LoginOtherDevice, None, event.actor);
+        notice.device = event.device.clone();
+        notice.login = Some(login.to_string());
+        notice.did = Some(did.to_string());
+        notice.ip = event.ip.clone();
+        notice.holder = event.holder.clone();
+        if let Err(e) = self.append(path, &notice) {
+            // The book already marked the pair as reported. Read it again
+            // from the log, which has no line for it.
+            self.logins = None;
+            return Err(e);
+        }
+        Ok(true)
+    }
+}
+
+fn append_line(path: &Path, event: &Event) -> Result<()> {
+    let mut line = serde_json::to_vec(event).context("encoding an audit line")?;
+    line.push(b'\n');
+    owner_only::append_owner_only(path, &line)
 }
 
 /// Remove lines older than [`RETENTION_SECS`] at `now`, then the oldest lines
@@ -390,6 +545,7 @@ fn line_time(line: &str) -> Option<i64> {
 }
 
 pub mod facts;
+pub(crate) mod logins;
 pub mod normalize;
 pub mod read;
 

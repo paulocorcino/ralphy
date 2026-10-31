@@ -8,17 +8,19 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
-use super::{ct_eq, SessionAuth};
+use super::{ct_eq, RevokedLogins, SessionAuth};
 use crate::{cookie, epoch, password, totp};
 
 /// The outcome of a [`SessionAuth::login_checked`] attempt.
 pub enum LoginOutcome {
     /// Credentials verified: send `cookie` (with the `Max-Age` of `kind`) and
-    /// persist `step` as the new last consumed TOTP step.
+    /// persist `step` as the new last consumed TOTP step. `login` is the ID
+    /// minted for this login, which the cookie carries.
     Ok {
         cookie: String,
         kind: cookie::SessionKind,
         step: u64,
+        login: cookie::LoginId,
     },
     /// The code/password did not verify.
     BadCredential,
@@ -108,13 +110,42 @@ pub fn upgrade_with_session(
     password: Option<password::Hash>,
     epoch: epoch::SessionEpoch,
 ) -> AuthPolicy {
+    upgrade_with(policy, token, totp, password, Shared::with_epoch(epoch))
+}
+
+/// What a `Session` policy shares with the auth state that built it: the
+/// session epoch and the revoked-login list.
+pub(super) struct Shared {
+    pub(super) epoch: epoch::SessionEpoch,
+    pub(super) revoked: RevokedLogins,
+}
+
+impl Shared {
+    /// `epoch`, with a new empty revoked-login list.
+    fn with_epoch(epoch: epoch::SessionEpoch) -> Shared {
+        Shared {
+            epoch,
+            revoked: RevokedLogins::default(),
+        }
+    }
+}
+
+/// [`upgrade_with_session`], with what the session shares.
+fn upgrade_with(
+    policy: AuthPolicy,
+    token: Option<String>,
+    totp: Option<totp::Seed>,
+    password: Option<password::Hash>,
+    shared: Shared,
+) -> AuthPolicy {
     match (policy, token, totp) {
         (AuthPolicy::Bearer(_), Some(key), Some(seed)) => {
             AuthPolicy::Session(Arc::new(SessionAuth {
                 token: key,
                 totp: seed,
                 password,
-                epoch,
+                epoch: shared.epoch,
+                revoked: shared.revoked,
             }))
         }
         (policy, _, _) => policy,
@@ -219,14 +250,33 @@ pub fn compute_policy(
     require: Requirements,
     epoch: epoch::SessionEpoch,
 ) -> Result<AuthPolicy> {
+    compute_policy_with(
+        bind_ip,
+        token,
+        seed,
+        password,
+        require,
+        Shared::with_epoch(epoch),
+    )
+}
+
+/// [`compute_policy`], with what a `Session` policy shares.
+pub(super) fn compute_policy_with(
+    bind_ip: IpAddr,
+    token: Option<String>,
+    seed: Option<totp::Seed>,
+    password: Option<password::Hash>,
+    require: Requirements,
+    shared: Shared,
+) -> Result<AuthPolicy> {
     match AuthPolicy::for_bind(bind_ip, token.clone())? {
         AuthPolicy::Localhost if require.token => match token.filter(|t| !t.is_empty()) {
-            Some(key) => Ok(upgrade_with_session(
+            Some(key) => Ok(upgrade_with(
                 AuthPolicy::Bearer(key.clone()),
                 Some(key),
                 seed,
                 password,
-                epoch,
+                shared,
             )),
             None => anyhow::bail!(
                 "this daemon requires its access token also on 127.0.0.1, but none is set — \
@@ -239,7 +289,8 @@ pub fn compute_policy(
                 token: key,
                 totp: seed,
                 password,
-                epoch,
+                epoch: shared.epoch,
+                revoked: shared.revoked,
             }))),
             // Gate requested but no seed/token to enforce it → stay open (the
             // enable route mints a token and refuses without a seed, so this is
@@ -247,9 +298,7 @@ pub fn compute_policy(
             // loopback bind, the §4 default.
             _ => Ok(AuthPolicy::Localhost),
         },
-        bearer @ AuthPolicy::Bearer(_) => {
-            Ok(upgrade_with_session(bearer, token, seed, password, epoch))
-        }
+        bearer @ AuthPolicy::Bearer(_) => Ok(upgrade_with(bearer, token, seed, password, shared)),
         session @ AuthPolicy::Session(_) => Ok(session),
     }
 }

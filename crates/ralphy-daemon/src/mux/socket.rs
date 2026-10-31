@@ -48,7 +48,7 @@ pub(crate) struct Page {
 }
 
 /// The login a page socket was let in under: the session epoch and the name
-/// of the auth policy at its upgrade.
+/// of the auth policy at its upgrade, and the login ID of its cookie.
 // ADR-0072 (a network client has no trust until it authenticates) and
 // ADR-0082 (one socket per page): the guard checks a request once, at the
 // upgrade, and a page socket lives on after a logout. Each `channel.open`
@@ -58,6 +58,7 @@ pub(crate) struct Login {
     auth: Arc<auth::AuthState>,
     epoch: u64,
     policy: &'static str,
+    login: Option<crate::cookie::LoginId>,
 }
 
 impl Login {
@@ -69,12 +70,25 @@ impl Login {
             auth,
             epoch,
             policy,
+            login: None,
         }
     }
 
-    /// Whether a logout, a new token or a new policy came after the upgrade.
+    /// The login as it stands now, for a request let in under the cookie of
+    /// `login` (`None` when no cookie let it in).
+    pub(crate) fn of(auth: Arc<auth::AuthState>, login: Option<crate::cookie::LoginId>) -> Login {
+        Login {
+            login,
+            ..Login::now(auth)
+        }
+    }
+
+    /// Whether a logout, a new token, a new policy or a revoke of its login
+    /// came after the upgrade.
     fn changed(&self) -> bool {
-        self.auth.epoch().get() != self.epoch || self.auth.policy().name() != self.policy
+        self.auth.epoch().get() != self.epoch
+            || self.auth.policy().name() != self.policy
+            || self.login.is_some_and(|id| self.auth.login_revoked(&id))
     }
 }
 

@@ -310,6 +310,10 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
         "wb-hosts-dialog.ts",
         include_str!("../../assets/ui/wb-hosts-dialog.ts"),
     ),
+    (
+        "wb-login-notice.ts",
+        include_str!("../../assets/ui/wb-login-notice.ts"),
+    ),
     ("wb-login.ts", include_str!("../../assets/ui/wb-login.ts")),
     (
         "wb-modals-store.ts",

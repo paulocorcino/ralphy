@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 
 use super::{request_may_carry_a_secret, Caller, RouterShared, SessionHost, SocketAudit};
 use crate::protocol::{Frame, Presence};
-use crate::{identity, mux, presence_board};
+use crate::{cookie, identity, mux, presence_board};
 
 /// A change to a shown fact the daemon owns, relayed on every open `/ws` as a
 /// `<fact>.dirty` command with id 0 (ADR-0070 D2 event 1). `/ws` carries them
@@ -31,6 +31,8 @@ pub(crate) enum Push {
     Peers,
     /// The attention list changed (`attention::tick`).
     Attention,
+    /// The revoked-login list changed (`POST /api/security/logins/revoke`).
+    Logins,
 }
 
 impl Push {
@@ -40,24 +42,28 @@ impl Push {
             Push::Repos => "repos.dirty",
             Push::Peers => "peers.dirty",
             Push::Attention => "attention.dirty",
+            Push::Logins => "logins.dirty",
         }
     }
 
     pub(crate) fn payload(&self) -> serde_json::Value {
         match self {
             Push::Desk { tab } => serde_json::json!({ "tab": tab }),
-            Push::Repos | Push::Peers | Push::Attention => serde_json::json!({}),
+            Push::Repos | Push::Peers | Push::Attention | Push::Logins => {
+                serde_json::json!({})
+            }
         }
     }
 
     /// Every push once: what a receiver that lagged sends, because a read
     /// again is harmless and a lost push is not.
-    pub(crate) fn all() -> [Push; 4] {
+    pub(crate) fn all() -> [Push; 5] {
         [
             Push::Desk { tab: None },
             Push::Repos,
             Push::Peers,
             Push::Attention,
+            Push::Logins,
         ]
     }
 }
@@ -199,8 +205,11 @@ pub(crate) fn presence_routes(s: &RouterShared) -> Router {
     Router::new().route(
         "/ws",
         get(
-            move |ws: WebSocketUpgrade, caller: Option<Extension<Caller>>, headers: HeaderMap| {
-                let page = page.page(caller, &headers);
+            move |ws: WebSocketUpgrade,
+                  caller: Option<Extension<Caller>>,
+                  login: Option<Extension<cookie::LoginId>>,
+                  headers: HeaderMap| {
+                let page = page.page(caller, login.map(|Extension(id)| id), &headers);
                 // A bare frame keeps its own smaller cap in the reader.
                 async move {
                     ws.max_message_size(mux::MAX_MESSAGE)
@@ -227,8 +236,13 @@ struct PageShared {
 }
 
 impl PageShared {
-    /// The page socket of one request.
-    fn page(&self, caller: Option<Extension<Caller>>, headers: &HeaderMap) -> mux::Page {
+    /// The page socket of one request, let in under the cookie of `login`.
+    fn page(
+        &self,
+        caller: Option<Extension<Caller>>,
+        login: Option<cookie::LoginId>,
+        headers: &HeaderMap,
+    ) -> mux::Page {
         mux::Page {
             identity: self.host.identity.clone(),
             start: self.start,
@@ -244,7 +258,7 @@ impl PageShared {
                 watchers: self.watchers.clone(),
                 run_exits: self.run_exits.clone(),
             },
-            login: mux::Login::now(self.auth.clone()),
+            login: mux::Login::of(self.auth.clone(), login),
         }
     }
 }

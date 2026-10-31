@@ -261,6 +261,7 @@ test("a page put together from its parts", () => {
   assert.deepEqual(
     COMPONENTS.map((c) => c.name),
     [
+      "wbLoginNotice",
       "wbAccount",
       "wbAttention",
       "wbFiles",

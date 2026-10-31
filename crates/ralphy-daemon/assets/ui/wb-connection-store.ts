@@ -17,9 +17,9 @@
      and its policy;
    - `workbench:log-off`: the operator logs off;
    - `workbench:repos-reread`, `workbench:sessions-reread`,
-     `workbench:desk-reread`, `workbench:release-reread` and
-     `workbench:attention-reread`: a push, a reopened socket or the tab
-     coming back asks to read that fact again;
+     `workbench:desk-reread`, `workbench:release-reread`,
+     `workbench:attention-reread` and `workbench:logins-reread`: a push, a
+     reopened socket or the tab coming back asks to read that fact again;
    - `workbench:board-refresh`, `workbench:panels-reread` and
      `workbench:sockets-resume`.
    The Changes view (wb-changes-panel.ts) tells it which change sets are not
@@ -215,6 +215,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
         sendWindow(window, "workbench:repos-reread", { git: false });
       } else if (verb === "attention.dirty") {
         sendWindow(window, "workbench:attention-reread");
+      } else if (verb === "logins.dirty") {
+        sendWindow(window, "workbench:logins-reread");
       }
     },
 
@@ -226,6 +228,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:repos-reread", { git: true });
       sendWindow(window, "workbench:desk-reread");
       sendWindow(window, "workbench:attention-reread");
+      sendWindow(window, "workbench:logins-reread");
       sendWindow(window, "workbench:board-refresh", { trigger: "reopen" });
       if (window.Alpine.store("projects").openSlug) void window.Alpine.store("runs").hydrateRuns();
     },

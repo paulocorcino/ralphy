@@ -195,13 +195,17 @@ pub(crate) fn router_with_roster(
         ));
     }
     // The audit log (ADR-0074) sits in the store beside `repos.toml`. A store
-    // with no directory (a test's bare relative name) keeps no log.
-    let audit = Arc::new(audit::Audit::in_dir(
-        registry_path
-            .parent()
-            .filter(|dir| !dir.as_os_str().is_empty())
-            .map(Path::to_path_buf),
-    ));
+    // with no directory (a test's bare relative name) keeps no log. It pushes
+    // `logins.dirty` when the login notices change (#717).
+    let audit = Arc::new(
+        audit::Audit::in_dir(
+            registry_path
+                .parent()
+                .filter(|dir| !dir.as_os_str().is_empty())
+                .map(Path::to_path_buf),
+        )
+        .with_pushes(pushes.clone()),
+    );
     let shared = RouterShared {
         daemon_id: identity.as_ref().map(|i| i.id.to_string()),
         identity,

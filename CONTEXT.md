@@ -166,6 +166,10 @@ _Avoid_: fingerprint, telemetry (Ralphy sends nothing out), user agent (one of t
 The daemon's record, one line per event, of each login, logout, **device facts** report, request and command that changed state, with the **device** that sent it (ADR-0074).
 _Avoid_: history (the **desk history** is a different thing), access log, event log.
 
+**Login ID**:
+The random name of one sign-in, carried in its session cookie, that the operator can end alone (ADR-0032 amendment of 2026-10-12).
+_Avoid_: session (the cookie itself), token (the daemon's own secret), device (one browser profile).
+
 **Scroll probe**:
 A developer-only measure of how smooth each scroll of a console is: frame times and where the time went, one record per scroll in a file of the daemon. Only a build with the `scroll-probe` feature has it (ADR-0084).
 _Avoid_: telemetry (nothing leaves the machine), metrics, profiler.
