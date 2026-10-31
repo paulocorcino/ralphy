@@ -46,7 +46,7 @@ impl Liveness {
     }
 
     /// 20 s pings (well under common 30–60 s proxy idle windows), so a silent
-    /// client is released after 45 s.
+    /// client is released 45 s after the last thing it sent.
     pub(crate) fn current() -> Liveness {
         static LIVENESS: OnceLock<Liveness> = OnceLock::new();
         *LIVENESS.get_or_init(|| {
@@ -57,11 +57,6 @@ impl Liveness {
                 .unwrap_or(20_000);
             Liveness::from_ping(Duration::from_millis(ms))
         })
-    }
-
-    /// Whether a client last heard from `heard` ago has gone silent.
-    pub(crate) fn is_silent(&self, heard: Duration) -> bool {
-        heard >= self.silent_after
     }
 }
 
@@ -145,12 +140,15 @@ pub(crate) async fn session_ws(
     open(&mut outbox, id, &opening, &mut attach, &mut traffic);
     // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
     // bytes, so a NAT/proxy idle-timeout silently drops it. The pongs the pings
-    // earn are what `heard` counts (see LIVENESS above).
+    // earn are what resets the silence (see LIVENESS above).
     let liveness = Liveness::current();
     let mut ping = tokio::time::interval(liveness.ping_every);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     ping.tick().await; // consume the immediate first tick — no ping on connect
-    let mut heard = Instant::now();
+                       // Reset on each message from the client, so the release comes
+                       // `silent_after` past the last one, not at the next ping tick.
+    let silence = tokio::time::sleep(liveness.silent_after);
+    tokio::pin!(silence);
     // Each ping carries its own number, so a pong is timed against its ping.
     let mut ping_seq: u64 = 0;
 
@@ -166,9 +164,9 @@ pub(crate) async fn session_ws(
             _ = &mut notified => ControlFlow::Break(Some(
                 evict.reason().unwrap_or(session::EndReason::ChildExited),
             )),
-            _ = ping.tick() => {
-                on_ping(&mut outbox, &mut traffic, &liveness, heard, &mut ping_seq)
-            }
+            _ = ping.tick() => on_ping(&mut outbox, &mut traffic, &mut ping_seq),
+            // Silent, not announced, as a dropped link (issue #334).
+            () = &mut silence => ControlFlow::Break(None),
             changed = attach.size.changed(), if sizes => {
                 on_size(changed, &mut outbox, id, &mut attach, &mut sizes)
             }
@@ -179,7 +177,8 @@ pub(crate) async fn session_ws(
                 silent_if_err(hand_on(permit, &mut outbox.queued))
             }
             incoming = from_client.next() => {
-                on_client(incoming, &mut heard, &attach, &mut traffic)
+                hear(&incoming, silence.as_mut(), &liveness);
+                on_client(incoming, &attach, &mut traffic)
             }
         };
         if let ControlFlow::Break(end) = flow {
@@ -201,19 +200,9 @@ pub(crate) async fn session_ws(
     drop(attach);
 }
 
-/// Silent, not announced: a client that is in fact alive reads the drop as a
-/// flaky link and reattaches (issue #334). The ping goes before the frames
-/// that wait in the outbox, so its round trip times the link, not the queue.
-fn on_ping(
-    outbox: &mut Outbox,
-    traffic: &mut Traffic,
-    liveness: &Liveness,
-    heard: Instant,
-    ping_seq: &mut u64,
-) -> Flow {
-    if liveness.is_silent(heard.elapsed()) {
-        return ControlFlow::Break(None);
-    }
+/// The ping goes before the frames that wait in the outbox, so its round
+/// trip times the link, not the queue.
+fn on_ping(outbox: &mut Outbox, traffic: &mut Traffic, ping_seq: &mut u64) -> Flow {
     *ping_seq += 1;
     let payload = ping_seq.to_le_bytes();
     traffic.ping_sent(&payload, Instant::now());
@@ -261,17 +250,25 @@ fn on_output(
     }
 }
 
+/// A message that arrived, of any kind, puts the release `silent_after`
+/// from now.
+fn hear(
+    incoming: &Option<Result<Message, axum::Error>>,
+    silence: std::pin::Pin<&mut tokio::time::Sleep>,
+    liveness: &Liveness,
+) {
+    if matches!(incoming, Some(Ok(_))) {
+        silence.reset(tokio::time::Instant::now() + liveness.silent_after);
+    }
+}
+
 /// One message from the client. Every message that arrives, of any kind,
-/// counts as `heard`.
+/// has already reset the silence.
 fn on_client(
     incoming: Option<Result<Message, axum::Error>>,
-    heard: &mut Instant,
     attach: &session::Attachment,
     traffic: &mut Traffic,
 ) -> Flow {
-    if matches!(incoming, Some(Ok(_))) {
-        *heard = Instant::now();
-    }
     match incoming {
         Some(Ok(Message::Binary(bytes))) => {
             traffic.inbound(bytes.len());
@@ -285,7 +282,7 @@ fn on_client(
             traffic.pong_received(&payload, Instant::now());
             ControlFlow::Continue(())
         }
-        // Text and ping: counted in `heard`, nothing else.
+        // Text and ping: they reset the silence, nothing else.
         Some(Ok(_)) => ControlFlow::Continue(()),
         None | Some(Err(_)) => ControlFlow::Break(None),
     }

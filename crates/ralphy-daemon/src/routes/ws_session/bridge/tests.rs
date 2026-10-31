@@ -8,6 +8,7 @@ use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite;
 
 mod input;
+mod liveness;
 
 /// A console whose child has exited: the eviction is signalled and the
 /// attachment's output stream is the test's own, holding `chunks`, so the
