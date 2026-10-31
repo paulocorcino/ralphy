@@ -2,11 +2,11 @@
    The FILES tree of the open project: an Alpine component on the one element
    after the project rows of the sidebar, shown for the open project.
 
-   It owns the Wunderbaum tree and its `/ws/tree` socket, the level cache, the
-   FILES search, the panel's states (loading, refused, stale, not live, the
-   peer down), the tree's context menu, and the move and create gestures. A
-   file opens through `openTab` of the Alpine store `tabs` and a note through
-   its `openNote` (wb-tabs-store.ts). The move picker is its own
+   It owns the Wunderbaum tree and its `tree` channel of the page socket, the
+   level cache, the FILES search, the panel's states (loading, refused, stale,
+   not live, the peer down), the tree's context menu, and the move and create
+   gestures. A file opens through `openTab` of the Alpine store `tabs` and a
+   note through its `openNote` (wb-tabs-store.ts). The move picker is its own
    component (wb-move-dialog.ts). The mount and the teardown of the tree are
    in wb-files-mount.ts, and the level cache is in wb-files-levels.ts.
 
@@ -106,7 +106,7 @@ export function wbFiles() {
         if (this.$store.projects.openSlug) this.mountTree();
       });
     },
-    // The tree, its `/ws/tree` socket and its context menu (wb-files-mount.ts).
+    // The tree, its `tree` channel and its context menu (wb-files-mount.ts).
     mountTree() {
       mountTree(this);
     },
@@ -224,7 +224,7 @@ export function wbFiles() {
         : "";
     },
 
-    _treeSub: null as TreeSub | null, // the live `/ws/tree` subscription for the open project, if any
+    _treeSub: null as TreeSub | null, // the `tree` channel of the open project, if any
     // Tree memory, `null` until `treeMem` creates it:
     //   _treeCache     directory levels already shown, keyed `repo\nrel`.
     //                  Survives closing a project. Memory only.

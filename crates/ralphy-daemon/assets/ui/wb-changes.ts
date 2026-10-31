@@ -108,9 +108,9 @@ function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
 }
 
 // The run-completion nudge filter (#310, ADR-0036 amendment): the daemon pushes
-// `changes.dirty` to EVERY `/ws/tree` connection with no subscription verb, so
-// the repo match happens HERE — a nudge for a repo this browser does not have
-// open must change nothing on screen.
+// `changes.dirty` on EVERY `changes` channel of a page socket, with no watch
+// verb, so the repo match happens HERE — a nudge for a repo this browser does
+// not have open must change nothing on screen.
 function shouldReload(frame: PushFrame | null | undefined, openSlug: string | null | undefined) {
   return !!(
     frame &&
