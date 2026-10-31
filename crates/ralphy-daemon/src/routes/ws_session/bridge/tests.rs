@@ -1,14 +1,19 @@
 use super::*;
-use crate::routes::ws_session::outbound::SESSION_SIZE;
+use crate::mux::{Mode, Writer};
+use crate::routes::ws_session::outbound::{CONSOLE_QUEUE, SESSION_SIZE};
 use crate::routes::ws_session::traffic::SESSION_OPEN;
 use std::sync::{Arc, Mutex};
 
 use axum::extract::ws::WebSocketUpgrade;
+use futures_util::stream::SplitStream;
 use futures_util::StreamExt;
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite;
 
 mod input;
-mod liveness;
+
+/// The channel of the page socket the console is served on.
+const CHANNEL: u32 = 1;
 
 /// A console whose child has exited: the eviction is signalled and the
 /// attachment's output stream is the test's own, holding `chunks`, so the
@@ -67,8 +72,9 @@ impl axum::serve::Listener for OneConnection {
     }
 }
 
-/// Serve `session_ws` for one client on `listener`; `gzip` is what the
-/// client's tab asked for.
+/// Serve the channel bridge for one client on `listener`, on channel
+/// [`CHANNEL`] of a page socket's writer; `gzip` is what the client's tab
+/// asked for.
 fn serve_bridge<L>(
     listener: L,
     id: session::SessionId,
@@ -91,24 +97,22 @@ where
                 .expect("one client connects");
             let shutdown = shutdown.clone();
             async move {
-                ws.on_upgrade(move |socket| {
-                    session_ws(
-                        socket,
-                        attach,
-                        id,
-                        "daemon".to_string(),
-                        "test".to_string(),
-                        SessionLabels {
-                            name: None,
-                            checkout: None,
-                            watching: false,
-                        },
-                        Tab {
-                            gzip,
-                            ..Tab::default()
-                        },
-                        shutdown,
-                    )
+                ws.on_upgrade(move |socket| async move {
+                    let (sink, stream) = socket.split();
+                    let writer = Writer::start(sink, Mode::Channels);
+                    let out = writer.channel_with_depth(CHANNEL, CONSOLE_QUEUE);
+                    let (inbound, mut frames) = mpsc::channel(64);
+                    let tab = Tab {
+                        gzip,
+                        ..Tab::default()
+                    };
+                    let bridge =
+                        channel::bridge_attached(attach, id, tab, &out, &mut frames, shutdown);
+                    tokio::pin!(bridge);
+                    tokio::select! {
+                        () = &mut bridge => {}
+                        () = join_pieces(stream, inbound) => bridge.await,
+                    }
                 })
             }
         }),
@@ -120,16 +124,81 @@ where
     })
 }
 
-/// What a client saw: the output, where `session-end` came in it, and
-/// whether the `Close` frame followed.
+/// Join the pieces the client sends on [`CHANNEL`] into inner frames for
+/// the bridge, until the client leaves; the dropped `inbound` then tells the
+/// bridge so.
+async fn join_pieces(mut stream: SplitStream<WebSocket>, inbound: mpsc::Sender<Vec<u8>>) {
+    let mut joiner = protocol::Joiner::default();
+    while let Some(Ok(message)) = stream.next().await {
+        let Message::Binary(bytes) = message else {
+            continue;
+        };
+        let Ok(Frame::Channel {
+            channel: CHANNEL,
+            more,
+            piece,
+        }) = protocol::decode(&bytes)
+        else {
+            panic!("the client sends only pieces of channel {CHANNEL}");
+        };
+        let joined = joiner.push(more, &piece).expect("a frame within the cap");
+        if let Some(inner) = joined {
+            if inbound.send(inner).await.is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// The wire messages that carry `frame` on [`CHANNEL`].
+fn channel_messages(frame: &Frame) -> Vec<tungstenite::Message> {
+    protocol::cut(CHANNEL, &protocol::encode(frame))
+        .iter()
+        .map(|piece| tungstenite::Message::Binary(protocol::encode(piece).into()))
+        .collect()
+}
+
+/// The next inner frame the client gets on [`CHANNEL`], joined from its
+/// pieces, or `None` when the socket ends.
+async fn next_inner(
+    client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
+              + Unpin),
+) -> Option<Vec<u8>> {
+    let mut joiner = protocol::Joiner::default();
+    while let Some(Ok(message)) = client.next().await {
+        let tungstenite::Message::Binary(bytes) = message else {
+            continue;
+        };
+        match protocol::decode(&bytes).expect("a well-formed frame") {
+            Frame::Channel {
+                channel: CHANNEL,
+                more,
+                piece,
+            } => {
+                if let Some(inner) = joiner.push(more, &piece).expect("a frame within the cap") {
+                    return Some(inner);
+                }
+            }
+            other @ (Frame::Terminal { .. }
+            | Frame::Command(_)
+            | Frame::Presence(_)
+            | Frame::Channel { .. }) => {
+                panic!("the bridge sends only pieces of channel {CHANNEL}: {other:?}")
+            }
+        }
+    }
+    None
+}
+
+/// What a client saw: the output, and where `session-end` came in it.
 struct Seen {
     received: Vec<u8>,
     ended_after: Option<usize>,
-    closed: bool,
 }
 
-/// Read until the `Close` frame, pausing `pause` after every message.
-async fn read_until_close(
+/// Read until `session-end`, pausing `pause` after every inner frame. A
+/// channel has no Close: the end is the last frame the bridge sends on it.
+async fn read_until_end(
     client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
               + Unpin),
     pause: Duration,
@@ -137,33 +206,14 @@ async fn read_until_close(
     let mut seen = Seen {
         received: Vec::new(),
         ended_after: None,
-        closed: false,
     };
-    // The bridge drops the socket right after its Close frame, so the
-    // read that follows the Close can fail: stop at the Close.
-    while let Some(Ok(message)) = client.next().await {
-        let bytes = match message {
-            tungstenite::Message::Binary(bytes) => bytes,
-            tungstenite::Message::Close(_) => {
-                seen.closed = true;
-                break;
-            }
-            tungstenite::Message::Text(_)
-            | tungstenite::Message::Ping(_)
-            | tungstenite::Message::Pong(_)
-            | tungstenite::Message::Frame(_) => continue,
-        };
-        match protocol::decode(&bytes).expect("a well-formed frame") {
-            Frame::Terminal { data, .. } => {
-                assert!(
-                    seen.ended_after.is_none(),
-                    "output arrived after session-end"
-                );
-                seen.received.extend_from_slice(&data);
-            }
+    while let Some(inner) = next_inner(client).await {
+        match protocol::decode(&inner).expect("a well-formed inner frame") {
+            Frame::Terminal { data, .. } => seen.received.extend_from_slice(&data),
             Frame::Command(cmd) if cmd.verb == "session-end" => {
                 assert_eq!(cmd.payload["reason"], "child-exited");
                 seen.ended_after = Some(seen.received.len());
+                break;
             }
             Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. } => {}
         }
@@ -196,10 +246,10 @@ async fn queued_output_reaches_the_client_before_the_session_end() {
         .expect("the bridge accepts the socket");
     let seen = tokio::time::timeout(
         Duration::from_secs(10),
-        read_until_close(&mut client, Duration::ZERO),
+        read_until_end(&mut client, Duration::ZERO),
     )
     .await
-    .expect("the bridge closes the socket after session-end");
+    .expect("the bridge sends session-end");
     server.abort();
 
     assert_eq!(
@@ -211,14 +261,14 @@ async fn queued_output_reaches_the_client_before_the_session_end() {
 }
 
 /// A client that takes the queue too slowly cannot hold back the end:
-/// the drain stops at its own limit, so `session-end` and `Close` are
-/// still sent inside the 5 s end window. The connection is a 4 KiB pipe
+/// the drain stops at its own limit, so `session-end` is still sent
+/// inside the 5 s end window. The connection is a 4 KiB pipe
 /// and the client reads one chunk per 100 ms, so 100 chunks need about
 /// 10 s. Time is paused: tokio moves the clock forward only while every
 /// task waits, so the limits are measured in test time, not in the speed
 /// of the machine.
 #[tokio::test(start_paused = true)]
-async fn a_drain_that_cannot_finish_still_sends_the_end_and_the_close() {
+async fn a_drain_that_cannot_finish_still_sends_the_end() {
     let chunks: Vec<Vec<u8>> = (0..100u8).map(|n| vec![n; 64 * 1024]).collect();
     let (id, attach) = exited_session(&chunks, 128);
     let (server_io, client_io) = tokio::io::duplex(4096);
@@ -229,35 +279,29 @@ async fn a_drain_that_cannot_finish_still_sends_the_end_and_the_close() {
         .expect("the bridge upgrades the connection");
     let seen = tokio::time::timeout(
         Duration::from_secs(15),
-        read_until_close(&mut client, Duration::from_millis(100)),
+        read_until_end(&mut client, Duration::from_millis(100)),
     )
     .await
-    .expect("the bridge closes the socket inside its end window");
+    .expect("the bridge sends session-end inside its end window");
     server.abort();
 
     assert!(seen.ended_after.is_some(), "the end is announced");
-    assert!(seen.closed, "the Close frame follows the end");
     assert!(
         seen.received.len() < chunks.concat().len(),
         "the drain stopped at its limit instead of sending everything"
     );
 }
 
-/// The next binary frame the client gets, decoded.
+/// The next inner frame the client gets, decoded.
 async fn next_frame(
     client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
               + Unpin),
 ) -> Frame {
-    loop {
-        let message = tokio::time::timeout(Duration::from_secs(10), client.next())
-            .await
-            .expect("a frame within 10 s")
-            .expect("the socket is open")
-            .expect("a well-formed message");
-        if let tungstenite::Message::Binary(bytes) = message {
-            return protocol::decode(&bytes).expect("a well-formed frame");
-        }
-    }
+    let inner = tokio::time::timeout(Duration::from_secs(10), next_inner(client))
+        .await
+        .expect("a frame within 10 s")
+        .expect("the socket is open");
+    protocol::decode(&inner).expect("a well-formed inner frame")
 }
 
 /// The session size as a frame says it, or `None` for another frame.

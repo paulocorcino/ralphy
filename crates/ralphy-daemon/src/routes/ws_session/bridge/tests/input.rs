@@ -49,12 +49,12 @@ async fn input_is_not_held_behind_output() {
         verb: "resize".to_string(),
         payload: serde_json::json!({ "rows": ASKED.0, "cols": ASKED.1 }),
     });
-    client
-        .send(tungstenite::Message::Binary(
-            protocol::encode(&resize).into(),
-        ))
-        .await
-        .expect("the client's own sends do not wait for its reads");
+    for message in channel_messages(&resize) {
+        client
+            .send(message)
+            .await
+            .expect("the client's own sends do not wait for its reads");
+    }
     let reached = tokio::time::timeout(
         Duration::from_millis(500),
         size.wait_for(|now| *now == ASKED),

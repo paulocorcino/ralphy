@@ -77,6 +77,30 @@ pub(crate) async fn serve_console(
     }
 }
 
+/// Run the bridge of an attached session on the channel whose queue is
+/// `out`, as [`serve_console`] runs it once the open is decided. The session
+/// has no name and no checkout, and its daemon is `daemon` in `test`.
+#[cfg(test)]
+pub(super) async fn bridge_attached(
+    attach: session::Attachment,
+    id: session::SessionId,
+    tab: super::Tab,
+    out: &ChannelSender,
+    frames: &mut mpsc::Receiver<Vec<u8>>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    let labels = super::SessionLabels::default();
+    let (daemon, environment) = ("daemon".to_string(), "test".to_string());
+    let opening = Opening::new(id, daemon, environment, &labels, tab.gzip);
+    let attached = Attached {
+        attach,
+        id,
+        traffic: Logged::new(Traffic::local(id, tab, Instant::now())),
+        opening,
+    };
+    attached.bridge(out, frames, shutdown).await;
+}
+
 /// Tell the page why its open was refused, when its shape says so.
 async fn refuse(refuser: &Refuser, refusal: Refusal, out: &ChannelSender) -> ConsoleEnd {
     if let Told::End(end) = refuser.tell(refusal) {
