@@ -1,9 +1,10 @@
-//! The session bridge's liveness rule (ADR-0051 §9 amendment 2026-09-22): a
-//! writer that answers no ping for two ping periods is gone, and its slot is
-//! released for the next attach. A send succeeding proves nothing — a tunnel
-//! agent keeps its leg to the daemon open after the browser behind it vanished —
-//! so only what the CLIENT sends counts. A live client, which pongs, is never
-//! released.
+//! The liveness rule of the page socket (ADR-0051 §9 amendment 2026-09-22),
+//! seen from the writer slot of a console it holds on a `console` channel: a
+//! page socket that answers no ping for two ping periods is gone, the daemon
+//! closes it, and the slot is released for the next attach. A send succeeding
+//! proves nothing — a tunnel agent keeps its leg to the daemon open after the
+//! browser behind it vanished — so only what the CLIENT sends counts. A live
+//! client, which pongs, is never released.
 //!
 //! Its own binary: the ping period is shortened through
 //! `RALPHY_DAEMON_WS_PING_MS`, read once per process, and the other session
@@ -16,15 +17,17 @@
 
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_tungstenite::tungstenite::{self, Message};
-use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
 
-type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+#[path = "support/page.rs"]
+pub mod page;
+
+use page::Channel as Ws;
 
 /// 500 ms pings, so a silent client is released after 1125 ms. The daemon and
 /// the client share the test's one thread, so a stall of the whole thread reads
@@ -138,13 +141,14 @@ async fn http_request(port: u16, method: &str, path: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Launch a session and round-trip a keystroke, so the returned socket is its
-/// attached writer. Returns the socket and the session id.
+/// Launch a session and round-trip a keystroke, so the returned channel is
+/// its attached writer. Returns the channel and the session id.
 async fn launch(port: u16) -> (Ws, u64) {
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("launching a session");
+    let mut ws = page::console(
+        port,
+        json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
     ws.send(terminal(b"first\r"))
         .await
         .expect("typing into the session");
@@ -155,32 +159,50 @@ async fn launch(port: u16) -> (Ws, u64) {
     (ws, id)
 }
 
-async fn attach_status(port: u16, id: u64) -> Result<Ws, u16> {
-    let url = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
-    match tokio_tungstenite::connect_async(&url).await {
-        Ok((ws, _)) => Ok(ws),
-        Err(tungstenite::Error::Http(resp)) => Err(resp.status().as_u16()),
-        Err(other) => panic!("the reattach failed below HTTP: {other:?}"),
+/// The reattach of console `id`: `Some` with its channel once its first frame
+/// came, `None` when the daemon refused it (no frame, then `channel.closed`
+/// with reason `refused`).
+async fn attach(port: u16, id: u64) -> Option<Ws> {
+    let mut ws = page::console(port, json!({ "id": id })).await;
+    let first = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match ws.next().await {
+                Some(Ok(Message::Binary(_))) => return true,
+                Some(Ok(Message::Close(_))) | None => return false,
+                Some(Ok(_)) => continue,
+                Some(Err(error)) => panic!("the reattach failed on the socket: {error:?}"),
+            }
+        }
+    })
+    .await
+    .expect("the daemon answers a reattach within 10s");
+    if first {
+        return Some(ws);
     }
+    assert_eq!(
+        ws.closed_reason(),
+        Some("refused"),
+        "a reattach ends only as refused"
+    );
+    None
 }
 
-/// The half-open leg: the writer's socket stays open but nothing reads it, so
-/// no pong ever goes back — what the daemon sees when a tunnel agent holds the
-/// leg for a browser that is gone.
+/// The half-open leg: the writer's page socket stays open but nothing reads
+/// it, so no pong ever goes back — what the daemon sees when a tunnel agent
+/// holds the leg for a browser that is gone.
 #[tokio::test]
 async fn a_writer_that_answers_no_ping_is_released() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let (port, _shutdown) = start_daemon(dir.path()).await;
-    let (silent, id) = launch(port).await;
+    let (mut silent, id) = launch(port).await;
 
-    assert_eq!(
-        attach_status(port, id).await.err(),
-        Some(409),
+    assert!(
+        attach(port, id).await.is_none(),
         "a writer heard from moments ago still holds the slot"
     );
 
     tokio::time::sleep(PAST_RELEASE).await;
-    let mut next = attach_status(port, id)
+    let mut next = attach(port, id)
         .await
         .expect("a writer silent past two ping periods must have released the slot");
     next.send(terminal(b"after\r"))
@@ -188,7 +210,15 @@ async fn a_writer_that_answers_no_ping_is_released() {
         .expect("typing as the new writer");
     read_until(&mut next, "GOT:after").await;
 
-    drop(silent);
+    // The daemon closed the silent page socket: read now, it ends.
+    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(Ok(_)) = silent.next().await {}
+    })
+    .await;
+    assert!(
+        ended.is_ok(),
+        "the daemon closes a page socket that answers no ping"
+    );
     http_request(port, "POST", &format!("/api/sessions/close?id={id}")).await;
 }
 
@@ -206,9 +236,8 @@ async fn a_writer_that_pongs_keeps_the_slot() {
         live
     });
     tokio::time::sleep(PAST_RELEASE * 2).await;
-    assert_eq!(
-        attach_status(port, id).await.err(),
-        Some(409),
+    assert!(
+        attach(port, id).await.is_none(),
         "a writer that answers its pings must keep the slot"
     );
 

@@ -35,6 +35,12 @@ const CHANNEL_HEADER: usize = 1 + 4 + 1;
 /// The largest message a page socket takes: one piece and its header.
 pub(crate) const MAX_MESSAGE: usize = protocol::MAX_PIECE + CHANNEL_HEADER;
 
+/// How long a page socket lives on after the daemon shuts down, so that its
+/// channels can send their last frames. It bounds how long a page that reads
+/// nothing holds the stop, and stays shorter than the 5 s a channel's own end
+/// waits for its frames, so a shutdown is never held for that long.
+const SHUTDOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// What one page socket serves from.
 pub(crate) struct Page {
     pub(crate) identity: Option<identity::Identity>,
@@ -159,11 +165,28 @@ async fn serve_with(socket: WebSocket, page: Page, liveness: Liveness) {
             break;
         }
     }
+    if *shutdown.borrow() {
+        let_channels_end(&mut reader).await;
+    }
     // The reader holds the table: stopping it ends every channel. A client
     // that reads nothing keeps the writer blocked in the socket send, so the
     // writer is stopped here, not left to the dropped handle.
     reader.abort();
     writer.abort();
+}
+
+/// On shutdown, keep the reader up to `SHUTDOWN_WAIT`. Each channel ends on
+/// the shutdown by itself, and its last frames (a console's `session-end`)
+/// need the reader's table and the writer alive to leave. The page may close
+/// the socket first.
+async fn let_channels_end(reader: &mut tokio::task::JoinHandle<()>) {
+    // A finished handle must not be polled again.
+    if reader.is_finished() {
+        return;
+    }
+    if tokio::time::timeout(SHUTDOWN_WAIT, reader).await.is_err() {
+        tracing::debug!("page socket stopped on shutdown before the page closed it");
+    }
 }
 
 /// Queue one ping on channel 0. `false` when the writer has ended.
