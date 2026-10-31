@@ -84,7 +84,11 @@ impl SessionEpoch {
     /// a `bump` still writes somewhere harmless. For a `Localhost`/`fixed` auth
     /// state that has no real session store (tests, the frictionless default).
     pub fn in_memory_detached() -> SessionEpoch {
-        let path = std::env::temp_dir().join(format!("ralphy-epoch-{}", ulid::Ulid::new()));
+        // In its own directory: `bump` makes the parent owner-only, and on
+        // Linux the shared temp dir belongs to root, so a chmod there fails.
+        let path = std::env::temp_dir()
+            .join(format!("ralphy-epoch-{}", ulid::Ulid::new()))
+            .join("daemon-session-epoch");
         SessionEpoch {
             current: Arc::new(AtomicU64::new(0)),
             path,
