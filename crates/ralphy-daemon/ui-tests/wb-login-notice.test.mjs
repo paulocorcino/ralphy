@@ -49,7 +49,8 @@ test("the dismiss reply says the notice is dismissed", () => {
 
 // The notice on every open page (assets/ui/wb-login-notice.ts), built as
 // Alpine builds it, with a window, a document and a fetch that answers each
-// call with the next of `replies` and keeps what was sent. `init` is not run.
+// call with the next of `replies` and keeps what was sent. `init` runs only
+// where a test calls it.
 // The test files share one process, so `t.after` puts the globals back.
 const GLOBALS = ["window", "document", "fetch"];
 
@@ -166,4 +167,24 @@ test("a logins push reads the notices again", (t) => {
   const store = connectionStore({ messages: { flash() {} }, detached: { dirty: () => false, close() {} } });
   store.onPresencePush("logins.dirty", fixture("logins.dirty"));
   assert.deepEqual(sent, ["workbench:logins-reread"]);
+});
+
+test("the notice reads the list again on workbench:logins-reread", async (t) => {
+  const reply = fixture("api-audit-logins-notices");
+  const { data, sent } = page(t, [ok(reply), ok(reply)]);
+  // A window that keeps its listeners, so the test can send the event.
+  const listeners = new Map();
+  window.addEventListener = (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+  window.dispatchEvent = (e) => {
+    for (const fn of listeners.get(e.type) ?? []) fn(e);
+  };
+  data.init();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(sent, [["GET", "/api/audit/logins/notices", undefined]]);
+  window.dispatchEvent(new Event("workbench:logins-reread"));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(sent, [
+    ["GET", "/api/audit/logins/notices", undefined],
+    ["GET", "/api/audit/logins/notices", undefined],
+  ]);
 });
