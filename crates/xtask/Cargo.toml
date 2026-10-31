@@ -18,7 +18,7 @@ chrono.workspace = true
 semver.workspace = true
 regex.workspace = true
 # The Rust measure of `complexity` reads the source text (ADR-0081).
-syn = { version = "2", features = ["full", "visit"] }
+syn = { version = "3", features = ["full", "visit"] }
 proc-macro2 = "1"
 
 [dev-dependencies]
