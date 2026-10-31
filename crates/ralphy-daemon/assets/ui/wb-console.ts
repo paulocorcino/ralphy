@@ -50,7 +50,7 @@ import type { ConsoleOpts, ConsoleWin, DeskChange, DeskFence } from "./wb-types.
 export function createConsole(
   window: Window,
   document: Document,
-  location: Pick<Location, "protocol" | "host" | "origin">,
+  location: Pick<Location, "origin">,
   opts: ConsoleOpts,
 ) {
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
