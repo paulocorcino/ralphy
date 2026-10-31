@@ -18,26 +18,26 @@ async fn unreachable_peer_is_an_environment_diagnosis() {
     )
     .await;
 
-    let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
-    let refusal = refused(&session_url(
+    let repo = format!("{DEAD_ID}/{SLUG}");
+    let refusal = page::refused(
         local.port,
-        &format!("repo={repo}&agent=claude"),
-    ))
+        serde_json::json!({ "repo": repo, "agent": "claude" }),
+    )
     .await;
     let body = refusal["message"].as_str().unwrap_or_default();
     assert!(body.contains(ENVIRONMENT), "got {body}");
     assert!(!body.contains("serde"), "got {body}");
     assert!(!body.contains("decod"), "got {body}");
 
-    // A reattach keeps the HTTP status: the browser counts it as a failed open.
-    let error =
-        tokio_tungstenite::connect_async(session_url(local.port, &format!("id=7&repo={repo}")))
-            .await
-            .unwrap_err();
-    let tungstenite::Error::Http(response) = error else {
-        panic!("expected HTTP refusal on a reattach, got {error}");
-    };
-    assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+    // A reattach is refused too: the channel ends as refused, with no frame.
+    let mut reattach =
+        page::console(local.port, serde_json::json!({ "id": 7, "repo": repo })).await;
+    let first = reattach.next().await;
+    assert!(
+        matches!(first, Some(Ok(Message::Close(_)))),
+        "a refused reattach sends no frame, got {first:?}"
+    );
+    assert_eq!(reattach.closed_reason(), Some("refused"));
 }
 
 #[tokio::test]
@@ -56,11 +56,11 @@ async fn incompatible_peer_is_an_environment_diagnosis() {
     )
     .await;
 
-    let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
-    let refusal = refused(&session_url(
+    let repo = format!("{DEAD_ID}/{SLUG}");
+    let refusal = page::refused(
         local.port,
-        &format!("repo={repo}&agent=claude"),
-    ))
+        serde_json::json!({ "repo": repo, "agent": "claude" }),
+    )
     .await;
     let body = refusal["message"].as_str().unwrap_or_default();
     assert!(body.contains(ENVIRONMENT), "got {body}");
@@ -113,11 +113,11 @@ async fn an_old_peer_that_refuses_over_http_is_shown_as_a_refusal() {
     )
     .await;
 
-    let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
-    let refusal = refused(&session_url(
+    let repo = format!("{DEAD_ID}/{SLUG}");
+    let refusal = page::refused(
         local.port,
-        &format!("repo={repo}&agent=gemini"),
-    ))
+        serde_json::json!({ "repo": repo, "agent": "gemini" }),
+    )
     .await;
     assert_eq!(
         refusal["message"], OLD_REFUSAL,
