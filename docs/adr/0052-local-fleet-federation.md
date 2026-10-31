@@ -541,3 +541,42 @@ refusal that names the older daemon. So the version stays, and the commit that
 adds the verb says why and pins the new hash with the same version.
 `file.stat` and `tree.size` (ADR-0036, amendment of 2026-10-15) are the first
 verbs added this way after version 4.
+
+
+## Amendment (2026-10-31): a peer's consoles and spawned verbs go over its page socket
+
+The page talks to its daemon over one socket, `/ws`, and opens a numbered
+channel on it for each console, tree and spawned verb (ADR-0082). The local
+daemon still dialled a peer's older routes: `/ws/session?<query>` for a
+relayed console and `/ws/command` for a relayed spawn verb (#830). Those
+routes go, so the relay moves to the peer's `/ws` too.
+
+**Decision.**
+
+- **One page socket per relay.** For each relayed console or spawn verb, the
+  local daemon probes the peer, dials the peer's `/ws` with the peer's bearer
+  token, and sends one bare `channel.open {channel: 1, kind, ..fields}`: kind
+  `console` with the fields of a console open, or kind `spawn` with
+  `command`. The relay ends with `channel.close`, then the socket's Close.
+  The one client is `peer::client::open_channel`, in the one seam that dials
+  a peer (§2).
+- **The client reads channel 1 only.** It joins the peer's pieces into whole
+  inner frames, drops the peer's channel 0 (its heartbeat and pushes), and
+  answers the peer's pings itself. A `channel.closed` for channel 1 ends the
+  relay; before any frame, the reason `refused` is a refusal of the open.
+- **The protocol goes from 4 to 5.** A peer of version 4 takes a `/ws`
+  socket but ignores `channel.open`, so a relayed console would wait forever.
+  With version 5 the handshake refuses that peer with the message §3 gives.
+  No reply type changes: `PEER_REPLY_PIN` keeps its hash and names version 5.
+
+**Rejected: one shared socket per peer.** It needs a part that owns the
+socket's life and reads it for every relay, a fair writer of its own, and a
+rule for what one failed relay does to the others. One socket per relay keeps
+the failure model of the older routes: each dial probes, fails and is
+diagnosed alone. A shared socket can come later with no protocol change.
+
+**Two limits.** The routes go in the same release as the move, with no
+release in between. So a page of rc.41 that is open during the update reloads
+once, because the build id changes. And a peer daemon of rc.41 is refused
+until it is updated: `scripts/update-ralphy.ps1` updates the WSL peer, and a
+host reached over SSH is updated with `ralphy host`, as for every raise.

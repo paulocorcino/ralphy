@@ -7,6 +7,7 @@ mod console;
 mod control;
 mod flood;
 mod peer;
+mod peer_channel;
 mod spawn;
 mod support;
 mod tree;

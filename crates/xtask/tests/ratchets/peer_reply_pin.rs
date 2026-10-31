@@ -6,7 +6,8 @@ use super::*;
 /// daemon wrote. The local daemon passes these replies on as the peer wrote
 /// them: the one-reply verbs of a peer repo and the registry verbs that name
 /// a peer (`relay_to_peer` in `routes/ws_command.rs`), the frames of a spawn
-/// verb, the `/ws/session` frames, and `GET /api/agents?repo=`. The page
+/// verb, the frames of a console channel (the `/ws/session` frames), and
+/// `GET /api/agents?repo=`. The page
 /// reads only the status of `POST /api/sessions/close`, so no type reads its
 /// body. `/api/sessions`, `/api/fleet`, `/api/usage` and the tree pushes are
 /// written again by the local daemon, so they are not here. A type that a
@@ -66,8 +67,10 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// answers them `unknown verb`, which the Properties dialog shows as a refusal
 /// that names the older daemon. The optional `phase.agent` of a run snapshot
 /// keeps version 4: a run of an older peer sends none, and the run card then
-/// draws no agent dot, as for a vendor with no hooks.
-const PEER_REPLY_PIN: (u32, u64) = (4, 0x1da2_853b_91d2_a9f8);
+/// draws no agent dot, as for a vendor with no hooks. Version 5 changes
+/// no reply type: it changes the transport of the relayed consoles and spawn
+/// verbs, which ride a channel of the peer's page socket (#830).
+const PEER_REPLY_PIN: (u32, u64) = (5, 0x1da2_853b_91d2_a9f8);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

@@ -25,7 +25,10 @@ use tokio_tungstenite::tungstenite::Error as WsError;
 use super::tunnel::Ensured;
 use super::PeerDescriptor;
 
+mod channel;
 mod handshake;
+
+pub use channel::{open_channel, PeerChannel, PeerEvent};
 
 /// An authenticated WebSocket to another daemon in the local fleet.
 pub type PeerSocket =
