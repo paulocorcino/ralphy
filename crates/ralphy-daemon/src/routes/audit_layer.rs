@@ -11,6 +11,7 @@ use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::response::Response;
 
 use crate::audit::{self, Actor, Audit, Event, EventKind, LoginFailure, ServerFacts};
+use crate::cookie::LoginId;
 use crate::device::{self, DeviceId};
 use crate::dispatch::{EffectClass, Verb};
 use crate::protocol::Command;
@@ -111,6 +112,8 @@ pub(crate) fn upload_event(
 #[derive(Clone, Debug)]
 pub(crate) struct Caller {
     pub(crate) device: Option<DeviceId>,
+    /// The login the guard found in the session cookie.
+    pub(crate) login: Option<LoginId>,
     pub(crate) actor: Actor,
     pub(crate) server: ServerFacts,
 }
@@ -120,6 +123,7 @@ impl Caller {
     fn unknown() -> Caller {
         Caller {
             device: None,
+            login: None,
             actor: Actor::Unknown,
             server: ServerFacts::default(),
         }
@@ -132,6 +136,7 @@ impl Caller {
 pub(crate) struct SocketAudit {
     pub(crate) audit: Arc<Audit>,
     pub(crate) device: Option<DeviceId>,
+    pub(crate) login: Option<LoginId>,
     pub(crate) actor: Actor,
     pub(crate) ip: Option<String>,
 }
@@ -143,6 +148,7 @@ impl SocketAudit {
         SocketAudit {
             audit,
             device: caller.device,
+            login: caller.login,
             actor: caller.actor,
             ip: caller.server.address(),
         }
@@ -151,8 +157,16 @@ impl SocketAudit {
     /// Record `verb` when it changes state.
     pub(crate) fn record(&self, verb: Verb, cmd: &Command) {
         if let Some(event) = command_event(verb, cmd, self.device, self.actor, self.ip.clone()) {
-            self.audit.record(&event);
+            self.record_verb(event);
         }
+    }
+
+    /// Record the line of a verb under this socket's login; a use from
+    /// another device than the login's own is reported once.
+    fn record_verb(&self, mut event: Event) {
+        event.login = self.login.map(|l| l.to_string());
+        let did = event.verb.clone().unwrap_or_default();
+        self.audit.record_use(&event, &did);
     }
 
     /// Record a `file.upload` part from its reply; only the last part writes.
@@ -161,14 +175,18 @@ impl SocketAudit {
             return;
         }
         if let Some(event) = upload_event(cmd, reply, self.device, self.actor, self.ip.clone()) {
-            self.audit.record(&event);
+            self.record_verb(event);
         }
     }
 
     /// Record a console launch or take-over (amendment 2026-10-05).
     pub(crate) fn console(&self, record: &ConsoleRecord) {
-        let event = console_event(record, self.device, self.actor, self.ip.clone());
-        self.audit.record(&event);
+        let mut event = console_event(record, self.device, self.actor, self.ip.clone());
+        event.login = self.login.map(|l| l.to_string());
+        match record.kind {
+            ConsoleKind::Launch => self.audit.record_use(&event, "console_launch"),
+            ConsoleKind::Takeover => self.audit.record(&event),
+        }
     }
 }
 
@@ -248,6 +266,8 @@ pub(crate) async fn audit_layer(
         req.extensions_mut().insert(id);
     }
     let actor = actor_of(req.headers(), device);
+    // The guard runs first and puts the login of a valid session cookie here.
+    let login = req.extensions().get::<LoginId>().copied();
     let method = req.method().clone();
     let mut server = ServerFacts::from_headers(req.headers());
     // Present on the TCP listener only (`serve.rs`).
@@ -257,13 +277,15 @@ pub(crate) async fn audit_layer(
         .map(|ConnectInfo(addr)| addr.ip().to_string());
     req.extensions_mut().insert(Caller {
         device,
+        login,
         actor,
         server: server.clone(),
     });
 
     let mut resp = next.run(req).await;
 
-    if let Some(event) = event_for(&method, &path, resp.status(), device, actor, server) {
+    if let Some(mut event) = event_for(&method, &path, resp.status(), device, actor, server) {
+        event.login = line_login(&event, login, &resp).map(|l| l.to_string());
         audit.record(&event);
     }
     if let Some(set_cookie) = new_cookie {
@@ -272,6 +294,17 @@ pub(crate) async fn audit_layer(
         }
     }
     resp
+}
+
+/// The login a request's line names: on `login_ok` the login the route
+/// started, which it hands back on the response; else the login that sent
+/// the request.
+fn line_login(event: &Event, sent_by: Option<LoginId>, resp: &Response) -> Option<LoginId> {
+    if event.event == EventKind::LoginOk {
+        resp.extensions().get::<LoginId>().copied()
+    } else {
+        sent_by
+    }
 }
 
 /// The line one finished request writes, or `None`.

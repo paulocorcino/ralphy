@@ -63,3 +63,204 @@ fn server_facts_read_the_front_and_the_client_hints() {
     );
     assert_eq!(facts.user_agent.unwrap().len(), MAX_HEADER_CHARS);
 }
+
+mod logins {
+    use std::sync::Arc;
+
+    use axum::body::Body;
+    use axum::extract::Request;
+    use axum::http::{header, StatusCode};
+    use axum::response::{IntoResponse, Response};
+    use axum::Router;
+    use serde_json::Value;
+    use tower::ServiceExt;
+
+    use super::super::*;
+    use crate::cookie::LoginId;
+    use crate::dispatch::Verb;
+    use crate::protocol::Command;
+    use crate::routes::{audit_layer, ConsoleKind, ConsoleRecord, SocketAudit};
+
+    fn of_kind(dir: &Path, kind: &str) -> Vec<Value> {
+        std::fs::read_to_string(log_path_in(dir))
+            .unwrap_or_default()
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .filter(|l| l["event"] == kind)
+            .collect()
+    }
+
+    /// One request through the audit layer, with `login` put on the request
+    /// as the guard does, and `answer_login` on the response as the login
+    /// route does.
+    async fn through_the_layer(
+        audit: Arc<Audit>,
+        path: &str,
+        login: Option<LoginId>,
+        answer_login: Option<LoginId>,
+        cookie: Option<String>,
+    ) -> StatusCode {
+        let handler = move || async move {
+            let mut resp: Response = StatusCode::OK.into_response();
+            if let Some(l) = answer_login {
+                resp.extensions_mut().insert(l);
+            }
+            resp
+        };
+        let guard = move |mut req: Request, next: axum::middleware::Next| async move {
+            if let Some(l) = login {
+                req.extensions_mut().insert(l);
+            }
+            next.run(req).await
+        };
+        let app = Router::new()
+            .route(path, axum::routing::post(handler))
+            .layer(axum::middleware::from_fn_with_state(audit, audit_layer))
+            .layer(axum::middleware::from_fn(guard));
+        let mut req = Request::builder().method("POST").uri(path);
+        if let Some(c) = cookie {
+            req = req.header(header::COOKIE, c);
+        }
+        app.oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    /// A `login_ok` line for `login` signed in from `device`.
+    fn signed_in(audit: &Audit, login: LoginId, device: Option<DeviceId>) {
+        let mut e = Event::new(EventKind::LoginOk, device, Actor::Device);
+        e.login = Some(login.to_string());
+        audit.record(&e);
+    }
+
+    fn socket(audit: &Arc<Audit>, login: LoginId, device: Option<DeviceId>) -> SocketAudit {
+        SocketAudit {
+            audit: audit.clone(),
+            device,
+            login: Some(login),
+            actor: Actor::Device,
+            ip: Some("203.0.113.9".to_string()),
+        }
+    }
+
+    fn launch() -> ConsoleRecord {
+        ConsoleRecord {
+            kind: ConsoleKind::Launch,
+            session: Some(7),
+            agent: Some("console".to_string()),
+            repo: Some("ralphy".to_string()),
+            peer: None,
+            holder: Some("tab-1".to_string()),
+        }
+    }
+
+    fn switch() -> Command {
+        Command {
+            id: 1,
+            verb: "branch.switch".to_string(),
+            payload: serde_json::json!({"repo": "ralphy", "name": "b"}),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_line_under_a_login_names_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let audit = Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())));
+        let login = LoginId::mint();
+        let status = through_the_layer(audit, "/api/ui/thing", Some(login), None, None).await;
+        assert_eq!(status, StatusCode::OK);
+        let actions = of_kind(dir.path(), "action");
+        assert_eq!(actions.len(), 1, "{actions:?}");
+        assert_eq!(actions[0]["login"], login.to_string());
+    }
+
+    #[tokio::test]
+    async fn login_ok_names_its_login_and_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let audit = Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())));
+        let device = DeviceId::mint();
+        let value = audit.key(true).expect("a device key").sign(device);
+        let cookie = format!("{}={value}", device::COOKIE_NAME);
+        let login = LoginId::mint();
+        let status = through_the_layer(audit, "/api/login", None, Some(login), Some(cookie)).await;
+        assert_eq!(status, StatusCode::OK);
+        let ok = of_kind(dir.path(), "login_ok");
+        assert_eq!(ok.len(), 1, "{ok:?}");
+        assert_eq!(ok[0]["login"], login.to_string());
+        assert_eq!(ok[0]["device"], device.to_string());
+    }
+
+    #[test]
+    fn a_launch_from_another_device_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let audit = Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())));
+        let login = LoginId::mint();
+        signed_in(&audit, login, Some(DeviceId::mint()));
+        let other = DeviceId::mint();
+        socket(&audit, login, Some(other)).console(&launch());
+        let reported = of_kind(dir.path(), "login_other_device");
+        assert_eq!(reported.len(), 1, "{reported:?}");
+        let line = &reported[0];
+        assert_eq!(line["login"], login.to_string());
+        assert_eq!(line["device"], other.to_string());
+        assert_eq!(line["did"], "console_launch");
+        assert_eq!(line["ip"], "203.0.113.9");
+        assert_eq!(line["holder"], "tab-1");
+    }
+
+    #[test]
+    fn each_pair_is_reported_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let audit = Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())));
+        let login = LoginId::mint();
+        let own = DeviceId::mint();
+        signed_in(&audit, login, Some(own));
+        let verb = Verb::from_query("branch.switch").expect("a known verb");
+        socket(&audit, login, Some(own)).record(verb, &switch());
+        socket(&audit, login, Some(own)).console(&launch());
+        assert!(
+            of_kind(dir.path(), "login_other_device").is_empty(),
+            "the login's own device writes none"
+        );
+        let other = DeviceId::mint();
+        socket(&audit, login, Some(other)).record(verb, &switch());
+        socket(&audit, login, Some(other)).console(&launch());
+        socket(&audit, login, Some(other)).record(verb, &switch());
+        let reported = of_kind(dir.path(), "login_other_device");
+        assert_eq!(reported.len(), 1, "{reported:?}");
+        assert_eq!(reported[0]["did"], "branch.switch");
+        socket(&audit, login, None).record(verb, &switch());
+        assert_eq!(
+            of_kind(dir.path(), "login_other_device").len(),
+            2,
+            "no device is a device of its own"
+        );
+    }
+
+    #[test]
+    fn a_reported_pair_stays_reported_after_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let login = LoginId::mint();
+        let other = DeviceId::mint();
+        {
+            let audit = Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())));
+            signed_in(&audit, login, Some(DeviceId::mint()));
+            socket(&audit, login, Some(other)).console(&launch());
+        }
+        assert_eq!(of_kind(dir.path(), "login_other_device").len(), 1);
+        let audit = Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())));
+        socket(&audit, login, Some(other)).console(&launch());
+        assert_eq!(
+            of_kind(dir.path(), "login_other_device").len(),
+            1,
+            "the pair in the log is not reported again"
+        );
+        socket(&audit, login, Some(DeviceId::mint())).console(&launch());
+        assert_eq!(
+            of_kind(dir.path(), "login_other_device").len(),
+            2,
+            "the login's device was read back from the log"
+        );
+    }
+}
