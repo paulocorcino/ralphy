@@ -131,6 +131,28 @@ test("presenceStale turns true on the clock once the heartbeat is older than the
   assert.equal(store.presenceStale, true, "three missed heartbeats are stale");
 });
 
+// #834: the page socket opens after the session read, which mints the
+// device cookie. `init` hands the read to the door before its first join.
+test("init holds the page socket on its session read", () => {
+  const { store } = storeOnly();
+  const calls = [];
+  window.WBDaemon = {
+    afterSessionRead: (read) => calls.push(["after", typeof read?.then]),
+    subscribePresence: () => (calls.push(["join"]), {}),
+  };
+  const realSetInterval = globalThis.setInterval;
+  const realFetch = globalThis.fetch;
+  globalThis.setInterval = () => 0;
+  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => null });
+  try {
+    store.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(calls, [["after", "function"], ["join"]]);
+});
+
 // #751: a desktop that slept with the tab in front fires no page event. The
 // clock resumes the page once, when the heartbeat stops while it is visible.
 test("a heartbeat that stops while the page is visible resumes the sockets and the consoles once", () => {

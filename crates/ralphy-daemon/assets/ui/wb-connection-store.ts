@@ -88,7 +88,9 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // Alpine calls this once, when `main.ts` registers the store. `main.ts`
     // builds `WBDaemon` and `WBConsole` first.
     init() {
-      void this.probeSession();
+      // The first page socket opens after this read: it mints the device
+      // cookie, which the socket's console lines name.
+      window.WBDaemon?.afterSessionRead?.(this.probeSession());
       this.subscribePresence();
       void this.loadIdentity();
       // The board's two time-driven refresh triggers (#301), registered ONCE;

@@ -63,7 +63,10 @@ own (measured on an iPad, 2026-10-05). A request with no valid cookie that
 is not this read is recorded with no device. This is a limit: the requests a
 first visit sends before the read answers have no device, and so has a page
 that was open before the daemon started to issue IDs and only uses its
-WebSocket connections, until it is loaded again. The value is 16 random bytes and an HMAC of them, keyed by
+WebSocket connections, until it is loaded again. The page opens its socket
+only after the read answers, or after the 8 s handshake deadline, because
+the daemon reads the device once, at the upgrade: the console lines of a
+first visit name the device (#834). The value is 16 random bytes and an HMAC of them, keyed by
 `daemon-device-key`, a key of its own in the daemon's store (owner-only).
 The cookie has no session epoch, so the ID stays the same across logout and
 login, and a new access token does not change it. It lives 400 days. It is `HttpOnly` and

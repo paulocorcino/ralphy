@@ -76,11 +76,8 @@ def main():
             ctx = browser.new_context(viewport=dict(D.VIEW))
             page = ctx.new_page()
             page.on("pageerror", lambda e: errors.append(str(e)))
-            # The page socket opens before the first `GET /api/session` is
-            # answered, so on a first visit it carries no device cookie yet.
-            # Measured on 2026-10-31: this pass saw two launches with no
-            # device. The device is issued here, as a returning one has it.
-            ctx.request.get(BASE + "api/session")
+            # A first visit: the page opens its socket after `GET
+            # /api/session` issued the device cookie, so A2 holds here too.
             page.goto(BASE)
             T.boot(page, want=2)
             page.wait_for_function(

@@ -392,7 +392,8 @@ function pageSockets() {
   };
   // Every socket is created with the fakes in place: a subscription, and a
   // reconnect.
-  const withFakes = (fn) => {
+  // Put the fakes in place; the returned function puts the real ones back.
+  const install = () => {
     const realSetTimeout = globalThis.setTimeout;
     const realClearTimeout = globalThis.clearTimeout;
     globalThis.setTimeout = (callback, ms) => timers.push({ fn: callback, ms }) - 1;
@@ -400,12 +401,27 @@ function pageSockets() {
       if (timers[id]) timers[id].fn = () => {};
     };
     globalThis.WebSocket = FakeSocket;
-    try {
-      return fn();
-    } finally {
+    return () => {
       globalThis.setTimeout = realSetTimeout;
       globalThis.clearTimeout = realClearTimeout;
       delete globalThis.WebSocket;
+    };
+  };
+  const withFakes = (fn) => {
+    const restore = install();
+    try {
+      return fn();
+    } finally {
+      restore();
+    }
+  };
+  // `withFakes` for an async `fn`: the fakes stay until it settles.
+  const withFakesAsync = async (fn) => {
+    const restore = install();
+    try {
+      return await fn();
+    } finally {
+      restore();
     }
   };
   const open = (s) => {
@@ -428,7 +444,7 @@ function pageSockets() {
     withFakes(() => {
       for (const t of timers.splice(0)) if (t.ms === 3000) t.fn();
     });
-  return { d, sockets, timers, open, push, drop, runRetries, withFakes };
+  return { d, sockets, timers, open, push, drop, runRetries, withFakes, withFakesAsync };
 }
 
 function treeSocket(checkout, onHead, onFailed) {
@@ -467,6 +483,37 @@ test("one socket carries presence, tree, runs and changes", () => {
   assert.deepEqual(beats, [{ uptime_secs: 2 }]);
   assert.deepEqual(runs, ["dirty"]);
   assert.deepEqual(changes, ["changes.dirty"]);
+});
+
+// #834: the daemon mints the device cookie on the page's session read, and
+// reads the device once, at the upgrade. The first socket waits for the read.
+test("the first page socket waits for the session read", async () => {
+  const { d, sockets, withFakes, withFakesAsync } = pageSockets();
+  let settle = null;
+  const read = new Promise((resolve) => (settle = resolve));
+  withFakes(() => {
+    d.afterSessionRead(read);
+    d.subscribePresence(() => {});
+    d.subscribeRuns("o/r", () => {});
+  });
+  assert.equal(sockets.length, 0, "no socket before the session read");
+  await withFakesAsync(async () => {
+    settle();
+    await read;
+  });
+  assert.equal(sockets.length, 1, "one socket for both users once the read settled");
+});
+
+test("a session read that does not settle holds the first socket only until the handshake deadline", () => {
+  const { d, sockets, timers, withFakes } = pageSockets();
+  withFakes(() => {
+    d.afterSessionRead(new Promise(() => {}));
+    d.subscribePresence(() => {});
+  });
+  assert.equal(sockets.length, 0);
+  const deadline = timers.find((t) => t.ms === CONNECT_TIMEOUT_MS);
+  withFakes(() => deadline.fn());
+  assert.equal(sockets.length, 1);
 });
 
 test("a reopened socket re-sends the watches and reads once", () => {
