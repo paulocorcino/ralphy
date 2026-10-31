@@ -7,7 +7,8 @@
           <span class="login-notice-failure" x-show="failureOf(n)" x-text="failureOf(n)"></span>
           <div style="display:flex;gap:0.5rem">
             <button class="btn login-notice-revoke" @click="revoke(n)" title="Sign out every device that uses this login">End this login</button>
-            <button class="btn login-notice-dismiss" @click="dismiss(n)" title="Dismiss this notice">This was me</button>
+            <button class="btn login-notice-dismiss" x-show="!n.here" @click="dismiss(n)" title="Dismiss this notice">This was me</button>
+            <span class="login-notice-here" x-show="n.here">Dismiss this from the device you signed in on.</span>
           </div>
         </div>
       </template>

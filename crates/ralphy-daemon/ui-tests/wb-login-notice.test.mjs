@@ -39,6 +39,7 @@ test("the notices reply lists each notice with its pair, its action and its devi
     assert.equal(typeof notice.did, "string");
     assert.equal(typeof notice.at, "string");
     assert.ok(notice.facts === null || typeof notice.facts.os === "string");
+    assert.equal(typeof notice.here, "boolean");
   }
 });
 
@@ -144,6 +145,17 @@ test("this was me closes the notice", async (t) => {
   assert.deepEqual(sent[1], ["POST", "/api/audit/logins/dismiss", `login=${notice.login}&device=`]);
   assert.deepEqual(data.notices, []);
   assert.match(partMarkup(PART), /@click="dismiss\(n\)"[^>]*>This was me</);
+});
+
+test("a notice of this device has no This was me action", () => {
+  // The daemon refuses a dismiss from the device the notice names, so the
+  // button shows only when `here` is false, and a line shows in its place.
+  const markup = partMarkup(PART);
+  const dismiss = markup.match(/<button[^>]*@click="dismiss\(n\)"[^>]*>/);
+  assert.ok(dismiss, "a This was me button");
+  assert.match(dismiss[0], /x-show="!n\.here"/);
+  assert.match(markup, /x-show="n\.here"[^>]*>Dismiss this from the device you signed in on\.</);
+  assert.match(markup, /<button[^>]*@click="revoke\(n\)"(?![^>]*x-show)[^>]*>End this login</);
 });
 
 test("a logins push reads the notices again", (t) => {

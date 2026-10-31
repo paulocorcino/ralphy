@@ -284,11 +284,14 @@ page then reads the notices of `GET /api/audit/logins/notices`, which the
 daemon reads from the audit log. "This was me" posts to
 `POST /api/audit/logins/dismiss` with the login and the device; the daemon
 writes one `login_notice_dismissed` line, and the notice of that pair is no
-longer shown. No polling timer was added.
+longer shown. No polling timer was added. The device the notice names
+cannot dismiss it: the daemon answers `403` and writes nothing, so an intruder
+who replays the cookie cannot hide the notice about itself. A real second
+device of the operator is dismissed from another device.
 
 **D2 still holds.** The notice is a record shown to a human. No access
-decision reads the device ID; the request that triggered the line succeeds as
-before. The human decides, and the revoke is the action.
+decision reads the device ID, except the dismiss rule above, which guards only
+the notice; the request that triggered the line succeeds as before. The human decides, and the revoke is the action.
 
 **Limits, stated so they are not mistaken for a guarantee.**
 

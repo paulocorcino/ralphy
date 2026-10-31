@@ -154,7 +154,9 @@ fn dismiss_pair(form: &DismissForm) -> Option<(LoginId, Option<&str>)> {
 }
 
 /// `POST /api/audit/logins/dismiss`: the operator says a notice was their own
-/// use. A malformed pair is a `400`; a failed write is a `500`.
+/// use. A malformed pair is a `400`; a notice that names the device of the
+/// request is a `403`, so the holder of a replayed cookie cannot hide the
+/// notice about itself (#717); a failed write is a `500`.
 async fn post_dismiss(
     audit: Arc<Audit>,
     caller: Option<Extension<super::audit_layer::Caller>>,
@@ -167,8 +169,18 @@ async fn post_dismiss(
         )
             .into_response();
     };
+    let caller = caller.map(|Extension(c)| c);
+    if logins::is_device(device, caller.as_ref().and_then(|c| c.device)) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "the notice names this device: dismiss it from the device you signed in on"
+            })),
+        )
+            .into_response();
+    }
     let device = device.map(str::to_string);
-    let actor = caller.map_or(Actor::Unknown, |Extension(c)| c.actor);
+    let actor = caller.map_or(Actor::Unknown, |c| c.actor);
     let written =
         tokio::task::spawn_blocking(move || audit.dismiss_notice(&login, device.as_deref(), actor))
             .await;

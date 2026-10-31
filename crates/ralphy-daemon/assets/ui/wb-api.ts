@@ -141,7 +141,8 @@ interface ApiRoutes {
   "GET /api/audit/events": { ok: { events: AuditEvent[] }; failed: ErrorBody };
   /** The open login notices, the newest first. */
   "GET /api/audit/logins/notices": { ok: LoginNoticesReply; failed: ErrorBody };
-  /** `400` for a pair that is not a login ID and a device ID. */
+  /** `400` for a pair that is not a login ID and a device ID, `403` for a
+   * notice that names the device that sends the dismiss. */
   "POST /api/audit/logins/dismiss": { ok: { dismissed: true }; failed: ErrorBody };
   "GET /api/release": { ok: ReleaseView };
   "POST /api/release/watch": { ok: { enabled: boolean } };

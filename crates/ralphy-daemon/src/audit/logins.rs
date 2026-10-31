@@ -60,6 +60,9 @@ pub(crate) struct Notice {
     /// What the log knows of the device from its page's reports; `None` when
     /// its page never reported facts.
     pub(crate) facts: Option<DeviceSummary>,
+    /// Whether the notice names the device that reads the list. That device
+    /// cannot dismiss it.
+    pub(crate) here: bool,
 }
 
 /// The lines of the log at `path`, an absent file read as empty.
@@ -78,7 +81,7 @@ fn lines(text: &str) -> impl Iterator<Item = Line> + '_ {
 
 /// The open notices of the log at `path` at `now` (unix seconds), the newest
 /// first. `revoked` says whether a login ID is on the revoked-login list;
-/// `this` is the device that asks, marked in the facts.
+/// `this` is the device that asks, marked in the facts and in `here`.
 pub(crate) fn notices(
     path: &Path,
     now: i64,
@@ -100,6 +103,7 @@ pub(crate) fn notices(
                 did: line.did,
                 at: line.at.unwrap_or_default(),
                 facts: None,
+                here: false,
             }),
             EventKind::LoginOk
             | EventKind::LoginFailed
@@ -118,11 +122,24 @@ pub(crate) fn notices(
             && !revoked(&n.login)
             && line_secs(&n.at).is_some_and(|at| at > cutoff)
     });
+    for notice in &mut open {
+        notice.here = is_device(notice.device.as_deref(), this);
+    }
     if !open.is_empty() {
         add_facts(&mut open, read::devices(path, this)?);
     }
     open.reverse();
     Ok(open)
+}
+
+/// Whether the device of a notice, as the log writes it, is `this` device. No
+/// device is a value of its own: it equals only no device.
+pub(crate) fn is_device(device: Option<&str>, this: Option<DeviceId>) -> bool {
+    match (device, this) {
+        (Some(d), Some(id)) => d == id.to_string(),
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+    }
 }
 
 fn line_secs(at: &str) -> Option<i64> {

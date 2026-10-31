@@ -15,7 +15,9 @@
    (`POST /api/security/logins/revoke`): every device that holds its cookie
    must sign in again. "This was me" dismisses the notice of that pair of
    login and device (`POST /api/audit/logins/dismiss`). After either one, the
-   notice goes away; a refusal keeps it and says the act failed.
+   notice goes away; a refusal keeps it and says the act failed. The daemon
+   refuses a dismiss from the device the notice names (`here`), so that
+   notice shows a line in place of "This was me".
 
    `main.ts` registers it as `wbLoginNotice`.
    --------------------------------------------------------------------------- */
@@ -27,13 +29,14 @@ import type { Device } from "./wb-devices.ts";
 /** A notice of `GET /api/audit/logins/notices` (`Notice` in
  * `audit/logins.rs`). `device` is `null` for a use that came with no device
  * cookie, and `facts` is `null` when that device's page never reported its
- * facts. */
+ * facts. `here` is `true` when the notice names the device of this page. */
 export type LoginNotice = {
   login: string;
   device: string | null;
   did: string | null;
   at: string;
   facts: Device | null;
+  here: boolean;
 };
 
 /** The reply of `GET /api/audit/logins/notices`. */

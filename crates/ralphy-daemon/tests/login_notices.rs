@@ -52,13 +52,18 @@ fn at(days_ago: i64) -> String {
 /// A log where `login` signed in from [`OWN`] and was then used from
 /// [`OTHER`], whose page reported its facts, `days_ago` days ago.
 fn write_log(dir: &Path, login: &str, days_ago: i64) {
+    write_log_used_from(dir, login, OTHER, days_ago);
+}
+
+/// [`write_log`], with the login used from `other`.
+fn write_log_used_from(dir: &Path, login: &str, other: &str, days_ago: i64) {
     let t = at(days_ago);
     let lines = [
         json!({"at": t, "event": "login_ok", "device": OWN, "login": login, "actor": "device"}),
         json!({
             "at": t,
             "event": "device_facts",
-            "device": OTHER,
+            "device": other,
             "actor": "device",
             "ip": "203.0.113.5",
             "normalizer": 1,
@@ -69,7 +74,7 @@ fn write_log(dir: &Path, login: &str, days_ago: i64) {
         json!({
             "at": t,
             "event": "login_other_device",
-            "device": OTHER,
+            "device": other,
             "login": login,
             "actor": "device",
             "did": "console_launch",
@@ -81,19 +86,60 @@ fn write_log(dir: &Path, login: &str, days_ago: i64) {
 }
 
 fn get_notices() -> Request<Body> {
-    Request::builder()
-        .uri("/api/audit/logins/notices")
-        .body(Body::empty())
-        .expect("build the request")
+    get_notices_from(None)
+}
+
+/// A notices request from the browser of the device `cookie`, if any.
+fn get_notices_from(cookie: Option<&str>) -> Request<Body> {
+    let mut req = Request::builder().uri("/api/audit/logins/notices");
+    if let Some(cookie) = cookie {
+        req = req.header(header::COOKIE, cookie);
+    }
+    req.body(Body::empty()).expect("build the request")
 }
 
 fn dismiss(body: &str) -> Request<Body> {
-    Request::builder()
+    dismiss_from(body, None)
+}
+
+/// A dismiss from the browser of the device `cookie`, if any.
+fn dismiss_from(body: &str, cookie: Option<&str>) -> Request<Body> {
+    let mut req = Request::builder()
         .method("POST")
         .uri("/api/audit/logins/dismiss")
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(Body::from(body.to_string()))
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+    if let Some(cookie) = cookie {
+        req = req.header(header::COOKIE, cookie);
+    }
+    req.body(Body::from(body.to_string()))
         .expect("build the request")
+}
+
+/// A new device: the `ralphy_device=…` pair the daemon sets on a first
+/// `/api/session`, and its device ID.
+async fn new_device(auth: &Arc<AuthState>, dir: &Path) -> (String, String) {
+    let req = Request::builder()
+        .uri("/api/session")
+        .body(Body::empty())
+        .expect("build the request");
+    let resp = app(auth, dir).oneshot(req).await.unwrap();
+    let cookie = resp
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|v| v.starts_with("ralphy_device="))
+        .expect("a device cookie")
+        .split(';')
+        .next()
+        .expect("a cookie pair")
+        .to_string();
+    let device = cookie
+        .split('.')
+        .nth(1)
+        .expect("a signed device ID")
+        .to_string();
+    (cookie, device)
 }
 
 async fn body_json(resp: axum::response::Response) -> Value {
@@ -224,6 +270,68 @@ async fn a_dismissed_pair_is_not_listed() {
         1,
         "a second dismiss writes no line"
     );
+}
+
+/// The holder of a replayed cookie cannot hide the notice about itself: the
+/// device a notice names cannot dismiss it, and another device can. A use
+/// with no device cookie is a device of its own: no device cookie cannot
+/// dismiss its notice either.
+#[tokio::test]
+async fn the_device_a_notice_names_cannot_dismiss_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = AuthState::localhost();
+    let (named, named_id) = new_device(&auth, dir.path()).await;
+    let (other, _) = new_device(&auth, dir.path()).await;
+    write_log_used_from(dir.path(), LOGIN, &named_id, 1);
+    let bare = json!({"at": at(1), "event": "login_other_device", "login": LOGIN});
+    let mut text = std::fs::read_to_string(log_path(dir.path())).expect("read the audit log");
+    text.push_str(&format!("{bare}\n"));
+    std::fs::write(log_path(dir.path()), text).expect("write the audit log");
+    let from_named = format!("login={LOGIN}&device={named_id}");
+    let from_none = format!("login={LOGIN}&device=");
+
+    for (body, cookie) in [(&from_named, Some(named.as_str())), (&from_none, None)] {
+        let resp = app(&auth, dir.path())
+            .oneshot(dismiss_from(body, cookie))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "{body}");
+    }
+    assert_eq!(
+        dismissed_lines(dir.path()),
+        0,
+        "a refused dismiss writes nothing"
+    );
+    assert_eq!(notices(&auth, dir.path()).await.len(), 2);
+
+    for body in [&from_named, &from_none] {
+        let resp = app(&auth, dir.path())
+            .oneshot(dismiss_from(body, Some(&other)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "{body}");
+    }
+    assert_eq!(dismissed_lines(dir.path()), 2);
+    assert!(notices(&auth, dir.path()).await.is_empty());
+}
+
+/// `here` marks the notice of the device that reads the list.
+#[tokio::test]
+async fn a_notice_says_whether_it_names_the_reading_device() {
+    let dir = tempfile::tempdir().unwrap();
+    let auth = AuthState::localhost();
+    let (named, named_id) = new_device(&auth, dir.path()).await;
+    let (other, _) = new_device(&auth, dir.path()).await;
+    write_log_used_from(dir.path(), LOGIN, &named_id, 1);
+    for (cookie, here) in [(Some(&named), true), (Some(&other), false), (None, false)] {
+        let resp = app(&auth, dir.path())
+            .oneshot(get_notices_from(cookie.map(String::as_str)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let reply = body_json(resp).await;
+        assert_eq!(reply["notices"][0]["here"], here, "{cookie:?}: {reply}");
+    }
 }
 
 #[tokio::test]
