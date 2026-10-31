@@ -5,6 +5,9 @@
 #[path = "../support/golden.rs"]
 mod golden;
 
+#[path = "../support/page.rs"]
+pub mod page;
+
 mod command_refusal;
 mod file_encoding;
 mod observe_read;

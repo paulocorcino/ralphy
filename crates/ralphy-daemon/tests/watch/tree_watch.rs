@@ -1,24 +1,22 @@
 //! The live file-tree watcher over the wire (issue #196; ADR-0036 §4): a
-//! `/ws/tree` client that `watch`es a repo dir receives a `tree.dirty` nudge when
-//! a file changes there, and the per-repo watcher is SHARED — a second client on
-//! the same dir keeps receiving after the first disconnects. Mirrors
-//! `tests/observe/observe_read.rs`'s `serve_repo` harness, but the URL is `…/ws/tree` and
-//! the socket stays OPEN (a subscription, not one answer-and-close).
+//! `tree` channel of the page socket that `watch`es a repo dir receives a
+//! `tree.dirty` nudge when a file changes there, and the per-repo watcher is
+//! SHARED — a second page on the same dir keeps receiving after the first
+//! disconnects. Mirrors `tests/observe/observe_read.rs`'s `serve_repo` harness,
+//! but the channel stays OPEN (a subscription, not one answer-and-close).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
-/// Bind a daemon over an empty temp repo; return the `ws://…/ws/tree` URL, the
-/// repo slug, and the repo root path (so the test can create files in it).
-async fn serve_repo() -> (String, String, PathBuf) {
+/// Bind a daemon over an empty temp repo; return its port, the repo slug, and
+/// the repo root path (so the test can create files in it).
+async fn serve_repo() -> (u16, String, PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path().to_path_buf();
 
@@ -55,14 +53,10 @@ async fn serve_repo() -> (String, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/tree"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }
 
-/// Send a `watch`/`unwatch` command for `(repo, path)` over the open socket.
+/// Send a `watch`/`unwatch` command for `(repo, path)` on the open channel.
 async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
     let frame = Frame::Command(Command {
         id: 0,
@@ -121,9 +115,9 @@ async fn recv_dirty_within(
 
 #[tokio::test]
 async fn shared_across_clients_survives_one_disconnect() {
-    let (url, slug, root) = serve_repo().await;
-    let (mut ws1, _r1) = connect_async(&url).await.expect("connect client 1");
-    let (mut ws2, _r2) = connect_async(&url).await.expect("connect client 2");
+    let (port, slug, root) = serve_repo().await;
+    let mut ws1 = page::tree(port).await;
+    let mut ws2 = page::tree(port).await;
     send_verb(&mut ws1, "watch", &slug, "").await;
     send_verb(&mut ws2, "watch", &slug, "").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -149,7 +143,7 @@ async fn shared_across_clients_survives_one_disconnect() {
 /// `wt-a`, which a plain root watch never sees (non-recursive).
 #[tokio::test]
 async fn dirty_nudge_reaches_a_checkout_watcher() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let wt = root.join(".ralphy/worktrees/wt-a");
     std::fs::create_dir_all(&wt).unwrap();
     let gitdir = root
@@ -158,7 +152,7 @@ async fn dirty_nudge_reaches_a_checkout_watcher() {
         .replace('\\', "/");
     std::fs::write(wt.join(".git"), format!("gitdir: {gitdir}\n")).unwrap();
 
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let mut ws = page::tree(port).await;
     send_verb_checkout(&mut ws, "watch", &slug, "", "wt-a").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -177,12 +171,12 @@ async fn dirty_nudge_reaches_a_checkout_watcher() {
 /// path, no `checkout`), not in the retired alias's.
 #[tokio::test]
 async fn unwatch_with_checkout_retires_the_alias() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let wt = root.join(".ralphy/worktrees/wt-a");
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(wt.join(".git"), "gitdir: /r/.git/worktrees/wt-a\n").unwrap();
 
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let mut ws = page::tree(port).await;
     send_verb_checkout(&mut ws, "watch", &slug, "", "wt-a").await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     send_verb_checkout(&mut ws, "unwatch", &slug, "", "wt-a").await;
@@ -204,8 +198,8 @@ async fn unwatch_with_checkout_retires_the_alias() {
 /// worktree's. Same door as `checkout::from_payload`.
 #[tokio::test]
 async fn malformed_checkout_on_watch_holds_nothing() {
-    let (url, slug, root) = serve_repo().await;
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let (port, slug, root) = serve_repo().await;
+    let mut ws = page::tree(port).await;
     for checkout in [serde_json::json!(""), serde_json::json!(5)] {
         let frame = Frame::Command(Command {
             id: 0,
@@ -222,7 +216,7 @@ async fn malformed_checkout_on_watch_holds_nothing() {
     let got = recv_dirty_within(&mut ws, Duration::from_secs(3)).await;
     assert_eq!(got, None, "no watch was held for a malformed checkout");
 
-    // POSITIVE CONTROL on the same socket: a well-formed plain watch still works.
+    // POSITIVE CONTROL on the same channel: a well-formed plain watch still works.
     send_verb(&mut ws, "watch", &slug, "").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     std::fs::write(root.join("i.txt"), b"x").unwrap();
@@ -236,8 +230,8 @@ async fn malformed_checkout_on_watch_holds_nothing() {
 /// show that it no longer updates by itself (ADR-0070 D3).
 #[tokio::test]
 async fn a_watch_that_fails_is_pushed_as_tree_failed() {
-    let (url, slug, _root) = serve_repo().await;
-    let (mut ws, _r) = connect_async(&url).await.expect("connect");
+    let (port, slug, _root) = serve_repo().await;
+    let mut ws = page::tree(port).await;
     send_verb(&mut ws, "watch", &slug, "no-such-dir").await;
     let payload = tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(msg) = ws.next().await {

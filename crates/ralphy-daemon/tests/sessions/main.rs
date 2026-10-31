@@ -23,6 +23,9 @@ mod session_ws_refusals;
 #[path = "../support/golden.rs"]
 mod golden;
 
+#[path = "../support/page.rs"]
+pub mod page;
+
 /// Open a NEW launch the daemon must refuse, and return the refusal's
 /// payload. The browser cannot read a refused upgrade, so the refusal is an
 /// upgrade, then ONE `session-end` frame with `reason: "refused"`, then the end
