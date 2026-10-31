@@ -56,6 +56,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
                 epoch::SessionEpoch::in_memory_detached(),
             ),
             roster_locator: Arc::new(|_| Some(PathBuf::from("/usr/local/bin/vendor"))),
+            page_sockets: Default::default(),
         },
     );
     let peer_task = tokio::spawn(async move {
@@ -95,6 +96,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
         RouterDependencies {
             auth: auth::AuthState::localhost(),
             roster_locator: Arc::new(|_| None),
+            page_sockets: Default::default(),
         },
     );
 

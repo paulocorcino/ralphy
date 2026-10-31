@@ -7,10 +7,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 
-use crate::router;
 use crate::routes::{poll_releases, RELEASE_POLL_EVERY};
 use crate::StorePaths;
 use crate::{auth, autostart, epoch, identity, peer, pidfile, registry, usage};
+use crate::{mux, router_tracking};
 
 #[cfg(unix)]
 pub mod socket;
@@ -117,7 +117,8 @@ pub(crate) async fn serve(
     let usage_dir = usage::usage_dir_path()?;
     let stores = usage_stores()?;
     let stop = shutdown_rx.clone();
-    let app = router(
+    let (page_sockets, drain) = mux::tracked();
+    let app = router_tracking(
         id,
         registry_path,
         usage_dir,
@@ -125,18 +126,50 @@ pub(crate) async fn serve(
         start,
         shutdown_rx,
         auth_state,
+        page_sockets,
     );
     spawn_shutdown_fanout(shutdown_tx);
-    serve_listeners(
+    serve_until_stopped(
+        tcp,
+        #[cfg(unix)]
+        socket,
+        app,
+        stop,
+        drain,
+    )
+    .await?;
+    tracing::info!("daemon stopped");
+    Ok(())
+}
+
+/// How long the stop waits for the page sockets after the listeners stop.
+/// Each socket ends within `mux::SHUTDOWN_WAIT` of the stop by itself; the
+/// extra second covers the end of its channels.
+const SOCKETS_WAIT: std::time::Duration =
+    mux::SHUTDOWN_WAIT.saturating_add(std::time::Duration::from_secs(1));
+
+/// Serve until `stop` says stop, then wait, bounded, for the page sockets
+/// `drain` tracks: the caller drops the runtime next, and that would cut
+/// their last frames.
+async fn serve_until_stopped(
+    tcp: Option<tokio::net::TcpListener>,
+    #[cfg(unix)] socket: Option<socket::BoundSocket>,
+    app: axum::Router,
+    stop: tokio::sync::watch::Receiver<bool>,
+    drain: mux::Drain,
+) -> Result<()> {
+    let served = serve_listeners(
         tcp,
         #[cfg(unix)]
         socket,
         app,
         stop,
     )
-    .await?;
-    tracing::info!("daemon stopped");
-    Ok(())
+    .await;
+    if !drain.wait(SOCKETS_WAIT).await {
+        tracing::debug!("a page socket was still open when the daemon stopped");
+    }
+    served
 }
 
 /// Say where the daemon listens, and warn once when its TCP listener is not

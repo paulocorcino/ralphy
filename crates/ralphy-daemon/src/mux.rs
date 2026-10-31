@@ -10,9 +10,11 @@
 mod writer;
 
 // ADR-0082 D3: `/ws` carries channel 0 and the channels a page opens.
+mod held;
 mod kinds;
 mod socket;
 
+pub(crate) use held::{tracked, Drain, Hold, Sockets};
 pub(crate) use kinds::Ctx;
-pub(crate) use socket::{serve, Login, Page, MAX_MESSAGE};
+pub(crate) use socket::{serve, Login, Page, MAX_MESSAGE, SHUTDOWN_WAIT};
 pub(crate) use writer::{ChannelSender, Out, Permit, Writer, WriterClosed};

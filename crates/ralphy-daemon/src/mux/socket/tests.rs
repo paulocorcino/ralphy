@@ -42,6 +42,7 @@ fn page(
             run_exits: broadcast::channel(4).0,
         },
         login: Login::now(crate::auth::AuthState::localhost()),
+        held: super::super::Hold::none(),
     }
 }
 
