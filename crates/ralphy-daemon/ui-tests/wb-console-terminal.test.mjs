@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
+import { CONNECT_TIMEOUT_MS } from "../assets/ui/wb-resume.ts";
 import {
   encodeDetach,
   encodeShown,
@@ -489,6 +490,32 @@ test("a dropped link keeps the count, writes nothing, and the strip shows until 
     assert.deepEqual(links, ["lost", "back"]);
     handle.dispose();
     assert.deepEqual(links, ["lost", "back"], "a link that is back is not told again");
+  } finally {
+    page.restore();
+  }
+});
+
+// A first connect while the page socket cannot open has no channel that
+// ends, so the handshake deadline is what shows the strip.
+test("a first connect that still waits at the handshake deadline shows the strip until its open", () => {
+  const page = fakePage();
+  try {
+    page.dropSocket();
+    const links = [];
+    const handle = createTerminal(fakeDeps(page).deps).attachTerminal(fakeElement(), {
+      id: 5,
+      onLink: (state) => links.push(state),
+    });
+    assert.equal(page.channels[0].readyState, 0, "the open waits for the page socket");
+    mock.timers.tick(CONNECT_TIMEOUT_MS - 1);
+    assert.deepEqual(links, [], "the strip waits for the deadline");
+    mock.timers.tick(1);
+    assert.deepEqual(links, ["lost"]);
+    assert.equal(page.channels.length, 1, "the deadline opens no second channel");
+    page.reopenSocket();
+    open(page.channels[0], { offset: 0, replay: true });
+    assert.deepEqual(links, ["lost", "back"]);
+    handle.dispose();
   } finally {
     page.restore();
   }

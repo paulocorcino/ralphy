@@ -13,7 +13,7 @@ import * as WBConsoleSession from "./wb-console-session.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { frameQueue } from "./wb-console-frames.ts";
 import { reportStall } from "./wb-stall.ts";
-import { resumeDecision, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import { announceDetach, detachSocket } from "./wb-console-terminal-socket.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
@@ -172,6 +172,16 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     link("back");
     // Never xterm's default 80×24: only a size the body measured.
     sizing.opened();
+  }
+
+  // A channel that still waits for the page socket at the handshake
+  // deadline shows the link strip: a first connect has no other signal
+  // that the daemon cannot be reached. Its `session-open` takes it away.
+  function armOpenDeadline(channel: ConsoleChannel) {
+    setTimeout(() => {
+      if (s.leaving || s.ended || s.held || s.ws !== channel) return;
+      if (channel.readyState === 0) link("lost");
+    }, CONNECT_TIMEOUT_MS);
   }
 
   function scheduleReconnect() {
@@ -342,6 +352,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       onClosed: (reason) => frames.whenIdle(() => closed(reason)),
     });
     s.ws = channel;
+    armOpenDeadline(channel);
   }
 
   // A key typed while the channel is down is not sent. The link strip says
