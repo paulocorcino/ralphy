@@ -158,10 +158,14 @@ impl Reader {
         let Some(kind) = request.kind else {
             return self.answer(id, CloseReason::Refused).await;
         };
+        let out = match kind.queue_depth() {
+            Some(depth) => self.writer.channel_with_depth(id, depth),
+            None => self.writer.channel(id),
+        };
         let opening = Opening {
             channel: id,
             payload: request.payload,
-            out: self.writer.channel(id),
+            out,
             control: self.control.clone(),
         };
         match kinds::open(kind, opening, &self.ctx) {

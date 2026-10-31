@@ -49,6 +49,19 @@ impl ChannelKind {
             _ => None,
         }
     }
+
+    /// The depth of the kind's writer queue, or `None` for the writer's
+    /// default. A console keeps the depth `/ws/session` gives it, so that
+    /// `session-end` waits behind one frame at most and goes out inside the
+    /// end window.
+    pub(crate) fn queue_depth(self) -> Option<usize> {
+        match self {
+            ChannelKind::Console => Some(console::QUEUE_FRAMES),
+            ChannelKind::Tree | ChannelKind::Runs | ChannelKind::Changes | ChannelKind::Spawn => {
+                None
+            }
+        }
+    }
 }
 
 /// Why the daemon ends a channel: the `reason` of its `channel.closed`.

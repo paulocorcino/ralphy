@@ -7,6 +7,10 @@ use tokio::sync::mpsc;
 use super::{peer, Channel, CloseReason, Opening};
 use crate::routes::{serve_console, ConsoleEnd, SessionHost, SessionQuery, SocketAudit};
 
+/// The writer queue depth of a console channel: the one of a console socket,
+/// where the bridge keeps the rest of the output in its own outbox.
+pub(super) const QUEUE_FRAMES: usize = 1;
+
 /// Serve a `console` channel. The open payload carries the fields of the
 /// `/ws/session` query, with their types and their rules; a payload that
 /// does not read as one is refused at once.
