@@ -787,9 +787,9 @@ This is why the flag is opt-in and why turning it on costs a code. To turn it
 off from the host, delete `daemon-remote-images` in the store and reload the
 page.
 
-## Amendment (2026-10-12, proposed): end one login without ending the others
+## Amendment (2026-10-12, accepted): end one login without ending the others
 
-Status: proposed.
+Status: accepted.
 
 **Context.** A pentest on 2026-10-12 replayed a valid session cookie from
 another machine. The step-up of amendment E held: the replay could not
@@ -809,10 +809,13 @@ own device.
   already declared for their bumps. A slide re-issue keeps the login ID; only
   a new login mints a new one.
 - The store gains a **revoked-login list**, `daemon-revoked-logins`, owner-only
-  like `daemon-token`. Each entry is a login ID and the `exp` cap of its
-  cookie. `verify_claims` refuses a cookie whose login ID is in the list. An
-  entry is pruned once its cap has passed: after that the cookie is dead on
-  its own. So the list holds at most the logins revoked in the last 30 days.
+  like `daemon-token`. Each entry is a login ID and a cap: the revoke time
+  plus 30 days (`REMEMBERED_ABSOLUTE_TTL_SECS`, the longest a remembered
+  cookie lives). The cap is not the exact `exp` of the cookie, because the
+  daemon stores no row per live login. `verify_claims` refuses a cookie whose
+  login ID is in the list. An entry is pruned once its cap has passed: after
+  that the cookie is dead on its own. So the list holds at most the logins
+  revoked in the last 30 days.
 - `POST /api/security/logins/revoke` with a login ID adds it to the list. It
   costs no fresh factor: ending a login lowers no posture (amendment E covers
   only lowering it). A login may revoke itself.

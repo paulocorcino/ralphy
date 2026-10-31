@@ -256,7 +256,7 @@ is absent. The daemon never guesses a value. Safari has no
 
 ## Amendment 2026-10-12 — a login used from a second device is reported to the operator
 
-Status: proposed. Depends on the login ID of the ADR-0032 amendment of the
+Status: accepted. Depends on the login ID of the ADR-0032 amendment of the
 same date.
 
 **Context.** A pentest on 2026-10-12 replayed a session cookie from a
@@ -277,6 +277,14 @@ operator while it happened.
   channel that carries the notice to the page is chosen in the issue, from
   the fact index in docs/ARCHITECTURE.md §7; this amendment adds no new path
   between daemon and browser by itself.
+
+**The channel and the dismissal, as built.** The daemon sends the verb
+`logins.dirty` on the existing push bus (channel 0 of the page socket). The
+page then reads the notices of `GET /api/audit/logins/notices`, which the
+daemon reads from the audit log. "This was me" posts to
+`POST /api/audit/logins/dismiss` with the login and the device; the daemon
+writes one `login_notice_dismissed` line, and the notice of that pair is no
+longer shown. No polling timer was added.
 
 **D2 still holds.** The notice is a record shown to a human. No access
 decision reads the device ID; the request that triggered the line succeeds as
