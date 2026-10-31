@@ -34,6 +34,6 @@ the esbuild version and the feature list. A Rust test (`lib.rs`,
 `vendored_crepe_states_its_recipe`) pins it against these files, so an artefact
 built by something else — or a recipe changed without a rebuild — reds.
 
-Measured at 7.22.2: **crepe.js 715 KB, crepe.css 20 KB** (≈232 KB gzipped
+Measured at 7.22.3: **crepe.js 718 KB, crepe.css 20 KB** (≈234 KB gzipped
 together). The build prints both sizes; a bump that doubles them is a decision,
 not a detail.
