@@ -1,5 +1,5 @@
-//! The non-streaming verbs of `/ws/command`: spawn-and-collect and the
-//! Observe family, answered by effect class (ADR-0036 §2, ADR-0063 §2).
+//! The non-streaming verbs: spawn-and-collect and the Observe family,
+//! answered by effect class (ADR-0036 §2, ADR-0063 §2).
 
 use std::path::{Path, PathBuf};
 

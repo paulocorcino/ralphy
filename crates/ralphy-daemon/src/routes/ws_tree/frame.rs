@@ -1,4 +1,4 @@
-//! The pure part of `/ws/tree`: reading a client command and shaping the
+//! The pure part of a tree connection: reading a client command and shaping the
 //! frames pushed back. Nothing here touches a socket, a watcher or the disk.
 
 use serde_json::{json, Value};
@@ -10,7 +10,7 @@ use crate::{checkout, watch};
 /// to the browser.
 pub(super) type Alias = (String, String);
 
-/// The verbs a `/ws/tree` client sends. Any other verb is ignored.
+/// The verbs a page sends on a tree channel. Any other verb is ignored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Verb {
     Watch,

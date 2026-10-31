@@ -1,5 +1,5 @@
-//! The Query and Mutate verbs of `/ws/command`: a config CLI invocation
-//! spawned and collected, answered as one reply (ADR-0036 §2).
+//! The Query and Mutate verbs: a config CLI invocation spawned and
+//! collected, answered as one reply (ADR-0036 §2).
 
 use std::path::Path;
 

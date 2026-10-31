@@ -314,8 +314,8 @@ pub struct Image {
 /// an image's cost is decode and paint, not lines in an editor (ADR-0049 §4).
 pub const MAX_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 
-/// The one transport cap on a command a client sends, on `/ws/command`,
-/// `/ws/session` and `/api/peer/command`: the base64 size of a
+/// The one transport cap on a command a client sends, on the `spawn` channel,
+/// `POST /api/command`, the console channel and `/api/peer/command`: the base64 size of a
 /// [`MAX_IMAGE_BYTES`] image (the largest payload a verb takes, `image.write`)
 /// plus 64 KiB for the JSON envelope. A larger message is refused before it is
 /// parsed (ADR-0072 D11).

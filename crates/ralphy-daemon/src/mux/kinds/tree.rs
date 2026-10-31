@@ -1,7 +1,8 @@
-//! The `tree` and `runs` kinds: each channel is one `/ws/tree` connection.
+//! The `tree` and `runs` kinds: each channel is one tree connection
+//! (`routes::TreeConn`).
 //!
-//! The page sends the verbs of `/ws/tree` on the channel (`watch`,
-//! `runs.watch`, …) and the pushes come back on it. The two kinds are
+//! The page sends the tree verbs on the channel (`watch`, `runs.watch`, …)
+//! and the pushes come back on it. The two kinds are
 //! the same connection under two names, so a page keeps its file-tree
 //! watches and its run watches on separate channels.
 

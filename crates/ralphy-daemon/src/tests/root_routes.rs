@@ -96,6 +96,35 @@ async fn unknown_path_is_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+/// The page socket `/ws` carries the runs and the file tree: the two sockets
+/// that carried them before are no longer served.
+#[tokio::test]
+async fn the_old_socket_routes_are_gone() {
+    for path in ["/ws/command", "/ws/tree"] {
+        let request = Request::builder()
+            .uri(path)
+            .header(header::CONNECTION, "upgrade")
+            .header(header::UPGRADE, "websocket")
+            .header(header::SEC_WEBSOCKET_VERSION, "13")
+            .header(header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==")
+            .body(Body::empty())
+            .expect("a static request builds");
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(request)
+        .await
+        .expect("the router answers");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "GET {path}");
+    }
+}
+
 #[tokio::test]
 async fn api_identity_route_returns_name_and_avatar() {
     let id = identity::Identity {

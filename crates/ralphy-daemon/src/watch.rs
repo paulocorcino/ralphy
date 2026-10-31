@@ -3,9 +3,10 @@
 //! per repo, watching only the directories a browser has actually expanded (a
 //! refcounted, lazy watch-set bounded by the screen, not the repo). Each settled
 //! event storm is mapped to the watched directory it touched and broadcast as one
-//! `tree.dirty` nudge; the `/ws/tree` handler (`routes::ws_tree::tree_ws`) turns a nudge into
-//! a client push, and the browser re-reads the changed subtree via the existing
-//! Observe [`crate::tree::list`] path.
+//! `tree.dirty` nudge; a tree channel of the page socket
+//! (`routes::ws_tree::TreeConn`) turns a nudge into a client push, and the
+//! browser re-reads the changed subtree via the existing Observe
+//! [`crate::tree::list`] path.
 //!
 //! Concurrency bridge (mirrors `session.rs`): the notify/debouncer thread forwards
 //! raw `Vec<DebouncedEvent>` batches over an `mpsc::unbounded_channel`; a tokio
@@ -163,7 +164,7 @@ impl RepoWatcher {
 }
 
 /// Shared, refcounted registry of live per-repo watchers. Cheap to clone via
-/// `Arc` at the router; every `/ws/tree` connection watches/unwatches through it.
+/// `Arc` at the router; every tree connection watches/unwatches through it.
 pub struct WatcherManager {
     repos: Mutex<BTreeMap<String, RepoWatcher>>,
     max_watches: usize,
@@ -469,7 +470,7 @@ fn rel_to_slug(rel: &Path) -> String {
 }
 
 /// Normalize an incoming rel dir to the watch-set form: `/`-separated, no leading
-/// or trailing slash; `""` stays the root. Public so the `/ws/tree` handler stores
+/// or trailing slash; `""` stays the root. Public so a tree connection stores
 /// a connection's watched dirs in the SAME form the nudges carry, so its
 /// per-connection filter matches.
 pub fn norm_rel(rel: &str) -> String {

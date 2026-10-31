@@ -264,7 +264,7 @@ impl ProcessSpawner {
         // ordered log (issue #180). The child ignores SIGPIPE, so a daemon crash
         // that drops the reader gives it a non-fatal broken-pipe write, never a
         // kill — but a LIVE daemon must drain the reader to EOF or the pipe fills
-        // and stalls the child (the detached drain task in `command_ws` does).
+        // and stalls the child (the detached drain task of `stream_child` does).
         let (reader, writer) = std::io::pipe()?;
         let writer2 = writer.try_clone()?;
         cmd.args(args)

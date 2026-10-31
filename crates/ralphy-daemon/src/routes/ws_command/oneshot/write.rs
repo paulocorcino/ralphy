@@ -1,5 +1,5 @@
-//! The Write verbs of `/ws/command` that answer in the daemon: the file
-//! mutations of the editor and the clipboard drop (ADR-0036 §2, ADR-0055).
+//! The Write verbs that answer in the daemon: the file mutations of the
+//! editor and the clipboard drop (ADR-0036 §2, ADR-0055).
 
 use std::path::Path;
 use std::time::SystemTime;

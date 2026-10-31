@@ -1,4 +1,4 @@
-//! The peer tree poller: the long poll a `/ws/tree` connection runs against
+//! The peer tree poller: the long poll a tree connection runs against
 //! a peer daemon for a repo that lives there (ADR-0052 §2).
 
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use crate::peer;
 
-/// The watch set one peer poller asks about, shared with the `/ws/tree`
+/// The watch set one peer poller asks about, shared with the tree
 /// connection that owns it. The three fields are one fact — which dirs this
 /// subscription wants nudges for — and they move together, which is why the bell
 /// lives here beside them rather than being remembered to ring.

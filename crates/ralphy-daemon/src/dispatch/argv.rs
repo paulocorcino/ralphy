@@ -58,8 +58,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
             argv.push(mode.as_flag().to_string());
             Ok(argv)
         }
-        // Non-Spawn verbs never reach the spawn path (the `command_ws`
-        // Observe/Query/Mutate branches answer and return first); refuse an argv
+        // Non-Spawn verbs never reach the spawn path (`answer_one` answers the
+        // Observe/Query/Mutate verbs and returns first); refuse an argv
         // defensively.
         Verb::TreeList
         | Verb::TreeFind
@@ -673,8 +673,8 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
             "--".to_string(),
             key()?,
         ]),
-        // Non-config verbs never route here (`command_ws` picks the branch by
-        // effect class); refuse an argv defensively.
+        // Non-config verbs never route here (`execute_oneshot` picks the branch
+        // by effect class); refuse an argv defensively.
         _ => Err(ArgvError::BadParam("verb")),
     }
 }

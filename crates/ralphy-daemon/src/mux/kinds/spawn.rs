@@ -1,20 +1,20 @@
-//! The `spawn` kind: one command, from the open payload, served as
-//! `/ws/command` serves its first frame.
+//! The `spawn` kind: one command, from the open payload, served by
+//! `routes::serve_command`.
 //!
 //! The open carries the command as `command: {id, verb, payload}`. It is a
 //! bare frame on channel 0, so the command must fit the cap of one. The
-//! channel gets the frames of the command socket (`spawned`, `output`,
-//! `exited`, or one reply or error), and then ends with `done`. The verb
-//! registry, the refusals and the audit line are those of the command
-//! socket: this kind calls the same code.
+//! channel gets the frames of the command (`spawned`, `output`, `exited`, or
+//! one reply or error), and then ends with `done`. The verb registry, the
+//! refusals and the audit line are those of `POST /api/command`: both call
+//! the same code.
 //!
 //! The channel never ends a run. The page closing the channel, the socket
 //! closing and the daemon stopping all stop only this task, and the run
-//! keeps its own life (the teardown invariant of the command socket).
+//! keeps its own life (the teardown invariant of `stream_child`).
 //!
 //! The command's work runs in a task of its own, which the channel task
 //! awaits. Stopping the channel task leaves the work to finish, so a reply
-//! verb ends with its audit line, as `/ws/command` ends its first answer.
+//! verb ends with its audit line.
 
 use tokio::sync::broadcast;
 

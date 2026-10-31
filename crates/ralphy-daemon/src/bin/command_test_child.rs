@@ -1,7 +1,7 @@
 //! Test helper child driven by `tests/command_ws.rs` through
 //! `CARGO_BIN_EXE_command_test_child` (pointed at via `RALPHY_EXE_OVERRIDE`). It
 //! stands in for the real `ralphy` exe a dispatched command would spawn, so the
-//! `/ws/command` spawn → ack → exit path can be exercised with a deterministic
+//! `spawn` channel → ack → exit path can be exercised with a deterministic
 //! exit code and no real run — portable on Windows and Unix, no shell-script
 //! child (house convention).
 //!

@@ -1,5 +1,5 @@
-//! The Observe verbs of `/ws/command`: filesystem reads answered off the
-//! runtime, each in the operator's coordinates (ADR-0036 §2, ADR-0063 §2).
+//! The Observe verbs: filesystem reads answered off the runtime, each
+//! in the operator's coordinates (ADR-0036 §2, ADR-0063 §2).
 
 use std::path::{Path, PathBuf};
 
