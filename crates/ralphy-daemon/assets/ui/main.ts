@@ -31,6 +31,7 @@ import { wbSpend } from "./wb-spend-panel.ts";
 import { wbAccount } from "./wb-account.ts";
 import { wbLogin } from "./wb-login.ts";
 import { wbAttention } from "./wb-attention.ts";
+import { wbLoginNotice } from "./wb-login-notice.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { startPresence } from "./wb-presence.ts";
 import { WBDevice } from "./wb-device.ts";
@@ -138,6 +139,7 @@ Alpine.data("wbSpend", wbSpend);
 Alpine.data("wbAccount", wbAccount);
 Alpine.data("wbLogin", wbLogin);
 Alpine.data("wbAttention", wbAttention);
+Alpine.data("wbLoginNotice", wbLoginNotice);
 Alpine.start();
 // The consoles boot on a page whose shell Alpine has built (ADR-0075 D7).
 window.WBConsole.boot();

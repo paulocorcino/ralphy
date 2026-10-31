@@ -26,6 +26,7 @@ import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
 import type { AttentionReply, TelegramReply } from "./wb-attention.ts";
+import type { LoginNoticesReply } from "./wb-login-notice.ts";
 import { reportStall } from "./wb-stall.ts";
 
 /** What HEAD points at (`ralphy_git_read::Head`). */
@@ -138,6 +139,10 @@ interface ApiRoutes {
   "POST /api/desk/history": { ok: { generation: number }; failed: ErrorBody };
   "GET /api/audit/devices": { ok: { devices: Device[] }; failed: ErrorBody };
   "GET /api/audit/events": { ok: { events: AuditEvent[] }; failed: ErrorBody };
+  /** The open login notices, the newest first. */
+  "GET /api/audit/logins/notices": { ok: LoginNoticesReply; failed: ErrorBody };
+  /** `400` for a pair that is not a login ID and a device ID. */
+  "POST /api/audit/logins/dismiss": { ok: { dismissed: true }; failed: ErrorBody };
   "GET /api/release": { ok: ReleaseView };
   "POST /api/release/watch": { ok: { enabled: boolean } };
   "GET /api/security/state": {
@@ -152,6 +157,8 @@ interface ApiRoutes {
   "POST /api/security/totp/enroll": { ok: { uri: string; newly_minted: boolean } };
   "POST /api/security/totp/confirm": { ok: { confirmed: boolean } };
   "POST /api/security/password": { ok: { password_set: boolean } };
+  /** `400` (plain text) for a value that is not a login ID. */
+  "POST /api/security/logins/revoke": { ok: { revoked: true } };
 }
 
 /** A route of `ApiRoutes`. */

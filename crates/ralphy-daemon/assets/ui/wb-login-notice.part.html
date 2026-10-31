@@ -1,0 +1,14 @@
+    <div class="build-notice login-notice" x-data="wbLoginNotice" x-show="notices.length > 0" x-cloak role="alert" style="top:0;bottom:auto;border-top:none;border-bottom:1px solid var(--danger);border-radius:0 0 6px 6px;max-width:min(40rem,calc(100% - 2rem))">
+      <template x-for="n in notices" :key="keyOf(n)">
+        <div class="login-notice-row" style="display:flex;flex-direction:column;gap:0.3rem;padding:0.3rem 0">
+          <strong>Your login was used on another device.</strong>
+          <span class="login-notice-device" x-text="deviceOf(n)"></span>
+          <span class="login-notice-did" x-text="didOf(n)"></span>
+          <span class="login-notice-failure" x-show="failureOf(n)" x-text="failureOf(n)"></span>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn login-notice-revoke" @click="revoke(n)" title="Sign out every device that uses this login">End this login</button>
+            <button class="btn login-notice-dismiss" @click="dismiss(n)" title="Dismiss this notice">This was me</button>
+          </div>
+        </div>
+      </template>
+    </div>
