@@ -1,6 +1,7 @@
 //! The signed, stateless session cookie (issue #179, ADR-0032 §4 + amendment §B).
 //! A browser login mints
-//! `ralphy_session=3.<epoch>.<iat>.<exp>.<kind>.<hex HMAC-SHA1(token, "3|<epoch>|<iat>|<exp>|<kind>")>`;
+//! `ralphy_session=4.<epoch>.<iat>.<exp>.<kind>.<login>.<mac>`, where `<mac>` is
+//! the hex HMAC-SHA1 under the token of `4|<epoch>|<iat>|<exp>|<kind>|<login>`;
 //! every subsequent request is authorized by recomputing the MAC (constant-time)
 //! and checking `exp > now`. No server-side store — the signing key is the daemon
 //! access token (re-minting it invalidates outstanding cookies), and the
@@ -17,9 +18,15 @@
 //! (remembered, 7 d idle / 30 d cap — the "keep me signed in" box). It sits in
 //! the MAC so a standard cookie cannot be re-tagged into a remembered one.
 //!
-//! Format history: `1.<exp>.<mac>` (pre-epoch) and `2.<epoch>.<iat>.<exp>.<mac>`
-//! (pre-kind) no longer verify — an old cookie fails closed and the browser
-//! re-logs in once.
+//! The `login` is the [`LoginId`] minted at login (issue #717): every cookie of
+//! one login carries the same ID, and a slide keeps it. It sits in the MAC, so
+//! the holder of a stolen cookie cannot swap it for another ID.
+//!
+//! Format history: `1.<exp>.<mac>` (pre-epoch), `2.<epoch>.<iat>.<exp>.<mac>`
+//! (pre-kind) and `3.<epoch>.<iat>.<exp>.<kind>.<mac>` (pre-login-ID) no longer
+//! verify — an old cookie fails closed and the browser re-logs in once.
+
+use std::fmt;
 
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
@@ -104,13 +111,99 @@ impl SessionKind {
     }
 }
 
+/// The number of characters of a [`LoginId`] in its text form.
+const LOGIN_ID_LEN: usize = 22;
+
+/// The base64url alphabet (RFC 4648 §5), written without padding.
+const BASE64URL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/// One login's ID: 16 random bytes minted when the login succeeds, carried in
+/// every cookie of that login. Its text form is 22 base64url characters.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LoginId([u8; 16]);
+
+impl LoginId {
+    /// A new random ID.
+    pub fn mint() -> LoginId {
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a login ID");
+        LoginId(bytes)
+    }
+
+    /// The ID written as `text`: exactly 22 base64url characters in the one
+    /// form that `Display` writes, else `None`.
+    pub fn parse(text: &str) -> Option<LoginId> {
+        if text.len() != LOGIN_ID_LEN {
+            return None;
+        }
+        let id = LoginId(from_base64url(text)?);
+        // The last character holds 2 bits of the ID and 4 bits that must be 0:
+        // only the canonical spelling is an ID.
+        (id.to_string() == text).then_some(id)
+    }
+}
+
+/// The ID as 22 base64url characters, without padding.
+impl fmt::Display for LoginId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&to_base64url(&self.0))
+    }
+}
+
+impl fmt::Debug for LoginId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "LoginId({self})")
+    }
+}
+
+/// `bytes` in base64url without padding.
+fn to_base64url(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity((bytes.len() * 8).div_ceil(6));
+    let mut acc: u32 = 0;
+    let mut bits = 0;
+    for &b in bytes {
+        acc = ((acc << 8) | u32::from(b)) & 0xffff;
+        bits += 8;
+        while bits >= 6 {
+            bits -= 6;
+            out.push(char::from(BASE64URL[((acc >> bits) & 63) as usize]));
+        }
+    }
+    if bits > 0 {
+        out.push(char::from(BASE64URL[((acc << (6 - bits)) & 63) as usize]));
+    }
+    out
+}
+
+/// The 16 bytes that 22 base64url characters decode to, or `None` when a
+/// character is outside the alphabet or the length is not 16 bytes.
+fn from_base64url(text: &str) -> Option<[u8; 16]> {
+    let mut out = [0u8; 16];
+    let mut len = 0;
+    let mut acc: u32 = 0;
+    let mut bits = 0;
+    for c in text.bytes() {
+        let value = BASE64URL.iter().position(|&a| a == c)?;
+        acc = ((acc << 6) | value as u32) & 0xfff;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            *out.get_mut(len)? = (acc >> bits) as u8;
+            len += 1;
+        }
+    }
+    (len == out.len()).then_some(out)
+}
+
 /// The validated claims carried by a session cookie: when it was issued (`iat`,
 /// the anchor for the absolute cap), when it currently expires (`exp`, slid by
-/// activity within the cap), and which length preset governs the slide.
+/// activity within the cap), which length preset governs the slide, and the
+/// login the cookie belongs to.
 pub struct Claims {
     pub iat: u64,
     pub exp: u64,
     pub kind: SessionKind,
+    pub login: LoginId,
 }
 
 /// The slid expiry for a `kind` cookie issued at `iat`, seen at `now`:
@@ -121,12 +214,18 @@ pub fn slide_exp(kind: SessionKind, iat: u64, now: u64) -> u64 {
 }
 
 /// The signed message MAC'd under the token: version-tagged, epoch-bound, and
-/// binding `iat`, `exp` and the kind so none can be tampered. Kept in one place
-/// so `sign`/`verify` cannot drift apart.
-fn mac_hex(token: &str, epoch: u64, iat: u64, exp: u64, kind: SessionKind) -> String {
+/// binding `iat`, `exp`, the kind and the login ID so none can be tampered.
+/// Kept in one place so `sign`/`verify` cannot drift apart.
+fn mac_hex(token: &str, epoch: u64, claims: &Claims) -> String {
+    let Claims {
+        iat,
+        exp,
+        kind,
+        login,
+    } = claims;
     let mut mac =
         Hmac::<Sha1>::new_from_slice(token.as_bytes()).expect("HMAC accepts a key of any length");
-    mac.update(format!("3|{epoch}|{iat}|{exp}|{}", kind.tag()).as_bytes());
+    mac.update(format!("4|{epoch}|{iat}|{exp}|{}|{login}", kind.tag()).as_bytes());
     let bytes = mac.finalize().into_bytes();
     let mut hex = String::with_capacity(bytes.len() * 2);
     for b in bytes {
@@ -135,52 +234,57 @@ fn mac_hex(token: &str, epoch: u64, iat: u64, exp: u64, kind: SessionKind) -> St
     hex
 }
 
-/// Mint a cookie value binding `epoch`, `iat`, `exp` and `kind` to `token`.
-pub fn sign(token: &str, epoch: u64, kind: SessionKind, iat: u64, exp: u64) -> String {
+/// Mint a cookie value binding `epoch`, `iat`, `exp`, `kind` and `login` to
+/// `token`.
+pub fn sign(
+    token: &str,
+    epoch: u64,
+    kind: SessionKind,
+    iat: u64,
+    exp: u64,
+    login: LoginId,
+) -> String {
+    let claims = Claims {
+        iat,
+        exp,
+        kind,
+        login,
+    };
     format!(
-        "3.{epoch}.{iat}.{exp}.{}.{}",
+        "4.{epoch}.{iat}.{exp}.{}.{login}.{}",
         kind.tag(),
-        mac_hex(token, epoch, iat, exp, kind)
+        mac_hex(token, epoch, &claims)
     )
 }
 
 /// The validated claims of `value` for `token` at the current `epoch`, or `None`
 /// when it is malformed, wrong-epoch, tampered, or expired at `now_unix`.
-/// Requires the version tag `3`, the matching epoch, a known kind, and
-/// `exp > now`. A cookie carrying any other epoch fails closed (invalidated by a
-/// bump).
+/// Requires the version tag `4`, the matching epoch, a known kind, a well-formed
+/// login ID, and `exp > now`. A cookie carrying any other epoch fails closed
+/// (invalidated by a bump).
 pub fn verify_claims(token: &str, epoch: u64, value: &str, now_unix: u64) -> Option<Claims> {
-    let mut parts = value.splitn(6, '.');
-    let (Some(ver), Some(epoch_str), Some(iat_str), Some(exp_str), Some(kind_str), Some(mac)) = (
-        parts.next(),
-        parts.next(),
-        parts.next(),
-        parts.next(),
-        parts.next(),
-        parts.next(),
-    ) else {
+    let (cookie_epoch, claims, mac) = parse_value(value)?;
+    if cookie_epoch != epoch || claims.exp <= now_unix {
+        return None;
+    }
+    let expected = mac_hex(token, epoch, &claims);
+    auth::ct_eq(mac.as_bytes(), expected.as_bytes()).then_some(claims)
+}
+
+/// The epoch, the claims and the MAC written in a format-4 cookie value, before
+/// any check of the MAC.
+fn parse_value(value: &str) -> Option<(u64, Claims, &str)> {
+    let fields: Vec<&str> = value.splitn(7, '.').collect();
+    let ["4", epoch, iat, exp, kind, login, mac] = fields[..] else {
         return None;
     };
-    if ver != "3" {
-        return None;
-    }
-    let cookie_epoch = epoch_str.parse::<u64>().ok()?;
-    if cookie_epoch != epoch {
-        return None;
-    }
-    let iat = iat_str.parse::<u64>().ok()?;
-    let exp = exp_str.parse::<u64>().ok()?;
-    let kind = SessionKind::from_tag(kind_str)?;
-    if exp <= now_unix {
-        return None;
-    }
-    if !auth::ct_eq(
-        mac.as_bytes(),
-        mac_hex(token, epoch, iat, exp, kind).as_bytes(),
-    ) {
-        return None;
-    }
-    Some(Claims { iat, exp, kind })
+    let claims = Claims {
+        iat: iat.parse().ok()?,
+        exp: exp.parse().ok()?,
+        kind: SessionKind::from_tag(kind)?,
+        login: LoginId::parse(login)?,
+    };
+    Some((epoch.parse().ok()?, claims, mac))
 }
 
 /// Whether `value` is a valid, unexpired cookie for `token` at `epoch`.
@@ -258,6 +362,13 @@ mod tests {
     const STD: SessionKind = SessionKind::Standard;
     const REM: SessionKind = SessionKind::Remembered;
 
+    /// The login ID of 16 zero bytes, in its text form.
+    const ZERO_ID: &str = "AAAAAAAAAAAAAAAAAAAAAA";
+
+    fn sign(token: &str, epoch: u64, kind: SessionKind, iat: u64, exp: u64) -> String {
+        super::sign(token, epoch, kind, iat, exp, LoginId::mint())
+    }
+
     #[test]
     fn round_trip_verifies() {
         let c = sign("tok", 0, STD, 500, 1000);
@@ -266,27 +377,87 @@ mod tests {
         assert_eq!(claims.kind, STD, "the kind round-trips");
     }
 
-    /// Cookies as a browser holds them, with each MAC from Python's
-    /// `hmac.new(token, b"3|7|1700000000|1700001800|<kind>", hashlib.sha1)`, not
-    /// from the crate under test. A dependency update that changes the MAC or its
-    /// hex form fails here, instead of logging out every browser (#443).
     #[test]
-    fn a_cookie_minted_by_an_earlier_build_still_verifies() {
+    fn a_login_id_round_trips_through_the_cookie() {
+        let login = LoginId::mint();
+        let c = super::sign("tok", 0, STD, 500, 1000, login);
+        let claims = verify_claims("tok", 0, &c, 900).expect("a fresh cookie verifies");
+        assert_eq!(claims.login, login);
+        assert_eq!(LoginId::parse(&login.to_string()), Some(login));
+    }
+
+    /// Cookies as a browser holds them, with each MAC from Python's
+    /// `hmac.new(token, b"4|7|1700000000|1700001800|<kind>|AAAAAAAAAAAAAAAAAAAAAA",
+    /// hashlib.sha1)`, not from the crate under test. A dependency update that
+    /// changes the MAC or its hex form fails here, instead of logging out every
+    /// browser (#443).
+    #[test]
+    fn a_v4_cookie_matches_an_independent_hmac() {
         let token = "0123456789abcdef".repeat(4);
+        let login = LoginId::parse(ZERO_ID).expect("22 zero characters are an ID");
         for (kind, cookie) in [
             (
                 STD,
-                "3.7.1700000000.1700001800.s.31965787eada68ef54fd63e069bd9f4fff61796c",
+                "4.7.1700000000.1700001800.s.AAAAAAAAAAAAAAAAAAAAAA.\
+                 4202cda714ddf4ff9e7f946d4449f218a875d2cb",
             ),
             (
                 REM,
-                "3.7.1700000000.1700001800.r.470dbca9dc84918172d523f0aa12f10d90c5abf7",
+                "4.7.1700000000.1700001800.r.AAAAAAAAAAAAAAAAAAAAAA.\
+                 c2481af5473ae872b4158b1173dfd7af58ad8086",
             ),
         ] {
-            assert_eq!(sign(&token, 7, kind, 1_700_000_000, 1_700_001_800), cookie);
+            let signed = super::sign(&token, 7, kind, 1_700_000_000, 1_700_001_800, login);
+            assert_eq!(signed, cookie);
             let claims = verify_claims(&token, 7, cookie, 1_700_000_900).expect("verifies");
-            assert_eq!(claims.kind, kind);
+            assert_eq!((claims.kind, claims.login), (kind, login));
         }
+    }
+
+    /// The text form is base64url without padding, as Python's
+    /// `base64.urlsafe_b64encode(bytes(range(16))).rstrip(b"=")` writes it.
+    #[test]
+    fn a_login_id_is_written_in_base64url() {
+        let id = LoginId::parse("AAECAwQFBgcICQoLDA0ODw").expect("a valid ID");
+        assert_eq!(id.0, core::array::from_fn::<u8, 16, _>(|i| i as u8));
+        assert_eq!(id.to_string(), "AAECAwQFBgcICQoLDA0ODw");
+    }
+
+    #[test]
+    fn a_tampered_login_id_is_rejected() {
+        let c = super::sign(
+            "tok",
+            0,
+            STD,
+            500,
+            1000,
+            LoginId::parse(ZERO_ID).expect("an ID"),
+        );
+        let edited = c.replacen(ZERO_ID, "AAAAAAAAAAAAAAAAAAAAAQ", 1);
+        assert_ne!(c, edited, "the ID was found and edited");
+        assert!(
+            !verify("tok", 0, &edited, 900),
+            "an edited ID breaks the MAC"
+        );
+        for bad in [
+            "AAAAAAAAAAAAAAAAAAAAA",   // 21 characters
+            "AAAAAAAAAAAAAAAAAAAAAAA", // 23 characters
+            "AAAAAAAAAAAAAAAAAAAAA+",  // outside base64url
+            "AAAAAAAAAAAAAAAAAAAAAB",  // the 4 unused bits are not 0
+        ] {
+            assert_eq!(LoginId::parse(bad), None, "{bad}");
+            let malformed = c.replacen(ZERO_ID, bad, 1);
+            assert!(!verify("tok", 0, &malformed, 900), "{malformed}");
+        }
+    }
+
+    /// A format-3 cookie, as a browser held it before the login ID: its MAC is
+    /// right for its own format, and it still fails closed.
+    #[test]
+    fn a_v3_cookie_no_longer_verifies() {
+        let token = "0123456789abcdef".repeat(4);
+        let v3 = "3.7.1700000000.1700001800.s.31965787eada68ef54fd63e069bd9f4fff61796c";
+        assert!(verify_claims(&token, 7, v3, 1_700_000_900).is_none());
     }
 
     #[test]
@@ -362,7 +533,7 @@ mod tests {
     fn a_tampered_iat_is_rejected() {
         // iat is in the MAC, so lengthening the absolute cap by editing it fails.
         let c = sign("tok", 0, STD, 500, 1000);
-        let forged = c.replacen("3.0.500.", "3.0.999.", 1);
+        let forged = c.replacen("4.0.500.", "4.0.999.", 1);
         assert!(
             !verify("tok", 0, &forged, 900),
             "editing iat breaks the MAC"
@@ -403,19 +574,39 @@ mod tests {
             "the pre-kind v2 format no longer verifies"
         );
         assert!(
-            !verify("tok", 0, "3.0.500.1000.deadbeef", 900),
-            "the 5-field (no-kind) format does not verify"
+            !verify("tok", 0, "4.0.500.1000.s.deadbeef", 900),
+            "the 6-field (no-login-ID) format does not verify"
         );
         assert!(
-            !verify("tok", 0, "3.0.500.1000.x.deadbeef", 900),
+            !verify(
+                "tok",
+                0,
+                "4.0.500.1000.x.AAAAAAAAAAAAAAAAAAAAAA.deadbeef",
+                900
+            ),
             "an unknown kind tag is rejected"
         );
         assert!(
-            !verify("tok", 0, "4.0.500.1000.s.deadbeef", 900),
+            !verify(
+                "tok",
+                0,
+                "5.0.500.1000.s.AAAAAAAAAAAAAAAAAAAAAA.deadbeef",
+                900
+            ),
             "wrong version tag"
         );
-        assert!(!verify("tok", 0, "3.notanumber.500.1000.s.deadbeef", 900));
-        assert!(!verify("tok", 0, "3.0.500.notanumber.s.deadbeef", 900));
+        assert!(!verify(
+            "tok",
+            0,
+            "4.notanumber.500.1000.s.AAAAAAAAAAAAAAAAAAAAAA.deadbeef",
+            900
+        ));
+        assert!(!verify(
+            "tok",
+            0,
+            "4.0.500.notanumber.s.AAAAAAAAAAAAAAAAAAAAAA.deadbeef",
+            900
+        ));
     }
 
     #[test]

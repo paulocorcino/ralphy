@@ -14,11 +14,13 @@ use crate::{cookie, epoch, password, totp};
 /// The outcome of a [`SessionAuth::login_checked`] attempt.
 pub enum LoginOutcome {
     /// Credentials verified: send `cookie` (with the `Max-Age` of `kind`) and
-    /// persist `step` as the new last consumed TOTP step.
+    /// persist `step` as the new last consumed TOTP step. `login` is the ID
+    /// minted for this login, which the cookie carries.
     Ok {
         cookie: String,
         kind: cookie::SessionKind,
         step: u64,
+        login: cookie::LoginId,
     },
     /// The code/password did not verify.
     BadCredential,

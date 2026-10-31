@@ -74,7 +74,7 @@ pub(crate) fn request_may_carry_a_secret(headers: &header::HeaderMap) -> bool {
 /// fall-through — fail closed.
 pub(crate) async fn require_auth(
     State(state): State<Arc<auth::AuthState>>,
-    req: axum::extract::Request,
+    mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
     // Cross-site first, BEFORE the policy: under `Localhost` the policy
@@ -100,7 +100,9 @@ pub(crate) async fn require_auth(
         return (StatusCode::UNAUTHORIZED, "missing or invalid bearer token").into_response();
     };
     let now = now_unix();
-    if session.cookie_valid(cookie_of(&req), now) {
+    if let Some(login) = session.cookie_login(cookie_of(&req), now) {
+        // The handler learns which login sent the request.
+        req.extensions_mut().insert(login);
         return run_with_slid_cookie(session, req, now, next).await;
     }
     if ungated_without_session(&req) {

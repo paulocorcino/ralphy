@@ -74,6 +74,7 @@ async fn secure_cookie_follows_the_forwarded_scheme_on_login_slide_and_logout() 
         cookie::SessionKind::Standard,
         now - cookie::SLIDE_MIN_SECS - 10,
         now + cookie::SESSION_IDLE_TTL_SECS - cookie::SLIDE_MIN_SECS - 10,
+        cookie::LoginId::mint(),
     );
     for (forwarded, want_secure) in [(Some("https"), true), (None, false)] {
         let mut req = Request::builder()
@@ -204,6 +205,83 @@ async fn logout_clears_cookie_and_needs_a_session() {
         StatusCode::UNAUTHORIZED,
         "and the epoch bump dropped it server-side (amendment §B)"
     );
+}
+
+/// A request with a valid session cookie reaches its handler with the login ID
+/// that cookie carries.
+#[tokio::test]
+async fn the_guard_hands_the_login_id_to_the_request() {
+    let session_epoch = epoch::SessionEpoch::in_memory_detached();
+    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
+        token: "tok".to_string(),
+        totp: rfc_seed(),
+        password: None,
+        epoch: session_epoch.clone(),
+    }));
+    let state = auth::AuthState::fixed(policy, session_epoch.clone());
+    let probe = |req: Request<Body>| async move {
+        req.extensions()
+            .get::<cookie::LoginId>()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    };
+    let app = Router::new()
+        .route("/api/probe", axum::routing::get(probe))
+        .layer(axum::middleware::from_fn_with_state(state, require_auth));
+    let login = cookie::LoginId::mint();
+    let now = now_unix();
+    let value = cookie::sign(
+        "tok",
+        session_epoch.get(),
+        cookie::SessionKind::Standard,
+        now,
+        now + 600,
+        login,
+    );
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/probe")
+                .header(header::COOKIE, format!("ralphy_session={value}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(body_text(resp).await, login.to_string());
+}
+
+/// A successful login answers with the login ID it minted, the same one its
+/// cookie carries, so a layer around the route can record it.
+#[tokio::test]
+async fn a_login_response_carries_its_login_id() {
+    let now = now_unix();
+    let code = rfc_seed().code_at(now / 30);
+    let resp = session_router("tok")
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!("code={code}")))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let login = *resp
+        .extensions()
+        .get::<cookie::LoginId>()
+        .expect("the response carries the login ID");
+    let set_cookie = resp
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .expect("a Set-Cookie header");
+    let value = cookie::from_cookie_header(set_cookie.split(';').next()).expect("a cookie value");
+    let claims = cookie::verify_claims("tok", 0, &value, now).expect("the cookie verifies");
+    assert_eq!(claims.login, login, "the response and the cookie agree");
 }
 
 /// A wrong TOTP code is rejected `401` by `POST /api/login` (the login handler

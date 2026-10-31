@@ -346,3 +346,52 @@ fn a_remembered_login_mints_a_remembered_cookie_with_its_own_hysteresis() {
         "the kind is preserved"
     );
 }
+
+/// A session over the RFC seed and the token `tok`, at epoch 0.
+fn rfc_session() -> SessionAuth {
+    SessionAuth {
+        token: "tok".into(),
+        totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+        password: None,
+        epoch: test_epoch(),
+    }
+}
+
+/// The cookie and login ID of a login that must succeed.
+fn login_ok(s: &SessionAuth) -> (String, cookie::LoginId) {
+    match s.login_checked("287082", None, cookie::SessionKind::Standard, 59, None) {
+        LoginOutcome::Ok { cookie, login, .. } => (cookie, login),
+        LoginOutcome::BadCredential | LoginOutcome::Replayed => panic!("login must succeed"),
+    }
+}
+
+#[test]
+fn each_login_mints_its_own_login_id() {
+    let s = rfc_session();
+    let (first_cookie, first) = login_ok(&s);
+    let (_, second) = login_ok(&s);
+    assert_ne!(first, second, "two logins, two IDs");
+    for id in [first, second] {
+        assert_eq!(id.to_string().len(), 22, "{id}");
+    }
+    let header = format!("{}={first_cookie}", cookie::COOKIE_NAME);
+    assert_eq!(
+        s.cookie_login(Some(&header), 60),
+        Some(first),
+        "the cookie carries the ID the login returned"
+    );
+}
+
+#[test]
+fn a_slid_cookie_keeps_its_login_id() {
+    let s = rfc_session();
+    let (cookie, login) = login_ok(&s);
+    let header = format!("{}={cookie}", cookie::COOKIE_NAME);
+    let later = 59 + cookie::SLIDE_MIN_SECS;
+    let (slid, _) = s
+        .slide_cookie(Some(&header), later)
+        .expect("re-issue past the hysteresis");
+    assert_ne!(slid, cookie, "the slide wrote a new cookie");
+    let slid_header = format!("{}={slid}", cookie::COOKIE_NAME);
+    assert_eq!(s.cookie_login(Some(&slid_header), later), Some(login));
+}

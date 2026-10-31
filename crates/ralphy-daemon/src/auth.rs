@@ -61,10 +61,14 @@ impl SessionAuth {
     /// Whether a `Cookie:` header carries a valid, unexpired session cookie
     /// signed by this daemon's token AT THE CURRENT EPOCH.
     pub fn cookie_valid(&self, cookie_header: Option<&str>, now: u64) -> bool {
-        match cookie::from_cookie_header(cookie_header) {
-            Some(value) => cookie::verify(&self.token, self.epoch.get(), &value, now),
-            None => false,
-        }
+        self.cookie_login(cookie_header, now).is_some()
+    }
+
+    /// The login ID of a valid, unexpired session cookie in a `Cookie:` header,
+    /// signed by this daemon's token at the current epoch; `None` otherwise.
+    pub fn cookie_login(&self, cookie_header: Option<&str>, now: u64) -> Option<cookie::LoginId> {
+        let value = cookie::from_cookie_header(cookie_header)?;
+        cookie::verify_claims(&self.token, self.epoch.get(), &value, now).map(|c| c.login)
     }
 
     /// Attempt a login with anti-replay (amendment §D). The TOTP `code` must match
@@ -97,14 +101,21 @@ impl SessionAuth {
             }
         }
         let iat = now;
+        let login = cookie::LoginId::mint();
         let cookie = cookie::sign(
             &self.token,
             self.epoch.get(),
             kind,
             iat,
             cookie::slide_exp(kind, iat, now),
+            login,
         );
-        LoginOutcome::Ok { cookie, kind, step }
+        LoginOutcome::Ok {
+            cookie,
+            kind,
+            step,
+            login,
+        }
     }
 
     /// Credential-only login (no anti-replay, standard length): a thin wrapper
@@ -119,8 +130,9 @@ impl SessionAuth {
 
     /// For an authorized session cookie, the re-issued cookie value (and its kind,
     /// for the `Max-Age`) when idle-slide moves `exp` at least the kind's
-    /// hysteresis forward (amendment §D), else `None`. Preserves `iat` and the
-    /// kind, so the absolute cap is never extended.
+    /// hysteresis forward (amendment §D), else `None`. Preserves `iat`, the
+    /// kind and the login ID, so the absolute cap is never extended and the
+    /// re-issued cookie still belongs to the same login.
     pub fn slide_cookie(
         &self,
         cookie_header: Option<&str>,
@@ -139,6 +151,7 @@ impl SessionAuth {
                 claims.kind,
                 claims.iat,
                 new_exp,
+                claims.login,
             ),
             claims.kind,
         ))

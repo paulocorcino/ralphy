@@ -66,7 +66,12 @@ pub(crate) async fn login_submit(
         cookie::SessionKind::Standard
     };
     match session.login_checked(&form.code, form.password.as_deref(), kind, now, last_step) {
-        auth::LoginOutcome::Ok { cookie, kind, step } => {
+        auth::LoginOutcome::Ok {
+            cookie,
+            kind,
+            step,
+            login,
+        } => {
             // Persist the consumed step so the same code can't be replayed.
             state.record_step(step);
             state.throttle_record(true);
@@ -74,14 +79,18 @@ pub(crate) async fn login_submit(
             // cookie then never rides plain http, and a loopback browser on
             // `http://127.0.0.1` keeps its plain cookie.
             let secure = super::request_is_https(&headers);
-            (
+            let mut resp = (
                 StatusCode::OK,
                 [(
                     header::SET_COOKIE,
                     cookie::set_cookie_value_with(&cookie, kind, secure),
                 )],
             )
-                .into_response()
+                .into_response();
+            // The layers around the route learn which login this response
+            // starts.
+            resp.extensions_mut().insert(login);
+            resp
         }
         // A replay and a bad credential are indistinguishable to the client (generic
         // message) and both feed the throttle.
