@@ -7,11 +7,11 @@ use super::*;
 /// none since #613. The table is empty and stays empty: every module has zero.
 const ANY_BASELINE: &[(&str, usize)] = &[];
 
-/// The `new WebSocket(` sites in the workbench modules: `spawn`,
+/// The `new WebSocket(` sites in the workbench modules:
 /// `persistentSocket` and the console terminal (ADR-0082 D1). A command with
 /// one reply goes over `POST /api/command`, not a new socket. Exact: a site
 /// that goes lowers it in the same change.
-const WEBSOCKET_SITES: usize = 3;
+const WEBSOCKET_SITES: usize = 2;
 
 /// `(module, count)` of every cast written over another cast (`x as A as B`)
 /// under `UI_DIR`: each is a new element typed as a console window or a note
@@ -32,7 +32,7 @@ fn explicit_any_matches_the_baseline() {
     );
 }
 
-/// ADR-0082 D1: the page opens a WebSocket in three places only.
+/// ADR-0082 D1: the page opens a WebSocket in two places only.
 #[test]
 fn websocket_sites_match_the_baseline() {
     let ui = workspace_root().join(UI_DIR);

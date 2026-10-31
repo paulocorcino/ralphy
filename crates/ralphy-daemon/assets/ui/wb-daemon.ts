@@ -3,8 +3,8 @@
 
    The browser's `workbench:action` seam is verb-agnostic; this adapter maps the
    actions that reach the daemon (`ACTION_TO_VERB`) to a `Command {id, verb,
-   payload}`. A verb that streams (a Spawn call) drives one `/ws/command`
-   socket per call; a command with one reply (`observe`, `write`, `readImage`)
+   payload}`. A verb that streams (a Spawn call) runs on a `spawn` channel of
+   the page's one socket; a command with one reply (`observe`, `write`, `readImage`)
    goes over `POST /api/command`. The client
    never composes a command line — it sends closed-enum params and the daemon's
    verb registry (dispatch.rs) builds the argv. Raw `status:"output"` chunks feed
@@ -133,29 +133,6 @@ export function createDaemon(
     out[0] = TAG_COMMAND;
     out.set(body, 1);
     return out;
-  }
-
-  // Open a fresh `/ws/command`, fire the verb, and stream each reply's `payload`
-  // (which carries `status`) to `onStatus`; close on the terminal `exited`/`error`.
-  function spawn(verb: string, payload: CommandPayload, onStatus: (st: SpawnStatus) => void) {
-    const id = nextId++;
-    const ws = new WebSocket(WS_ORIGIN + "/ws/command");
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
-    ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => {
-      const a = new Uint8Array(ev.data);
-      if (a[0] !== TAG_COMMAND) return;
-      let frame: { payload: SpawnStatus };
-      try {
-        frame = socketFrame(a);
-      } catch {
-        return;
-      }
-      const status = frame.payload;
-      onStatus(status);
-      if (status.status === "exited" || status.status === "error") ws.close();
-    };
-    return id;
   }
 
   // The optional `checkout` argument of a repo-scoped verb (#406, ADR-0063
@@ -386,6 +363,43 @@ export function createDaemon(
         leave();
       },
     };
+  }
+
+  // Fire the verb on a `spawn` channel of the page socket and stream each
+  // reply's `payload` (which carries `status`) to `onStatus`. The channel ends
+  // on the terminal `exited`/`error`, or when the daemon or the socket ends
+  // it. A socket that ends mid-run ends the command: the next socket does not
+  // run the verb again.
+  function spawn(verb: string, payload: CommandPayload, onStatus: (st: SpawnStatus) => void) {
+    const id = nextId++;
+    let over = false;
+    let left = false;
+    let leave: (() => void) | null = null;
+    const finish = () => {
+      over = true;
+      left = true;
+      leave?.();
+    };
+    leave = page.join({
+      onOpen: (channels: PageChannels) => {
+        if (over) return;
+        const ch = channels.open("spawn", { command: { id, verb, payload } });
+        ch.onFrame = (inner: Uint8Array) => {
+          if (over || inner[0] !== TAG_COMMAND) return;
+          let status: SpawnStatus;
+          try {
+            status = socketFrame<{ payload: SpawnStatus }>(inner).payload;
+          } catch {
+            return;
+          }
+          onStatus(status);
+          if (status.status === "exited" || status.status === "error") finish();
+        };
+        ch.onClosed = finish;
+      },
+    });
+    if (over && !left) finish();
+    return id;
   }
 
   // Open ONE `tree` channel for a project (#196, ADR-0036 §4):

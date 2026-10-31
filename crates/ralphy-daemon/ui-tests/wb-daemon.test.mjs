@@ -687,6 +687,57 @@ test("subscribePresence hands a command frame to onPush and each open to onOpen"
   assert.deepEqual(opens, [false]);
 });
 
+test("spawn runs on a channel and opens no socket", () => {
+  const { d, sockets, open, push, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const seen = [];
+  const id = withFakes(() =>
+    d.spawn("run", { repo: "o/r", agent: "claude" }, (st) => seen.push(st)),
+  );
+  assert.equal(sockets.length, 1, "the command opens no WebSocket of its own");
+  const opens = sockets[0].sent.filter((f) => f.verb === "channel.open");
+  assert.equal(opens.length, 1);
+  assert.equal(opens[0].channel, 0);
+  assert.equal(opens[0].payload.kind, "spawn");
+  assert.deepEqual(opens[0].payload.command, {
+    id,
+    verb: "run",
+    payload: { repo: "o/r", agent: "claude" },
+  });
+  push(sockets[0], "spawn", "run", { status: "spawned", pid: 7 });
+  push(sockets[0], "spawn", "run", { status: "output", chunk: "hello" });
+  push(sockets[0], "spawn", "run", { status: "exited", code: 0 });
+  assert.deepEqual(
+    seen.map((s) => s.status),
+    ["spawned", "output", "exited"],
+  );
+  assert.equal(seen[1].chunk, "hello");
+  // The run ended with `exited`: a late frame on the channel is not heard,
+  // and the verb is not sent again.
+  push(sockets[0], "spawn", "run", { status: "output", chunk: "late" });
+  assert.equal(seen.length, 3);
+  // NEGATIVE CONTROL: the same frame bare on channel 0 is not the command's.
+  const other = withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st)));
+  assert.notEqual(other, id);
+  push(sockets[0], null, "run", { status: "output", chunk: "bare" });
+  assert.equal(seen.length, 3);
+});
+
+test("a command whose socket was lost is not run again on the next socket", () => {
+  const { d, sockets, open, drop, runRetries, withFakes } = pageSockets();
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  const seen = [];
+  withFakes(() => d.spawn("run", { repo: "o/r" }, (st) => seen.push(st.status)));
+  drop(sockets[0]);
+  runRetries();
+  open(sockets[1]);
+  const opens = sockets[1].sent.filter((f) => f.verb === "channel.open" && f.payload.kind === "spawn");
+  assert.deepEqual(opens, [], "a new socket does not run the verb again");
+  assert.deepEqual(seen, []);
+});
+
 test("an observe past its deadline reports a stall naming the verb", async () => {
   const stalls = [];
   forgetStalls();
