@@ -23,9 +23,10 @@ use crate::protocol::{self, Command, Frame};
 use crate::routes::{CommandCtx, SessionHost, SocketAudit, TreeHost};
 use crate::watch::WatcherManager;
 
-/// How many inner frames from the page one channel may hold before the
-/// socket's reader waits for the kind to take them.
-const INBOUND_FRAMES: usize = 64;
+/// How many inner frames from the page one channel may hold. One more ends
+/// the channel with `overflow`: the socket's reader never waits on one
+/// channel, so the others and the pongs are still read.
+pub(super) const INBOUND_FRAMES: usize = 64;
 
 /// The kinds of channel, a closed set (ADR-0082 amendment 2026-10-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +75,8 @@ pub(crate) enum CloseReason {
     TooLarge,
     /// The kind has finished its work.
     Done,
+    /// The page sent more frames than the kind's queue holds.
+    Overflow,
 }
 
 impl CloseReason {
@@ -82,6 +85,7 @@ impl CloseReason {
             CloseReason::Refused => "refused",
             CloseReason::TooLarge => "too-large",
             CloseReason::Done => "done",
+            CloseReason::Overflow => "overflow",
         }
     }
 }
@@ -224,10 +228,11 @@ impl Channel {
         Channel { inbound, task }
     }
 
-    /// Hand one inner frame from the page to the kind; waits while the
-    /// kind's queue is full. `false` when the kind's task has ended.
+    /// Hand one inner frame from the page to the kind; never waits.
+    /// `false` when the kind's task has ended or its queue is full;
+    /// [`Channel::ended`] tells which.
     pub(crate) async fn take(&self, inner: Vec<u8>) -> bool {
-        self.inbound.send(inner).await.is_ok()
+        self.inbound.try_send(inner).is_ok()
     }
 
     /// Whether the kind's task has ended.

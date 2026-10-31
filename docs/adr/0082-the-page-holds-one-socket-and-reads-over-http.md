@@ -187,7 +187,7 @@ today's `/ws`. Two verbs control the other channels, both on channel 0. The
 page sends `channel.open {channel, kind, ...}` and `channel.close {channel}`.
 The daemon sends `channel.closed {channel, reason}` when it ends a channel
 itself. The page picks each id: a u32 of 1 or more, never reused on one
-socket. The `reason` is one of three words:
+socket. The `reason` is one of four words:
 
 - `"refused"`: the daemon did not serve the open or the piece. This covers a
   duplicate id, an unknown id, an unknown kind, an open that its kind cannot
@@ -197,6 +197,8 @@ socket. The `reason` is one of three words:
   past the cap.
 - `"done"`: the kind finished its work, such as a spawned command that ended
   or a console session that ended.
+- `"overflow"`: the page sent the channel more frames than its kind had
+  taken and its queue holds; only that channel ends.
 
 Rejected: ids that the daemon picks. They add one round trip
 before a console can resume.

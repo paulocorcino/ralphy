@@ -8,6 +8,9 @@
 //! with an unknown flag are all answered with
 //! `channel.closed {reason: "refused"}`; the socket stays open. An open after
 //! the login changed is refused too, and ends the socket.
+//!
+//! The reader never waits on one channel: a piece for a channel whose kind
+//! holds a full queue ends that channel with `overflow`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -228,12 +231,7 @@ impl Reader {
         };
         match open.joiner.push(more, piece) {
             Ok(None) => true,
-            Ok(Some(inner)) => {
-                if !open.channel.take(inner).await {
-                    self.open.remove(&id);
-                }
-                true
-            }
+            Ok(Some(inner)) => self.hand(id, inner).await,
             Err(ChannelError::OverCap | ChannelError::UnknownFlags(_)) => {
                 self.end(id, CloseReason::TooLarge).await
             }
@@ -263,6 +261,22 @@ impl Reader {
         false
     }
 
+    /// Hand a whole inner frame to the kind of channel `id`. A kind whose
+    /// queue is full ends with `overflow`, and only that channel ends.
+    async fn hand(&mut self, id: u32, inner: Vec<u8>) -> bool {
+        let Some(open) = self.open.get(&id) else {
+            return true;
+        };
+        if open.channel.take(inner).await {
+            return true;
+        }
+        if open.channel.ended() {
+            self.open.remove(&id);
+            return true;
+        }
+        self.end(id, CloseReason::Overflow).await
+    }
+
     /// End a channel the daemon refuses: its kind stops, the id stays used,
     /// and the page gets `channel.closed`.
     async fn end(&mut self, id: u32, reason: CloseReason) -> bool {
@@ -284,3 +298,6 @@ impl Reader {
         self.open.retain(|_, open| !open.channel.ended());
     }
 }
+
+#[cfg(test)]
+mod tests;
