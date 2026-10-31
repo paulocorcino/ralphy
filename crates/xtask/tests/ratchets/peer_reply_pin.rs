@@ -6,7 +6,7 @@ use super::*;
 /// daemon wrote. The local daemon passes these replies on as the peer wrote
 /// them: the one-reply verbs of a peer repo and the registry verbs that name
 /// a peer (`relay_to_peer` in `routes/ws_command.rs`), the frames of a spawn
-/// verb, the frames of a console channel (the `/ws/session` frames), and
+/// verb, the frames of a console channel, and
 /// `GET /api/agents?repo=`. The page
 /// reads only the status of `POST /api/sessions/close`, so no type reads its
 /// body. `/api/sessions`, `/api/fleet`, `/api/usage` and the tree pushes are

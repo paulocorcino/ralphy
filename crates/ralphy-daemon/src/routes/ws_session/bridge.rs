@@ -1,12 +1,11 @@
-//! The byte bridge of an attached `/ws/session`: replay, live stream, input,
-//! resize, and the eviction/exit teardown.
+//! The byte bridge of an attached console: replay, live stream, input,
+//! resize, and the eviction/exit teardown. [`Liveness`] is the page
+//! socket's.
 
 use std::ops::ControlFlow;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use axum::extract::ws::{Message, WebSocket};
-use futures_util::StreamExt;
 use tokio::sync::broadcast::error::RecvError;
 
 // ADR-0082 D4: a console served on a channel of the page socket.
@@ -14,17 +13,21 @@ mod channel;
 
 pub(crate) use channel::{serve_console, ConsoleEnd, PeerRelay};
 
-use super::outbound::{
-    announce_end, hand_on, open, resync, send_output, send_size, Opening, Outbox,
-};
-use super::traffic::{Tab, Traffic};
-use super::SessionLabels;
-use crate::mux::Out;
+use super::outbound::{resync, send_output, send_size, Opening, Outbox};
+use super::traffic::Traffic;
 use crate::protocol::{Command, Frame};
 use crate::{protocol, session};
 
-/// How often the bridge pings its client, and how long the client may stay
-/// silent before the bridge gives up on it (ADR-0051 §9 amendment 2026-09-22).
+/// How often the page socket pings its browser, and how long the browser may
+/// stay silent before the socket gives up on it (ADR-0051 §9 amendment
+/// 2026-09-22).
+///
+/// The browser answers every ping with a pong from its network stack, even
+/// in a background tab, so a browser that has sent NOTHING for
+/// `silent_after` is gone. A send succeeding proves nothing: a tunnel agent
+/// (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
+/// daemon open for minutes after the browser behind it vanished, and that
+/// leg would hold a console's writer slot against the page's own reattach.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Liveness {
     pub(crate) ping_every: Duration,
@@ -76,140 +79,6 @@ fn silent_if_err<T, E>(sent: Result<T, E>) -> Flow {
     }
 }
 
-/// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
-/// FIRST announces `session-open` with the hosting identity, then the session
-/// size (`session-size`), then replays the screen snapshot and loops: session
-/// output (via the broadcast `rx`) → `Frame::Terminal`; a new session size →
-/// `session-size`; client `Frame::Terminal` → PTY stdin; client
-/// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
-/// close/error, a send failure, an eviction (a `takeover` reattach OR the child
-/// exiting), or daemon shutdown.
-///
-/// TEARDOWN INVARIANT (INVERTED vs #162): on EVERY exit path the bridge drops
-/// `attach` — releasing the single-writer slot — and does NOT close the session.
-/// A WebSocket drop detaches; the child survives it and a later reattach resumes
-/// it. A session ends only via `POST /api/sessions/close` or its child exiting,
-/// never because a browser tab closed.
-///
-/// LIVENESS: the browser answers every ping with a pong from its network stack,
-/// even in a background tab, so a client that has sent NOTHING for
-/// [`Liveness::silent_after`] is gone. A send succeeding proves nothing: a tunnel
-/// agent (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
-/// daemon open for minutes after the browser behind it vanished, and that leg
-/// would hold the writer slot against the client's own reattach.
-/// `tab` is the browser tab that opened the socket.
-///
-/// INPUT IS NEVER HELD BEHIND OUTPUT (ADR-0082 D5): the frames for the client
-/// wait in an [`Outbox`] and go to the socket's writer when it has room, so
-/// the loop keeps reading the client while a slow link takes the output. The
-/// session's output is read only once the outbox is empty, so a slow client
-/// still slows the reading of output, as a blocking send did.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the socket, the attachment, the session identity and the tab, one parameter each"
-)]
-pub(crate) async fn session_ws(
-    socket: WebSocket,
-    mut attach: session::Attachment,
-    id: session::SessionId,
-    daemon_id: String,
-    environment: String,
-    labels: SessionLabels,
-    tab: Tab,
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
-) {
-    // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
-    // future across the whole loop (a fresh `notified()` per iteration could miss
-    // an eviction firing mid-iteration), and `enable()` it up front so the waiter
-    // is parked before the snapshot replay below: an eviction (a `takeover`
-    // reattach or the child exiting) that fires during that replay `await` — or in
-    // the `on_upgrade` scheduling gap — is delivered as a stored permit and breaks
-    // the loop on the first poll, never lost. Missing this leaks the single-writer
-    // slot AND hangs the bridge forever (the `Attachment` keeps `tx` alive, so
-    // `rx.recv()` never returns `Closed`).
-    let evict = attach.evict.clone();
-    let notified = evict.notify.notified();
-    tokio::pin!(notified);
-    notified.as_mut().enable();
-    let gzip = tab.gzip;
-    let mut traffic = Traffic::local(id, tab, Instant::now());
-
-    let (sink, mut from_client) = socket.split();
-    let mut outbox = Outbox::start(sink);
-    let opening = Opening::new(id, daemon_id, environment, &labels, gzip);
-    open(&mut outbox, id, &opening, &mut attach, &mut traffic);
-    // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
-    // bytes, so a NAT/proxy idle-timeout silently drops it. The pongs the pings
-    // earn are what resets the silence (see LIVENESS above).
-    let liveness = Liveness::current();
-    let mut ping = tokio::time::interval(liveness.ping_every);
-    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    ping.tick().await; // consume the immediate first tick — no ping on connect
-                       // Reset on each message from the client, so the release comes
-                       // `silent_after` past the last one, not at the next ping tick.
-    let silence = tokio::time::sleep(liveness.silent_after);
-    tokio::pin!(silence);
-    // Each ping carries its own number, so a pong is timed against its ping.
-    let mut ping_seq: u64 = 0;
-
-    // False once the size sender is gone, so `changed()` cannot return at once
-    // on every turn of the loop.
-    let mut sizes = true;
-    let end = loop {
-        let flow = tokio::select! {
-            _ = shutdown.changed() => {
-                ControlFlow::Break(Some(session::EndReason::DaemonShutdown))
-            }
-            // Taken over, closed, or the child exited — the token carries which.
-            _ = &mut notified => ControlFlow::Break(Some(
-                evict.reason().unwrap_or(session::EndReason::ChildExited),
-            )),
-            _ = ping.tick() => on_ping(&mut outbox, &mut traffic, &mut ping_seq),
-            // Silent, not announced, as a dropped link (issue #334).
-            () = &mut silence => ControlFlow::Break(None),
-            changed = attach.size.changed(), if sizes => {
-                on_size(changed, &mut outbox, id, &mut attach, &mut sizes)
-            }
-            recv = attach.rx.recv(), if outbox.queued.is_empty() => {
-                on_output(recv, &mut outbox, id, &opening, &mut attach, &mut traffic)
-            }
-            permit = outbox.out.reserve(), if !outbox.queued.is_empty() => {
-                silent_if_err(hand_on(permit, &mut outbox.queued))
-            }
-            incoming = from_client.next() => {
-                hear(&incoming, silence.as_mut(), &liveness);
-                on_client(incoming, &attach, &mut traffic)
-            }
-        };
-        if let ControlFlow::Break(end) = flow {
-            break end;
-        }
-    };
-    // `None` announces nothing: the socket is already gone there.
-    if let Some(reason) = end {
-        announce_end(&mut outbox, id, &opening, &mut attach, &mut traffic, reason).await;
-    }
-    // The socket is dropped here, as the bridge dropped it before it had a
-    // writer: whatever the writer still holds is not sent.
-    if let Some(writer) = &outbox.writer {
-        writer.abort();
-    }
-    traffic.log(end.map(|r| r.as_wire()), Instant::now());
-    // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
-    // session (and its child) live on for a later reattach.
-    drop(attach);
-}
-
-/// The ping goes before the frames that wait in the outbox, so its round
-/// trip times the link, not the queue.
-fn on_ping(outbox: &mut Outbox, traffic: &mut Traffic, ping_seq: &mut u64) -> Flow {
-    *ping_seq += 1;
-    let payload = ping_seq.to_le_bytes();
-    traffic.ping_sent(&payload, Instant::now());
-    outbox.queued.push_front(Out::Ping(payload.to_vec()));
-    ControlFlow::Continue(())
-}
-
 /// A new session size goes to the client. A closed size sender stops the arm.
 fn on_size(
     changed: Result<(), tokio::sync::watch::error::RecvError>,
@@ -247,44 +116,6 @@ fn on_output(
             ControlFlow::Continue(())
         }
         Err(RecvError::Closed) => ControlFlow::Break(Some(session::EndReason::ChildExited)),
-    }
-}
-
-/// A message that arrived, of any kind, puts the release `silent_after`
-/// from now.
-fn hear(
-    incoming: &Option<Result<Message, axum::Error>>,
-    silence: std::pin::Pin<&mut tokio::time::Sleep>,
-    liveness: &Liveness,
-) {
-    if matches!(incoming, Some(Ok(_))) {
-        silence.reset(tokio::time::Instant::now() + liveness.silent_after);
-    }
-}
-
-/// One message from the client. Every message that arrives, of any kind,
-/// has already reset the silence.
-fn on_client(
-    incoming: Option<Result<Message, axum::Error>>,
-    attach: &session::Attachment,
-    traffic: &mut Traffic,
-) -> Flow {
-    match incoming {
-        Some(Ok(Message::Binary(bytes))) => {
-            traffic.inbound(bytes.len());
-            on_client_frame(&bytes, attach, traffic)
-        }
-        Some(Ok(Message::Close(_))) => {
-            traffic.client_closed();
-            ControlFlow::Break(None)
-        }
-        Some(Ok(Message::Pong(payload))) => {
-            traffic.pong_received(&payload, Instant::now());
-            ControlFlow::Continue(())
-        }
-        // Text and ping: they reset the silence, nothing else.
-        Some(Ok(_)) => ControlFlow::Continue(()),
-        None | Some(Err(_)) => ControlFlow::Break(None),
     }
 }
 

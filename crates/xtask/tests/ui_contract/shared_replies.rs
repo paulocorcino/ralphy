@@ -6,10 +6,11 @@ use super::*;
 /// registry verbs: 51 registry verbs + 30 UI routes + 10 pushes = 91 types, 9
 /// of them covered. `file.stat` and `tree.size` add 2 types and 2 reply
 /// files. The removal of the `ws-command` and `ws-tree` routes takes 2 UI
-/// routes away: 28 UI routes, 78 types without a reply. Counting rules are in
-/// [`message_types`]. A new type starts with a shared reply; a new reply file
-/// lowers this number.
-const UNSHARED_BASELINE: usize = 78;
+/// routes away: 28 UI routes, 78 types without a reply. The removal of the
+/// `ws-session` route takes 1 more: 27 UI routes, 77 types without a reply.
+/// Counting rules are in [`message_types`]. A new type starts with a shared
+/// reply; a new reply file lowers this number.
+const UNSHARED_BASELINE: usize = 77;
 
 #[test]
 fn message_types_without_a_shared_reply_match_the_baseline() {

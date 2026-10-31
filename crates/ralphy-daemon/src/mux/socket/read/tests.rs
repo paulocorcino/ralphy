@@ -10,7 +10,6 @@ use tokio_tungstenite::tungstenite::Message as Wire;
 
 use super::*;
 use crate::mux::kinds::INBOUND_FRAMES;
-use crate::mux::Mode;
 use crate::routes::{SessionHost, SocketAudit};
 
 /// The channel whose kind never takes a frame.
@@ -55,7 +54,7 @@ fn reader_route() -> Router {
                 first.expect("the test connects once");
                 ws.on_upgrade(|socket| async move {
                     let (sink, stream) = socket.split();
-                    let writer = Writer::start(sink, Mode::Channels);
+                    let writer = Writer::start(sink);
                     let control = writer.channel(0);
                     let echo = writer.channel(ECHO);
                     let page = PageEntry::open(crate::presence_board::Shared::default());

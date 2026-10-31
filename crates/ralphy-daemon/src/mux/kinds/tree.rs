@@ -62,7 +62,7 @@ mod tests {
 
     use super::*;
     use crate::mux::kinds::Taken;
-    use crate::mux::{Mode, Writer};
+    use crate::mux::Writer;
     use crate::protocol::{self, Command, Frame};
     use crate::{registry, watch};
 
@@ -84,7 +84,7 @@ mod tests {
                 async move {
                     ws.on_upgrade(move |socket| async move {
                         let (sink, _stream) = socket.split();
-                        let writer = Writer::start(sink, Mode::Channels);
+                        let writer = Writer::start(sink);
                         let out = writer.channel(1);
                         let channel = Channel::spawn(move |frames| serve(frames, host, out));
                         give.send((channel, writer))

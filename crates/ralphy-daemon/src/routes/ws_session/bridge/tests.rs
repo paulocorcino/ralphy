@@ -1,10 +1,10 @@
 use super::*;
-use crate::mux::{Mode, Writer};
-use crate::routes::ws_session::outbound::{CONSOLE_QUEUE, SESSION_SIZE};
-use crate::routes::ws_session::traffic::SESSION_OPEN;
+use crate::mux::Writer;
+use crate::routes::ws_session::outbound::SESSION_SIZE;
+use crate::routes::ws_session::traffic::{Tab, SESSION_OPEN};
 use std::sync::{Arc, Mutex};
 
-use axum::extract::ws::WebSocketUpgrade;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use futures_util::stream::SplitStream;
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
@@ -14,6 +14,9 @@ mod input;
 
 /// The channel of the page socket the console is served on.
 const CHANNEL: u32 = 1;
+
+/// The writer queue depth the page socket gives a console channel.
+const CONSOLE_QUEUE: usize = 1;
 
 /// A console whose child has exited: the eviction is signalled and the
 /// attachment's output stream is the test's own, holding `chunks`, so the
@@ -99,7 +102,7 @@ where
             async move {
                 ws.on_upgrade(move |socket| async move {
                     let (sink, stream) = socket.split();
-                    let writer = Writer::start(sink, Mode::Channels);
+                    let writer = Writer::start(sink);
                     let out = writer.channel_with_depth(CHANNEL, CONSOLE_QUEUE);
                     let (inbound, mut frames) = mpsc::channel(64);
                     let tab = Tab {

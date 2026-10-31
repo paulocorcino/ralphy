@@ -15,4 +15,4 @@ mod socket;
 
 pub(crate) use kinds::Ctx;
 pub(crate) use socket::{serve, Login, Page, MAX_MESSAGE};
-pub(crate) use writer::{ChannelSender, Mode, Out, Permit, Writer, WriterClosed};
+pub(crate) use writer::{ChannelSender, Out, Permit, Writer, WriterClosed};

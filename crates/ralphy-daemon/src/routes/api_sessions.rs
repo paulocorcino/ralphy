@@ -4,7 +4,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Query;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -12,7 +11,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 
-use super::{session_ws_upgrade, RouterShared, SessionHost, SessionQuery};
+use super::RouterShared;
 use crate::routes::read_peer_store;
 use crate::{agent_state, fleet, identity, peer, session};
 
@@ -217,23 +216,10 @@ async fn close_on_peer(peer: &peer::PeerDescriptor, id: u64) -> Response {
     }
 }
 
-/// `/ws/session`, `/api/sessions` and `/api/sessions/close`.
+/// `/api/sessions` and `/api/sessions/close`. A console opens on a channel
+/// of the page socket.
 pub(crate) fn session_routes(s: &RouterShared) -> Router {
-    let host = SessionHost::of(s);
     Router::new()
-        .route(
-            "/ws/session",
-            get({
-                let audit = s.audit.clone();
-                move |ws: WebSocketUpgrade,
-                      q: Query<SessionQuery>,
-                      caller: Option<axum::Extension<super::audit_layer::Caller>>| {
-                    let host = host.clone();
-                    let who = super::audit_layer::SocketAudit::of(audit.clone(), caller);
-                    async move { session_ws_upgrade(ws, q, host, who).await }
-                }
-            }),
-        )
         .route(
             "/api/sessions",
             get({

@@ -1,19 +1,21 @@
 //! The `console` kind: the console the open payload names, launched,
-//! reattached or watched as `/ws/session` does it, then served on the
-//! channel. A console a peer accepted goes to the peer arm.
+//! reattached or watched, then served on the channel. A console a peer
+//! accepted goes to the peer arm.
 
 use tokio::sync::mpsc;
 
 use super::{peer, Channel, CloseReason, Opening};
 use crate::routes::{serve_console, ConsoleEnd, SessionHost, SessionQuery, SocketAudit};
 
-/// The writer queue depth of a console channel: the one of a console socket,
-/// where the bridge keeps the rest of the output in its own outbox.
+/// The writer queue depth of a console channel. The bridge keeps the rest of
+/// the output in its own outbox, so a slow page slows the reading of output
+/// as a blocking send did, and `session-end` waits behind one frame at most,
+/// not a deep queue of output.
 pub(super) const QUEUE_FRAMES: usize = 1;
 
-/// Serve a `console` channel. The open payload carries the fields of the
-/// `/ws/session` query, with their types and their rules; a payload that
-/// does not read as one is refused at once.
+/// Serve a `console` channel. The open payload is a [`SessionQuery`], with
+/// its types and its rules; a payload that does not read as one is refused
+/// at once.
 pub(super) fn open(
     opening: Opening,
     host: SessionHost,

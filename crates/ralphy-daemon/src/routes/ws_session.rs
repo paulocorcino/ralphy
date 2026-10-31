@@ -1,5 +1,6 @@
-//! `/ws/session` and `/api/sessions*`: launch, reattach, watch and close the
+//! The console channel of the page socket: launch, reattach and watch the
 //! daemon-owned sessions, locally or relayed to the peer that owns them.
+//! `/api/sessions*` lists and closes them.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,7 +20,6 @@ mod upgrade;
 
 pub(crate) use bridge::*;
 pub(crate) use relay::*;
-pub(crate) use upgrade::session_ws_upgrade;
 
 use crate::device::DeviceId;
 use crate::identity;
@@ -29,11 +29,12 @@ use traffic::{EffectiveType, Link, Tab};
 #[cfg(test)]
 mod tests;
 
-/// Query for `/ws/session`. A NEW agent launch carries `repo` + `agent`; a NEW
-/// free-console launch (issue #167) carries `console=1` and an optional `repo`
-/// (home dir when absent); a REATTACH carries `id` (and optional `takeover=1`,
-/// or `watch=1` for a read-only attach, issue #334). All optional so one struct
-/// serves every shape; the handler dispatches on `id` first, then `console`.
+/// The open payload of a `console` channel. A NEW agent launch carries
+/// `repo` + `agent`; a NEW free-console launch (issue #167) carries
+/// `console: 1` and an optional `repo` (home dir when absent); a REATTACH
+/// carries `id` (and optional `takeover: 1`, or `watch: 1` for a read-only
+/// attach, issue #334). All optional so one struct serves every shape; the
+/// open dispatches on `id` first, then `console`.
 #[derive(Default, serde::Deserialize)]
 pub(crate) struct SessionQuery {
     pub(crate) repo: Option<String>,
@@ -43,15 +44,15 @@ pub(crate) struct SessionQuery {
     pub(crate) watch: Option<u32>,
     pub(crate) console: Option<u32>,
     /// A worktree NAME beside `repo`+`agent` on a NEW agent launch (ADR-0063
-    /// §3); ignored on a reattach — the record owns it — and on `console=1`.
+    /// §3); ignored on a reattach — the record owns it — and on `console: 1`.
     pub(crate) checkout: Option<String>,
-    /// The startup command of a `console=1` launch: the shell runs it and the
+    /// The startup command of a `console: 1` launch: the shell runs it and the
     /// session ends with it. Ignored on every other path. Whitespace-only is
     /// the same as absent.
     pub(crate) command: Option<String>,
     /// The browser tab's holder id, on a launch or a writer reattach: a
     /// reattach naming the holder that claimed the slot reclaims it without
-    /// `takeover` (ADR-0051 §9 amendment 2026-09-22). Ignored on `watch=1`.
+    /// `takeover` (ADR-0051 §9 amendment 2026-09-22). Ignored on `watch: 1`.
     pub(crate) holder: Option<String>,
     /// The console name on a NEW agent launch. Claude takes its folded form as
     /// `--name` when the repo opts in; a name that folds to nothing keeps the
@@ -78,7 +79,7 @@ pub(crate) struct SessionQuery {
     /// The network the browser reported (`navigator.connection`): its
     /// `effectiveType`, its `rtt` in ms, and its `downlink` in Mbit/s. Only
     /// the traffic summary reads them. Strings, so that a bad value is absent
-    /// and does not refuse the socket.
+    /// and does not refuse the open.
     pub(crate) net: Option<String>,
     pub(crate) net_rtt: Option<String>,
     pub(crate) net_down: Option<String>,
@@ -106,8 +107,8 @@ impl SessionQuery {
         self.record.as_deref().filter(|r| well_formed_key(r))
     }
 
-    /// The browser tab that opens the socket, as this query names it.
-    /// `device` is the device of the request that carries the query.
+    /// The browser tab that opens the console, as this open names it.
+    /// `device` is the device of the page socket that carries the open.
     pub(crate) fn tab(&self, device: Option<DeviceId>) -> Tab {
         Tab {
             holder: self.holder().map(str::to_owned),

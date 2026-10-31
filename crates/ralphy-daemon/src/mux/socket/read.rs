@@ -27,9 +27,9 @@ use crate::mux::{ChannelSender, Writer};
 use crate::presence_board::MAX_REPORT_BYTES;
 use crate::protocol::{self, ChannelError, Command, Frame, FrameError, Joiner};
 
-/// The cap of a bare `channel.open`. A console open carries the fields of a
-/// `/ws/session` query, and a repo ref or a startup command can pass the
-/// cap of a presence report.
+/// The cap of a bare `channel.open`. A console open carries every field of
+/// a console's open payload, and a repo ref or a startup command can pass
+/// the cap of a presence report.
 const MAX_OPEN_BYTES: usize = 4 * 1024;
 
 /// How many channels one socket may hold open at once. A page opens a few

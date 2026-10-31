@@ -23,7 +23,7 @@ use tokio::sync::{broadcast, watch};
 use tokio::time::Instant;
 
 use super::kinds::Ctx;
-use super::{ChannelSender, Mode, Out, Writer};
+use super::{ChannelSender, Out, Writer};
 use crate::routes::{Liveness, Push};
 use crate::{auth, identity, presence_board, protocol};
 use page::{Arms, PageEntry, HEARTBEAT_EVERY};
@@ -120,7 +120,7 @@ async fn serve_with(socket: WebSocket, page: Page, liveness: Liveness) {
         login,
     } = page;
     let (sink, stream) = socket.split();
-    let writer = Writer::start(sink, Mode::Channels);
+    let writer = Writer::start(sink);
     let out = writer.channel(0);
     let (heard_tx, mut heard) = watch::channel(Instant::now());
     let reader = read::Reader::new(

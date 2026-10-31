@@ -96,11 +96,11 @@ async fn unknown_path_is_404() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-/// The page socket `/ws` carries the runs and the file tree: the two sockets
-/// that carried them before are no longer served.
+/// The page socket `/ws` carries the consoles, the runs and the file tree:
+/// the three sockets that carried them before are no longer served.
 #[tokio::test]
 async fn the_old_socket_routes_are_gone() {
-    for path in ["/ws/command", "/ws/tree"] {
+    for path in ["/ws/command", "/ws/tree", "/ws/session"] {
         let request = Request::builder()
             .uri(path)
             .header(header::CONNECTION, "upgrade")
