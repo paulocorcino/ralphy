@@ -12,6 +12,7 @@ use super::super::outbound::{announce_end, hand_on, open, Opening, Outbox};
 use super::super::refuse::{Refusal, Refuser, Told};
 use super::super::traffic::Traffic;
 use super::super::upgrade::{Decided, Opened};
+use super::super::PendingRecord;
 use super::super::{SessionHost, SessionQuery};
 use super::{on_client_frame, on_output, on_size, silent_if_err, Flow};
 use crate::mux::ChannelSender;
@@ -28,15 +29,16 @@ pub(crate) enum ConsoleEnd {
     /// The bridge ended. A deliberate end was named in `session-end` first;
     /// a silent one, when the socket is gone, was not.
     Ended,
-    /// A peer accepted the open: the peer arm relays it.
+    /// The peer's channel is open: the peer arm relays it.
     Relay(Box<PeerRelay>),
 }
 
-/// The socket to the peer that accepted a console open, and the traffic
-/// summary of the relay.
+/// The channel open on the peer, the traffic summary of the relay, and the
+/// audit line the relay writes once the peer accepts the open.
 pub(crate) struct PeerRelay {
-    pub(crate) peer: Box<peer::client::PeerSocket>,
+    pub(crate) peer: peer::client::PeerChannel,
     pub(crate) traffic: Traffic,
+    pub(crate) record: Option<PendingRecord>,
 }
 
 /// Serve the console that `query` names on the channel whose queue is `out`.
@@ -72,7 +74,7 @@ pub(crate) async fn serve_console(
             attached.bridge(out, frames, shutdown).await;
             ConsoleEnd::Ended
         }
-        Opened::Relay { peer, traffic } => ConsoleEnd::Relay(Box::new(PeerRelay { peer, traffic })),
+        Opened::Relay(relay) => ConsoleEnd::Relay(relay),
         Opened::Refused(refusal) => refuse(&refuser, refusal, out).await,
     }
 }

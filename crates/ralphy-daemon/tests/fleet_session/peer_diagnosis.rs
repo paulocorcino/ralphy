@@ -77,9 +77,9 @@ async fn incompatible_peer_is_an_environment_diagnosis() {
 
 #[tokio::test]
 async fn an_old_peer_that_refuses_over_http_is_shown_as_a_refusal() {
-    // A peer that predates the refusal frame answers a refused launch with an
-    // HTTP status before the upgrade. This stand-in passes the handshake and
-    // refuses every session that way.
+    // A peer that refuses at the upgrade answers with an HTTP status and a
+    // body. This stand-in passes the handshake and refuses its page socket
+    // that way.
     const OLD_REFUSAL: &str = "gemini: no owned configuration root in this repo";
     let old_peer = axum::Router::new()
         .route(
@@ -92,7 +92,7 @@ async fn an_old_peer_that_refuses_over_http_is_shown_as_a_refusal() {
             }),
         )
         .route(
-            "/ws/session",
+            "/ws",
             axum::routing::get(|| async { (axum::http::StatusCode::BAD_REQUEST, OLD_REFUSAL) }),
         );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

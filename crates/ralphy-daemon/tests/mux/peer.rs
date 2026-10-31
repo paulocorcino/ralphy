@@ -64,7 +64,8 @@ struct Fleet {
     _peer: Daemon,
     local_repo: tempfile::TempDir,
     peer_repo: tempfile::TempDir,
-    _stores: [tempfile::TempDir; 2],
+    /// The peer's store, then the local daemon's.
+    stores: [tempfile::TempDir; 2],
 }
 
 fn identity(id: &str, name: &str) -> Identity {
@@ -159,7 +160,7 @@ async fn fleet() -> Fleet {
         _peer: peer,
         local_repo,
         peer_repo,
-        _stores: [peer_store, local_store],
+        stores: [peer_store, local_store],
     }
 }
 
@@ -355,6 +356,45 @@ impl Page {
         opened
     }
 
+    /// Read until the `channel.closed` of `channel` and return its reason. A
+    /// frame of `channel` before it panics.
+    async fn closed_without_a_frame(&mut self, channel: u32) -> String {
+        let read = async {
+            loop {
+                let message = self
+                    .ws
+                    .next()
+                    .await
+                    .expect("the page socket stays open")
+                    .expect("the page socket reads");
+                let Message::Binary(bytes) = message else {
+                    continue;
+                };
+                match protocol::decode(&bytes).expect("a well-formed frame") {
+                    Frame::Channel { channel: c, .. } if c == channel => {
+                        panic!("a frame on channel {channel} before its end")
+                    }
+                    Frame::Command(command)
+                        if command.verb == "channel.closed"
+                            && command.payload["channel"] == channel =>
+                    {
+                        return command.payload["reason"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string();
+                    }
+                    Frame::Channel { .. }
+                    | Frame::Command(_)
+                    | Frame::Terminal { .. }
+                    | Frame::Presence(_) => {}
+                }
+            }
+        };
+        tokio::time::timeout(WITHIN, read)
+            .await
+            .unwrap_or_else(|_| panic!("channel {channel} ends within the wait"))
+    }
+
     /// Send one inner frame on `channel`.
     async fn send(&mut self, channel: u32, frame: &Frame) {
         send_on(&mut self.ws, channel, &protocol::encode(frame)).await;
@@ -506,4 +546,42 @@ async fn two_daemons_with_the_same_session_id_are_two_channels() {
     page.until(2, "GOT:on-peer").await;
     assert!(!page.shown(1).contains("GOT:on-peer"), "{}", page.shown(1));
     assert!(!page.shown(2).contains("GOT:on-local"), "{}", page.shown(2));
+}
+
+/// The `event` of each console line of the audit log in `store`.
+fn console_events(store: &Path) -> Vec<String> {
+    let log = std::fs::read_to_string(store.join("daemon-audit.jsonl")).unwrap_or_default();
+    log.lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("the line is JSON"))
+        .filter_map(|line| line["event"].as_str().map(str::to_string))
+        .filter(|event| event.starts_with("console_"))
+        .collect()
+}
+
+#[tokio::test]
+async fn a_reattach_the_peer_refuses_closes_the_channel_refused() {
+    let fleet = fleet().await;
+    let mut page = Page::connect(&fleet).await;
+    let fields = serde_json::json!({ "id": 999, "repo": peer_repo() });
+    open(&mut page.ws, 1, "console", fields).await;
+    assert_eq!(page.closed_without_a_frame(1).await, "refused");
+}
+
+#[tokio::test]
+async fn a_relayed_takeover_the_peer_refuses_writes_no_console_line() {
+    let fleet = fleet().await;
+    let local_store = fleet.stores[1].path();
+    let mut page = Page::connect(&fleet).await;
+    // A relayed open the peer accepts writes its line in this log.
+    page.launch(1, &peer_repo()).await;
+    assert_eq!(console_events(local_store), ["console_launch"]);
+
+    let fields = serde_json::json!({ "id": 999, "repo": peer_repo(), "takeover": 1 });
+    open(&mut page.ws, 2, "console", fields).await;
+    assert_eq!(page.closed_without_a_frame(2).await, "refused");
+    assert_eq!(
+        console_events(local_store),
+        ["console_launch"],
+        "a refused take-over writes no line"
+    );
 }

@@ -1,7 +1,9 @@
 //! The `/ws/session` handler: one route, four shapes (reattach, watch, agent
 //! launch, free-console launch), each local or relayed to the peer that owns
 //! the repo. The open is decided first, as an [`Opened`] value; only the
-//! handler turns that value into an upgrade or an HTTP status.
+//! handler turns that value into an upgrade or an HTTP status. A console of
+//! a peer is relayed on a channel of the page socket only, so this route
+//! refuses it.
 
 use std::ops::ControlFlow;
 use std::path::PathBuf;
@@ -14,8 +16,8 @@ use axum::response::Response;
 
 use super::join::{claim_for, join};
 use super::refuse::{Refusal, Refuser};
-use super::traffic::{Tab, Traffic};
-use super::{dial_peer, peer_session_query, peer_session_ws, session_ws, Opening, PeerDial};
+use super::traffic::Tab;
+use super::{dial_peer, peer_session_open, session_ws, Opening, PeerDial, PeerRelay};
 use super::{SessionHost, SessionLabels, SessionQuery};
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
 use crate::routes::read_peer_store;
@@ -90,12 +92,19 @@ pub(crate) async fn session_ws_upgrade(
                 shutdown,
             )
         }),
-        Opened::Relay { peer, traffic } => {
-            ws.on_upgrade(move |socket| peer_session_ws(socket, *peer, traffic, shutdown))
+        // A peer's console is relayed on a channel of the page socket only.
+        Opened::Relay(relay) => {
+            let PeerRelay { mut peer, .. } = *relay;
+            tokio::spawn(async move { peer.close().await });
+            let refusal = Refusal::refuse(StatusCode::BAD_GATEWAY, RELAY_REFUSAL);
+            refuser.answer(ws, refusal)
         }
         Opened::Refused(refusal) => refuser.answer(ws, refusal),
     }
 }
+
+/// The refusal of a peer's console on this route.
+const RELAY_REFUSAL: &str = "This console is on another computer. Reload the page.";
 
 /// A console open, decided, and what answering it needs on any socket.
 pub(super) struct Decided {
@@ -137,11 +146,8 @@ pub(crate) enum Opened {
         environment: String,
         labels: SessionLabels,
     },
-    /// Relay the socket to the peer that accepted the open.
-    Relay {
-        peer: Box<peer::client::PeerSocket>,
-        traffic: Traffic,
-    },
+    /// Relay the channel to the channel open on the peer.
+    Relay(Box<PeerRelay>),
     /// Refuse the open.
     Refused(Refusal),
 }
@@ -284,17 +290,13 @@ impl Open {
             port: self.bound_port,
             daemon_id: &self.daemon_id,
         };
-        let peer_query = peer_session_query(&self.query, slug);
+        let fields = peer_session_open(&self.query, slug);
         let opening = Opening {
             record: relayed_record(&self.query, slug, &peer.daemon_id, &self.tab),
             tab: self.tab,
             who: self.who,
         };
-        let dial = PeerDial {
-            peer,
-            query: &peer_query,
-            me,
-        };
+        let dial = PeerDial { peer, fields, me };
         dial_peer(dial, opening).await
     }
 
@@ -413,7 +415,7 @@ mod tests {
             }
             Opened::Refused(Refusal::Supersede { .. }) => panic!("decided superseded"),
             Opened::Session { .. } => panic!("decided an attached session"),
-            Opened::Relay { .. } => panic!("decided a peer relay"),
+            Opened::Relay(_) => panic!("decided a peer relay"),
         }
     }
 

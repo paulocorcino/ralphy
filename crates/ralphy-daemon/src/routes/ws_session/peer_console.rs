@@ -12,7 +12,7 @@ use super::join::{claim_for, hold, join};
 use super::refuse::Refusal;
 use super::traffic::Tab;
 use super::upgrade::{launch_record, relayed_record, Opened};
-use super::{dial_peer, peer_session_query, Opening, PeerDial};
+use super::{dial_peer, peer_session_open, Opening, PeerDial};
 use super::{SessionLabels, SessionQuery};
 use crate::routes::audit_layer::SocketAudit;
 use crate::{fleet, peer, session};
@@ -77,7 +77,7 @@ impl PeerConsole<'_> {
             who,
             ..
         } = self;
-        let peer_query = peer_session_query(query, slug);
+        let fields = peer_session_open(query, slug);
         let opening = Opening {
             record: relayed_record(query, slug, &peer.daemon_id, &tab),
             tab,
@@ -85,7 +85,7 @@ impl PeerConsole<'_> {
         };
         let dial = PeerDial {
             peer,
-            query: &peer_query,
+            fields,
             me: peer::client::SelfRef {
                 port: bound_port,
                 daemon_id: &daemon_id,

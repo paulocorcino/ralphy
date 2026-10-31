@@ -432,18 +432,6 @@ pub async fn post_json_timeout(
     send(d, "POST", path, Some(body), response_timeout).await
 }
 
-/// Probe the peer protocol, then open an authenticated `/ws/session` socket.
-///
-/// The socket is established before the browser is upgraded, so every refusal
-/// remains an ordinary HTTP diagnosis on the local daemon.
-pub async fn session(
-    d: &PeerDescriptor,
-    query: &str,
-    me: SelfRef<'_>,
-) -> std::result::Result<PeerSocket, SocketError> {
-    websocket(d, &format!("/ws/session?{query}"), "session", me).await
-}
-
 /// Probe the peer protocol, then open its authenticated command socket.
 pub async fn command(
     d: &PeerDescriptor,
