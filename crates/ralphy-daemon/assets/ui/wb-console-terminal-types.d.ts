@@ -39,6 +39,9 @@ export type ConsoleHandlers = {
   onFrame: (inner: Uint8Array) => void;
   /** The daemon ended the channel, or the page socket under it ended. */
   onClosed: (reason: CloseReason) => void;
+  /** The page socket is about to be replaced: the last frame of this
+   * channel goes now. */
+  onResume?: () => void;
 };
 
 /** One console's channel of the page socket. `readyState` takes the numbers

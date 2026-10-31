@@ -937,3 +937,20 @@ test("a resume of a socket whose only user is a console makes one socket and ope
     [["console", 1]],
   );
 });
+
+// #834: the daemon reads the frames sent before a close, so a console names
+// its leave on the old socket before the resume closes it.
+test("a resume lets each console send its last frame on the old socket", () => {
+  const { d, sockets, open, withFakes } = pageSockets();
+  const states = [];
+  withFakes(() =>
+    d.openConsole({ id: 5 }, {
+      onFrame() {},
+      onClosed() {},
+      onResume: () => states.push(sockets[0].readyState),
+    }),
+  );
+  open(sockets[0]);
+  withFakes(() => d.resumePage(true));
+  assert.deepEqual(states, [1], "called once, while the old socket is open");
+});

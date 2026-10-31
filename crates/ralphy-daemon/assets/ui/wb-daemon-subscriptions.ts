@@ -15,6 +15,9 @@ export type SocketUser = {
   onOpen: (channels: PageChannels, reopened: boolean) => void;
   /** A bare frame of channel 0: the heartbeat and the pushes. */
   onBare?: (bytes: Uint8Array) => void;
+  /** The page replaces the socket: a last frame sent here goes before the
+   * close. */
+  onResume?: () => void;
 };
 
 /** What a subscription on a channel of the page socket hears. */

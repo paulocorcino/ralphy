@@ -310,6 +310,8 @@ export function createDaemon(
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
+        // The daemon reads the frames sent before the close (#834).
+        for (const user of [...users.keys()]) user.onResume?.();
         const old = ws;
         detachSocket(old);
         lose();
@@ -408,6 +410,7 @@ export function createDaemon(
           handlers.onClosed(reason);
         };
       },
+      onResume: () => handlers.onResume?.(),
     });
     const opened: ConsoleChannel = {
       get readyState() {

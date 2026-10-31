@@ -350,6 +350,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     channel = openConsole(fields, {
       onFrame: (inner) => frames.take(inner),
       onClosed: (reason) => frames.whenIdle(() => closed(reason)),
+      onResume: () => announceDetach(channel, "reconnect"),
     });
     s.ws = channel;
     armOpenDeadline(channel);
