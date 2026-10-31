@@ -834,11 +834,13 @@ def main():
 
             # --- Scenario 9: coming back from a suspend -------------------------
             page.wait_for_timeout(1500)
+            # A console holds its channel from its first connect; a channel
+            # that ended reads CLOSED (3).
             ended_count = page.evaluate(
                 "() => [...document.querySelectorAll('.session-window')]"
-                ".filter((w) => w._term && w._term.ws === null).length"
+                ".filter((w) => w._term && (!w._term.ws || w._term.ws.readyState === 3)).length"
             )
-            info("9 windows whose socket is already gone", str(ended_count))
+            info("9 windows whose console channel is already gone", str(ended_count))
             before_ws = page.evaluate(
                 "() => { const w = document.querySelectorAll('.session-window')[0];"
                 " window.__ws0 = w._term.ws; return !!w._term.ws; }"

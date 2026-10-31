@@ -11,9 +11,9 @@ Scenario 2   with NO repo selected the menu renders the 7 roster labels + consol
              last, agent rows `disabled` with the verbatim "select a repo first…"
 Scenario 3   selecting the fixture repo enables them
 Scenario 4   a live claude console makes its row read "1 live"; clicking the row
-             LAUNCHES another (the menu is "New console") — 2 sessions, a launch socket
+             LAUNCHES another (the menu is "New console") — 2 sessions, a launch channel
 Scenario 5   the row reads "2 live" and carries no "+" (a readout, not a reach)
-Scenario 6   `Alt+Shift+Digit2` still opens a `/ws/session?…agent=codex` console
+Scenario 6   `Alt+Shift+Digit2` still opens a console channel with `agent: codex`
 Scenario 7   `Alt+Shift+Digit1` on a LIVE row launches too — the key is the click
 Scenario 8   a disabled row's accelerator is inert (no repo selected)
 Scenario 9   a 500 from `/api/agents` leaves the roster empty — no adapter is
@@ -26,6 +26,10 @@ operator's own daemon registry and login policy are untouched. The daemon is
 stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as the
 orchestrator on this host). Every session is closed before the daemon stops, so
 no helper child is left behind.
+
+Each console is a `console` channel of the page socket `/ws`. The check reads
+each channel open from the frames the page sends (`PageSockets` of
+`console/wb_one_socket_740.py`).
 
 Writes .ralphy/screenshots/304-agent-menu-2026-07-25.png.
 Run: python tests/browser/agents/wb_agents_304.py   (exit 0 = all pass)
@@ -40,6 +44,9 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "console"))
+from wb_one_socket_740 import PageSockets  # noqa: E402  the console channels of the page socket
 
 # The Windows console's default codepage (cp1252 here) cannot encode the glyphs
 # this script prints in its detail strings; force utf-8 stdout so a PASSING
@@ -208,8 +215,8 @@ def main():
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             ctx = browser.new_context(viewport={"width": 1400, "height": 900})
             page = ctx.new_page()
-            sockets = []
-            page.on("websocket", lambda ws: sockets.append(ws.url))
+            # Every console channel the page opened.
+            seen = PageSockets().attach(page)
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
 
@@ -322,9 +329,9 @@ def main():
                 f"got={page.locator('.dropdown-item .row-live:visible').count()}",
             )
             # The menu is "New console": the live row's click is a LAUNCH like
-            # any other. `/ws` is the daemon's control channel, always opened;
-            # only `/ws/session` sockets launch or attach a PTY (#303).
-            mark = len([u for u in sockets if "/ws/session" in u])
+            # any other. Only a console channel of `/ws` launches or attaches
+            # a PTY (#303).
+            mark = len(seen.channels)
             windows_before = page.locator(".session-window").count()
             claude_row.click()
             page.wait_for_timeout(300)
@@ -339,13 +346,13 @@ def main():
                 len(two) == 2 and all(s["agent"] == "claude" for s in two),
                 f"got={two}",
             )
-            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            opened = [c["payload"] for c in seen.channels[mark:]]
             check(
-                "…through one launch socket, in a new window",
+                "…through one launch channel, in a new window",
                 len(opened) == 1
-                and "agent=claude" in opened[0]
+                and opened[0].get("agent") == "claude"
                 and page.locator(".session-window").count() == windows_before + 1,
-                f"new sockets={opened}",
+                f"new channels={opened}",
             )
 
             # --- scenario 5: the count is a readout; there is no "+" ----------
@@ -366,7 +373,7 @@ def main():
 
             # --- scenario 6: the accelerators keep their digits ---------------
             close_menu(page)
-            mark = len([u for u in sockets if "/ws/session" in u])
+            mark = len(seen.channels)
             page.keyboard.press("Alt+Shift+Digit2")
             page.wait_for_timeout(300)
             page.wait_for_function(
@@ -374,11 +381,11 @@ def main():
                 timeout=15000,
             )
             page.wait_for_timeout(800)
-            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            opened = [c["payload"] for c in seen.channels[mark:]]
             check(
                 "Alt+Shift+2 still opens a codex console",
-                len(opened) == 1 and "agent=codex" in opened[0] and f"repo={slug}" in opened[0],
-                f"new sockets={opened}",
+                len(opened) == 1 and opened[0].get("agent") == "codex" and opened[0].get("repo") == slug,
+                f"new channels={opened}",
             )
             check(
                 "…and the daemon really started it",
@@ -388,7 +395,7 @@ def main():
 
             # --- scenario 7: the accelerator IS the row's click -----------------
             # A live row launches on click, so its key launches too.
-            mark = len([u for u in sockets if "/ws/session" in u])
+            mark = len(seen.channels)
             windows_before = page.locator(".session-window").count()
             page.evaluate(f"async () => Alpine.store('projects').refreshLive()")
             page.wait_for_timeout(400)
@@ -404,26 +411,26 @@ def main():
                 len(sessions_of(page)) == 4,
                 f"got={sessions_of(page)}",
             )
-            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            opened = [c["payload"] for c in seen.channels[mark:]]
             check(
-                "…through a launch socket, in a new window",
+                "…through a launch channel, in a new window",
                 len(opened) == 1
-                and "agent=claude" in opened[0]
+                and opened[0].get("agent") == "claude"
                 and page.locator(".session-window").count() == windows_before + 1,
-                f"new sockets={opened}",
+                f"new channels={opened}",
             )
 
             # --- scenario 8: a DISABLED row's accelerator is inert -------------
             page.evaluate(f"() => {{ Alpine.store('projects').setOpen(null); }}")
             page.wait_for_timeout(300)
-            mark = len([u for u in sockets if "/ws/session" in u])
+            mark = len(seen.channels)
             windows_before = page.locator(".session-window").count()
             page.keyboard.press("Alt+Shift+Digit3")
             page.wait_for_timeout(1200)
             check(
                 "with no repo selected an agent accelerator launches nothing",
                 len(sessions_of(page)) == 4
-                and [u for u in sockets if "/ws/session" in u][mark:] == []
+                and [c["payload"] for c in seen.channels[mark:]] == []
                 and page.locator(".session-window").count() == windows_before,
                 f"sessions={len(sessions_of(page))}",
             )

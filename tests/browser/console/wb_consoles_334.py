@@ -9,12 +9,16 @@ Scenario 1   `WBConsole.reconnectDecision` in isolation: a 16-row table over
              known/unknown, both cap boundaries)
 Scenario 2   ctx A opens a console and its keystroke round-trips
 Scenario 3   ctx B (fresh profile) restores the desk, lands as a WATCHER, sees
-             the same output, and neither context storms the socket over 12 s
+             the same output, and neither context storms its console channel over 12 s
 Scenario 4   an explicit take-over click moves the baton: exactly one
-             `takeover=1` URL ever, and A parks instead of stealing it back
+             `takeover: 1` open ever, and A parks instead of stealing it back
 Scenario 5   a real dropped link (offline/online) still recovers by reconnecting
 Scenario 6   F5 reattaches without evicting anything
 Scenario 7   a genuine end (`POST /api/sessions/close`) states "closed" in both
+
+Each console is a `console` channel of the page socket `/ws`. The counts are
+of console channels, read inside the page (`CONSOLE_SPY` of
+`wb_one_socket_740.py`).
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -33,6 +37,7 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from wb_one_socket_740 import CONSOLE_SPY, DROP_PAGE_SOCKET
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -287,33 +292,10 @@ def decision_table(page):
 
 
 # Every context wraps `WebSocket` before any page script runs, so a reconnect
-# storm is COUNTED, not eyeballed: `__wsCount` tallies `/ws/session`
-# constructions and closes, `__wsUrls` keeps every URL (which is how "no
+# storm is COUNTED, not eyeballed: `__wsCount` tallies the console channels
+# opened and ended, `__wsOpens` keeps every open (which is how "no
 # client-initiated reconnect carries takeover" is asserted rather than assumed).
-WS_SPY = """
-(() => {
-  const Native = window.WebSocket;
-  window.__wsCount = { created: 0, closed: 0 };
-  window.__wsUrls = [];
-  function Spy(url, protocols) {
-    const sock = protocols === undefined ? new Native(url) : new Native(url, protocols);
-    if (String(url).includes('/ws/session')) {
-      window.__wsCount.created += 1;
-      window.__wsUrls.push(String(url));
-      sock.addEventListener('close', () => { window.__wsCount.closed += 1; });
-    }
-    return sock;
-  }
-  Spy.prototype = Native.prototype;
-  // The client reads `WebSocket.OPEN`; without these the readyState guards in
-  // wb-console.ts compare against `undefined` and every send is dropped.
-  Spy.CONNECTING = Native.CONNECTING;
-  Spy.OPEN = Native.OPEN;
-  Spy.CLOSING = Native.CLOSING;
-  Spy.CLOSED = Native.CLOSED;
-  window.WebSocket = Spy;
-})();
-"""
+WS_SPY = CONSOLE_SPY
 
 
 def new_context(browser):
@@ -346,12 +328,12 @@ def counters(page):
     return page.evaluate("() => JSON.parse(JSON.stringify(window.__wsCount))")
 
 
-def urls(page):
-    return page.evaluate("() => window.__wsUrls.slice()")
+def opens(page):
+    return page.evaluate("() => window.__wsOpens.slice()")
 
 
-def takeover_urls(page):
-    return [u for u in urls(page) if "takeover=1" in u]
+def takeover_opens(page):
+    return [o for o in opens(page) if o.get("takeover") == 1]
 
 
 def screen(page, i=0):
@@ -495,7 +477,7 @@ def main():
                 screen(page_a, 0)[-120:],
             )
             check(
-                "…over exactly one socket",
+                "…over exactly one console channel",
                 counters(page_a)["created"] == 1,
                 f"got={counters(page_a)}",
             )
@@ -535,7 +517,7 @@ def main():
 
             count_a = counters(page_a)
             count_b = counters(page_b)
-            check("A opened exactly 1 session socket", count_a["created"] == 1, f"got={count_a}")
+            check("A opened exactly 1 console channel", count_a["created"] == 1, f"got={count_a}")
             check(
                 "B opened exactly 4 (one refused, two bounded retries, one watch)",
                 count_b["created"] == 4,
@@ -543,13 +525,13 @@ def main():
             )
             check(
                 "…the last of them being the watch attach",
-                urls(page_b)[-1].endswith("watch=1"),
-                f"got={urls(page_b)[-1]}",
+                opens(page_b)[-1].get("watch") == 1,
+                f"got={opens(page_b)[-1]}",
             )
             check(
                 "NO client-initiated reconnect carried takeover, in either context",
-                takeover_urls(page_a) == [] and takeover_urls(page_b) == [],
-                f"A={takeover_urls(page_a)} B={takeover_urls(page_b)}",
+                takeover_opens(page_a) == [] and takeover_opens(page_b) == [],
+                f"A={takeover_opens(page_a)} B={takeover_opens(page_b)}",
             )
 
             # The storm assertion: counts, not the absence of visible flicker.
@@ -565,8 +547,8 @@ def main():
                 f"before={count_b} after={counters(page_b)}",
             )
             check(
-                "…still with no takeover=1 URL anywhere",
-                takeover_urls(page_a) == [] and takeover_urls(page_b) == [],
+                "…still with no `takeover: 1` open anywhere",
+                takeover_opens(page_a) == [] and takeover_opens(page_b) == [],
             )
 
             # A watcher's keystrokes are dropped by the daemon, not echoed back.
@@ -587,9 +569,9 @@ def main():
             page_b.locator('[data-act="take-over"]').click()
             page_b.wait_for_timeout(2500)
             check(
-                "B's take-over click is the FIRST takeover=1 URL of the run",
-                len(takeover_urls(page_b)) == 1,
-                f"got={takeover_urls(page_b)}",
+                "B's take-over click is the FIRST `takeover: 1` open of the run",
+                len(takeover_opens(page_b)) == 1,
+                f"got={takeover_opens(page_b)}",
             )
             check("…and B is no longer parked", parked(page_b) == 0)
             check(
@@ -605,12 +587,12 @@ def main():
             )
             check(
                 "…A NEVER sent a takeover of its own (the storm's root cause)",
-                takeover_urls(page_a) == [],
-                f"got={takeover_urls(page_a)}",
+                takeover_opens(page_a) == [],
+                f"got={takeover_opens(page_a)}",
             )
             after_take_a = counters(page_a)
             check(
-                "…A opened exactly ONE more socket (the watch reattach)",
+                "…A opened exactly ONE more console channel (the watch reattach)",
                 after_take_a["created"] == count_a["created"] + 1,
                 f"before={count_a} after={after_take_a}",
             )
@@ -640,8 +622,8 @@ def main():
             page_a.wait_for_timeout(2500)
             check(
                 "A reclaims the baton only by its own explicit click",
-                len(takeover_urls(page_a)) == 1 and parked(page_a) == 0,
-                f"urls={takeover_urls(page_a)} parked={parked(page_a)}",
+                len(takeover_opens(page_a)) == 1 and parked(page_a) == 0,
+                f"opens={takeover_opens(page_a)} parked={parked(page_a)}",
             )
             check("…and B parks in turn", parked(page_b) == 1)
             base_b = counters(page_b)
@@ -649,18 +631,12 @@ def main():
 
             # --- scenario 5: a real dropped link still recovers --------------
             # The outage is real — offline blocks every reconnect attempt for its
-            # duration. The DROP itself is delivered in-page: measured on this
-            # host, Chromium's offline emulation leaves an already-established
-            # WebSocket up (no close event for >10s), so the socket is closed and
-            # the client's own handler invoked with the `1006 / wasClean=false`
-            # shape a dropped link produces. Nothing about the client is stubbed:
-            # this is the event the browser itself would deliver.
+            # duration. The DROP of the page socket is delivered in-page
+            # (`DROP_PAGE_SOCKET`): Chromium's offline emulation leaves an open
+            # WebSocket up. Nothing about the client is stubbed: this is the
+            # event the browser itself would deliver.
             ctx_a.set_offline(True)
-            page_a.evaluate(
-                "() => { const t = document.querySelectorAll('.session-window')[0]._term;"
-                " const s = t.ws; const onclose = s.onclose; s.onclose = null; s.close();"
-                " setTimeout(() => onclose({ code: 1006, wasClean: false }), 50); }"
-            )
+            page_a.evaluate(DROP_PAGE_SOCKET)
             check(
                 "an offline A says the link dropped, not that the session ended",
                 wait_link_lost(page_a, 0),
@@ -686,11 +662,11 @@ def main():
             check("…without parking", parked(page_a) == 0)
             check(
                 "…and without ever sending a second takeover",
-                len(takeover_urls(page_a)) == 1,
-                f"got={takeover_urls(page_a)}",
+                len(takeover_opens(page_a)) == 1,
+                f"got={takeover_opens(page_a)}",
             )
             check(
-                "…while B's socket count is untouched by A's outage",
+                "…while B's console channel count is untouched by A's outage",
                 counters(page_b) == base_b,
                 f"before={base_b} after={counters(page_b)}",
             )
@@ -713,8 +689,8 @@ def main():
             check("…not parked — the reload reclaimed its own slot", parked(page_a) == 0)
             check(
                 "…having sent no takeover on the way back",
-                takeover_urls(page_a) == [],
-                f"got={takeover_urls(page_a)}",
+                takeover_opens(page_a) == [],
+                f"got={takeover_opens(page_a)}",
             )
             type_line(page_a, 0, "after-reload")
             check(
@@ -728,7 +704,7 @@ def main():
                 flat(page_b, 0)[-120:],
             )
             check(
-                "…with B's socket count unchanged across the whole reload",
+                "…with B's console channel count unchanged across the whole reload",
                 counters(page_b) == base_b,
                 f"before={base_b} after={counters(page_b)}",
             )
