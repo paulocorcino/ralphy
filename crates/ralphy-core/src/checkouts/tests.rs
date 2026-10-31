@@ -505,3 +505,39 @@ fn remove_applies_the_gates_in_order() {
 
     remove_scratch(&root);
 }
+
+#[test]
+fn core_errors_keep_their_text_remove_error() {
+    let n = || "wt-a".to_string();
+    let cases = [
+        (
+            RemoveError::NotFound { name: n() },
+            "no workbench worktree named 'wt-a'",
+        ),
+        (
+            RemoveError::Locked { name: n() },
+            "worktree 'wt-a' is locked: unlock it first",
+        ),
+        (
+            RemoveError::Dirty { name: n() },
+            "worktree 'wt-a' has uncommitted changes: commit or discard them first",
+        ),
+        (
+            RemoveError::RemoveFailed {
+                name: n(),
+                detail: "boom".into(),
+            },
+            "removing worktree 'wt-a' failed: boom",
+        ),
+        (
+            RemoveError::BranchKept {
+                name: n(),
+                why: "not merged".into(),
+            },
+            "removed worktree 'wt-a'; branch 'wt-a' kept: not merged",
+        ),
+    ];
+    for (err, text) in cases {
+        assert_eq!(err.to_string(), text);
+    }
+}

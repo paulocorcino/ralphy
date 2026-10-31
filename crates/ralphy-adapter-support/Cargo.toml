@@ -8,6 +8,7 @@ description = "Shared, vendor-neutral adapter machinery for Ralphy: the headless
 
 [dependencies]
 anyhow.workspace = true
+thiserror.workspace = true
 include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-proc-util.workspace = true

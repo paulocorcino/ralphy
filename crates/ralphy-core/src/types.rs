@@ -139,42 +139,29 @@ pub enum Outcome {
 /// generic "no plan" failure, so the runner can route a plan-time limit into the
 /// same wait-and-resume / stop-and-report machinery as an execute-time
 /// [`Outcome::Limit`]. `reset` carries the parsed reset hint when present.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("usage limit hit during planning{}", reset_hint(.reset.as_deref()))]
 pub struct PlanLimit {
     pub reset: Option<String>,
 }
 
-impl std::fmt::Display for PlanLimit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.reset {
-            Some(r) => write!(f, "usage limit hit during planning (reset ~{r})"),
-            None => write!(f, "usage limit hit during planning"),
-        }
+/// The ` (reset ~<hint>)` tail of a [`PlanLimit`] message, or nothing.
+fn reset_hint(reset: Option<&str>) -> String {
+    match reset {
+        Some(r) => format!(" (reset ~{r})"),
+        None => String::new(),
     }
 }
-
-impl std::error::Error for PlanLimit {}
 
 /// An agent refused to start a session because its hooks did not prove they
 /// run. This is a fault of the machine, not of the issue: the runner ends the
 /// run with this error, restores the repository, and leaves the issue's labels
 /// and comments as they were (ADR-0072 D6, amendment of 2026-10-28).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("the agent's hooks did not prove they run: {cause}")]
 pub struct HooksUnproven {
     pub cause: String,
 }
-
-impl std::fmt::Display for HooksUnproven {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "the agent's hooks did not prove they run: {}",
-            self.cause
-        )
-    }
-}
-
-impl std::error::Error for HooksUnproven {}
 
 /// The repository a run operates on, in place. Owns the paths under the
 /// gitignored `.ralphy/` scratch dir that planner and executor read and write.
@@ -373,5 +360,27 @@ mod tests {
         // No record carries a model → fall back to the requested id.
         let f = Usage::fold_usage(&[Usage::default()], Some("sonnet"));
         assert_eq!(f.model.as_deref(), Some("sonnet"));
+    }
+
+    #[test]
+    fn core_errors_keep_their_text_plan_and_hooks() {
+        assert_eq!(
+            PlanLimit {
+                reset: Some("14:00".into())
+            }
+            .to_string(),
+            "usage limit hit during planning (reset ~14:00)"
+        );
+        assert_eq!(
+            PlanLimit { reset: None }.to_string(),
+            "usage limit hit during planning"
+        );
+        assert_eq!(
+            HooksUnproven {
+                cause: "no marker".into()
+            }
+            .to_string(),
+            "the agent's hooks did not prove they run: no marker"
+        );
     }
 }

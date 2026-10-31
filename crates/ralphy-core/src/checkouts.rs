@@ -293,48 +293,20 @@ fn create_and_record(primary: &Path, name: &str, rel: &str, base: &str) -> Resul
 /// Why [`remove`] refused, one variant per gate (ADR-0063 §1). Returned bare —
 /// never under a `.context()` — so the CLI's stderr is the one line the daemon
 /// relays and the picker shows verbatim.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RemoveError {
-    NotFound {
-        name: String,
-    },
-    Locked {
-        name: String,
-    },
-    Dirty {
-        name: String,
-    },
-    RemoveFailed {
-        name: String,
-        detail: String,
-    },
+    #[error("no workbench worktree named '{name}'")]
+    NotFound { name: String },
+    #[error("worktree '{name}' is locked: unlock it first")]
+    Locked { name: String },
+    #[error("worktree '{name}' has uncommitted changes: commit or discard them first")]
+    Dirty { name: String },
+    #[error("removing worktree '{name}' failed: {detail}")]
+    RemoveFailed { name: String, detail: String },
     /// The directory is gone; the branch was not `-d`-deletable and stays.
-    BranchKept {
-        name: String,
-        why: String,
-    },
+    #[error("removed worktree '{name}'; branch '{name}' kept: {why}")]
+    BranchKept { name: String, why: String },
 }
-
-impl std::fmt::Display for RemoveError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotFound { name } => write!(f, "no workbench worktree named '{name}'"),
-            Self::Locked { name } => write!(f, "worktree '{name}' is locked: unlock it first"),
-            Self::Dirty { name } => write!(
-                f,
-                "worktree '{name}' has uncommitted changes: commit or discard them first"
-            ),
-            Self::RemoveFailed { name, detail } => {
-                write!(f, "removing worktree '{name}' failed: {detail}")
-            }
-            Self::BranchKept { name, why } => {
-                write!(f, "removed worktree '{name}'; branch '{name}' kept: {why}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for RemoveError {}
 
 /// Remove the workbench worktree `<name>` and its branch, behind ADR-0063 §1's
 /// gates in this order: locked (git's own word), dirty, then `worktree remove`

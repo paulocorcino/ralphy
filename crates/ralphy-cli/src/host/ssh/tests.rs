@@ -213,3 +213,13 @@ fn ssh_password_argv_asks_once_and_keeps_the_host_key_check() {
     let dash = argv.iter().position(|a| a == "--").expect("a -- separator");
     assert_eq!(argv[dash + 1..], ["root@10.1.1.4", "uname -s"]);
 }
+
+#[test]
+fn ssh_error_keeps_its_text() {
+    let err = SshError {
+        kind: SshFailure::Unreachable,
+        message: "could not reach 10.1.1.4".to_string(),
+        key_line: Some("ssh-ed25519 AAAA".to_string()),
+    };
+    assert_eq!(err.to_string(), "could not reach 10.1.1.4");
+}
