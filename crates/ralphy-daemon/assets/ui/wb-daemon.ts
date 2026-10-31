@@ -328,9 +328,13 @@ export function createDaemon(
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
-        detachSocket(ws);
+        const old = ws;
+        detachSocket(old);
         lose();
-        connect();
+        // A console that reopens as its channel ends joins inside `lose`. When
+        // it was the only user, its leave cleared `ws` and its join opened the
+        // next socket; a second one here would open the console twice.
+        if (ws === old) connect();
         return true;
       },
       // The milliseconds from the construction of the last socket that opened

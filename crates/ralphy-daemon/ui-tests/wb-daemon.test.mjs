@@ -828,3 +828,30 @@ test("a page socket that a drop left with no user does not reconnect", () => {
   assert.equal(again.readyState, 1);
   assert.equal(sockets[1].sent.filter((f) => f.verb === "channel.open").length, 1);
 });
+
+// A resume ends the console's channel, and a console that reopens on
+// `socket-lost` joins the page socket again inside that end. The resume
+// leaves one socket: a second one would open the console twice.
+test("a resume of a socket whose only user is a console makes one socket and opens the console once", () => {
+  const { d, sockets, open, withFakes } = pageSockets();
+  const reopen = (since) =>
+    d.openConsole({ id: 5, since }, {
+      onFrame() {},
+      onClosed: (reason) => {
+        if (reason === "socket-lost") reopen(since + 1);
+      },
+    });
+  withFakes(() => reopen(0));
+  open(sockets[0]);
+  assert.equal(
+    withFakes(() => d.resumePage(true)),
+    true,
+  );
+  assert.equal(sockets.length, 2, "one new socket");
+  for (const s of sockets.slice(1)) if (s.readyState === 0) open(s);
+  const opens = sockets.slice(1).flatMap((s) => s.sent.filter((f) => f.verb === "channel.open"));
+  assert.deepEqual(
+    opens.map((f) => [f.payload.kind, f.payload.since]),
+    [["console", 1]],
+  );
+});
