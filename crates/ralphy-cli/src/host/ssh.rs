@@ -214,21 +214,14 @@ impl SshFailure {
 
 /// A classified connection failure, so a caller can tell an unreachable host
 /// from a refused key without reading the message.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
 pub(crate) struct SshError {
     pub kind: SshFailure,
     pub message: String,
     /// The peer key's public line, when the fix is to add it on the host.
     pub key_line: Option<String>,
 }
-
-impl std::fmt::Display for SshError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for SshError {}
 
 pub(crate) fn ssh_error(kind: SshFailure, message: String) -> anyhow::Error {
     SshError {

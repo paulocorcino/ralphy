@@ -56,16 +56,9 @@ pub(crate) enum Out {
 }
 
 /// The socket's writer has ended: the socket is closed or failed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the socket writer is closed")]
 pub(crate) struct WriterClosed;
-
-impl std::fmt::Display for WriterClosed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the socket writer is closed")
-    }
-}
-
-impl std::error::Error for WriterClosed {}
 
 /// The handle that opens channels on one socket's writer.
 #[derive(Debug, Clone)]

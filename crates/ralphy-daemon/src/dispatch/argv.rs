@@ -2,28 +2,17 @@
 //! validated client input — a malformed parameter yields [`ArgvError`] and
 //! NO argv (docs/adr/0036 §2).
 
-use std::fmt;
-
 use super::{agent_flag, BranchMode, Verb};
 use crate::session::Agent;
 
 /// A run's params failed closed-enum validation (ADR-0036 §1): the named field
 /// was absent or carried an out-of-enum / free-text value. The caller sends one
 /// refusal frame and spawns nothing — no partial argv reaches the CLI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ArgvError {
+    #[error("invalid run param: {0}")]
     BadParam(&'static str),
 }
-
-impl fmt::Display for ArgvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ArgvError::BadParam(field) => write!(f, "invalid run param: {field}"),
-        }
-    }
-}
-
-impl std::error::Error for ArgvError {}
 
 /// Compose the blessed argv for `verb` from its closed-enum params (ADR-0036 §1).
 /// The verb picks the static shape; `Run` reads `agent` (required), `planAgent`

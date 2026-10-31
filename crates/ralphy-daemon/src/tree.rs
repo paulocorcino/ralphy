@@ -99,21 +99,25 @@ pub(crate) fn is_not_noise(e: &ignore::DirEntry) -> bool {
 }
 
 /// A [`read`] failure that is not a plain confinement escape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ReadError {
     /// The file's bytes are text in no encoding the decoder can name: a NUL in
     /// the first window that is not the shape of UTF-16, or a multibyte
     /// fallback that fails to decode ([`textcodec::decode`]). The daemon serves
     /// text, so a binary file is refused.
+    #[error("binary file")]
     Binary,
     /// The file exceeds [`MAX_READ_BYTES`].
+    #[error("file too large")]
     TooLarge,
     /// The file does not exist or escapes the root (an out-of-root read is
     /// reported as a plain miss, never leaking whether the target exists).
+    #[error("file not found")]
     NotFound,
     /// [`read_image`] only: the path's extension names no allowlisted image
     /// type, or the bytes do not agree with the type the extension claimed
     /// (ADR-0049 §3).
+    #[error("not an image")]
     NotImage,
 }
 
@@ -131,19 +135,6 @@ impl ReadError {
         }
     }
 }
-
-impl std::fmt::Display for ReadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReadError::Binary => write!(f, "binary file"),
-            ReadError::TooLarge => write!(f, "file too large"),
-            ReadError::NotFound => write!(f, "file not found"),
-            ReadError::NotImage => write!(f, "not an image"),
-        }
-    }
-}
-
-impl std::error::Error for ReadError {}
 
 /// Hard cap on a single [`read`]; the daemon serves bytes, so one read is bounded.
 pub const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
@@ -363,6 +354,15 @@ pub fn read_image(root: &Path, rel: &str) -> Result<Image, ReadError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn read_error_keeps_its_text() {
+        use super::ReadError;
+        assert_eq!(ReadError::Binary.to_string(), "binary file");
+        assert_eq!(ReadError::TooLarge.to_string(), "file too large");
+        assert_eq!(ReadError::NotFound.to_string(), "file not found");
+        assert_eq!(ReadError::NotImage.to_string(), "not an image");
+    }
+
     /// The cap is the base64 size of the largest image plus 64 KiB, so a
     /// 4 MiB paste and its envelope fit and nothing much larger does.
     #[test]

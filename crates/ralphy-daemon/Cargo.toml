@@ -8,6 +8,7 @@ description = "Ralphy's resident daemon: a localhost HTTP listener serving the e
 
 [dependencies]
 anyhow.workspace = true
+thiserror.workspace = true
 include_dir.workspace = true
 tracing.workspace = true
 serde.workspace = true

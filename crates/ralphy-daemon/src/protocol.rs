@@ -72,42 +72,29 @@ pub struct Presence {
 }
 
 /// Why a byte string failed to decode into a [`Frame`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum FrameError {
     /// Zero bytes — no tag to dispatch on.
+    #[error("empty frame: no channel tag")]
     Empty,
     /// The leading tag byte matches no known channel.
+    #[error("unknown channel tag {0:#04x}")]
     UnknownTag(u8),
     /// A terminal frame with fewer than 8 payload bytes (no room for the
     /// session id).
+    #[error("terminal frame too short for an 8-byte session id")]
     ShortTerminal,
     /// A structured frame whose JSON payload did not parse.
+    #[error("malformed frame JSON: {0}")]
     BadJson(String),
     /// A channel frame with fewer than 5 bytes after the tag (no room for the
     /// channel id and the flags).
+    #[error("channel frame too short for a channel id and flags")]
     ShortChannel,
     /// A channel frame the channel layer refuses.
-    Channel(ChannelError),
+    #[error("{0}")]
+    Channel(#[source] ChannelError),
 }
-
-impl std::fmt::Display for FrameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FrameError::Empty => write!(f, "empty frame: no channel tag"),
-            FrameError::UnknownTag(tag) => write!(f, "unknown channel tag {tag:#04x}"),
-            FrameError::ShortTerminal => {
-                write!(f, "terminal frame too short for an 8-byte session id")
-            }
-            FrameError::BadJson(msg) => write!(f, "malformed frame JSON: {msg}"),
-            FrameError::ShortChannel => {
-                write!(f, "channel frame too short for a channel id and flags")
-            }
-            FrameError::Channel(err) => err.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for FrameError {}
 
 /// Encode a [`Frame`] into its wire byte string.
 pub fn encode(frame: &Frame) -> Vec<u8> {
@@ -274,5 +261,42 @@ mod tests {
                 Ok(f) => panic!("{case}: decoded {f:?}"),
             }
         }
+    }
+
+    #[test]
+    fn wire_errors_keep_their_text() {
+        let rows: [(FrameError, &str); 6] = [
+            (FrameError::Empty, "empty frame: no channel tag"),
+            (FrameError::UnknownTag(9), "unknown channel tag 0x09"),
+            (
+                FrameError::ShortTerminal,
+                "terminal frame too short for an 8-byte session id",
+            ),
+            (
+                FrameError::BadJson("eof".to_string()),
+                "malformed frame JSON: eof",
+            ),
+            (
+                FrameError::ShortChannel,
+                "channel frame too short for a channel id and flags",
+            ),
+            (
+                FrameError::Channel(ChannelError::UnknownFlags(0x02)),
+                "channel frame with unknown flags 0x02",
+            ),
+        ];
+        for (err, text) in rows {
+            assert_eq!(err.to_string(), text);
+        }
+    }
+
+    #[test]
+    fn a_channel_frame_error_names_its_cause() {
+        let err = FrameError::Channel(ChannelError::OverCap);
+        let cause = std::error::Error::source(&err).expect("a channel frame error has a cause");
+        assert_eq!(
+            cause.downcast_ref::<ChannelError>(),
+            Some(&ChannelError::OverCap)
+        );
     }
 }

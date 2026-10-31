@@ -97,14 +97,9 @@ pub type PromptGate<'a> = Box<dyn FnOnce() -> Result<()> + 'a>;
 
 /// The context of a gate error. Its type lets a caller in this crate tell a
 /// refusal by the gate apart from a failure to spawn the child.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("the prompt was held and not sent")]
 pub(crate) struct PromptHeld;
-
-impl std::fmt::Display for PromptHeld {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the prompt was held and not sent")
-    }
-}
 
 /// The optional guards of one headless drive: the streamed log, the stderr
 /// early-kill, the idle watchdog, the degraded-line watch and the prompt gate.
@@ -651,5 +646,16 @@ fn recv_and_join(
             );
             Vec::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_held_keeps_its_text() {
+        let err: &dyn std::error::Error = &PromptHeld;
+        assert_eq!(err.to_string(), "the prompt was held and not sent");
     }
 }
