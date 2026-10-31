@@ -15,6 +15,8 @@
 mod page;
 mod read;
 
+use std::sync::Arc;
+
 use axum::extract::ws::WebSocket;
 use futures_util::StreamExt;
 use tokio::sync::{broadcast, watch};
@@ -23,7 +25,7 @@ use tokio::time::Instant;
 use super::kinds::Ctx;
 use super::{ChannelSender, Mode, Out, Writer};
 use crate::routes::{Liveness, Push};
-use crate::{identity, presence_board, protocol};
+use crate::{auth, identity, presence_board, protocol};
 use page::{Arms, PageEntry, HEARTBEAT_EVERY};
 
 /// The bytes of a channel frame's header: the tag, the channel id and the
@@ -42,6 +44,38 @@ pub(crate) struct Page {
     pub(crate) pushes: broadcast::Receiver<Push>,
     pub(crate) board: presence_board::Shared,
     pub(crate) ctx: Ctx,
+    pub(crate) login: Login,
+}
+
+/// The login a page socket was let in under: the session epoch and the name
+/// of the auth policy at its upgrade.
+// ADR-0072 (a network client has no trust until it authenticates) and
+// ADR-0082 (one socket per page): the guard checks a request once, at the
+// upgrade, and a page socket lives on after a logout. Each `channel.open`
+// reads both again, so a page that was logged out launches nothing on its
+// old socket.
+pub(crate) struct Login {
+    auth: Arc<auth::AuthState>,
+    epoch: u64,
+    policy: &'static str,
+}
+
+impl Login {
+    /// The login as it stands now.
+    pub(crate) fn now(auth: Arc<auth::AuthState>) -> Login {
+        let epoch = auth.epoch().get();
+        let policy = auth.policy().name();
+        Login {
+            auth,
+            epoch,
+            policy,
+        }
+    }
+
+    /// Whether a logout, a new token or a new policy came after the upgrade.
+    fn changed(&self) -> bool {
+        self.auth.epoch().get() != self.epoch || self.auth.policy().name() != self.policy
+    }
 }
 
 /// Serve one page socket until the page goes, it stays silent too long, a
@@ -63,12 +97,19 @@ async fn serve_with(socket: WebSocket, page: Page, liveness: Liveness) {
         pushes,
         board,
         ctx,
+        login,
     } = page;
     let (sink, stream) = socket.split();
     let writer = Writer::start(sink, Mode::Channels);
     let out = writer.channel(0);
     let (heard_tx, mut heard) = watch::channel(Instant::now());
-    let reader = read::Reader::new(writer.clone(), out.clone(), PageEntry::open(board), ctx);
+    let reader = read::Reader::new(
+        writer.clone(),
+        out.clone(),
+        PageEntry::open(board),
+        ctx,
+        login,
+    );
     let mut reader = tokio::spawn(read::read(stream, reader, heard_tx));
     let mut arms = Arms::new(sessions, pushes);
     let mut tick = tokio::time::interval(HEARTBEAT_EVERY);

@@ -2,6 +2,7 @@
 //! socket: each kind of channel has its own module, and `support` holds the
 //! helpers they share.
 
+mod auth;
 mod console;
 mod control;
 mod flood;

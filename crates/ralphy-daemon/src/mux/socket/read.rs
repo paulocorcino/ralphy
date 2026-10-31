@@ -6,7 +6,8 @@
 //! twice on a socket. An open of an id already used, a piece on an id never
 //! opened, an unknown kind, an open past the cap of open channels and a piece
 //! with an unknown flag are all answered with
-//! `channel.closed {reason: "refused"}`; the socket stays open.
+//! `channel.closed {reason: "refused"}`; the socket stays open. An open after
+//! the login changed is refused too, and ends the socket.
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,6 +18,7 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 
 use super::page::PageEntry;
+use super::Login;
 use crate::mux::kinds::{self, Channel, CloseReason, Ctx, Opening, Request};
 use crate::mux::{ChannelSender, Writer};
 use crate::presence_board::MAX_REPORT_BYTES;
@@ -32,6 +34,10 @@ const MAX_OPEN_BYTES: usize = 4 * 1024;
 /// socket can make (ADR-0072 D11, item counts).
 const MAX_CHANNELS: usize = 256;
 
+/// How long the refusal of an open after a login change may wait to be sent
+/// before the socket ends anyway.
+const REFUSAL_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One open channel: the pieces of the inner frame still due, and its kind.
 struct Open {
     joiner: Joiner,
@@ -45,6 +51,7 @@ pub(super) struct Reader {
     control: ChannelSender,
     page: PageEntry,
     ctx: Ctx,
+    login: Login,
     open: HashMap<u32, Open>,
     /// Every id an open, a close or a refusal named on this socket.
     used: HashSet<u32>,
@@ -84,12 +91,19 @@ fn channel_of(bytes: &[u8]) -> Option<u32> {
 }
 
 impl Reader {
-    pub(super) fn new(writer: Writer, control: ChannelSender, page: PageEntry, ctx: Ctx) -> Reader {
+    pub(super) fn new(
+        writer: Writer,
+        control: ChannelSender,
+        page: PageEntry,
+        ctx: Ctx,
+        login: Login,
+    ) -> Reader {
         Reader {
             writer,
             control,
             page,
             ctx,
+            login,
             open: HashMap::new(),
             used: HashSet::new(),
         }
@@ -157,6 +171,9 @@ impl Reader {
             return true;
         };
         let id = request.channel;
+        if self.login.changed() {
+            return self.refuse_after_login_change(id).await;
+        }
         self.prune();
         if !self.used.insert(id) {
             return self.answer(id, CloseReason::Refused).await;
@@ -221,6 +238,29 @@ impl Reader {
                 self.end(id, CloseReason::TooLarge).await
             }
         }
+    }
+
+    /// Refuse an open because the login changed since the upgrade, and end
+    /// the socket once the refusal is sent: the page connects again through
+    /// the guard. Always `false`.
+    async fn refuse_after_login_change(&mut self, id: u32) -> bool {
+        self.used.insert(id);
+        tracing::info!(
+            channel = id,
+            "page socket ended: the login changed since it opened"
+        );
+        if self.answer(id, CloseReason::Refused).await {
+            // The refusal waits on channel 0; a page that reads nothing does
+            // not hold the socket open.
+            match tokio::time::timeout(REFUSAL_WAIT, self.control.sent()).await {
+                // Sent, or the socket is gone already.
+                Ok(Ok(()) | Err(_)) => {}
+                Err(_elapsed) => {
+                    tracing::debug!(channel = id, "the refusal was not sent before the end")
+                }
+            }
+        }
+        false
     }
 
     /// End a channel the daemon refuses: its kind stops, the id stays used,

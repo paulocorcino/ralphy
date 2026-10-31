@@ -41,6 +41,7 @@ fn page(
             watchers: Arc::new(crate::watch::WatcherManager::new(crate::watch::MAX_WATCHES)),
             run_exits: broadcast::channel(4).0,
         },
+        login: Login::now(crate::auth::AuthState::localhost()),
     }
 }
 
