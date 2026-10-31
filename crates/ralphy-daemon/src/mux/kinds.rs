@@ -148,6 +148,10 @@ impl Ctx {
     }
 }
 
+/// How long a channel's end waits for its queued frames to be sent, as the
+/// console bridge bounds its own end.
+const END_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One open a kind is asked to serve.
 pub(crate) struct Opening {
     pub(crate) channel: u32,
@@ -160,7 +164,9 @@ pub(crate) struct Opening {
 
 impl Opening {
     /// End the channel: its queue closes, and `channel.closed` with `reason`
-    /// goes on channel 0. A socket that is gone hears nothing.
+    /// goes on channel 0 after the frames already queued on the channel, or
+    /// after `END_WAIT` when the page reads nothing. A socket that is gone
+    /// hears nothing.
     pub(crate) async fn end(self, reason: CloseReason) {
         let Opening {
             channel,
@@ -168,6 +174,15 @@ impl Opening {
             out,
             control,
         } = self;
+        // The writer visits channel 0 first in each turn, so a `channel.closed`
+        // queued at once could leave before the channel's last frame.
+        match tokio::time::timeout(END_WAIT, out.sent()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(_closed)) => return,
+            Err(_elapsed) => {
+                tracing::debug!(channel, "a channel ended before its frames were sent")
+            }
+        }
         drop(out);
         let kind = payload.get("kind").and_then(serde_json::Value::as_str);
         tracing::debug!(channel, ?kind, reason = reason.as_wire(), "a channel ended");

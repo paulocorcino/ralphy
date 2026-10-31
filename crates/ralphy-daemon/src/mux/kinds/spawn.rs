@@ -43,11 +43,5 @@ fn command_of(payload: &serde_json::Value) -> Option<Command> {
 
 /// End the channel with `done`, after the last frame of the run is sent.
 async fn end(opening: Opening) {
-    // `channel.closed` goes on channel 0, which the writer may send before
-    // the last frame of this channel.
-    if opening.out.sent().await.is_err() {
-        // The socket is gone, and the page with it.
-        return;
-    }
     opening.end(CloseReason::Done).await;
 }
