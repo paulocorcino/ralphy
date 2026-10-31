@@ -74,18 +74,23 @@ pub const DIR: &str = ".ralphy/notes";
 /// A note read/write failure, in the wire vocabulary the console already
 /// knows. `Confined` is a refused target (escape, denylist) and `NotFound`
 /// masks an out-of-root read as a plain miss exactly as [`crate::tree`] does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NoteError {
     /// The path is not spelled `.note`, or the bytes are not a container this
     /// version can read (bad magic, unknown version, truncated stream).
+    #[error("not a note")]
     NotNote,
     /// The file — or the text it inflates to — exceeds [`MAX_READ_BYTES`].
+    #[error("note too large")]
     TooLarge,
     /// The file does not exist, or the target escapes the root on a read.
+    #[error("note not found")]
     NotFound,
     /// The write target escapes the root or names a protected directory.
+    #[error("path refused")]
     Confined,
     /// Any other filesystem failure.
+    #[error("io error")]
     Io,
 }
 
@@ -104,20 +109,6 @@ impl NoteError {
         }
     }
 }
-
-impl std::fmt::Display for NoteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NoteError::NotNote => write!(f, "not a note"),
-            NoteError::TooLarge => write!(f, "note too large"),
-            NoteError::NotFound => write!(f, "note not found"),
-            NoteError::Confined => write!(f, "path refused"),
-            NoteError::Io => write!(f, "io error"),
-        }
-    }
-}
-
-impl std::error::Error for NoteError {}
 
 impl From<WriteError> for NoteError {
     fn from(e: WriteError) -> Self {
@@ -281,6 +272,15 @@ fn refuse_other_extension(rel: &str) -> Result<(), NoteError> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn note_error_keeps_its_text() {
+        assert_eq!(NoteError::NotNote.to_string(), "not a note");
+        assert_eq!(NoteError::TooLarge.to_string(), "note too large");
+        assert_eq!(NoteError::NotFound.to_string(), "note not found");
+        assert_eq!(NoteError::Confined.to_string(), "path refused");
+        assert_eq!(NoteError::Io.to_string(), "io error");
+    }
 
     #[test]
     fn a_container_round_trips_every_text_a_note_can_hold() {

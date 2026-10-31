@@ -75,30 +75,17 @@ pub const RESERVED: &[&str] = &[
 
 /// Why a proposed daemon name was refused, each carrying an operator-facing
 /// message via `Display`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NameError {
+    #[error("name must not be empty")]
     Empty,
+    #[error("name may only contain lowercase letters, digits, and hyphens")]
     InvalidChars,
+    #[error(
+        "'{0}' is reserved (it collides with Ralphy's command vocabulary) — pick another name"
+    )]
     Reserved(String),
 }
-
-impl std::fmt::Display for NameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NameError::Empty => write!(f, "name must not be empty"),
-            NameError::InvalidChars => write!(
-                f,
-                "name may only contain lowercase letters, digits, and hyphens"
-            ),
-            NameError::Reserved(term) => write!(
-                f,
-                "'{term}' is reserved (it collides with Ralphy's command vocabulary) — pick another name"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for NameError {}
 
 /// Normalize and validate a proposed name: trim, lowercase, then reject empty,
 /// any char outside `[a-z0-9-]`, or a match against [`RESERVED`]. On success
@@ -226,6 +213,19 @@ pub fn load_current() -> Result<Option<Identity>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn name_error_keeps_its_text() {
+        assert_eq!(NameError::Empty.to_string(), "name must not be empty");
+        assert_eq!(
+            NameError::InvalidChars.to_string(),
+            "name may only contain lowercase letters, digits, and hyphens"
+        );
+        assert_eq!(
+            NameError::Reserved("list".to_string()).to_string(),
+            "'list' is reserved (it collides with Ralphy's command vocabulary) — pick another name"
+        );
+    }
 
     /// Serializes tests that mutate the process-global home / `RALPHY_DAEMON_DIR`
     /// env vars so they never race on the resolved path.

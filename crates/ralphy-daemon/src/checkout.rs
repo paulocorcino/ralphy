@@ -61,21 +61,12 @@ impl Checkout {
 /// Why a `checkout` value did not resolve. One variant on purpose: a malformed
 /// name, a missing worktree and a non-string value all answer [`UNKNOWN`] — the
 /// reply must not distinguish "no such name" from "not a name" to a client.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CheckoutError {
     /// The name is malformed, unknown, or not a string.
+    #[error("{}", UNKNOWN)]
     Unknown,
 }
-
-impl std::fmt::Display for CheckoutError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CheckoutError::Unknown => f.write_str(UNKNOWN),
-        }
-    }
-}
-
-impl std::error::Error for CheckoutError {}
 
 /// The shape gate: a name is exactly ONE normal path component — so not empty,
 /// no separator, not `.`/`..`, and not a Windows drive or root prefix either
@@ -176,6 +167,11 @@ mod tests {
     use crate::dispatch::agent_flag;
     use crate::session::Agent;
     use serde_json::json;
+
+    #[test]
+    fn checkout_error_keeps_its_text() {
+        assert_eq!(CheckoutError::Unknown.to_string(), "unknown checkout");
+    }
 
     #[test]
     fn resolve_known_name_prefixes_under_the_fixed_location() {
