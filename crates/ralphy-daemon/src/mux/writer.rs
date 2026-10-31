@@ -21,8 +21,8 @@ use std::task::{Context, Poll};
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::stream::SplitSink;
 use futures_util::SinkExt;
-use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::{SendError, TryRecvError};
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::AbortHandle;
 
 use crate::protocol;
@@ -50,6 +50,9 @@ pub(crate) enum Out {
     Pong(Vec<u8>),
     /// A WebSocket Close. The writer sends nothing after it and ends.
     Close,
+    /// Sends nothing. The writer answers on this when every item queued
+    /// before it has been sent: see [`ChannelSender::sent`].
+    Sent(oneshot::Sender<()>),
 }
 
 /// The socket's writer has ended: the socket is closed or failed.
@@ -138,6 +141,16 @@ impl ChannelSender {
         self.put(Out::Frame(inner)).await
     }
 
+    /// Wait until the writer has sent every item queued on this channel so
+    /// far. A frame queued on another channel may leave before or after.
+    pub(crate) async fn sent(&self) -> Result<(), WriterClosed> {
+        let (answer, sent) = oneshot::channel();
+        self.put(Out::Sent(answer)).await?;
+        // The answer is dropped unsent when the writer ends first.
+        sent.await
+            .map_err(|_ended: oneshot::error::RecvError| WriterClosed)
+    }
+
     /// Queue one item; waits while the channel's queue is full.
     pub(crate) async fn put(&self, out: Out) -> Result<(), WriterClosed> {
         // The error carries only the item back; the writer has ended.
@@ -213,6 +226,13 @@ impl Queue {
             Out::Ping(payload) => VecDeque::from([Message::Ping(payload.into())]),
             Out::Pong(payload) => VecDeque::from([Message::Pong(payload.into())]),
             Out::Close => VecDeque::from([Message::Close(None)]),
+            // The item is loaded only when the messages before it are sent.
+            Out::Sent(answer) => {
+                if answer.send(()).is_err() {
+                    tracing::debug!("a sent-wait was dropped before the answer");
+                }
+                VecDeque::new()
+            }
         };
     }
 

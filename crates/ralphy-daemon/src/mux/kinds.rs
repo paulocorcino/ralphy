@@ -59,6 +59,8 @@ pub(crate) enum CloseReason {
     Refused,
     /// The pieces the page sent join to an inner frame past the cap.
     TooLarge,
+    /// The kind has said all it has to say: a spawned command that ended.
+    Done,
 }
 
 impl CloseReason {
@@ -66,6 +68,7 @@ impl CloseReason {
         match self {
             CloseReason::Refused => "refused",
             CloseReason::TooLarge => "too-large",
+            CloseReason::Done => "done",
         }
     }
 }

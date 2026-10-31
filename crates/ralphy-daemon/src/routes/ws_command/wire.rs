@@ -1,13 +1,14 @@
-//! The command socket once its first command is read: one writer channel
-//! that sends to the client, the half that reads the client, and the
-//! daemon's shutdown signal.
+//! Where a command is served once it is read: one writer channel that sends
+//! to the client, and what ends the serving. On a command socket of its own
+//! that is the half that reads the client and the daemon's shutdown signal.
+//! On a spawn channel of the page socket it is the page closing the channel.
 
 use std::time::Duration;
 
 use axum::extract::ws::WebSocket;
 use futures_util::stream::SplitStream;
 use futures_util::StreamExt;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use super::send_command_on;
 use crate::mux::{ChannelSender, Mode, Out, Writer, WriterClosed};
@@ -21,12 +22,23 @@ const SEND_QUEUE: usize = 1;
 /// the writer is stopped and the socket dropped.
 const CLOSE_WINDOW: Duration = Duration::from_secs(5);
 
-/// The sending and reading halves of one command socket.
+/// The sending half of one served command, and what ends the serving.
 pub(crate) struct Wire {
     pub(super) out: ChannelSender,
-    pub(super) from_browser: SplitStream<WebSocket>,
-    pub(super) shutdown: watch::Receiver<bool>,
-    writer: Writer,
+    client: Client,
+}
+
+/// The client of a [`Wire`]: what it reads, and what it sends through.
+enum Client {
+    /// A command socket of its own.
+    Socket {
+        from_browser: SplitStream<WebSocket>,
+        shutdown: watch::Receiver<bool>,
+        writer: Writer,
+    },
+    /// A spawn channel of the page socket: the inner frames the page sends
+    /// on it. The page sends none that mean anything.
+    Channel { frames: mpsc::Receiver<Vec<u8>> },
 }
 
 impl Wire {
@@ -36,9 +48,40 @@ impl Wire {
         let writer = Writer::start(sink, Mode::Plain);
         Wire {
             out: writer.channel_with_depth(0, SEND_QUEUE),
-            from_browser,
-            shutdown,
-            writer,
+            client: Client::Socket {
+                from_browser,
+                shutdown,
+                writer,
+            },
+        }
+    }
+
+    /// Serve on a spawn channel: `out` is the channel's queue on the page
+    /// socket, and `frames` the inner frames the page sends on it.
+    pub(crate) fn on_channel(out: ChannelSender, frames: mpsc::Receiver<Vec<u8>>) -> Wire {
+        Wire {
+            out,
+            client: Client::Channel { frames },
+        }
+    }
+
+    /// Ready when serving this wire should stop: the client sent or closed
+    /// something on its socket, the daemon is shutting down, or the page
+    /// closed the channel. Cancel safe. It never ends a run: see the
+    /// teardown invariant on `stream_child`.
+    pub(super) async fn gone(&mut self) {
+        match &mut self.client {
+            Client::Socket {
+                from_browser,
+                shutdown,
+                ..
+            } => {
+                tokio::select! {
+                    _ = shutdown.changed() => {}
+                    _ = from_browser.next() => {}
+                }
+            }
+            Client::Channel { frames } => while frames.recv().await.is_some() {},
         }
     }
 
@@ -52,10 +95,14 @@ impl Wire {
 
     /// Send the client a Close after the frames already queued, and wait for
     /// the writer to finish, for [`CLOSE_WINDOW`] at most. Then stop the writer.
+    /// A channel has no socket of its own to close: it only stops.
     pub(super) async fn finish(self) {
+        let Client::Socket { writer, .. } = self.client else {
+            return;
+        };
         let closed = async {
             self.out.put(Out::Close).await?;
-            self.writer.ended().await;
+            writer.ended().await;
             Ok(())
         };
         match tokio::time::timeout(CLOSE_WINDOW, closed).await {
@@ -63,6 +110,6 @@ impl Wire {
             Ok(Ok(()) | Err(WriterClosed)) => {}
             Err(_) => tracing::debug!("the client did not take the close in time"),
         }
-        self.writer.abort();
+        writer.abort();
     }
 }
