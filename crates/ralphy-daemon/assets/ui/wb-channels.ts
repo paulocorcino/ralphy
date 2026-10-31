@@ -33,8 +33,9 @@ const SOCKET_OPEN = 1;
 export type ChannelKind = "console" | "tree" | "runs" | "changes" | "spawn";
 
 /** Why a channel ended: a word of the daemon's `channel.closed`, or
- * `socket-lost` when the socket under it ended. */
-export type CloseReason = "refused" | "too-large" | "done" | "socket-lost";
+ * `socket-lost` when the socket under it ended. `overflow`: the daemon's
+ * queue for what this channel sends was full, and the channel ended alone. */
+export type CloseReason = "refused" | "too-large" | "done" | "overflow" | "socket-lost";
 
 /** The part of a WebSocket the layer uses. */
 export type ChannelSocket = {
@@ -221,6 +222,7 @@ function closeReason(reason: unknown): CloseReason {
     case "refused":
     case "too-large":
     case "done":
+    case "overflow":
       return reason;
     default:
       // A word this page does not know: the channel is over all the same.

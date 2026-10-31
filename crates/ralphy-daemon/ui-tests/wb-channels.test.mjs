@@ -186,6 +186,16 @@ test("hands channel.closed to its channel", () => {
   assert.deepEqual(bare, [], "channel 0 does not see a channel.closed");
 });
 
+test("a channel.closed with overflow reaches its channel as overflow", () => {
+  const { channels } = layer();
+  const channel = channels.open("tree", {});
+  const reasons = [];
+  channel.onClosed = (reason) => reasons.push(reason);
+  channels.receive(bareCommand("channel.closed", { channel: channel.id, reason: "overflow" }));
+  assert.deepEqual(reasons, ["overflow"]);
+  assert.equal(channel.readyState, "closed");
+});
+
 test("a frame that arrives after channel.closed is dropped", () => {
   const { channels } = layer();
   const channel = channels.open("console", {});
