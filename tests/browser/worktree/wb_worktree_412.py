@@ -317,8 +317,11 @@ def desk_records(page):
     return page.request.get(BASE + "api/desk").json()["windows"]
 
 
-SWITCHER = "() => document.querySelector('.session-window .session-checkout')"
-SWITCHER_TEXT = "() => (document.querySelector('.session-window .session-checkout') || {}).textContent"
+# The checkout switcher of a console. The "tell me when it is done" bell
+# carries the class `session-checkout` too, so the selector leaves it out.
+SWITCHER_SEL = ".session-window .session-checkout:not(.session-done-mark)"
+SWITCHER = f"() => document.querySelector('{SWITCHER_SEL}')"
+SWITCHER_TEXT = f"() => (document.querySelector('{SWITCHER_SEL}') || {{}}).textContent"
 MENU_ROWS = (
     "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
     "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
@@ -478,7 +481,7 @@ def main():
             page.evaluate(f"() => {MENUS}.newPlainConsole()")
             page.wait_for_function(f"() => ({WINDOWS})() === 2", timeout=15000)
             page.wait_for_timeout(800)
-            n = page.evaluate("() => document.querySelectorAll('.session-window .session-checkout').length")
+            n = page.evaluate(f"() => document.querySelectorAll('{SWITCHER_SEL}').length")
             check("the plain console adds no switcher (still exactly one)", n == 1, f"got={n}")
 
             # --- scenario 9 ------------------------------------------------------
