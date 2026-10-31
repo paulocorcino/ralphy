@@ -1,6 +1,6 @@
 //! `POST /api/command` answers a one-reply command with the same JSON the
-//! command socket sends, under the same guard, cap and audit record, and
-//! refuses a command whose output streams (ADR-0082 D1, ADR-0072 D3, D11).
+//! page socket sends on a `spawn` channel, under the same guard, cap and audit
+//! record, and refuses a command whose output streams (ADR-0082 D1, ADR-0072 D3, D11).
 
 #![expect(
     clippy::disallowed_methods,
@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::AuthState;
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::protocol::{self, Command, Frame};
@@ -21,6 +20,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 use tower::ServiceExt;
+
+#[path = "support/page.rs"]
+pub mod page;
 
 const SLUG: &str = "owner/http";
 const TOKEN: &str = "http-command-token";
@@ -130,14 +132,15 @@ async fn over_http(
     (status, value)
 }
 
-/// The one reply payload `/ws/command` sends for the same command.
+/// The one reply payload a `spawn` channel of the page socket sends for the
+/// same command.
 async fn over_socket(
     port: u16,
     verb: &str,
     payload: serde_json::Value,
     headers: &[(&str, &str)],
 ) -> serde_json::Value {
-    let mut request = format!("ws://127.0.0.1:{port}/ws/command")
+    let mut request = page::url(port)
         .into_client_request()
         .expect("the websocket request is valid");
     for (name, value) in headers {
@@ -146,9 +149,7 @@ async fn over_socket(
             value.parse().expect("the header value is valid"),
         );
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .expect("the websocket connects");
+    let mut ws = page::Channel::spawn_on(page::connect_request(request).await);
     let frame = Frame::Command(Command {
         id: 1,
         verb: verb.to_string(),

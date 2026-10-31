@@ -1,16 +1,19 @@
-//! A command-socket verb that changes state writes a `command` line in the
-//! audit log with the device of the browser that asked (ADR-0074 D12).
+//! A verb that changes state, sent on a `spawn` channel of the page socket,
+//! writes a `command` line in the audit log with the device of the browser
+//! that asked (ADR-0074 D12).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::AuthState;
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::router;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
+
+#[path = "support/page.rs"]
+pub mod page;
 
 async fn serve(registry_path: PathBuf) -> u16 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -82,25 +85,25 @@ async fn a_command_that_changes_state_is_recorded_with_its_device() {
     let cookie = device_cookie(port).await;
     let device = cookie.split('.').nth(1).unwrap().to_string();
 
-    let mut request = format!("ws://127.0.0.1:{port}/ws/command")
-        .into_client_request()
-        .unwrap();
+    let mut request = page::url(port).into_client_request().unwrap();
     request
         .headers_mut()
         .insert("cookie", cookie.parse().unwrap());
-    let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
-    ws.send(Message::Binary(
-        protocol::encode(&Frame::Command(Command {
-            id: 1,
-            verb: "branch.switch".to_string(),
-            payload: serde_json::json!({"repo": "nope", "name": "main"}),
-        }))
-        .into(),
-    ))
-    .await
-    .unwrap();
+    let ws = page::connect_request(request).await;
+    let mut channel = page::Channel::spawn_on(ws);
+    channel
+        .send(Message::Binary(
+            protocol::encode(&Frame::Command(Command {
+                id: 1,
+                verb: "branch.switch".to_string(),
+                payload: serde_json::json!({"repo": "nope", "name": "main"}),
+            }))
+            .into(),
+        ))
+        .await
+        .unwrap();
     tokio::time::timeout(Duration::from_secs(20), async {
-        while let Some(Ok(_)) = ws.next().await {}
+        while let Some(Ok(_)) = channel.next().await {}
     })
     .await
     .expect("the server closes the socket");

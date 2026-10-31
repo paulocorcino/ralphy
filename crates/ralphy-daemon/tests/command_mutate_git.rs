@@ -19,16 +19,15 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
+#[path = "support/page.rs"]
+pub mod page;
+
 async fn mutate_message(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> String {
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
 
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {

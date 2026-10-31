@@ -1,6 +1,7 @@
-//! The host verbs on `/ws/command` (ADR-0036 amendment 2026-09-29): served with
-//! no `repo`, refused on a bad value before anything spawns, and never answered
-//! for a peer. The spawned exe is `command_test_child`, which echoes its argv.
+//! The host verbs on a `spawn` channel of the page socket (ADR-0036 amendment
+//! 2026-09-29): served with no `repo`, refused on a bad value before anything
+//! spawns, and never answered for a peer. The spawned exe is
+//! `command_test_child`, which echoes its argv.
 
 #![expect(
     clippy::disallowed_methods,
@@ -11,12 +12,14 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::http::{header, Request};
-use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::router;
 use tokio_tungstenite::tungstenite::Message;
 use tower::ServiceExt;
+
+#[path = "support/page.rs"]
+pub mod page;
 
 fn command(id: u64, verb: &str, payload: serde_json::Value) -> Message {
     Message::Binary(
@@ -56,17 +59,16 @@ async fn replies_with(
     headers: &[(&str, &str)],
 ) -> Vec<serde_json::Value> {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let mut request = url.into_client_request().expect("a websocket request");
+    let mut request = page::url(port)
+        .into_client_request()
+        .expect("a websocket request");
     for (name, value) in headers {
         request.headers_mut().insert(
             header::HeaderName::from_bytes(name.as_bytes()).expect("the header name is valid"),
             value.parse().expect("the header value is valid"),
         );
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::Channel::spawn_on(page::connect_request(request).await);
     ws.send(command(1, verb, payload))
         .await
         .expect("the frame is sent");
