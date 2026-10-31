@@ -31,7 +31,11 @@ mod tests;
 /// answer raises it, unless each change is a new field the page reads as
 /// optional (ADR-0052, amendment of 2026-10-10). The pin in
 /// `crates/xtask/tests/ratchets/` fails until the change makes one of the two.
-pub const PEER_PROTOCOL_VERSION: u32 = 4;
+/// Version 5 moves a relayed console and a relayed spawn verb onto a channel
+/// of the peer's page socket `/ws`: a peer of version 4 takes that socket but
+/// ignores `channel.open`, so without the raise the relay would wait forever
+/// instead of naming the older peer.
+pub const PEER_PROTOCOL_VERSION: u32 = 5;
 
 /// How to wake a peer that is not answering. Only ever populated by a daemon
 /// running inside WSL, which is the one environment whose host can start it.

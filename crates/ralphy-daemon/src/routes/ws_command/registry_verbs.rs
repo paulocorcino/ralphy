@@ -1,7 +1,8 @@
-//! The registry verbs on `/ws/command` and `/api/peer/command` (ADR-0036
-//! amendment "the registry verbs"): `dir.list` and `project.add`. They name a
-//! daemon, not a repo. The daemon that owns the disk serves them; the browser's
-//! daemon relays them to a peer, and the peer never routes them again.
+//! The registry verbs on the `spawn` channel, `POST /api/command` and
+//! `/api/peer/command` (ADR-0036 amendment "the registry verbs"): `dir.list`
+//! and `project.add`. They name a daemon, not a repo. The daemon that owns
+//! the disk serves them; the browser's daemon relays them to a peer, and the
+//! peer never routes them again.
 
 use std::path::{Path, PathBuf};
 

@@ -1,6 +1,6 @@
 //! Teardown invariant over a real loopback WebSocket (docs/adr/0032 §2; PRD #157
 //! stories 18/20; issue #180): a client fires a `run`, reads the `spawned` ack,
-//! then DROPS the `/ws/command` socket immediately — and the dispatched child
+//! then DROPS the page socket (its `spawn` channel) immediately — and the dispatched child
 //! still runs to completion. Proven machine-side: the child writes a
 //! `dispatch-done` sentinel (via `RALPHY_TEST_DONE_FILE`) AFTER a delay, and this
 //! test observes the sentinel appear despite the disconnect. No client kill.
@@ -13,9 +13,11 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
+#[path = "support/page.rs"]
+pub mod page;
+
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
@@ -69,10 +71,7 @@ async fn dispatched_run_survives_a_client_disconnect_after_the_ack() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
 
     ws.send(command(1, "run", slug)).await.unwrap();
 

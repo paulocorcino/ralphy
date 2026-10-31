@@ -4,18 +4,19 @@
 //! `ralphy run --agent cursor` does — writing `.cursorindexingignore` BEFORE
 //! anything is spawned.
 //!
-//! Two legs against one live loopback daemon: an unprotected repo upgrades, and
+//! Two legs against one live loopback daemon: an unprotected repo opens, and
 //! the opt-out file exists on disk afterwards while the session streams through
 //! the codec + PTY like any other vendor; then an explicit opt-in reaches the
 //! capability while writing no file.
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page::{self, Channel};
 
 fn terminal(data: &[u8]) -> Message {
     Message::Binary(
@@ -25,6 +26,31 @@ fn terminal(data: &[u8]) -> Message {
         })
         .into(),
     )
+}
+
+/// Open a `console` channel that launches a cursor console in `owner/cursorlab`
+/// and read the daemon's `session-open`. The daemon sends it after the launch
+/// gate ran, so what the gate wrote or left is on disk once this returns.
+async fn launch_cursor(port: u16) -> Channel {
+    let mut ws = page::console(
+        port,
+        serde_json::json!({ "repo": "owner/cursorlab", "agent": "cursor" }),
+    )
+    .await;
+    let first = tokio::time::timeout(Duration::from_secs(10), ws.next())
+        .await
+        .expect("a first frame within 10s")
+        .expect("the channel stays open")
+        .expect("read the first frame");
+    let Message::Binary(bytes) = first else {
+        panic!("the first message is a frame; got {first:?}");
+    };
+    let open = protocol::decode(&bytes).expect("a well-formed frame");
+    assert!(
+        matches!(&open, Frame::Command(c) if c.verb == "session-open"),
+        "an accepted launch opens with session-open: {open:?}"
+    );
+    ws
 }
 
 #[tokio::test]
@@ -56,17 +82,13 @@ async fn cursor_session_protects_an_unprotected_repo_then_streams() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fcursorlab&agent=cursor");
-
     // --- Leg 1: no opt-out file → the daemon WRITES it before spawning, then the
-    // same URL upgrades and streams. The gate no longer refuses; it protects.
+    // same launch opens and streams. The gate no longer refuses; it protects.
     assert!(
         !dir.path().join(".cursorindexingignore").exists(),
         "precondition: the repo starts unprotected"
     );
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("an unprotected repo must upgrade once the gate has written the opt-out");
+    let mut ws = launch_cursor(port).await;
     assert_eq!(
         std::fs::read_to_string(dir.path().join(".cursorindexingignore")).unwrap(),
         "*\n",
@@ -124,9 +146,7 @@ async fn cursor_session_protects_an_unprotected_repo_then_streams() {
         r#"{"cursor":{"allow_codebase_indexing_i_understand_the_risk":true}}"#,
     )
     .unwrap();
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("an explicit opt-in must reach the capability");
+    let mut ws = launch_cursor(port).await;
     ws.send(terminal(b"quit\r")).await.unwrap();
     assert!(
         !dir.path().join(".cursorindexingignore").exists(),

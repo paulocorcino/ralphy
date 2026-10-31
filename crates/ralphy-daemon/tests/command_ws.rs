@@ -1,9 +1,9 @@
 //! End-to-end remote command over a real loopback WebSocket (docs/adr/0032 §2;
-//! issue #163): a client connects to `/ws/command`, sends a `run` command for a
+//! issue #163): a page socket opens a `spawn` channel with a `run` command for a
 //! registered slug (the spawned exe overridden to `command_test_child`, which
 //! exits 7), and receives the spawn ack (`status:"spawned"` + a pid) followed by
-//! the child's exit frame (`status:"exited"`, `code:7`) — proving the WS →
-//! dispatch → spawn → ack/exit path. Mirrors `tests/session_ws.rs`.
+//! the child's exit frame (`status:"exited"`, `code:7`) — proving the channel →
+//! dispatch → spawn → ack/exit path. Mirrors `tests/sessions/session_ws.rs`.
 
 #![expect(
     clippy::disallowed_methods,
@@ -12,10 +12,12 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
+
+#[path = "support/page.rs"]
+pub mod page;
 
 /// Encode the command frame the browser button would send.
 fn command(id: u64, verb: &str, slug: &str) -> Message {
@@ -66,10 +68,7 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
 
     ws.send(command(1, "run", slug)).await.unwrap();
 
@@ -134,8 +133,8 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
     );
 }
 
-/// Serve `/ws/command` over an empty registry; returns its URL.
-async fn serve_empty() -> String {
+/// Serve a daemon over an empty registry; returns its port.
+async fn serve_empty() -> u16 {
     let dir = tempfile::tempdir().expect("the temp dir is created");
     let registry_path = dir.path().join("repos.toml");
     registry::save_to(&registry::RegistryStore::default(), &registry_path)
@@ -164,15 +163,13 @@ async fn serve_empty() -> String {
             .await
             .expect("the test server runs");
     });
-    format!("ws://127.0.0.1:{port}/ws/command")
+    port
 }
 
-/// Send `first` as the first frame and return every binary frame the daemon
-/// sends until it ends the socket.
-async fn frames_after(url: &str, first: Message) -> Vec<Vec<u8>> {
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("connecting to /ws/command");
+/// Send `first` as the frame that opens a `spawn` channel, and return every
+/// binary frame of the channel until it ends, and the reason it ended with.
+async fn frames_after(port: u16, first: Message) -> (Vec<Vec<u8>>, Option<String>) {
+    let mut ws = page::command(port).await;
     ws.send(first).await.expect("the frame is sent");
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut frames = Vec::new();
@@ -186,13 +183,14 @@ async fn frames_after(url: &str, first: Message) -> Vec<Vec<u8>> {
         frames
     })
     .await
-    .expect("the daemon must end the socket within 10s")
+    .map(|frames| (frames, ws.closed_reason().map(String::from)))
+    .expect("the daemon must end the channel within 10s")
 }
 
 #[tokio::test]
 async fn an_unknown_verb_gets_one_error_frame() {
-    let url = serve_empty().await;
-    let frames = frames_after(&url, command(4, "no.such.verb", "owner/repo")).await;
+    let port = serve_empty().await;
+    let (frames, _reason) = frames_after(port, command(4, "no.such.verb", "owner/repo")).await;
     assert_eq!(frames.len(), 1, "exactly one reply frame: {frames:?}");
     let Ok(Frame::Command(reply)) = protocol::decode(&frames[0]) else {
         panic!("the reply is a command frame");
@@ -205,15 +203,18 @@ async fn an_unknown_verb_gets_one_error_frame() {
     );
 }
 
+/// A `spawn` open with no command, as a page sends for a frame that is not a
+/// command, is refused, and the channel sends no frame.
 #[tokio::test]
-async fn a_first_frame_that_is_not_a_command_gets_no_frame() {
-    let url = serve_empty().await;
+async fn a_spawn_open_with_no_command_is_refused() {
+    let port = serve_empty().await;
     for first in [
         Message::Text("run".into()),
         Message::Binary(vec![0xFF, 0x00, 0x13].into()),
     ] {
         let shown = format!("{first:?}");
-        let frames = frames_after(&url, first).await;
+        let (frames, reason) = frames_after(port, first).await;
         assert!(frames.is_empty(), "{shown} got {frames:?}");
+        assert_eq!(reason.as_deref(), Some("refused"), "{shown}");
     }
 }

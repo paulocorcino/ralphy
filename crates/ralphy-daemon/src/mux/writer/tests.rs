@@ -29,9 +29,9 @@ impl axum::serve::Listener for OneConnection {
 }
 
 /// A real WebSocket over an in-memory pipe: the server side splits the
-/// socket, drops its read half and starts the writer in `mode` on the sink
-/// half. Returns the client and the writer.
-async fn connect(mode: Mode) -> (Client, Writer) {
+/// socket, drops its read half and starts the writer on the sink half.
+/// Returns the client and the writer.
+async fn connect() -> (Client, Writer) {
     let (server_io, client_io) = tokio::io::duplex(64 * 1024);
     let (give, take) = tokio::sync::oneshot::channel::<Writer>();
     let give = Arc::new(Mutex::new(Some(give)));
@@ -46,7 +46,7 @@ async fn connect(mode: Mode) -> (Client, Writer) {
             async move {
                 ws.on_upgrade(move |socket| async move {
                     let (sink, _stream) = socket.split();
-                    let writer = Writer::start(sink, mode);
+                    let writer = Writer::start(sink);
                     give.send(writer)
                         .unwrap_or_else(|_| panic!("the test waits for the writer"));
                 })
@@ -104,7 +104,7 @@ fn pattern(len: usize, seed: u8) -> Vec<u8> {
 /// frame before the small one.
 #[tokio::test]
 async fn a_flooding_channel_delays_another_by_one_piece() {
-    let (mut client, writer) = connect(Mode::Channels).await;
+    let (mut client, writer) = connect().await;
     let flood = writer.channel(1);
     let other = writer.channel(2);
     flood
@@ -135,7 +135,7 @@ async fn a_flooding_channel_delays_another_by_one_piece() {
 /// pieces in arrival order and gets the frames exactly as they were sent.
 #[tokio::test]
 async fn the_pieces_of_one_frame_join_to_the_same_bytes() {
-    let (mut client, writer) = connect(Mode::Channels).await;
+    let (mut client, writer) = connect().await;
     let main = writer.channel(5);
     let side = writer.channel(9);
     let first = pattern(5 * protocol::MAX_PIECE + 7, 0x11);
@@ -176,7 +176,7 @@ async fn the_pieces_of_one_frame_join_to_the_same_bytes() {
 /// has nothing left and ends, so the socket ends after the third frame.
 #[tokio::test]
 async fn a_dropped_channel_drains_then_frees_its_queue() {
-    let (mut client, writer) = connect(Mode::Plain).await;
+    let (mut client, writer) = connect().await;
     let channel = writer.channel(1);
     let frames: Vec<Vec<u8>> = (0..3u8).map(|n| vec![n; 32]).collect();
     for frame in &frames {
@@ -189,9 +189,11 @@ async fn a_dropped_channel_drains_then_frees_its_queue() {
     drop(writer);
 
     for frame in &frames {
+        let (channel, more, piece) = next_piece(&mut client).await;
+        assert_eq!(channel, 1, "only channel 1 sends");
+        assert!(!more, "a 32-byte frame is one piece");
         assert_eq!(
-            next_binary(&mut client).await.as_ref(),
-            Some(frame),
+            &piece, frame,
             "a queued frame is sent after its sender is dropped"
         );
     }
@@ -202,26 +204,10 @@ async fn a_dropped_channel_drains_then_frees_its_queue() {
     );
 }
 
-/// Plain mode sends today's bytes: a 1 MiB frame is one Binary message,
-/// equal to the input.
-#[tokio::test]
-async fn plain_mode_sends_each_frame_whole() {
-    let (mut client, writer) = connect(Mode::Plain).await;
-    let channel = writer.channel(3);
-    let frame = pattern(1024 * 1024, 0x5a);
-    channel
-        .send(frame.clone())
-        .await
-        .expect("the writer is open");
-
-    let message = next_binary(&mut client).await.expect("the socket is open");
-    assert!(message == frame, "the frame leaves whole and unchanged");
-}
-
 /// When the socket is gone, every sender reports the writer closed.
 #[tokio::test]
 async fn a_closed_socket_makes_every_sender_report_closed() {
-    let (client, writer) = connect(Mode::Channels).await;
+    let (client, writer) = connect().await;
     let channel = writer.channel(1);
     drop(client);
     let mut result = Ok(());
@@ -247,7 +233,7 @@ async fn next_message(client: &mut Client) -> tungstenite::Message {
 /// A Ping queued after a frame leaves after it, whole.
 #[tokio::test]
 async fn a_ping_follows_the_frame_queued_before_it() {
-    let (mut client, writer) = connect(Mode::Channels).await;
+    let (mut client, writer) = connect().await;
     let channel = writer.channel(0);
     channel
         .send(vec![1, 2, 3])
@@ -270,40 +256,12 @@ async fn a_ping_follows_the_frame_queued_before_it() {
     );
 }
 
-/// A Close queued after a frame leaves after it, and the writer ends once
-/// the Close is sent: every sender then reports closed.
-#[tokio::test]
-async fn a_close_follows_the_frames_and_ends_the_writer() {
-    let (mut client, writer) = connect(Mode::Plain).await;
-    let channel = writer.channel(0);
-    channel
-        .send(vec![1, 2, 3])
-        .await
-        .expect("the writer is open");
-    channel.put(Out::Close).await.expect("the writer is open");
-
-    let frame = next_message(&mut client).await;
-    assert!(
-        matches!(&frame, tungstenite::Message::Binary(b) if b[..] == [1, 2, 3]),
-        "{frame:?}"
-    );
-    let close = next_message(&mut client).await;
-    assert!(
-        matches!(&close, tungstenite::Message::Close(None)),
-        "{close:?}"
-    );
-    tokio::time::timeout(Duration::from_secs(10), writer.ended())
-        .await
-        .expect("the writer ends after its Close");
-    assert_eq!(channel.send(vec![4]).await, Err(WriterClosed));
-}
-
 /// A channel opened with depth 1 makes its sender wait once one item waits
 /// behind the one being sent. Aborting the writer of a client that reads
-/// nothing ends it at once.
+/// nothing ends it at once: the waiting sender then reports closed.
 #[tokio::test]
 async fn a_shallow_channel_waits_and_an_aborted_writer_ends() {
-    let (_client, writer) = connect(Mode::Plain).await;
+    let (_client, writer) = connect().await;
     let channel = writer.channel_with_depth(1, 1);
     // The first frame fills the 64 KiB pipe and holds the writer; the
     // second takes the one place in the queue.
@@ -317,9 +275,10 @@ async fn a_shallow_channel_waits_and_an_aborted_writer_ends() {
     assert!(third.is_err(), "a third frame waits for room");
 
     writer.abort();
-    tokio::time::timeout(Duration::from_secs(10), writer.ended())
+    let after = tokio::time::timeout(Duration::from_secs(10), channel.send(vec![1]))
         .await
         .expect("an aborted writer ends");
+    assert_eq!(after, Err(WriterClosed));
 }
 
 #[test]

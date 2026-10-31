@@ -1,5 +1,5 @@
 //! The run-snapshot subscription over the wire (issue #300; ADR-0047 §9): a
-//! `/ws/tree` client that sends `runs.watch` receives a `runs.dirty` push when a
+//! `runs` channel client that sends `runs.watch` receives a `runs.dirty` push when a
 //! snapshot document under the repo's `.ralphy/runstate/` is written OR removed.
 //! Mirrors `tests/tree_watch.rs`'s `serve_repo` harness; the distinguishing fact
 //! this pins over the wire is the gitignore exemption — the repo root carries a
@@ -8,19 +8,17 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
 const RUNID: &str = "01TESTRUNIDTESTRUNIDTE";
 
 /// Bind a daemon over a temp repo whose `.gitignore` hides `.ralphy/`; return the
-/// `ws://…/ws/tree` URL, the repo slug, and the repo root.
-async fn serve_repo() -> (String, String, PathBuf) {
+/// port, the repo slug, and the repo root.
+async fn serve_repo() -> (u16, String, PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path().to_path_buf();
     // The trap the exemption exists for: every repo ralphy touches gitignores
@@ -60,11 +58,7 @@ async fn serve_repo() -> (String, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/tree"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }
 
 /// Send a subscription command for `repo` over the open socket. The `runs.*`
@@ -143,10 +137,10 @@ fn document() -> String {
 
 #[tokio::test]
 async fn runstate_write_pushes_runs_dirty() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let runstate = root.join(".ralphy").join("runstate");
 
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let mut ws = page::runs(port).await;
     send_verb(&mut ws, "runs.watch", &slug, "ignored/path").await;
     // Poll rather than sleep-then-assert: a fixed nap used as synchronization
     // fails a conformant daemon on a loaded host.
@@ -171,10 +165,10 @@ async fn runstate_write_pushes_runs_dirty() {
 /// took no second hold that one release would fail to undo.
 #[tokio::test]
 async fn runs_unwatch_stops_the_pushes() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let runstate = root.join(".ralphy").join("runstate");
 
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let mut ws = page::runs(port).await;
     send_verb(&mut ws, "runs.watch", &slug, "").await;
     send_verb(&mut ws, "runs.watch", &slug, "some/other/path").await;
     assert!(wait_until(|| runstate.is_dir()).await, "the watch is up");
@@ -212,13 +206,13 @@ async fn runs_unwatch_stops_the_pushes() {
 
 #[tokio::test]
 async fn snapshot_removal_pushes_runs_dirty() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let runstate = root.join(".ralphy").join("runstate");
     std::fs::create_dir_all(&runstate).unwrap();
     let doc = runstate.join(format!("{RUNID}.json"));
     std::fs::write(&doc, document()).unwrap();
 
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let mut ws = page::runs(port).await;
     send_verb(&mut ws, "runs.watch", &slug, "").await;
     tokio::time::sleep(Duration::from_millis(500)).await;
 

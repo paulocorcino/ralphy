@@ -1,4 +1,4 @@
-//! The reattach shapes of `/ws/session`: a writer attach, with or without a
+//! The reattach shapes of a console open: a writer attach, with or without a
 //! take-over, and a read-only watch.
 
 use axum::http::StatusCode;
@@ -29,7 +29,7 @@ impl Open {
             })
             .unwrap_or_default();
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
-        // attach branch and can never produce a `409`.
+        // attach branch and is never refused as busy.
         if self.query.watch == Some(1) {
             return self.watch(id, environment, labels);
         }

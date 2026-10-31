@@ -1,103 +1,58 @@
-//! The `/ws/session` handler: one route, four shapes (reattach, watch, agent
+//! The open of a console channel: four shapes (reattach, watch, agent
 //! launch, free-console launch), each local or relayed to the peer that owns
 //! the repo. The open is decided first, as an [`Opened`] value; only the
-//! handler turns that value into an upgrade or an HTTP status.
+//! channel turns that value into a bridge, a relay or a refusal.
 
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::ws::WebSocketUpgrade;
-use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::response::Response;
 
 use super::join::{claim_for, join};
 use super::refuse::{Refusal, Refuser};
-use super::traffic::{Tab, Traffic};
-use super::{dial_peer, peer_session_query, peer_session_ws, session_ws, Opening, PeerDial};
+use super::traffic::Tab;
+use super::{dial_peer, peer_session_open, Opening, PeerDial, PeerRelay};
 use super::{SessionHost, SessionLabels, SessionQuery};
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
 use crate::routes::read_peer_store;
 use crate::{fleet, peer, registry, session};
 
-/// `GET /ws/session`: four shapes over one route.
+/// A console open, decided, and what answering it needs on the channel.
 ///
-/// - `?id=<id>[&takeover=1]` — REATTACH to a daemon-owned session. `attach`
-///   returns `404` for an unknown id and `409` for a busy one (a single writer is
-///   attached and `takeover` was not set) — both BEFORE the upgrade, so a refusal
-///   is an HTTP status the browser can read, not a silently-dropped socket.
-/// - `?id=<id>&watch=1` — REATTACH read-only (issue #334): the same replay and
+/// The open payload of a `console` channel has four shapes:
+///
+/// - `{id}` with an optional `takeover: 1` — REATTACH to a daemon-owned
+///   session. An unknown id is refused as `unknown session` and a busy one
+///   (a single writer is attached and `takeover` was not set) as
+///   `session busy`.
+/// - `{id, watch: 1}` — REATTACH read-only (issue #334): the same replay and
 ///   live stream, but the writer slot is never claimed, so a busy session is
-///   reachable (never `409`) and nobody is evicted. Only `404` refuses it. This
-///   is what lets a second workbench see a session instead of stealing it.
-/// - `?repo=<slug>&agent=<claude|codex|opencode>[&checkout=<name>][&name=<console name>]`
-///   — NEW agent launch. Refuses an unknown agent, an unreadable registry, or an
+///   reachable and nobody is evicted. Only an unknown id refuses it. This is
+///   what lets a second workbench see a session instead of stealing it.
+/// - `{repo, agent}` with an optional `checkout` and `name` — NEW agent
+///   launch. Refuses an unknown agent, an unreadable registry, or an
 ///   unregistered slug before anything is spawned; an unknown or malformed
-///   `checkout` is refused as `unknown checkout` before anything is written or
-///   spawned (ADR-0063 §3); a spawn failure is refused too.
-/// - `?console=1[&repo=<slug>][&command=<cmd>]` — NEW free-console launch
-///   (issue #167): the platform shell in the chosen repo's dir, or the home dir
-///   when `repo` is absent. With `command`, the shell runs that command instead
-///   of a prompt and the session ends when it exits (the startup-command
-///   console: `htop`, `btop`…); the session's `agent` label is then the
-///   command, so the workbench can tell it from a bare shell. Refuses an
-///   unreadable registry, an unregistered slug, or a spawn failure.
+///   `checkout` is refused as `unknown checkout` before anything is written
+///   or spawned (ADR-0063 §3); a spawn failure is refused too.
+/// - `{console: 1}` with an optional `repo` and `command` — NEW free-console
+///   launch (issue #167): the platform shell in the chosen repo's dir, or the
+///   home dir when `repo` is absent. With `command`, the shell runs that
+///   command instead of a prompt and the session ends when it exits (the
+///   startup-command console: `htop`, `btop`…); the session's `agent` label
+///   is then the command, so the workbench can tell it from a bare shell.
 ///
-/// Either NEW launch may carry `&record=<window record id>`. While a live
-/// session already serves that record, nothing is spawned: the socket joins
+/// Either NEW launch may carry `record`, a window record id. While a live
+/// session already serves that record, nothing is spawned: the channel joins
 /// that session, as the writer when the slot is free or is this holder's,
 /// else read-only with `watch: true` in its `session-open`.
 ///
-/// A NEW launch is refused after the upgrade, by a `session-end` frame with
-/// `reason: "refused"` and the reason as `message` ([`Refuser`]); the browser
-/// cannot read the body of a refused upgrade, and a new launch has no id to
-/// retry. A reattach keeps the HTTP statuses above, except a claim that a
-/// newer attempt of the same holder superseded: on any shape it upgrades and
-/// ends with `reason: "superseded"`, and nobody is evicted (ADR-0079 D7).
-pub(crate) async fn session_ws_upgrade(
-    ws: WebSocketUpgrade,
-    Query(query): Query<SessionQuery>,
-    host: SessionHost,
-    who: SocketAudit,
-) -> Response {
-    // Every upgrade below, the peer relay included, inherits the cap.
-    let ws = ws
-        .max_message_size(crate::tree::MAX_COMMAND_BYTES)
-        .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-    let Decided {
-        opened,
-        refuser,
-        daemon_id,
-        tab,
-        shutdown,
-    } = Decided::of(query, host, who).await;
-    match opened {
-        Opened::Session {
-            att,
-            id,
-            environment,
-            labels,
-        } => ws.on_upgrade(move |socket| {
-            session_ws(
-                socket,
-                att,
-                id,
-                daemon_id,
-                environment,
-                labels,
-                tab,
-                shutdown,
-            )
-        }),
-        Opened::Relay { peer, traffic } => {
-            ws.on_upgrade(move |socket| peer_session_ws(socket, *peer, traffic, shutdown))
-        }
-        Opened::Refused(refusal) => refuser.answer(ws, refusal),
-    }
-}
-
-/// A console open, decided, and what answering it needs on any socket.
+/// Every refused open ends with a `channel.closed` whose reason is
+/// `refused`. A NEW launch is told why first, by a `session-end` with
+/// `reason: "refused"` and the reason as `message` ([`Refuser`]): a new
+/// launch has no id to retry. A reattach is not, except a claim that a newer
+/// attempt of the same holder superseded: on any shape it is told
+/// `reason: "superseded"`, and nobody is evicted (ADR-0079 D7).
 pub(super) struct Decided {
     pub(super) opened: Opened,
     pub(super) refuser: Refuser,
@@ -137,11 +92,8 @@ pub(crate) enum Opened {
         environment: String,
         labels: SessionLabels,
     },
-    /// Relay the socket to the peer that accepted the open.
-    Relay {
-        peer: Box<peer::client::PeerSocket>,
-        traffic: Traffic,
-    },
+    /// Relay the channel to the channel open on the peer.
+    Relay(Box<PeerRelay>),
     /// Refuse the open.
     Refused(Refusal),
 }
@@ -152,8 +104,8 @@ impl Opened {
     }
 }
 
-/// One `/ws/session` request, read: the query and the values every shape of
-/// the route needs to decide the open.
+/// One console open, read: the open payload and the values every shape
+/// needs to decide the open.
 pub(super) struct Open {
     pub(super) query: SessionQuery,
     pub(super) sessions: Arc<session::SessionManager>,
@@ -284,17 +236,13 @@ impl Open {
             port: self.bound_port,
             daemon_id: &self.daemon_id,
         };
-        let peer_query = peer_session_query(&self.query, slug);
+        let fields = peer_session_open(&self.query, slug);
         let opening = Opening {
             record: relayed_record(&self.query, slug, &peer.daemon_id, &self.tab),
             tab: self.tab,
             who: self.who,
         };
-        let dial = PeerDial {
-            peer,
-            query: &peer_query,
-            me,
-        };
+        let dial = PeerDial { peer, fields, me };
         dial_peer(dial, opening).await
     }
 
@@ -413,7 +361,7 @@ mod tests {
             }
             Opened::Refused(Refusal::Supersede { .. }) => panic!("decided superseded"),
             Opened::Session { .. } => panic!("decided an attached session"),
-            Opened::Relay { .. } => panic!("decided a peer relay"),
+            Opened::Relay(_) => panic!("decided a peer relay"),
         }
     }
 

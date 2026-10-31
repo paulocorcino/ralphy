@@ -8,6 +8,9 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
+#[path = "../support/page.rs"]
+pub mod page;
+
 mod fleet_console;
 mod peer_diagnosis;
 mod peer_session;
@@ -16,7 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
@@ -25,10 +27,38 @@ use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_tungstenite::tungstenite::{self, Message};
-use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::{self, protocol::CloseFrame, Message};
 
-type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+/// A console channel of the page socket. A reattach reads its first message
+/// ahead to learn whether the daemon took it, so that message waits here.
+struct Ws {
+    channel: page::Channel,
+    ahead: Option<Message>,
+}
+
+impl Ws {
+    fn new(channel: page::Channel) -> Ws {
+        Ws {
+            channel,
+            ahead: None,
+        }
+    }
+
+    async fn send(&mut self, message: Message) -> Result<(), tungstenite::Error> {
+        self.channel.send(message).await
+    }
+
+    async fn next(&mut self) -> Option<Result<Message, tungstenite::Error>> {
+        match self.ahead.take() {
+            Some(message) => Some(Ok(message)),
+            None => self.channel.next().await,
+        }
+    }
+
+    async fn close(&mut self, frame: Option<CloseFrame>) -> Result<(), tungstenite::Error> {
+        self.channel.close(frame).await
+    }
+}
 
 const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
@@ -135,77 +165,43 @@ fn resize(rows: u16, cols: u16) -> Message {
     )
 }
 
-fn session_url(port: u16, suffix: &str) -> String {
-    format!("ws://127.0.0.1:{port}/ws/session?{suffix}")
-}
-
 fn peer_repo() -> String {
     format!("{PEER_ID}/{SLUG}")
 }
 
 async fn launch(port: u16) -> Ws {
-    let repo = peer_repo().replace('/', "%2F");
-    tokio_tungstenite::connect_async(session_url(port, &format!("repo={repo}&agent=claude")))
-        .await
-        .expect("the websocket connects")
-        .0
+    let fields = serde_json::json!({ "repo": peer_repo(), "agent": "claude" });
+    Ws::new(page::console(port, fields).await)
 }
 
 async fn launch_local(port: u16) -> Ws {
-    tokio_tungstenite::connect_async(session_url(port, "repo=owner%2Fshared&agent=claude"))
-        .await
-        .expect("the websocket connects")
-        .0
+    let fields = serde_json::json!({ "repo": SLUG, "agent": "claude" });
+    Ws::new(page::console(port, fields).await)
 }
 
-/// Open a NEW launch the daemon must refuse, and return the refusal's payload:
-/// the upgrade succeeds, ONE `session-end` frame says `refused`, the stream ends.
-async fn refused(url: &str) -> serde_json::Value {
-    let (mut ws, _) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("a refused NEW launch still upgrades, so the browser can read why");
-    let mut payload = None;
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while let Some(msg) = ws.next().await {
-            let bytes = match msg {
-                Ok(Message::Binary(b)) => b,
-                Ok(Message::Close(_)) | Err(_) => break,
-                Ok(_) => continue,
-            };
-            match protocol::decode(&bytes).expect("a well-formed frame") {
-                Frame::Command(cmd) => {
-                    assert_eq!(
-                        cmd.verb, "session-end",
-                        "the only frame is the end: {cmd:?}"
-                    );
-                    assert_eq!(cmd.payload["reason"], "refused", "{cmd:?}");
-                    assert!(payload.is_none(), "exactly one refusal frame");
-                    payload = Some(cmd.payload);
-                }
-                frame @ (Frame::Terminal { .. } | Frame::Presence(_) | Frame::Channel { .. }) => {
-                    panic!("a refusal carries no other frame; got {frame:?}")
-                }
-            }
-        }
-    })
-    .await
-    .expect("the daemon closes a refused launch");
-    payload.expect("a session-end frame")
-}
-
+/// Reattach to session `id` of the peer's repo. The peer may still hold the
+/// previous client for a moment: a refused reattach is tried again.
 async fn attach(port: u16, id: u64) -> Ws {
-    let repo = peer_repo().replace('/', "%2F");
-    let url = session_url(port, &format!("id={id}&repo={repo}"));
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            match tokio_tungstenite::connect_async(&url).await {
-                Ok((ws, _)) => return ws,
-                Err(tungstenite::Error::Http(response))
-                    if response.status() == axum::http::StatusCode::CONFLICT =>
-                {
+            let fields = serde_json::json!({ "id": id, "repo": peer_repo() });
+            let mut channel = page::console(port, fields).await;
+            match channel.next().await {
+                Some(Ok(Message::Close(_))) | None => {
+                    assert_eq!(
+                        channel.closed_reason(),
+                        Some("refused"),
+                        "a reattach ends only as refused"
+                    );
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
-                Err(error) => panic!("reattach failed: {error}"),
+                Some(Ok(first)) => {
+                    return Ws {
+                        channel,
+                        ahead: Some(first),
+                    }
+                }
+                Some(Err(error)) => panic!("reattach failed: {error}"),
             }
         }
     })

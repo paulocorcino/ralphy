@@ -1,17 +1,17 @@
 //! End-to-end workbench session over a real loopback WebSocket (docs/adr/0032
-//! §2; issues #162, #166): a client connects to `/ws/session?repo=<slug>&agent=
-//! claude` (the agent program overridden to the helper bin), types a line, and
-//! reads it echoed back through the codec + PTY — proving the WS → codec → PTY →
-//! child path. Then it types `quit` so the CHILD exits: under the #166 tmux model
-//! a WS drop no longer kills the session (persistence — see
-//! `session_persistence.rs`), so the session ends only when its child exits, and
-//! that end is observed as the server-side stream closing within a bounded wait.
+//! §2; issues #162, #166): a page socket opens a `console` channel with
+//! `repo=<slug>` and `agent=claude` (the agent program overridden to the helper
+//! bin), types a line, and reads it echoed back through the codec + PTY —
+//! proving the channel → codec → PTY → child path. Then it types `quit` so the
+//! CHILD exits: under the #166 tmux model a WS drop no longer kills the session
+//! (persistence — see `session_persistence.rs`), so the session ends only when
+//! its child exits, and that end is observed as the daemon closing the channel
+//! with `done` within a bounded wait.
 //! Tree-kill DEPTH is proven by `session_roundtrip`; this proves the transport +
 //! the child-exit teardown path.
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
@@ -56,10 +56,11 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/session");
+    let mut ws = super::page::console(
+        port,
+        serde_json::json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
 
     // Type a line and read until the child echoes it. Along the way, play the
     // terminal emulator (xterm.js's role): answer the ConPTY startup `ESC[6n` so
@@ -114,7 +115,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     // End the CHILD (not the socket): under the #166 tmux model a WS drop only
     // detaches, so a session ends when its child exits. `quit` exits the helper;
     // its PTY reaches EOF, the pump removes the session and evicts this bridge,
-    // and the client observes the server-side stream ending. Bounded so a hang fails.
+    // and the daemon closes the channel. Bounded so a hang fails.
     ws.send(terminal(b"quit\r")).await.unwrap();
     let ended = tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(msg) = ws.next().await {
@@ -128,5 +129,10 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     assert!(
         ended.is_ok(),
         "the child exiting must end the session's stream (pump EOF → evict), not hang"
+    );
+    assert_eq!(
+        ws.closed_reason(),
+        Some("done"),
+        "the session ended, so its channel closes as done"
     );
 }

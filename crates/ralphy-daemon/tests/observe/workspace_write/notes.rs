@@ -5,10 +5,10 @@ use super::*;
 /// container and not the markdown, and `note.read` answers with the text.
 #[tokio::test]
 async fn note_write_then_read_round_trips_through_the_container() {
-    let (url, slug, root) = serve_worktree_repo().await;
+    let (port, slug, root) = serve_worktree_repo().await;
     let markdown = "---\ncolor: sage\n---\n# Standup\n\nrotate the staging token\n";
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "note.write",
         serde_json::json!({
@@ -30,7 +30,7 @@ async fn note_write_then_read_round_trips_through_the_container() {
     );
 
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "note.read",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/standup.note" }),
@@ -44,10 +44,10 @@ async fn note_write_then_read_round_trips_through_the_container() {
 /// in a committable directory, and nothing but a `.note` is a note.
 #[tokio::test]
 async fn note_verbs_take_any_directory_but_only_a_note_extension() {
-    let (url, slug, root) = serve_worktree_repo().await;
+    let (port, slug, root) = serve_worktree_repo().await;
     std::fs::create_dir(root.join("docs")).unwrap();
     let (replies, _) = round_trip(
-        &url,
+        port,
         1,
         "note.write",
         serde_json::json!({ "repo": slug, "path": "docs/plan.note", "markdown": "# Plan\n" }),
@@ -62,7 +62,7 @@ async fn note_verbs_take_any_directory_but_only_a_note_extension() {
         ".ralphy/settings.json",
     ] {
         let (replies, _) = round_trip(
-            &url,
+            port,
             2,
             "note.write",
             serde_json::json!({ "repo": slug, "path": path, "markdown": "# no\n" }),
@@ -76,7 +76,7 @@ async fn note_verbs_take_any_directory_but_only_a_note_extension() {
     // A file that is not a container refuses on its bytes, not its name.
     std::fs::write(root.join("docs/fake.note"), b"# plain").unwrap();
     let (replies, _) = round_trip(
-        &url,
+        port,
         3,
         "note.read",
         serde_json::json!({ "repo": slug, "path": "docs/fake.note" }),
@@ -88,16 +88,16 @@ async fn note_verbs_take_any_directory_but_only_a_note_extension() {
 /// A malformed payload must never be the way a note is emptied.
 #[tokio::test]
 async fn note_write_without_markdown_is_refused() {
-    let (url, slug, root) = serve_worktree_repo().await;
+    let (port, slug, root) = serve_worktree_repo().await;
     round_trip(
-        &url,
+        port,
         1,
         "note.write",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/a.note", "markdown": "# Kept\n" }),
     )
     .await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "note.write",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/a.note" }),
@@ -108,7 +108,7 @@ async fn note_write_without_markdown_is_refused() {
     // Read it BACK rather than sniffing the magic: a refusal that nevertheless
     // rewrote the note would leave a container there too.
     let (replies, _) = round_trip(
-        &url,
+        port,
         3,
         "note.read",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/a.note" }),
@@ -127,9 +127,9 @@ async fn note_write_without_markdown_is_refused() {
 /// in `NoteError`'s string table.
 #[tokio::test]
 async fn note_read_of_an_absent_file_is_not_found() {
-    let (url, slug, _root) = serve_worktree_repo().await;
+    let (port, slug, _root) = serve_worktree_repo().await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         1,
         "note.read",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/gone.note" }),
@@ -139,7 +139,7 @@ async fn note_read_of_an_absent_file_is_not_found() {
     assert_eq!(replies[0]["reason"], "not found");
     // And a note under a checkout that resolves, but is not there either.
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "note.read",
         serde_json::json!({ "repo": slug, "path": "docs/gone.note", "checkout": "wt-a" }),
@@ -154,9 +154,9 @@ async fn note_read_of_an_absent_file_is_not_found() {
 /// an accident.
 #[tokio::test]
 async fn note_write_honours_a_checkout_while_file_write_is_still_refused() {
-    let (url, slug, root) = serve_worktree_repo().await;
+    let (port, slug, root) = serve_worktree_repo().await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         1,
         "note.write",
         serde_json::json!({
@@ -179,7 +179,7 @@ async fn note_write_honours_a_checkout_while_file_write_is_still_refused() {
 
     // Read it back through the same checkout.
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "note.read",
         serde_json::json!({ "repo": slug, "path": "docs/wt.note", "checkout": "wt-a" }),
@@ -189,7 +189,7 @@ async fn note_write_honours_a_checkout_while_file_write_is_still_refused() {
 
     // The negative control: a generic Write under the same checkout is refused.
     let (replies, _) = round_trip(
-        &url,
+        port,
         3,
         "file.write",
         serde_json::json!({
@@ -205,7 +205,7 @@ async fn note_write_honours_a_checkout_while_file_write_is_still_refused() {
 
     // And a checkout that does not resolve is refused, not silently dropped.
     let (replies, _) = round_trip(
-        &url,
+        port,
         4,
         "note.write",
         serde_json::json!({
@@ -224,16 +224,16 @@ async fn note_write_honours_a_checkout_while_file_write_is_still_refused() {
 /// carve-out — the whole reason there is no `note.rename`/`note.delete`.
 #[tokio::test]
 async fn the_generic_byte_ops_reach_a_note_in_the_landing_dir() {
-    let (url, slug, root) = serve_worktree_repo().await;
+    let (port, slug, root) = serve_worktree_repo().await;
     round_trip(
-        &url,
+        port,
         1,
         "note.write",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/a.note", "markdown": "# A\n" }),
     )
     .await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "file.rename",
         serde_json::json!({
@@ -245,7 +245,7 @@ async fn the_generic_byte_ops_reach_a_note_in_the_landing_dir() {
     .await;
     assert_eq!(replies[0]["status"], "ok", "reply={}", replies[0]);
     let (replies, _) = round_trip(
-        &url,
+        port,
         3,
         "file.delete",
         serde_json::json!({ "repo": slug, "path": ".ralphy/notes/b.note" }),
@@ -256,7 +256,7 @@ async fn the_generic_byte_ops_reach_a_note_in_the_landing_dir() {
 
     // The rest of `.ralphy` is exactly as closed as it was.
     let (replies, _) = round_trip(
-        &url,
+        port,
         4,
         "file.write",
         serde_json::json!({ "repo": slug, "path": ".ralphy/settings.json", "content": "{}" }),

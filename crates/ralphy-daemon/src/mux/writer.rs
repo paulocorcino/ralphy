@@ -2,18 +2,15 @@
 //! frames of every channel, one bounded queue per channel, in turn.
 //!
 //! Each turn visits the open channels in the order they were opened and
-//! sends at most one wire message per channel. In [`Mode::Plain`] a message
-//! is a whole inner frame, the bytes the old routes send today. In
-//! [`Mode::Channels`] an inner frame is cut into channel frames of at most
-//! [`protocol::MAX_PIECE`] bytes, so a large frame delays another channel by
-//! one piece. Channel 0 is the socket itself and its frames leave whole and
-//! bare in both modes.
+//! sends at most one wire message per channel. The inner frame of a channel
+//! above 0 is cut into channel frames of at most [`protocol::MAX_PIECE`]
+//! bytes, so a large frame delays another channel by one piece. Channel 0 is
+//! the socket itself and its frames leave whole and bare.
 //!
 //! A dropped [`ChannelSender`] closes its queue: the frames already in it
 //! are still sent, then the queue is freed. The task ends when the socket
-//! fails, when it has sent a Close, when [`Writer::abort`] stops it, or when
-//! every [`Writer`] handle is dropped and no queue is left. Every sender
-//! then reports [`WriterClosed`].
+//! fails, when [`Writer::abort`] stops it, or when every [`Writer`] handle is
+//! dropped and no queue is left. Every sender then reports [`WriterClosed`].
 
 use std::collections::VecDeque;
 use std::task::{Context, Poll};
@@ -30,26 +27,13 @@ use crate::protocol;
 /// How many inner frames one channel may queue before its sender waits.
 const QUEUE_FRAMES: usize = 64;
 
-/// The wire form of the frames the writer sends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Mode {
-    /// Each inner frame is one Binary message, as the old routes send it.
-    Plain,
-    /// Each inner frame of a channel above 0 is cut into channel frames.
-    Channels,
-}
-
 /// One item of a channel's queue.
 #[derive(Debug)]
 pub(crate) enum Out {
-    /// An inner frame; [`Mode::Channels`] cuts it into pieces.
+    /// An inner frame; on a channel above 0 it is cut into pieces.
     Frame(Vec<u8>),
     /// A WebSocket Ping with this payload, sent whole.
     Ping(Vec<u8>),
-    /// A WebSocket Pong with this payload, sent whole.
-    Pong(Vec<u8>),
-    /// A WebSocket Close. The writer sends nothing after it and ends.
-    Close,
     /// Sends nothing. The writer answers on this when every item queued
     /// before it has been sent: see [`ChannelSender::sent`].
     Sent(oneshot::Sender<()>),
@@ -79,11 +63,10 @@ pub(crate) struct Permit(mpsc::OwnedPermit<Out>);
 
 impl Writer {
     /// Start the writer task on `sink`.
-    pub(crate) fn start(sink: SplitSink<WebSocket, Message>, mode: Mode) -> Writer {
+    pub(crate) fn start(sink: SplitSink<WebSocket, Message>) -> Writer {
         let (opens, opened) = mpsc::unbounded_channel();
         let task = Task {
             sink,
-            mode,
             opened: Some(opened),
             queues: Vec::new(),
         };
@@ -112,13 +95,6 @@ impl Writer {
             drop(queue);
         }
         ChannelSender { frames }
-    }
-
-    /// Wait until the writer task has ended.
-    pub(crate) async fn ended(&self) {
-        // The task holds the receiver of `opens` while any handle lives, and
-        // drops it when it ends.
-        self.opens.closed().await;
     }
 
     /// Stop the writer task now. The items still queued are not sent, and
@@ -187,22 +163,22 @@ struct Queue {
 
 impl Queue {
     /// Take the next inner frame when no piece of the last one is due.
-    fn refill(&mut self, mode: Mode) {
+    fn refill(&mut self) {
         if !self.pieces.is_empty() || self.closed {
             return;
         }
         match self.frames.try_recv() {
-            Ok(inner) => self.load(inner, mode),
+            Ok(inner) => self.load(inner),
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => self.closed = true,
         }
     }
 
     /// Wait for the next inner frame, or for the last sender to drop.
-    fn poll_refill(&mut self, cx: &mut Context<'_>, mode: Mode) -> Poll<()> {
+    fn poll_refill(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         match self.frames.poll_recv(cx) {
             Poll::Ready(Some(inner)) => {
-                self.load(inner, mode);
+                self.load(inner);
                 Poll::Ready(())
             }
             Poll::Ready(None) => {
@@ -213,12 +189,10 @@ impl Queue {
         }
     }
 
-    fn load(&mut self, out: Out, mode: Mode) {
+    fn load(&mut self, out: Out) {
         self.pieces = match out {
-            Out::Frame(inner) => self.frame_messages(inner, mode),
+            Out::Frame(inner) => self.frame_messages(inner),
             Out::Ping(payload) => VecDeque::from([Message::Ping(payload.into())]),
-            Out::Pong(payload) => VecDeque::from([Message::Pong(payload.into())]),
-            Out::Close => VecDeque::from([Message::Close(None)]),
             // The item is loaded only when the messages before it are sent.
             Out::Sent(answer) => {
                 if answer.send(()).is_err() {
@@ -229,14 +203,14 @@ impl Queue {
         };
     }
 
-    fn frame_messages(&self, inner: Vec<u8>, mode: Mode) -> VecDeque<Message> {
-        match mode {
-            Mode::Channels if self.channel != 0 => protocol::cut(self.channel, &inner)
-                .iter()
-                .map(|piece| Message::Binary(protocol::encode(piece).into()))
-                .collect(),
-            Mode::Plain | Mode::Channels => VecDeque::from([Message::Binary(inner.into())]),
+    fn frame_messages(&self, inner: Vec<u8>) -> VecDeque<Message> {
+        if self.channel == 0 {
+            return VecDeque::from([Message::Binary(inner.into())]);
         }
+        protocol::cut(self.channel, &inner)
+            .iter()
+            .map(|piece| Message::Binary(protocol::encode(piece).into()))
+            .collect()
     }
 
     fn finished(&self) -> bool {
@@ -250,13 +224,10 @@ enum Turn {
     Idle,
     /// At least one message was sent.
     Sent,
-    /// A Close was sent: the writer ends.
-    Closed,
 }
 
 struct Task {
     sink: SplitSink<WebSocket, Message>,
-    mode: Mode,
     /// New queues; `None` once every [`Writer`] handle is dropped.
     opened: Option<mpsc::UnboundedReceiver<Queue>>,
     queues: Vec<Queue>,
@@ -268,7 +239,6 @@ impl Task {
             self.take_opened();
             match self.turn().await {
                 Ok(Turn::Sent) => {}
-                Ok(Turn::Closed) => return,
                 Ok(Turn::Idle) if self.opened.is_none() && self.queues.is_empty() => return,
                 Ok(Turn::Idle) => std::future::poll_fn(|cx| self.poll_wake(cx)).await,
                 Err(error) => {
@@ -299,13 +269,9 @@ impl Task {
     async fn turn(&mut self) -> Result<Turn, axum::Error> {
         let mut turn = Turn::Idle;
         for queue in &mut self.queues {
-            queue.refill(self.mode);
+            queue.refill();
             if let Some(message) = queue.pieces.pop_front() {
-                let close = matches!(message, Message::Close(_));
                 self.sink.send(message).await?;
-                if close {
-                    return Ok(Turn::Closed);
-                }
                 turn = Turn::Sent;
             }
         }
@@ -318,7 +284,7 @@ impl Task {
     fn poll_wake(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         let mut woke = false;
         for queue in &mut self.queues {
-            woke |= queue.poll_refill(cx, self.mode).is_ready();
+            woke |= queue.poll_refill(cx).is_ready();
         }
         if let Some(opened) = &mut self.opened {
             match opened.poll_recv(cx) {

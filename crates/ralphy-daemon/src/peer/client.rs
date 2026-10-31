@@ -25,7 +25,10 @@ use tokio_tungstenite::tungstenite::Error as WsError;
 use super::tunnel::Ensured;
 use super::PeerDescriptor;
 
+mod channel;
 mod handshake;
+
+pub use channel::{open_channel, PeerChannel, PeerEvent};
 
 /// An authenticated WebSocket to another daemon in the local fleet.
 pub type PeerSocket =
@@ -427,26 +430,6 @@ pub async fn post_json_timeout(
     response_timeout: Duration,
 ) -> Result<(u16, Vec<u8>)> {
     send(d, "POST", path, Some(body), response_timeout).await
-}
-
-/// Probe the peer protocol, then open an authenticated `/ws/session` socket.
-///
-/// The socket is established before the browser is upgraded, so every refusal
-/// remains an ordinary HTTP diagnosis on the local daemon.
-pub async fn session(
-    d: &PeerDescriptor,
-    query: &str,
-    me: SelfRef<'_>,
-) -> std::result::Result<PeerSocket, SocketError> {
-    websocket(d, &format!("/ws/session?{query}"), "session", me).await
-}
-
-/// Probe the peer protocol, then open its authenticated command socket.
-pub async fn command(
-    d: &PeerDescriptor,
-    me: SelfRef<'_>,
-) -> std::result::Result<PeerSocket, SocketError> {
-    websocket(d, "/ws/command", "command", me).await
 }
 
 async fn websocket(

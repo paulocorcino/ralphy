@@ -14,12 +14,13 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page;
 
 fn terminal(data: &[u8]) -> Message {
     Message::Binary(
@@ -29,6 +30,11 @@ fn terminal(data: &[u8]) -> Message {
         })
         .into(),
     )
+}
+
+/// The open fields of the gemini console every leg launches.
+fn launch() -> serde_json::Value {
+    serde_json::json!({ "repo": "owner/geminilab", "agent": "gemini" })
 }
 
 /// A raw HTTP/1.1 GET on the live listener, returning the body. Raw sockets rather
@@ -53,15 +59,13 @@ async fn http_get(port: u16, path: &str) -> String {
         .unwrap_or(raw)
 }
 
-/// Open `url`, read back the env var and argv the LIVE child was spawned with,
-/// and assert both halves of the containment: the repo's own `GEMINI_CLI_HOME`
-/// and `--policy` pointing at the owned root's document. Read off the CHILD,
-/// not the spec: a regression that dropped `spec.args` would leave the root
-/// right and the policy gone.
-async fn assert_launches_contained(url: &str, home: &Path, policy: &Path) {
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("a repo with an owned root must upgrade");
+/// Open a gemini console in `owner/geminilab`, read back the env var and argv
+/// the LIVE child was spawned with, and assert both halves of the containment:
+/// the repo's own `GEMINI_CLI_HOME` and `--policy` pointing at the owned root's
+/// document. Read off the CHILD, not the spec: a regression that dropped
+/// `spec.args` would leave the root right and the policy gone.
+async fn assert_launches_contained(port: u16, home: &Path, policy: &Path) {
+    let mut ws = page::console(port, launch()).await;
     ws.send(terminal(b"env GEMINI_CLI_HOME\r"))
         .await
         .expect("send the frame");
@@ -154,7 +158,6 @@ async fn gemini_session_prepares_a_missing_root_and_refuses_when_it_cannot() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fgeminilab&agent=gemini");
     let home = dir.path().join(".ralphy").join("gemini-home");
     let policy = home.join(".gemini").join("ralphy-policy.toml");
     let (fail, noop, ran) = (
@@ -166,7 +169,7 @@ async fn gemini_session_prepares_a_missing_root_and_refuses_when_it_cannot() {
     // --- Leg 1: the CLI cannot prepare the root → the launch is refused with
     // the CLI's own reason, and nothing is spawned.
     std::fs::write(&fail, "").unwrap();
-    let refusal = super::refused(&url).await;
+    let refusal = page::refused(port, launch()).await;
     assert!(
         ran.exists(),
         "the daemon must ask the CLI to prepare the root"
@@ -191,7 +194,7 @@ async fn gemini_session_prepares_a_missing_root_and_refuses_when_it_cannot() {
     // the gate keys on the file, never on the exit code.
     std::fs::remove_file(&fail).unwrap();
     std::fs::write(&noop, "").unwrap();
-    let refusal = super::refused(&url).await;
+    let refusal = page::refused(port, launch()).await;
     assert!(
         refusal["message"]
             .as_str()
@@ -202,9 +205,9 @@ async fn gemini_session_prepares_a_missing_root_and_refuses_when_it_cannot() {
     assert!(!policy.exists());
     assert_eq!(http_get(port, "/api/sessions").await, "[]");
 
-    // --- Leg 3: the CLI writes the root → the same URL launches, contained.
+    // --- Leg 3: the CLI writes the root → the same launch is contained.
     std::fs::remove_file(&noop).unwrap();
-    assert_launches_contained(&url, &home, &policy).await;
+    assert_launches_contained(port, &home, &policy).await;
     assert!(
         policy.is_file(),
         "the CLI wrote the policy the child points at"
@@ -212,6 +215,6 @@ async fn gemini_session_prepares_a_missing_root_and_refuses_when_it_cannot() {
 
     // --- Leg 4: the root exists → the launch does not ask the CLI again.
     std::fs::remove_file(&ran).unwrap();
-    assert_launches_contained(&url, &home, &policy).await;
+    assert_launches_contained(port, &home, &policy).await;
     assert!(!ran.exists(), "an existing root needs no preparation");
 }

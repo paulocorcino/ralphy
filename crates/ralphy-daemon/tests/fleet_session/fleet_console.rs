@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
@@ -14,6 +13,8 @@ use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page::{self, Channel as Ws};
 
 const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
 const PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
@@ -93,22 +94,11 @@ fn peer_repo() -> String {
     format!("{PEER_ID}/{SLUG}")
 }
 
-async fn launch(
-    port: u16,
-    query: &str,
-) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
-    tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/session?{query}"))
-        .await
-        .expect("the websocket connects")
-        .0
+async fn launch(port: u16, fields: serde_json::Value) -> Ws {
+    page::console(port, fields).await
 }
 
-async fn read_until(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    needle: &str,
-) -> (String, Option<serde_json::Value>) {
+async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Value>) {
     let mut terminal = String::new();
     let mut open = None;
     let completed = tokio::time::timeout(Duration::from_secs(10), async {
@@ -159,12 +149,7 @@ async fn read_until(
     (terminal, open)
 }
 
-async fn send_line(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    line: &str,
-) {
+async fn send_line(ws: &mut Ws, line: &str) {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Terminal {
             session: 0,
@@ -237,8 +222,12 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     )
     .await;
 
-    let encoded_repo = peer_repo().replace('/', "%2F");
-    let mut console = launch(local.port, &format!("console=1&repo={encoded_repo}")).await;
+    let repo = peer_repo();
+    let mut console = launch(
+        local.port,
+        serde_json::json!({ "console": 1, "repo": repo }),
+    )
+    .await;
     let (_, open) = read_until(&mut console, "READY").await;
     let open = open.expect("free console must announce its effective environment");
     let console_id = open["session"].as_u64().unwrap();
@@ -276,7 +265,7 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     drop(console);
     let mut console = launch(
         local.port,
-        &format!("id={console_id}&repo={encoded_repo}&takeover=1"),
+        serde_json::json!({ "id": console_id, "repo": repo, "takeover": 1 }),
     )
     .await;
     let (replayed, reopened) = read_until(&mut console, "ARGV:").await;
@@ -285,14 +274,21 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     let close = http_json(
         local.port,
         "POST",
-        &format!("/api/sessions/close?id={console_id}&repo={encoded_repo}"),
+        &format!(
+            "/api/sessions/close?id={console_id}&repo={}",
+            repo.replace('/', "%2F")
+        ),
         None,
     )
     .await;
     assert_eq!(close["closed"], true);
     drop(console);
 
-    let mut agent = launch(local.port, &format!("repo={encoded_repo}&agent=claude")).await;
+    let mut agent = launch(
+        local.port,
+        serde_json::json!({ "repo": repo, "agent": "claude" }),
+    )
+    .await;
     let (_, agent_open) = read_until(&mut agent, "READY").await;
     let agent_open = agent_open.expect("peer agent must announce its owning daemon");
     assert_eq!(agent_open["daemon_id"], PEER_ID);
@@ -351,7 +347,11 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     // argv.
     let mut named = launch(
         local.port,
-        &format!("repo={encoded_repo}&agent=claude&name=a%26b%20%25PATH%25%20%22x%22"),
+        serde_json::json!({
+            "repo": repo,
+            "agent": "claude",
+            "name": "a&b %PATH% \"x\"",
+        }),
     )
     .await;
     let (_, named_open) = read_until(&mut named, "READY").await;
@@ -419,8 +419,12 @@ async fn a_free_console_on_a_peer_with_no_distro_runs_on_the_peer() {
     )
     .await;
 
-    let encoded_repo = peer_repo().replace('/', "%2F");
-    let mut console = launch(local.port, &format!("console=1&repo={encoded_repo}")).await;
+    let repo = peer_repo();
+    let mut console = launch(
+        local.port,
+        serde_json::json!({ "console": 1, "repo": repo }),
+    )
+    .await;
     let (_, open) = read_until(&mut console, "READY").await;
     let open = open.expect("the peer's console must announce its owner");
     let console_id = open["session"].as_u64().unwrap();
@@ -448,7 +452,7 @@ async fn a_free_console_on_a_peer_with_no_distro_runs_on_the_peer() {
     drop(console);
     let mut console = launch(
         local.port,
-        &format!("id={console_id}&repo={encoded_repo}&takeover=1"),
+        serde_json::json!({ "id": console_id, "repo": repo, "takeover": 1 }),
     )
     .await;
     let (replayed, reopened) = read_until(&mut console, "GOT:tunnel-marker").await;

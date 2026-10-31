@@ -1,7 +1,8 @@
-//! The `tree` and `runs` kinds: each channel is one `/ws/tree` connection.
+//! The `tree` and `runs` kinds: each channel is one tree connection
+//! (`routes::TreeConn`).
 //!
-//! The page sends the verbs of `/ws/tree` on the channel (`watch`,
-//! `runs.watch`, …) and the pushes come back on it. The two kinds are
+//! The page sends the tree verbs on the channel (`watch`, `runs.watch`, …)
+//! and the pushes come back on it. The two kinds are
 //! the same connection under two names, so a page keeps its file-tree
 //! watches and its run watches on separate channels.
 
@@ -61,7 +62,7 @@ mod tests {
 
     use super::*;
     use crate::mux::kinds::Taken;
-    use crate::mux::{Mode, Writer};
+    use crate::mux::Writer;
     use crate::protocol::{self, Command, Frame};
     use crate::{registry, watch};
 
@@ -83,7 +84,7 @@ mod tests {
                 async move {
                     ws.on_upgrade(move |socket| async move {
                         let (sink, _stream) = socket.split();
-                        let writer = Writer::start(sink, Mode::Channels);
+                        let writer = Writer::start(sink);
                         let out = writer.channel(1);
                         let channel = Channel::spawn(move |frames| serve(frames, host, out));
                         give.send((channel, writer))

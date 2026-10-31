@@ -12,8 +12,8 @@ PORT 7465 and the two-console desk are `wb_console_detach.py`'s.
 A1  each restored console wrote one console_launch line, agent console
 A2  the lines carry the device of the browser and a holder
 A3  the Devices panel shows the launch by the project name, not the registry key
-R1  a reattach to an unknown session is refused with 404, and logged with
-    its reason in quotes
+R1  a console channel for an unknown session is closed with `channel.closed`,
+    refused with 404, and logged with its reason in quotes
 
 The daemon is stopped by its own subprocess handle, NEVER by name.
 
@@ -76,6 +76,11 @@ def main():
             ctx = browser.new_context(viewport=dict(D.VIEW))
             page = ctx.new_page()
             page.on("pageerror", lambda e: errors.append(str(e)))
+            # The page socket opens before the first `GET /api/session` is
+            # answered, so on a first visit it carries no device cookie yet.
+            # Measured on 2026-10-31: this pass saw two launches with no
+            # device. The device is issued here, as a returning one has it.
+            ctx.request.get(BASE + "api/session")
             page.goto(BASE)
             T.boot(page, want=2)
             page.wait_for_function(
@@ -113,10 +118,30 @@ def main():
             )
 
             # R1 ---------------------------------------------------------------
-            page.evaluate(
+            # A second page socket asks for an unknown console on channel 1:
+            # tag 0x02 (a bare frame) and the JSON of `channel.open`.
+            closed = page.evaluate(
                 "() => new Promise((done) => {"
-                " const ws = new WebSocket(`ws://${location.host}/ws/session?id=999999`);"
-                " ws.onerror = ws.onclose = () => done(); })"
+                " const ws = new WebSocket(`ws://${location.host}/ws`);"
+                " ws.binaryType = 'arraybuffer';"
+                " ws.onerror = ws.onclose = () => done(null);"
+                " ws.onopen = () => {"
+                "  const body = new TextEncoder().encode(JSON.stringify({ id: 0,"
+                "   verb: 'channel.open',"
+                "   payload: { channel: 1, kind: 'console', id: 999999 } }));"
+                "  const out = new Uint8Array(1 + body.length);"
+                "  out[0] = 0x02; out.set(body, 1); ws.send(out); };"
+                " ws.onmessage = (e) => {"
+                "  const bytes = new Uint8Array(e.data);"
+                "  if (bytes[0] !== 0x02) return;"
+                "  const frame = JSON.parse(new TextDecoder().decode(bytes.subarray(1)));"
+                "  if (frame.verb === 'channel.closed') { ws.close(); done(frame.payload); } };"
+                " setTimeout(() => done(null), 5000); })"
+            )
+            check(
+                "R1 the daemon ends the refused channel with channel.closed",
+                closed is not None and closed.get("channel") == 1,
+                str(closed),
             )
             deadline = time.time() + 5
             while not refused_lines(log_path) and time.time() < deadline:

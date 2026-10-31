@@ -1,6 +1,8 @@
-//! A console socket that starts a session writes a `console_launch` line in
-//! the audit log, and a take-over writes a `console_takeover` line; a plain
-//! reattach writes none (ADR-0074, amendment 2026-10-05).
+//! A `console` channel of the page socket that starts a session writes a
+//! `console_launch` line in the audit log, and a take-over writes a
+//! `console_takeover` line; a plain reattach and a refused one write none
+//! (ADR-0074, amendment 2026-10-05). The device cookie rides on the upgrade of
+//! the page socket.
 
 #![expect(
     clippy::disallowed_methods,
@@ -9,15 +11,17 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::AuthState;
 use ralphy_daemon::{registry, router};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-use tokio_tungstenite::tungstenite::{self, Message};
+use tokio_tungstenite::tungstenite::Message;
 
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+#[path = "support/page.rs"]
+pub mod page;
+
+use page::Channel as Ws;
 
 async fn serve(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender<bool>) {
     static OVERRIDE: std::sync::Once = std::sync::Once::new();
@@ -93,27 +97,46 @@ async fn device_cookie(port: u16) -> String {
         .to_string()
 }
 
-async fn open(port: u16, query: &str, cookie: &str) -> Result<Ws, u16> {
-    let mut request = format!("ws://127.0.0.1:{port}/ws/session?{query}")
+/// Open a `console` channel with `fields` on a page socket that carries
+/// `cookie`. `Some` once its first frame came; `None` when the daemon refused
+/// it (no frame, then `channel.closed` with reason `refused`).
+async fn open(port: u16, fields: serde_json::Value, cookie: &str) -> Option<Ws> {
+    let mut request = page::url(port)
         .into_client_request()
         .expect("the websocket request is valid");
     request.headers_mut().insert(
         "cookie",
         cookie.parse().expect("the cookie is a valid header value"),
     );
-    match tokio_tungstenite::connect_async(request).await {
-        Ok((ws, _)) => Ok(ws),
-        Err(tungstenite::Error::Http(resp)) => Err(resp.status().as_u16()),
-        Err(other) => panic!("the upgrade failed below HTTP: {other:?}"),
+    let ws = page::connect_request(request).await;
+    let mut channel = Ws::open(ws, "console", fields).await;
+    let first = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match channel.next().await {
+                Some(Ok(Message::Binary(_))) => return true,
+                Some(Ok(Message::Close(_))) | None => return false,
+                Some(Ok(_)) => continue,
+                Some(Err(error)) => panic!("the channel failed on the socket: {error:?}"),
+            }
+        }
+    })
+    .await
+    .expect("the daemon answers a console open within 10s");
+    if first {
+        return Some(channel);
     }
+    assert_eq!(
+        channel.closed_reason(),
+        Some("refused"),
+        "an open ends only as refused"
+    );
+    None
 }
 
-/// Close the socket and wait for the daemon to answer the close, so the
-/// writer slot is free before the next attach.
+/// Close the channel and its page socket and wait for the daemon to answer
+/// the close, so the writer slot is free before the next attach.
 async fn close(mut ws: Ws) {
-    ws.send(Message::Close(None))
-        .await
-        .expect("the frame is sent");
+    ws.close(None).await.expect("the close is sent");
     let _drained = tokio::time::timeout(Duration::from_secs(5), async {
         while let Some(Ok(_)) = ws.next().await {}
     })
@@ -154,32 +177,30 @@ async fn a_launch_and_a_takeover_are_recorded_and_a_reattach_is_not() {
     let cookie = device_cookie(port).await;
     let device = cookie.split('.').nth(1).unwrap().to_string();
 
-    let ws = open(
-        port,
-        "repo=owner%2Fworkbench&agent=claude&holder=tab-a",
-        &cookie,
-    )
-    .await
-    .expect("the launch upgrades");
+    let launch = json!({ "repo": "owner/workbench", "agent": "claude", "holder": "tab-a" });
+    let ws = open(port, launch, &cookie).await.expect("the launch opens");
     let id = launched_id(port, &cookie).await;
     close(ws).await;
 
     // A plain reattach by the same tab. The slot may still be closing.
-    let mut reattach = open(port, &format!("id={id}&holder=tab-a"), &cookie).await;
+    let mut reattach = open(port, json!({ "id": id, "holder": "tab-a" }), &cookie).await;
     let deadline = Instant::now() + Duration::from_secs(5);
-    while matches!(reattach, Err(409)) && Instant::now() < deadline {
+    while reattach.is_none() && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        reattach = open(port, &format!("id={id}&holder=tab-a"), &cookie).await;
+        reattach = open(port, json!({ "id": id, "holder": "tab-a" }), &cookie).await;
     }
-    close(reattach.expect("the reattach upgrades")).await;
+    close(reattach.expect("the reattach opens")).await;
 
-    let takeover = open(port, &format!("id={id}&takeover=1&holder=tab-b"), &cookie)
+    let takeover = json!({ "id": id, "takeover": 1, "holder": "tab-b" });
+    let takeover = open(port, takeover, &cookie)
         .await
-        .expect("the take-over upgrades");
+        .expect("the take-over opens");
     close(takeover).await;
 
-    // A refused reattach keeps its HTTP status.
-    assert!(matches!(open(port, "id=999999", &cookie).await, Err(404)));
+    // A reattach of an unknown console is refused.
+    assert!(open(port, json!({ "id": 999_999 }), &cookie)
+        .await
+        .is_none());
 
     http(
         port,

@@ -1,6 +1,7 @@
-//! The host verbs on `/ws/command` (ADR-0036 amendment 2026-09-29, ADR-0067):
-//! `ralphy host …` on the computer this daemon runs on. They name no repo, so
-//! they are served before any routing, and never relayed to a peer.
+//! The host verbs of the `spawn` channel and `POST /api/command` (ADR-0036
+//! amendment 2026-09-29, ADR-0067): `ralphy host …` on the computer this
+//! daemon runs on. They name no repo, so they are served before any routing,
+//! and never relayed to a peer.
 
 use std::path::Path;
 

@@ -360,19 +360,15 @@ async fn session_login_rejects_wrong_code() {
 }
 
 /// The auth layer covers the REMOTE-EXEC WS routes, not just `/api`: an
-/// unauthenticated `/ws/session` (PTY) and `/ws/command` (run dispatch)
-/// request is rejected `401` by the middleware BEFORE reaching the upgrade
-/// handler. A `401` here (not the handler's `400`) proves the layer fired, so
-/// a future route reordered past the layer would fail this test instead of
-/// silently serving an unauthenticated shell/run trigger.
+/// unauthenticated `/ws` request (the page socket, which carries the
+/// consoles and the runs) is rejected `401` by the
+/// middleware BEFORE reaching the upgrade handler. A `401` here (not the
+/// handler's `400`) proves the layer fired, so a future route reordered past
+/// the layer would fail this test instead of silently serving an
+/// unauthenticated shell/run trigger.
 #[tokio::test]
 async fn bearer_policy_gates_the_remote_exec_ws_routes() {
-    for uri in [
-        "/ws/session?repo=x&agent=claude",
-        "/ws/command",
-        "/api/usage",
-        "/api/peer/usage",
-    ] {
+    for uri in ["/ws", "/api/usage", "/api/peer/usage"] {
         let resp = router(
             None,
             PathBuf::from("does-not-exist"),

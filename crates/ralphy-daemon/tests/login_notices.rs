@@ -43,9 +43,12 @@ fn log_path(dir: &Path) -> PathBuf {
     dir.join("daemon-audit.jsonl")
 }
 
-/// The time `days_ago` days before now, as the log writes it.
+/// The time `days_ago` days before now, as the log writes it. "Now" is read once per
+/// test process, so a line written and the value a test expects never fall on two
+/// sides of a second.
 fn at(days_ago: i64) -> String {
-    (chrono::Utc::now() - chrono::Duration::days(days_ago))
+    static NOW: std::sync::OnceLock<chrono::DateTime<chrono::Utc>> = std::sync::OnceLock::new();
+    (*NOW.get_or_init(chrono::Utc::now) - chrono::Duration::days(days_ago))
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 

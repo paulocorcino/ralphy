@@ -18,6 +18,8 @@
 
 #[path = "support/golden.rs"]
 mod golden;
+#[path = "support/page.rs"]
+pub mod page;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -32,8 +34,7 @@ use ralphy_daemon::{registry, router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+use page::Ws;
 
 const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
@@ -170,19 +171,34 @@ async fn serve(home: &Path, identity: Option<Identity>, auth: Arc<AuthState>) ->
 }
 
 /// A Claude console on the daemon at `port`, with `bearer` when it asks one.
-async fn claude_console(port: u16, bearer: Option<&str>) -> Ws {
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fattention&agent=claude");
-    let mut request = url.into_client_request().expect("a websocket request");
+async fn claude_console(port: u16, bearer: Option<&str>) -> page::Channel {
+    let mut request = page::url(port)
+        .into_client_request()
+        .expect("a websocket request");
     if let Some(token) = bearer {
         request.headers_mut().insert(
             "Authorization",
             format!("Bearer {token}").parse().expect("a header value"),
         );
     }
-    tokio_tungstenite::connect_async(request)
+    let ws = page::connect_request(request).await;
+    let fields = serde_json::json!({ "repo": "owner/attention", "agent": "claude" });
+    let mut console = page::Channel::open(ws, "console", fields).await;
+    // The daemon starts the session after it takes the open: the first frame
+    // is `session-open`, so the status file exists once this returns.
+    let first = tokio::time::timeout(Duration::from_secs(10), console.next())
         .await
-        .expect("a claude console launches")
-        .0
+        .expect("the daemon opens the console within 10 s")
+        .expect("the console channel yields a frame")
+        .expect("the page socket reads");
+    let tokio_tungstenite::tungstenite::Message::Binary(bytes) = first else {
+        panic!("the first message of a console is a frame: {first:?}");
+    };
+    match protocol::decode(&bytes) {
+        Ok(Frame::Command(open)) => assert_eq!(open.verb, "session-open", "{open:?}"),
+        other => panic!("the first frame of a console is session-open: {other:?}"),
+    }
+    console
 }
 
 fn identity(id: &str, name: &str) -> Identity {
@@ -318,9 +334,7 @@ async fn a_run_snapshot_in_a_registered_repo_is_listed() {
     let home = dir.path().join("home");
     std::fs::create_dir_all(&home).expect("create the repo dir");
     let port = serve(&home, None, AuthState::localhost()).await;
-    let (mut presence, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
-        .await
-        .expect("connect the presence socket");
+    let mut presence = page::connect(port).await;
 
     // The run is this test: the reader keeps a document whose pid lives.
     let mut snapshot = ralphy_run_snapshot::RunSnapshot {

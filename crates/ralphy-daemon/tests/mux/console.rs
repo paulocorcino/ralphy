@@ -367,8 +367,8 @@ async fn a_console_open_with_a_bad_holder_is_refused() {
     .await;
     opened(&mut ws, 2).await;
 
-    // A holder of 65 characters is no holder, as in the query of
-    // `/ws/session`: it holds no slot, so it cannot reclaim one.
+    // A holder of 65 characters is no holder, as in the open of
+    // a console channel: it holds no slot, so it cannot reclaim one.
     let bad = "h".repeat(65);
     let (id, _shown) = launch(&mut ws, 3, serde_json::json!({ "holder": bad })).await;
     open(

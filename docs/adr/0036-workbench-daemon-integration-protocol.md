@@ -223,6 +223,10 @@ run already streams over `/ws/command` (`status:"output"`, ADR-0032 §5 / issue
 from `ralphy:run-event`) is **deferred to the events platform** (ADR-0019, Phase
 2); no daemon-side CloudEvents relay is built now, so ADR-0032 §5 is not stretched.
 
+*Note (2026-10-31, #830):* since #740 the run output streams on a spawn
+channel of the page socket `/ws`, not on `/ws/command`. The daemon no longer
+serves that route.
+
 ## Consequences
 
 - **Adding a capability is a table row.** The verb registry + effect classes turn
@@ -1206,7 +1210,7 @@ Neither is true now. Nothing new is decided.
 - The socket description above (one `/ws/command` socket per command, one
   `/ws/tree` socket per kind, one `/ws/session` socket per console) is
   history since #740: the page holds one `/ws` socket and carries each of
-  those on a channel of it (ADR-0082).
+  those on a channel of it (ADR-0082); #830 removed the three routes.
 
 ## Amendment (2026-10-15): a rename on a peer reaches the host
 

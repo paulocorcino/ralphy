@@ -1,4 +1,4 @@
-//! The free-console launch of `/ws/session` (`console=1`): relayed to a peer,
+//! The free-console launch of a console open (`console: 1`): relayed to a peer,
 //! joined to the live session of its window record, or spawned here.
 
 use std::path::PathBuf;

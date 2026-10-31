@@ -21,11 +21,11 @@
 //! OWN lifecycle — the daemon must NEVER kill it on shutdown or client
 //! disconnect (PRD #157 story 18/20: "spawned runs keep their own lifecycle", "a
 //! daemon crash never kills a run"). The [`Child`] handle here is `wait`-only;
-//! it has no kill and dropping it does not kill (std semantics). The `/ws/command`
-//! handler's teardown arms enforce the rest.
+//! it has no kill and dropping it does not kill (std semantics). The teardown
+//! arms of the run's relay (`routes::ws_command::stream`) enforce the rest.
 //!
 //! OUTPUT STREAMING (issue #180): the child's stdout+stderr are merged into a
-//! single OS pipe ([`Child::take_output`]) so the `/ws/command` handler can
+//! single OS pipe ([`Child::take_output`]) so the `spawn` channel can
 //! stream the live output into the UI log pane. This does NOT weaken teardown:
 //! a Rust child ignores `SIGPIPE`, so after a daemon crash the child's writes to
 //! the now-broken pipe return a non-fatal `EPIPE`/Windows write error rather than

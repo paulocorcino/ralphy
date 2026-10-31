@@ -45,14 +45,15 @@ async fn relay_chunk(wire: &Wire, id: u64, verb: &str, chunk: String) -> bool {
 
 /// Relay `child` on `wire`: the `spawned` ack, each output chunk, then the
 /// exit code. `on_exit` runs once the child has exited, whether or not the
-/// socket is still served.
+/// channel is still served.
 ///
 /// TEARDOWN INVARIANT (the INVERSE of `session_ws`): the dispatched run keeps its
-/// OWN lifecycle. NONE of the `select!` arms — daemon shutdown, client
-/// close/error, output, wait-complete — kills the child; the
+/// OWN lifecycle. NONE of the `select!` arms — the page closing the channel,
+/// output, wait-complete — kills the child, and neither does stopping this task
+/// from outside (the socket closing, daemon shutdown); the
 /// `Box<dyn dispatch::Child>` has no kill and dropping it does not kill (std
 /// semantics). A daemon shutdown or a browser disconnect stops us serving THIS
-/// socket but never the run (PRD #157 story 18/20). Do not add a kill to any arm.
+/// channel but never the run (PRD #157 story 18/20). Do not add a kill to any arm.
 /// The output DRAIN task is likewise detached: it reads the child's pipe to EOF
 /// regardless of client presence, so a disconnect never stalls the child on a
 /// full pipe. Do not await it on a teardown arm.
@@ -87,8 +88,8 @@ pub(super) async fn stream_child(
     let mut output_open = true;
     loop {
         tokio::select! {
-            // Daemon shutdown, or the client closed or errored: stop serving
-            // this socket, but LEAVE the run alive. Abandon the wait, never kill.
+            // The page closed the channel: stop serving it, but LEAVE the
+            // run alive. Abandon the wait, never kill.
             () = wire.gone() => break,
             // A live output chunk: forward it into the UI log pane.
             chunk = rx.recv(), if output_open => {

@@ -1,12 +1,17 @@
-//! The refusals of `/ws/session` that come before anything is spawned: a new
-//! launch is refused by a `session-end` frame with the reason as its message,
-//! and a reattach of an unknown session by HTTP `404`.
+//! The refusals of a `console` channel that come before anything is spawned:
+//! a new launch is refused by a `session-end` frame with the reason as its
+//! message, and a reattach of an unknown session by `channel.closed` with
+//! reason `refused` and no frame.
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ralphy_daemon::{registry, router};
-use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::tungstenite::Message;
+
+use serde_json::json;
+
+use crate::page;
 
 /// A live loopback daemon whose registry is `repos.toml` in `dir`.
 async fn serve(dir: &Path) -> u16 {
@@ -37,8 +42,8 @@ async fn serve(dir: &Path) -> u16 {
     port
 }
 
-async fn refusal(port: u16, query: &str) -> String {
-    let payload = super::refused(&format!("ws://127.0.0.1:{port}/ws/session?{query}")).await;
+async fn refusal(port: u16, fields: serde_json::Value) -> String {
+    let payload = page::refused(port, fields).await;
     payload["message"]
         .as_str()
         .expect("read the message field")
@@ -58,22 +63,22 @@ async fn an_agent_launch_names_a_known_agent_and_a_registered_repo() {
     let port = serve(dir.path()).await;
 
     assert_eq!(
-        refusal(port, "repo=owner%2Fknown").await,
+        refusal(port, json!({ "repo": "owner/known" })).await,
         "unknown agent",
         "no agent"
     );
     assert_eq!(
-        refusal(port, "repo=owner%2Fknown&agent=nobody").await,
+        refusal(port, json!({ "repo": "owner/known", "agent": "nobody" })).await,
         "unknown agent",
         "an agent no vendor answers to"
     );
     assert_eq!(
-        refusal(port, "agent=claude").await,
+        refusal(port, json!({ "agent": "claude" })).await,
         "unknown repo",
         "no repo"
     );
     assert_eq!(
-        refusal(port, "repo=owner%2Fother&agent=claude").await,
+        refusal(port, json!({ "repo": "owner/other", "agent": "claude" })).await,
         "unknown repo",
         "a repo nobody registered"
     );
@@ -86,7 +91,7 @@ async fn a_console_launch_needs_a_registered_repo_when_it_names_one() {
     let port = serve(dir.path()).await;
 
     assert_eq!(
-        refusal(port, "console=1&repo=owner%2Fother").await,
+        refusal(port, json!({ "console": 1, "repo": "owner/other" })).await,
         "unknown repo"
     );
 }
@@ -98,25 +103,40 @@ async fn an_unreadable_registry_refuses_every_launch() {
     let port = serve(dir.path()).await;
 
     assert_eq!(
-        refusal(port, "repo=owner%2Fknown&agent=claude").await,
+        refusal(port, json!({ "repo": "owner/known", "agent": "claude" })).await,
         "repo registry unreadable",
         "an agent launch"
     );
     assert_eq!(
-        refusal(port, "console=1&repo=owner%2Fknown").await,
+        refusal(port, json!({ "console": 1, "repo": "owner/known" })).await,
         "repo registry unreadable",
         "a console launch"
     );
 }
 
+/// A reattach of an unknown session is refused before anything is sent: no
+/// frame, and no `session-open`.
 #[tokio::test]
-async fn a_reattach_of_an_unknown_session_is_a_404_before_the_upgrade() {
+async fn a_reattach_of_an_unknown_session_is_refused_with_no_frame() {
     let dir = tempfile::tempdir().unwrap();
     let port = serve(dir.path()).await;
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?id=9999");
-    match tokio_tungstenite::connect_async(&url).await {
-        Err(tungstenite::Error::Http(resp)) => assert_eq!(resp.status(), 404),
-        other => panic!("an attach to an unknown id must be 404, got {other:?}"),
-    }
+    let mut channel = page::console(port, json!({ "id": 9999 })).await;
+    let mut frames = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(message) = channel.next().await {
+            match message.expect("the page socket reads") {
+                Message::Binary(bytes) => frames.push(bytes.to_vec()),
+                Message::Close(_) => break,
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
+            }
+        }
+    })
+    .await
+    .expect("the daemon ends the reattach within 10s");
+    assert!(
+        frames.is_empty(),
+        "a refused reattach sends no frame: {frames:?}"
+    );
+    assert_eq!(channel.closed_reason(), Some("refused"));
 }

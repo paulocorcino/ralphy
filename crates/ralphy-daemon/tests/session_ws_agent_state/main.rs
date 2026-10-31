@@ -10,7 +10,7 @@
 //! off the spec: a regression that dropped `spec.env` would leave the file
 //! written and the hook pointing nowhere.
 //!
-//! The presence socket `/ws` pushes `sessions.dirty` when the console
+//! The presence frames of the page socket `/ws` include `sessions.dirty`, pushed when the console
 //! starts, when its agent state changes, and when it ends (ADR-0070 D2).
 //!
 //! The environment and the start check are process-global, so each test
@@ -23,12 +23,15 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
+
+#[path = "../support/page.rs"]
+pub mod page;
 
 mod silent_console;
 
@@ -139,15 +142,13 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
     let dir = tempfile::tempdir().unwrap();
     let (port, store) = start_daemon(dir.path()).await;
 
-    let (mut presence, _resp) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
-            .await
-            .expect("connecting to /ws");
+    let mut presence = page::connect(port).await;
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fstatelab&agent=claude");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("a claude console launches");
+    let mut ws = page::console(
+        port,
+        serde_json::json!({ "repo": "owner/statelab", "agent": "claude" }),
+    )
+    .await;
     assert!(
         sessions_dirty(&mut presence).await,
         "sessions.dirty when the console starts"
@@ -299,10 +300,11 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
 async fn a_codex_console_is_launched_with_the_status_hooks() {
     let dir = tempfile::tempdir().unwrap();
     let (port, store) = start_daemon(dir.path()).await;
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fstatelab&agent=codex");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("a codex console launches");
+    let mut ws = page::console(
+        port,
+        serde_json::json!({ "repo": "owner/statelab", "agent": "codex" }),
+    )
+    .await;
     let sessions_dir = store.join("sessions");
     let status = sessions_dir.join("1.agent-status.jsonl");
 
@@ -422,10 +424,11 @@ async fn a_codex_console_is_launched_with_the_status_hooks() {
 async fn an_opencode_console_is_launched_with_the_state_plugin() {
     let dir = tempfile::tempdir().unwrap();
     let (port, store) = start_daemon(dir.path()).await;
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fstatelab&agent=opencode");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("an opencode console launches");
+    let mut ws = page::console(
+        port,
+        serde_json::json!({ "repo": "owner/statelab", "agent": "opencode" }),
+    )
+    .await;
     let sessions_dir = store.join("sessions");
     let status = sessions_dir.join("1.agent-status.jsonl");
     let plugin = sessions_dir.join("1.state-plugin.js");

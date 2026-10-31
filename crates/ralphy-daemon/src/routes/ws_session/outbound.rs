@@ -1,36 +1,28 @@
-//! What the bridge of an attached `/ws/session` sends the client: the opening
+//! What the bridge of an attached console sends the page: the opening
 //! (`session-open`, the size, the replay), live output, a resync after a lag,
-//! and the announced end. Each goes through the socket's writer.
+//! and the announced end. Each goes through the queue of the console's
+//! channel on the page socket's writer.
 
 use std::collections::VecDeque;
 use std::io::Write;
 use std::time::Duration;
 
-use axum::extract::ws::{Message, WebSocket};
-use futures_util::stream::SplitSink;
-
 use super::traffic::{Traffic, SESSION_OPEN};
 use super::SessionLabels;
-use crate::mux::{ChannelSender, Mode, Out, Permit, Writer, WriterClosed};
+use crate::mux::{ChannelSender, Out, Permit, WriterClosed};
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command_on;
 use crate::{protocol, session};
 
 /// The share of the 5 s end window that the queued output may use. The
-/// remaining second is for `session-end` and `Close`, which must always be
-/// sent (#334): a full queue on a slow link can otherwise use the whole window.
+/// remaining second is for `session-end`, which must always be sent (#334):
+/// a full queue on a slow link can otherwise use the whole window.
 const DRAIN_LIMIT: Duration = Duration::from_secs(4);
 
-/// The whole end window: the drain, `session-end` and `Close`. Past it the
-/// writer is stopped, so a client that does not read cannot keep the
-/// socket, or the session's scrollback ring, alive (#334).
+/// The whole end window: the drain and `session-end`. Past it the bridge
+/// gives up, so a client that does not read cannot keep the session's
+/// scrollback ring alive (#334).
 const END_WINDOW: Duration = Duration::from_secs(5);
-
-/// How many items a console socket's writer queue holds. The bridge keeps
-/// the rest in its [`Outbox`], so a slow client slows the reading of output
-/// as a blocking send did, and `session-end` waits behind one frame at
-/// most, not a deep queue of output.
-pub(super) const CONSOLE_QUEUE: usize = 1;
 
 /// The command verb that tells a client the session size (ADR-0079 D6).
 pub(super) const SESSION_SIZE: &str = "session-size";
@@ -38,34 +30,19 @@ pub(super) const SESSION_SIZE: &str = "session-size";
 /// The `replay_encoding` of a gzipped replay frame (ADR-0079 D9).
 const GZIP: &str = "gzip";
 
-/// The bridge's side of its socket writer, and the items made for the client
-/// that the writer has not taken yet, in order. The bridge loop hands them
-/// on one at a time when the writer has room, and keeps reading input while
-/// they wait (ADR-0082 D5).
+/// The bridge's queue on the page socket's writer, and the items made for
+/// the page that the writer has not taken yet, in order. The bridge loop
+/// hands them on one at a time when the writer has room, and keeps reading
+/// input while they wait (ADR-0082 D5).
 pub(super) struct Outbox {
-    /// The writer this outbox owns; `None` on a channel of a page socket,
-    /// whose writer the socket owns.
-    pub(super) writer: Option<Writer>,
     pub(super) out: ChannelSender,
     pub(super) queued: VecDeque<Out>,
 }
 
 impl Outbox {
-    /// Start a writer on `sink`, with one queue for the console.
-    pub(super) fn start(sink: SplitSink<WebSocket, Message>) -> Outbox {
-        let writer = Writer::start(sink, Mode::Plain);
-        let out = writer.channel_with_depth(0, CONSOLE_QUEUE);
-        Outbox {
-            writer: Some(writer),
-            out,
-            queued: VecDeque::new(),
-        }
-    }
-
     /// An outbox on the queue `out` of a writer the page socket owns.
     pub(super) fn on(out: ChannelSender) -> Outbox {
         Outbox {
-            writer: None,
             out,
             queued: VecDeque::new(),
         }
@@ -137,21 +114,19 @@ impl Opening {
     }
 }
 
-/// Name a deliberate end to the client, then close the socket when the
-/// outbox owns its writer. A channel of a page socket closes nothing: the
-/// socket stays open for its other channels.
+/// Name a deliberate end to the page. The socket stays open for its other
+/// channels; the kind closes the channel after it.
 ///
 /// ANNOUNCEMENT-BEFORE-CLOSE INVARIANT (issue #334), to hold on every return
 /// path: a deliberate end is named in a DATA frame first, and only then does
-/// the Close frame follow and the attachment drop. Meaning placed in the close
-/// metadata is meaning lost — the browser reports `1005 / wasClean=false` for
-/// this very `Close(None)`, which is why the client could not tell an eviction
-/// from a flaky link and stole the session back.
+/// the channel close and the attachment drop. Meaning placed in the close
+/// metadata is meaning lost: the page could not tell an eviction from a
+/// flaky link and stole the session back.
 ///
 /// Bounded by [`END_WINDOW`]: these are the only sends made AFTER the loop
 /// that would surface a wedged peer as an error, so an unbounded await here
 /// would defer `drop(attach)` — and the session's scrollback ring with it —
-/// indefinitely. The caller stops the writer after it.
+/// indefinitely.
 pub(super) async fn announce_end(
     outbox: &mut Outbox,
     id: session::SessionId,
@@ -178,12 +153,7 @@ pub(super) async fn announce_end(
             "daemon_id": opening.daemon_id,
             "environment": opening.environment,
         });
-        send_command_on(&outbox.out, 0, "session-end", end).await?;
-        if let Some(writer) = &outbox.writer {
-            outbox.out.put(Out::Close).await?;
-            writer.ended().await;
-        }
-        Ok(())
+        send_command_on(&outbox.out, 0, "session-end", end).await
     };
     match tokio::time::timeout(END_WINDOW, farewell).await {
         Ok(Ok(())) => {}

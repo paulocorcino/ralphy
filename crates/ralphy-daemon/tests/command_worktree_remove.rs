@@ -16,29 +16,27 @@
     reason = "nextest runs each test in its own process, so a test may change its environment"
 )]
 
+#[path = "support/page.rs"]
+pub mod page;
+
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
 
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+use page::Channel as Ws;
 
-/// Send one command on a fresh `/ws/command` socket and return the whole reply.
+/// Send one command on a fresh page socket's `spawn` channel and return the whole reply.
 async fn command_reply(
     port: u16,
     id: u64,
     verb: &str,
     payload: serde_json::Value,
 ) -> serde_json::Value {
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -215,11 +213,11 @@ async fn worktree_remove_is_refused_while_a_console_lives_in_it_and_proceeds_aft
     });
 
     // --- (a) a claude console lives in wt-a.
-    let (mut ws_a, _) = tokio_tungstenite::connect_async(format!(
-        "ws://127.0.0.1:{port}/ws/session?repo=owner%2Fwtrm&agent=claude&checkout=wt-a"
-    ))
-    .await
-    .expect("a known checkout must upgrade");
+    let mut ws_a = page::console(
+        port,
+        serde_json::json!({ "repo": "owner/wtrm", "agent": "claude", "checkout": "wt-a" }),
+    )
+    .await;
     let open = read_until(&mut ws_a, "READY")
         .await
         .expect("session-open precedes the first terminal byte");

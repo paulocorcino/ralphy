@@ -205,13 +205,13 @@ async fn peer_takeover_and_shutdown_end_events_keep_owner_identity() {
     let mut incumbent = launch(local.port).await;
     let opened = read_until(&mut incumbent, "READY", true).await;
     let id = opened.open.unwrap()["session"].as_u64().unwrap();
-    let repo = peer_repo().replace('/', "%2F");
-    let (mut taker, _) = tokio_tungstenite::connect_async(session_url(
-        local.port,
-        &format!("id={id}&repo={repo}&takeover=1"),
-    ))
-    .await
-    .unwrap();
+    let mut taker = Ws::new(
+        page::console(
+            local.port,
+            serde_json::json!({ "id": id, "repo": peer_repo(), "takeover": 1 }),
+        )
+        .await,
+    );
     let takeover = read_until(&mut incumbent, "session-end", false)
         .await
         .end

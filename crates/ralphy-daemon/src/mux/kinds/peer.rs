@@ -1,5 +1,5 @@
 //! The `console` channel of a console a peer hosts: this daemon relays the
-//! peer's session socket on the channel.
+//! channel to a `console` channel open on the peer's page socket.
 //!
 //! The peer's frames go to the page whole, and the socket's writer cuts each
 //! one into pieces. The page's frames go to the peer unchanged. The page
@@ -9,73 +9,91 @@
 use std::ops::ControlFlow;
 use std::time::Instant;
 
-use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::{self, Message};
 
 use super::{CloseReason, Opening};
 use crate::mux::Out;
-use crate::peer::client::PeerSocket;
+use crate::peer::client::{PeerChannel, PeerEvent};
 use crate::protocol::{self, Frame};
-use crate::routes::{close_peer_session, hand_on, PeerRelay, Traffic, PEER_CLOSED};
+use crate::routes::{hand_on, PeerRelay, PendingRecord, Traffic, PEER_CLOSED, SESSION_OPEN};
 
-/// Whether the relay goes on. `Break(true)`: the peer has gone, and the
-/// channel ends with `channel.closed`; `Break(false)`: the page socket has
-/// gone, and nobody is left to tell.
-type Flow = ControlFlow<bool>;
+/// Whether the relay goes on. `Break(Some(reason))`: the channel ends with
+/// `channel.closed` and `reason`; `Break(None)`: the page socket has gone,
+/// and nobody is left to tell.
+type Flow = ControlFlow<Option<CloseReason>>;
 
-/// Serve a `console` channel whose open the peer of `relay` accepted.
+/// Serve a `console` channel whose open went to the peer of `relay`.
 /// `frames` are the inner frames the page sends on the channel.
 pub(super) async fn open(
     opening: Opening,
     relay: Box<PeerRelay>,
     mut frames: mpsc::Receiver<Vec<u8>>,
 ) {
-    let PeerRelay { peer, traffic } = *relay;
-    let mut relay = Relay {
-        peer: Some(*peer),
+    let PeerRelay {
+        peer,
         traffic,
-        end: None,
+        record,
+    } = *relay;
+    let mut relay = Relay {
+        peer: Some(peer),
+        answer: Answer {
+            traffic,
+            record,
+            opened: false,
+            refused: false,
+            end: None,
+        },
     };
-    let told = relay.run(&opening, &mut frames).await;
+    let reason = relay.run(&opening, &mut frames).await;
     drop(relay);
-    if told {
-        opening.end(CloseReason::Done).await;
+    if let Some(reason) = reason {
+        opening.end(reason).await;
     }
 }
 
 /// The relay of one channel. Dropped, it logs its traffic line and closes
-/// the peer socket: the kind's task can be stopped at any await, when the
-/// page closes the channel or the page socket ends.
+/// the peer's channel: the kind's task can be stopped at any await, when
+/// the page closes the channel or the page socket ends.
 struct Relay {
-    /// `None` only once the peer socket is closed.
-    peer: Option<PeerSocket>,
+    /// `None` only once the peer's channel is closed.
+    peer: Option<PeerChannel>,
+    answer: Answer,
+}
+
+/// What the relay learned from the peer so far.
+struct Answer {
     traffic: Traffic,
-    /// The end this daemon decided, if it decided one.
+    /// The audit line still due: it is written on the peer's `session-open`.
+    record: Option<PendingRecord>,
+    /// Whether the peer sent a `session-open` on the channel.
+    opened: bool,
+    /// Whether the peer refused the open.
+    refused: bool,
+    /// The end this daemon saw, if it saw one.
     end: Option<&'static str>,
 }
 
 impl Relay {
-    async fn run(&mut self, opening: &Opening, frames: &mut mpsc::Receiver<Vec<u8>>) -> bool {
-        let Some(peer) = self.peer.as_mut() else {
-            return false;
-        };
+    async fn run(
+        &mut self,
+        opening: &Opening,
+        frames: &mut mpsc::Receiver<Vec<u8>>,
+    ) -> Option<CloseReason> {
+        let peer = self.peer.as_mut()?;
+        let answer = &mut self.answer;
         // A frame from the peer waits here for room on the channel's queue,
         // and the peer is not read while it waits: a slow page slows the peer.
         let mut held: Option<Out> = None;
         loop {
             let flow = tokio::select! {
-                frame = frames.recv() => to_peer(frame, peer, &mut self.traffic).await,
-                permit = opening.out.reserve(), if held.is_some() => hand_on(permit, &mut held),
-                incoming = peer.next(), if held.is_none() => {
-                    from_peer(incoming, peer, &mut held, &mut self.traffic).await
+                frame = frames.recv() => to_peer(frame, peer, answer).await,
+                permit = opening.out.reserve(), if held.is_some() => {
+                    page_flow(hand_on(permit, &mut held))
                 }
+                event = peer.next(), if held.is_none() => answer.take(event, &mut held),
             };
-            if let ControlFlow::Break(peer_gone) = flow {
-                if peer_gone {
-                    self.end = Some(PEER_CLOSED);
-                }
-                return peer_gone;
+            if let ControlFlow::Break(reason) = flow {
+                return reason;
             }
         }
     }
@@ -83,67 +101,95 @@ impl Relay {
 
 impl Drop for Relay {
     fn drop(&mut self) {
-        self.traffic.log(self.end, Instant::now());
+        // A refusal is the peer's to log: the channel carried no console.
+        if !self.answer.refused {
+            self.answer.traffic.log(self.answer.end, Instant::now());
+        }
         let Some(mut peer) = self.peer.take() else {
             return;
         };
         // The close is sent in a task of its own: a drop cannot wait.
         match tokio::runtime::Handle::try_current() {
             Ok(runtime) => {
-                runtime.spawn(async move { close_peer_session(&mut peer).await });
+                runtime.spawn(async move { peer.close().await });
             }
-            Err(_no_runtime) => tracing::debug!("a peer socket dropped without its close"),
+            Err(_no_runtime) => tracing::debug!("a peer channel dropped without its close"),
         }
+    }
+}
+
+impl Answer {
+    /// Take one event of the peer's channel: a frame for the page into
+    /// `held`, or the end of the channel.
+    fn take(&mut self, event: PeerEvent, held: &mut Option<Out>) -> Flow {
+        match event {
+            PeerEvent::Frame(bytes) => {
+                self.traffic.peer_frame(&bytes);
+                // Only frames before the open are checked: after it, each
+                // terminal frame would be decoded and copied once more.
+                if !self.opened && is_session_open(&bytes) {
+                    self.opened = true;
+                    if let Some(record) = self.record.take() {
+                        record.write();
+                    }
+                }
+                *held = Some(Out::Frame(bytes));
+                ControlFlow::Continue(())
+            }
+            PeerEvent::Closed { reason } => ControlFlow::Break(Some(self.ended(&reason))),
+            PeerEvent::Gone => ControlFlow::Break(Some(self.ended(""))),
+        }
+    }
+
+    /// The reason of the page's channel when the peer's ended with `reason`:
+    /// a refusal before any `session-open` is a refused open, any other end
+    /// is done. The `session-end` that announces a refusal is a frame, but it
+    /// does not open the console.
+    fn ended(&mut self, reason: &str) -> CloseReason {
+        self.end = Some(PEER_CLOSED);
+        if !self.opened && reason == CloseReason::Refused.as_wire() {
+            self.refused = true;
+            return CloseReason::Refused;
+        }
+        CloseReason::Done
+    }
+}
+
+/// Whether the inner frame `bytes` is the peer's `session-open`.
+fn is_session_open(bytes: &[u8]) -> bool {
+    // A terminal frame cannot be a command: skip its decode and copy.
+    bytes.first() == Some(&protocol::TAG_COMMAND)
+        && matches!(
+            protocol::decode(bytes),
+            Ok(Frame::Command(command)) if command.verb == SESSION_OPEN
+        )
+}
+
+/// The relay's flow when the hand-on to the page's queue ended it: the page
+/// socket is gone.
+fn page_flow(flow: ControlFlow<bool>) -> Flow {
+    match flow {
+        ControlFlow::Continue(()) => ControlFlow::Continue(()),
+        ControlFlow::Break(_) => ControlFlow::Break(None),
     }
 }
 
 /// Send one inner frame from the page to the peer, unchanged.
-async fn to_peer(frame: Option<Vec<u8>>, peer: &mut PeerSocket, traffic: &mut Traffic) -> Flow {
+async fn to_peer(frame: Option<Vec<u8>>, peer: &mut PeerChannel, answer: &mut Answer) -> Flow {
     let Some(bytes) = frame else {
         // The page socket has dropped the channel.
-        return ControlFlow::Break(false);
+        return ControlFlow::Break(None);
     };
-    traffic.inbound(bytes.len());
+    answer.traffic.inbound(bytes.len());
     // Read only for the log; the bytes go on unchanged.
     if let Ok(Frame::Command(command)) = protocol::decode(&bytes) {
-        traffic.client_command(&command);
+        answer.traffic.client_command(&command);
     }
-    match peer.send(Message::Binary(bytes.into())).await {
+    match peer.send(&bytes).await {
         Ok(()) => ControlFlow::Continue(()),
         Err(error) => {
             tracing::debug!(%error, "a relayed console could not reach its peer");
-            ControlFlow::Break(true)
+            ControlFlow::Break(Some(answer.ended("")))
         }
-    }
-}
-
-/// Take one read of the peer socket: a frame for the page into `held`, a
-/// ping answered at once.
-async fn from_peer(
-    incoming: Option<Result<Message, tungstenite::Error>>,
-    peer: &mut PeerSocket,
-    held: &mut Option<Out>,
-    traffic: &mut Traffic,
-) -> Flow {
-    let Some(Ok(message)) = incoming else {
-        return ControlFlow::Break(true);
-    };
-    match message {
-        Message::Binary(bytes) => {
-            traffic.peer_frame(&bytes);
-            *held = Some(Out::Frame(Vec::from(bytes)));
-            ControlFlow::Continue(())
-        }
-        // The socket queued the pong when it read the ping; the flush sends
-        // it now rather than with the next frame for the peer.
-        Message::Ping(_) => match peer.flush().await {
-            Ok(()) => ControlFlow::Continue(()),
-            Err(error) => {
-                tracing::debug!(%error, "a relayed console could not answer its peer");
-                ControlFlow::Break(true)
-            }
-        },
-        Message::Close(_) => ControlFlow::Break(true),
-        Message::Pong(_) | Message::Text(_) | Message::Frame(_) => ControlFlow::Continue(()),
     }
 }

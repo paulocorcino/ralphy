@@ -24,6 +24,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::support::{close, open, send_on, Ws};
 
+mod refusal;
+
 const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB0";
 const PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB1";
 const SLUG: &str = "owner/shared";
@@ -64,7 +66,8 @@ struct Fleet {
     _peer: Daemon,
     local_repo: tempfile::TempDir,
     peer_repo: tempfile::TempDir,
-    _stores: [tempfile::TempDir; 2],
+    /// The peer's store, then the local daemon's.
+    stores: [tempfile::TempDir; 2],
 }
 
 fn identity(id: &str, name: &str) -> Identity {
@@ -159,7 +162,7 @@ async fn fleet() -> Fleet {
         _peer: peer,
         local_repo,
         peer_repo,
-        _stores: [peer_store, local_store],
+        stores: [peer_store, local_store],
     }
 }
 
@@ -353,6 +356,45 @@ impl Page {
         self.command(channel, "session-size").await;
         self.until(channel, "READY").await;
         opened
+    }
+
+    /// Read until the `channel.closed` of `channel` and return its reason. A
+    /// frame of `channel` before it panics.
+    async fn closed_without_a_frame(&mut self, channel: u32) -> String {
+        let read = async {
+            loop {
+                let message = self
+                    .ws
+                    .next()
+                    .await
+                    .expect("the page socket stays open")
+                    .expect("the page socket reads");
+                let Message::Binary(bytes) = message else {
+                    continue;
+                };
+                match protocol::decode(&bytes).expect("a well-formed frame") {
+                    Frame::Channel { channel: c, .. } if c == channel => {
+                        panic!("a frame on channel {channel} before its end")
+                    }
+                    Frame::Command(command)
+                        if command.verb == "channel.closed"
+                            && command.payload["channel"] == channel =>
+                    {
+                        return command.payload["reason"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string();
+                    }
+                    Frame::Channel { .. }
+                    | Frame::Command(_)
+                    | Frame::Terminal { .. }
+                    | Frame::Presence(_) => {}
+                }
+            }
+        };
+        tokio::time::timeout(WITHIN, read)
+            .await
+            .unwrap_or_else(|_| panic!("channel {channel} ends within the wait"))
     }
 
     /// Send one inner frame on `channel`.

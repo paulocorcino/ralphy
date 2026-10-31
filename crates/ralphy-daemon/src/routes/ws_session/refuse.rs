@@ -1,28 +1,20 @@
-//! How `/ws/session` says no.
+//! How a console open says no.
 //!
-//! A browser `WebSocket` cannot read the status or the body of a refused
-//! upgrade: it sees only a close. A NEW launch has no session to retry, so the
-//! console used to print `[session closed]` and the reason was lost. A new
-//! launch is therefore refused AFTER the upgrade, by a `session-end` frame with
-//! `reason: "refused"` and the reason as `message`, then a Close — the same
-//! announcement-before-close rule as every other deliberate end (#334).
+//! Every refused open ends its channel with a `channel.closed` whose reason
+//! is `refused`. A NEW launch has no session to retry, so it is told why
+//! first, by a `session-end` with `reason: "refused"` and the reason as
+//! `message` — the same announcement-before-close rule as every other
+//! deliberate end (#334).
 //!
-//! A REATTACH keeps its HTTP status: the browser's retry rules count those
-//! failed opens, and a `404`/`409` must stay a failed open, not an announced end.
-//! The one exception is a superseded claim (ADR-0079 D7): it is announced on
-//! every shape, because a retry would only raise the attempt and evict the
-//! socket that replaced it.
+//! A REATTACH is not told why: the browser's retry rules count those failed
+//! opens, and a refused reattach must stay a failed open, not an announced
+//! end. The one exception is a superseded claim (ADR-0079 D7): it is
+//! announced on every shape, because a retry would only raise the attempt
+//! and evict the socket that replaced it.
 
-use std::time::Duration;
-
-use axum::extract::ws::WebSocketUpgrade;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
-use futures_util::StreamExt;
 
 use super::traffic::Tab;
-use crate::mux::{Mode, Out, Writer, WriterClosed};
-use crate::routes::send_command_on;
 
 /// The wire value of `session-end`'s `reason` for a launch the daemon refused.
 pub(crate) const REFUSED: &str = "refused";
@@ -31,12 +23,12 @@ pub(crate) const REFUSED: &str = "refused";
 /// newer socket already holds the writer slot (ADR-0079 D7).
 pub(crate) const SUPERSEDED: &str = "superseded";
 
-/// A console open the daemon refused, as it was decided: the handler turns
-/// it into the answer the client can read ([`Refuser::answer`]).
+/// A console open the daemon refused, as it was decided: the channel tells
+/// its client what [`Refuser::tell`] decides.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Refusal {
-    /// Refuse with `message`. `status` is what a reattach answers; a new
-    /// launch upgrades and announces `message` instead.
+    /// Refuse with `message`. `status` is logged; a new launch announces
+    /// `message` too.
     Refuse { status: StatusCode, message: String },
     /// A claim whose holder already holds the slot with a higher attempt.
     Supersede { attempt: Option<u64> },
@@ -51,17 +43,16 @@ impl Refusal {
     }
 }
 
-/// How the client of a refused open is told: an HTTP status for a reattach,
-/// or a `session-end` with this payload.
+/// How the client of a refused open is told: by the channel's close alone
+/// for a reattach, or first by a `session-end` with this payload.
 #[derive(Debug)]
 pub(crate) enum Told {
-    Status(StatusCode, String),
+    Close,
     End(serde_json::Value),
 }
 
-/// Refuses one `/ws/session` request in the way its client can read, and
-/// logs each refusal: a console that does not open is the failure the
-/// operator sees.
+/// Refuses one console open in the way its client can read, and logs each
+/// refusal: a console that does not open is the failure the operator sees.
 #[derive(Clone)]
 pub(crate) struct Refuser {
     /// The session a reattach names; `None` for a new launch.
@@ -81,14 +72,6 @@ impl Refuser {
         }
     }
 
-    /// Answer the decided `refusal` on the socket still to upgrade.
-    pub(crate) fn answer(&self, ws: WebSocketUpgrade, refusal: Refusal) -> Response {
-        match self.tell(refusal) {
-            Told::Status(status, message) => (status, message).into_response(),
-            Told::End(end) => announce(ws, end),
-        }
-    }
-
     /// Log the decided `refusal`, and decide how its client is told.
     pub(crate) fn tell(&self, refusal: Refusal) -> Told {
         match refusal {
@@ -97,8 +80,8 @@ impl Refuser {
         }
     }
 
-    /// Refuse with `message`. `status` is what a reattach answers; a new
-    /// launch announces `message` instead.
+    /// Refuse with `message`. A reattach is told nothing more; a new launch
+    /// announces `message`.
     fn refuse(&self, status: StatusCode, message: String) -> Told {
         tracing::info!(
             status = status.as_u16(),
@@ -110,7 +93,7 @@ impl Refuser {
             "console socket refused"
         );
         if self.session.is_some() {
-            return Told::Status(status, message);
+            return Told::Close;
         }
         Told::End(self.end(REFUSED, message))
     }
@@ -142,30 +125,4 @@ impl Refuser {
             "environment": self.environment,
         })
     }
-}
-
-/// Upgrade, send the `session-end` whose payload is `end`, then Close.
-fn announce(ws: WebSocketUpgrade, end: serde_json::Value) -> Response {
-    ws.on_upgrade(move |socket| async move {
-        // The read half is kept, unread, until the writer is stopped.
-        let (sink, _from_browser) = socket.split();
-        let writer = Writer::start(sink, Mode::Plain);
-        let out = writer.channel(0);
-        // Bounded like the bridge's own end: a browser that does not read
-        // must not hold this task.
-        let announce = async {
-            send_command_on(&out, 0, "session-end", end).await?;
-            out.put(Out::Close).await?;
-            writer.ended().await;
-            Ok(())
-        };
-        match tokio::time::timeout(Duration::from_secs(5), announce).await {
-            Ok(Ok(())) => {}
-            Ok(Err(WriterClosed)) => {
-                tracing::debug!("the browser left before the refusal was closed");
-            }
-            Err(_) => tracing::debug!("the browser did not read the refusal within 5 s"),
-        }
-        writer.abort();
-    })
 }

@@ -1,8 +1,8 @@
-//! The registry verbs on `/ws/command` (ADR-0036 amendment "the registry
-//! verbs"): `dir.list` and `project.add` need no `repo`, are relayed to a peer
-//! by its `daemon` id, refuse an unknown id, and refuse a bad path before
-//! anything spawns. The spawned exe is `command_test_child`, which logs its
-//! argv.
+//! The registry verbs on a `spawn` channel of the page socket (ADR-0036
+//! amendment "the registry verbs"): `dir.list` and `project.add` need no
+//! `repo`, are relayed to a peer by its `daemon` id, refuse an unknown id, and
+//! refuse a bad path before anything spawns. The spawned exe is
+//! `command_test_child`, which logs its argv.
 
 #![expect(
     clippy::disallowed_methods,
@@ -11,12 +11,13 @@
 
 #[path = "support/golden.rs"]
 mod golden;
+#[path = "support/page.rs"]
+pub mod page;
 
 use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
@@ -90,9 +91,7 @@ fn descriptor(id: &str, port: u16) -> PeerDescriptor {
 
 /// Every reply frame to one command, until the server closes the socket.
 async fn ask(port: u16, verb: &str, payload: serde_json::Value) -> Vec<serde_json::Value> {
-    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
-        .await
-        .expect("the websocket connects");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
@@ -241,12 +240,22 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
     for path in [
         serde_json::json!(""),
         serde_json::json!("relative/dir"),
-        serde_json::json!(format!("{}{}", local_repo.display(), "a".repeat(4096))),
         serde_json::json!(control),
     ] {
         let reply = ask_one(port, "project.add", serde_json::json!({ "path": path })).await;
         assert_eq!(reply["status"], "error", "{path}: {reply}");
     }
+    // A path this long does not fit the open frame of a channel, so it goes by
+    // the page's own HTTP path for a command.
+    let long = Command {
+        id: 1,
+        verb: "project.add".to_string(),
+        payload: serde_json::json!({
+            "path": format!("{}{}", local_repo.display(), "a".repeat(4096))
+        }),
+    };
+    let reply = page::post_command(port, &long).await;
+    assert_eq!(reply["status"], "error", "a path over the limit: {reply}");
     assert!(argv_lines(&argv_file).is_empty(), "nothing spawned");
 
     // (e) A valid path spawns `daemon add`, `--init` only when asked and `--`

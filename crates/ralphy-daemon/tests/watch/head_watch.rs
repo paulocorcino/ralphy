@@ -1,4 +1,4 @@
-//! The HEAD watch over the wire: a `/ws/tree` client that sends `head.watch`
+//! The HEAD watch over the wire: a `tree` channel client that sends `head.watch`
 //! receives `head.dirty` when real git moves the checkout's HEAD, and nothing
 //! for a `git status` — whose `index` rewrite, answered by another
 //! `git status`, would otherwise loop. Mirrors `tests/runs_watch.rs`.
@@ -6,13 +6,11 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-type Ws = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
 fn git(dir: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
@@ -36,9 +34,9 @@ fn git(dir: &Path, args: &[&str]) {
     );
 }
 
-/// Bind a daemon over a temp repo with one commit; return the `/ws/tree` URL,
+/// Bind a daemon over a temp repo with one commit; return the port,
 /// the slug and the root.
-async fn serve_repo() -> (String, String, PathBuf) {
+async fn serve_repo() -> (u16, String, PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path().join("repo");
     std::fs::create_dir(&root).expect("create the test directory");
@@ -78,11 +76,7 @@ async fn serve_repo() -> (String, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/tree"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }
 
 async fn send_head_watch(ws: &mut Ws, repo: &str, checkout: Option<&str>) {
@@ -129,8 +123,8 @@ async fn drain(ws: &mut Ws) {
 
 #[tokio::test]
 async fn a_branch_switch_pushes_head_dirty_and_git_status_does_not() {
-    let (url, slug, root) = serve_repo().await;
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let (port, slug, root) = serve_repo().await;
+    let mut ws = page::tree(port).await;
     send_head_watch(&mut ws, &slug, None).await;
     // Give the OS watch a beat to attach, then settle anything it replayed.
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -155,8 +149,8 @@ async fn a_branch_switch_pushes_head_dirty_and_git_status_does_not() {
 
 #[tokio::test]
 async fn a_commit_pushes_head_dirty() {
-    let (url, slug, root) = serve_repo().await;
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let (port, slug, root) = serve_repo().await;
+    let mut ws = page::tree(port).await;
     send_head_watch(&mut ws, &slug, None).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     drain(&mut ws).await;
@@ -171,7 +165,7 @@ async fn a_commit_pushes_head_dirty() {
 
 #[tokio::test]
 async fn a_worktree_switch_pushes_head_dirty_with_its_name() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     git(
         &root,
         &[
@@ -185,7 +179,7 @@ async fn a_worktree_switch_pushes_head_dirty_with_its_name() {
     );
     let wt = root.join(".ralphy/worktrees/wt-a");
 
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    let mut ws = page::tree(port).await;
     send_head_watch(&mut ws, &slug, Some("wt-a")).await;
     tokio::time::sleep(Duration::from_millis(500)).await;
     drain(&mut ws).await;

@@ -1,5 +1,5 @@
-//! The startup-command console over a real loopback WebSocket: a client
-//! connects to `/ws/session?console=1&repo=<slug>&command=<cmd>` (the
+//! The startup-command console over a real loopback WebSocket: a page socket
+//! opens a `console` channel with `console: 1`, `repo` and `command` (the
 //! console's program overridden to the helper bin), asks the child for its
 //! argv, and reads back the `-lc <cmd>` the daemon composed — the command as
 //! ONE argv element, never re-split. Then `GET /api/sessions` must label the
@@ -9,12 +9,13 @@
 
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page;
 
 /// Encode a terminal keystroke frame the way the browser would.
 fn terminal(data: &[u8]) -> Message {
@@ -87,13 +88,16 @@ async fn console_ws_runs_the_startup_command_and_labels_the_session_with_it() {
     });
 
     // `htop -d 5` — a command WITH a space, so a re-split would show as two
-    // argv elements. Percent-encoded as the browser's `encodeURIComponent` does.
-    let url = format!(
-        "ws://127.0.0.1:{port}/ws/session?console=1&repo=owner%2Fconsole-repo&command=htop%20-d%205"
-    );
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/session");
+    // argv elements.
+    let mut ws = page::console(
+        port,
+        serde_json::json!({
+            "console": 1,
+            "repo": "owner/console-repo",
+            "command": "htop -d 5",
+        }),
+    )
+    .await;
 
     // The helper's `argv` line prints its own argv (everything after the exe),
     // so the daemon's shell-command composition is observable end to end.

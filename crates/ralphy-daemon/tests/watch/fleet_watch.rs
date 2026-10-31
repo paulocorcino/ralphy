@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
@@ -11,6 +10,8 @@ use ralphy_daemon::peer::{self, PeerDescriptor, PEER_PROTOCOL_VERSION};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page::{self, Channel};
 
 const A_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const B_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
@@ -61,12 +62,7 @@ async fn serve(
     (port, task)
 }
 
-async fn send_watch(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    repo: &str,
-) {
+async fn send_watch(ws: &mut Channel, repo: &str) {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
@@ -79,12 +75,7 @@ async fn send_watch(
     .expect("send the frame");
 }
 
-async fn next_tree_dirty(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-    repo: &str,
-) -> serde_json::Value {
+async fn next_tree_dirty(ws: &mut Channel, repo: &str) -> serde_json::Value {
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(message) = ws.next().await {
             if let Message::Binary(bytes) = message.expect("read the next frame") {
@@ -95,7 +86,7 @@ async fn next_tree_dirty(
                 }
             }
         }
-        panic!("tree socket closed without a matching dirty frame");
+        panic!("tree channel closed without a matching dirty frame");
     })
     .await
     .expect("tree dirty timed out")
@@ -145,10 +136,7 @@ async fn peer_and_local_creates_push_their_own_repo_identity() {
     )
     .await;
 
-    let (mut ws, _) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{local_port}/ws/tree"))
-            .await
-            .unwrap();
+    let mut ws = page::tree(local_port).await;
     let peer_ref = format!("{B_ID}/{SLUG}");
     send_watch(&mut ws, &peer_ref).await;
     tokio::time::sleep(Duration::from_millis(500)).await;

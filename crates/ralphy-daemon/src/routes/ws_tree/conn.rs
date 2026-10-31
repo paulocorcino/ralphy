@@ -1,4 +1,4 @@
-//! The state one `/ws/tree` connection holds, and what each client command
+//! The state one tree connection holds, and what each client command
 //! does to it.
 
 use std::collections::BTreeMap;

@@ -4,9 +4,9 @@ use super::*;
 /// SAME root: `tree.list` at `""` lists the WORKTREE's root, not the primary's.
 #[tokio::test]
 async fn tree_list_with_checkout_lists_the_worktree() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "tree.list",
         serde_json::json!({ "repo": slug, "path": "", "checkout": "wt-a" }),
@@ -35,9 +35,9 @@ async fn tree_list_with_checkout_lists_the_worktree() {
 /// primary would mark every entry of it ignored.
 #[tokio::test]
 async fn tree_list_with_checkout_marks_ignored_by_the_worktree_rules() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         1,
         "tree.list",
         serde_json::json!({ "repo": slug, "path": "", "checkout": "wt-a" }),
@@ -62,9 +62,9 @@ async fn tree_list_with_checkout_marks_ignored_by_the_worktree_rules() {
 
 #[tokio::test]
 async fn tree_list_with_checkout_and_subdir_prefixes_the_rel() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "tree.list",
         serde_json::json!({ "repo": slug, "path": "sub", "checkout": "wt-a" }),
@@ -77,9 +77,9 @@ async fn tree_list_with_checkout_and_subdir_prefixes_the_rel() {
 
 #[tokio::test]
 async fn file_read_with_checkout_reads_the_worktree_file() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         3,
         "file.read",
         serde_json::json!({ "repo": slug, "path": "inner.txt", "checkout": "wt-a" }),
@@ -92,7 +92,7 @@ async fn file_read_with_checkout_reads_the_worktree_file() {
 
     // NEGATIVE CONTROL: the same rel WITHOUT `checkout` is the primary's miss.
     let (replies, _) = round_trip(
-        &url,
+        port,
         4,
         "file.read",
         serde_json::json!({ "repo": slug, "path": "inner.txt" }),
@@ -105,9 +105,9 @@ async fn file_read_with_checkout_reads_the_worktree_file() {
 /// operator's rel), never with the `.ralphy/worktrees/wt-a/` prefix.
 #[tokio::test]
 async fn tree_find_with_checkout_answers_unprefixed_paths() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         5,
         "tree.find",
         serde_json::json!({ "repo": slug, "query": "inner", "checkout": "wt-a" }),
@@ -124,7 +124,7 @@ async fn tree_find_with_checkout_answers_unprefixed_paths() {
     // The same query WITHOUT `checkout` finds it under the primary's rel —
     // the prefix is what the checkout strips, not the walk.
     let (replies, _) = round_trip(
-        &url,
+        port,
         6,
         "tree.find",
         serde_json::json!({ "repo": slug, "query": "inner" }),
@@ -140,7 +140,7 @@ async fn tree_find_with_checkout_answers_unprefixed_paths() {
 /// by NAME with the one message the shell resets its selection on.
 #[tokio::test]
 async fn unknown_checkout_is_refused_by_name() {
-    let (url, slug, root) = serve_checkout_repo().await;
+    let (port, slug, root) = serve_checkout_repo().await;
     // Plant a pointer file where `../x` WOULD resolve if the shape gate were
     // skipped and the name joined first (`.ralphy/worktrees/../x/.git`): a
     // gate-less daemon would then prefix, fail `confine` on the `..`, and
@@ -150,7 +150,7 @@ async fn unknown_checkout_is_refused_by_name() {
     let unknown = serde_json::json!({ "status": "error", "message": "unknown checkout" });
     for (id, name) in [(7u64, "nope"), (8, "../x"), (9, ""), (12, "C:")] {
         let (replies, spawned) = round_trip(
-            &url,
+            port,
             id,
             "tree.list",
             serde_json::json!({ "repo": slug, "path": "", "checkout": name }),
@@ -162,7 +162,7 @@ async fn unknown_checkout_is_refused_by_name() {
     }
     // `null` is the primary tree, not an unknown name.
     let (replies, _) = round_trip(
-        &url,
+        port,
         10,
         "tree.list",
         serde_json::json!({ "repo": slug, "path": "", "checkout": null }),
@@ -177,9 +177,9 @@ async fn unknown_checkout_is_refused_by_name() {
 /// is the negative control: the write must not land there either.
 #[tokio::test]
 async fn file_write_with_checkout_is_refused() {
-    let (url, slug, root) = serve_checkout_repo().await;
+    let (port, slug, root) = serve_checkout_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         11,
         "file.write",
         serde_json::json!({
@@ -216,7 +216,7 @@ async fn file_write_with_checkout_is_refused() {
 /// handed to the walker as a root that would confine against itself.
 #[tokio::test]
 async fn search_with_a_symlinked_checkout_is_refused_like_a_listing() {
-    let (url, slug, root) = serve_checkout_repo().await;
+    let (port, slug, root) = serve_checkout_repo().await;
     let outside = tempfile::tempdir().unwrap();
     std::fs::write(
         outside.path().join(".git"),
@@ -243,7 +243,7 @@ async fn search_with_a_symlinked_checkout_is_refused_like_a_listing() {
         } else {
             serde_json::json!({ "repo": slug, "query": "secret", "checkout": "wt-out" })
         };
-        let (replies, spawned) = round_trip(&url, id, verb, payload).await;
+        let (replies, spawned) = round_trip(port, id, verb, payload).await;
         assert_eq!(spawned, 0);
         let reply = &replies[0];
         assert_eq!(reply["status"], "error", "{verb} must refuse: {reply}");

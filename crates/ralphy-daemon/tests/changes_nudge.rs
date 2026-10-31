@@ -1,12 +1,13 @@
 //! The run-completion nudge (issue #310; ADR-0036 amendment 2026-07-25): when a
 //! dispatched child exits, the daemon pushes `changes.dirty {repo}` on EVERY
-//! `/ws/tree` connection — with no `watch` frame ever sent, because this third
+//! `changes` channel — with no `watch` frame ever sent, because this third
 //! push kind is not watcher-fed and has no subscription verb.
 //!
-//! The second test is the load-bearing one: it drops the `/ws/command` socket
-//! mid-run, so the nudge can only arrive if the send lives inside the blocking
-//! wait task rather than in the handler's `select!` wait arm (which that
-//! disconnect abandons). A presence-only assertion would not catch that.
+//! The second test is the load-bearing one: it drops the page socket of the
+//! `spawn` channel that ran the command, mid-run, so the nudge can only arrive
+//! if the send lives inside the blocking wait task rather than in the
+//! handler's `select!` wait arm (which that disconnect abandons). A presence-only
+//! assertion would not catch that.
 //!
 //! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE`/`RALPHY_TEST_*` are
 //! process-global. Both tests set the SAME values, so they may run in parallel.
@@ -18,10 +19,14 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
+
+#[path = "support/page.rs"]
+pub mod page;
+
+use page::Channel;
 
 /// The child sleeps before exiting so a test can disconnect mid-run. Identical
 /// in both tests — a differing value would be an intra-process env race.
@@ -76,12 +81,9 @@ async fn serve(registry_path: std::path::PathBuf) -> (u16, tokio::sync::watch::S
     (port, tx)
 }
 
-/// Read `/ws/tree` frames until one decodes as `changes.dirty`, and answer its
-/// `payload.repo`. Panics on the 15s deadline.
-async fn next_changes_dirty<S>(tree: &mut S) -> String
-where
-    S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
-{
+/// Read `changes` channel frames until one decodes as `changes.dirty`, and
+/// answer its `payload.repo`. Panics on the 15s deadline.
+async fn next_changes_dirty(tree: &mut Channel) -> String {
     tokio::time::timeout(Duration::from_secs(15), async {
         while let Some(msg) = tree.next().await {
             let Ok(Message::Binary(bytes)) = msg else {
@@ -93,7 +95,7 @@ where
                 }
             }
         }
-        panic!("the /ws/tree socket closed before any changes.dirty frame");
+        panic!("the changes channel closed before any changes.dirty frame");
     })
     .await
     .expect("a changes.dirty frame must arrive within 15s")
@@ -116,18 +118,12 @@ async fn run_exit_pushes_changes_dirty() {
 
     // Connect the listener FIRST and with NO watch frame: the nudge must reach a
     // connection that holds no watch at all.
-    let (mut tree, _resp) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/tree"))
-            .await
-            .expect("connecting to /ws/tree");
+    let mut tree = page::changes(port).await;
     // The upgraded handler subscribes after the handshake returns; settle so the
     // subscription is live before the run that must reach it.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let (mut cmd_ws, _resp) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
-            .await
-            .expect("connecting to /ws/command");
+    let mut cmd_ws = page::command(port).await;
     cmd_ws.send(run_command(slug)).await.unwrap();
 
     assert_eq!(
@@ -149,16 +145,10 @@ async fn nudge_survives_the_spawning_client_disconnect() {
     set_child_env();
     let (port, _shutdown) = serve(registry_path).await;
 
-    let (mut tree, _resp) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/tree"))
-            .await
-            .expect("connecting to /ws/tree");
+    let mut tree = page::changes(port).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let (mut cmd_ws, _resp) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
-            .await
-            .expect("connecting to /ws/command");
+    let mut cmd_ws = page::command(port).await;
     cmd_ws.send(run_command(slug)).await.unwrap();
 
     // Read only up to the ack, then drop the socket while the child still sleeps.

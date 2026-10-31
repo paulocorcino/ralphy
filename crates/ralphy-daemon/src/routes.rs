@@ -61,8 +61,8 @@ pub(crate) use ws_command::*;
 pub(crate) use ws_session::*;
 pub(crate) use ws_tree::*;
 
-/// Capacity of the shared run-exit ring (ONE buffer for all `/ws/tree`
-/// subscribers, not one each). A subscriber that falls behind it just skips
+/// Capacity of the shared run-exit ring (ONE buffer for all `changes`
+/// channels, not one each). A subscriber that falls behind it just skips
 /// ahead — the browser's re-read is idempotent — so this bounds memory rather
 /// than correctness.
 pub(crate) const RUN_EXIT_CAP: usize = 32;
@@ -166,7 +166,7 @@ pub(crate) fn router_with_roster(
     // registrar this router lifetime (ADR-0036 amendment 2026-09-16): a hash
     // key whose remote yields no forge slug must not respawn on every page.
     let heal_memo = rekey::heal_memo();
-    // The live file-tree watcher (#196) is shared across every `/ws/tree`
+    // The live file-tree watcher (#196) is shared across every tree
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
@@ -179,7 +179,7 @@ pub(crate) fn router_with_roster(
     spawn_watch_sub_sweep(&peer_watch_subs);
     // The run-completion nudge bus (#310, ADR-0036 amendment): the Spawn path
     // sends the repo slug of every dispatched child that exits, and every
-    // `/ws/tree` connection relays it as `changes.dirty`. Daemon-wide and
+    // `changes` channel relays it as `changes.dirty`. Daemon-wide and
     // subscription-free — same ownership model as `watchers`, so the public
     // `router` signature holds.
     let run_exits = tokio::sync::broadcast::channel::<String>(RUN_EXIT_CAP).0;
@@ -242,9 +242,7 @@ pub(crate) fn router_with_roster(
         .merge(session_routes(&shared))
         .merge(attention_routes(&shared))
         .merge(desk_routes(&shared))
-        .merge(command_routes(&shared))
         .merge(command_http_routes(&shared))
-        .merge(tree_routes(&shared))
         .merge(security_routes(&shared))
         .merge(audit_routes(&shared))
         .merge(stall_routes(&shared))
@@ -252,8 +250,8 @@ pub(crate) fn router_with_roster(
         .fallback(ui_asset)
         // Inside the guard: only requests the guard let through are recorded.
         .layer(axum::middleware::from_fn_with_state(audit, audit_layer))
-        // The auth guard wraps EVERY route above — the API handlers, all three
-        // WS upgrades, and the UI fallback — so a network bind rejects an
+        // The auth guard wraps EVERY route above — the API handlers, every
+        // WS upgrade, and the UI fallback — so a network bind rejects an
         // unauthenticated request before it reaches any handler or upgrade.
         .layer(axum::middleware::from_fn_with_state(
             auth.clone(),

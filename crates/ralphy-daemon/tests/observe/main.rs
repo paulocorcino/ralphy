@@ -1,9 +1,14 @@
-//! The Observe and Write byte-op paths over the real `/ws/command` wire: reads,
-//! run snapshots, file encodings, confined writes and the refusal of a
-//! malformed run. No module sets an env var, so they share one test binary.
+//! The Observe and Write byte-op paths over the page socket `/ws`: each command
+//! goes over a `spawn` channel, or over `POST /api/command` when its frame
+//! passes 4096 bytes. They cover reads, run snapshots, file encodings, confined
+//! writes and the refusal of a malformed run. No module sets an env var, so
+//! they share one test binary.
 
 #[path = "../support/golden.rs"]
 mod golden;
+
+#[path = "../support/page.rs"]
+pub mod page;
 
 mod command_refusal;
 mod file_encoding;

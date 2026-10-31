@@ -23,6 +23,9 @@ use ralphy_daemon::peer::{self, PeerDescriptor, TunnelSpec, PEER_PROTOCOL_VERSIO
 use ralphy_daemon::{registry, router};
 use tower::ServiceExt;
 
+#[path = "support/page.rs"]
+pub mod page;
+
 /// The env seams below are process-wide; this keeps the file correct under
 /// `cargo test` threads, not only under nextest's process per test.
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -390,7 +393,6 @@ const SILENT_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB5";
 /// does not answer gets the sentence `/api/fleet` gives the same peer.
 #[tokio::test]
 async fn a_relayed_command_names_a_silent_tunnel_as_the_fleet_does() {
-    use futures_util::{SinkExt, StreamExt};
     use ralphy_daemon::protocol::{self, Command, Frame};
     use tokio_tungstenite::tungstenite::Message;
 
@@ -408,10 +410,7 @@ async fn a_relayed_command_names_a_silent_tunnel_as_the_fleet_does() {
         axum::serve(listener, local).await.unwrap();
     });
 
-    let (mut ws, _) =
-        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{local_port}/ws/command"))
-            .await
-            .unwrap();
+    let mut ws = page::command(local_port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,

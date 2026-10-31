@@ -1,5 +1,4 @@
 use super::*;
-use std::time::Duration;
 
 fn traffic(now: Instant) -> Traffic {
     let tab = Tab {
@@ -7,19 +6,6 @@ fn traffic(now: Instant) -> Traffic {
         ..Tab::default()
     };
     Traffic::local(1, tab, now)
-}
-
-#[test]
-fn a_pong_is_timed_against_the_ping_with_its_payload() {
-    let t0 = Instant::now();
-    let mut t = traffic(t0);
-    t.ping_sent(&[1], t0);
-    t.ping_sent(&[2], t0 + Duration::from_millis(100));
-    t.pong_received(&[9], t0 + Duration::from_millis(150));
-    t.pong_received(&[2], t0 + Duration::from_millis(130));
-    let s = t.summary();
-    assert_eq!(s.rtt_samples, 1, "an unknown payload records no sample");
-    assert_eq!(s.rtt_p50_ms, Some(30));
 }
 
 #[test]
@@ -33,39 +19,6 @@ fn replay_and_live_bytes_are_kept_apart() {
     assert_eq!((s.replay_bytes, s.live_bytes, s.live_frames), (400, 15, 2));
     assert_eq!(s.replay_raw_bytes, 1000, "the replay before its gzip");
     assert_eq!(s.in_bytes, 3);
-}
-
-#[test]
-fn a_ping_after_live_output_is_busy_and_a_quiet_one_is_idle() {
-    let t0 = Instant::now();
-    let mut t = traffic(t0);
-    t.ping_sent(&[1], t0);
-    t.pong_received(&[1], t0 + Duration::from_millis(40));
-    t.live(10);
-    t.ping_sent(&[2], t0);
-    t.pong_received(&[2], t0 + Duration::from_millis(400));
-    let s = t.summary();
-    assert_eq!(s.rtt_idle_p50_ms, Some(40));
-    assert_eq!(s.rtt_busy_p50_ms, Some(400));
-}
-
-#[test]
-fn the_median_is_the_lower_middle_sample() {
-    assert_eq!(median(&[]), None);
-    assert_eq!(median_of(&[30, 10, 20]), Some(20));
-    assert_eq!(median_of(&[40, 10, 30, 20]), Some(20));
-}
-
-#[test]
-fn lost_pongs_do_not_grow_the_waiting_queue() {
-    let t0 = Instant::now();
-    let mut t = traffic(t0);
-    for seq in 0..=OUTSTANDING_CAP as u8 {
-        t.ping_sent(&[seq], t0);
-    }
-    assert_eq!(t.outstanding.len(), OUTSTANDING_CAP);
-    t.pong_received(&[0], t0 + Duration::from_millis(10));
-    assert_eq!(t.summary().rtt_samples, 0, "the oldest ping was dropped");
 }
 
 #[test]
@@ -151,8 +104,6 @@ fn a_detach_command_names_the_leave() {
 fn the_end_is_the_most_specific_reason_known() {
     let mut t = traffic(Instant::now());
     assert_eq!(t.end_label(None), "dropped");
-    t.client_closed();
-    assert_eq!(t.end_label(None), "client-closed");
     t.client_command(&command(
         r#"{"id":0,"verb":"detach","payload":{"reason":"dormant"}}"#,
     ));

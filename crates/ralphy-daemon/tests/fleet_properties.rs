@@ -5,11 +5,13 @@
 //! with the same slug and a file of the same name, so a reply that came from the
 //! local disk would differ.
 
+#[path = "support/page.rs"]
+pub mod page;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity::Identity;
@@ -81,9 +83,7 @@ fn descriptor(port: u16) -> PeerDescriptor {
 }
 
 async fn ask(port: u16, verb: &str, payload: Value) -> Value {
-    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
-        .await
-        .expect("the websocket connects");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,

@@ -1,6 +1,7 @@
-//! A Claude console launch reads `claude --version` before it spawns the
-//! console. That read waits on a child process, so it must not run on a tokio
-//! worker: on a runtime with one worker, every other request would wait for it.
+//! A Claude console launch, opened on a `console` channel of the page socket,
+//! reads `claude --version` before it spawns the console. That read waits on a
+//! child process, so it must not run on a tokio worker: on a runtime with one
+//! worker, every other request would wait for it.
 //!
 //! SOLE env-setter in its file: the variables are process-global, so this
 //! test must be alone in its file (no intra-process race).
@@ -14,6 +15,9 @@ use std::time::{Duration, Instant};
 
 use ralphy_daemon::{registry, router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+#[path = "support/page.rs"]
+pub mod page;
 
 /// How long the fake `claude --version` waits before it answers.
 const VERSION_SLEEP: Duration = Duration::from_secs(3);
@@ -64,10 +68,10 @@ async fn a_claude_launch_does_not_block_the_worker() {
     tokio::spawn(async move { axum::serve(listener, app).await });
 
     let launched = Instant::now();
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Flaunch&agent=claude");
+    let launch = serde_json::json!({ "repo": "owner/launch", "agent": "claude" });
     tokio::spawn(async move {
         // Held open until the test ends, so the launch is not abandoned.
-        let held = tokio_tungstenite::connect_async(&url).await;
+        let held = page::console(port, launch).await;
         tokio::time::sleep(VERSION_SLEEP * 2).await;
         drop(held);
     });

@@ -12,10 +12,11 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page;
 
 /// `§6 240×180 — ok` as windows-1252 writes it.
 const CP1252: &[u8] = b"\xA76 240\xD7180 \x97 ok";
@@ -29,8 +30,8 @@ const UTF8_BOM: &[u8] = b"\xEF\xBB\xBFol\xC3\xA1";
 const SJIS: &[u8] = b"\x93\xFA\x96\x7B";
 
 /// Bind a daemon over a temp repo seeded with one file per encoding; return the
-/// `ws://…/ws/command` URL, the repo slug, and the leaked repo root.
-async fn serve_repo() -> (String, String, PathBuf) {
+/// port of its page socket, the repo slug, and the leaked repo root.
+async fn serve_repo() -> (u16, String, PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     std::fs::write(dir.path().join("cp1252.md"), CP1252).expect("write cp1252.md");
     std::fs::write(dir.path().join("utf16.txt"), UTF16LE_BOM).expect("write utf16.txt");
@@ -73,18 +74,12 @@ async fn serve_repo() -> (String, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }
 
 /// Send one `Command` and return the single reply on `id`.
-async fn ask(url: &str, id: u64, verb: &str, payload: serde_json::Value) -> serde_json::Value {
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("connecting to /ws/command");
+async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serde_json::Value {
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -117,9 +112,9 @@ async fn ask(url: &str, id: u64, verb: &str, payload: serde_json::Value) -> serd
     .expect("the reply must arrive and the socket close within 10s")
 }
 
-async fn read(url: &str, slug: &str, path: &str) -> serde_json::Value {
+async fn read(port: u16, slug: &str, path: &str) -> serde_json::Value {
     ask(
-        url,
+        port,
         1,
         "file.read",
         serde_json::json!({ "repo": slug, "path": path }),
@@ -129,7 +124,7 @@ async fn read(url: &str, slug: &str, path: &str) -> serde_json::Value {
 
 #[tokio::test]
 async fn file_read_declares_the_encoding_it_detected() {
-    let (url, slug, _) = serve_repo().await;
+    let (port, slug, _) = serve_repo().await;
     let cases: [(&str, &str, &str, bool); 5] = [
         ("cp1252.md", "§6 240×180 — ok", "windows-1252", false),
         ("utf16.txt", "§ x", "UTF-16LE", true),
@@ -138,7 +133,7 @@ async fn file_read_declares_the_encoding_it_detected() {
         ("plain.txt", "café", "UTF-8", false),
     ];
     for (path, text, encoding, bom) in cases {
-        let reply = read(&url, &slug, path).await;
+        let reply = read(port, &slug, path).await;
         assert_eq!(reply["status"], "ok", "{path}: {reply}");
         assert_eq!(reply["content"], text, "{path}");
         assert_eq!(reply["encoding"], encoding, "{path}");
@@ -148,13 +143,13 @@ async fn file_read_declares_the_encoding_it_detected() {
 
 #[tokio::test]
 async fn file_read_still_refuses_binary_and_an_unknown_label() {
-    let (url, slug, _) = serve_repo().await;
-    let reply = read(&url, &slug, "bin.dat").await;
+    let (port, slug, _) = serve_repo().await;
+    let reply = read(port, &slug, "bin.dat").await;
     assert_eq!(reply["status"], "error");
     assert_eq!(reply["reason"], "binary");
 
     let reply = ask(
-        &url,
+        port,
         2,
         "file.read",
         serde_json::json!({ "repo": slug, "path": "plain.txt", "encoding": "klingon" }),
@@ -166,12 +161,12 @@ async fn file_read_still_refuses_binary_and_an_unknown_label() {
 
 #[tokio::test]
 async fn file_read_reopens_with_the_encoding_the_client_names() {
-    let (url, slug, _) = serve_repo().await;
+    let (port, slug, _) = serve_repo().await;
     // Detection reads Shift_JIS bytes as the fallback page; the reopen names it.
-    let detected = read(&url, &slug, "sjis.txt").await;
+    let detected = read(port, &slug, "sjis.txt").await;
     assert_eq!(detected["encoding"], "windows-1252");
     let reply = ask(
-        &url,
+        port,
         3,
         "file.read",
         serde_json::json!({ "repo": slug, "path": "sjis.txt", "encoding": "shift_jis" }),
@@ -185,26 +180,26 @@ async fn file_read_reopens_with_the_encoding_the_client_names() {
 
 #[tokio::test]
 async fn the_repos_files_encoding_is_the_fallback() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     std::fs::create_dir_all(root.join(".ralphy")).unwrap();
     std::fs::write(
         root.join(".ralphy/settings.json"),
         r#"{ "files": { "encoding": "shift_jis" } }"#,
     )
     .unwrap();
-    let reply = read(&url, &slug, "sjis.txt").await;
+    let reply = read(port, &slug, "sjis.txt").await;
     assert_eq!(reply["content"], "日本", "{reply}");
     assert_eq!(reply["encoding"], "Shift_JIS");
     // UTF-8 and the BOM'd files are recognised before the fallback applies.
-    assert_eq!(read(&url, &slug, "plain.txt").await["encoding"], "UTF-8");
-    assert_eq!(read(&url, &slug, "utf16.txt").await["encoding"], "UTF-16LE");
+    assert_eq!(read(port, &slug, "plain.txt").await["encoding"], "UTF-8");
+    assert_eq!(read(port, &slug, "utf16.txt").await["encoding"], "UTF-16LE");
 }
 
 #[tokio::test]
 async fn tree_grep_finds_text_in_a_windows_1252_file() {
-    let (url, slug, _) = serve_repo().await;
+    let (port, slug, _) = serve_repo().await;
     let reply = ask(
-        &url,
+        port,
         4,
         "tree.grep",
         serde_json::json!({ "repo": slug, "query": "240×180" }),
@@ -221,7 +216,7 @@ async fn tree_grep_finds_text_in_a_windows_1252_file() {
 }
 
 async fn write(
-    url: &str,
+    port: u16,
     slug: &str,
     path: &str,
     content: &str,
@@ -233,7 +228,7 @@ async fn write(
     if let Some(enc) = encoding {
         payload["encoding"] = serde_json::json!(enc);
     }
-    ask(url, 9, "file.write", payload).await
+    ask(port, 9, "file.write", payload).await
 }
 
 /// `(path, text, encoding param, bom param, expected bytes)`.
@@ -247,7 +242,7 @@ type WriteCase = (
 
 #[tokio::test]
 async fn file_write_encodes_with_the_encoding_it_is_given() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let cases: [WriteCase; 5] = [
         ("w1.txt", "\u{a7}", Some("windows-1252"), false, b"\xA7"),
         (
@@ -270,7 +265,7 @@ async fn file_write_encodes_with_the_encoding_it_is_given() {
         ("w5.txt", "\u{a7}", None, false, b"\xC2\xA7"),
     ];
     for (path, text, encoding, bom, bytes) in cases {
-        let reply = write(&url, &slug, path, text, encoding, bom).await;
+        let reply = write(port, &slug, path, text, encoding, bom).await;
         assert_eq!(reply["status"], "ok", "{path}: {reply}");
         assert_eq!(std::fs::read(root.join(path)).unwrap(), bytes, "{path}");
     }
@@ -278,9 +273,9 @@ async fn file_write_encodes_with_the_encoding_it_is_given() {
 
 #[tokio::test]
 async fn file_write_refuses_an_unrepresentable_char_and_writes_nothing() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let reply = write(
-        &url,
+        port,
         &slug,
         "cp1252.md",
         "ol\u{e1} \u{2192}",
@@ -297,7 +292,7 @@ async fn file_write_refuses_an_unrepresentable_char_and_writes_nothing() {
         "untouched"
     );
 
-    let reply = write(&url, &slug, "cp1252.md", "x", Some("klingon"), false).await;
+    let reply = write(port, &slug, "cp1252.md", "x", Some("klingon"), false).await;
     assert_eq!(reply["reason"], "unknown encoding");
     assert_eq!(
         std::fs::read(root.join("cp1252.md")).unwrap(),
@@ -308,7 +303,7 @@ async fn file_write_refuses_an_unrepresentable_char_and_writes_nothing() {
 
 #[tokio::test]
 async fn every_read_writes_back_byte_for_byte() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     for path in [
         "cp1252.md",
         "utf16.txt",
@@ -317,9 +312,9 @@ async fn every_read_writes_back_byte_for_byte() {
         "plain.txt",
     ] {
         let before = std::fs::read(root.join(path)).unwrap();
-        let read = read(&url, &slug, path).await;
+        let read = read(port, &slug, path).await;
         let reply = write(
-            &url,
+            port,
             &slug,
             path,
             read["content"].as_str().unwrap(),

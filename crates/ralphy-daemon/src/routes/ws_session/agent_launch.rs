@@ -1,4 +1,4 @@
-//! The agent launch of `/ws/session` (`agent=`): the repo, the checkout and
+//! The agent launch of a console open (`agent`): the repo, the checkout and
 //! the vendor gates are settled before anything is spawned.
 
 use std::path::{Path, PathBuf};

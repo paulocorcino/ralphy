@@ -1,10 +1,8 @@
-//! The traffic summary of one console socket: the bytes it sent, how many of
-//! them were a replay (on the wire, and before a gzip), and the round trip of
-//! its pings. It is logged
-//! once, when the socket closes, so that a session over a slow or metered link
-//! can be measured.
+//! The traffic summary of one console channel: the bytes it sent, and how
+//! many of them were a replay (on the wire, and before a gzip). It is logged
+//! once, when the channel closes, so that a session over a slow or metered
+//! link can be measured.
 
-use std::collections::VecDeque;
 use std::io::Read;
 use std::time::Instant;
 
@@ -85,9 +83,6 @@ impl Channel {
 /// link failed, or a send failed.
 const DROPPED: &str = "dropped";
 
-/// The `end` of a socket whose client sent a Close frame without saying why.
-const CLIENT_CLOSED: &str = "client-closed";
-
 /// The command verb that opens every console socket, before any output.
 pub(crate) const SESSION_OPEN: &str = "session-open";
 
@@ -142,13 +137,6 @@ impl Leave {
     }
 }
 
-/// Pings waiting for their pong. A client answers each ping, so more than a
-/// few waiting means the pongs are lost, and the oldest are dropped.
-const OUTSTANDING_CAP: usize = 4;
-
-/// Round-trip samples kept per socket: about 5 hours of 20 s pings.
-const SAMPLE_CAP: usize = 1024;
-
 /// The most bytes a relayed gzip replay is decoded to, only to count them. A
 /// snapshot is a screen and its scrollback, far below this.
 const RAW_COUNT_CAP: u64 = 16 * 1024 * 1024;
@@ -162,12 +150,6 @@ enum PeerStage {
     Open,
     FirstOutput { replay: bool, gzip: bool },
     Live,
-}
-
-struct Outstanding {
-    payload: Vec<u8>,
-    sent: Instant,
-    busy: bool,
 }
 
 /// The keys that join a summary to other records: the session this daemon
@@ -193,17 +175,11 @@ pub(crate) struct Traffic {
     in_bytes: u64,
     lagged_events: u64,
     lagged_skipped: u64,
-    live_since_ping: bool,
     peer_stage: PeerStage,
     left: Option<Leave>,
-    client_closed: bool,
-    outstanding: VecDeque<Outstanding>,
-    busy_ms: Vec<u32>,
-    idle_ms: Vec<u32>,
 }
 
-/// The numbers one log line carries. Round trips are in milliseconds; `None`
-/// when the socket earned no sample of that kind.
+/// The numbers one log line carries.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Summary {
     pub(crate) replay_bytes: u64,
@@ -215,12 +191,6 @@ pub(crate) struct Summary {
     pub(crate) in_bytes: u64,
     pub(crate) lagged_events: u64,
     pub(crate) lagged_skipped: u64,
-    pub(crate) rtt_samples: usize,
-    pub(crate) rtt_min_ms: Option<u32>,
-    pub(crate) rtt_p50_ms: Option<u32>,
-    pub(crate) rtt_max_ms: Option<u32>,
-    pub(crate) rtt_busy_p50_ms: Option<u32>,
-    pub(crate) rtt_idle_p50_ms: Option<u32>,
 }
 
 impl Traffic {
@@ -263,13 +233,8 @@ impl Traffic {
             in_bytes: 0,
             lagged_events: 0,
             lagged_skipped: 0,
-            live_since_ping: false,
             peer_stage: PeerStage::Open,
             left: None,
-            client_closed: false,
-            outstanding: VecDeque::new(),
-            busy_ms: Vec::new(),
-            idle_ms: Vec::new(),
         }
     }
 
@@ -282,7 +247,6 @@ impl Traffic {
     pub(crate) fn live(&mut self, bytes: usize) {
         self.live_bytes += bytes as u64;
         self.live_frames += 1;
-        self.live_since_ping = true;
     }
 
     /// Count one binary frame a peer sent to the browser. The relay forwards
@@ -357,23 +321,14 @@ impl Traffic {
         }
     }
 
-    /// The client sent a Close frame.
-    pub(crate) fn client_closed(&mut self) {
-        self.client_closed = true;
-    }
-
     /// How the socket ended, most specific first: the end this daemon decided
-    /// (`daemon_end`), then the leave the page announced, then a bare Close
-    /// frame from the client, then `dropped`.
+    /// (`daemon_end`), then the leave the page announced, then `dropped`.
     fn end_label<'a>(&self, daemon_end: Option<&'a str>) -> &'a str {
         if let Some(end) = daemon_end {
             return end;
         }
         if let Some(leave) = self.left {
             return leave.as_str();
-        }
-        if self.client_closed {
-            return CLIENT_CLOSED;
         }
         DROPPED
     }
@@ -384,44 +339,7 @@ impl Traffic {
         self.lagged_skipped += skipped;
     }
 
-    /// A ping is "busy" when live output went out since the previous ping, so
-    /// its round trip shares the link with that output.
-    pub(crate) fn ping_sent(&mut self, payload: &[u8], now: Instant) {
-        if self.outstanding.len() == OUTSTANDING_CAP {
-            self.outstanding.pop_front();
-        }
-        self.outstanding.push_back(Outstanding {
-            payload: payload.to_vec(),
-            sent: now,
-            busy: self.live_since_ping,
-        });
-        self.live_since_ping = false;
-    }
-
-    /// A pong echoes the payload of its ping (RFC 6455 §5.5.3); a pong that
-    /// matches no waiting ping records nothing.
-    pub(crate) fn pong_received(&mut self, payload: &[u8], now: Instant) {
-        let Some(at) = self.outstanding.iter().position(|o| o.payload == payload) else {
-            return;
-        };
-        let ping = self
-            .outstanding
-            .remove(at)
-            .expect("`position` returned an index inside the queue");
-        if self.busy_ms.len() + self.idle_ms.len() >= SAMPLE_CAP {
-            return;
-        }
-        let ms = u32::try_from(now.duration_since(ping.sent).as_millis()).unwrap_or(u32::MAX);
-        if ping.busy {
-            self.busy_ms.push(ms);
-        } else {
-            self.idle_ms.push(ms);
-        }
-    }
-
     pub(crate) fn summary(&self) -> Summary {
-        let mut all: Vec<u32> = self.busy_ms.iter().chain(&self.idle_ms).copied().collect();
-        all.sort_unstable();
         Summary {
             replay_bytes: self.replay_bytes,
             replay_raw_bytes: self.replay_raw_bytes,
@@ -430,12 +348,6 @@ impl Traffic {
             in_bytes: self.in_bytes,
             lagged_events: self.lagged_events,
             lagged_skipped: self.lagged_skipped,
-            rtt_samples: all.len(),
-            rtt_min_ms: all.first().copied(),
-            rtt_p50_ms: median(&all),
-            rtt_max_ms: all.last().copied(),
-            rtt_busy_p50_ms: median_of(&self.busy_ms),
-            rtt_idle_p50_ms: median_of(&self.idle_ms),
         }
     }
 
@@ -462,12 +374,6 @@ impl Traffic {
             in_bytes = s.in_bytes,
             lagged_events = s.lagged_events,
             lagged_skipped = s.lagged_skipped,
-            rtt_samples = s.rtt_samples,
-            rtt_min_ms = s.rtt_min_ms,
-            rtt_p50_ms = s.rtt_p50_ms,
-            rtt_max_ms = s.rtt_max_ms,
-            rtt_busy_p50_ms = s.rtt_busy_p50_ms,
-            rtt_idle_p50_ms = s.rtt_idle_p50_ms,
             "console socket traffic"
         );
     }
@@ -489,20 +395,6 @@ fn gunzipped_frame_len(frame: &[u8]) -> usize {
             frame.len()
         }
     }
-}
-
-fn median_of(samples: &[u32]) -> Option<u32> {
-    let mut sorted = samples.to_vec();
-    sorted.sort_unstable();
-    median(&sorted)
-}
-
-/// Nearest-rank median of sorted samples: the lower middle one for an even count.
-fn median(sorted: &[u32]) -> Option<u32> {
-    if sorted.is_empty() {
-        return None;
-    }
-    Some(sorted[(sorted.len() - 1) / 2])
 }
 
 #[cfg(test)]

@@ -1,9 +1,10 @@
-//! Single-writer attach policy over a real loopback WebSocket (docs/adr/0032 §2;
-//! issue #166 AC4): two browsers can't corrupt one session. While one client is
-//! attached, a second reattach WITHOUT `takeover` is refused with HTTP `409`
-//! BEFORE the upgrade; the same reattach WITH `takeover=1` succeeds, EVICTS the
-//! incumbent (its stream ends), and the taker drives the child. Proves the
-//! explicit, race-free takeover the policy promises.
+//! Single-writer attach policy over `console` channels of real loopback page
+//! sockets (docs/adr/0032 §2; issue #166 AC4): two browsers can't corrupt one
+//! session. While one client is attached, a second reattach WITHOUT `takeover`
+//! is refused: its channel gets no frame and closes as `refused`, and the
+//! incumbent keeps the slot. The same reattach WITH `takeover: 1` succeeds,
+//! EVICTS the incumbent (its channel ends), and the taker drives the child.
+//! Proves the explicit, race-free takeover the policy promises.
 
 #![expect(
     clippy::disallowed_methods,
@@ -12,15 +13,17 @@
 
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_tungstenite::tungstenite::{self, Message};
-use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
 
-type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+#[path = "support/page.rs"]
+pub mod page;
+
+use page::Channel as Ws;
 
 fn terminal(data: &[u8]) -> Message {
     Message::Binary(
@@ -192,10 +195,11 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
     let (port, _shutdown) = start_daemon(dir.path()).await;
 
     // ws1: launch and round-trip a keystroke so it is the attached single writer.
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut ws1, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting ws1");
+    let mut ws1 = page::console(
+        port,
+        json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
     ws1.send(terminal(b"first\r")).await.unwrap();
     read_until(&mut ws1, "GOT:first", true).await;
 
@@ -204,28 +208,22 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
     let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
     // A second attach WITHOUT takeover, while ws1 holds the writer slot, must be
-    // refused as HTTP 409 at the handshake — never a silently upgraded socket.
-    let busy = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
-    match tokio_tungstenite::connect_async(&busy).await {
-        Err(tungstenite::Error::Http(resp)) => {
-            assert_eq!(
-                resp.status(),
-                409,
-                "a busy session refuses a non-takeover attach"
-            );
-        }
-        Ok(_) => panic!("second attach without takeover must NOT succeed"),
-        Err(other) => panic!("expected an HTTP 409, got {other:?}"),
-    }
+    // refused before any frame — never a silently attached channel.
+    refused(
+        port,
+        json!({ "id": id }),
+        "a busy session refuses a non-takeover attach",
+    )
+    .await;
+    // The refusal evicted nobody: ws1 still drives the child.
+    ws1.send(terminal(b"still-first\r")).await.unwrap();
+    read_until(&mut ws1, "GOT:still-first", false).await;
 
-    // The same attach WITH takeover=1 succeeds and evicts ws1.
-    let take = format!("ws://127.0.0.1:{port}/ws/session?id={id}&takeover=1");
-    let (mut ws2, _) = tokio_tungstenite::connect_async(&take)
-        .await
-        .expect("takeover attach must succeed");
+    // The same attach WITH takeover: 1 succeeds and evicts ws1.
+    let mut ws2 = page::console(port, json!({ "id": id, "takeover": 1 })).await;
 
-    // ws1 is evicted: its stream ends within 5s (the server bridge broke and
-    // dropped its socket) — NOT a hang. And on the way out it is TOLD why, in a
+    // ws1 is evicted: its channel ends within 5s (the server bridge broke and
+    // closed its channel) — NOT a hang. And on the way out it is TOLD why, in a
     // data frame read before the stream ends: the close metadata cannot carry
     // that (issue #334), which is what let the old client mistake an eviction for
     // a flaky link and steal the session back.
@@ -239,6 +237,7 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
         Some("taken-over"),
         "the eviction must be ANNOUNCED before the socket closes, naming its reason"
     );
+    assert_eq!(ws1.closed_reason(), Some("done"), "the daemon closed ws1");
 
     // The taker drives the child: a keystroke round-trips (no cursor answer — the
     // child is past startup on this reattach).
@@ -249,8 +248,8 @@ async fn second_attach_needs_takeover_which_evicts_the_first() {
     http_request(port, "POST", &format!("/api/sessions/close?id={id}")).await;
 }
 
-/// `?id=N&watch=1` (issue #334): a second client reaches a BUSY session as a
-/// reader — no `409`, no eviction — sees the same replay and the same live
+/// `id: N, watch: 1` (issue #334): a second client reaches a BUSY session as a
+/// reader — no refusal, no eviction — sees the same replay and the same live
 /// stream, and its keystrokes and resizes never reach the child. The read half
 /// is what makes "both contexts see the session's output" true; the write half
 /// is what makes a watcher a watcher rather than a second writer.
@@ -259,10 +258,11 @@ async fn a_watcher_reads_but_never_writes() {
     let dir = tempfile::tempdir().unwrap();
     let (port, _shutdown) = start_daemon(dir.path()).await;
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut writer, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting the writer");
+    let mut writer = page::console(
+        port,
+        json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
     writer.send(terminal(b"first\r")).await.unwrap();
     read_until(&mut writer, "GOT:first", true).await;
 
@@ -271,17 +271,15 @@ async fn a_watcher_reads_but_never_writes() {
     let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
     // An unknown id is refused even as a watcher — `watch` maps only `Unknown`.
-    let ghost = format!("ws://127.0.0.1:{port}/ws/session?id={}&watch=1", id + 9999);
-    match tokio_tungstenite::connect_async(&ghost).await {
-        Err(tungstenite::Error::Http(resp)) => assert_eq!(resp.status(), 404),
-        other => panic!("a watch on an unknown id must be 404, got {other:?}"),
-    }
+    refused(
+        port,
+        json!({ "id": id + 9999, "watch": 1 }),
+        "a watch on an unknown id is refused",
+    )
+    .await;
 
-    // The writer still holds the slot, so a plain `?id=` here would be a 409.
-    let watch_url = format!("ws://127.0.0.1:{port}/ws/session?id={id}&watch=1");
-    let (mut watcher, _) = tokio_tungstenite::connect_async(&watch_url)
-        .await
-        .expect("a watch attach must succeed on a BUSY session — never a 409");
+    // The writer still holds the slot, so a plain `id` here would be refused.
+    let mut watcher = page::console(port, json!({ "id": id, "watch": 1 })).await;
     let replay = read_until(&mut watcher, "GOT:first", false).await;
     assert!(
         replay.contains("GOT:first"),
@@ -323,39 +321,37 @@ async fn a_watcher_reads_but_never_writes() {
     writer.send(resize(40, 100)).await.unwrap();
     read_until(&mut writer, "SIZE 100x40", false).await;
 
-    // `watch=1` is dispatched BEFORE the attach branch, so a stray `takeover=1`
+    // `watch: 1` is dispatched BEFORE the attach branch, so a stray `takeover: 1`
     // riding along cannot evict the writer. Swapping that order reds this.
-    let sneaky = format!("ws://127.0.0.1:{port}/ws/session?id={id}&watch=1&takeover=1");
-    let (mut sneak, _) = tokio_tungstenite::connect_async(&sneaky)
-        .await
-        .expect("watch+takeover must still be a watch");
+    let mut sneak = page::console(port, json!({ "id": id, "watch": 1, "takeover": 1 })).await;
     writer.send(terminal(b"still-mine\r")).await.unwrap();
     read_until(&mut writer, "GOT:still-mine", false).await;
+    // The channel was accepted as a watch: it shows the same output.
+    read_until(&mut sneak, "GOT:still-mine", false).await;
     drop(sneak.close(None).await);
 
     // A takeover evicts the WRITER and leaves the watcher untouched: exactly one
     // writer, and watching is not a claim on the slot.
-    let take = format!("ws://127.0.0.1:{port}/ws/session?id={id}&takeover=1");
-    let (mut taker, _) = tokio_tungstenite::connect_async(&take)
-        .await
-        .expect("takeover attach must succeed");
+    let mut taker = page::console(port, json!({ "id": id, "takeover": 1 })).await;
     let (ended, announced) = drain_capturing_announcement(&mut writer, 5).await;
     assert!(ended, "the evicted writer's stream must end");
     assert_eq!(announced.as_deref(), Some("taken-over"));
+    assert_eq!(
+        writer.closed_reason(),
+        Some("done"),
+        "the daemon closed the writer"
+    );
 
     // The evicted incumbent's guard-drop must not clear the TAKER's slot: asked
     // again AFTER the eviction has settled, a plain attach is still refused.
     // (Before the takeover the same probe passes even with the `ptr_eq` guard
     // removed, which is why it is asked here.)
-    let busy_again = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
-    match tokio_tungstenite::connect_async(&busy_again).await {
-        Err(tungstenite::Error::Http(resp)) => assert_eq!(
-            resp.status(),
-            409,
-            "the taker must still hold the slot after the incumbent's guard dropped"
-        ),
-        other => panic!("expected an HTTP 409, got {other:?}"),
-    }
+    refused(
+        port,
+        json!({ "id": id }),
+        "the taker must still hold the slot after the incumbent's guard dropped",
+    )
+    .await;
 
     taker.send(terminal(b"after-takeover\r")).await.unwrap();
     read_until(&mut taker, "GOT:after-takeover", false).await;
@@ -374,6 +370,11 @@ async fn a_watcher_reads_but_never_writes() {
         Some("child-exited"),
         "a watcher is told the session ended, not left on a dead socket"
     );
+    assert_eq!(
+        watcher.closed_reason(),
+        Some("done"),
+        "the daemon closed the watcher"
+    );
 }
 
 /// The SILENT half of the announcement invariant (issue #334): a bridge that
@@ -389,10 +390,11 @@ async fn a_client_close_announces_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (port, _shutdown) = start_daemon(dir.path()).await;
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut writer, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting the writer");
+    let mut writer = page::console(
+        port,
+        json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
     writer.send(terminal(b"first\r")).await.unwrap();
     read_until(&mut writer, "GOT:first", true).await;
 
@@ -400,14 +402,12 @@ async fn a_client_close_announces_nothing() {
     let list: serde_json::Value = serde_json::from_str(&body).unwrap();
     let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
-    let watch_url = format!("ws://127.0.0.1:{port}/ws/session?id={id}&watch=1");
-    let (mut watcher, _) = tokio_tungstenite::connect_async(&watch_url)
-        .await
-        .expect("connecting the watcher");
+    let mut watcher = page::console(port, json!({ "id": id, "watch": 1 })).await;
     read_until(&mut watcher, "GOT:first", false).await;
 
-    // The WRITER goes away on its own. The session lives on (the tmux model), so
-    // nobody was evicted and there is nothing to announce.
+    // The WRITER goes away on its own: it closes its channel and its page
+    // socket. The session lives on (the tmux model), so nobody was evicted and
+    // there is nothing to announce.
     writer.close(None).await.unwrap();
     drop(writer);
 
@@ -436,10 +436,7 @@ async fn a_client_close_announces_nothing() {
     );
 
     // Still live: the slot was released, so a plain reattach succeeds and drives.
-    let back = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
-    let (mut again, _) = tokio_tungstenite::connect_async(&back)
-        .await
-        .expect("the session must have survived its writer's departure");
+    let mut again = page::console(port, json!({ "id": id })).await;
     again.send(terminal(b"still-here\r")).await.unwrap();
     read_until(&mut again, "GOT:still-here", false).await;
 
@@ -454,10 +451,11 @@ async fn daemon_shutdown_is_announced_as_such() {
     let dir = tempfile::tempdir().unwrap();
     let (port, shutdown) = start_daemon(dir.path()).await;
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting the writer");
+    let mut ws = page::console(
+        port,
+        json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
     ws.send(terminal(b"first\r")).await.unwrap();
     read_until(&mut ws, "GOT:first", true).await;
 
@@ -477,31 +475,41 @@ async fn daemon_shutdown_is_announced_as_such() {
     );
 }
 
-/// Expect `url` to be refused at the handshake with `status`.
-async fn refused(url: &str, status: u16, why: &str) {
-    match tokio_tungstenite::connect_async(url).await {
-        Err(tungstenite::Error::Http(resp)) => assert_eq!(resp.status(), status, "{why}"),
-        Ok(_) => panic!("{why}: the attach must NOT succeed"),
-        Err(other) => panic!("{why}: expected an HTTP {status}, got {other:?}"),
-    }
+/// Expect the attach `fields` to be refused: its channel gets no frame (no
+/// `session-open`), then `channel.closed` with reason `refused`.
+async fn refused(port: u16, fields: serde_json::Value, why: &str) {
+    let mut channel = page::console(port, fields).await;
+    let mut frames = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(message) = channel.next().await {
+            match message.expect("the page socket reads") {
+                Message::Binary(bytes) => frames.push(bytes.to_vec()),
+                Message::Close(_) => break,
+                Message::Text(_) | Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{why}: the daemon ends the attach within 10s"));
+    assert!(
+        frames.is_empty(),
+        "{why}: a refused attach sends no frame: {frames:?}"
+    );
+    assert_eq!(channel.closed_reason(), Some("refused"), "{why}");
 }
 
 /// ADR-0051 §9 amendment 2026-09-22: a reattach naming the holder that claimed
 /// the slot reclaims it without `takeover`. The incumbent there is the same
 /// tab's own earlier socket, which a tunnel can keep half-open after a network
 /// change. It is evicted by name, so its bridge ends. Any other client stays
-/// `409`: a different holder, no holder at all, or a slot claimed with none.
+/// refused: a different holder, no holder at all, or a slot claimed with none.
 #[tokio::test]
 async fn a_reattach_as_the_same_holder_reclaims_its_own_slot() {
     let dir = tempfile::tempdir().unwrap();
     let (port, _shutdown) = start_daemon(dir.path()).await;
 
-    let url = format!(
-        "ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude&holder=tab-A"
-    );
-    let (mut ws1, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("launching as tab-A");
+    let launch = json!({ "repo": "owner/workbench", "agent": "claude", "holder": "tab-A" });
+    let mut ws1 = page::console(port, launch).await;
     ws1.send(terminal(b"first\r")).await.unwrap();
     read_until(&mut ws1, "GOT:first", true).await;
 
@@ -509,49 +517,51 @@ async fn a_reattach_as_the_same_holder_reclaims_its_own_slot() {
     let list: serde_json::Value = serde_json::from_str(&body).unwrap();
     let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
 
-    let base = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
-    refused(&base, 409, "a reattach naming no holder is not the holder").await;
     refused(
-        &format!("{base}&holder=tab-B"),
-        409,
+        port,
+        json!({ "id": id }),
+        "a reattach naming no holder is not the holder",
+    )
+    .await;
+    refused(
+        port,
+        json!({ "id": id, "holder": "tab-B" }),
         "another tab is not the holder",
     )
     .await;
     // A malformed holder counts as none, so it cannot pass for tab-A.
     refused(
-        &format!("{base}&holder=tab-A%26"),
-        409,
+        port,
+        json!({ "id": id, "holder": "tab-A&" }),
         "a malformed holder is no holder",
     )
     .await;
 
-    let (mut ws2, _) = tokio_tungstenite::connect_async(&format!("{base}&holder=tab-A"))
-        .await
-        .expect("the launching tab reclaims its own slot without takeover");
+    // The launching tab reclaims its own slot without takeover.
+    let mut ws2 = page::console(port, json!({ "id": id, "holder": "tab-A" })).await;
     let (ended, announced) = drain_capturing_announcement(&mut ws1, 5).await;
     assert!(ended, "the reclaimed socket's bridge must end");
     assert_eq!(announced.as_deref(), Some("taken-over"));
+    assert_eq!(ws1.closed_reason(), Some("done"), "the daemon closed ws1");
     ws2.send(terminal(b"reclaimed\r")).await.unwrap();
     read_until(&mut ws2, "GOT:reclaimed", false).await;
 
     // The reclaim keeps the name: the slot is still tab-A's, and still nobody else's.
     refused(
-        &format!("{base}&holder=tab-B"),
-        409,
+        port,
+        json!({ "id": id, "holder": "tab-B" }),
         "the reclaimed slot is tab-A's",
     )
     .await;
     drop(ws2);
 
     // A slot claimed with NO holder is reclaimable by nobody: `None` never matches.
-    let (mut anon, _) = tokio_tungstenite::connect_async(&base)
-        .await
-        .expect("the freed slot takes a plain reattach");
+    let mut anon = page::console(port, json!({ "id": id })).await;
     anon.send(terminal(b"anon\r")).await.unwrap();
     read_until(&mut anon, "GOT:anon", false).await;
     refused(
-        &format!("{base}&holder=tab-A"),
-        409,
+        port,
+        json!({ "id": id, "holder": "tab-A" }),
         "a holder cannot claim a nameless slot",
     )
     .await;

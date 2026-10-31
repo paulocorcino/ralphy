@@ -1,6 +1,7 @@
-//! `file.upload` over the real `/ws/command` wire (ADR-0036 amendment
-//! 2026-10-19): parts land in `.ralphy/uploads/`, the last part moves the file
-//! to its target, and a worktree is refused like every other Write.
+//! `file.upload` through the `round_trip` helper of `workspace_write.rs`
+//! (ADR-0036 amendment 2026-10-19): parts land in `.ralphy/uploads/`, the
+//! last part moves the file to its target, and a worktree is refused like
+//! every other Write.
 
 use super::workspace_write::{round_trip, serve_repo, serve_worktree_repo};
 
@@ -12,24 +13,24 @@ fn b64(bytes: &[u8]) -> String {
 
 #[tokio::test]
 async fn two_parts_land_one_file_and_a_resend_learns_the_offset() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let part = |offset: u64, data: &[u8]| {
         serde_json::json!({
             "repo": slug, "path": "up.bin", "id": ID,
             "offset": offset, "total": 6, "data": b64(data),
         })
     };
-    let (replies, spawned) = round_trip(&url, 1, "file.upload", part(0, b"abc")).await;
+    let (replies, spawned) = round_trip(port, 1, "file.upload", part(0, b"abc")).await;
     assert_eq!(spawned, 0, "a Write must never spawn");
     assert_eq!(replies[0]["status"], "ok", "{:?}", replies[0]);
     assert_eq!(replies[0]["received"], 3);
     assert!(!root.join("up.bin").exists(), "not before the last part");
 
-    let (replies, _) = round_trip(&url, 2, "file.upload", part(0, b"abc")).await;
+    let (replies, _) = round_trip(port, 2, "file.upload", part(0, b"abc")).await;
     assert_eq!(replies[0]["reason"], "offset", "{:?}", replies[0]);
     assert_eq!(replies[0]["expected"], 3);
 
-    let (replies, _) = round_trip(&url, 3, "file.upload", part(3, b"def")).await;
+    let (replies, _) = round_trip(port, 3, "file.upload", part(3, b"def")).await;
     assert_eq!(replies[0]["status"], "ok", "{:?}", replies[0]);
     assert_eq!(replies[0]["path"], "up.bin");
     assert_eq!(replies[0]["result"], "created");
@@ -39,9 +40,9 @@ async fn two_parts_land_one_file_and_a_resend_learns_the_offset() {
 
 #[tokio::test]
 async fn an_upload_under_a_checkout_is_refused() {
-    let (url, slug, root) = serve_worktree_repo().await;
+    let (port, slug, root) = serve_worktree_repo().await;
     let (replies, _) = round_trip(
-        &url,
+        port,
         1,
         "file.upload",
         serde_json::json!({

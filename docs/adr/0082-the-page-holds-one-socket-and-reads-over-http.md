@@ -108,6 +108,14 @@ daemon serves `/ws/command`, the `/ws/tree` sockets and `/ws/session` until
 the release after D3 ships, so a page loaded before the update keeps working
 until it reloads (ADR-0070 D6).
 
+*Note (2026-10-31, #830):* the daemon no longer serves `/ws/command`,
+`/ws/tree` or `/ws/session`, and there is no grace release. Two limits
+follow. A page of the previous release that is open during the update
+reloads once, because its build ID changes. A peer daemon of the previous
+release must be updated too: the peer protocol is now 5 (ADR-0052), a peer of
+an older version is refused, and `ralphy host` updates a host reached over
+SSH as for every protocol raise.
+
 ## Consequences
 
 - One socket carries all channels on one TCP connection. A lost packet
@@ -165,7 +173,8 @@ until it reloads (ADR-0070 D6).
   delay`, and `wb-daemon.test.mjs` (`the page socket keeps the time its
   handshake took`).
 - D7: not checked by code: manual, reviewed in the PR.
-- D8: not checked by code: manual, reviewed in the PR.
+- D8: done in #830: the daemon no longer serves `/ws/command`, `/ws/tree` or
+  `/ws/session`.
 
 ## Amendment (2026-10-30): the channel wire
 

@@ -1,10 +1,11 @@
-//! The query a daemon relays to a peer for a console launch or a reattach.
+//! The console open a daemon relays to a peer for a launch or a reattach.
 
 use super::*;
+use serde_json::json;
 
 /// The peer relay forwards the checkout on the LAUNCH shape only; a reattach
-/// names a record the peer already owns, and the no-checkout launch stays
-/// byte-identical for an older peer.
+/// names a record the peer already owns, and a launch with no checkout sends
+/// no `checkout` key.
 #[test]
 fn peer_session_query_forwards_the_checkout_only_when_present() {
     let launch = |checkout: Option<&str>| SessionQuery {
@@ -14,20 +15,20 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         ..SessionQuery::default()
     };
     assert_eq!(
-        peer_session_query(&launch(Some("wt-a")), "owner/repo"),
-        "repo=owner%2Frepo&agent=claude&checkout=wt-a"
+        peer_session_open(&launch(Some("wt-a")), "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude", "checkout": "wt-a"})
     );
     assert_eq!(
-        peer_session_query(&launch(None), "owner/repo"),
-        "repo=owner%2Frepo&agent=claude"
+        peer_session_open(&launch(None), "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude"})
     );
     let reattach = SessionQuery {
         id: Some(7),
         ..launch(Some("wt-a"))
     };
     assert_eq!(
-        peer_session_query(&reattach, "owner/repo"),
-        "id=7&repo=owner%2Frepo"
+        peer_session_open(&reattach, "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo"})
     );
 }
 
@@ -43,24 +44,24 @@ fn peer_session_query_forwards_a_console_launch() {
         ..SessionQuery::default()
     };
     assert_eq!(
-        peer_session_query(&console(Some(" htop ")), "owner/repo"),
-        "console=1&repo=owner%2Frepo&command=htop&holder=tab-1"
+        peer_session_open(&console(Some(" htop ")), "owner/repo"),
+        json!({"console": 1, "repo": "owner/repo", "command": "htop", "holder": "tab-1"})
     );
     assert_eq!(
-        peer_session_query(
+        peer_session_open(
             &SessionQuery {
                 holder: None,
                 ..console(None)
             },
             "owner/repo"
         ),
-        "console=1&repo=owner%2Frepo"
+        json!({"console": 1, "repo": "owner/repo"})
     );
 }
 
 /// The owning daemon keeps the writer slot, so the relay forwards the tab's
 /// holder on a launch and on a reattach — and drops a malformed one rather
-/// than splicing it into the peer's query string.
+/// than passing it on to the peer.
 #[test]
 fn peer_session_query_forwards_a_well_formed_holder() {
     let reattach = |holder: &str| SessionQuery {
@@ -70,8 +71,8 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         ..SessionQuery::default()
     };
     assert_eq!(
-        peer_session_query(&reattach("tab-1_A"), "owner/repo"),
-        "id=7&repo=owner%2Frepo&holder=tab-1_A"
+        peer_session_open(&reattach("tab-1_A"), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "holder": "tab-1_A"})
     );
     let launch = SessionQuery {
         id: None,
@@ -79,13 +80,13 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         ..reattach("tab-1_A")
     };
     assert_eq!(
-        peer_session_query(&launch, "owner/repo"),
-        "repo=owner%2Frepo&agent=claude&holder=tab-1_A"
+        peer_session_open(&launch, "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude", "holder": "tab-1_A"})
     );
     for bad in ["", "a&takeover=1", &"x".repeat(65)] {
         assert_eq!(
-            peer_session_query(&reattach(bad), "owner/repo"),
-            "id=7&repo=owner%2Frepo",
+            peer_session_open(&reattach(bad), "owner/repo"),
+            json!({"id": 7, "repo": "owner/repo"}),
             "{bad:?} is not a holder"
         );
     }
@@ -93,7 +94,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
 
 /// The relay forwards the console name on a LAUNCH only: the owning daemon
 /// folds it. A reattach names a session that already has its name, and an
-/// empty name leaves the query byte-identical for an older peer.
+/// empty name sends no `name` key.
 #[test]
 fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
     let launch = |name: Option<String>| SessionQuery {
@@ -116,33 +117,30 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
         net_down: None,
     };
     assert_eq!(
-        peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
-        "repo=owner%2Frepo&agent=claude&name=fincal%20%231"
+        peer_session_open(&launch(Some("fincal #1".into())), "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude", "name": "fincal #1"})
     );
     for none in [None, Some(String::new())] {
         assert_eq!(
-            peer_session_query(&launch(none), "owner/repo"),
-            "repo=owner%2Frepo&agent=claude"
+            peer_session_open(&launch(none), "owner/repo"),
+            json!({"repo": "owner/repo", "agent": "claude"})
         );
     }
-    let long = peer_session_query(&launch(Some("é".repeat(41))), "owner/repo");
-    assert!(long.ends_with(&format!(
-        "&name={}",
-        crate::routes::encode_query_value(&"é".repeat(40))
-    )));
+    let long = peer_session_open(&launch(Some("é".repeat(41))), "owner/repo");
+    assert_eq!(long["name"], "é".repeat(40));
     let reattach = SessionQuery {
         id: Some(7),
         ..launch(Some("fincal #1".into()))
     };
     assert_eq!(
-        peer_session_query(&reattach, "owner/repo"),
-        "id=7&repo=owner%2Frepo"
+        peer_session_open(&reattach, "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo"})
     );
 }
 
 /// The relay forwards the window record on a LAUNCH only, so the owning
 /// daemon keeps one session per record; a reattach names its session already,
-/// and a malformed record is dropped rather than spliced into the query.
+/// and a malformed record is dropped rather than passed on.
 #[test]
 fn peer_session_query_forwards_the_record_on_a_launch_only() {
     let console = |record: &str| SessionQuery {
@@ -152,8 +150,8 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
         ..SessionQuery::default()
     };
     assert_eq!(
-        peer_session_query(&console("w-a_1"), "owner/repo"),
-        "console=1&repo=owner%2Frepo&record=w-a_1"
+        peer_session_open(&console("w-a_1"), "owner/repo"),
+        json!({"console": 1, "repo": "owner/repo", "record": "w-a_1"})
     );
     let agent = SessionQuery {
         console: None,
@@ -161,28 +159,28 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
         ..console("w-a_1")
     };
     assert_eq!(
-        peer_session_query(&agent, "owner/repo"),
-        "repo=owner%2Frepo&agent=claude&record=w-a_1"
+        peer_session_open(&agent, "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude", "record": "w-a_1"})
     );
     let reattach = SessionQuery {
         id: Some(7),
         ..console("w-a_1")
     };
     assert_eq!(
-        peer_session_query(&reattach, "owner/repo"),
-        "id=7&repo=owner%2Frepo"
+        peer_session_open(&reattach, "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo"})
     );
     for bad in ["", "w&takeover=1", &"x".repeat(65)] {
         assert_eq!(
-            peer_session_query(&console(bad), "owner/repo"),
-            "console=1&repo=owner%2Frepo",
+            peer_session_open(&console(bad), "owner/repo"),
+            json!({"console": 1, "repo": "owner/repo"}),
             "{bad:?} is not a record"
         );
     }
 }
 
 /// The daemon that hosts the session compresses the replay, so the relay
-/// forwards `gzip=1` on every shape, and nothing when the page did not ask.
+/// forwards `gzip: 1` on every shape, and nothing when the page did not ask.
 #[test]
 fn peer_session_query_forwards_gzip_on_every_shape() {
     let launch = |gzip: Option<u32>| SessionQuery {
@@ -205,8 +203,8 @@ fn peer_session_query_forwards_gzip_on_every_shape() {
         net_down: None,
     };
     assert_eq!(
-        peer_session_query(&launch(Some(1)), "owner/repo"),
-        "repo=owner%2Frepo&agent=claude&gzip=1"
+        peer_session_open(&launch(Some(1)), "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude", "gzip": 1})
     );
     let watch = |gzip| SessionQuery {
         id: Some(7),
@@ -214,8 +212,8 @@ fn peer_session_query_forwards_gzip_on_every_shape() {
         ..launch(gzip)
     };
     assert_eq!(
-        peer_session_query(&watch(Some(1)), "owner/repo"),
-        "id=7&repo=owner%2Frepo&watch=1&gzip=1"
+        peer_session_open(&watch(Some(1)), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "watch": 1, "gzip": 1})
     );
     let console = SessionQuery {
         console: Some(1),
@@ -223,16 +221,16 @@ fn peer_session_query_forwards_gzip_on_every_shape() {
         ..launch(Some(1))
     };
     assert_eq!(
-        peer_session_query(&console, "owner/repo"),
-        "console=1&repo=owner%2Frepo&gzip=1"
+        peer_session_open(&console, "owner/repo"),
+        json!({"console": 1, "repo": "owner/repo", "gzip": 1})
     );
     assert_eq!(
-        peer_session_query(&watch(None), "owner/repo"),
-        "id=7&repo=owner%2Frepo&watch=1"
+        peer_session_open(&watch(None), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "watch": 1})
     );
     assert_eq!(
-        peer_session_query(&watch(Some(0)), "owner/repo"),
-        "id=7&repo=owner%2Frepo&watch=1",
+        peer_session_open(&watch(Some(0)), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "watch": 1}),
         "only `1` asks"
     );
 }
@@ -250,8 +248,8 @@ fn peer_session_query_forwards_the_attempt_with_the_holder() {
         ..SessionQuery::default()
     };
     assert_eq!(
-        peer_session_query(&reattach(Some("tab-A")), "owner/repo"),
-        "id=7&repo=owner%2Frepo&holder=tab-A&attempt=12"
+        peer_session_open(&reattach(Some("tab-A")), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "holder": "tab-A", "attempt": 12})
     );
     let launch = SessionQuery {
         id: None,
@@ -259,20 +257,20 @@ fn peer_session_query_forwards_the_attempt_with_the_holder() {
         ..reattach(Some("tab-A"))
     };
     assert_eq!(
-        peer_session_query(&launch, "owner/repo"),
-        "repo=owner%2Frepo&agent=claude&holder=tab-A&attempt=12"
+        peer_session_open(&launch, "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude", "holder": "tab-A", "attempt": 12})
     );
     let console = SessionQuery {
         console: Some(1),
         ..launch
     };
     assert_eq!(
-        peer_session_query(&console, "owner/repo"),
-        "console=1&repo=owner%2Frepo&holder=tab-A&attempt=12"
+        peer_session_open(&console, "owner/repo"),
+        json!({"console": 1, "repo": "owner/repo", "holder": "tab-A", "attempt": 12})
     );
     assert_eq!(
-        peer_session_query(&reattach(None), "owner/repo"),
-        "id=7&repo=owner%2Frepo",
+        peer_session_open(&reattach(None), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo"}),
         "no holder, no attempt"
     );
 }
@@ -302,20 +300,20 @@ fn peer_session_query_forwards_since_on_a_reattach() {
         net_down: None,
     };
     assert_eq!(
-        peer_session_query(&reattach(None), "owner/repo"),
-        "id=7&repo=owner%2Frepo&since=4096"
+        peer_session_open(&reattach(None), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "since": 4096})
     );
     assert_eq!(
-        peer_session_query(&reattach(Some(1)), "owner/repo"),
-        "id=7&repo=owner%2Frepo&watch=1&since=4096"
+        peer_session_open(&reattach(Some(1)), "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "watch": 1, "since": 4096})
     );
     let at_zero = SessionQuery {
         since: Some(0),
         ..reattach(None)
     };
     assert_eq!(
-        peer_session_query(&at_zero, "owner/repo"),
-        "id=7&repo=owner%2Frepo&since=0",
+        peer_session_open(&at_zero, "owner/repo"),
+        json!({"id": 7, "repo": "owner/repo", "since": 0}),
         "a terminal that shows no byte yet resumes at 0"
     );
     let launch = SessionQuery {
@@ -324,8 +322,8 @@ fn peer_session_query_forwards_since_on_a_reattach() {
         ..reattach(None)
     };
     assert_eq!(
-        peer_session_query(&launch, "owner/repo"),
-        "repo=owner%2Frepo&agent=claude"
+        peer_session_open(&launch, "owner/repo"),
+        json!({"repo": "owner/repo", "agent": "claude"})
     );
 }
 

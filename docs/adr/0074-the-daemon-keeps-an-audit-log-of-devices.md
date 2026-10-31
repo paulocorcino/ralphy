@@ -130,7 +130,8 @@ between tabs. Its source is `client`. A record that knows only the holder
 joins to a device through the `device_facts` line of that tab.
 
 **D12. A command-socket verb that changes state is a `command` line.** The
-command socket (`/ws/command`) and its peer form (`POST /api/peer/command`)
+command route (`POST /api/command`), the spawn channel of the page
+socket `/ws` and the peer form (`POST /api/peer/command`)
 carry most of the changes to a project: branch, commit, push, discard, file
 writes, a run. A verb records a line when its effect class (ADR-0036 §2) is
 Mutate, Write or Spawn, so a new verb is recorded without a list to keep. A
@@ -217,8 +218,8 @@ the browser's device, and one line on the peer with the actor `bearer`
 
 ## Amendment 2026-10-05 — console launches and take-overs
 
-This changes D4. A console socket (`/ws/session`) starts a shell or an
-agent, the same effect as a `run` on the command socket (D12), and D4 did
+This changes D4. A console channel of the page socket `/ws` starts a shell or an
+agent, the same effect as a `run` verb (D12), and D4 did
 not record it. Two events are added:
 
 - **`console_launch`**: an upgrade that spawned a new session on this

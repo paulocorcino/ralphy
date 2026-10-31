@@ -75,11 +75,7 @@ async fn the_bearer_policy_admits_only_the_right_token() {
 #[tokio::test]
 async fn session_policy_login_flow() {
     // 1. No cookie / no bearer → every DATA endpoint is 401.
-    for uri in [
-        "/api/identity",
-        "/ws/session?repo=x&agent=claude",
-        "/ws/command",
-    ] {
+    for uri in ["/api/identity", "/ws"] {
         let resp = session_router("tok")
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await

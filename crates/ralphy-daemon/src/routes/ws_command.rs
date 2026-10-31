@@ -1,15 +1,11 @@
-//! `/ws/command`: the verb socket — spawn-and-stream, spawn-and-collect and
+//! The verbs of the daemon, as the `spawn` channel of the page socket and
+//! `POST /api/command` serve them: spawn-and-stream, spawn-and-collect and
 //! the Observe verbs, or the relay of a verb to the owning peer (ADR-0036).
 
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::routing::get;
-use axum::Router;
-use futures_util::{SinkExt, StreamExt};
 
 mod host;
 mod oneshot;
@@ -26,12 +22,10 @@ pub(crate) use wire::Wire;
 
 use super::audit_layer::SocketAudit;
 use super::{read_peer_store, send_command_on};
-use super::{request_may_carry_a_secret, RouterShared};
-use crate::mux::Out;
 use crate::protocol::{Command, Frame};
 use crate::{dispatch, fleet, peer, protocol, registry, session};
 
-/// What the command socket needs to answer a one-reply command.
+/// What serving a command needs: the stores, this daemon and its consoles.
 pub(crate) struct CommandCtx {
     pub(crate) registry_path: PathBuf,
     pub(crate) peers_dir: PathBuf,
@@ -137,31 +131,14 @@ fn for_peer(cmd: &Command, slug: &str) -> Command {
     proxied
 }
 
-/// `GET /ws/command`: one remote command per connection. Read the first frame; a
-/// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
-/// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
-/// pid), a stream of live output (`status:"output"` + `chunk`, issue #180), then
-/// the child's exit (`status:"exited"` + code). An unknown verb or an unregistered
-/// repo gets one `status:"error"` frame and spawns nothing. A one-reply verb is
-/// answered by [`answer_one`]. The run keeps its own lifecycle: see the teardown
-/// invariant on [`stream::stream_child`].
-pub(crate) async fn command_ws(
-    mut socket: WebSocket,
-    ctx: CommandCtx,
-    shutdown: tokio::sync::watch::Receiver<bool>,
-    run_exits: tokio::sync::broadcast::Sender<String>,
-    bound_port: u16,
-    who: SocketAudit,
-) {
-    let Some(cmd) = read_first_command(&mut socket).await else {
-        return;
-    };
-    let mut wire = Wire::start(socket, shutdown);
-    serve_command(&mut wire, cmd, ctx, run_exits, bound_port, who).await;
-    wire.finish().await;
-}
-
-/// Answer `cmd` on `wire`; every path returns to the caller, which closes.
+/// Answer `cmd` on `wire`. A Spawn verb for a registered repo spawns the run
+/// and reports its lifecycle: an ack (`status:"spawned"` + pid), the live
+/// output (`status:"output"` + `chunk`, issue #180), then the child's exit
+/// (`status:"exited"` + code). An unknown verb or an unregistered repo gets
+/// one `status:"error"` frame and spawns nothing. A one-reply verb is
+/// answered by [`answer_one`]. The run keeps its own lifecycle: see the
+/// teardown invariant on [`stream::stream_child`]. Every path returns to the
+/// caller, which closes.
 pub(crate) async fn serve_command(
     wire: &mut Wire,
     cmd: Command,
@@ -209,7 +186,7 @@ pub(crate) async fn serve_command(
     // The run-completion nudge (#310) rides on the child's exit, which
     // `stream_child` observes on every path the daemon outlives (a run that
     // outlives the process has no nudge to send — the browser's reconnect
-    // catch-up read covers that one). A send with no `/ws/tree` subscriber is
+    // catch-up read covers that one). A send with no `changes` channel to hear it is
     // `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
     stream::stream_child(wire, cmd.id, &cmd.verb, child, move || {
         #[expect(
@@ -219,43 +196,6 @@ pub(crate) async fn serve_command(
         let _ = run_exits.send(slug);
     })
     .await;
-}
-
-/// The first frame of a command socket, as a command.
-///
-/// First frame or nothing: a client that opens and hangs up spawns nothing.
-/// A frame that is refused (too big for the socket's limits, not binary,
-/// undecodable) drops the connection without a reply — the browser then
-/// reports only "closed before a reply", so the reason is logged HERE, the
-/// one place that knows it.
-async fn read_first_command(socket: &mut WebSocket) -> Option<Command> {
-    let bytes = match socket.recv().await {
-        Some(Ok(Message::Binary(bytes))) => bytes,
-        Some(Ok(Message::Close(_))) | None => return None,
-        Some(Ok(_)) => {
-            tracing::warn!("command socket: first frame is not binary; dropping");
-            return None;
-        }
-        Some(Err(e)) => {
-            tracing::warn!(error = %e, "command socket: could not read the first frame");
-            return None;
-        }
-    };
-    match protocol::decode(&bytes) {
-        Ok(Frame::Command(cmd)) => Some(cmd),
-        Ok(_) => {
-            tracing::warn!("command socket: first frame is not a command; dropping");
-            None
-        }
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                bytes = bytes.len(),
-                "command socket: undecodable first frame"
-            );
-            None
-        }
-    }
 }
 
 /// The reply to a registry verb. A registry verb names a daemon, not a repo:
@@ -367,126 +307,88 @@ async fn relay_to_peer(peer: &peer::PeerDescriptor, command: &Command) -> serde_
     }
 }
 
+/// Relay a Spawn verb to the peer that owns its repo, over a `spawn`
+/// channel of the peer's page socket. Each whole frame of the peer goes to
+/// the browser; the relay ends after the terminal reply to the command, when
+/// the browser leaves, or with one error reply when the peer ends first.
 pub(crate) async fn proxy_peer_command(
     browser: &mut Wire,
     descriptor: &peer::PeerDescriptor,
     command: Command,
     me: peer::client::SelfRef<'_>,
 ) {
-    let Some(mut peer_socket) = open_peer(browser, descriptor, &command, me).await else {
+    let Some(mut channel) = open_peer(browser, descriptor, &command, me).await else {
         return;
     };
-
     loop {
         tokio::select! {
             () = browser.gone() => break,
-            incoming = peer_socket.next() => {
-                let Some(Ok(message)) = incoming else {
-                    browser
-                        .reply(
-                            command.id,
-                            &command.verb,
-                            serde_json::json!({
-                                "status": "error",
-                                "message": fleet::peer_unreachable(
-                                    descriptor,
-                                    "the peer command socket closed before a terminal frame"
-                                ),
-                            }),
-                        )
-                        .await;
-                    break;
-                };
-                if forward_peer_message(browser, message, command.id).await.is_break() {
+            event = channel.next() => {
+                if relay_event(browser, descriptor, &command, event).await.is_break() {
                     break;
                 }
             }
         }
     }
+    channel.close().await;
 }
 
-/// Open the peer's command socket and send it `command`. `None` once the
-/// browser has the one error frame that says why it failed.
+/// Pass one event of the peer's channel to the browser. `Break` when the
+/// browser did not take a frame, after the terminal reply to `command`, or
+/// once the browser has the error reply for a peer that ended first.
+async fn relay_event(
+    browser: &Wire,
+    descriptor: &peer::PeerDescriptor,
+    command: &Command,
+    event: peer::client::PeerEvent,
+) -> ControlFlow<()> {
+    match event {
+        peer::client::PeerEvent::Frame(inner) => {
+            let terminal = is_terminal_reply(&inner, command.id);
+            if browser.out.send(inner).await.is_err() || terminal {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        }
+        peer::client::PeerEvent::Closed { .. } | peer::client::PeerEvent::Gone => {
+            let reply = serde_json::json!({
+                "status": "error",
+                "message": fleet::peer_unreachable(
+                    descriptor,
+                    "the peer command socket closed before a terminal frame"
+                ),
+            });
+            browser.reply(command.id, &command.verb, reply).await;
+            ControlFlow::Break(())
+        }
+    }
+}
+
+/// Open a `spawn` channel on the peer's page socket, with `command` in the
+/// open. `None` once the browser has the one error frame that says why it
+/// failed.
 async fn open_peer(
     browser: &Wire,
     descriptor: &peer::PeerDescriptor,
     command: &Command,
     me: peer::client::SelfRef<'_>,
-) -> Option<peer::client::PeerSocket> {
-    let mut peer_socket = match peer::client::command(descriptor, me).await {
-        Ok(socket) => socket,
-        Err(peer::client::SocketError::Peer(status)) => {
-            let reply = serde_json::json!({
-                "status": "error",
-                "message": status.diagnosis(&descriptor.environment),
-            });
-            browser.reply(command.id, &command.verb, reply).await;
-            return None;
-        }
+) -> Option<peer::client::PeerChannel> {
+    let fields = serde_json::json!({ "command": command });
+    let message = match peer::client::open_channel(descriptor, me, "spawn", fields).await {
+        Ok(channel) => return Some(channel),
+        Err(peer::client::SocketError::Peer(status)) => status.diagnosis(&descriptor.environment),
         Err(peer::client::SocketError::Http { status, body }) => {
             let detail = if body.trim().is_empty() {
                 format!("peer command upgrade answered HTTP {status}")
             } else {
                 body
             };
-            let reply = serde_json::json!({
-                "status": "error",
-                "message": fleet::peer_unreachable(descriptor, &detail),
-            });
-            browser.reply(command.id, &command.verb, reply).await;
-            return None;
+            fleet::peer_unreachable(descriptor, &detail)
         }
     };
-    if peer_socket
-        .send(tokio_tungstenite::tungstenite::Message::Binary(
-            protocol::encode(&Frame::Command(command.clone())).into(),
-        ))
-        .await
-        .is_err()
-    {
-        let reply = serde_json::json!({
-            "status": "error",
-            "message": fleet::peer_unreachable(
-                descriptor,
-                "the peer command socket closed before accepting the command"
-            ),
-        });
-        browser.reply(command.id, &command.verb, reply).await;
-        return None;
-    }
-    Some(peer_socket)
-}
-
-/// Forward one peer frame to the browser. `Break` when the browser did not
-/// take it, or after the terminal reply to command `id`.
-async fn forward_peer_message(
-    browser: &Wire,
-    message: tokio_tungstenite::tungstenite::Message,
-    id: u64,
-) -> ControlFlow<()> {
-    let sent = match message {
-        tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
-            let terminal = is_terminal_reply(&bytes, id);
-            if browser.out.send(Vec::from(bytes)).await.is_err() || terminal {
-                return ControlFlow::Break(());
-            }
-            return ControlFlow::Continue(());
-        }
-        tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
-            browser.out.put(Out::Ping(Vec::from(bytes))).await
-        }
-        tokio_tungstenite::tungstenite::Message::Pong(bytes) => {
-            browser.out.put(Out::Pong(Vec::from(bytes))).await
-        }
-        tokio_tungstenite::tungstenite::Message::Close(_)
-        | tokio_tungstenite::tungstenite::Message::Text(_)
-        | tokio_tungstenite::tungstenite::Message::Frame(_) => return ControlFlow::Continue(()),
-    };
-    if sent.is_err() {
-        ControlFlow::Break(())
-    } else {
-        ControlFlow::Continue(())
-    }
+    let reply = serde_json::json!({ "status": "error", "message": message });
+    browser.reply(command.id, &command.verb, reply).await;
+    None
 }
 
 /// Whether `bytes` is the reply that ends command `id`: its `exited` or
@@ -500,50 +402,5 @@ fn is_terminal_reply(bytes: &[u8], id: u64) -> bool {
                     reply.payload.get("status").and_then(|value| value.as_str()),
                     Some("exited" | "error")
                 )
-    )
-}
-
-/// `/ws/command`: the command socket.
-pub(crate) fn command_routes(s: &RouterShared) -> Router {
-    let registry = s.registry_path.clone();
-    let peers = s.peers_dir.clone();
-    // A dispatched run must survive daemon shutdown (inverse of the session
-    // invariant), but the handler still watches `shutdown` to stop serving the
-    // socket — it just never kills the child.
-    let shutdown = s.shutdown.clone();
-    // The daemon identity a dispatched child inherits as RALPHY_DAEMON_ID (#168).
-    // Only the dispatch path passes it; session/console children get none.
-    let daemon_id = s.daemon_id.clone();
-    let run_exits = s.run_exits.clone();
-    let bound_port = s.bound_port;
-    let sessions = s.sessions.clone();
-    let audit = s.audit.clone();
-    Router::new().route(
-        "/ws/command",
-        get(
-            move |ws: WebSocketUpgrade,
-                  caller: Option<axum::Extension<super::audit_layer::Caller>>,
-                  headers: axum::http::HeaderMap| {
-                let ws = ws
-                    .max_message_size(crate::tree::MAX_COMMAND_BYTES)
-                    .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-                let secret_ok = request_may_carry_a_secret(&headers);
-                let who = SocketAudit::of(audit.clone(), caller);
-                let ctx = CommandCtx {
-                    registry_path: registry.clone(),
-                    peers_dir: peers.clone(),
-                    daemon_id: daemon_id.clone(),
-                    sessions: sessions.clone(),
-                    secret_ok,
-                };
-                let shutdown = shutdown.clone();
-                let run_exits = run_exits.clone();
-                async move {
-                    ws.on_upgrade(move |socket| {
-                        command_ws(socket, ctx, shutdown, run_exits, bound_port, who)
-                    })
-                }
-            },
-        ),
     )
 }

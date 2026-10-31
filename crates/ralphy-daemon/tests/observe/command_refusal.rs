@@ -1,15 +1,17 @@
 //! A malformed run is refused, not spawned (issue #191; ADR-0036 §1): a `run`
 //! command with an out-of-enum `agent` yields exactly one `status:"error"` frame
 //! and NO `status:"spawned"` — the closed-enum validation of `spawn_argv` fails
-//! before any child is launched. Sets NO env and never spawns, so it is race-free
+//! before any child is launched. The command goes over a `spawn` channel of the
+//! page socket `/ws`. Sets NO env and never spawns, so it is race-free
 //! against the env-setting suites.
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page;
 
 #[tokio::test]
 async fn malformed_run_is_refused_without_spawning() {
@@ -36,10 +38,7 @@ async fn malformed_run_is_refused_without_spawning() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
 
     // `agent:"bogus"` is out of the closed enum → refusal, no spawn.
     ws.send(Message::Binary(
@@ -56,8 +55,8 @@ async fn malformed_run_is_refused_without_spawning() {
     let (errors, spawned) = tokio::time::timeout(Duration::from_secs(10), async {
         let mut errors = 0usize;
         let mut spawned = 0usize;
-        // The handler sends the refusal then returns (dropping the socket); read
-        // until the server closes or the stream ends.
+        // The handler sends the refusal then ends the channel; read until the
+        // channel closes.
         while let Some(msg) = ws.next().await {
             let bytes = match msg {
                 Ok(Message::Binary(b)) => b,
@@ -75,7 +74,7 @@ async fn malformed_run_is_refused_without_spawning() {
         (errors, spawned)
     })
     .await
-    .expect("the refusal must arrive and the socket close within 10s");
+    .expect("the refusal must arrive and the channel close within 10s");
 
     assert_eq!(errors, 1, "exactly one error frame");
     assert_eq!(spawned, 0, "a malformed run must never spawn");
