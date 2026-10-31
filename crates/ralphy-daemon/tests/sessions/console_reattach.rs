@@ -1,21 +1,20 @@
 //! Reattach/close parity for console-kind sessions (issue #193): the tmux
 //! model proven for agent sessions by `session_persistence.rs` must hold
-//! identically for a `console=1` session. A client launches a console
-//! session, types a marker, drops its socket, then reattaches by id — the
+//! identically for a `console: 1` session. A page socket opens a `console`
+//! channel that launches the session, types a marker, drops its socket, then a
+//! new page socket reattaches by id — the
 //! REPLAYED scrollback must carry the marker, live streaming must resume,
 //! and close must remove it from `GET /api/sessions`.
 
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
 
-type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
 /// Encode a terminal keystroke frame the way the browser would.
 fn terminal(data: &[u8]) -> Message {
@@ -100,16 +99,29 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
     (status, body)
 }
 
-/// Reattach by id, retrying briefly on a `409`: a just-dropped socket's server
-/// bridge clears the single-writer slot a hair after the client observes the
-/// close, so an immediate reattach can race it. A browser would retry the same way.
+/// Reattach by id on a new page socket, retrying briefly while the daemon
+/// refuses: a just-dropped socket's server bridge clears the single-writer slot
+/// a hair after the client observes the close, so an immediate reattach can race
+/// it. A browser would retry the same way. An accepted reattach opens with
+/// `session-open`, which is read here; a refused one ends the channel with no
+/// frame.
 async fn reattach(port: u16, id: u64) -> Ws {
-    let url = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
     for _ in 0..40 {
-        match tokio_tungstenite::connect_async(&url).await {
-            Ok((ws, _)) => return ws,
-            Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+        let mut channel = page::console(port, serde_json::json!({ "id": id })).await;
+        while let Some(Ok(message)) = channel.next().await {
+            if let Message::Binary(bytes) = message {
+                let open = protocol::decode(&bytes).expect("a well-formed frame");
+                assert!(
+                    matches!(&open, Frame::Command(c) if c.verb == "session-open"),
+                    "the first frame of a reattach is session-open: {open:?}"
+                );
+                return channel;
+            }
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
         }
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!("reattach to session {id} never succeeded within 2s");
 }
@@ -143,10 +155,11 @@ async fn console_session_reattaches_with_scrollback_then_closes() {
 
     // ws1: launch a console session, type a marker, read it echoed, then DROP
     // the socket.
-    let url = format!("ws://127.0.0.1:{port}/ws/session?console=1&repo=owner%2Fconsole-repo");
-    let (mut ws1, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/session");
+    let mut ws1 = page::console(
+        port,
+        serde_json::json!({ "console": 1, "repo": "owner/console-repo" }),
+    )
+    .await;
     ws1.send(terminal(b"console-marker\r")).await.unwrap();
     read_until(&mut ws1, "GOT:console-marker", true).await;
     ws1.close(None).await.unwrap();

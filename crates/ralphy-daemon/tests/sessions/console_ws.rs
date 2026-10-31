@@ -1,7 +1,7 @@
-//! Free-console session over a real loopback WebSocket (issue #167): a client
-//! connects to `/ws/session?console=1&repo=<slug>` (the console's program
-//! overridden to the helper bin), types a line, and reads it echoed back
-//! through the codec + PTY — proving the WS → codec → PTY → child path AND
+//! Free-console session over a real loopback WebSocket (issue #167): a page
+//! socket opens a `console` channel with `console: 1` and `repo` (the console's
+//! program overridden to the helper bin), types a line, and reads it echoed back
+//! through the codec + PTY — proving the channel → codec → PTY → child path AND
 //! that the child was spawned in the CHOSEN repo's directory (the helper's
 //! startup `CWD:` line). Then it asserts `GET /api/sessions` lists the session
 //! with `kind: "console"` (distinct from the curated agent path's `"agent"`,
@@ -9,12 +9,13 @@
 
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page;
 
 /// Encode a terminal keystroke frame the way the browser would.
 fn terminal(data: &[u8]) -> Message {
@@ -88,10 +89,11 @@ async fn console_ws_spawns_shell_in_chosen_repo_and_lists_as_console_kind() {
         axum::serve(listener, app).await.unwrap();
     });
 
-    let url = format!("ws://127.0.0.1:{port}/ws/session?console=1&repo=owner%2Fconsole-repo");
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/session");
+    let mut ws = page::console(
+        port,
+        serde_json::json!({ "console": 1, "repo": "owner/console-repo" }),
+    )
+    .await;
 
     // Type a line and read until the child echoes it, along the way answering
     // the ConPTY startup cursor-position request (xterm.js's role in prod) and

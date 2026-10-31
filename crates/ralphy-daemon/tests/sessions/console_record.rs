@@ -5,14 +5,12 @@
 
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
 
-type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
 /// A daemon over a registry holding one project, on a free loopback port.
 async fn daemon(dir: &std::path::Path) -> u16 {
@@ -52,12 +50,16 @@ async fn daemon(dir: &std::path::Path) -> u16 {
 /// Launch a free console for `record` as `holder`, and return the socket with
 /// the payload of its `session-open`.
 async fn launch(port: u16, record: &str, holder: &str) -> (Ws, serde_json::Value) {
-    let url = format!(
-        "ws://127.0.0.1:{port}/ws/session?console=1&repo=owner%2Frecord-repo&record={record}&holder={holder}"
-    );
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/session");
+    let mut ws = page::console(
+        port,
+        serde_json::json!({
+            "console": 1,
+            "repo": "owner/record-repo",
+            "record": record,
+            "holder": holder,
+        }),
+    )
+    .await;
     let open = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = ws.next().await {
             let Ok(Message::Binary(bytes)) = msg else {

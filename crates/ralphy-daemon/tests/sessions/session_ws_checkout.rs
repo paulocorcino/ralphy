@@ -1,6 +1,6 @@
 //! ADR-0063 §3 over the workbench's interactive launch (issue #408): a NEW
-//! console opens INSIDE the checkout the picker selected. `/ws/session?repo=…
-//! &agent=…&checkout=<name>` resolves the name against the primary's
+//! console opens INSIDE the checkout the picker selected. A `console` channel
+//! opened with `repo`, `agent` and `checkout` resolves the name against the primary's
 //! `.ralphy/worktrees/` with the same resolver and confinement every git-backed
 //! verb uses, spawns the child with the worktree as `cwd`, and announces the
 //! name on `session-open` — on launch AND on a reattach, from the record — and
@@ -8,7 +8,7 @@
 //! write (the Cursor gate) or spawn; no key is the primary tree, byte-identical
 //! to today.
 //!
-//! Every leg runs against ONE live loopback daemon, each on its own socket, so
+//! Every leg runs against ONE live loopback daemon, each on its own page socket, so
 //! the "no session row" and "no file written" claims are about the SERVING
 //! router's own state. The cwd is read off the CHILD (`CWD:` line), not the
 //! spec — a regression that resolved the name but spawned at the root would
@@ -17,15 +17,13 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
 
-type Ws =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
 fn terminal(data: &[u8]) -> Message {
     Message::Binary(
@@ -164,14 +162,15 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    let base = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fwtlab");
+    let repo = "owner/wtlab";
 
     // --- (a) a claude console with `checkout=wt-a` runs IN the worktree and
     // announces the name.
-    let (mut ws_a, _) =
-        tokio_tungstenite::connect_async(format!("{base}&agent=claude&checkout=wt-a"))
-            .await
-            .expect("a known checkout must upgrade");
+    let mut ws_a = page::console(
+        port,
+        serde_json::json!({ "repo": repo, "agent": "claude", "checkout": "wt-a" }),
+    )
+    .await;
     let (text, open) = read_until(&mut ws_a, "READY").await;
     let open = open.expect("session-open precedes the first terminal byte");
     assert_eq!(
@@ -190,7 +189,11 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     let id_a = open["session"].as_u64().expect("a numeric session id");
 
     // --- (b) an unknown name is refused and leaves no session row.
-    let refusal = super::refused(&format!("{base}&agent=claude&checkout=nope")).await;
+    let refusal = page::refused(
+        port,
+        serde_json::json!({ "repo": repo, "agent": "claude", "checkout": "nope" }),
+    )
+    .await;
     assert_eq!(
         refusal["message"], "unknown checkout",
         "(b) the one refusal text"
@@ -203,7 +206,11 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     );
 
     // --- (b') the refusal precedes the Cursor gate: nothing is written anywhere.
-    let refusal = super::refused(&format!("{base}&agent=cursor&checkout=nope")).await;
+    let refusal = page::refused(
+        port,
+        serde_json::json!({ "repo": repo, "agent": "cursor", "checkout": "nope" }),
+    )
+    .await;
     assert_eq!(
         refusal["message"], "unknown checkout",
         "(b') the one refusal text"
@@ -215,9 +222,8 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     assert_eq!(sessions(port).await.len(), 1, "(b') no session row either");
 
     // --- (c) no key: the primary tree, no `checkout` announced.
-    let (mut ws_c, _) = tokio_tungstenite::connect_async(format!("{base}&agent=claude"))
-        .await
-        .expect("no checkout must upgrade as before");
+    let mut ws_c =
+        page::console(port, serde_json::json!({ "repo": repo, "agent": "claude" })).await;
     let (text, open) = read_until(&mut ws_c, "READY").await;
     let open = open.expect("session-open precedes the first terminal byte");
     assert!(
@@ -243,11 +249,11 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
 
     // --- (d) a reattach re-announces the checkout from the record (`takeover`:
     // leg (a)'s socket still holds the writer slot; the snapshot replays `READY`).
-    let (mut ws_d, _) = tokio_tungstenite::connect_async(format!(
-        "ws://127.0.0.1:{port}/ws/session?id={id_a}&repo=owner%2Fwtlab&takeover=1"
-    ))
-    .await
-    .expect("a reattach on a live session must upgrade");
+    let mut ws_d = page::console(
+        port,
+        serde_json::json!({ "id": id_a, "repo": repo, "takeover": 1 }),
+    )
+    .await;
     let (_, open) = read_until(&mut ws_d, "READY").await;
     let open = open.expect("session-open on reattach");
     assert_eq!(
@@ -277,10 +283,11 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     );
 
     // --- (f) a Cursor console in the worktree writes the opt-out IN the worktree.
-    let (mut ws_f, _) =
-        tokio_tungstenite::connect_async(format!("{base}&agent=cursor&checkout=wt-a"))
-            .await
-            .expect("cursor in a known checkout must upgrade");
+    let mut ws_f = page::console(
+        port,
+        serde_json::json!({ "repo": repo, "agent": "cursor", "checkout": "wt-a" }),
+    )
+    .await;
     let (_, open) = read_until(&mut ws_f, "READY").await;
     assert_eq!(open.expect("session-open")["checkout"], "wt-a");
     assert_eq!(

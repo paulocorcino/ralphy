@@ -1,22 +1,21 @@
 //! Session persistence over a real loopback WebSocket (docs/adr/0032 §2; issue
-//! #166): the tmux model. A client launches a session, types a marker, then drops
-//! its socket — and the session survives. `GET /api/sessions` still lists it (the
-//! child is alive); a reattach by id first REPLAYS the scrollback (the earlier
-//! marker) and then STREAMS LIVE (a freshly typed marker arrives); and
+//! #166): the tmux model. A page socket opens a `console` channel that launches a
+//! session, types a marker, then drops — and the session survives.
+//! `GET /api/sessions` still lists it (the child is alive); a reattach by id
+//! first REPLAYS the scrollback (the earlier marker) and then STREAMS LIVE (a
+//! freshly typed marker arrives); and
 //! `POST /api/sessions/close` removes it. Proves AC1 (detach/reattach + replay)
 //! and AC3 (list with identity + close), the inverse of #162's WS-drop teardown.
 
 use std::time::Duration;
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Frame};
 use ralphy_daemon::{registry, router};
 use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
 
-type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+use crate::page::{self, Channel as Ws};
 
 /// Encode a terminal keystroke frame the way the browser would.
 fn terminal(data: &[u8]) -> Message {
@@ -102,16 +101,29 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
     (status, body)
 }
 
-/// Reattach by id, retrying briefly on a `409`: a just-dropped socket's server
-/// bridge clears the single-writer slot a hair after the client observes the
-/// close, so an immediate reattach can race it. A browser would retry the same way.
+/// Reattach by id on a new page socket, retrying briefly while the daemon
+/// refuses: a just-dropped socket's server bridge clears the single-writer slot
+/// a hair after the client observes the close, so an immediate reattach can race
+/// it. A browser would retry the same way. An accepted reattach opens with
+/// `session-open`, which is read here; a refused one ends the channel with no
+/// frame.
 async fn reattach(port: u16, id: u64) -> Ws {
-    let url = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
     for _ in 0..40 {
-        match tokio_tungstenite::connect_async(&url).await {
-            Ok((ws, _)) => return ws,
-            Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+        let mut channel = page::console(port, serde_json::json!({ "id": id })).await;
+        while let Some(Ok(message)) = channel.next().await {
+            if let Message::Binary(bytes) = message {
+                let open = protocol::decode(&bytes).expect("a well-formed frame");
+                assert!(
+                    matches!(&open, Frame::Command(c) if c.verb == "session-open"),
+                    "the first frame of a reattach is session-open: {open:?}"
+                );
+                return channel;
+            }
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
         }
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!("reattach to session {id} never succeeded within 2s");
 }
@@ -144,10 +156,11 @@ async fn session_survives_ws_drop_reattach_replays_then_streams_and_close_remove
     });
 
     // ws1: launch, type a marker, read it echoed, then DROP the socket.
-    let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude");
-    let (mut ws1, _) = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect("connecting to /ws/session");
+    let mut ws1 = page::console(
+        port,
+        serde_json::json!({ "repo": "owner/workbench", "agent": "claude" }),
+    )
+    .await;
     ws1.send(terminal(b"marker-alpha\r")).await.unwrap();
     read_until(&mut ws1, "GOT:marker-alpha", true).await;
     ws1.close(None).await.unwrap();
