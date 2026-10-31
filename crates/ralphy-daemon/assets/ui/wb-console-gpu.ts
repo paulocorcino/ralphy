@@ -38,11 +38,23 @@ import type { ConsoleWin } from "./wb-types.d.ts";
 export const DORMANT_AFTER_MS = 15000;
 export const DORMANT_MARGIN_PX = 300;
 
-// How long a window off the viewport waits before it sleeps. The slow-link
-// verdict of ADR-0079 D10 is suspended: the handshake time included the
-// browser's queue time. It waits for the one socket of ADR-0082 D6.
+// On a slow link a reattach costs more, so a covered window waits longer
+// before it sleeps (ADR-0079 D10). A link is slow when the handshake of the
+// page's one socket took SLOW_HANDSHAKE_MS or more: three round trips (TCP,
+// TLS, upgrade) at 250 ms, the round trip only the slowest 10% of remote
+// sockets passed in the operator's log. With one socket the browser has no
+// connection queue to add to the time (ADR-0082 D6).
+export const SLOW_HANDSHAKE_MS = 750;
+export const SLOW_DORMANT_AFTER_MS = 120000;
+
+// How long a window off the viewport waits before it sleeps. The page's
+// handshake is `null` before its socket first opened, and then the link is
+// not slow.
 export function dormantAfterMs() {
-  return DORMANT_AFTER_MS;
+  const handshakeMs = globalThis.WBDaemon?.pageHandshakeMs?.() ?? null;
+  return handshakeMs != null && handshakeMs >= SLOW_HANDSHAKE_MS
+    ? SLOW_DORMANT_AFTER_MS
+    : DORMANT_AFTER_MS;
 }
 
 // ---- the GPU budget ------------------------------------------------------

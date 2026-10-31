@@ -1203,6 +1203,10 @@ Neither is true now. Nothing new is decided.
 - `docs/WORKBENCH-BUILD-GUIDE.md` now holds only the `workbench:action` seam,
   the vendored-library procedures and the touch rules. It does not document
   the client.
+- The socket description above (one `/ws/command` socket per command, one
+  `/ws/tree` socket per kind, one `/ws/session` socket per console) is
+  history since #740: the page holds one `/ws` socket and carries each of
+  those on a channel of it (ADR-0082).
 
 ## Amendment (2026-10-15): a rename on a peer reaches the host
 
