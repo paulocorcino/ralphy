@@ -9,6 +9,11 @@ use axum::extract::ws::{Message, WebSocket};
 use futures_util::StreamExt;
 use tokio::sync::broadcast::error::RecvError;
 
+// ADR-0082 D4: a console served on a channel of the page socket.
+mod channel;
+
+pub(crate) use channel::{serve_console, ConsoleEnd, PeerRelay};
+
 use super::outbound::{
     announce_end, hand_on, open, resync, send_output, send_size, Opening, Outbox,
 };
@@ -187,7 +192,9 @@ pub(crate) async fn session_ws(
     }
     // The socket is dropped here, as the bridge dropped it before it had a
     // writer: whatever the writer still holds is not sent.
-    outbox.writer.abort();
+    if let Some(writer) = &outbox.writer {
+        writer.abort();
+    }
     traffic.log(end.map(|r| r.as_wire()), Instant::now());
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.

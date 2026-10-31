@@ -1,20 +1,23 @@
 //! The `console` channel of a console a peer hosts. Not served on a
-//! channel yet: each open is refused.
+//! channel yet: the peer socket is closed and the channel is refused.
 
-use super::{Channel, CloseReason, Opening};
-use crate::routes::{SessionHost, SocketAudit};
+use tokio::sync::mpsc;
 
-/// Serve a `console` channel whose console a peer hosts.
-#[expect(
-    dead_code,
-    reason = "the console kind calls it once it serves a console a peer hosts"
-)]
-pub(super) fn open(
+use super::{CloseReason, Opening};
+use crate::routes::{close_peer_session, PeerRelay};
+
+/// Serve a `console` channel whose open the peer of `relay` accepted.
+/// `frames` are the inner frames the page sends on the channel.
+pub(super) async fn open(
     opening: Opening,
-    _host: SessionHost,
-    _who: SocketAudit,
-) -> Result<Channel, CloseReason> {
-    Ok(Channel::spawn(move |_frames| {
-        opening.end(CloseReason::Refused)
-    }))
+    relay: Box<PeerRelay>,
+    _frames: mpsc::Receiver<Vec<u8>>,
+) {
+    let PeerRelay { mut peer, traffic } = *relay;
+    close_peer_session(&mut peer).await;
+    traffic.log(
+        Some(CloseReason::Refused.as_wire()),
+        std::time::Instant::now(),
+    );
+    opening.end(CloseReason::Refused).await;
 }

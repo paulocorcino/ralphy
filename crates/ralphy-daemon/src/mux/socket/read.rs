@@ -21,6 +21,11 @@ use crate::mux::{ChannelSender, Writer};
 use crate::presence_board::MAX_REPORT_BYTES;
 use crate::protocol::{self, ChannelError, Command, Frame, FrameError, Joiner};
 
+/// The cap of a bare `channel.open`. A console open carries the fields of a
+/// `/ws/session` query, and a repo ref or a startup command can pass the
+/// cap of a presence report.
+const MAX_OPEN_BYTES: usize = 4 * 1024;
+
 /// One open channel: the pieces of the inner frame still due, and its kind.
 struct Open {
     joiner: Joiner,
@@ -60,6 +65,12 @@ pub(super) async fn read(
     }
 }
 
+/// End the socket for a bare frame past its cap. Always `false`.
+fn past_cap(len: usize) -> bool {
+    tracing::debug!(len, "page socket ended: a bare frame past its cap");
+    false
+}
+
 /// The id of a channel frame whose flags were refused, read from its header.
 fn channel_of(bytes: &[u8]) -> Option<u32> {
     let id: [u8; 4] = bytes.get(1..5)?.try_into().ok()?;
@@ -84,18 +95,19 @@ impl Reader {
             return self.take_piece(bytes).await;
         }
         // A bare frame is a presence report or a control verb, both small.
-        if bytes.len() > MAX_REPORT_BYTES {
-            tracing::debug!(
-                len = bytes.len(),
-                "page socket ended: a bare frame past its cap"
-            );
-            return false;
+        if bytes.len() > MAX_OPEN_BYTES {
+            return past_cap(bytes.len());
         }
         match protocol::decode(bytes) {
-            Ok(Frame::Command(command)) => self.take_command(command).await,
+            Ok(Frame::Command(command)) => {
+                if bytes.len() > MAX_REPORT_BYTES && command.verb != "channel.open" {
+                    return past_cap(bytes.len());
+                }
+                self.take_command(command).await
+            }
             // Nothing else on channel 0 carries a meaning from the page.
             Ok(Frame::Terminal { .. } | Frame::Presence(_) | Frame::Channel { .. }) | Err(_) => {
-                true
+                bytes.len() <= MAX_REPORT_BYTES || past_cap(bytes.len())
             }
         }
     }

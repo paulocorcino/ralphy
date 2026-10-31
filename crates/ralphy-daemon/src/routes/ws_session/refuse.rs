@@ -51,6 +51,14 @@ impl Refusal {
     }
 }
 
+/// How the client of a refused open is told: an HTTP status for a reattach,
+/// or a `session-end` with this payload.
+#[derive(Debug)]
+pub(crate) enum Told {
+    Status(StatusCode, String),
+    End(serde_json::Value),
+}
+
 /// Refuses one `/ws/session` request in the way its client can read, and
 /// logs each refusal: a console that does not open is the failure the
 /// operator sees.
@@ -75,15 +83,23 @@ impl Refuser {
 
     /// Answer the decided `refusal` on the socket still to upgrade.
     pub(crate) fn answer(&self, ws: WebSocketUpgrade, refusal: Refusal) -> Response {
+        match self.tell(refusal) {
+            Told::Status(status, message) => (status, message).into_response(),
+            Told::End(end) => announce(ws, end),
+        }
+    }
+
+    /// Log the decided `refusal`, and decide how its client is told.
+    pub(crate) fn tell(&self, refusal: Refusal) -> Told {
         match refusal {
-            Refusal::Refuse { status, message } => self.refuse(ws, status, message),
-            Refusal::Supersede { attempt } => self.supersede(ws, attempt),
+            Refusal::Refuse { status, message } => self.refuse(status, message),
+            Refusal::Supersede { attempt } => self.supersede(attempt),
         }
     }
 
     /// Refuse with `message`. `status` is what a reattach answers; a new
-    /// launch upgrades and announces `message` instead.
-    fn refuse(&self, ws: WebSocketUpgrade, status: StatusCode, message: String) -> Response {
+    /// launch announces `message` instead.
+    fn refuse(&self, status: StatusCode, message: String) -> Told {
         tracing::info!(
             status = status.as_u16(),
             reason = message.as_str(),
@@ -94,14 +110,14 @@ impl Refuser {
             "console socket refused"
         );
         if self.session.is_some() {
-            return (status, message).into_response();
+            return Told::Status(status, message);
         }
-        self.announce(ws, REFUSED, message)
+        Told::End(self.end(REFUSED, message))
     }
 
     /// Refuse a claim whose holder already holds the slot with a higher
     /// attempt, on a reattach and on a launch alike. Nobody is evicted.
-    fn supersede(&self, ws: WebSocketUpgrade, attempt: Option<u64>) -> Response {
+    fn supersede(&self, attempt: Option<u64>) -> Told {
         tracing::info!(
             reason = SUPERSEDED,
             launch = self.session.is_none(),
@@ -111,44 +127,45 @@ impl Refuser {
             device = self.tab.device.map(|d| d.to_string()),
             "console socket refused"
         );
-        self.announce(
-            ws,
+        Told::End(self.end(
             SUPERSEDED,
             "a newer connection from this tab has the console".to_string(),
-        )
+        ))
     }
 
-    /// Upgrade, send `session-end` with `reason` and `message`, then Close.
-    fn announce(&self, ws: WebSocketUpgrade, reason: &'static str, message: String) -> Response {
-        let daemon_id = self.daemon_id.clone();
-        let environment = self.environment.clone();
-        ws.on_upgrade(move |socket| async move {
-            // The read half is kept, unread, until the writer is stopped.
-            let (sink, _from_browser) = socket.split();
-            let writer = Writer::start(sink, Mode::Plain);
-            let out = writer.channel(0);
-            // Bounded like the bridge's own end: a browser that does not read
-            // must not hold this task.
-            let announce = async {
-                let end = serde_json::json!({
-                    "reason": reason,
-                    "message": message,
-                    "daemon_id": daemon_id,
-                    "environment": environment,
-                });
-                send_command_on(&out, 0, "session-end", end).await?;
-                out.put(Out::Close).await?;
-                writer.ended().await;
-                Ok(())
-            };
-            match tokio::time::timeout(Duration::from_secs(5), announce).await {
-                Ok(Ok(())) => {}
-                Ok(Err(WriterClosed)) => {
-                    tracing::debug!("the browser left before the refusal was closed");
-                }
-                Err(_) => tracing::debug!("the browser did not read the refusal within 5 s"),
-            }
-            writer.abort();
+    /// The payload of the `session-end` that names a refusal.
+    fn end(&self, reason: &'static str, message: String) -> serde_json::Value {
+        serde_json::json!({
+            "reason": reason,
+            "message": message,
+            "daemon_id": self.daemon_id,
+            "environment": self.environment,
         })
     }
+}
+
+/// Upgrade, send the `session-end` whose payload is `end`, then Close.
+fn announce(ws: WebSocketUpgrade, end: serde_json::Value) -> Response {
+    ws.on_upgrade(move |socket| async move {
+        // The read half is kept, unread, until the writer is stopped.
+        let (sink, _from_browser) = socket.split();
+        let writer = Writer::start(sink, Mode::Plain);
+        let out = writer.channel(0);
+        // Bounded like the bridge's own end: a browser that does not read
+        // must not hold this task.
+        let announce = async {
+            send_command_on(&out, 0, "session-end", end).await?;
+            out.put(Out::Close).await?;
+            writer.ended().await;
+            Ok(())
+        };
+        match tokio::time::timeout(Duration::from_secs(5), announce).await {
+            Ok(Ok(())) => {}
+            Ok(Err(WriterClosed)) => {
+                tracing::debug!("the browser left before the refusal was closed");
+            }
+            Err(_) => tracing::debug!("the browser did not read the refusal within 5 s"),
+        }
+        writer.abort();
+    })
 }
