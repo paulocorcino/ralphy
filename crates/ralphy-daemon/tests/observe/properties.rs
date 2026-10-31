@@ -10,24 +10,24 @@ use super::observe_read::{round_trip, serve_checkout_repo, serve_git_repo, serve
 
 /// One `file.stat` on its own id: the single reply, after the proof that the
 /// read never spawned.
-async fn stat(url: &str, slug: &str, path: &str, checkout: Option<&str>) -> Value {
+async fn stat(port: u16, slug: &str, path: &str, checkout: Option<&str>) -> Value {
     let mut payload = json!({ "repo": slug, "path": path });
     if let Some(name) = checkout {
         payload["checkout"] = json!(name);
     }
-    let (mut replies, spawned) = round_trip(url, 1, "file.stat", payload).await;
+    let (mut replies, spawned) = round_trip(port, 1, "file.stat", payload).await;
     assert_eq!(spawned, 0, "an Observe read must never spawn");
     assert_eq!(replies.len(), 1, "exactly one reply on the id");
     replies.remove(0)
 }
 
 /// One `tree.size`, as `stat` does for `file.stat`.
-async fn size(url: &str, slug: &str, path: &str, checkout: Option<&str>) -> Value {
+async fn size(port: u16, slug: &str, path: &str, checkout: Option<&str>) -> Value {
     let mut payload = json!({ "repo": slug, "path": path });
     if let Some(name) = checkout {
         payload["checkout"] = json!(name);
     }
-    let (mut replies, spawned) = round_trip(url, 2, "tree.size", payload).await;
+    let (mut replies, spawned) = round_trip(port, 2, "tree.size", payload).await;
     assert_eq!(spawned, 0, "an Observe read must never spawn");
     assert_eq!(replies.len(), 1, "exactly one reply on the id");
     replies.remove(0)
@@ -46,9 +46,9 @@ fn without_modified(mut reply: Value) -> Value {
 
 #[tokio::test]
 async fn a_file_answers_its_facts() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
 
-    let reply = stat(&url, &slug, "visible.txt", None).await;
+    let reply = stat(port, &slug, "visible.txt", None).await;
 
     // The reply the dialog of the workbench is tested on (ADR-0070).
     super::golden::check("file.stat", reply.clone(), &["/modified"]);
@@ -68,7 +68,7 @@ async fn a_file_answers_its_facts() {
 
 #[tokio::test]
 async fn the_type_is_what_the_file_verbs_would_serve() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let want = [
         ("bin.dat", json!({ "class": "binary" })),
         ("logo.png", json!({ "class": "image", "image": "png" })),
@@ -81,7 +81,7 @@ async fn the_type_is_what_the_file_verbs_would_serve() {
     ];
 
     for (path, expected) in want {
-        let reply = stat(&url, &slug, path, None).await;
+        let reply = stat(port, &slug, path, None).await;
         assert_eq!(reply["status"], "ok", "{path}: {reply}");
         assert_eq!(reply["type"], expected, "{path}: {reply}");
     }
@@ -89,12 +89,12 @@ async fn the_type_is_what_the_file_verbs_would_serve() {
 
 #[tokio::test]
 async fn a_folder_and_the_root_answer_no_size_and_no_type() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
 
     // `node_modules` is a folder that the tree never lists. A stat is still
     // answered: a size counts what is on the disk.
     for path in ["node_modules", ""] {
-        let reply = stat(&url, &slug, path, None).await;
+        let reply = stat(port, &slug, path, None).await;
         assert_eq!(reply["status"], "ok", "{path:?}: {reply}");
         assert_eq!(reply["kind"], "folder", "{path:?}: {reply}");
         assert!(reply.get("size").is_none(), "{path:?}: {reply}");
@@ -104,11 +104,11 @@ async fn a_folder_and_the_root_answer_no_size_and_no_type() {
 
 #[tokio::test]
 async fn the_ignored_mark_is_the_one_of_the_tree() {
-    let (url, slug) = serve_git_repo().await;
+    let (port, slug) = serve_git_repo().await;
 
     let mut marks = Vec::new();
     for path in [".secret", ".secret/key", "visible.txt"] {
-        marks.push(stat(&url, &slug, path, None).await["ignored"].clone());
+        marks.push(stat(port, &slug, path, None).await["ignored"].clone());
     }
 
     // An ignored folder, a file inside it, and the control that is not ignored.
@@ -117,7 +117,7 @@ async fn the_ignored_mark_is_the_one_of_the_tree() {
 
 #[tokio::test]
 async fn a_miss_and_an_escape_are_both_not_found() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let not_found = json!({ "status": "error", "reason": "not found" });
 
     // `outer/secret` and `outer/secret.png` are real files just outside the
@@ -125,21 +125,21 @@ async fn a_miss_and_an_escape_are_both_not_found() {
     // `..` is `outer`, a folder that exists: only the stat's own confinement
     // refuses it, the type readers never see a folder.
     for path in ["nope.txt", "../secret", "../secret.png", ".."] {
-        assert_eq!(stat(&url, &slug, path, None).await, not_found, "{path}");
+        assert_eq!(stat(port, &slug, path, None).await, not_found, "{path}");
     }
     // The control: the same server answers a path that is inside.
-    assert_eq!(stat(&url, &slug, "visible.txt", None).await["status"], "ok");
+    assert_eq!(stat(port, &slug, "visible.txt", None).await["status"], "ok");
 }
 
 #[tokio::test]
 async fn a_checkout_is_judged_by_its_own_rules() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
 
     // The primary ignores `.ralphy/`, where the worktree lives; the worktree
     // ignores `*.log`. Read from the primary root, every file would be ignored.
     let mut marks = Vec::new();
     for path in ["inner.txt", "sub", "build.log"] {
-        let reply = stat(&url, &slug, path, Some("wt-a")).await;
+        let reply = stat(port, &slug, path, Some("wt-a")).await;
         assert_eq!(reply["status"], "ok", "{path}: {reply}");
         marks.push(reply["ignored"].clone());
     }
@@ -152,7 +152,7 @@ async fn a_checkout_is_judged_by_its_own_rules() {
 /// root first.
 #[tokio::test]
 async fn a_symlinked_checkout_is_refused() {
-    let (url, slug, root) = serve_checkout_repo().await;
+    let (port, slug, root) = serve_checkout_repo().await;
     let outside = tempfile::tempdir().unwrap();
     std::fs::write(
         outside.path().join(".git"),
@@ -173,7 +173,7 @@ async fn a_symlinked_checkout_is_refused() {
     }
     std::mem::forget(outside);
 
-    let reply = stat(&url, &slug, "secret.txt", Some("wt-out")).await;
+    let reply = stat(port, &slug, "secret.txt", Some("wt-out")).await;
 
     assert_eq!(reply["status"], "error", "must refuse: {reply}");
     assert!(
@@ -184,11 +184,11 @@ async fn a_symlinked_checkout_is_refused() {
 
 #[tokio::test]
 async fn a_folder_the_tree_never_lists_has_a_size() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
 
     // `node_modules` holds one byte (`junk`). The tree drops the folder; a
     // size counts what is on the disk.
-    let reply = size(&url, &slug, "node_modules", None).await;
+    let reply = size(port, &slug, "node_modules", None).await;
 
     super::golden::check("tree.size", reply.clone(), &[]);
     assert_eq!(
@@ -206,12 +206,12 @@ async fn a_folder_the_tree_never_lists_has_a_size() {
 
 #[tokio::test]
 async fn the_size_says_how_much_of_it_git_ignores() {
-    let (url, slug) = serve_git_repo().await;
+    let (port, slug) = serve_git_repo().await;
 
     // `.secret/` is ignored and `target/` is not; each holds one byte.
     let mut ignored = Vec::new();
     for path in [".secret", "target"] {
-        let reply = size(&url, &slug, path, None).await;
+        let reply = size(port, &slug, path, None).await;
         assert_eq!(
             (&reply["status"], &reply["bytes"]),
             (&json!("ok"), &json!(1))
@@ -224,10 +224,10 @@ async fn the_size_says_how_much_of_it_git_ignores() {
 
 #[tokio::test]
 async fn a_size_in_a_checkout_uses_the_rules_of_the_checkout() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (port, slug, _root) = serve_checkout_repo().await;
 
-    let whole = size(&url, &slug, "", Some("wt-a")).await;
-    let sub = size(&url, &slug, "sub", Some("wt-a")).await;
+    let whole = size(port, &slug, "", Some("wt-a")).await;
+    let sub = size(port, &slug, "sub", Some("wt-a")).await;
 
     // Only `build.log` (one byte) is ignored, by the worktree's `*.log`. Read
     // from the primary root, the whole worktree would be ignored.
@@ -237,16 +237,16 @@ async fn a_size_in_a_checkout_uses_the_rules_of_the_checkout() {
 
 #[tokio::test]
 async fn a_size_of_a_miss_a_file_and_an_escape_is_not_found() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let not_found = json!({ "status": "error", "reason": "not found" });
 
     // `..` is `outer`, a folder that exists: only confinement refuses it.
     for path in ["nope", "visible.txt", ".."] {
-        assert_eq!(size(&url, &slug, path, None).await, not_found, "{path}");
+        assert_eq!(size(port, &slug, path, None).await, not_found, "{path}");
     }
     // The control: the same server answers a folder that is inside.
     assert_eq!(
-        size(&url, &slug, "node_modules", None).await["status"],
+        size(port, &slug, "node_modules", None).await["status"],
         "ok"
     );
 }
