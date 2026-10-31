@@ -8,42 +8,30 @@
    read outside it. `wb-console.ts` creates one per console and keeps the
    font size, the plane and the clipboard. Each `attachTerminal` call keeps
    the state of its own terminal and socket; the session is the daemon's.
-   The touch gesture is `wb-console-touch.ts`; the image paste, OSC 52 and
-   the right button are `wb-console-paste.ts`; the GPU addon is
-   `terminalGpu` in `wb-console-gpu.ts` (#621). `TerminalDeps` and
+   The socket link (connect, reconnect, close, input while down) is
+   `wb-console-terminal-link.ts`. The touch gesture is `wb-console-touch.ts`;
+   the image paste, OSC 52 and the right button are `wb-console-paste.ts`; the
+   GPU addon is `terminalGpu` in `wb-console-gpu.ts` (#621). `TerminalDeps` and
    `TerminalOpts` are `wb-console-terminal-types.d.ts`; the retirement of a
    socket is `wb-console-terminal-socket.ts`.
    --------------------------------------------------------------------------- */
-import { WBSessionRoute } from "./wb-session-route.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { wireTouch } from "./wb-console-touch.ts";
 import { wirePaste } from "./wb-console-paste.ts";
 import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
-import { frameQueue } from "./wb-console-frames.ts";
 import { placeOf } from "./wb-console-probe.ts";
 import { terminalGpu } from "./wb-console-gpu.ts";
-import { reportStall } from "./wb-stall.ts";
-import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
-import type { DetachReason } from "./wb-console-session.ts";
-import type { SessionRequest } from "./wb-session-route.ts";
-import type { FramePayload, SocketEvent } from "./wb-console-frames.ts";
-import type { Group } from "./wb-fleet.ts";
 import { announceDetach, detachSocket } from "./wb-console-terminal-socket.ts";
-import type { LinkState, TerminalDeps, TerminalOpts } from "./wb-console-terminal-types.d.ts";
+import { createLink } from "./wb-console-terminal-link.ts";
+import type { TerminalLinkState } from "./wb-console-terminal-link.ts";
+import type { DetachReason } from "./wb-console-session.ts";
+import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal-types.d.ts";
 
 const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
-const { encodeTerminal, encodeDetach, encodeShown, endNotice, reconnectDecision, peerGate } =
-  WBConsoleSession;
-
-// The count of the session's output bytes a `session-open` says the terminal
-// shows, or null when the daemon sent none that is a whole count.
-function offsetOf(payload: FramePayload | undefined): number | null {
-  const offset = payload?.offset;
-  return typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0 ? offset : null;
-}
+const { encodeTerminal, encodeDetach, encodeShown } = WBConsoleSession;
 
 // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
 // (WebGL paints the glyphs), so these mirror :root in styles.css and must
@@ -138,9 +126,9 @@ export function createTerminal(deps: TerminalDeps) {
       opts,
       writeClipboard,
       readClipboard,
-      watchingNow: () => watching,
-      replayingNow: () => replaying,
-      currentRepoNow: () => currentRepo,
+      watchingNow: () => linkState.watching,
+      replayingNow: () => linkState.replaying,
+      currentRepoNow: () => linkState.currentRepo,
     });
 
     // The keyboard and mouse rules: wb-console-press.ts.
@@ -150,309 +138,58 @@ export function createTerminal(deps: TerminalDeps) {
       term,
       body,
       fitAddon,
-      socket: () => ws,
+      socket: () => linkState.ws,
       covered: opts.covered,
       focused: opts.focused,
-      watching: () => watching,
+      watching: () => linkState.watching,
     });
     const { fit, dispose: stopFit } = sizing;
 
-    let currentSessionId = opts.id ?? null;
-    let currentRepo = opts.repo ?? null;
-    let currentDaemonId: string | null = null;
-    let currentEnvironment: string | null = null;
-    let leaving = false;
+    // The state of the socket link, and the functions that change it:
+    // wb-console-terminal-link.ts. The terminal reads the state below.
+    const linkState: TerminalLinkState = {
+      ws: null,
+      opened: false,
+      everOpened: false,
+      // A launch that is a watch starts read-only.
+      watching: !!opts.watch,
+      announced: null,
+      refusal: null,
+      switching: false,
+      firstConnect: true,
+      shown: null,
+      replayNext: false,
+      writingOutput: false,
+      replaying: false,
+      retryDelay: 0,
+      retryTimer: null,
+      failedReopens: 0,
+      connectingSince: 0,
+      ended: false,
+      lastResumeAt: 0,
+      held: false,
+      linkLost: false,
+      leaving: false,
+      currentSessionId: opts.id ?? null,
+      currentRepo: opts.repo ?? null,
+      currentDaemonId: null,
+      currentEnvironment: null,
+    };
+    const link = createLink(linkState, { term, opts, WS_ORIGIN, sizing, stopFit, probe });
 
-    // A dropped socket does NOT end the session: the daemon keeps the child
-    // alive (session_ws's teardown invariant), so a close is recovered by
-    // reattaching to the SAME id. The daemon replays the screen on reattach,
-    // so the terminal is reset on a reconnecting open, unless the daemon
-    // sends only the bytes after `shown` (a resume). Backoff is exponential
-    // with jitter, capped.
-    //
-    // NO RECONNECT EVER CARRIES `takeover` (#334): two open workbenches
-    // reclaiming the writer slot on a timer evicted each other ~1.1s per flip,
-    // indefinitely. The baton moves only on `takeOver()`. `reconnectDecision`
-    // owns the choice; this carries it out.
-    const RECONNECT_BASE = 1000;
-    const RECONNECT_MAX = 15000;
-    let ws: WebSocket | null = null;
-    let opened = false; // has the CURRENT socket opened
-    let everOpened = false; // has ANY socket of this window opened
-    // True on EVERY path into the watcher role (the park below, or `{id,
-    // watch}` from the start). The `term.onData` gate reads this flag.
-    let watching = !!opts.watch;
-    let announced: string | null = null; // the daemon's reason, when it named one before closing
-    let refusal: string | null = null; // the daemon's words when that reason is "refused"
-    let switching = false; // an intentional close on the way to a takeover
-    let firstConnect = true;
-    // The count of the session's output bytes this terminal shows (ADR-0079
-    // D8), sent as `since` so that a reconnect gets only the bytes it misses.
-    // `null` when it is not known: a peer of an older build sends no count,
-    // and a terminal that shows a notice of this page no longer matches the
-    // session's bytes.
-    let shown: number | null = null;
-    // The next terminal frame is the replay, which `shown` already counts.
-    let replayNext = false;
-    // True while the session's output is written. Every other write is a
-    // notice of this page (here, or in the paste and close modules).
-    let writingOutput = false;
+    // Output is written through this wrapper. A write that is not session
+    // output (a notice of this page) forgets the byte count.
     const write = term.write.bind(term);
     term.write = (data, done) => {
-      if (!writingOutput) shown = null;
+      if (!linkState.writingOutput) linkState.shown = null;
       write(data, done);
     };
-    // True while the scrollback replay is being parsed. The replay is RAW BYTES
-    // (one terminal frame), so every escape sequence in the backlog runs again
-    // (OSC 52 is refused meanwhile). Cleared by the write callback, not after
-    // `term.write` returns: xterm parses ASYNCHRONOUSLY.
-    let replaying = false;
-    let retryDelay = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let failedReopens = 0;
-    let connectingSince = 0;
-    // This window is done. Without the latch a resume would reconnect a dead
-    // id and print a second "[session closed]".
-    let ended = false;
-    let lastResumeAt = 0;
-    // True while the fleet calls this window's peer down: no socket, no timer.
-    // The session lives on the peer, so a hold never gives up.
-    let held = false;
-    const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
-    let linkLost = false;
-    function link(state: LinkState) {
-      const lost = state === "lost";
-      if (lost === linkLost) return;
-      linkLost = lost;
-      if (typeof opts.onLink === "function") opts.onLink(state);
-    }
 
-    function hold(group: Group | null) {
-      held = true;
-      // The peer's own strip says why.
-      link("back");
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      if (typeof opts.onPeerHold === "function") opts.onPeerHold(group);
-    }
-
-    function release() {
-      held = false;
-      retryDelay = 0;
-      failedReopens = 0;
-      if (typeof opts.onPeerBack === "function") opts.onPeerBack();
-      connect({ id: currentSessionId, repo: currentRepo, watch: watching });
-    }
-
-    function giveUp() {
-      ended = true;
-      link("back");
-      // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
-      // window is closed.
-      stopFit();
-      term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
-      void reportStall("console-gave-up", announced ?? "closed", 0);
-      if (typeof opts.onEnded === "function") opts.onEnded(announced, refusal);
-    }
-
-    function scheduleReconnect() {
-      retryDelay = Math.min(retryDelay ? retryDelay * 2 : RECONNECT_BASE, RECONNECT_MAX);
-      const wait = retryDelay + Math.random() * 0.3 * retryDelay; // jitter
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        connect({ id: currentSessionId, repo: currentRepo, watch: watching });
-      }, wait);
-    }
-
-    function connect(connOpts: SessionRequest) {
-      opened = false;
-      announced = null;
-      refusal = null;
-      // A reattach (`id`) gets the backlog replayed; a fresh launch has none.
-      // An empty scrollback sends no replay frame, so the flag rides until the
-      // first LIVE frame clears it.
-      replaying = connOpts.id != null;
-      replayNext = false;
-      // A terminal that no `session-open` of this window has written to yet.
-      let fresh = firstConnect;
-      const holder = WBSessionRoute.tabHolder();
-      const request = WBSessionRoute.requestOpts(
-        connOpts,
-        holder,
-        WBSessionRoute.canGunzip(),
-        WBSessionRoute.tabAttempt(),
-        shown ?? undefined,
-      );
-      ws = new WebSocket(
-        WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }),
-      );
-      const socket = ws;
-      ws.binaryType = "arraybuffer";
-      connectingSince = Date.now();
-      // `close()` on a CONNECTING socket fires `onclose` with `opened` false:
-      // the ordinary failed-reopen path, backoff and give-up count included.
-      const handshake = ws;
-      setTimeout(() => {
-        if (handshake.readyState !== 0) return;
-        try {
-          handshake.close();
-        } catch {}
-      }, CONNECT_TIMEOUT_MS);
-      ws.onopen = () => {
-        opened = true;
-        everOpened = true;
-        retryDelay = 0;
-        failedReopens = 0;
-        firstConnect = false;
-        link("back");
-        // Never xterm's default 80×24: only a size the body measured.
-        sizing.opened();
-      };
-      // The daemon's `session-open`: who owns the session, what the terminal
-      // shows of it, and whether this window only watches.
-      function takeOpen(event: Extract<SocketEvent, { kind: "open" }>) {
-        const resumed = event.payload?.resume === true;
-        // A resume writes only the missing bytes after what the terminal
-        // shows. Any other replay repaints the screen, so the terminal is
-        // cleared first.
-        if (!fresh && !resumed) term.reset();
-        fresh = false;
-        // HERE, not in `onPark`: the reset above would wipe a line written
-        // before the socket opened.
-        if (watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");
-        const owner = WBSessionRoute.announcement(
-          {
-            sessionId: currentSessionId,
-            daemonId: currentDaemonId,
-            environment: currentEnvironment,
-          },
-          event.payload,
-        );
-        currentSessionId = owner.sessionId;
-        currentDaemonId = owner.daemonId;
-        currentEnvironment = owner.environment;
-        if (typeof opts.onSession === "function") opts.onSession(currentSessionId, event.payload);
-        joinWatch(event.payload);
-        // Last: the notices above are not session output.
-        shown = offsetOf(event.payload);
-        replayNext = event.payload?.replay === true;
-      }
-      // A launch that joined a session another page drives is read-only
-      // from the start; the daemon says so here.
-      function joinWatch(payload: FramePayload | undefined) {
-        if (payload?.watch !== true || watching) return;
-        watching = true;
-        term.write("\r\n[read-only: another window has control]\r\n");
-        if (typeof opts.onPark === "function") opts.onPark("joined");
-      }
-      const frames = frameQueue((event) => {
-        // A replay decoded after its socket was retired belongs to no one.
-        if (leaving || ws !== socket) return;
-        switch (event.kind) {
-          case "output":
-            if (currentSessionId == null) {
-              currentSessionId = event.sessionId;
-              // A fresh launch's id is only known now; the chrome records under it.
-              if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
-            }
-            if (replayNext) replayNext = false;
-            else if (shown != null) shown += event.bytes.length;
-            // The callback tells the OSC 52 handler the replay is behind us.
-            writingOutput = true;
-            probe?.wrote(event.bytes.length);
-            try {
-              term.write(
-                event.bytes,
-                replaying
-                  ? () => {
-                      replaying = false;
-                    }
-                  : undefined,
-              );
-            } finally {
-              writingOutput = false;
-            }
-            return;
-          case "open":
-            takeOpen(event);
-            return;
-          // A watcher paints at the session size; the writer ignores it.
-          case "size":
-            sizing.sessionSize(event.rows, event.cols);
-            return;
-          case "replay-lost":
-            shown = null;
-            replayNext = false;
-            return;
-          case "end":
-            announced = event.reason;
-            refusal = event.message;
-            return;
-          case "other":
-            return;
-          default: {
-            const unreachable: never = event;
-            return unreachable;
-          }
-        }
-      });
-      ws.onmessage = (ev: MessageEvent<ArrayBuffer>) => frames.take(new Uint8Array(ev.data));
-      // Swallow the error event; onclose drives recovery in every case.
-      ws.onerror = () => {};
-      const closed = () => {
-        if (leaving || switching || ws !== socket) return;
-        if (!opened) failedReopens += 1;
-        const decision = reconnectDecision({
-          everOpened,
-          announced,
-          idKnown: currentSessionId != null,
-          failedReopens,
-        });
-        switch (peerGate({ decision, group: peerGroup(), id: currentSessionId })) {
-          case "hold":
-            if (!opened) failedReopens -= 1;
-            hold(peerGroup());
-            return;
-          case "give-up":
-            giveUp();
-            return;
-          case "park-as-watcher":
-            parkAsWatcher();
-            return;
-          case "connect":
-          case "reconnect":
-            if (retryDelay === 0) {
-              link("lost");
-              // The fleet may already know why; its answer can hold this window.
-              if (typeof opts.readFleet === "function") opts.readFleet();
-            }
-            scheduleReconnect();
-        }
-      };
-      // Park ONCE, immediately. A watch socket that itself drops falls back
-      // to the backoff, so a refused watch cannot busy-loop.
-      function parkAsWatcher() {
-        if (watching) {
-          scheduleReconnect();
-          return;
-        }
-        watching = true;
-        // The watcher repaints from the snapshot, under its banner.
-        shown = null;
-        if (typeof opts.onPark === "function") opts.onPark(announced);
-        connect({ id: currentSessionId, repo: currentRepo, watch: true });
-      }
-      // After the frames that wait behind a replay decode: a `session-end`
-      // among them names the reason this close is read with.
-      ws.onclose = () => frames.whenIdle(closed);
-    }
+    let ctrlLatched = false;
+    let shiftLatched = false;
 
     // Every byte this window sends to the child goes through here (keyboard,
     // key bar, paste), so the watched gate and the Ctrl latch apply to all.
-    let ctrlLatched = false;
-    let shiftLatched = false;
     function sendInput(raw: string) {
       const folded = applyCtrlLatch(ctrlLatched, raw);
       ctrlLatched = folded.latched;
@@ -460,52 +197,27 @@ export function createTerminal(deps: TerminalDeps) {
       const d = folded.out;
       // The daemon-side drop in `Attachment::write` (session.rs) stays as
       // defence in depth; this gate makes the refusal VISIBLE (#335).
-      if (watching) {
+      if (linkState.watching) {
         if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
         return false;
       }
+      const ws = linkState.ws;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(encodeTerminal(d));
         return true;
       }
-      inputWhileDown();
+      link.inputWhileDown();
       return false;
-    }
-
-    // A key typed while the socket is down is not sent. The link strip says
-    // so, and the reconnect comes now instead of after the backoff (#751).
-    // A CONNECTING socket is already the reconnect.
-    function inputWhileDown() {
-      if (leaving || ended || held || currentSessionId == null) return;
-      link("lost");
-      if (ws && ws.readyState === 0) return;
-      const now = Date.now();
-      if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return;
-      lastResumeAt = now;
-      reconnectNow();
-    }
-
-    // Reattach now: a pending backoff is dropped, else the old socket is.
-    function reconnectNow() {
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-        retryTimer = null;
-      } else {
-        detachSocket(ws, "reconnect");
-      }
-      connect({ id: currentSessionId, repo: currentRepo, watch: watching });
     }
 
     // The backlog's old queries are answered again during a replay; those
     // answers would reach the child as typed input.
     term.onData((d) => {
-      if (replaying && isTerminalReply(d)) return;
+      if (linkState.replaying && isTerminalReply(d)) return;
       sendInput(d);
     });
 
-    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold")
-      hold(peerGroup());
-    else connect(opts);
+    link.start();
 
     return {
       term,
@@ -515,19 +227,19 @@ export function createTerminal(deps: TerminalDeps) {
       useGpu,
       dropGpu,
       get ws() {
-        return ws;
+        return linkState.ws;
       },
       get sessionId() {
-        return currentSessionId;
+        return linkState.currentSessionId;
       },
       get daemonId() {
-        return currentDaemonId;
+        return linkState.currentDaemonId;
       },
       get environment() {
-        return currentEnvironment;
+        return linkState.currentEnvironment;
       },
       get watching() {
-        return watching;
+        return linkState.watching;
       },
       // A key-bar tap, through `sendInput`: refused for a watcher like a
       // keystroke, and `Ctrl` then `c` folds through the same latch.
@@ -563,71 +275,18 @@ export function createTerminal(deps: TerminalDeps) {
       get selecting() {
         return touch.selecting;
       },
-      // The page came back from a suspend (or the network did). Returns whether
-      // it acted. The `currentSessionId == null` bail is load-bearing: a window
-      // not yet told its id would compose a LAUNCH url and spawn a second
-      // vendor CLI (`reconnectDecision` R1, `takeOver`).
-      resume(stale: boolean) {
-        if (leaving || ended || currentSessionId == null) return false;
-        // Held: the fleet decides, so ask it rather than dial a peer it calls
-        // down. Its answer reaches `peerRefresh`.
-        if (held) {
-          if (typeof opts.readFleet === "function") opts.readFleet();
-          return false;
-        }
-        const now = Date.now();
-        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
-        // A pending backoff is brought forward. `retryDelay` is kept: it stops
-        // a second fleet read for one drop.
-        if (!retryTimer) {
-          const readyState = ws ? ws.readyState : null;
-          const connectingMs = now - connectingSince;
-          if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
-        }
-        lastResumeAt = now;
-        reconnectNow();
-        return true;
-      },
-      // The ONLY place in this file that sets `takeover` — from the parked
-      // banner's button. `switching` makes the current socket's onclose a no-op.
-      takeOver() {
-        if (currentSessionId == null) return;
-        switching = true;
-        if (retryTimer) {
-          clearTimeout(retryTimer);
-          retryTimer = null;
-        }
-        // Detach EVERY handler before closing: the events land AFTER this
-        // returns, when `switching` is false again and `ws` names the new
-        // socket. A queued `session-end` would otherwise attach a stale reason
-        // to the NEW connection and turn its next drop into a give-up.
-        detachSocket(ws, "reconnect");
-        watching = false;
-        announced = null;
-        refusal = null;
-        failedReopens = 0;
-        retryDelay = 0;
-        switching = false;
-        if (typeof opts.onResume === "function") opts.onResume();
-        connect({ id: currentSessionId, repo: currentRepo, takeover: true });
-      },
-      // A fleet read arrived. A held window goes back when its peer is
-      // available, or when the fleet no longer lists it (the ordinary retry
-      // decides then). A window in its backoff holds when the peer is down.
-      peerRefresh() {
-        if (leaving || ended) return;
-        const group = peerGroup();
-        const gate = peerGate({ decision: "reconnect", group, id: currentSessionId });
-        if (held) {
-          if (gate === "hold") opts.onPeerHold?.(group);
-          else release();
-          return;
-        }
-        if (retryTimer && gate === "hold") hold(group);
-      },
+      // The page came back from a suspend, or the network did: see `resume`
+      // in wb-console-terminal-link.ts. Returns whether it acted.
+      resume: link.resume,
+      // The baton of the parked banner's button: see `takeOver` in
+      // wb-console-terminal-link.ts.
+      takeOver: link.takeOver,
+      // A fleet read arrived: see `peerRefresh` in wb-console-terminal-link.ts.
+      peerRefresh: link.peerRefresh,
       // The page went hidden, or is visible again. The socket stays open;
       // only the daemon's log reads this.
       notePage(hidden: boolean) {
+        const ws = linkState.ws;
         if (!ws || ws.readyState !== 1) return;
         try {
           ws.send(hidden ? encodeDetach("hidden") : encodeShown());
@@ -635,27 +294,13 @@ export function createTerminal(deps: TerminalDeps) {
       },
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
       dispose(reason: DetachReason) {
-        leaving = true;
-        link("back");
-        if (held) {
-          held = false;
-          if (typeof opts.onPeerBack === "function") opts.onPeerBack();
-        }
-        if (retryTimer) {
-          clearTimeout(retryTimer);
-          retryTimer = null;
-        }
+        link.leave();
         stopFit();
         // A glide or a pending scroll would call `scrollLines` on a disposed
         // terminal.
         stopFling();
         stopScroll();
-        if (ws && ws.readyState <= 1) {
-          try {
-            announceDetach(ws, reason);
-          } catch {}
-          ws.close();
-        }
+        link.closeSocket(reason);
         dropGpu();
         term.dispose();
       },
