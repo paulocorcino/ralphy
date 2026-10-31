@@ -32,26 +32,17 @@ pub(crate) fn miss<K>(kind: K, what: &str, cause: &dyn std::fmt::Debug) -> K {
 }
 
 /// A confinement outcome that is NOT a resolved in-root path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ConfineError {
     /// The requested path resolves outside the repo root (traversal, absolute
     /// `rel`, or a symlink whose target escapes) — refused.
+    #[error("path escapes the repo root")]
     Escape,
     /// The root or the requested path does not exist. `canonicalize` requires
     /// the path to exist (std semantics), so a missing target lands here.
+    #[error("path not found")]
     NotFound,
 }
-
-impl std::fmt::Display for ConfineError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ConfineError::Escape => write!(f, "path escapes the repo root"),
-            ConfineError::NotFound => write!(f, "path not found"),
-        }
-    }
-}
-
-impl std::error::Error for ConfineError {}
 
 /// Resolve `rel` against `root`, returning the canonical path ONLY when it stays
 /// inside `root`. See the module docs for the kernel; every escape is
@@ -234,5 +225,14 @@ mod tests {
         let canonical = confine(root.path(), "sub/f.txt").expect("canonical form confines");
         let mixed = confine(root.path(), "SUB\\F.TXT").expect("mixed-case form confines");
         assert_eq!(mixed, canonical);
+    }
+
+    #[test]
+    fn confine_error_keeps_its_text() {
+        assert_eq!(
+            ConfineError::Escape.to_string(),
+            "path escapes the repo root"
+        );
+        assert_eq!(ConfineError::NotFound.to_string(), "path not found");
     }
 }

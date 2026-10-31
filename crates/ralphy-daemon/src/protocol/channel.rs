@@ -14,31 +14,15 @@ pub const MAX_PIECE: usize = 16 * 1024;
 const FLAG_MORE: u8 = 0b0000_0001;
 
 /// Why a channel frame or a joined inner frame is refused.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ChannelError {
     /// The flags byte has a bit set other than MORE.
+    #[error("channel frame with unknown flags {0:#04x}")]
     UnknownFlags(u8),
     /// The pieces joined so far are larger than `MAX_COMMAND_BYTES`.
+    #[error("joined channel frame is larger than {MAX_COMMAND_BYTES} bytes")]
     OverCap,
 }
-
-impl std::fmt::Display for ChannelError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ChannelError::UnknownFlags(flags) => {
-                write!(f, "channel frame with unknown flags {flags:#04x}")
-            }
-            ChannelError::OverCap => {
-                write!(
-                    f,
-                    "joined channel frame is larger than {MAX_COMMAND_BYTES} bytes"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for ChannelError {}
 
 /// The wire bytes of a channel frame.
 pub(super) fn encode(channel: u32, more: bool, piece: &[u8]) -> Vec<u8> {
@@ -201,6 +185,18 @@ mod tests {
         assert_eq!(
             decode_frame(&[TAG_CHANNEL, 0, 0, 0, 1]),
             Err(FrameError::ShortChannel)
+        );
+    }
+
+    #[test]
+    fn wire_errors_keep_their_text() {
+        assert_eq!(
+            ChannelError::UnknownFlags(0x81).to_string(),
+            "channel frame with unknown flags 0x81"
+        );
+        assert_eq!(
+            ChannelError::OverCap.to_string(),
+            format!("joined channel frame is larger than {MAX_COMMAND_BYTES} bytes")
         );
     }
 }

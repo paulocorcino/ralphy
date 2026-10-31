@@ -30,19 +30,24 @@ use crate::textcodec;
 /// confirms nothing); `Conflict` is create/rename onto an existing path;
 /// `NotFound` is a rename/delete of an absent source; `Unencodable` is a save
 /// whose text the named encoding cannot represent; `Io` is any other failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum WriteError {
     /// The target escapes the repo root (traversal or symlink) — refused.
+    #[error("path escapes the repo root")]
     Confined,
     /// The target already exists (create) or the destination exists (rename).
+    #[error("path already exists")]
     Conflict,
     /// The source path does not exist (rename/delete).
+    #[error("path not found")]
     NotFound,
     /// A char at `char_index` (zero-based) has no representation in the
     /// encoding the write named; nothing was written (ADR-0036 amendment
     /// 2026-09-22: a round-trip or a refusal, never a substitution).
+    #[error("character {char_index} is not representable in the target encoding")]
     Unencodable { char_index: usize },
     /// An underlying filesystem error.
+    #[error("io error")]
     Io,
 }
 
@@ -59,25 +64,6 @@ impl WriteError {
         }
     }
 }
-
-impl std::fmt::Display for WriteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            WriteError::Confined => write!(f, "path escapes the repo root"),
-            WriteError::Conflict => write!(f, "path already exists"),
-            WriteError::NotFound => write!(f, "path not found"),
-            WriteError::Unencodable { char_index } => {
-                write!(
-                    f,
-                    "character {char_index} is not representable in the target encoding"
-                )
-            }
-            WriteError::Io => write!(f, "io error"),
-        }
-    }
-}
-
-impl std::error::Error for WriteError {}
 
 /// Map a confinement failure to a Write failure: an escape surfaces verbatim as
 /// `Confined`, a missing parent as `NotFound`. Crate-visible so the clipboard

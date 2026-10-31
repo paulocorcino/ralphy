@@ -2308,6 +2308,7 @@ dependencies = [
  "swc_ts_fast_strip",
  "tempfile",
  "terminal_size",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite",
  "toml",

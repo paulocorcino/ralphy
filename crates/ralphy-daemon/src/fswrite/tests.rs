@@ -589,3 +589,20 @@ fn write_refuses_traversal() {
     assert_eq!(write(root.path(), "../x", "hi"), Err(WriteError::Confined));
     assert!(!root.path().parent().unwrap().join("x").exists());
 }
+
+#[test]
+fn write_error_keeps_its_text() {
+    let rows: [(WriteError, &str); 5] = [
+        (WriteError::Confined, "path escapes the repo root"),
+        (WriteError::Conflict, "path already exists"),
+        (WriteError::NotFound, "path not found"),
+        (
+            WriteError::Unencodable { char_index: 3 },
+            "character 3 is not representable in the target encoding",
+        ),
+        (WriteError::Io, "io error"),
+    ];
+    for (err, text) in rows {
+        assert_eq!(err.to_string(), text);
+    }
+}
