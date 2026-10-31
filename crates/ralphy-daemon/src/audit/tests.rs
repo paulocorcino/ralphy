@@ -264,6 +264,37 @@ mod logins {
         );
     }
 
+    #[test]
+    fn a_report_that_failed_to_write_is_written_at_the_next_use() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = log_path_in(dir.path());
+        let login = LoginId::mint();
+        let audit = Audit::in_dir(Some(dir.path().to_path_buf()));
+        signed_in(&audit, login, Some(DeviceId::mint()));
+        let mut use_line = Event::new(EventKind::Command, Some(DeviceId::mint()), Actor::Device);
+        use_line.login = Some(login.to_string());
+        let mut writer = Writer::default();
+        // A directory at the log's path: the book reads nothing from it
+        // after the swap, and an append to it fails on every platform.
+        writer.book(&path).unwrap();
+        let aside = dir.path().join("log.aside");
+        std::fs::rename(&path, &aside).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        writer
+            .report_other_device(&path, &use_line, "branch.switch")
+            .expect_err("the append fails while the path is a directory");
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::rename(&aside, &path).unwrap();
+        let written = writer
+            .report_other_device(&path, &use_line, "branch.switch")
+            .unwrap();
+        assert!(
+            written,
+            "the pair was not reported, so the next use reports"
+        );
+        assert_eq!(of_kind(dir.path(), "login_other_device").len(), 1);
+    }
+
     /// A `login_other_device` line for `login` and `device`, `ts` seconds
     /// after the epoch.
     fn reported_at(ts: i64, login: LoginId, device: DeviceId) -> String {

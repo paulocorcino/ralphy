@@ -501,10 +501,7 @@ impl AuthState {
         let seed = totp::load_seed_from(&totp::seed_path_in(&dir))?;
         let pw = password::load_from(&password::password_path_in(&dir))?;
         let require_login = require_login_enabled_in(&dir);
-        self.revoked.replace(revoked::load(
-            &self.revoked_path,
-            crate::routes::now_unix(),
-        )?);
+        self.reload_revoked()?;
         let next = policy::compute_policy_with(
             self.bind_ip,
             token,
@@ -522,6 +519,16 @@ impl AuthState {
         *self.policy.write().expect("auth policy lock poisoned") = next;
         self.remote_images
             .store(remote_images_enabled_in(&dir), Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Read the revoked-login list from disk into the shared handle. It holds
+    /// `revoke_lock` from the read to the swap, so a revoke cannot land
+    /// between them and be undone in memory.
+    fn reload_revoked(&self) -> Result<()> {
+        let _held = self.revoke_lock.lock().expect("revoke lock poisoned");
+        let entries = revoked::load(&self.revoked_path, crate::routes::now_unix())?;
+        self.revoked.replace(entries);
         Ok(())
     }
 

@@ -483,7 +483,12 @@ impl Writer {
         notice.did = Some(did.to_string());
         notice.ip = event.ip.clone();
         notice.holder = event.holder.clone();
-        self.append(path, &notice)?;
+        if let Err(e) = self.append(path, &notice) {
+            // The book already marked the pair as reported. Read it again
+            // from the log, which has no line for it.
+            self.logins = None;
+            return Err(e);
+        }
         Ok(true)
     }
 }

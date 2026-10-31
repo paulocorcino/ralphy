@@ -812,8 +812,9 @@ own device.
   like `daemon-token`. Each entry is a login ID and a cap: the revoke time
   plus 30 days (`REMEMBERED_ABSOLUTE_TTL_SECS`, the longest a remembered
   cookie lives). The cap is not the exact `exp` of the cookie, because the
-  daemon stores no row per live login. `verify_claims` refuses a cookie whose
-  login ID is in the list. An entry is pruned once its cap has passed: after
+  daemon stores no row per live login. `SessionAuth::live_claims` refuses a
+  cookie whose login ID is in the list, after `cookie::verify_claims` has
+  accepted it. An entry is pruned once its cap has passed: after
   that the cookie is dead on its own. So the list holds at most the logins
   revoked in the last 30 days.
 - `POST /api/security/logins/revoke` with a login ID adds it to the list. It
