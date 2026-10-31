@@ -8,18 +8,19 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::page;
+
 mod image;
 mod notes;
 
-/// Bind a daemon over a temp repo seeded with `a.txt`; return the
-/// `ws://…/ws/command` URL, the repo slug, AND the leaked repo root so a test can
+/// Bind a daemon over a temp repo seeded with `a.txt`; return the daemon's
+/// port, the repo slug, AND the leaked repo root so a test can
 /// assert on-disk state after a Write.
-pub(super) async fn serve_repo() -> (String, String, PathBuf) {
+pub(super) async fn serve_repo() -> (u16, String, PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     std::fs::write(dir.path().join("a.txt"), b"x").expect("write a.txt");
     let root = dir.path().to_path_buf();
@@ -56,34 +57,36 @@ pub(super) async fn serve_repo() -> (String, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }
 
-/// Send one `Command` and collect every reply frame on `id` until the socket
-/// closes, returning `(replies, spawned_count)`.
+/// The longest encoded command frame a `spawn` channel opens with: a longer
+/// command goes over `POST /api/command`, which has no such limit.
+const OPEN_LIMIT: usize = 4096;
+
+/// Send one `Command` and collect every reply frame on `id` until its channel
+/// ends, returning `(replies, spawned_count)`. A command whose encoded frame
+/// passes [`OPEN_LIMIT`] goes over `POST /api/command` instead, whose one reply
+/// is the only frame.
 pub(super) async fn round_trip(
-    url: &str,
+    port: u16,
     id: u64,
     verb: &str,
     payload: serde_json::Value,
 ) -> (Vec<serde_json::Value>, usize) {
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
+    let command = Command {
+        id,
+        verb: verb.to_string(),
+        payload,
+    };
+    let encoded = protocol::encode(&Frame::Command(command.clone()));
+    if encoded.len() > OPEN_LIMIT {
+        return (vec![page::post_command(port, &command).await], 0);
+    }
+    let mut ws = page::command(port).await;
+    ws.send(Message::Binary(encoded.into()))
         .await
-        .expect("connecting to /ws/command");
-    ws.send(Message::Binary(
-        protocol::encode(&Frame::Command(Command {
-            id,
-            verb: verb.to_string(),
-            payload,
-        }))
-        .into(),
-    ))
-    .await
-    .expect("send the frame");
+        .expect("send the frame");
 
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut replies = Vec::new();
@@ -107,14 +110,14 @@ pub(super) async fn round_trip(
         (replies, spawned)
     })
     .await
-    .expect("the reply must arrive and the socket close within 10s")
+    .expect("the reply must arrive and the channel close within 10s")
 }
 
 #[tokio::test]
 async fn write_persists_bytes() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "file.write",
         serde_json::json!({ "repo": slug, "path": "note.txt", "content": "hi" }),
@@ -133,9 +136,9 @@ async fn write_persists_bytes() {
 
 #[tokio::test]
 async fn create_folder() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         2,
         "file.create",
         serde_json::json!({ "repo": slug, "path": "newdir", "dir": true }),
@@ -150,9 +153,9 @@ async fn create_folder() {
 
 #[tokio::test]
 async fn rename_moves() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         3,
         "file.rename",
         serde_json::json!({ "repo": slug, "path": "a.txt", "to": "b.txt" }),
@@ -172,9 +175,9 @@ async fn rename_moves() {
 /// the file the operator already has there.
 #[tokio::test]
 async fn copy_duplicates_and_refuses_a_second_onto_the_same_dst() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let payload = serde_json::json!({ "repo": slug, "path": "a.txt", "to": "a copy.txt" });
-    let (replies, spawned) = round_trip(&url, 5, "file.copy", payload.clone()).await;
+    let (replies, spawned) = round_trip(port, 5, "file.copy", payload.clone()).await;
 
     assert_eq!(replies.len(), 1);
     assert_eq!(spawned, 0, "a Write must never spawn");
@@ -186,7 +189,7 @@ async fn copy_duplicates_and_refuses_a_second_onto_the_same_dst() {
     );
     assert!(root.join("a.txt").exists(), "the source survives a copy");
 
-    let (replies, spawned) = round_trip(&url, 6, "file.copy", payload).await;
+    let (replies, spawned) = round_trip(port, 6, "file.copy", payload).await;
     assert_eq!(replies.len(), 1);
     assert_eq!(spawned, 0);
     assert_eq!(replies[0]["status"], "error");
@@ -195,9 +198,9 @@ async fn copy_duplicates_and_refuses_a_second_onto_the_same_dst() {
 
 #[tokio::test]
 async fn delete_removes() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         4,
         "file.delete",
         serde_json::json!({ "repo": slug, "path": "a.txt" }),
@@ -216,7 +219,7 @@ async fn delete_removes() {
 /// the narrow verb exists so the generic ops never have to gain a hole.
 #[tokio::test]
 async fn plan_discard_removes_the_plan_and_nothing_else() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let ralphy = root.join(".ralphy");
     std::fs::create_dir_all(&ralphy).unwrap();
     std::fs::write(
@@ -230,7 +233,7 @@ async fn plan_discard_removes_the_plan_and_nothing_else() {
     // anyway, to prove it is IGNORED rather than honoured: if it were read, this
     // would delete `a.txt`.
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         20,
         "plan.discard",
         serde_json::json!({ "repo": slug, "path": "a.txt" }),
@@ -248,7 +251,7 @@ async fn plan_discard_removes_the_plan_and_nothing_else() {
 
     // Discarding again says so, rather than reporting a second success.
     let (again, _) = round_trip(
-        &url,
+        port,
         21,
         "plan.discard",
         serde_json::json!({ "repo": slug }),
@@ -260,7 +263,7 @@ async fn plan_discard_removes_the_plan_and_nothing_else() {
     // …and the denylist still refuses the same file through the generic verb.
     std::fs::write(ralphy.join("plan.md"), "back again").unwrap();
     let (denied, _) = round_trip(
-        &url,
+        port,
         22,
         "file.delete",
         serde_json::json!({ "repo": slug, "path": ".ralphy/plan.md" }),
@@ -276,9 +279,9 @@ async fn plan_discard_removes_the_plan_and_nothing_else() {
 
 #[tokio::test]
 async fn write_escape_refused() {
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         5,
         "file.write",
         serde_json::json!({ "repo": slug, "path": "../evil", "content": "boom" }),
@@ -300,9 +303,9 @@ async fn write_escape_refused() {
 
 #[tokio::test]
 async fn create_conflict() {
-    let (url, slug, _root) = serve_repo().await;
+    let (port, slug, _root) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         6,
         "file.create",
         serde_json::json!({ "repo": slug, "path": "a.txt", "dir": false }),
@@ -319,7 +322,7 @@ async fn create_conflict() {
 #[tokio::test]
 async fn symlink_write_escape_refused() {
     use std::os::unix::fs::symlink;
-    let (url, slug, root) = serve_repo().await;
+    let (port, slug, root) = serve_repo().await;
     let outside = tempfile::tempdir().unwrap();
     std::fs::write(outside.path().join("target.txt"), b"secret").unwrap();
     // An in-root symlink pointing at an outside file: a write THROUGH it must be
@@ -327,7 +330,7 @@ async fn symlink_write_escape_refused() {
     symlink(outside.path().join("target.txt"), root.join("link.txt")).unwrap();
 
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         7,
         "file.write",
         serde_json::json!({ "repo": slug, "path": "link.txt", "content": "boom" }),
@@ -348,7 +351,7 @@ async fn symlink_write_escape_refused() {
 /// A repo with a linked worktree, the same fixture shape `observe_read.rs`
 /// uses: the pointer FILE is what `checkout::is_linked` reads, so no `git`
 /// child is needed to make `wt-a` resolve.
-pub(super) async fn serve_worktree_repo() -> (String, String, PathBuf) {
+pub(super) async fn serve_worktree_repo() -> (u16, String, PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     std::fs::write(dir.path().join("a.txt"), b"x").expect("write a.txt");
     let wt = dir.path().join(".ralphy/worktrees/wt-a");
@@ -391,9 +394,5 @@ pub(super) async fn serve_worktree_repo() -> (String, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }

@@ -6,10 +6,11 @@
 
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::page;
 
 mod checkout;
 
@@ -19,13 +20,13 @@ const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
 
 /// Bind a daemon over a temp repo seeded with `visible.txt`, `node_modules/junk`,
 /// a binary `bin.dat`, a real `logo.png` and an HTML-in-`.png` `evil.png`; return
-/// the `ws://…/ws/command` URL and the repo slug.
+/// the daemon's port and the repo slug.
 ///
 /// The repo is `outer/repo`, and a real text `outer/secret` and a real image
 /// `outer/secret.png` sit right outside it. So a `../secret` read can answer
 /// "not found" only because confinement refused it, never because the target
 /// is absent.
-pub(super) async fn serve_repo() -> (String, String) {
+pub(super) async fn serve_repo() -> (u16, String) {
     let outer = tempfile::tempdir().expect("create the temp dir");
     std::fs::write(outer.path().join("secret"), b"token").expect("write secret");
     std::fs::write(outer.path().join("secret.png"), PNG_BYTES).expect("write secret.png");
@@ -71,10 +72,7 @@ pub(super) async fn serve_repo() -> (String, String) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-    )
+    (port, slug.to_string())
 }
 
 /// Bind a daemon over a temp *git* repo seeded with committed dot-folders
@@ -82,8 +80,8 @@ pub(super) async fn serve_repo() -> (String, String) {
 /// gitignored `.secret/`, and a `visible.txt`. `git init` stays even though the
 /// listing no longer consults `.gitignore`: it is what makes `.secret/` a
 /// genuinely ignored entry, so the test proves the amendment rather than a
-/// no-op. Returns the `ws://…/ws/command` URL and the repo slug.
-pub(super) async fn serve_git_repo() -> (String, String) {
+/// no-op. Returns the daemon's port and the repo slug.
+pub(super) async fn serve_git_repo() -> (u16, String) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     std::fs::write(dir.path().join("visible.txt"), b"hello").expect("write visible.txt");
     std::fs::create_dir(dir.path().join(".github")).expect("create the directory .github");
@@ -136,23 +134,18 @@ pub(super) async fn serve_git_repo() -> (String, String) {
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-    )
+    (port, slug.to_string())
 }
 
-/// Send one `Command` and collect every reply frame on `id` until the socket
-/// closes, returning `(replies, spawned_count)`.
+/// Send one `Command` on a `spawn` channel and collect every reply frame on
+/// `id` until the channel ends, returning `(replies, spawned_count)`.
 pub(super) async fn round_trip(
-    url: &str,
+    port: u16,
     id: u64,
     verb: &str,
     payload: serde_json::Value,
 ) -> (Vec<serde_json::Value>, usize) {
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
-        .await
-        .expect("connecting to /ws/command");
+    let mut ws = page::command(port).await;
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
@@ -186,14 +179,14 @@ pub(super) async fn round_trip(
         (replies, spawned)
     })
     .await
-    .expect("the reply must arrive and the socket close within 10s")
+    .expect("the reply must arrive and the channel close within 10s")
 }
 
 #[tokio::test]
 async fn tree_list_answers_on_id_without_spawn() {
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "tree.list",
         serde_json::json!({ "repo": slug, "path": "" }),
@@ -223,9 +216,9 @@ async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
     // dot-folders (`.github`), `.ralphy`, and — since ADR-0036's 2026-07-26
     // amendment — gitignored entries (`.secret`); only the `HARD_EXCLUDE` noise
     // dirs (`.git`, `node_modules`, `target`) are dropped.
-    let (url, slug) = serve_git_repo().await;
+    let (port, slug) = serve_git_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         4,
         "tree.list",
         serde_json::json!({ "repo": slug, "path": "" }),
@@ -262,9 +255,9 @@ async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
 async fn image_read_serves_a_png_as_base64() {
     // ADR-0049 §2: one reply on the id, carrying the VERIFIED media type and the
     // bytes base64'd — and, like every Observe verb, zero spawns.
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         5,
         "file.image",
         serde_json::json!({ "repo": slug, "path": "logo.png" }),
@@ -291,9 +284,9 @@ async fn image_read_serves_a_png_as_base64() {
 async fn image_read_refuses_bytes_that_belie_the_extension() {
     // The magic-byte check over the wire (ADR-0049 §3): HTML named `.png` is
     // refused, never handed to the browser labelled `image/png`.
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         6,
         "file.image",
         serde_json::json!({ "repo": slug, "path": "evil.png" }),
@@ -315,9 +308,9 @@ async fn image_read_refuses_bytes_that_belie_the_extension() {
 async fn image_read_masks_traversal_as_not_found() {
     // Confinement is unchanged by ADR-0049: an out-of-root image read is a plain
     // miss, never leaking whether the target exists (ADR-0036 §5).
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         7,
         "file.image",
         serde_json::json!({ "repo": slug, "path": "../secret.png" }),
@@ -334,9 +327,9 @@ async fn image_read_masks_traversal_as_not_found() {
 async fn file_read_masks_traversal_as_not_found() {
     // A `..` traversal over the wire must return a plain "not found", never
     // leaking whether the out-of-root target exists (ADR-0036 §5).
-    let (url, slug) = serve_repo().await;
+    let (port, slug) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         3,
         "file.read",
         serde_json::json!({ "repo": slug, "path": "../secret" }),
@@ -355,9 +348,9 @@ async fn file_read_masks_traversal_as_not_found() {
 /// dotfolder is found (the tree shows it), the noise dirs never are.
 #[tokio::test]
 async fn tree_find_answers_on_id_without_spawn() {
-    let (url, slug) = serve_git_repo().await;
+    let (port, slug) = serve_git_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "tree.find",
         serde_json::json!({ "repo": slug, "query": "KEY" }),
@@ -379,7 +372,7 @@ async fn tree_find_answers_on_id_without_spawn() {
 
     // NEGATIVE CONTROL: a name inside a noise dir is not found.
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "tree.find",
         serde_json::json!({ "repo": slug, "query": "junk" }),
@@ -392,11 +385,11 @@ async fn tree_find_answers_on_id_without_spawn() {
 /// tree — but `.ralphy/` is always searched, and the count is per occurrence.
 #[tokio::test]
 async fn tree_grep_respects_gitignore_but_searches_ralphy() {
-    let (url, slug) = serve_git_repo().await;
+    let (port, slug) = serve_git_repo().await;
     // "plan" is in BOTH `.ralphy/plan.md` (ignored, always searched) and
     // `.secret/key` (ignored, honoured): only the former is a hit.
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "tree.grep",
         serde_json::json!({ "repo": slug, "query": "PLAN" }),
@@ -418,7 +411,7 @@ async fn tree_grep_respects_gitignore_but_searches_ralphy() {
     // NEGATIVE CONTROL: `tree.find` on the same repo DOES see the ignored
     // file — the two policies differ on purpose.
     let (replies, _) = round_trip(
-        &url,
+        port,
         2,
         "tree.find",
         serde_json::json!({ "repo": slug, "query": "key" }),
@@ -430,9 +423,9 @@ async fn tree_grep_respects_gitignore_but_searches_ralphy() {
 /// An unknown repo is refused the same way every Observe verb is.
 #[tokio::test]
 async fn tree_find_refuses_an_unknown_repo() {
-    let (url, _slug) = serve_repo().await;
+    let (port, _slug) = serve_repo().await;
     let (replies, spawned) = round_trip(
-        &url,
+        port,
         1,
         "tree.find",
         serde_json::json!({ "repo": "owner/nowhere", "query": "vis" }),
@@ -445,9 +438,9 @@ async fn tree_find_refuses_an_unknown_repo() {
 /// Bind a daemon over a temp repo that also holds a linked worktree `wt-a`
 /// under `.ralphy/worktrees/` — the `.git` POINTER file git writes for one,
 /// with its own files (`inner.txt`, `sub/deep.txt`) that the primary lacks.
-/// Returns the `ws://…/ws/command` URL, the slug, and the primary's path (so a
+/// Returns the daemon's port, the slug, and the primary's path (so a
 /// test can prove a refused write never landed there).
-pub(super) async fn serve_checkout_repo() -> (String, String, std::path::PathBuf) {
+pub(super) async fn serve_checkout_repo() -> (u16, String, std::path::PathBuf) {
     let dir = tempfile::tempdir().expect("create the temp dir");
     std::fs::write(dir.path().join("visible.txt"), b"hello").expect("write visible.txt");
     std::fs::write(dir.path().join("only.txt"), b"primary").expect("write only.txt");
@@ -498,11 +491,7 @@ pub(super) async fn serve_checkout_repo() -> (String, String, std::path::PathBuf
             .await
             .expect("serve the test app");
     });
-    (
-        format!("ws://127.0.0.1:{port}/ws/command"),
-        slug.to_string(),
-        root,
-    )
+    (port, slug.to_string(), root)
 }
 
 fn entry_names(reply: &serde_json::Value) -> Vec<&str> {
