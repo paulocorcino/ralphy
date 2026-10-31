@@ -81,6 +81,9 @@ export function createDaemon(
   // (60 s) of the daemon, plus the 5 s margin of `relay_to_peer` for a peer.
   const COMMAND_DEADLINE_MS = 70000;
 
+  // The wait before a lost page socket is opened again.
+  const RECONNECT_MS = 3000;
+
   // Fail a handshake that has not opened by the deadline. `close()` on a
   // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
   function armHandshakeDeadline(ws: WebSocket) {
@@ -269,7 +272,7 @@ export function createDaemon(
         // timer here would open a second socket beside the one the next
         // user opens.
         if (ws !== sock) return;
-        timer = setTimeout(connect, 3000);
+        timer = setTimeout(connect, RECONNECT_MS);
       };
     };
     const leave = (user: SocketUser) => {
@@ -338,6 +341,7 @@ export function createDaemon(
     encodeCommand,
     withCheckout,
     commandFrame,
+    reopenMs: RECONNECT_MS,
   });
 
   // Fire the verb on a `spawn` channel of the page socket and stream each

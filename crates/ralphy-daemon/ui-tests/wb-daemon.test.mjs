@@ -629,6 +629,54 @@ test("a closed tree subscription never reopens", () => {
   assert.equal(sockets.length, 1);
 });
 
+// The ids of every channel of `kind` the page opened on socket `s`, in order.
+function channelsOf(s, kind) {
+  return s.sent
+    .filter((f) => f.channel === 0 && f.verb === "channel.open" && f.payload.kind === kind)
+    .map((f) => f.payload.channel);
+}
+
+// The daemon ends channel `id` of socket `s` with `reason`.
+function closeChannel(page, s, id, reason) {
+  const bytes = commandBytes({ id: 0, verb: "channel.closed", payload: { channel: id, reason } });
+  page.withFakes(() => s.onmessage({ data: bytes.buffer }));
+}
+
+test("a tree channel the daemon closes is opened again after 3 s with its watches", () => {
+  const page = treeSocket(null, undefined);
+  const { sub, ws, dirty, runRetries } = page;
+  sub.watch("");
+  sub.watch("src");
+  const [first] = channelsOf(ws, "tree");
+  closeChannel(page, ws, first, "refused");
+  assert.equal(channelsOf(ws, "tree").length, 1, "the open waits for its timer");
+  runRetries();
+  const ids = channelsOf(ws, "tree");
+  assert.equal(ids.length, 2, "one new tree channel on the same socket");
+  const resent = ws.sent.filter((f) => f.channel === ids[1]).map((f) => [f.verb, f.payload.path]);
+  assert.deepEqual(resent, [
+    ["watch", ""],
+    ["watch", "src"],
+  ]);
+  assert.deepEqual(dirty, ["", "src"], "each held dir is read once");
+});
+
+test("a reopened tree channel the daemon closes again waits for the next socket", () => {
+  const page = treeSocket(null, undefined);
+  const { sub, ws, sockets, open, drop, runRetries } = page;
+  sub.watch("src");
+  closeChannel(page, ws, channelsOf(ws, "tree")[0], "refused");
+  runRetries();
+  const opens = channelsOf(ws, "tree");
+  closeChannel(page, ws, opens[opens.length - 1], "overflow");
+  runRetries();
+  assert.deepEqual(channelsOf(ws, "tree"), opens, "no open after the second close");
+  drop(ws);
+  runRetries();
+  open(sockets[1]);
+  assert.deepEqual(sentOn(sockets[1]), [["watch", "src"]], "the next socket opens it again");
+});
+
 test("resume(true) replaces an open tree socket and the new one replays the held set", () => {
   const { sub, ws, sockets, open, withFakes } = treeSocket(null, undefined);
   sub.watch("src");

@@ -6,7 +6,7 @@
    `wb-daemon.ts` owns: it gives this module the socket's `join` and
    `resume`, and its frame codec.
 --------------------------------------------------------------------------- */
-import type { Channel, ChannelKind, PageChannels } from "./wb-channels.ts";
+import type { Channel, ChannelKind, CloseReason, PageChannels } from "./wb-channels.ts";
 
 /** One user of the page socket: presence, or a subscription with its channel. */
 export type SocketUser = {
@@ -39,6 +39,9 @@ export type SubscriptionDeps = {
   withCheckout: (payload: CommandPayload, checkout: string | null | undefined) => CommandPayload;
   /** A `[0x02][JSON]` command frame, or `null` for anything else. */
   commandFrame: (bytes: Uint8Array) => PushFrame | null;
+  /** The wait before a channel the daemon ended is opened again: the
+   * socket's own reconnect delay. */
+  reopenMs: number;
 };
 
 export function createSubscriptions({
@@ -46,27 +49,57 @@ export function createSubscriptions({
   encodeCommand,
   withCheckout,
   commandFrame,
+  reopenMs,
 }: SubscriptionDeps) {
   // A subscription on a channel of `kind` of the page socket. Each open of
   // the socket opens the channel again and runs `onOpen`; `close` ends the
-  // channel and leaves the socket.
+  // channel and leaves the socket. A channel the daemon ends while its socket
+  // stays open is opened again after `reopenMs`, and runs `onOpen` as a
+  // reopen. It is opened again once per socket: a second end waits for the
+  // next open of the socket.
   function channelSubscription(kind: ChannelKind, { onOpen, onPush }: ChannelHandlers) {
     let channel: Channel | null = null;
+    let closed = false;
+    // Counts the opens of the socket, so a timer of an older socket does nothing.
+    let socketOpens = 0;
+    let reopenedOnce = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attach = (channels: PageChannels, reopened: boolean) => {
+      const ch = channels.open(kind, {});
+      // A socket that is not open gives a closed channel; its next open attaches.
+      if (ch.readyState === "closed") return;
+      channel = ch;
+      ch.onFrame = (inner: Uint8Array) => {
+        const f = commandFrame(inner);
+        if (f) onPush(f);
+      };
+      ch.onClosed = (ended: CloseReason) => {
+        if (ended !== "socket-lost") reopenLater(channels);
+      };
+      onOpen((frame) => ch.send(frame), reopened);
+    };
+    const reopenLater = (channels: PageChannels) => {
+      if (closed || reopenedOnce) return;
+      reopenedOnce = true;
+      const opens = socketOpens;
+      timer = setTimeout(() => {
+        if (!closed && opens === socketOpens) attach(channels, true);
+      }, reopenMs);
+    };
     const leave = page.join({
       onOpen: (channels: PageChannels, reopened: boolean) => {
-        const ch = channels.open(kind, {});
-        channel = ch;
-        ch.onFrame = (inner: Uint8Array) => {
-          const f = commandFrame(inner);
-          if (f) onPush(f);
-        };
-        onOpen((frame) => ch.send(frame), reopened);
+        socketOpens += 1;
+        reopenedOnce = false;
+        clearTimeout(timer);
+        attach(channels, reopened);
       },
     });
     return {
       sendIfOpen: (frame: Uint8Array) => channel?.send(frame) ?? false,
       resume: page.resume,
       close: () => {
+        closed = true;
+        clearTimeout(timer);
         channel?.close();
         channel = null;
         leave();
