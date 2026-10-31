@@ -22,7 +22,7 @@ use tokio::time::Instant;
 
 use super::page::PageEntry;
 use super::Login;
-use crate::mux::kinds::{self, Channel, CloseReason, Ctx, Opening, Request};
+use crate::mux::kinds::{self, Channel, CloseReason, Ctx, Opening, Request, Taken};
 use crate::mux::{ChannelSender, Writer};
 use crate::presence_board::MAX_REPORT_BYTES;
 use crate::protocol::{self, ChannelError, Command, Frame, FrameError, Joiner};
@@ -267,14 +267,14 @@ impl Reader {
         let Some(open) = self.open.get(&id) else {
             return true;
         };
-        if open.channel.take(inner).await {
-            return true;
+        match open.channel.take(inner) {
+            Taken::Yes => true,
+            Taken::Ended => {
+                self.open.remove(&id);
+                true
+            }
+            Taken::Full => self.end(id, CloseReason::Overflow).await,
         }
-        if open.channel.ended() {
-            self.open.remove(&id);
-            return true;
-        }
-        self.end(id, CloseReason::Overflow).await
     }
 
     /// End a channel the daemon refuses: its kind stops, the id stays used,

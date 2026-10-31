@@ -60,6 +60,7 @@ mod tests {
     use futures_util::StreamExt;
 
     use super::*;
+    use crate::mux::kinds::Taken;
     use crate::mux::{Mode, Writer};
     use crate::protocol::{self, Command, Frame};
     use crate::{registry, watch};
@@ -136,7 +137,11 @@ mod tests {
             verb: "watch".to_string(),
             payload: serde_json::json!({ "repo": SLUG, "path": "" }),
         }));
-        assert!(channel.take(watch_frame).await, "the channel takes frames");
+        assert_eq!(
+            channel.take(watch_frame),
+            Taken::Yes,
+            "the channel takes frames"
+        );
         assert!(refcount_reaches(&watchers, 1).await, "the watch is held");
 
         drop(channel);

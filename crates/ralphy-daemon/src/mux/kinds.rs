@@ -209,6 +209,17 @@ impl Opening {
     }
 }
 
+/// What became of a frame handed to a kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Taken {
+    /// The kind's queue holds it.
+    Yes,
+    /// The kind's queue is full.
+    Full,
+    /// The kind's task has ended.
+    Ended,
+}
+
 /// A channel its kind serves. Dropping it stops the kind's task.
 #[derive(Debug)]
 pub(crate) struct Channel {
@@ -229,10 +240,12 @@ impl Channel {
     }
 
     /// Hand one inner frame from the page to the kind; never waits.
-    /// `false` when the kind's task has ended or its queue is full;
-    /// [`Channel::ended`] tells which.
-    pub(crate) async fn take(&self, inner: Vec<u8>) -> bool {
-        self.inbound.try_send(inner).is_ok()
+    pub(crate) fn take(&self, inner: Vec<u8>) -> Taken {
+        match self.inbound.try_send(inner) {
+            Ok(()) => Taken::Yes,
+            Err(mpsc::error::TrySendError::Full(_)) => Taken::Full,
+            Err(mpsc::error::TrySendError::Closed(_)) => Taken::Ended,
+        }
     }
 
     /// Whether the kind's task has ended.
