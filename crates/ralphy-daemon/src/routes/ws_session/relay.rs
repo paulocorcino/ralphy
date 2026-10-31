@@ -150,7 +150,7 @@ pub(crate) struct Opening {
 }
 
 /// The audit line of a relayed open, written once the peer accepts the
-/// open, on its first frame. A refused open writes none.
+/// open, on its `session-open` frame. A refused open writes none.
 pub(crate) struct PendingRecord {
     who: SocketAudit,
     record: ConsoleRecord,

@@ -125,7 +125,9 @@ impl Answer {
         match event {
             PeerEvent::Frame(bytes) => {
                 self.traffic.peer_frame(&bytes);
-                if is_session_open(&bytes) {
+                // Only frames before the open are checked: after it, each
+                // terminal frame would be decoded and copied once more.
+                if !self.opened && is_session_open(&bytes) {
                     self.opened = true;
                     if let Some(record) = self.record.take() {
                         record.write();
@@ -155,7 +157,12 @@ impl Answer {
 
 /// Whether the inner frame `bytes` is the peer's `session-open`.
 fn is_session_open(bytes: &[u8]) -> bool {
-    matches!(protocol::decode(bytes), Ok(Frame::Command(command)) if command.verb == SESSION_OPEN)
+    // A terminal frame cannot be a command: skip its decode and copy.
+    bytes.first() == Some(&protocol::TAG_COMMAND)
+        && matches!(
+            protocol::decode(bytes),
+            Ok(Frame::Command(command)) if command.verb == SESSION_OPEN
+        )
 }
 
 /// The relay's flow when the hand-on to the page's queue ended it: the page
