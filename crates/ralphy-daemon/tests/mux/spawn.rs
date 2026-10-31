@@ -1,0 +1,1 @@
+//! The `spawn` channel.

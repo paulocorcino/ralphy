@@ -1,18 +1,19 @@
-//! `/ws`: the presence heartbeat.
+//! `/ws`: the page socket, with the presence heartbeat and the pushes on
+//! channel 0. The socket itself is served in `mux`.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::WebSocketUpgrade;
+use axum::http::HeaderMap;
 use axum::routing::get;
-use axum::Router;
-use futures_util::StreamExt;
+use axum::{Extension, Router};
 use tokio::sync::broadcast;
 
-use super::{send_command_on, RouterShared};
-use crate::mux::{ChannelSender, Mode, Writer};
+use super::{request_may_carry_a_secret, Caller, RouterShared, SessionHost, SocketAudit};
 use crate::protocol::{Frame, Presence};
-use crate::{identity, presence_board, protocol};
+use crate::{identity, mux, presence_board};
 
 /// A change to a shown fact the daemon owns, relayed on every open `/ws` as a
 /// `<fact>.dirty` command with id 0 (ADR-0070 D2 event 1). `/ws` carries them
@@ -33,7 +34,7 @@ pub(crate) enum Push {
 }
 
 impl Push {
-    fn verb(&self) -> &'static str {
+    pub(crate) fn verb(&self) -> &'static str {
         match self {
             Push::Desk { .. } => "desk.dirty",
             Push::Repos => "repos.dirty",
@@ -42,7 +43,7 @@ impl Push {
         }
     }
 
-    fn payload(&self) -> serde_json::Value {
+    pub(crate) fn payload(&self) -> serde_json::Value {
         match self {
             Push::Desk { tab } => serde_json::json!({ "tab": tab }),
             Push::Repos | Push::Peers | Push::Attention => serde_json::json!({}),
@@ -51,7 +52,7 @@ impl Push {
 
     /// Every push once: what a receiver that lagged sends, because a read
     /// again is harmless and a lost push is not.
-    fn all() -> [Push; 4] {
+    pub(crate) fn all() -> [Push; 4] {
         [
             Push::Desk { tab: None },
             Push::Repos,
@@ -60,6 +61,10 @@ impl Push {
         ]
     }
 }
+
+/// The push every page socket sends when the console list changes. The
+/// session manager's own bus carries it, not the [`Push`] bus.
+pub(crate) const SESSIONS_DIRTY: &str = "sessions.dirty";
 
 /// Capacity of the daemon-wide [`Push`] bus.
 pub(crate) const PUSH_CAP: usize = 32;
@@ -165,10 +170,6 @@ async fn stamp_stores(registry_path: &Path, peers_dir: &Path) -> Option<(String,
     }
 }
 
-async fn send_push(out: &ChannelSender, verb: &str, payload: serde_json::Value) -> bool {
-    send_command_on(out, 0, verb, payload).await.is_ok()
-}
-
 /// Build the presence heartbeat for the loaded identity and the daemon's
 /// current uptime. `None` identity → a heartbeat with no name/avatar (the
 /// daemon is alive but un-baptized).
@@ -181,229 +182,81 @@ pub(crate) fn build_presence(identity: Option<&identity::Identity>, uptime: Dura
     })
 }
 
-/// Push a presence heartbeat to a connected client every 2s until it hangs up
-/// or the daemon shuts down. The send loop MUST exit on every teardown path —
-/// a `None`/`Close`/error from the client (the `recv` arm) OR a daemon shutdown
-/// (the `shutdown` arm) — and drop the socket, so no task keeps sending after a
-/// disconnect and a held-open connection cannot stall graceful shutdown.
-///
-/// Between heartbeats it relays `sessions.dirty` from `sessions` and every
-/// [`Push`] from `pushes`. A receiver that lagged sends every verb once; a
-/// closed one turns its arm off, so the loop never spins on it.
-///
-/// The page sends `presence.report` on the same socket (docs/adr/0085 D14):
-/// each one goes on `board`, under this socket's entry, which goes when the
-/// loop ends. A frame that is not a report is ignored, and the socket stays
-/// open.
-pub(crate) async fn ws_presence_loop(
-    socket: WebSocket,
-    identity: Option<identity::Identity>,
-    start: Instant,
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
-    (mut sessions, mut pushes): (broadcast::Receiver<()>, broadcast::Receiver<Push>),
-    board: presence_board::Shared,
-) {
-    let page = PageEntry::open(board);
-    let (sink, mut from_page) = socket.split();
-    // Channel 0 is the socket itself: its frames leave whole and bare.
-    let writer = Writer::start(sink, Mode::Plain);
-    let out = writer.channel(0);
-    let mut tick = tokio::time::interval(Duration::from_secs(2));
-    let mut sessions_open = true;
-    let mut pushes_open = true;
-    loop {
-        let stop = tokio::select! {
-            changed = sessions.recv(), if sessions_open => {
-                on_sessions(&out, changed).await.stops(&mut sessions_open)
-            }
-            pushed = pushes.recv(), if pushes_open => {
-                on_push(&out, pushed).await.stops(&mut pushes_open)
-            }
-            // Ok = the daemon signalled shutdown; Err = the sender was dropped
-            // (its runtime is going away). Either way, stop serving this socket.
-            _ = shutdown.changed() => true,
-            _ = tick.tick() => !send_presence(&out, identity.as_ref(), start).await,
-            incoming = from_page.next() => {
-                page.take(&incoming);
-                ends_the_loop(&incoming)
-            }
-        };
-        if stop {
-            break;
-        }
-    }
-    // A client that reads nothing keeps the writer blocked in the socket
-    // send, so the writer is stopped here, not left to the dropped handle.
-    writer.abort();
-}
-
-/// The entry of one `/ws` socket on the presence board, removed when the
-/// socket's loop ends, on every path.
-struct PageEntry {
-    board: presence_board::Shared,
-    conn: Option<u64>,
-}
-
-impl PageEntry {
-    /// A poisoned board is logged, and this socket's reports are not kept.
-    fn open(board: presence_board::Shared) -> Self {
-        let conn = match board.lock() {
-            Ok(mut b) => Some(b.open()),
-            Err(e) => {
-                tracing::warn!(error = %e, "the presence board is poisoned");
-                None
-            }
-        };
-        PageEntry { board, conn }
-    }
-
-    /// Put a `presence.report` from the page on the board. Anything else
-    /// the page sends is ignored.
-    fn take(&self, incoming: &Option<Result<Message, axum::Error>>) {
-        let (Some(conn), Some(Ok(Message::Binary(bytes)))) = (self.conn, incoming) else {
-            return;
-        };
-        let Ok(Frame::Command(command)) = protocol::decode(bytes) else {
-            return;
-        };
-        if command.verb != "presence.report" {
-            return;
-        }
-        if let Ok(mut board) = self.board.lock() {
-            board.report(conn, &command.payload, std::time::SystemTime::now());
-        }
-    }
-}
-
-impl Drop for PageEntry {
-    fn drop(&mut self) {
-        let Some(conn) = self.conn else {
-            return;
-        };
-        match self.board.lock() {
-            Ok(mut board) => board.close(conn),
-            Err(e) => tracing::warn!(error = %e, "the presence board is poisoned"),
-        }
-    }
-}
-
-/// What one channel arm of [`ws_presence_loop`] tells the loop to do next.
-enum Next {
-    /// Wait for the next event.
-    Go,
-    /// The channel is closed: turn its arm off and go on.
-    CloseArm,
-    /// A send failed: end the loop.
-    Stop,
-}
-
-impl Next {
-    /// Whether the loop ends; a closed arm sets its `open` flag to false.
-    fn stops(self, open: &mut bool) -> bool {
-        match self {
-            Next::Go => false,
-            Next::CloseArm => {
-                *open = false;
-                false
-            }
-            Next::Stop => true,
-        }
-    }
-
-    /// `Go` when the send worked, `Stop` when it failed.
-    fn sent(ok: bool) -> Next {
-        if ok {
-            Next::Go
-        } else {
-            Next::Stop
-        }
-    }
-}
-
-/// The sessions arm: a change, or a lag, is one `sessions.dirty`.
-async fn on_sessions(
-    out: &ChannelSender,
-    changed: Result<(), broadcast::error::RecvError>,
-) -> Next {
-    match changed {
-        Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
-            Next::sent(send_push(out, "sessions.dirty", serde_json::json!({})).await)
-        }
-        Err(broadcast::error::RecvError::Closed) => Next::CloseArm,
-    }
-}
-
-/// The pushes arm: a push is sent as its verb; a lag sends every verb once.
-async fn on_push(out: &ChannelSender, pushed: Result<Push, broadcast::error::RecvError>) -> Next {
-    match pushed {
-        Ok(p) => Next::sent(send_push(out, p.verb(), p.payload()).await),
-        Err(broadcast::error::RecvError::Lagged(_)) => Next::sent(send_every_push(out).await),
-        Err(broadcast::error::RecvError::Closed) => Next::CloseArm,
-    }
-}
-
-/// `sessions.dirty` and every [`Push`] once; no send after the first one that
-/// fails. `false` when a send failed.
-async fn send_every_push(out: &ChannelSender) -> bool {
-    let mut sent = send_push(out, "sessions.dirty", serde_json::json!({})).await;
-    for p in Push::all() {
-        sent = sent && send_push(out, p.verb(), p.payload()).await;
-    }
-    sent
-}
-
-/// Send one presence heartbeat. `false` when the send failed.
-async fn send_presence(
-    out: &ChannelSender,
-    identity: Option<&identity::Identity>,
-    start: Instant,
-) -> bool {
-    let frame = build_presence(identity, start.elapsed());
-    out.send(protocol::encode(&frame)).await.is_ok()
-}
-
-/// Whether a message from the client ends the loop. None (stream closed), a
-/// Close frame, or a recv error all end it; the socket drops when the loop's
-/// task returns.
-fn ends_the_loop(incoming: &Option<Result<Message, axum::Error>>) -> bool {
-    match incoming {
-        Some(Ok(Message::Close(_))) | None => true,
-        Some(Err(_)) => true,
-        Some(Ok(_)) => false,
-    }
-}
-
-/// `/ws`: the presence socket.
+/// `/ws`: the page socket. Channel 0 is the presence heartbeat and the
+/// pushes; the page opens its other channels on it.
 pub(crate) fn presence_routes(s: &RouterShared) -> Router {
-    let identity = s.identity.clone();
-    let start = s.start;
-    let shutdown = s.shutdown.clone();
-    let sessions = s.sessions.clone();
-    let pushes = s.pushes.clone();
-    let board = s.presence.clone();
+    let page = PageShared {
+        start: s.start,
+        pushes: s.pushes.clone(),
+        board: s.presence.clone(),
+        audit: s.audit.clone(),
+        host: SessionHost {
+            peers_dir: s.peers_dir.clone(),
+            identity: s.identity.clone(),
+            environment: s.environment.clone(),
+            bound_port: s.bound_port,
+            sessions: s.sessions.clone(),
+            registry_path: s.registry_path.clone(),
+            shutdown: s.shutdown.clone(),
+        },
+        daemon_id: s.daemon_id.clone(),
+        watchers: s.watchers.clone(),
+        run_exits: s.run_exits.clone(),
+    };
     Router::new().route(
         "/ws",
-        get(move |ws: WebSocketUpgrade| {
-            let id = identity.clone();
-            let shutdown = shutdown.clone();
-            let receivers = (sessions.subscribe_changes(), pushes.subscribe());
-            let board = board.clone();
-            async move {
-                // The page sends only its presence reports here.
-                ws.max_message_size(presence_board::MAX_REPORT_BYTES)
-                    .max_frame_size(presence_board::MAX_REPORT_BYTES)
-                    .on_upgrade(move |socket| {
-                        ws_presence_loop(socket, id, start, shutdown, receivers, board)
-                    })
-            }
-        }),
+        get(
+            move |ws: WebSocketUpgrade, caller: Option<Extension<Caller>>, headers: HeaderMap| {
+                let page = page.page(caller, &headers);
+                // A bare frame keeps its own smaller cap in the reader.
+                async move {
+                    ws.max_message_size(mux::MAX_MESSAGE)
+                        .max_frame_size(mux::MAX_MESSAGE)
+                        .on_upgrade(move |socket| mux::serve(socket, page))
+                }
+            },
+        ),
     )
+}
+
+/// What every page socket of the router serves from, cloned per socket.
+#[derive(Clone)]
+struct PageShared {
+    start: Instant,
+    pushes: broadcast::Sender<Push>,
+    board: presence_board::Shared,
+    audit: Arc<crate::audit::Audit>,
+    host: SessionHost,
+    daemon_id: Option<String>,
+    watchers: Arc<crate::watch::WatcherManager>,
+    run_exits: broadcast::Sender<String>,
+}
+
+impl PageShared {
+    /// The page socket of one request.
+    fn page(&self, caller: Option<Extension<Caller>>, headers: &HeaderMap) -> mux::Page {
+        mux::Page {
+            identity: self.host.identity.clone(),
+            start: self.start,
+            shutdown: self.host.shutdown.clone(),
+            sessions: self.host.sessions.subscribe_changes(),
+            pushes: self.pushes.subscribe(),
+            board: self.board.clone(),
+            ctx: mux::Ctx {
+                who: SocketAudit::of(self.audit.clone(), caller),
+                secret_ok: request_may_carry_a_secret(headers),
+                host: self.host.clone(),
+                daemon_id: self.daemon_id.clone(),
+                watchers: self.watchers.clone(),
+                run_exits: self.run_exits.clone(),
+            },
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::Command;
 
     #[test]
     fn a_stamp_changes_when_the_store_changes() {
@@ -426,211 +279,5 @@ mod tests {
         let one = peers_stamp(&peers);
         assert_ne!(one, empty, "a new descriptor changes the stamp");
         assert_eq!(peers_stamp(&peers), one);
-    }
-
-    type Ws = tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >;
-
-    /// Run one `ws_presence_loop` on `sessions` and `pushes` behind a loopback
-    /// `/ws`, and connect to it. The returned sender holds the shutdown open.
-    async fn connect(
-        sessions: broadcast::Receiver<()>,
-        pushes: broadcast::Receiver<Push>,
-    ) -> (Ws, tokio::sync::watch::Sender<bool>) {
-        connect_on(sessions, pushes, presence_board::Shared::default()).await
-    }
-
-    /// [`connect`], with the presence board `board`.
-    async fn connect_on(
-        sessions: broadcast::Receiver<()>,
-        pushes: broadcast::Receiver<Push>,
-        board: presence_board::Shared,
-    ) -> (Ws, tokio::sync::watch::Sender<bool>) {
-        let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-        let receivers = std::sync::Arc::new(std::sync::Mutex::new(Some((sessions, pushes))));
-        let app = Router::new().route(
-            "/ws",
-            get(move |ws: WebSocketUpgrade| {
-                let taken = receivers.lock().unwrap().take();
-                let stop_rx = stop_rx.clone();
-                let board = board.clone();
-                async move {
-                    let pair = taken.expect("the test connects once");
-                    ws.on_upgrade(move |socket| {
-                        ws_presence_loop(socket, None, Instant::now(), stop_rx, pair, board)
-                    })
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
-                panic!("the test /ws stopped: {e}");
-            }
-        });
-        let (ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
-            .await
-            .unwrap();
-        (ws, stop_tx)
-    }
-
-    /// What the socket carried within `within`: the verbs of the commands,
-    /// the number of presence frames, and whether the socket ended.
-    async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) {
-        use futures_util::StreamExt;
-        use tokio_tungstenite::tungstenite::Message as Wire;
-        let mut commands = Vec::new();
-        let mut beats = 0;
-        let deadline = tokio::time::Instant::now() + within;
-        loop {
-            let msg = match tokio::time::timeout_at(deadline, ws.next()).await {
-                Err(_) => return (commands, beats, false),
-                Ok(msg) => msg,
-            };
-            match msg {
-                Some(Ok(Wire::Binary(bytes))) => match protocol::decode(&bytes).unwrap() {
-                    Frame::Command(c) => commands.push(c),
-                    Frame::Presence(_) => beats += 1,
-                    other @ (Frame::Terminal { .. } | Frame::Channel { .. }) => {
-                        panic!("an unexpected frame: {other:?}")
-                    }
-                },
-                None | Some(Ok(Wire::Close(_))) | Some(Err(_)) => return (commands, beats, true),
-                Some(Ok(_)) => {}
-            }
-        }
-    }
-
-    fn count(commands: &[Command], verb: &str) -> usize {
-        commands.iter().filter(|c| c.verb == verb).count()
-    }
-
-    /// A pushes receiver that lagged sends `sessions.dirty` and every push
-    /// once, then goes on with what the bus still holds.
-    #[tokio::test]
-    async fn a_lagged_push_receiver_sends_every_push_once() {
-        let (_sessions_tx, sessions) = broadcast::channel(4);
-        let (pushes_tx, pushes) = broadcast::channel(1);
-        let tab = Some("t1".to_string());
-        // Two pushes on a bus that holds one: the receiver lags by one.
-        for _ in 0..2 {
-            pushes_tx.send(Push::Desk { tab: tab.clone() }).unwrap();
-        }
-        let (mut ws, _stop) = connect(sessions, pushes).await;
-        let (commands, _, ended) = read_for(&mut ws, Duration::from_millis(1500)).await;
-        assert!(!ended, "the socket stays open");
-        let verbs: Vec<&str> = commands.iter().map(|c| c.verb.as_str()).collect();
-        assert_eq!(count(&commands, "sessions.dirty"), 1, "got: {verbs:?}");
-        assert_eq!(count(&commands, "repos.dirty"), 1, "got: {verbs:?}");
-        assert_eq!(count(&commands, "peers.dirty"), 1, "got: {verbs:?}");
-        assert_eq!(count(&commands, "attention.dirty"), 1, "got: {verbs:?}");
-        let desk_tabs: Vec<&serde_json::Value> = commands
-            .iter()
-            .filter(|c| c.verb == "desk.dirty")
-            .map(|c| &c.payload["tab"])
-            .collect();
-        assert_eq!(
-            desk_tabs,
-            [&serde_json::Value::Null, &serde_json::json!("t1")],
-            "the lag sends a desk push for every tab, then the push the bus kept"
-        );
-    }
-
-    /// A channel whose sender is gone turns its arm off: the socket stays
-    /// open, the heartbeat goes on, and nothing is sent for that channel.
-    async fn a_closed_channel_keeps_the_heartbeat(close_sessions: bool) {
-        let (sessions_tx, sessions) = broadcast::channel::<()>(4);
-        let (pushes_tx, pushes) = broadcast::channel::<Push>(4);
-        let _held = if close_sessions {
-            drop(sessions_tx);
-            (None, Some(pushes_tx))
-        } else {
-            drop(pushes_tx);
-            (Some(sessions_tx), None)
-        };
-        let (mut ws, _stop) = connect(sessions, pushes).await;
-        let (commands, beats, ended) = read_for(&mut ws, Duration::from_millis(2600)).await;
-        assert!(!ended, "a closed channel does not close the socket");
-        assert!(beats >= 2, "the heartbeat goes on: {beats} beat(s)");
-        let verbs: Vec<&str> = commands.iter().map(|c| c.verb.as_str()).collect();
-        assert!(
-            verbs.is_empty(),
-            "a closed channel sends nothing: {verbs:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_closed_sessions_channel_keeps_the_heartbeat() {
-        a_closed_channel_keeps_the_heartbeat(true).await;
-    }
-
-    #[tokio::test]
-    async fn a_closed_pushes_channel_keeps_the_heartbeat() {
-        a_closed_channel_keeps_the_heartbeat(false).await;
-    }
-
-    /// The board's answer within `within`: whether the operator is present.
-    async fn present_within(board: &presence_board::Shared, want: bool, within: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + within;
-        loop {
-            let now = std::time::SystemTime::now();
-            if board.lock().unwrap().present(now) == want {
-                return true;
-            }
-            if tokio::time::Instant::now() > deadline {
-                return false;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    }
-
-    #[tokio::test]
-    async fn a_page_report_on_the_presence_socket_sets_presence() {
-        use futures_util::SinkExt;
-        use tokio_tungstenite::tungstenite::Message as Wire;
-        let (_sessions_tx, sessions) = broadcast::channel(4);
-        let (_pushes_tx, pushes) = broadcast::channel(4);
-        let board = presence_board::Shared::default();
-        let (mut ws, _stop) = connect_on(sessions, pushes, board.clone()).await;
-        let frame = |payload: serde_json::Value| {
-            Wire::Binary(
-                protocol::encode(&Frame::Command(Command {
-                    id: 0,
-                    verb: "presence.report".to_string(),
-                    payload,
-                }))
-                .into(),
-            )
-        };
-        // A frame that is no report is ignored, and the socket stays open.
-        ws.send(Wire::Binary(vec![0x02, b'{'].into()))
-            .await
-            .unwrap();
-        ws.send(frame(serde_json::json!({ "visible": true })))
-            .await
-            .unwrap();
-        let now = 1_000_000.0;
-        ws.send(frame(serde_json::json!({
-            "visible": true, "lastInput": now, "now": now, "origin": "http://127.0.0.1:8765"
-        })))
-        .await
-        .unwrap();
-        assert!(
-            present_within(&board, true, Duration::from_secs(5)).await,
-            "the report makes the operator present"
-        );
-        assert_eq!(
-            board.lock().unwrap().last_origin().as_deref(),
-            Some("http://127.0.0.1:8765")
-        );
-
-        ws.close(None).await.unwrap();
-        drop(ws);
-        assert!(
-            present_within(&board, false, Duration::from_secs(5)).await,
-            "closing the socket ends the presence"
-        );
     }
 }
