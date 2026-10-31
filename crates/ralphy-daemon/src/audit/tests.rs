@@ -263,4 +263,93 @@ mod logins {
             "the login's device was read back from the log"
         );
     }
+
+    /// A `login_other_device` line for `login` and `device`, `ts` seconds
+    /// after the epoch.
+    fn reported_at(ts: i64, login: LoginId, device: DeviceId) -> String {
+        let at = chrono::DateTime::from_timestamp(ts, 0)
+            .unwrap()
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        serde_json::json!({
+            "at": at,
+            "event": "login_other_device",
+            "device": device.to_string(),
+            "login": login.to_string(),
+            "actor": "device",
+            "did": "console_launch",
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn a_notice_older_than_thirty_days_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = log_path_in(dir.path());
+        let now = 2_000_000_000;
+        let day = 86_400;
+        let (fresh, old, edge) = (LoginId::mint(), LoginId::mint(), LoginId::mint());
+        let lines = [
+            reported_at(now - 31 * day, old, DeviceId::mint()),
+            reported_at(now - 30 * day, edge, DeviceId::mint()),
+            reported_at(now - 29 * day, fresh, DeviceId::mint()),
+        ];
+        std::fs::write(
+            &path,
+            lines.join(
+                "
+",
+            ) + "
+",
+        )
+        .unwrap();
+        let listed = super::super::logins::notices(&path, now, None, |_| false).unwrap();
+        let logins: Vec<String> = listed.iter().map(|n| n.login.clone()).collect();
+        assert_eq!(
+            logins,
+            [fresh.to_string()],
+            "only a notice under 30 days old"
+        );
+    }
+
+    #[test]
+    fn a_notice_change_pushes_logins_dirty() {
+        let dir = tempfile::tempdir().unwrap();
+        let pushes = tokio::sync::broadcast::channel(8).0;
+        let mut bus = pushes.subscribe();
+        let audit =
+            Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())).with_pushes(pushes.clone()));
+        let pushed = |bus: &mut tokio::sync::broadcast::Receiver<crate::routes::Push>| {
+            let mut verbs = Vec::new();
+            while let Ok(p) = bus.try_recv() {
+                verbs.push(p.verb());
+            }
+            verbs
+        };
+        let login = LoginId::mint();
+        let (own, other) = (DeviceId::mint(), DeviceId::mint());
+        signed_in(&audit, login, Some(own));
+        socket(&audit, login, Some(own)).console(&launch());
+        assert!(
+            pushed(&mut bus).is_empty(),
+            "a use from the login's own device"
+        );
+        socket(&audit, login, Some(other)).console(&launch());
+        assert_eq!(
+            pushed(&mut bus),
+            ["logins.dirty"],
+            "the login_other_device line"
+        );
+        let other = other.to_string();
+        audit
+            .dismiss_notice(&login, Some(&other), Actor::Device)
+            .unwrap();
+        assert_eq!(pushed(&mut bus), ["logins.dirty"], "the dismissal");
+        audit
+            .dismiss_notice(&login, Some(&other), Actor::Device)
+            .unwrap();
+        assert!(
+            pushed(&mut bus).is_empty(),
+            "a second dismissal changes nothing"
+        );
+    }
 }

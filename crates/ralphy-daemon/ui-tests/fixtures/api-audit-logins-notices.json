@@ -1,0 +1,25 @@
+{
+  "notices": [
+    {
+      "at": "<at>",
+      "device": "fedcba9876543210fedcba9876543210",
+      "did": "console_launch",
+      "facts": {
+        "browser": "chrome",
+        "browser_version": null,
+        "device": "fedcba9876543210fedcba9876543210",
+        "events": 2,
+        "first_seen": "<first_seen>",
+        "form": "phone",
+        "gpu": null,
+        "ip": "203.0.113.5",
+        "last_seen": "<last_seen>",
+        "model": null,
+        "os": "android",
+        "os_version": null,
+        "this": false
+      },
+      "login": "AAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ]
+}

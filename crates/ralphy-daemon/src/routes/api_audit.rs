@@ -1,10 +1,11 @@
 //! The audit log's routes (ADR-0074): the page reports its device facts once
-//! for each load (D5), and the Devices section reads the log back (D9).
+//! for each load (D5), the Devices section reads the log back (D9), and the
+//! page reads and dismisses the login notices (#717).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::{DefaultBodyLimit, Query};
+use axum::extract::{DefaultBodyLimit, Form, Query};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -13,7 +14,9 @@ use serde_json::json;
 
 use super::RouterShared;
 use crate::audit::facts::ClientFacts;
-use crate::audit::{read, Audit};
+use crate::audit::{logins, read, Actor, Audit};
+use crate::auth::AuthState;
+use crate::cookie::LoginId;
 use crate::device::DeviceId;
 use crate::registry;
 
@@ -110,10 +113,90 @@ async fn get_events(audit: Arc<Audit>, registry_path: PathBuf, q: EventsQuery) -
     .await
 }
 
+/// `GET /api/audit/logins/notices`: the open login notices, the newest
+/// first.
+async fn get_notices(
+    audit: Arc<Audit>,
+    auth: Arc<AuthState>,
+    device: Option<Extension<DeviceId>>,
+) -> Response {
+    read_reply("notices", move || {
+        let Some(path) = audit.log_path() else {
+            return Ok(Vec::new());
+        };
+        let revoked = |login: &str| LoginId::parse(login).is_some_and(|id| auth.login_revoked(&id));
+        logins::notices(
+            &path,
+            chrono::Utc::now().timestamp(),
+            device.map(|Extension(id)| id),
+            revoked,
+        )
+    })
+    .await
+}
+
+/// The `POST /api/audit/logins/dismiss` body: the pair of the notice. An
+/// empty `device` is the use that came with no device cookie.
+#[derive(serde::Deserialize)]
+pub(crate) struct DismissForm {
+    login: Option<String>,
+    device: Option<String>,
+}
+
+/// The pair of a dismiss body, or `None` when it is malformed.
+fn dismiss_pair(form: &DismissForm) -> Option<(LoginId, Option<&str>)> {
+    let login = LoginId::parse(form.login.as_deref()?)?;
+    match form.device.as_deref()? {
+        "" => Some((login, None)),
+        device if is_device_id(device) => Some((login, Some(device))),
+        _ => None,
+    }
+}
+
+/// `POST /api/audit/logins/dismiss`: the operator says a notice was their own
+/// use. A malformed pair is a `400`; a failed write is a `500`.
+async fn post_dismiss(
+    audit: Arc<Audit>,
+    caller: Option<Extension<super::audit_layer::Caller>>,
+    form: DismissForm,
+) -> Response {
+    let Some((login, device)) = dismiss_pair(&form) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "the notice is not a login ID and a device ID" })),
+        )
+            .into_response();
+    };
+    let device = device.map(str::to_string);
+    let actor = caller.map_or(Actor::Unknown, |Extension(c)| c.actor);
+    let written =
+        tokio::task::spawn_blocking(move || audit.dismiss_notice(&login, device.as_deref(), actor))
+            .await;
+    match written {
+        Ok(Ok(())) => Json(json!({ "dismissed": true })).into_response(),
+        Ok(Err(e)) => {
+            tracing::warn!(error = %format!("{e:#}"), "dismissing a login notice failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "the dismissal was not written" })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("the write stopped: {e}") })),
+        )
+            .into_response(),
+    }
+}
+
 pub(crate) fn audit_routes(s: &RouterShared) -> Router {
     let facts_audit = s.audit.clone();
     let devices_audit = s.audit.clone();
     let events_audit = s.audit.clone();
+    let notices_audit = s.audit.clone();
+    let notices_auth = s.auth.clone();
+    let dismiss_audit = s.audit.clone();
     let registry_path = s.registry_path.clone();
     Router::new()
         .route(
@@ -137,5 +220,20 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
             get(move |Query(q): Query<EventsQuery>| {
                 get_events(events_audit.clone(), registry_path.clone(), q)
             }),
+        )
+        .route(
+            "/api/audit/logins/notices",
+            get(move |device: Option<Extension<DeviceId>>| {
+                get_notices(notices_audit.clone(), notices_auth.clone(), device)
+            }),
+        )
+        .route(
+            "/api/audit/logins/dismiss",
+            post(
+                move |caller: Option<Extension<super::audit_layer::Caller>>,
+                      Form(form): Form<DismissForm>| {
+                    post_dismiss(dismiss_audit.clone(), caller, form)
+                },
+            ),
         )
 }

@@ -14,8 +14,10 @@ use anyhow::{Context, Result};
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 
+use crate::cookie::LoginId;
 use crate::device::{self, DeviceId, DeviceKey};
 use crate::owner_only;
+use crate::routes::Push;
 
 /// Lines older than this are removed (D3).
 pub const RETENTION_SECS: i64 = 90 * 24 * 3600;
@@ -52,6 +54,9 @@ pub enum EventKind {
     /// A login used from a device other than the one that signed in: one
     /// line for each pair of login and device (#717).
     LoginOtherDevice,
+    /// The operator said a `login_other_device` pair was their own use: one
+    /// line for each pair, which then is no longer a notice (#717).
+    LoginNoticeDismissed,
 }
 
 /// Who sent the request.
@@ -262,6 +267,9 @@ pub struct Audit {
     writer: Mutex<Writer>,
     /// The last normalized facts of each device since the daemon started.
     last_facts: Mutex<HashMap<DeviceId, normalize::Normalized>>,
+    /// Where a change of the login notices is told: `logins.dirty`. `None`
+    /// pushes nothing.
+    pushes: Option<tokio::sync::broadcast::Sender<Push>>,
 }
 
 impl Audit {
@@ -273,6 +281,19 @@ impl Audit {
             key: OnceLock::new(),
             writer: Mutex::new(Writer::default()),
             last_facts: Mutex::new(HashMap::new()),
+            pushes: None,
+        }
+    }
+
+    /// This log, telling each change of the login notices on `pushes`.
+    pub(crate) fn with_pushes(mut self, pushes: tokio::sync::broadcast::Sender<Push>) -> Audit {
+        self.pushes = Some(pushes);
+        self
+    }
+
+    fn push_logins(&self) {
+        if let Some(pushes) = &self.pushes {
+            crate::routes::push(pushes, Push::Logins);
         }
     }
 
@@ -349,32 +370,57 @@ impl Audit {
 
     fn write(&self, event: &Event, did: Option<&str>) {
         let Some(dir) = &self.dir else { return };
-        if let Err(e) = self.append(dir, event, did) {
-            tracing::warn!(error = format!("{e:#}"), "audit log write failed");
+        match self.append(dir, event, did) {
+            Ok(true) => self.push_logins(),
+            Ok(false) => {}
+            Err(e) => tracing::warn!(error = format!("{e:#}"), "audit log write failed"),
         }
     }
 
-    fn append(&self, dir: &Path, event: &Event, did: Option<&str>) -> Result<()> {
+    /// Append `event`, then the report it causes; `true` when a
+    /// `login_other_device` line was written.
+    fn append(&self, dir: &Path, event: &Event, did: Option<&str>) -> Result<bool> {
         let path = log_path_in(dir);
-        let now = chrono::Utc::now().timestamp();
         // The report is decided and written under this lock, so two uses by
         // one new pair write one line.
         let mut writer = self.writer.lock().expect("audit writer lock poisoned");
-        if writer.last_prune_day != Some(now / 86_400) {
-            prune(&path, now)?;
-            writer.last_prune_day = Some(now / 86_400);
-            // A prune may remove the lines the book was read from.
-            writer.logins = None;
-        }
+        writer.prune_if_due(&path)?;
         owner_only::create_owner_only_dir(dir)?;
-        append_line(&path, event)?;
-        if let Some(book) = writer.logins.as_mut() {
-            book.note(event);
-        }
+        writer.append(&path, event)?;
         match did {
             Some(did) => writer.report_other_device(&path, event, did),
-            None => Ok(()),
+            None => Ok(false),
         }
+    }
+
+    /// Write a `login_notice_dismissed` line for the pair of `login` and
+    /// `device`, unless the log already has one, and push `logins.dirty`
+    /// when it writes. With the log off, nothing is written.
+    pub(crate) fn dismiss_notice(
+        &self,
+        login: &LoginId,
+        device: Option<&str>,
+        actor: Actor,
+    ) -> Result<()> {
+        let Some(dir) = &self.dir else { return Ok(()) };
+        let path = log_path_in(dir);
+        let login = login.to_string();
+        {
+            // Decided and written under the lock, so two dismissals of one
+            // pair write one line.
+            let mut writer = self.writer.lock().expect("audit writer lock poisoned");
+            writer.prune_if_due(&path)?;
+            if writer.book(&path)?.dismissed(&login, device) {
+                return Ok(());
+            }
+            let mut event = Event::new(EventKind::LoginNoticeDismissed, None, actor);
+            event.device = device.map(str::to_string);
+            event.login = Some(login);
+            owner_only::create_owner_only_dir(dir)?;
+            writer.append(&path, &event)?;
+        }
+        self.push_logins();
+        Ok(())
     }
 }
 
@@ -389,18 +435,47 @@ struct Writer {
 }
 
 impl Writer {
-    /// Append a `login_other_device` line when `event`, written when its
-    /// login did `did`, is the first use of a new pair of login and device.
-    fn report_other_device(&mut self, path: &Path, event: &Event, did: &str) -> Result<()> {
-        let Some(login) = event.login.as_deref() else {
-            return Ok(());
-        };
-        let book = match self.logins.as_mut() {
-            Some(book) => book,
+    /// Prune the log at `path` once a day.
+    fn prune_if_due(&mut self, path: &Path) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        if self.last_prune_day != Some(now / 86_400) {
+            prune(path, now)?;
+            self.last_prune_day = Some(now / 86_400);
+            // A prune may remove the lines the book was read from.
+            self.logins = None;
+        }
+        Ok(())
+    }
+
+    /// Append `event` and keep the book, when it is read, in step.
+    fn append(&mut self, path: &Path, event: &Event) -> Result<()> {
+        append_line(path, event)?;
+        if let Some(book) = self.logins.as_mut() {
+            book.note(event);
+        }
+        Ok(())
+    }
+
+    /// The login book, read from the log at `path` the first time.
+    fn book(&mut self, path: &Path) -> Result<&mut logins::Logins> {
+        Ok(match self.logins {
+            Some(ref mut book) => book,
             None => self.logins.insert(logins::Logins::read(path)?),
+        })
+    }
+
+    /// Append a `login_other_device` line when `event`, written when its
+    /// login did `did`, is the first use of a new pair of login and device;
+    /// `true` when it did.
+    fn report_other_device(&mut self, path: &Path, event: &Event, did: &str) -> Result<bool> {
+        let Some(login) = event.login.as_deref() else {
+            return Ok(false);
         };
-        if !book.first_use_elsewhere(login, event.device.as_deref()) {
-            return Ok(());
+        if !self
+            .book(path)?
+            .first_use_elsewhere(login, event.device.as_deref())
+        {
+            return Ok(false);
         }
         let mut notice = Event::new(EventKind::LoginOtherDevice, None, event.actor);
         notice.device = event.device.clone();
@@ -408,7 +483,8 @@ impl Writer {
         notice.did = Some(did.to_string());
         notice.ip = event.ip.clone();
         notice.holder = event.holder.clone();
-        append_line(path, &notice)
+        self.append(path, &notice)?;
+        Ok(true)
     }
 }
 
@@ -464,7 +540,7 @@ fn line_time(line: &str) -> Option<i64> {
 }
 
 pub mod facts;
-mod logins;
+pub(crate) mod logins;
 pub mod normalize;
 pub mod read;
 
