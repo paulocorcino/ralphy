@@ -136,12 +136,18 @@ async fn a_watcher_does_not_occupy_the_writer_slot() {
 /// ADR-0059 §6 through the listing, not the pure `render`: a `working`
 /// observed longer than `STALE_AFTER` ago lists as `unknown`, a fresh one
 /// as `working`, a `waiting` never ages — and `list` reads the observation
-/// the pump stored, so replacing the render with a bare clone would red.
-/// A status-less console (a shell) lists no state at all.
+/// the tick stored, so replacing the render with a bare clone would red.
+/// A console before its first hook line lists no state at all.
 #[tokio::test]
 async fn list_renders_the_agent_state_with_the_staleness_rule() {
-    use crate::agent_state::{Observed, STALE_AFTER};
+    use crate::agent_state::STALE_AFTER;
+    use std::io::Write;
     let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let files = crate::agent_state::StatusFiles::for_session(dir.path(), 1);
+    let status = files.status.clone();
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(files);
     let (id, _att) = manager
         .spawn_attached(
             "owner/r".to_string(),
@@ -150,47 +156,43 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
             None,
             None,
             None,
-            console_spec(std::env::temp_dir(), 24, 80, None),
+            spec,
         )
         .expect("the platform shell must spawn");
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
     let now = SystemTime::now();
     assert_eq!(
         manager.list_at(now)[0].agent_state,
         None,
         "no hook fired, no state"
     );
-    let observe = |state: &'static str, seen: SystemTime| {
-        let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-        *sess.agent_state.lock().expect("agent_state mutex") = Some(Observed {
-            state,
-            detail: None,
-            since: "t".into(),
-            seen,
-            cause: None,
-        });
+    // The line is read at `seen`, so the observation is that old at `now`.
+    let observe = |event: &str, seen: SystemTime| {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&status)
+            .expect("open the status file");
+        writeln!(
+            file,
+            r#"{{"event":"{event}","tool_name":"Bash","tool_input":null,"ts":"t"}}"#
+        )
+        .expect("append the status line");
+        sess.poll_status(seen, None);
     };
-    observe(
-        "working",
-        now - STALE_AFTER + std::time::Duration::from_secs(60),
-    );
-    assert_eq!(
+    let state_at = |now: SystemTime| {
         manager.list_at(now)[0]
             .agent_state
             .as_ref()
-            .and_then(|a| a.state.as_deref()),
-        Some("working")
-    );
-    observe(
-        "working",
-        now - STALE_AFTER - std::time::Duration::from_secs(60),
-    );
+            .and_then(|a| a.state.clone())
+    };
+    let seen = now - STALE_AFTER - std::time::Duration::from_secs(60);
+    observe("UserPromptSubmit", seen);
     assert_eq!(
-        manager.list_at(now)[0]
-            .agent_state
-            .as_ref()
-            .and_then(|a| a.state.as_deref()),
-        Some("unknown")
+        state_at(seen + STALE_AFTER - std::time::Duration::from_secs(60)),
+        Some("working".to_string())
     );
+    assert_eq!(state_at(now), Some("unknown".to_string()));
     assert_eq!(
         manager
             .get(id)
@@ -199,16 +201,10 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
         Some("unknown".to_string()),
         "`get` renders too"
     );
-    observe(
-        "waiting",
-        now - STALE_AFTER - std::time::Duration::from_secs(60),
-    );
+    observe("PermissionRequest", seen);
     assert_eq!(
-        manager.list_at(now)[0]
-            .agent_state
-            .as_ref()
-            .and_then(|a| a.state.as_deref()),
-        Some("waiting"),
+        state_at(now),
+        Some("waiting".to_string()),
         "a question never goes stale"
     );
     manager.close(id);

@@ -100,8 +100,12 @@ Per ADR-0036 §2, every write is a `ralphy` subcommand: `worktree.list`
 with the same `--` guard `branch_argv` uses, `dispatch.rs:758-783`).
 
 Every repo-scoped verb gains an optional **`checkout: <name>`** argument.
-The daemon resolves it against `worktree list` — never against a client
-path — and applies it in one of two ways, by verb family:
+The daemon resolves it against the pointer file git writes for a linked
+worktree (`<root>/.ralphy/worktrees/<name>/.git` = `gitdir: …`) — never
+against a client path — and confines the worktree folder against the
+registered root. The result is a `ConfinedCheckout`, the only way from a
+name to a directory (amended 2026-11-01). It applies in one of two ways, by
+verb family:
 
 - **Observe verbs that take a `rel`** (`tree.*`, `file.*`, `tree.watch`,
   `runs.watch`): the checkout becomes a **prefix on `rel`** —
@@ -120,6 +124,17 @@ path — and applies it in one of two ways, by verb family:
 
 An unknown name is `{ status: "error", message: "unknown checkout" }`.
 Absent, every verb runs exactly as today.
+
+The `ConfinedCheckout` names the folder in two forms (amended 2026-11-01,
+ADR-0036 amendment of the same date). `cwd()` is the lexical path, the
+`current_dir` of a git-backed verb and of a console: a canonical path on
+Windows starts with `\\?\`, which a child program may not accept.
+`root()` is the canonical path, the root of a walk (`tree.list`, the
+searches, `file.stat`, `tree.size`), of `note.write` and of the HEAD pointer
+read. A read that confines against the primary root keeps the prefixed
+`rel`. A folder that leaves the root — a symlink out of the repo — is
+`unknown checkout` from every verb, and a `/ws/tree` watch of it holds
+nothing.
 
 `worktree.remove` is additionally refused by the daemon while any live
 session's `checkout` (§3) names it: the session table is the daemon's, the

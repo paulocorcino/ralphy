@@ -1,18 +1,19 @@
-//! The agent state a console shows: the hook tail read at each tick, and
-//! the silence rule over it (docs/adr/0059 §5, A2).
+//! The agent state a console shows: the hook lines folded at each tick,
+//! the operator's input, and the silence rule over them (docs/adr/0059 §5,
+//! A2).
 
-use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
-use super::{ManagedSession, SessionManager};
+use super::SessionManager;
 use crate::agent_state::fold::Cause;
-use crate::agent_state::Observed;
+use crate::agent_state::fold::Fold;
+use crate::agent_state::{AgentState, HookVendor, Observed};
 use crate::session::SessionId;
 
 /// The turns a console finished, as the hooks showed them: how many, and the
 /// hook time of the last one.
 #[derive(Debug, Default)]
-pub(super) struct TurnEnds {
+struct TurnEnds {
     count: u64,
     since: String,
 }
@@ -37,12 +38,12 @@ impl SessionManager {
         sessions
             .values()
             .filter_map(|s| {
-                let ends = s.turn_ends.lock().expect("turn_ends mutex");
-                (ends.count > 0).then(|| TurnEnd {
+                let status = s.agent_status.lock().expect("agent_status mutex");
+                status.turn_ends().map(|(count, since)| TurnEnd {
                     id: s.info.id,
                     record: s.info.record.clone(),
-                    count: ends.count,
-                    since: ends.since.clone(),
+                    count,
+                    since: since.to_owned(),
                 })
             })
             .collect()
@@ -66,122 +67,167 @@ fn turn_ends_in(was: Option<&str>, transitions: &[Observed]) -> (u64, Option<Str
     (count, since)
 }
 
-impl ManagedSession {
+/// Why a console's state is not reported, the reason in words, and when it
+/// began.
+type Unreported = (crate::agent_state::Unreported, String, SystemTime);
+
+/// The agent state of one console, and everything the silence rule and the
+/// turn count read: one value, so one lock holds it.
+///
+/// The one rule of its lock: read the status file's lines first, with no
+/// lock held, then lock this and fold them with [`on_tick`](Self::on_tick).
+/// An input folds under the same lock, so a tick and an input never store
+/// over each other (ADR-0085 D7.5). This type reads no file.
+pub(super) struct AgentStatus {
+    id: SessionId,
+    /// The vendor of the hook lines and their fold; `None` for a console
+    /// without hooks.
+    hooks: Option<(HookVendor, Fold)>,
+    /// The last observed state, `None` until the first hook fires.
+    observed: Option<Observed>,
+    /// The state word and detail the list showed at the last tick. A
+    /// `working` that ages into `unknown` changes what is shown with no new
+    /// observation, so the change is measured against this, not against the
+    /// observation.
+    shown: Option<AgentState>,
+    /// The time of the operator's first input with at least one byte: the
+    /// start of the silence clock (docs/adr/0059 A2). Later inputs do not
+    /// move it.
+    first_input: Option<SystemTime>,
+    /// When a tick first folded a hook line; once set, the console is never
+    /// silent again.
+    first_line: Option<SystemTime>,
+    /// Why the state is not reported, while it lasts.
+    silent: Option<Unreported>,
+    /// Whether this console already logged that it became silent.
+    logged_silent: bool,
+    /// The turns this console finished (docs/adr/0085 D11).
+    turn_ends: TurnEnds,
+}
+
+impl AgentStatus {
+    /// The state of console `id`: folded from the lines of `vendor` when it
+    /// has hooks, and not reported from its start when `unreported` gives
+    /// the reason and the time.
+    pub(super) fn new(
+        id: SessionId,
+        vendor: Option<HookVendor>,
+        unreported: Option<(String, SystemTime)>,
+    ) -> Self {
+        AgentStatus {
+            id,
+            hooks: vendor.map(|v| (v, Fold::new())),
+            observed: None,
+            shown: None,
+            first_input: None,
+            first_line: None,
+            silent: unreported
+                .map(|(reason, since)| (crate::agent_state::Unreported::NoSource, reason, since)),
+            logged_silent: false,
+            turn_ends: TurnEnds::default(),
+        }
+    }
+
+    /// The operator wrote to the console at `now`: the silence clock starts,
+    /// and the permission `waiting` of a vendor that sends no grant event
+    /// ends (ADR-0085 D7.5). The next tick reports the change.
+    pub(super) fn on_input(&mut self, now: SystemTime) {
+        self.first_input.get_or_insert(now);
+        if let Some(obs) = self.hooks.as_mut().and_then(|(v, f)| v.fold_input(f, now)) {
+            self.observed = Some(obs);
+        }
+    }
+
+    /// Fold the `lines` a tick read at `now`: keep the newest transition,
+    /// and on ANY folded line refresh the observation's `seen` — a `working`
+    /// that keeps producing `PreToolUse` lines is alive, and the staleness
+    /// clock must not age it into `unknown` (§6). Then apply the silence
+    /// rule; `start_failure` counts only for a vendor whose hook runs the
+    /// ralphy program.
+    ///
+    /// Returns whether the state the list shows changed since the last tick:
+    /// its word or its detail, including a `working` that ages into `unknown`
+    /// (§6) with no new line, and the start or the end of a silence. A
+    /// refreshed `seen` alone does not count. A console without hooks never
+    /// changes.
+    pub(super) fn on_tick(
+        &mut self,
+        lines: &[String],
+        now: SystemTime,
+        start_failure: Option<&str>,
+    ) -> bool {
+        let Some((vendor, fold)) = self.hooks.as_mut() else {
+            return false;
+        };
+        let start_failure = start_failure.filter(|_| vendor.runs_the_ralphy_program());
+        let polled = vendor.fold_lines(fold, lines, now);
+        if polled.activity {
+            self.first_line.get_or_insert(now);
+        }
+        self.count_turn_ends(&polled.transitions);
+        if let Some(last) = polled.transitions.into_iter().last() {
+            self.observed = Some(last);
+        } else if polled.activity {
+            if let Some(obs) = self.observed.as_mut() {
+                obs.seen = now;
+            }
+        }
+        self.update_silence(now, start_failure);
+        let shown_now = self.shown_at(now);
+        let changed = self.shown != shown_now;
+        self.shown = shown_now;
+        changed
+    }
+
     /// The agent block the list shows at `now`: the unreported block while
     /// the state is not reported, else the observation rendered with §6
     /// staleness.
-    pub(super) fn shown_at(&self, now: SystemTime) -> Option<crate::agent_state::AgentState> {
-        if let Some((why, reason, since)) = self.silent.lock().expect("silent mutex").clone() {
-            return Some(crate::agent_state::AgentState::unreported(
-                why, reason, since,
-            ));
+    pub(super) fn shown_at(&self, now: SystemTime) -> Option<AgentState> {
+        if let Some((why, reason, since)) = self.silent.clone() {
+            return Some(AgentState::unreported(why, reason, since));
         }
-        self.agent_state
-            .lock()
-            .expect("agent_state mutex")
+        self.observed
             .as_ref()
             .map(|o| crate::agent_state::render(o, now))
     }
 
+    /// How many turns this console finished, and the hook time of the last
+    /// one; `None` before the first.
+    pub(super) fn turn_ends(&self) -> Option<(u64, &str)> {
+        let ends = &self.turn_ends;
+        (ends.count > 0).then_some((ends.count, ends.since.as_str()))
+    }
+
     /// Apply the silence rule at `now` (docs/adr/0059 A2) and log one line
-    /// the first time this console becomes silent. Only a console with a
-    /// status tail calls this, and it has one only when its state comes from
-    /// hooks.
-    fn update_silence(&self, now: SystemTime, start_failure: Option<&str>) {
+    /// the first time this console becomes silent. Only a console with hooks
+    /// calls this.
+    fn update_silence(&mut self, now: SystemTime, start_failure: Option<&str>) {
         let reason = crate::agent_state::silence(
             crate::agent_state::StateSource::Hooks,
-            *self.first_input.lock().expect("first_input mutex"),
-            *self.first_line.lock().expect("first_line mutex"),
+            self.first_input,
+            self.first_line,
             start_failure,
             now,
         );
-        let mut silent = self.silent.lock().expect("silent mutex");
-        match (reason, silent.is_some()) {
+        match (reason, self.silent.is_some()) {
             (Some(reason), false) => {
-                if !self.logged_silent.swap(true, Ordering::Relaxed) {
-                    tracing::warn!(session = self.info.id, "a console became silent: {reason}");
+                if !std::mem::replace(&mut self.logged_silent, true) {
+                    tracing::warn!(session = self.id, "a console became silent: {reason}");
                 }
-                *silent = Some((crate::agent_state::Unreported::Silent, reason, now));
+                self.silent = Some((crate::agent_state::Unreported::Silent, reason, now));
             }
-            (None, true) => *silent = None,
+            (None, true) => self.silent = None,
             (Some(_), true) | (None, false) => {}
         }
     }
 
     /// Add the turns `transitions` ended to this console's count.
-    fn count_turn_ends(&self, was: Option<&str>, transitions: &[Observed]) {
+    fn count_turn_ends(&mut self, transitions: &[Observed]) {
+        let was = self.observed.as_ref().map(|o| o.state);
         let (ended, at) = turn_ends_in(was, transitions);
         if let Some(at) = at {
-            let mut ends = self.turn_ends.lock().expect("turn_ends mutex");
-            ends.count += ended;
-            ends.since = at;
+            self.turn_ends.count += ended;
+            self.turn_ends.since = at;
         }
-    }
-
-    /// Read what the hooks appended since the last tick: keep the newest
-    /// transition, and on ANY folded line refresh the observation's `seen` —
-    /// a `working` that keeps producing `PreToolUse` lines is alive, and the
-    /// staleness clock must not age it into `unknown` (§6). Cheap when
-    /// nothing changed (an open, a seek, an empty read).
-    ///
-    /// Returns whether the state the list shows changed since the last tick:
-    /// its word or its detail, including a `working` that ages into `unknown`
-    /// (§6) with no new line, and the start or the end of a silence. A
-    /// refreshed `seen` alone does not count.
-    pub(super) fn poll_status(&self, now: SystemTime) -> bool {
-        self.poll_status_with(now, crate::agent_state::start_check_failure().as_deref())
-    }
-
-    /// [`poll_status`](Self::poll_status) with the start check's failure
-    /// given, so a test does not depend on the daemon-wide check. The
-    /// failure counts only for a vendor whose hook runs the ralphy program.
-    pub(super) fn poll_status_with(&self, now: SystemTime, start_failure: Option<&str>) -> bool {
-        self.poll_status_between(now, start_failure, || {})
-    }
-
-    /// [`poll_status_with`](Self::poll_status_with), with `between` run
-    /// after the tail is read and before the state is stored, so a test can
-    /// write the operator's input there.
-    ///
-    /// LOCK ORDER: `tail`, then `agent_state`, as in `operator_input`. The
-    /// tail stays locked until the new state is stored: an input folded
-    /// between the read and the store would else be overwritten by the older
-    /// state the read returned (ADR-0085 D7.5).
-    pub(super) fn poll_status_between(
-        &self,
-        now: SystemTime,
-        start_failure: Option<&str>,
-        between: impl FnOnce(),
-    ) -> bool {
-        let Some(status) = &self.status else {
-            return false;
-        };
-        let start_failure = start_failure.filter(|_| status.files.vendor.runs_the_ralphy_program());
-        let mut tail = status.tail.lock().expect("tail mutex");
-        let polled = tail.poll();
-        between();
-        if polled.activity {
-            self.first_line
-                .lock()
-                .expect("first_line mutex")
-                .get_or_insert(now);
-        }
-        let mut slot = self.agent_state.lock().expect("agent_state mutex");
-        self.count_turn_ends(slot.as_ref().map(|o| o.state), &polled.transitions);
-        if let Some(last) = polled.transitions.into_iter().last() {
-            *slot = Some(last);
-        } else if polled.activity {
-            if let Some(obs) = slot.as_mut() {
-                obs.seen = now;
-            }
-        }
-        drop(slot);
-        drop(tail);
-        self.update_silence(now, start_failure);
-        let shown_now = self.shown_at(now);
-        let mut shown = self.shown.lock().expect("shown mutex");
-        let changed = *shown != shown_now;
-        *shown = shown_now;
-        changed
     }
 }

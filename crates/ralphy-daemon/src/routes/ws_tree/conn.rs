@@ -8,7 +8,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
-use super::frame::{dirty_push, failed_payload, parse_request, Alias, Request, Verb};
+use super::frame::{
+    dirty_push, failed_payload, local_checkout, parse_request, Alias, Request, Verb,
+};
 use super::{
     close_peer_tree_poller, push_command, spawn_nudge_forwarder, spawn_peer_tree_poller,
     PeerTreePoller, PeerWatchSet, TreeHost,
@@ -178,8 +180,11 @@ impl TreeConn {
         if req.verb.runs() {
             ensure_runstate_dir(&root);
         }
+        let Ok(confined) = local_checkout(req, &root) else {
+            return;
+        };
         let rels = if req.verb.head() {
-            checkout::head_rels(&root, req.head_checkout.as_ref())
+            checkout::head_rels(&root, confined.as_ref())
         } else {
             vec![req.rel.clone()]
         };
