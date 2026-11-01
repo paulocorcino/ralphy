@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use crate::peer;
-use crate::routes::read_peer_store;
+use crate::peer::read_peer_store;
 
 /// The `daemon_id` a nudge is aimed at.
 #[derive(serde::Deserialize)]

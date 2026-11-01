@@ -21,25 +21,14 @@ use crate::attention::dismissals::Dismissals;
 use crate::attention::done::DeskFiles;
 use crate::attention::telegram::Notifier;
 use crate::attention::tick::{self, Dismissed, Runs};
-use crate::attention::{from_peer, AttentionRequest, PeerReader, RunsRead};
+use crate::attention::{from_peer, AttentionList, AttentionRequest, PeerReader, RunsRead};
 use crate::peer::join::{name_unanswered, read_peer_lists, PeerList};
-use crate::routes::read_peer_store;
+use crate::peer::read_peer_store;
 use crate::{fleet, peer, presence_board, session};
 
 #[derive(serde::Deserialize)]
 pub(crate) struct AttentionQuery {
     pub(crate) local: Option<u32>,
-}
-
-/// The body of `GET /api/attention`. `present` is only in the `?local=1`
-/// reply: whether the operator is at one of the pages of the daemon that
-/// answers (docs/adr/0085 D14). A main daemon reads it from each peer, and
-/// an older peer, which has no such field, is "not present".
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct AttentionList {
-    pub(crate) requests: Vec<AttentionRequest>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) present: Option<bool>,
 }
 
 /// The runs of the last tick. A poisoned lock is logged and reads as none.

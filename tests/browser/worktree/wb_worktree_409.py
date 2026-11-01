@@ -25,7 +25,7 @@ Scenario 5  remove refused: `has a live console` — a notice with ONE button
 Scenario 6  close the console → `/api/sessions` empty
 Scenario 7  dirty refusal: `has uncommitted changes`, rows 2, directory stays
 Scenario 8  locked refusal: `is locked`
-Scenario 9  a commit inside `wt-r`, then remove → `branch 'wt-r' kept`, row
+Scenario 9  a commit inside `wt-r`, then remove → a flash `branch 'wt-r' kept`, row
             gone, directory gone, branch still exists, selection reset
 Scenario 10 create `wt-s`, select, remove → no error, row gone, directory and
             branch gone, selection reset, chip reads `main`
@@ -511,8 +511,10 @@ def main():
             git(wt, "add", "-A")
             git(wt, "commit", "-m", "beyond")
             click_remove(page, "wt-r", slug)
-            r = refusal(page)
-            check("the reply says `branch 'wt-r' kept`", "branch 'wt-r' kept" in (r["err"] or ""), f"got={r['err']!r}")
+            # The worktree is gone, so this is a flash, not a notice.
+            page.wait_for_function(f"() => {MODALS}.runsActionMsg.includes(\"branch 'wt-r' kept\")", timeout=5000)
+            check("the flash says `branch 'wt-r' kept`", True)
+            check("…and no notice opened", page.evaluate(f"() => !({NOTICE_STATE})()"))
             page.wait_for_function(WORKTREE_COUNT_IS, arg=0, timeout=15000)
             check("the re-read listing has no worktree; the chip is gone", not page.evaluate(CK_VISIBLE))
             check("the directory is gone", not wt.exists())
@@ -545,7 +547,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 33
+    check_floor = 34
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

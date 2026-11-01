@@ -81,6 +81,17 @@ pub struct AttentionRequest {
     pub dismissable: bool,
 }
 
+/// The body of `GET /api/attention`. `present` is only in the `?local=1`
+/// reply: whether the operator is at one of the pages of the daemon that
+/// answers (docs/adr/0085 D14). A main daemon reads it from each peer, and
+/// an older peer, which has no such field, is "not present".
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct AttentionList {
+    pub(crate) requests: Vec<AttentionRequest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) present: Option<bool>,
+}
+
 /// Who reads a peer's request, which decides its `repo`: the page finds the
 /// console under the peer's repo ref, so it reads `repo` prefixed; a person
 /// reads the repo as the peer's slug.

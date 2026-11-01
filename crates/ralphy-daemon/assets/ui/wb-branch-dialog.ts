@@ -255,30 +255,44 @@ export function wbBranchDialog() {
       });
       if (!ok || this._removing(slug, w.name)) return;
       this._setRemoving(slug, w.name, true);
-      this.$store.checkouts.hideWorktree(slug, w.name);
-      let failure: string | null = null;
+      // Cleared on every path, last: no entry means the re-read landed too, and
+      // a delete that threw can be tried again.
       try {
-        const reply = await window.WBDaemon.observe("worktree.remove", {
-          repo: slug,
-          name: w.name,
-        });
-        if (WBFail.isError(reply))
-          failure = WBFail.cause(reply, "The daemon refused to delete the worktree.");
-      } catch {
-        failure = "Could not reach the daemon. Check whether the worktree was deleted.";
+        const failure = await this._sendRemove(slug, w.name);
+        await this.$store.checkouts.ensureWorktreeListing(slug, true);
+        this._reportRemoval(slug, w.name, failure);
+      } finally {
+        this._setRemoving(slug, w.name, false);
       }
-      this.$store.checkouts.unhideWorktree(slug, w.name);
-      await this.$store.checkouts.ensureWorktreeListing(slug, true);
-      this._reportRemoval(slug, w.name, failure);
-      // Cleared last: no entry means the re-read landed too.
-      this._setRemoving(slug, w.name, false);
+    },
+    // Send `worktree.remove` with the row hidden, and return the failure to
+    // report, or `null`. The row is shown again on every path, so a throw
+    // here never leaves it hidden from the next listing.
+    async _sendRemove(slug: string, name: string): Promise<string | null> {
+      try {
+        this.$store.checkouts.hideWorktree(slug, name);
+        try {
+          const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name });
+          return WBFail.isError(reply)
+            ? WBFail.cause(reply, "The daemon refused to delete the worktree.")
+            : null;
+        } catch {
+          return "Could not reach the daemon. Check whether the worktree was deleted.";
+        }
+      } finally {
+        this.$store.checkouts.unhideWorktree(slug, name);
+      }
     },
     _removing(slug: string, name: string) {
       return (this.worktreeRemoving[slug] || []).includes(name);
     },
     _setRemoving(slug: string, name: string, on: boolean) {
-      const rest = (this.worktreeRemoving[slug] || []).filter((n) => n !== name);
-      this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: on ? [...rest, name] : rest };
+      // A repo with no delete in flight has no entry: the browser checks wait
+      // for an empty object.
+      const { [slug]: old = [], ...others } = this.worktreeRemoving;
+      const rest = old.filter((n) => n !== name);
+      const names = on ? [...rest, name] : rest;
+      this.worktreeRemoving = names.length ? { ...others, [slug]: names } : others;
     },
     // After the re-read: a worktree still listed was refused; a listing that
     // could not be read says nothing, so the reply decides.

@@ -413,7 +413,7 @@ async fn stopped(mut stop: tokio::sync::watch::Receiver<bool>) {
 /// are logged per peer: a distro that no longer exists must not keep the others
 /// asleep, and none of this may abort a listener that is already serving.
 async fn wake_fleet_at_start(peers_dir: PathBuf, self_id: Option<String>) {
-    let (descriptors, _rejects) = crate::routes::read_peer_store(peers_dir).await;
+    let (descriptors, _rejects) = crate::peer::read_peer_store(peers_dir).await;
     for d in descriptors {
         if self_id.as_deref() == Some(d.daemon_id.as_str()) {
             continue;
@@ -430,7 +430,7 @@ async fn wake_fleet_at_start(peers_dir: PathBuf, self_id: Option<String>) {
 /// Ensure every peer tunnel once at start, off the reactor. Nothing here may
 /// abort a listener that is already serving.
 async fn hold_tunnels_at_start(peers_dir: PathBuf, self_id: Option<String>, port: u16) {
-    let (descriptors, _rejects) = crate::routes::read_peer_store(peers_dir).await;
+    let (descriptors, _rejects) = crate::peer::read_peer_store(peers_dir).await;
     let held = tokio::task::spawn_blocking(move || {
         let me = peer::client::SelfRef {
             port,

@@ -80,7 +80,7 @@ pub(crate) async fn claim_once(c: &Claimer) -> Vec<(String, Claimed)> {
     if !matches!(sends, Ok(true)) {
         return Vec::new();
     }
-    let (peers, _) = crate::routes::read_peer_store(c.peers_dir.clone()).await;
+    let (peers, _) = super::read_peer_store(c.peers_dir.clone()).await;
     let claims = peers
         .iter()
         .map(|peer| async { (peer.daemon_id.clone(), claim_peer(peer, &c.daemon_id).await) });

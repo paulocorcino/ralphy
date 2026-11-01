@@ -10,8 +10,8 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 
-use super::read_peer_store;
 use super::RouterShared;
+use crate::peer::read_peer_store;
 use crate::{fleet, identity, peer, registry};
 
 mod nudge;
