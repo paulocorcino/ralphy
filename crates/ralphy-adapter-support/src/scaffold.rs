@@ -20,7 +20,7 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
-use crate::HeadlessRun;
+use crate::{failed_run_stop, HeadlessRun, RunFacts, RunStop};
 
 /// The paths and error wording for a [`run_plan_session`] call. Everything the
 /// shared plan shell needs to create dirs, write the charter, and phrase the
@@ -109,7 +109,12 @@ pub fn run_plan_session<P>(
             return Err(e);
         }
         // An auth failure won't self-heal, so bail with an actionable message.
-        if is_auth_error(&r.log) {
+        // A missing plan counts as a failed run, whatever the exit.
+        let facts = RunFacts {
+            exited_cleanly: false,
+            ..RunFacts::from(&r)
+        };
+        if failed_run_stop(&facts, &r.log, &is_auth_error) == Some(RunStop::Auth) {
             bail!("{} (see {})", cfg.auth_msg, cfg.log_path.display());
         }
         bail!(
@@ -184,8 +189,8 @@ pub struct ExecCfg<'a> {
 /// cannot be an auth failure, because a signed-out CLI fails the command. The
 /// plan shell reaches the same place from the other side: there the auth ladder
 /// is already reached only when no plan landed. Should a vendor ever be observed
-/// exiting 0 on an auth failure, this gate is what has to change — not the
-/// detector.
+/// exiting 0 on an auth failure, the gate in [`failed_run_stop`] is what has to
+/// change — not the detector.
 pub fn run_exec_session<P>(
     cfg: ExecCfg,
     run: impl FnOnce() -> Result<(HeadlessRun, P)>,
@@ -194,7 +199,7 @@ pub fn run_exec_session<P>(
     ensure_dir(cfg.run_dir);
     ensure_dir(cfg.ralphy_dir);
     let (r, p) = run()?;
-    if !r.exited_cleanly && is_auth_error(&r.log) {
+    if failed_run_stop(&RunFacts::from(&r), &r.log, is_auth_error) == Some(RunStop::Auth) {
         bail!("{} (see {})", cfg.auth_msg, cfg.log_path.display());
     }
     Ok((r, p))

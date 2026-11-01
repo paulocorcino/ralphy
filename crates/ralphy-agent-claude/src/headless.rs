@@ -9,7 +9,9 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{classify, CompletionSignals, HeadlessCall, PROMPT_EXECUTE};
+use ralphy_adapter_support::{
+    classify, failed_run_stop, CompletionSignals, HeadlessCall, RunFacts, RunStop, PROMPT_EXECUTE,
+};
 use ralphy_core::{git, plan, Outcome, Plan, Workspace};
 use tracing::info;
 
@@ -99,7 +101,7 @@ impl ClaudeAgent {
         // The detectors read the text of the stream; the raw log stays on
         // disk as it came.
         let text = stream_text(&r.log);
-        if is_exec_auth_failure(r.exited_cleanly, &text) {
+        if is_exec_auth_failure(RunFacts::from(&r), &text) {
             bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
         }
 
@@ -195,8 +197,8 @@ impl ClaudeAgent {
 /// Whether a headless exec call failed on login: a login error in its text, from
 /// a call that did not exit cleanly. A call that exited cleanly keeps its result,
 /// whatever its text quotes.
-fn is_exec_auth_failure(exited_cleanly: bool, text: &str) -> bool {
-    !exited_cleanly && is_claude_auth_error(text)
+fn is_exec_auth_failure(run: RunFacts, text: &str) -> bool {
+    failed_run_stop(&run, text, is_claude_auth_error) == Some(RunStop::Auth)
 }
 
 /// The headless `-p` degraded-line matcher, handed to the shared runner's
@@ -364,8 +366,13 @@ mod tests {
     #[test]
     fn a_clean_exec_with_auth_text_is_not_an_auth_error() {
         let text = "Not logged in \u{00b7} Please run /login\n";
-        assert!(!is_exec_auth_failure(true, text));
-        assert!(is_exec_auth_failure(false, text));
+        let ended = |exited_cleanly| RunFacts {
+            exited_cleanly,
+            timed_out: false,
+            stopped: false,
+        };
+        assert!(!is_exec_auth_failure(ended(true), text));
+        assert!(is_exec_auth_failure(ended(false), text));
     }
 
     #[test]

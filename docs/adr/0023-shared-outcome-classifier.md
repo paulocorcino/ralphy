@@ -112,3 +112,32 @@ the *ordering*, not the *detection*.
   unchanged test suite.
 - P3 (a trustworthy limit upgrades a Codex timeout) aligns Codex with OpenCode's
   ADR-0005 D9 and with Claude.
+
+## Amendment (2026-11-01): one verdict on how a failed run stopped (#842)
+
+The same split now covers the stop checks that run before any ladder reads a
+log for a cause. Six places (the shared text and JSON session, the plan and
+execute shells, the Gemini one-shots, the Claude plan, the Claude headless
+exec) each wrote their own copy of the rule "a free-text detector judges only
+a failed run", and #841 was the copy that drifted: a run that exited 0 was
+reported as a login failure because its log quoted the vendor's login banner.
+
+- **The function.** `failed_run_stop(facts: &RunFacts, log: &str, auth: impl
+  Fn(&str) -> bool) -> Option<RunStop>` in `ralphy-adapter-support`
+  (`verdict.rs`).
+- **Its inputs.** `RunFacts { exited_cleanly, timed_out, stopped }` are facts
+  about how the child ended, never the child itself. A caller whose run must
+  also leave an artifact (the plan) sets `exited_cleanly` to `false` when the
+  artifact is missing.
+- **Its order.** `stopped` → `Stopped`; then, only when the run did not exit
+  cleanly, `auth(log)` → `Auth`; then `timed_out` → `Timeout`; else `None`.
+  `RunStop` is a closed `enum`, so each caller matches every stop.
+- **What stays in the adapters.** The detector (`auth`), the error text for
+  each stop, and every ladder after it: the typed limit, the Gemini revocation
+  and exit-code taxonomy, the `classify` ladder of D2. A caller that has its own
+  order for a stop (the Gemini one-shot names the timeout after a hard-stop
+  revocation) lets that stop fall through to its own ladder.
+
+ADR-0002 still holds: the function takes facts and a detector, and runs no
+child. It shares the *ordering* of the stop checks, as D5 shares the ordering
+of the signals.

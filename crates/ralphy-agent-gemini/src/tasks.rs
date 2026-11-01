@@ -26,6 +26,7 @@ use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
 use tracing::info;
 
+use ralphy_adapter_support::{failed_run_stop, RunFacts, RunStop};
 use ralphy_core::{
     build_diagnose_prompt, build_init_issues_prompt, build_triage_prompt, DiagnosisReport,
     DraftRequest, IssuesDraft, TriageDraft, TriageRequest, Usage, Workspace, PROMPT_CONSOLIDATE,
@@ -157,6 +158,7 @@ fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) 
 /// the log of a good run may quote one.
 fn judge_one_shot(out: ralphy_adapter_support::HeadlessOutput, log_path: &Path) -> Result<String> {
     let succeeded = one_shot_succeeded(&out);
+    let facts = RunFacts::from(&out);
     let (code, timed_out) = (out.exit.and_then(|s| s.code()), out.timed_out);
     let mut log = out.stdout;
     log.push_str(&out.stderr);
@@ -171,8 +173,11 @@ fn judge_one_shot(out: ralphy_adapter_support::HeadlessOutput, log_path: &Path) 
         // that need token usage (consolidate) fold it, the rest drop it.
         return Ok(log);
     }
-    if is_gemini_auth_error(&log) {
-        bail!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display());
+    match failed_run_stop(&facts, &log, is_gemini_auth_error) {
+        Some(RunStop::Auth) => bail!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display()),
+        // The one-shot ladder below names the timeout and the stop in its own
+        // order: a hard-stop revocation comes before the timeout.
+        Some(RunStop::Stopped | RunStop::Timeout) | None => {}
     }
     match one_shot_stop(&log, code, timed_out) {
         Some(msg) => bail!("{msg} (see {})", log_path.display()),
