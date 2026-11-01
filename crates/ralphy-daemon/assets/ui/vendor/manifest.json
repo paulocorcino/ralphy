@@ -33,7 +33,7 @@
     {
       "name": "Milkdown Crepe",
       "npm": "@milkdown/crepe",
-      "version": "7.22.2",
+      "version": "7.22.3",
       "source": "crates/ralphy-daemon/vendor-build/crepe",
       "files": [
         {
@@ -42,11 +42,11 @@
         },
         {
           "path": "crepe/crepe.css",
-          "sha256": "16d8d444622515338e748c813ee6b3fb971abe131e7b1ab58a3114fbbfbabbb7"
+          "sha256": "5189d12fc536fb17126983d08439cacd824dde5d0271f3f15c856d9a985f1ed3"
         },
         {
           "path": "crepe/crepe.js",
-          "sha256": "c8984c5ebf3a9085c77356648a633e84156141f73a3759d9529c5f6f057c5fd8"
+          "sha256": "1d7905da9dfb2ba546bd4b5486289c561faee8aad17ad31ea1cfb7081102e455"
         }
       ]
     },
