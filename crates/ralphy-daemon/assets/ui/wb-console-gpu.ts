@@ -90,6 +90,9 @@ export type GpuBudgetDeps = {
   // The viewport, the observer's root; null before the page has it.
   workspace: () => HTMLElement | null;
   isCovered: (win: ConsoleWin) => boolean;
+  // Whether the tab that holds the window is the one shown: the dormancy rule
+  // reads the same function.
+  windowShown: (win: ConsoleWin) => boolean;
   // `wb-console-dormancy.ts`: it reaches `wakeWindow` and the terminal factory.
   applyDormancy: (win: ConsoleWin) => unknown;
   // The page's; absent in a page without it, and then the watch is inert.
@@ -98,7 +101,7 @@ export type GpuBudgetDeps = {
 };
 
 export function createGpuBudget(deps: GpuBudgetDeps) {
-  const { wins, workspace, isCovered, applyDormancy } = deps;
+  const { wins, workspace, isCovered, windowShown, applyDormancy } = deps;
 
   // Built on first use: `#workspace` is not in the document when this module
   // evaluates. Without `IntersectionObserver` the feature is inert.
@@ -159,8 +162,10 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
         list.map((w) => ({
           // `=== true`, not the dormancy fold's reading: an unobserved window
           // is not yet seen. The console of the active console tab is seen:
-          // the observer watches the stage only.
-          seen: w._visible === true || w.classList.contains("tab-shown"),
+          // the observer watches the stage only. A file tab hides the stage
+          // with `visibility: hidden`, which the observer does not report, so
+          // the shown tab is asked first.
+          seen: windowShown(w) && (w._visible === true || w.classList.contains("tab-shown")),
           covered: isCovered(w),
           hasTerminal: !!w._term,
           z: parseInt(w.style.zIndex, 10) || 0,

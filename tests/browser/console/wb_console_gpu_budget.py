@@ -20,6 +20,8 @@ G4  a click on the bottom window gives it a context; the count stays at the budg
 G5  a maximize leaves only the maximized window on the GPU
 G6  a restore gives the budget back, and still no context was refused or lost
 G7  a closed window's context goes to the next window in line
+G8  a file tab in front leaves no stage window on the GPU, before any sleeps
+G9  back on the Consoles tab, the budget is given out again
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -50,7 +52,10 @@ LOSS_WAIT_MS = 3500
 # The real GPU, as on the operator's machine; without these flags headless
 # Chromium draws WebGL with SwiftShader.
 GPU_ARGS = ["--use-angle=d3d11", "--ignore-gpu-blocklist", "--enable-gpu"] if os.name == "nt" else []
-FLOOR = 10  # every check above the floor check; pinned after the first green run
+# `DORMANT_AFTER_MS` in wb-console-gpu.ts: G8 reads well before it.
+TAB_READ_MS = 1000
+TABS = "Alpine.store('tabs')"
+FLOOR = 12  # every check above the floor check; pinned after the first green run
 
 results = []
 
@@ -170,6 +175,27 @@ def main():
                 len(got) == BUDGET and top not in got and set(before) - {top} < set(got),
                 f"{top} {got}",
             )
+
+            # G8 ---------------------------------------------------------------
+            # `visibility: hidden` hides the Consoles tab, and the observer does
+            # not see it: only the shown rule can take the contexts back.
+            page.evaluate("(s) => Alpine.store('projects').setOpen(s)", slug)
+            page.wait_for_timeout(200)
+            page.evaluate(
+                f"(s) => {TABS}.openTab({{ project: s, path: 'README.md', title: 'README.md', ftype: 'markdown' }})",
+                slug,
+            )
+            page.wait_for_function(f"() => {TABS}.active !== 'consoles'", timeout=10000)
+            page.wait_for_timeout(TAB_READ_MS)
+            got = gpu_ids(page)
+            awake = page.evaluate("() => [...document.querySelectorAll('#stage .session-window')].filter((w) => !w._dormant).length")
+            check("G8 a file tab in front leaves no stage window on the GPU", got == [], f"{got} awake={awake}")
+
+            # G9 ---------------------------------------------------------------
+            page.evaluate(f"() => {TABS}.activate('consoles')")
+            page.wait_for_timeout(LOSS_WAIT_MS)
+            got = gpu_ids(page)
+            check(f"G9 back on the Consoles tab, {BUDGET} contexts again", len(got) == BUDGET, str(len(got)))
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()
