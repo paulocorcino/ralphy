@@ -2089,6 +2089,7 @@ name = "ralphy-agent-claude"
 version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
+ "chrono",
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",
@@ -2107,6 +2108,7 @@ name = "ralphy-agent-codex"
 version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
+ "chrono",
  "include_dir",
  "ralphy-adapter-support",
  "ralphy-core",

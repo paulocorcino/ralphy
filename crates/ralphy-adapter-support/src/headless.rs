@@ -60,6 +60,15 @@ pub struct HeadlessOutput {
     pub exit: Option<ExitStatus>,
 }
 
+impl HeadlessOutput {
+    /// `true` when the child exited on its own with a success status: not killed
+    /// (deadline, idle watchdog, stop) and not failed. The one rule for "this run
+    /// ended well", shared by every caller that gates a log scan on it.
+    pub fn exited_cleanly(&self) -> bool {
+        self.exit.is_some_and(|status| status.success())
+    }
+}
+
 /// Spawn `cmd`, pipe `prompt` on its stdin, drain stdout/stderr to completion or
 /// timeout, killing the child if it outlives `timeout`. `cmd` must already have
 /// stdin/stdout/stderr set to [`Stdio::piped()`](std::process::Stdio::piped); the
@@ -592,6 +601,7 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
         gate,
     };
     let r = drive_headless(cmd, prompt, timeout, guards)?;
+    let exited_cleanly = r.exited_cleanly();
     let stdout = r.stdout;
     let mut log = stdout.clone();
     log.push_str(&r.stderr);
@@ -606,7 +616,6 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
     )]
     let _ = fs::write(log_path, &log);
     let exit = r.exit;
-    let exited_cleanly = exit.map(|s| s.success()).unwrap_or(false);
     Ok(HeadlessRun {
         stdout,
         log,

@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 
 use ralphy_core::{
-    Agent, Execution, HooksUnproven, Issue, IssueTracker, Outcome, Plan, PlanLimit, RunClock,
-    Usage, Verdict, WaitOutcome, Workspace,
+    Agent, Execution, HooksUnproven, Issue, IssueTracker, Outcome, Plan, PlanLimit, ResetAt,
+    RunClock, Usage, Verdict, WaitOutcome, Workspace,
 };
 
 use super::repo::git;
@@ -13,7 +13,16 @@ use super::repo::git;
 /// `PlanLimit` error (a usage limit before any plan was written); once the
 /// queue drains, `plan()` succeeds normally.
 pub(crate) enum PlanScript {
-    Limit(Option<String>),
+    Limit(Option<ResetAt>),
+}
+
+/// A limit's reset with the vendor's `text` and no instant. The scripted
+/// clock records only the text, so no test here needs the instant.
+pub(crate) fn reset_text(text: &str) -> Option<ResetAt> {
+    Some(ResetAt {
+        text: text.to_string(),
+        at: None,
+    })
 }
 
 /// Where a scripted agent refuses with `HooksUnproven`.
@@ -445,8 +454,8 @@ impl RunClock for ScriptedClock {
         passed
     }
 
-    fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
-        self.waited_for.borrow_mut().push(reset.to_string());
+    fn wait_for_reset(&self, reset: &ResetAt) -> WaitOutcome {
+        self.waited_for.borrow_mut().push(reset.text.clone());
         self.wait_result
     }
 }

@@ -4,7 +4,7 @@
 use anyhow::Result;
 use tracing::{info, warn};
 
-use crate::{handoff, Issue, Plan, PlanLimit};
+use crate::{handoff, Issue, Plan, PlanLimit, ResetAt};
 
 use super::IssueCtx;
 use crate::runner::comments::{bundle_comment, infeasible_comment};
@@ -70,7 +70,7 @@ pub(crate) enum PlanPhase {
     /// A plan-time usage limit stops the run (configured `stop_on_limit_plan`, or a
     /// scheduled reset that hit the no-progress cap). A limit with no parseable reset
     /// no longer stops here — it parks a synthetic wait and re-plans (ADR-0030).
-    StopLimit { reset: Option<String> },
+    StopLimit { reset: Option<ResetAt> },
     /// The global deadline cut a reset wait short — stop the run.
     StopDeadline,
 }
@@ -167,14 +167,20 @@ fn wait_out_plan_limit(
     if cx.cfg.stop_on_limit_plan || (!synthetic && capped) {
         info!(
             number = issue.number,
-            reset = ?limit.reset,
+            reset = ?limit.reset.as_ref().map(|r| &r.text),
             "usage limit while planning — stopping run"
         );
         return Some(PlanPhase::StopLimit { reset: limit.reset });
     }
 
     // Deadline beats resume: a reset past the deadline stops the run.
-    let reset = limit.reset.unwrap_or_else(synthetic_reset);
+    let reset = match &limit.reset {
+        Some(reset) => reset.clone(),
+        None => ResetAt {
+            text: synthetic_reset(),
+            at: None,
+        },
+    };
     if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
         info!(
             number = issue.number,

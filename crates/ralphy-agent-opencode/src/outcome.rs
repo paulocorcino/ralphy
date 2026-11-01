@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
-use ralphy_core::Outcome;
+use ralphy_core::{Outcome, ResetAt};
 
 use crate::OpenCodeAgent;
 
@@ -25,7 +25,7 @@ pub(crate) fn classify_opencode_outcome(
     committed: bool,
     text: &str,
     saw_error: bool,
-    limit: Option<Option<String>>,
+    limit: Option<Option<ResetAt>>,
 ) -> Outcome {
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(text),
@@ -48,7 +48,7 @@ pub(crate) fn classify_opencode_outcome(
 /// ADR-0023); Claude/Codex are stable and keep their hints.
 pub(crate) fn unschedulable_opencode_limit(
     detected: Option<Option<String>>,
-) -> Option<Option<String>> {
+) -> Option<Option<ResetAt>> {
     detected.map(|_| None)
 }
 

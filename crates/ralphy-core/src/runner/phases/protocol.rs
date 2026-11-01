@@ -3,7 +3,7 @@
 use anyhow::Result;
 use tracing::{info, warn};
 
-use crate::{protocol, Execution, Issue, Outcome, Plan, Usage};
+use crate::{protocol, Execution, Issue, Outcome, Plan, ResetAt, Usage};
 
 use super::IssueCtx;
 use crate::runner::artifacts::{clear_protocol_failure, write_protocol_failure};
@@ -21,7 +21,7 @@ pub(crate) enum ProtocolGate {
     },
     /// The bounce itself hit a usage limit — that is the run's limit, so stop
     /// on the reset instead of judging the lint again.
-    StopLimit { reset: Option<String> },
+    StopLimit { reset: Option<ResetAt> },
 }
 
 /// Deterministic protocol lint (ADR-0015): before anything else, structurally
@@ -46,7 +46,7 @@ pub(crate) fn protocol_gate(
     let mut protocol_usage = Usage::default();
     // Set when the bounce itself hits a usage limit: that is the run's
     // limit, so stop on the reset instead of judging the lint again.
-    let mut protocol_limit: Option<Option<String>> = None;
+    let mut protocol_limit: Option<Option<ResetAt>> = None;
     // The vendor session of the protocol bounce, so the repair line carries it.
     let mut protocol_session_id: Option<String> = None;
     if !lint.passed() {

@@ -145,7 +145,10 @@ pub(crate) fn render_final_panel(
             outcome: format!("{outcome:?}"),
         },
         StopReason::StopBefore { number } => ui::PanelStop::StopBefore { number },
-        StopReason::Limit { number, reset } => ui::PanelStop::Limit { number, reset },
+        StopReason::Limit { number, reset } => ui::PanelStop::Limit {
+            number,
+            reset: reset.map(|r| r.text),
+        },
         StopReason::Stopped { number } => ui::PanelStop::Stopped { number },
     });
 
@@ -334,7 +337,10 @@ mod tests {
         assert_eq!(
             outcome_of(&Some(StopReason::Limit {
                 number: 3,
-                reset: Some("14:30".into()),
+                reset: Some(ralphy_core::ResetAt {
+                    text: "14:30".into(),
+                    at: None,
+                }),
             })),
             "non_green"
         );

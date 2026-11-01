@@ -12,7 +12,7 @@ use super::{
     IssueResult, PlanPhase, Prepared, ProtocolGate, ResultStatus, RunLedger, SkipReason,
     StopReason, VerifyGate, HUMAN_GATE_LABELS,
 };
-use crate::{Issue, Outcome, Plan, Usage};
+use crate::{Issue, Outcome, Plan, ResetAt, Usage};
 
 /// Why a step ended its issue before the close.
 pub(super) enum Early {
@@ -215,7 +215,7 @@ impl QueueRun<'_> {
     }
 
     /// Record an issue that stopped the run on a usage limit.
-    fn limit_stop(&mut self, number: u64, reset: Option<String>) -> Early {
+    fn limit_stop(&mut self, number: u64, reset: Option<ResetAt>) -> Early {
         self.worked.push(IssueResult {
             outcome: Some(Outcome::Limit(reset.clone())),
             ..result(number, ResultStatus::NonGreen)

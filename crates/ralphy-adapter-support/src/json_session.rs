@@ -19,7 +19,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::headless::{run_headless_held, PromptHeld};
 use crate::scaffold::{ensure_dir, remove_stale_file};
-use crate::{run_headless, PromptGate};
+use crate::{failed_run_stop, run_headless, PromptGate, RunFacts, RunStop};
 
 /// The vendor-specific inputs to [`run_json_session`]: the built command, the
 /// prompt, paths, and the exact error wording. The `(see <log>)` suffix is
@@ -183,9 +183,15 @@ pub fn run_init_session<T>(
 /// Sibling of [`run_json_session`] for one-shots that produce **no JSON artifact**
 /// (Claude's `consolidate_knowledge`): spawn via [`run_headless`], combine
 /// stdout+stderr into the log and persist it at `log_path`, `bail!` on an auth
-/// failure (`auth_error(&log)`), then `bail!` on a wall timeout — in that exact
-/// order — and return the combined log verbatim on success. This is the shared
-/// body [`run_json_session`] layers its read+validate onto.
+/// failure, then `bail!` on a wall timeout — in that exact order — and return the
+/// combined log verbatim on success. This is the shared body [`run_json_session`]
+/// layers its read+validate onto.
+///
+/// The stop is [`failed_run_stop`]'s: an auth failure is `auth_error(&log)` on a
+/// run that did not exit cleanly, so a session that exited 0 keeps its result
+/// even when its log quotes a login error. A killed child has no clean exit, so
+/// a timeout with an auth line still reports the auth error. A run the
+/// operator stopped returns its cut log.
 pub fn run_text_session(
     session: TextSession<'_>,
     auth_error: impl Fn(&str) -> bool,
@@ -224,6 +230,7 @@ fn text_session(
         None => run_headless(cmd, prompt, timeout),
     }
     .map_err(|e| with_spawn_context(e, spawn_err))?;
+    let facts = RunFacts::from(&r);
     let mut log = r.stdout;
     log.push_str(&r.stderr);
     #[expect(
@@ -232,13 +239,13 @@ fn text_session(
     )]
     let _ = fs::write(log_path, &log);
 
-    if auth_error(&log) {
-        bail!("{} (see {})", auth_msg, log_path.display());
+    match failed_run_stop(&facts, &log, auth_error) {
+        Some(RunStop::Auth) => bail!("{} (see {})", auth_msg, log_path.display()),
+        Some(RunStop::Timeout) => bail!("{} (see {})", timeout_msg, log_path.display()),
+        // A stop is not this session's error: the run reports the operator's
+        // stop, and the caller reads whatever the cut log holds.
+        Some(RunStop::Stopped) | None => Ok(log),
     }
-    if r.timed_out {
-        bail!("{} (see {})", timeout_msg, log_path.display());
-    }
-    Ok(log)
 }
 
 /// Add `spawn_err` to `e`, unless the gate refused the prompt: the child

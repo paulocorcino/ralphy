@@ -9,12 +9,14 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{classify, CompletionSignals, HeadlessCall, PROMPT_EXECUTE};
-use ralphy_core::{git, plan, Outcome, Plan, Workspace};
+use ralphy_adapter_support::{
+    classify, failed_run_stop, CompletionSignals, HeadlessCall, RunFacts, RunStop, PROMPT_EXECUTE,
+};
+use ralphy_core::{git, plan, Outcome, Plan, ResetAt, Workspace};
 use tracing::info;
 
 use crate::auth::{
-    is_claude_auth_error, is_limit_text, parse_reset_hhmm, transcript_limit, CLAUDE_AUTH_ERROR_MSG,
+    claude_reset, is_claude_auth_error, is_limit_text, transcript_limit, CLAUDE_AUTH_ERROR_MSG,
 };
 use crate::plan::materialize_plugin;
 use crate::settings::SettingsFile;
@@ -99,7 +101,7 @@ impl ClaudeAgent {
         // The detectors read the text of the stream; the raw log stays on
         // disk as it came.
         let text = stream_text(&r.log);
-        if is_claude_auth_error(&text) {
+        if is_exec_auth_failure(RunFacts::from(&r), &text) {
             bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
         }
 
@@ -192,6 +194,13 @@ impl ClaudeAgent {
     }
 }
 
+/// Whether a headless exec call failed on login: a login error in its text, from
+/// a call that did not exit cleanly. A call that exited cleanly keeps its result,
+/// whatever its text quotes.
+fn is_exec_auth_failure(run: RunFacts, text: &str) -> bool {
+    failed_run_stop(&run, text, is_claude_auth_error) == Some(RunStop::Auth)
+}
+
 /// The headless `-p` degraded-line matcher, handed to the shared runner's
 /// [`degraded_line`](ralphy_adapter_support::HeadlessCall::degraded_line) seam.
 /// Reuses the two distinctive substrings from the PTY banner detector
@@ -239,7 +248,7 @@ pub(crate) fn classify_outcome(
 pub(crate) enum HeadlessReason {
     Done,
     Blocked(String),
-    Limit(Option<String>),
+    Limit(Option<ResetAt>),
     Timeout,
     Stuck,
     MaxCalls,
@@ -259,7 +268,7 @@ pub(crate) fn classify_exec_call(
     let signals = CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(out) || open_steps == 0,
         blocked: ralphy_adapter_support::blocked_reason(out),
-        limit: ralphy_adapter_support::detect_limit(out, is_limit_text, parse_reset_hhmm),
+        limit: ralphy_adapter_support::detect_limit(out, is_limit_text, claude_reset),
         committed: false,
         timed_out: !exited,
         exited_ok: exited,
@@ -318,6 +327,15 @@ fn headless_reason_to_outcome(r: HeadlessReason) -> Outcome {
 mod tests {
     use super::*;
 
+    /// A limit's reset carries the parsed hint and names an instant. The instant
+    /// is read from the clock apart from the code under test, so only its
+    /// presence is asserted, never its value.
+    fn assert_reset(reset: Option<ResetAt>, text: &str) {
+        let reset = reset.expect("the limit text names a reset");
+        assert_eq!(reset.text, text);
+        assert!(reset.at.is_some(), "the reset names an instant");
+    }
+
     #[test]
     fn headless_command_maps_high_and_omits_unset() {
         let set = headless_args(
@@ -355,6 +373,18 @@ mod tests {
     }
 
     #[test]
+    fn a_clean_exec_with_auth_text_is_not_an_auth_error() {
+        let text = "Not logged in \u{00b7} Please run /login\n";
+        let ended = |exited_cleanly| RunFacts {
+            exited_cleanly,
+            timed_out: false,
+            stopped: false,
+        };
+        assert!(!is_exec_auth_failure(ended(true), text));
+        assert!(is_exec_auth_failure(ended(false), text));
+    }
+
+    #[test]
     fn classify_done_from_flag() {
         assert_eq!(classify_outcome(Some("DONE\n"), false, None), Outcome::Done);
     }
@@ -387,10 +417,11 @@ mod tests {
     #[test]
     fn classify_limit_from_transcript() {
         let t = limit_jsonl("You've reached your usage limit; resets 3:00pm");
-        assert_eq!(
-            classify_outcome(None, false, Some(&t)),
-            Outcome::Limit(Some("15:00".into()))
-        );
+        let got = classify_outcome(None, false, Some(&t));
+        let Outcome::Limit(reset) = got else {
+            panic!("expected a limit, got {got:?}");
+        };
+        assert_reset(reset, "15:00");
     }
 
     #[test]
@@ -398,10 +429,11 @@ mod tests {
         // The exact line Claude Code records when the session cap is hit while the
         // interactive PTY remains alive (captured from a real 429).
         let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
-        assert_eq!(
-            classify_outcome(None, false, Some(&t)),
-            Outcome::Limit(Some("08:10".into()))
-        );
+        let got = classify_outcome(None, false, Some(&t));
+        let Outcome::Limit(reset) = got else {
+            panic!("expected a limit, got {got:?}");
+        };
+        assert_reset(reset, "08:10");
     }
 
     #[test]
@@ -458,10 +490,11 @@ mod tests {
     #[test]
     fn classify_exec_not_exited_with_limit_text_is_limit() {
         let out = "You've reached your usage limit; resets 3:00pm";
-        assert_eq!(
-            classify_exec_call(out, false, 5),
-            Some(HeadlessReason::Limit(Some("15:00".into())))
-        );
+        let got = classify_exec_call(out, false, 5);
+        let Some(HeadlessReason::Limit(reset)) = got else {
+            panic!("expected a limit, got {got:?}");
+        };
+        assert_reset(reset, "15:00");
     }
 
     #[test]
@@ -498,10 +531,11 @@ mod tests {
     #[test]
     fn classify_exec_limit_on_natural_exit() {
         let out = "You've reached your usage limit; resets 3:00pm";
-        assert_eq!(
-            classify_exec_call(out, true, 2),
-            Some(HeadlessReason::Limit(Some("15:00".into())))
-        );
+        let got = classify_exec_call(out, true, 2);
+        let Some(HeadlessReason::Limit(reset)) = got else {
+            panic!("expected a limit, got {got:?}");
+        };
+        assert_reset(reset, "15:00");
     }
 
     #[test]
@@ -510,10 +544,11 @@ mod tests {
         // wins even when the same exited call emitted RALPHY_DONE_EXIT, so the
         // run resumes after reset instead of closing the issue.
         let out = "RALPHY_DONE_EXIT\nYou've reached your usage limit; resets 3:00pm";
-        assert_eq!(
-            classify_exec_call(out, true, 0),
-            Some(HeadlessReason::Limit(Some("15:00".into())))
-        );
+        let got = classify_exec_call(out, true, 0);
+        let Some(HeadlessReason::Limit(reset)) = got else {
+            panic!("expected a limit, got {got:?}");
+        };
+        assert_reset(reset, "15:00");
     }
 
     #[test]

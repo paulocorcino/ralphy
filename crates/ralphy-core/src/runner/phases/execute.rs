@@ -3,7 +3,7 @@
 use anyhow::Result;
 use tracing::info;
 
-use crate::{Execution, Issue, Outcome, Plan, Usage};
+use crate::{Execution, Issue, Outcome, Plan, ResetAt, Usage};
 
 use super::IssueCtx;
 use crate::runner::artifacts::{clear_protocol_failure, clear_verify_failure};
@@ -168,7 +168,7 @@ fn advance_streak(streak: u32, before_sha: &Option<String>, after_sha: &Option<S
 
 /// The reset to wait for and whether it is synthetic, when `outcome` calls for
 /// an auto-resume; `None` when the loop ends with the outcome as it is.
-fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(String, bool)> {
+fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(ResetAt, bool)> {
     match outcome {
         // A scheduled reset (Codex/Claude) auto-resumes at its target time.
         Outcome::Limit(Some(r)) if !stop_on_limit_exec => Some((r.clone(), false)),
@@ -176,7 +176,13 @@ fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(String,
         // synthetic ~30-min window and retry, unbounded until the deadline or a
         // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap
         // skips it.
-        Outcome::Limit(None) if !stop_on_limit_exec => Some((synthetic_reset(), true)),
+        Outcome::Limit(None) if !stop_on_limit_exec => Some((
+            ResetAt {
+                text: synthetic_reset(),
+                at: None,
+            },
+            true,
+        )),
         Outcome::Done
         | Outcome::Blocked(_)
         | Outcome::Timeout
@@ -199,7 +205,7 @@ enum Resume {
 fn keep_resuming(
     cx: &IssueCtx,
     issue: &Issue,
-    reset: &str,
+    reset: &ResetAt,
     synthetic: bool,
     no_commit_streak: u32,
 ) -> Resume {

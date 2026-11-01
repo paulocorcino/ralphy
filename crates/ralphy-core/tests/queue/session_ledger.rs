@@ -37,7 +37,7 @@ fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> Stri
     let repo = init_repo("session-ledger");
     let usage_dir = ensure_usage_dir();
     let agent = SessionedAgent {
-        inner: ScriptedAgent::new(vec![Outcome::Limit(Some("09:00".into())), Outcome::Done]),
+        inner: ScriptedAgent::new(vec![Outcome::Limit(reset_text("09:00")), Outcome::Done]),
         sessions: RefCell::new(VecDeque::from(sessions)),
     };
 

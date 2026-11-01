@@ -10,7 +10,7 @@ use tracing::warn;
 
 use super::BranchMode;
 use crate::ledger::{LedgerRecord, LedgerSink};
-use crate::{Outcome, Usage};
+use crate::{Outcome, ResetAt, Usage};
 
 /// Everything the core needs to work a whole queue — model-free by construction
 /// (model and effort are adapter concerns, set when the adapter is built). The
@@ -172,7 +172,7 @@ pub enum StopReason {
     StopBefore { number: u64 },
     /// The agent hit a usage/rate limit; includes the parsed reset time when
     /// present in the transcript.
-    Limit { number: u64, reset: Option<String> },
+    Limit { number: u64, reset: Option<ResetAt> },
     /// The operator asked the run to stop (docs/adr/0054). `number` names the
     /// issue that was in flight, or `None` when the stop landed between issues.
     ///

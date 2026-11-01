@@ -21,7 +21,9 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{list_session_files, session_files_appeared, HeadlessCall};
+use ralphy_adapter_support::{
+    failed_run_stop, list_session_files, session_files_appeared, HeadlessCall, RunFacts, RunStop,
+};
 use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 
 mod api_watch;
@@ -40,7 +42,7 @@ mod usage;
 /// triage session reasons over a fetched screenshot directly (ADR-0025 §4).
 pub const ACCEPTS_IMAGES: bool = true;
 
-use auth::{is_claude_auth_error, is_limit_text, parse_reset_hhmm, CLAUDE_AUTH_ERROR_MSG};
+use auth::{claude_reset, is_claude_auth_error, is_limit_text, CLAUDE_AUTH_ERROR_MSG};
 use cleanup::remove_stale_file;
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};
@@ -288,43 +290,7 @@ impl Agent for ClaudeAgent {
             )
         })?;
         status.stop();
-        // A reaped planner's log is cut mid-stream, so no verdict read from it is
-        // true — and every stream-json log carries a `rate_limit_event`, which
-        // the limit scan below would read as a usage limit.
-        if run.stopped {
-            bail!("planning stopped by the operator");
-        }
-        let log = run.log;
-
-        if is_claude_auth_error(&log) {
-            bail!(
-                "{} (see {})",
-                CLAUDE_AUTH_ERROR_MSG,
-                self.run_dir.join("plan.log").display()
-            );
-        }
-
-        if !plan_path.exists() {
-            if is_limit_text(&log) {
-                return Err(PlanLimit {
-                    reset: parse_reset_hhmm(&log),
-                }
-                .into());
-            }
-            bail!(
-                "claude produced no plan at {} (see {})",
-                plan_path.display(),
-                self.run_dir.join("plan.log").display()
-            );
-        }
-        let md = fs::read_to_string(&plan_path).context("reading the written plan.md")?;
-        Ok(Plan {
-            open_steps: ralphy_core::plan::count_open_steps(&md),
-            recommended_model: recommended_model(&md),
-            path: plan_path,
-            usage: parse_plan_usage(&log),
-            session_id: parse_plan_session_id(&log),
-        })
+        plan_from_run(&plan_path, &log_path, RunFacts::from(&run), &run.log)
     }
 
     fn execute(&self, plan: &Plan, ws: &Workspace) -> Result<Execution> {
@@ -367,10 +333,100 @@ impl Agent for ClaudeAgent {
     }
 }
 
+/// Turn a finished plan run into the [`Plan`] it wrote, or into the error that
+/// names why it wrote none. A login error in the log is an auth failure only when
+/// the run did not exit cleanly or wrote no plan: a plan that was written by a
+/// clean run is the result, whatever its log quotes.
+fn plan_from_run(plan_path: &Path, log_path: &Path, run: RunFacts, log: &str) -> Result<Plan> {
+    let written = plan_path.exists();
+    // A missing plan counts as a failed run, whatever the exit.
+    let facts = RunFacts {
+        exited_cleanly: run.exited_cleanly && written,
+        ..run
+    };
+    match failed_run_stop(&facts, log, is_claude_auth_error) {
+        // A reaped planner's log is cut mid-stream, so no verdict read from it is
+        // true — and every stream-json log carries a `rate_limit_event`, which
+        // the limit scan below would read as a usage limit.
+        Some(RunStop::Stopped) => bail!("planning stopped by the operator"),
+        Some(RunStop::Auth) => {
+            bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display())
+        }
+        // The plan has no wall clock of its own; the ladder below names the end.
+        Some(RunStop::Timeout) | None => {}
+    }
+
+    if !written {
+        if is_limit_text(log) {
+            return Err(PlanLimit {
+                reset: claude_reset(log),
+            }
+            .into());
+        }
+        bail!(
+            "claude produced no plan at {} (see {})",
+            plan_path.display(),
+            log_path.display()
+        );
+    }
+    let md = fs::read_to_string(plan_path).context("reading the written plan.md")?;
+    Ok(Plan {
+        open_steps: ralphy_core::plan::count_open_steps(&md),
+        recommended_model: recommended_model(&md),
+        path: plan_path.to_path_buf(),
+        usage: parse_plan_usage(log),
+        session_id: parse_plan_session_id(log),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ralphy_adapter_support::PROMPT_EXECUTE;
+
+    const LOGGED_OUT: &str = "Not logged in \u{00b7} Please run /login\n";
+
+    /// A plan run that ended on its own, cleanly or not.
+    fn ended(exited_cleanly: bool) -> RunFacts {
+        RunFacts {
+            exited_cleanly,
+            timed_out: false,
+            stopped: false,
+        }
+    }
+
+    #[test]
+    fn a_written_plan_with_auth_text_is_kept() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let plan_path = dir.path().join("plan.md");
+        fs::write(&plan_path, "- [ ] one step\n").expect("write the plan");
+        let plan = plan_from_run(
+            &plan_path,
+            &dir.path().join("plan.log"),
+            ended(true),
+            LOGGED_OUT,
+        )
+        .expect("a clean run that wrote a plan keeps it");
+        assert_eq!(plan.path, plan_path);
+        assert_eq!(plan.open_steps, 1);
+    }
+
+    #[test]
+    fn a_failed_plan_run_with_auth_text_is_an_auth_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let plan_path = dir.path().join("plan.md");
+        let log_path = dir.path().join("plan.log");
+        let want = format!("{CLAUDE_AUTH_ERROR_MSG} (see {})", log_path.display());
+        // No plan written, clean exit.
+        let err = plan_from_run(&plan_path, &log_path, ended(true), LOGGED_OUT)
+            .expect_err("no plan and a login error is an auth failure");
+        assert_eq!(err.to_string(), want);
+        // A plan on disk, but the run failed.
+        fs::write(&plan_path, "- [ ] one step\n").expect("write the plan");
+        let err = plan_from_run(&plan_path, &log_path, ended(false), LOGGED_OUT)
+            .expect_err("a failed run with a login error is an auth failure");
+        assert_eq!(err.to_string(), want);
+    }
 
     #[test]
     fn planning_command_maps_high_and_omits_unset() {

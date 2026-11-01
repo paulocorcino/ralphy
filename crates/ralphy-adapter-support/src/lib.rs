@@ -61,6 +61,9 @@ pub use resume::{plan_is_finalized_for, plan_trailer};
 mod scaffold;
 pub use scaffold::{run_exec_session, run_plan_session, ExecCfg, PlanCfg};
 
+mod verdict;
+pub use verdict::{failed_run_stop, RunFacts, RunStop};
+
 mod session_files;
 pub use session_files::{list_session_files, session_files_appeared};
 

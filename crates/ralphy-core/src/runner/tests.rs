@@ -57,7 +57,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::ledger::LedgerRecord;
-use crate::{Execution, Plan};
+use crate::{Execution, Plan, ResetAt};
 
 /// Constant answers for the reads, a recorder for the checkouts. The
 /// constant `head_sha` is fine here: the no-commit streak only matters on
@@ -282,7 +282,7 @@ impl RunClock for FakeClock {
         false
     }
 
-    fn wait_for_reset(&self, _reset: &str) -> WaitOutcome {
+    fn wait_for_reset(&self, _reset: &ResetAt) -> WaitOutcome {
         WaitOutcome::Resumed
     }
 }

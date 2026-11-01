@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use crate::{
     verify::{self, VerifySpec},
-    Execution, Issue, Outcome, Plan, Usage,
+    Execution, Issue, Outcome, Plan, ResetAt, Usage,
 };
 
 use super::IssueCtx;
@@ -84,7 +84,7 @@ pub(crate) enum VerifyGate {
     /// A repair attempt itself hit a usage limit — the run's limit, so stop
     /// on the reset rather than burning the rest of the repair budget on an
     /// agent that cannot work.
-    StopLimit { reset: Option<String> },
+    StopLimit { reset: Option<ResetAt> },
     /// `require_verify_gate` is set and no gate resolved: label the issue
     /// `ready-for-human`, leave it open, continue the queue (ADR-0015).
     NeedsHuman,

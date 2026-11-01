@@ -168,7 +168,13 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
     let repo = init_repo("exec-usage-resume");
     let queue = vec![issue(7)];
     let agent = ScriptedAgent::scripted(vec![
-        (Outcome::Limit(Some("15:00".into())), false),
+        (
+            Outcome::Limit(Some(ralphy_core::ResetAt {
+                text: "15:00".into(),
+                at: None,
+            })),
+            false,
+        ),
         (Outcome::Done, true),
     ])
     .with_exec_usages(vec![
@@ -428,7 +434,11 @@ fn pins_usage_limit_vocabulary() {
     // `ScriptedClock` the runner tests inject — so drive it directly. A reset
     // instant more than the 5-minute wake buffer in the past makes the wait
     // resolve on its first loop turn, with no sleep.
-    let past = (chrono::Local::now() - chrono::Duration::minutes(30)).to_rfc3339();
+    let past_instant = chrono::Local::now() - chrono::Duration::minutes(30);
+    let past = ralphy_core::ResetAt {
+        text: past_instant.to_rfc3339(),
+        at: Some(past_instant.fixed_offset()),
+    };
     let (outcome, events) =
         capture_run(|| ralphy_core::WallClock { deadline: None }.wait_for_reset(&past));
     assert_eq!(outcome, ralphy_core::WaitOutcome::Resumed);
@@ -446,7 +456,7 @@ fn pins_usage_limit_vocabulary() {
         "reset is HH:MM: {}",
         sleep.get("reset")
     );
-    assert_eq!(sleep.get("hint"), past, "the raw hint stays on `hint`");
+    assert_eq!(sleep.get("hint"), past.text, "the raw hint stays on `hint`");
     assert!(
         sleep.get("target_epoch").parse::<i64>().is_ok(),
         "target_epoch is an i64 timestamp: {}",
@@ -454,4 +464,49 @@ fn pins_usage_limit_vocabulary() {
     );
 
     pin(&events, "reset reached — resuming", &["message"]);
+}
+
+#[test]
+fn a_limit_wait_event_carries_the_vendor_reset_text() {
+    // The runner waits on the `ResetAt` the adapter put in `Outcome::Limit`:
+    // the vendor's own words reach the wait event unchanged. The instant is
+    // more than the 5-minute wake buffer in the past, so the real clock
+    // resumes on its first loop turn.
+    let repo = init_repo("limit-wait-vendor-text");
+    let past = chrono::Local::now() - chrono::Duration::minutes(30);
+    let reset = ralphy_core::ResetAt {
+        text: "3:05 PM".into(),
+        at: Some(past.fixed_offset()),
+    };
+    let agent = ScriptedAgent::scripted(vec![
+        (Outcome::Limit(Some(reset)), false),
+        (Outcome::Done, true),
+    ]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-limit-wait-vendor-text", false),
+            &[issue(7)],
+            &agent,
+            &tracker,
+            &ralphy_core::WallClock { deadline: None },
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let sleep = pin(
+        &events,
+        "usage limit — waiting for reset",
+        &["hint", "message", "reset", "target_epoch"],
+    );
+    assert_eq!(sleep.get("hint"), "3:05 PM");
+    assert_eq!(
+        sleep.get("target_epoch"),
+        (past + chrono::Duration::minutes(5))
+            .timestamp()
+            .to_string()
+    );
+
+    remove_scratch(&repo);
 }
