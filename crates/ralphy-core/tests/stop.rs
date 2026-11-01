@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use ralphy_core::{
     run_queue, Agent, BranchMode, Execution, Issue, IssueTracker, Outcome, Plan, QueueConfig,
-    RunClock, StopReason, Usage, WaitOutcome, Workspace,
+    ResetAt, RunClock, StopReason, Usage, WaitOutcome, Workspace,
 };
 
 // ---- the flag guard ---------------------------------------------------------
@@ -204,7 +204,7 @@ impl RunClock for FreeClock {
     fn deadline_passed(&self) -> bool {
         false
     }
-    fn wait_for_reset(&self, _reset: &str) -> WaitOutcome {
+    fn wait_for_reset(&self, _reset: &ResetAt) -> WaitOutcome {
         WaitOutcome::Resumed
     }
 }
@@ -582,7 +582,10 @@ fn a_stop_cuts_a_running_verify_gate() {
 fn wait_for_reset_returns_at_once_on_a_stop_request() {
     let _flag = StopFlagGuard::acquire();
     let clock = ralphy_core::WallClock { deadline: None };
-    let far_future = (chrono::Local::now() + chrono::Duration::days(3)).to_rfc3339();
+    let far_future = ResetAt {
+        text: "in three days".to_string(),
+        at: Some((chrono::Local::now() + chrono::Duration::days(3)).fixed_offset()),
+    };
 
     ralphy_core::stop::request();
     let started = std::time::Instant::now();

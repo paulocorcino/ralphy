@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Datelike, Local, NaiveDateTime, NaiveTime, Weekday};
 use tracing::info;
 
+use crate::types::ResetAt;
+
 /// A synthetic reset hint for a usage limit that carries **no** schedulable reset
 /// time (e.g. Kimi's HTTP-403 account block, or any adapter's `Limit(None)`): treat
 /// "unknown" as "retry in ~30 min". Returns `now + 25min` as RFC3339 —
@@ -14,7 +16,24 @@ use tracing::info;
 /// interrupts (Ctrl-C) — which is the point: the operator, not a parseable reset,
 /// decides when to give up (ADR-0030).
 pub fn synthetic_reset() -> String {
-    (Local::now() + chrono::Duration::minutes(25)).to_rfc3339()
+    synthetic_instant(Local::now()).to_rfc3339()
+}
+
+/// The synthetic reset instant for a `now`: 25 minutes out.
+fn synthetic_instant(now: DateTime<Local>) -> DateTime<Local> {
+    now + chrono::Duration::minutes(25)
+}
+
+impl ResetAt {
+    /// Read the instant out of a vendor's reset text, relative to `now`. Text
+    /// that names no instant gives `at: None`, which waits the synthetic window.
+    /// Temporary: the adapters will own this parse.
+    pub(crate) fn from_vendor_text(text: &str, now: DateTime<Local>) -> Self {
+        Self {
+            text: text.to_string(),
+            at: next_reset(text, now).map(|t| t.fixed_offset()),
+        }
+    }
 }
 
 /// How a [`RunClock::wait_for_reset`] wait ended: the reset time arrived and the
@@ -34,12 +53,12 @@ pub enum WaitOutcome {
 pub trait RunClock {
     fn deadline_passed(&self) -> bool;
 
-    /// Block until the parsed `reset` time (plus a wait-policy buffer), polling so
+    /// Block until the `reset` instant (plus a wait-policy buffer), polling so
     /// the wait stays interruptible and emits a heartbeat. Returns
     /// [`WaitOutcome::Resumed`] once the reset arrives, or
     /// [`WaitOutcome::DeadlinePassed`] if the global deadline is already past or
     /// passes during the wait (deadline beats resume).
-    fn wait_for_reset(&self, reset: &str) -> WaitOutcome;
+    fn wait_for_reset(&self, reset: &ResetAt) -> WaitOutcome;
 }
 
 /// The production clock: a wall-clock deadline. `None` never expires.
@@ -55,13 +74,8 @@ impl RunClock for WallClock {
         }
     }
 
-    fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
-        let Some(target) = wake_target(reset) else {
-            // Unreachable in practice: `synthetic_reset` is always RFC3339-parseable.
-            // Keep the fail-safe stop rather than an `unwrap` if that ever changes.
-            info!(%reset, "reset hint unparseable and synthetic fallback failed — stopping");
-            return WaitOutcome::DeadlinePassed;
-        };
+    fn wait_for_reset(&self, reset: &ResetAt) -> WaitOutcome {
+        let target = wake_target(reset, Local::now());
 
         if self.deadline_passed() {
             return WaitOutcome::DeadlinePassed;
@@ -77,7 +91,7 @@ impl RunClock for WallClock {
         // in the first place (it falls to the ~30-min synthetic cadence of
         // `wake_target`) — strict parsing, not a time cap, is the guard.
         if self.lands_beyond_deadline(target) {
-            info!(%reset, "reset lands beyond the run deadline — not waiting");
+            info!(reset = %reset.text, "reset lands beyond the run deadline — not waiting");
             return WaitOutcome::DeadlinePassed;
         }
 
@@ -88,7 +102,7 @@ impl RunClock for WallClock {
         // raw hint stays as `hint` for the log.
         crate::emit::usage_limit_waiting(
             &target.format("%H:%M").to_string(),
-            reset,
+            &reset.text,
             target.timestamp(),
         );
         self.sleep_until(target)
@@ -141,22 +155,20 @@ impl WallClock {
     }
 }
 
-/// The wake time for a reset hint: the parsed reset plus the wait-policy buffer.
-/// `None` only when the synthetic fallback fails to parse too.
-fn wake_target(reset: &str) -> Option<DateTime<Local>> {
+/// The wake time for a reset: its instant, or the synthetic reset when it has
+/// none, plus the wait-policy buffer.
+fn wake_target(reset: &ResetAt, now: DateTime<Local>) -> DateTime<Local> {
     // The 5-minute buffer is a wait policy (wake a little after the reset to
-    // avoid re-limiting), applied here rather than baked into `next_reset`.
+    // avoid re-limiting), applied here rather than baked into the parse.
     let buffer = chrono::Duration::minutes(5);
-    // The adapter parsed *some* reset string, but this clock may not turn it
-    // into a wake time (a format the adapter accepts verbatim but `next_reset`
-    // does not). Rather than stop-and-abandon the limit (the old #145 fail-safe),
-    // fall back to the synthetic cadence — retry ~30 min out — so an unrecognised
-    // hint keeps trying until the reset lands, the run deadline cuts it, or a
-    // human interrupts. The 25-min floor in `synthetic_reset` prevents the
-    // 0-second hot-loop #145 was guarding against, so this stays safe.
-    next_reset(reset, Local::now())
-        .or_else(|| next_reset(&synthetic_reset(), Local::now()))
-        .map(|t| t + buffer)
+    // A reset the clock cannot read as an instant falls back to the synthetic
+    // cadence — retry ~30 min out — so an unrecognised hint keeps trying until
+    // the reset lands, the run deadline cuts it, or a human interrupts (#145).
+    // The 25-min floor in `synthetic_instant` prevents a 0-second hot loop.
+    let at = reset
+        .at
+        .map_or_else(|| synthetic_instant(now), |t| t.with_timezone(&Local));
+    at + buffer
 }
 
 /// The next clock occurrence of a parsed reset hint relative to `now`. `reset` is
@@ -374,11 +386,42 @@ mod tests {
         };
         let tomorrow = (Local::now() + chrono::Duration::days(1)).to_rfc3339();
         let started = Instant::now();
-        assert_eq!(clock.wait_for_reset(&tomorrow), WaitOutcome::DeadlinePassed);
+        let reset = ResetAt::from_vendor_text(&tomorrow, Local::now());
+        assert_eq!(clock.wait_for_reset(&reset), WaitOutcome::DeadlinePassed);
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "took {:?}",
             started.elapsed()
+        );
+    }
+
+    /// The wait-policy buffer every wake time carries.
+    const BUFFER_MINUTES: i64 = 5;
+
+    #[test]
+    fn a_reset_without_an_instant_wakes_at_the_synthetic_reset() {
+        let now = at(2026, 6, 9, 10, 0);
+        let reset = ResetAt {
+            text: "retry later".to_string(),
+            at: None,
+        };
+        assert_eq!(
+            wake_target(&reset, now),
+            now + chrono::Duration::minutes(25 + BUFFER_MINUTES)
+        );
+    }
+
+    #[test]
+    fn a_reset_instant_wakes_at_that_instant_plus_the_buffer() {
+        let now = at(2026, 6, 9, 10, 0);
+        let instant = DateTime::parse_from_rfc3339("2026-06-09T18:00:00-03:00").unwrap();
+        let reset = ResetAt {
+            text: "6 PM".to_string(),
+            at: Some(instant),
+        };
+        assert_eq!(
+            wake_target(&reset, now).timestamp(),
+            instant.timestamp() + BUFFER_MINUTES * 60
         );
     }
 

@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 
 use ralphy_core::{
-    Agent, Execution, HooksUnproven, Issue, IssueTracker, Outcome, Plan, PlanLimit, RunClock,
-    Usage, Verdict, WaitOutcome, Workspace,
+    Agent, Execution, HooksUnproven, Issue, IssueTracker, Outcome, Plan, PlanLimit, ResetAt,
+    RunClock, Usage, Verdict, WaitOutcome, Workspace,
 };
 
 use super::repo::git;
@@ -445,8 +445,8 @@ impl RunClock for ScriptedClock {
         passed
     }
 
-    fn wait_for_reset(&self, reset: &str) -> WaitOutcome {
-        self.waited_for.borrow_mut().push(reset.to_string());
+    fn wait_for_reset(&self, reset: &ResetAt) -> WaitOutcome {
+        self.waited_for.borrow_mut().push(reset.text.clone());
         self.wait_result
     }
 }

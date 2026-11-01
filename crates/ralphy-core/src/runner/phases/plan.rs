@@ -2,9 +2,10 @@
 //! read the steps off the plan it wrote.
 
 use anyhow::Result;
+use chrono::Local;
 use tracing::{info, warn};
 
-use crate::{handoff, Issue, Plan, PlanLimit};
+use crate::{handoff, Issue, Plan, PlanLimit, ResetAt};
 
 use super::IssueCtx;
 use crate::runner::comments::{bundle_comment, infeasible_comment};
@@ -174,7 +175,13 @@ fn wait_out_plan_limit(
     }
 
     // Deadline beats resume: a reset past the deadline stops the run.
-    let reset = limit.reset.unwrap_or_else(synthetic_reset);
+    let reset = match &limit.reset {
+        Some(text) => ResetAt::from_vendor_text(text, Local::now()),
+        None => ResetAt {
+            text: synthetic_reset(),
+            at: None,
+        },
+    };
     if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
         info!(
             number = issue.number,

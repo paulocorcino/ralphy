@@ -428,7 +428,11 @@ fn pins_usage_limit_vocabulary() {
     // `ScriptedClock` the runner tests inject — so drive it directly. A reset
     // instant more than the 5-minute wake buffer in the past makes the wait
     // resolve on its first loop turn, with no sleep.
-    let past = (chrono::Local::now() - chrono::Duration::minutes(30)).to_rfc3339();
+    let past_instant = chrono::Local::now() - chrono::Duration::minutes(30);
+    let past = ralphy_core::ResetAt {
+        text: past_instant.to_rfc3339(),
+        at: Some(past_instant.fixed_offset()),
+    };
     let (outcome, events) =
         capture_run(|| ralphy_core::WallClock { deadline: None }.wait_for_reset(&past));
     assert_eq!(outcome, ralphy_core::WaitOutcome::Resumed);
@@ -446,7 +450,7 @@ fn pins_usage_limit_vocabulary() {
         "reset is HH:MM: {}",
         sleep.get("reset")
     );
-    assert_eq!(sleep.get("hint"), past, "the raw hint stays on `hint`");
+    assert_eq!(sleep.get("hint"), past.text, "the raw hint stays on `hint`");
     assert!(
         sleep.get("target_epoch").parse::<i64>().is_ok(),
         "target_epoch is an i64 timestamp: {}",

@@ -134,6 +134,15 @@ pub enum Outcome {
     Limit(Option<String>),
 }
 
+/// When a usage limit lifts: the vendor's own words, and the instant they name.
+/// `at` is `None` when the words name no instant the core can read; the run
+/// clock then waits the synthetic window instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResetAt {
+    pub text: String,
+    pub at: Option<chrono::DateTime<chrono::FixedOffset>>,
+}
+
 /// A usage/rate limit hit during *planning* — before any plan artifact was
 /// produced. Adapters return this (wrapped in `anyhow::Error`) instead of a
 /// generic "no plan" failure, so the runner can route a plan-time limit into the
