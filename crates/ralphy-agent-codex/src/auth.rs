@@ -69,10 +69,11 @@ pub(crate) fn codex_reset(text: &str) -> Option<ResetAt> {
 /// The instant a Codex reset hint names, relative to `now`. The hint is one of:
 /// an RFC3339 instant (`"2026-06-09T18:00:00Z"`, alone or trailed by prose), a
 /// month-name date-time (`"Jun 10th, 2026 12:23 AM"`), a numeric date-time with
-/// no zone (`"2026-07-12 11:11:48"`), or a bare 12-hour time (`"6:13 PM"`). The
-/// date-times name their own date and are used as they are (a zoneless one is
-/// read as local wall-clock time); `now` only places a bare time, which is today
-/// when still ahead, else tomorrow. `None` when the hint is none of these.
+/// no zone (`"2026-07-12 11:11:48"`), or a bare 12-hour (`"6:13 PM"`) or 24-hour
+/// (`"18:13"`) time. The date-times name their own date and are used as they are
+/// (a zoneless one is read as local wall-clock time); `now` only places a bare
+/// time, which is today when still ahead, else tomorrow. `None` when the hint is
+/// none of these.
 fn reset_instant(hint: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
     // Trailing sentence punctuation an error line may leave on the hint.
     let trimmed = hint.trim().trim_end_matches('.').trim();
@@ -80,6 +81,11 @@ fn reset_instant(hint: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
         .or_else(|| parse_month_name_datetime(trimmed))
         .or_else(|| parse_numeric_local_datetime(trimmed))
         .or_else(|| parse_12h_time(trimmed).and_then(|time| next_time_of_day(time, now)))
+        // Last, so a hint with an AM/PM marker is read as 12-hour time first.
+        .or_else(|| {
+            let time = NaiveTime::parse_from_str(trimmed, "%H:%M").ok()?;
+            next_time_of_day(time, now)
+        })
 }
 
 /// An RFC3339 instant in local time: the whole hint, or its leading token when
@@ -234,6 +240,12 @@ mod tests {
         let cases = [
             // (hint, now, expected instant)
             ("6:13 PM", now, local(2026, 6, 9, 18, 13, 0)),
+            ("18:13", now, local(2026, 6, 9, 18, 13, 0)),
+            (
+                "18:13",
+                local(2026, 6, 9, 19, 0, 0),
+                local(2026, 6, 10, 18, 13, 0),
+            ),
             (
                 "6:13 PM",
                 local(2026, 6, 9, 19, 0, 0),

@@ -538,27 +538,13 @@ mod tests {
     fn a_successful_one_shot_is_never_failed_by_its_own_log() {
         // The rungs are live on these strings — which is exactly why the gate
         // must exist.
-        assert!(one_shot_stop(
-            "MCP server disabled by administrator
-",
-            Some(0),
-            false
-        )
-        .is_some());
-        assert!(one_shot_stop(
-            "the backlog mentions a rate limit
-",
-            Some(0),
-            false
-        )
-        .is_some());
+        assert!(one_shot_stop("MCP server disabled by administrator\n", Some(0), false).is_some());
+        assert!(one_shot_stop("the backlog mentions a rate limit\n", Some(0), false).is_some());
 
         let dir = tempfile::tempdir().expect("tempdir");
         for text in [
-            "MCP server disabled by administrator
-",
-            "the backlog mentions a rate limit
-",
+            "MCP server disabled by administrator\n",
+            "the backlog mentions a rate limit\n",
         ] {
             let log_path = dir.path().join("one-shot.log");
             let kept = judge_one_shot(finished(0, text), &log_path)
@@ -569,19 +555,11 @@ mod tests {
         // …and the log is persisted before ANY bail, so every error message's
         // `(see <log>)` points at a file that exists.
         let log_path = dir.path().join("failed.log");
-        judge_one_shot(
-            finished(
-                1,
-                "Error: quota exceeded
-",
-            ),
-            &log_path,
-        )
-        .expect_err("a failed session is an error");
+        judge_one_shot(finished(1, "Error: quota exceeded\n"), &log_path)
+            .expect_err("a failed session is an error");
         assert_eq!(
             fs::read_to_string(&log_path).expect("the log was written"),
-            "Error: quota exceeded
-"
+            "Error: quota exceeded\n"
         );
     }
 
@@ -605,8 +583,7 @@ mod tests {
     fn a_clean_one_shot_with_auth_text_keeps_its_log() {
         let dir = tempfile::tempdir().expect("tempdir");
         let log_path = dir.path().join("one-shot.log");
-        let text = "Please set an Auth method in your settings
-";
+        let text = "Please set an Auth method in your settings\n";
         let kept = judge_one_shot(finished(0, text), &log_path)
             .expect("a one-shot that exited 0 keeps its result");
         assert_eq!(kept, text);
@@ -617,11 +594,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let log_path = dir.path().join("one-shot.log");
         let err = judge_one_shot(
-            finished(
-                1,
-                "Please set an Auth method in your settings
-",
-            ),
+            finished(1, "Please set an Auth method in your settings\n"),
             &log_path,
         )
         .expect_err("a one-shot that failed with a login error is an auth failure");

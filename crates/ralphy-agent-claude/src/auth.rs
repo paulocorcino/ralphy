@@ -236,7 +236,12 @@ mod tests {
     #[test]
     fn transcript_limit_detects_real_429_error_line() {
         let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
-        assert_eq!(transcript_limit(&t), Some(claude_reset("resets 8:10am")));
+        // The instant comes from the clock, so only its presence is asserted.
+        let reset = transcript_limit(&t)
+            .expect("the transcript holds a limit")
+            .expect("the limit text names a reset");
+        assert_eq!(reset.text, "08:10");
+        assert!(reset.at.is_some(), "the reset names an instant");
     }
 
     /// Build a fixed `DateTime<Local>` for the deterministic parse table.
