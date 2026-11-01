@@ -19,7 +19,8 @@ command and path below is the implemented surface, not the plan.
 | Token env override | `RALPHY_DAEMON_TOKEN` (stripped from every child the daemon spawns) |
 | Test isolation | `RALPHY_DAEMON_DIR=<dir>` points all three stores at a scratch dir |
 
-Command verbs the UI dispatches (`/ws/command`) map to exactly the blessed
+Command verbs the UI dispatches (`POST /api/command`, or a `spawn` channel on
+the page socket `/ws`) map to exactly the blessed
 invocations — nothing else is reachable:
 
 | UI action | Spawned child |

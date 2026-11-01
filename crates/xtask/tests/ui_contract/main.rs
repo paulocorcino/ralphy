@@ -6,6 +6,7 @@
 //! - Error literals: every string the UI compares with a reply's `reason`,
 //!   `message` or `state` is a literal in the daemon's or the CLI's Rust code.
 //! - Mirrored limits: each value the UI repeats equals its Rust constant.
+//! - Cited routes: every `/api/…` or `/ws/…` path the repo cites is served.
 //!
 //! Each check reads both sides as text, like `ratchets/`: xtask may not
 //! depend on the daemon.
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
+mod cited_routes;
 mod error_literals;
 mod mirrored_limits;
 mod reply_fields;

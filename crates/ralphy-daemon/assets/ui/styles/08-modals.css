@@ -6,11 +6,11 @@
    this was cut from, byte for byte. Renaming one, or linking it out of
    order, changes which declaration wins. See ADR-0057 D5.
    --------------------------------------------------------------------- */
-/* --- rail: settings gear pinned to the bottom ----------------------------- */
+/* --- rail: settings gear and attention bell pinned to the bottom ---------- */
 .rail-spacer {
   flex: 1;
 }
-.rail > button:last-child {
+.rail > :last-child {
   margin-bottom: 0.6rem;
 }
 

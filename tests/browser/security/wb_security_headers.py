@@ -13,7 +13,8 @@ Scenario 3  a .rs tab mounts Monaco — its language worker is a blob: worker
 Scenario 4  a markdown tab with a mermaid block renders the SVG (inline styles)
 Scenario 5  the Security modal enrols TOTP and shows the QR (`data:` image)
 Scenario 6  detached.html and detached-fence.html boot their entry modules
-Scenario 7  opening a project dials /ws/tree — a refused ws: would be a violation
+Scenario 7  the page socket `/ws` and the channels a project opens on it — a
+            refused ws: would be a violation
 
 Boots a Localhost daemon on 7409 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -188,7 +189,7 @@ def main():
             #      in the violation list every later check reads.
             page.evaluate(f"Alpine.store('projects').openProject && Alpine.store('projects').openProject('{slug}')")
             page.wait_for_timeout(2000)
-            check("opening a project (its /ws/tree socket) with no CSP violation", violations(page) == [], violations(page))
+            check("opening a project (its channels on the /ws socket) with no CSP violation", violations(page) == [], violations(page))
 
             # ── 3. Monaco + its blob: worker ──────────────────────────────
             page.evaluate(

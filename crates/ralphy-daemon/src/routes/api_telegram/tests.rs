@@ -6,9 +6,6 @@ use tower::ServiceExt;
 
 use crate::{auth, router, StorePaths};
 
-#[path = "../../../tests/support/golden.rs"]
-mod golden;
-
 async fn state(config: &std::path::Path) -> serde_json::Value {
     let (_tx, shutdown) = tokio::sync::watch::channel(false);
     let response = router(
@@ -54,7 +51,6 @@ async fn the_telegram_state_follows_the_config() {
     std::fs::write(&config, "token = \"123:abc\"\nchat_id = 42\n").expect("write the config");
     let sends = state(&config).await;
     assert_eq!(sends, serde_json::json!({ "state": "sends" }));
-    golden::check("api-telegram", sends, &[]);
 }
 
 /// The reply of `request` on a router over the config at `config`.
@@ -110,9 +106,8 @@ async fn a_claimed_peer_sends_through_its_main() {
         .expect("a request");
     let (status, claimed) = reply_of(app.clone(), claim).await;
     assert_eq!(status, 200);
-    golden::check("api-telegram-main", claimed, &[]);
-
     let through = serde_json::json!({ "state": "through-main", "main": "m" });
+    assert_eq!(claimed, through, "the reply is the state after the claim");
     let (_, joined) = reply_of(app.clone(), get("/api/telegram")).await;
     assert_eq!(joined, through, "the claim wins over its own bot");
     let (_, local) = reply_of(app, get("/api/telegram?local=1")).await;

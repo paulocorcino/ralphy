@@ -10,7 +10,7 @@ newline was typed with it" are both read off the child, not off the widget.
 The paste is synthetic: a `ClipboardEvent("paste")` carrying a `DataTransfer`
 with a real PNG `File`, dispatched on xterm's own textarea — the exact node and
 event the browser fires for Ctrl+V — so every scenario drives the real path:
-paste listener -> `image.write` over /ws/command -> daemon sniff + confined
+paste listener -> `image.write` over `POST /api/command` -> daemon sniff + confined
 write -> reply path -> `term.paste` -> PTY -> child.
 
 Scenario 1  a PNG paste lands under `<repo>/.ralphy/clipboard/` with the PNG

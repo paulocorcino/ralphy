@@ -172,10 +172,11 @@ def wait_badge(page, expected, timeout=15000):
 
 # Installed BEFORE any app script runs, so it sees every socket the page opens
 # and every Observe call it makes. Two facts the scenarios below need:
-#   __wsOpens  — how many `/ws/tree` sockets were constructed. `subscribeChanges`
-#                synthesizes a local `changes.dirty` on each (re)open, so a badge
-#                that moved without a new socket can only have been moved by a
-#                frame that arrived over the wire.
+#   __wsOpens  — how many page sockets (`/ws`) were constructed.
+#                `subscribeChanges` synthesizes a local `changes.dirty` when its
+#                channel reopens on a new socket, so a badge that moved without
+#                a new socket can only have been moved by a frame that arrived
+#                over the wire.
 #   __listReads — how many `changes.list` reads were issued, i.e. the mechanism a
 #                polling timer would show up in.
 INSTRUMENT = """
@@ -183,7 +184,7 @@ window.__wsOpens = 0;
 window.__listReads = 0;
 const RealWS = window.WebSocket;
 window.WebSocket = function (url, protocols) {
-  if (String(url).indexOf('/ws/tree') !== -1) window.__wsOpens++;
+  if (new URL(String(url), location.href).pathname === '/ws') window.__wsOpens++;
   return protocols ? new RealWS(url, protocols) : new RealWS(url);
 };
 window.WebSocket.prototype = RealWS.prototype;
@@ -204,7 +205,7 @@ def counters(page):
 
 def fire_run(page, slug):
     """Dispatch the same `workbench:action` the run button emits — a real Spawn
-    over `/ws/command`, whose child exit is the nudge under test."""
+    on the daemon, whose child exit is the nudge under test."""
     page.evaluate(
         "(slug) => document.dispatchEvent(new CustomEvent('workbench:action',"
         " { detail: { action: 'run-start', project: slug, agent: 'claude', branchMode: 'new' } }))",
@@ -282,7 +283,7 @@ def main():
             # daemon that pushed nothing would still reach 2 if the socket flapped.
             after = counters(page)
             check(
-                "the refresh came over the wire — the /ws/tree socket never reopened",
+                "the refresh came over the wire — the page socket never reopened",
                 after["ws"] == before["ws"],
                 f"ws opens {before['ws']} -> {after['ws']}",
             )
