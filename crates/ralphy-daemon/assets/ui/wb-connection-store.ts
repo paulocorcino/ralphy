@@ -3,7 +3,7 @@
    (#621; ADR-0073 D6 and the amendment of 2026-10-08, decisions 3 and 6).
 
    The store is the one owner of the session (whether this browser may read),
-   the security fact and log off, the presence socket and its heartbeat, the uptime, the daemon's name and
+   the security fact and log off, the presence subscription, the uptime, the daemon's name and
    mark, the page build and the build skew, whether the tab is hidden, and
    the write locks. Its fields change only through its own methods.
    `shell()` code reads `this.$store.connection`, the markup reads
@@ -20,8 +20,9 @@
      `workbench:desk-reread`, `workbench:release-reread`,
      `workbench:attention-reread` and `workbench:logins-reread`: a push, a
      reopened socket or the tab coming back asks to read that fact again;
-   - `workbench:board-refresh`, `workbench:panels-reread` and
-     `workbench:sockets-resume`.
+   - `workbench:board-refresh` and `workbench:panels-reread`.
+   The daemon door (`WBDaemon`, wb-daemon.ts) owns the heartbeat's time and
+   the page's resume; the store only shows whether the heartbeat is lost.
    The Changes view (wb-changes-panel.ts) tells it which change sets are not
    current (`changesCurrent`), so the write lock asks no component.
 
@@ -74,13 +75,12 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     uptimeText: "",
     identityName: "",
     identityAvatar: "",
-    _lastHeartbeat: 0,
     // Staleness is DERIVED on a clock (`_clockTick`), not in the binding: the
     // event that makes the daemon stale — ticks STOPPING — never re-renders a
-    // binding on `_lastHeartbeat`. Writing the same boolean is inert under
-    // Alpine, so the steady state costs one comparison a second.
+    // binding. Writing the same boolean is inert under Alpine, so the steady
+    // state costs one comparison a second.
     presenceStale: false,
-    _presenceSub: null as Subscription | null, // the `/ws` heartbeat subscription, kept so a resume can re-open it
+    _presenceSub: null as Subscription | null, // the `/ws` presence subscription
     _clockTick: null as Timer,
     LIVE_SETTLE_MS: 250,
     _liveTimer: null as ReturnType<typeof setTimeout> | null,
@@ -98,19 +98,11 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") this.onTabVisible();
       });
-      // A tablet resumes on a different link; its sockets died without a close.
-      window.addEventListener("online", () => this.resumeSockets(true));
-      // The console module cannot know whether THIS document's connection is
-      // alive; hand it the heartbeat verdict, or its hidden-time fallback
-      // resets every console after a minute on another tab.
-      window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
       // The presence half of the one-second clock; the phase clock's half is
       // the shell's (app.ts).
       this._clockTick = setInterval(() => {
         // Unconditional: the flag must already be true when the menu opens.
-        const was = this.presenceStale;
         this.presenceStale = this.socketsAreStale();
-        if (!was && this.presenceStale) this.onHeartbeatLost();
       }, 1000);
     },
 
@@ -132,46 +124,20 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       } catch {}
     },
 
-    // Three missed ~2s heartbeats: this document's connection is gone. The
-    // shell's whole staleness signal — a suspended tablet runs no JS, so on
-    // return the stamp is old; a desktop tab switch leaves it fresh.
+    // Whether this page's heartbeat is lost: the daemon door's verdict
+    // (`heartbeatStale`), which the browser checks read here too.
     socketsAreStale() {
-      return !this._lastHeartbeat || Date.now() - this._lastHeartbeat > 6000;
+      return window.WBDaemon?.heartbeatStale?.() ?? true;
     },
 
-    // The heartbeat stopped while the page stays visible: a desktop that slept
-    // with the tab in front may fire neither `visibilitychange` nor `online`,
-    // and its sockets read OPEN with no byte to come (#751). One resume per
-    // loss, so a daemon that is down is not dialled every second. A page that
-    // never had a heartbeat lost nothing; a hidden one resumes on its return.
-    onHeartbeatLost() {
-      if (!this._lastHeartbeat || this.tabHidden()) return;
-      this.resumeSockets(true);
-      window.WBConsole?.resumeAll?.(true);
-    },
-
-    // Bring the long-lived subscriptions back after a suspend. Presence, the
-    // tree, the runs and the changes share the page's one socket, so one
-    // resume of it brings them all back; it decides for itself
-    // (`resumeDecision`) and debounces.
-    resumeSockets(stale?: boolean) {
-      const verdict = stale === undefined ? this.socketsAreStale() : stale;
-      this._presenceSub?.resume?.(verdict);
-      // The files and the Changes view hear it (wb-files.ts,
-      // wb-changes-panel.ts). Their resume is the page socket's too, and its
-      // debounce makes the three calls one.
-      sendWindow(window, "workbench:sockets-resume", { stale: verdict });
-    },
-
-    // The `/ws` presence heartbeat (daemon mode). Each tick stamps
-    // `_lastHeartbeat`, refreshes uptime and carries name/avatar once
+    // The `/ws` presence heartbeat (daemon mode). Each tick refreshes the
+    // uptime and carries name/avatar once
     // baptized. It reads nothing: the shown facts are read again on the
     // daemon's pushes, which ride the same socket (ADR-0070 D2).
     subscribePresence() {
       if (!window.WBDaemon?.subscribePresence) return;
       this._presenceSub = window.WBDaemon.subscribePresence(
         (p) => {
-          this._lastHeartbeat = Date.now();
           this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
           if (p.name) this.identityName = p.name;
           if (p.avatar) this.identityAvatar = p.avatar;
@@ -335,7 +301,6 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       // Not only with the Runs panel open: the runs lock the writes.
       void window.Alpine.store("runs").hydrateRuns();
       this.rereadOpenPanels();
-      this.resumeSockets();
       sendWindow(window, "workbench:release-reread");
     },
     // The panels whose facts have no push: read again on visible and after

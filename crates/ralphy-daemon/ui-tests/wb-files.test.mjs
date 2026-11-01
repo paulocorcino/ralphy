@@ -143,7 +143,7 @@ test("each workbench event reaches the files, and a create re-lists before it re
   files.filesFollowCheckout = () => calls.push("checkout");
   files.openFileSearch = () => calls.push("search");
   files.performMove = (from, to) => calls.push(`move ${from} ${to}`);
-  files._treeSub = { resume: (stale) => calls.push(`resume ${stale}`), replay: () => calls.push("replay") };
+  files._treeSub = { replay: () => calls.push("replay") };
   let settle;
   files.onTreeDirty = (rel) => {
     calls.push(`dirty ${rel}`);
@@ -154,7 +154,6 @@ test("each workbench event reaches the files, and a create re-lists before it re
   fire("workbench:fleet-read");
   fire("workbench:peer-woken", { daemon: "01PEER" });
   fire("workbench:checkout-changed");
-  fire("workbench:sockets-resume", { stale: true });
   fire("workbench:panels-reread");
   fire("workbench:file-search-open");
   fire("workbench:move-confirmed", { from: "a.txt", to: "dst/a.txt" });
@@ -167,7 +166,6 @@ test("each workbench event reaches the files, and a create re-lists before it re
     "fleet",
     "wake 01PEER",
     "checkout",
-    "resume true",
     "replay",
     "search",
     "move a.txt dst/a.txt",

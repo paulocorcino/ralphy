@@ -71,7 +71,8 @@ export type SpawnDeps = {
       | undefined,
   ) => Presentation;
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
-  // The worktree switcher: its menu, the restart, and the repo's listing.
+  // The worktree switcher: its menu, the restart, and the request for the
+  // repo's listing.
   closeCheckoutMenu: () => void;
   restartWin: (win: ConsoleWin) => Promise<void>;
   ensureListing: (ref: string | null | undefined, force?: boolean) => void;
@@ -428,7 +429,7 @@ export function createSpawn(deps: SpawnDeps) {
       e.stopPropagation();
       void restartWin(win);
     });
-    // The switcher needs the repo's listing; one read per ref, cached.
+    // The switcher needs the repo's listing; the store reads it once per ref.
     if (kind === "agent") ensureListing(repo);
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;

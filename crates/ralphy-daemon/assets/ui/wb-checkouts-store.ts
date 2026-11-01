@@ -17,6 +17,12 @@
    It also holds the change count of each project, which the Changes view
    reads and the project rows show.
 
+   The worktree listing has this one holder. The console reads it by ref
+   (`listingOf`), asks for its read (`ensureWorktreeListing`), and hears of a
+   change through `WBConsole.ingestWorktrees(ref)`. No copy of the listing is
+   pushed to it, so a worktree whose delete is in flight is absent from every
+   reader.
+
    The branch dialog and the checkout menu are the component `wbBranchDialog`
    (wb-branch-dialog.ts). `main.ts` registers the store as `checkouts`, after
    `runs`. `checkoutsStore` builds it without Alpine, so `node --test` can test
@@ -35,14 +41,18 @@ export type CheckoutsStoreDeps = {
 
 export function checkoutsStore(deps: CheckoutsStoreDeps) {
   const { messages } = deps;
+  // The `worktree.list` read in flight per ref. Not in the returned object:
+  // Alpine would wrap it.
+  const reading = new Map<string, Promise<void>>();
   return {
     worktreeListings: {} as Record<string, Listing | null>,
     // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE copy
     // of `WBConsole`'s desk mirror (a closure variable there is invisible to
     // Alpine). `worktreeListings` is the last `worktree.list` reply per ref.
     checkouts: {} as Record<string, string>,
-    // The newest `worktree.list` read: a reply of an older one is dropped.
-    _listingSeq: 0,
+    // The newest `worktree.list` read of each ref: a reply of an older one is
+    // dropped. One counter per ref, so a read of another repo never drops it.
+    _listingSeq: {} as Record<string, number>,
     // Worktrees per ref whose delete is in flight: every listing leaves them
     // out until their own delete settles, so the re-read of another delete
     // does not bring them back.
@@ -150,15 +160,30 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       this.setCheckout(ref, null);
       messages.flash(`Worktree ${name} no longer exists. Showing the primary tree.`);
     },
+    // The listing of `ref` as every reader sees it: without a worktree whose
+    // delete is in flight. `null` until a read lands.
+    listingOf(ref: string | null | undefined): Listing | null {
+      return (ref && this.worktreeListings[ref]) || null;
+    },
     // The chip needs the worktree's BRANCH, which only `worktree.list` knows:
     // one read per ref, `force` re-reads (after a branch act the chip
-    // converges from this reply, #407). A forced re-read that fails DROPS the
-    // cached entry rather than showing the pre-act branch. Newest read wins.
-    async ensureWorktreeListing(ref: string | null | undefined, force = false) {
-      if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
-      const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
+    // converges from this reply, #407). A read of a ref already in flight is
+    // that read, unless forced. A forced re-read that fails DROPS the cached
+    // entry rather than showing the pre-act branch. Newest read of a ref wins.
+    ensureWorktreeListing(ref: string | null | undefined, force = false): Promise<void> {
+      if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return Promise.resolve();
+      const open = reading.get(ref);
+      if (open && !force) return open;
+      const read: Promise<void> = this._readListing(ref, force).finally(() => {
+        if (reading.get(ref) === read) reading.delete(ref);
+      });
+      reading.set(ref, read);
+      return read;
+    },
+    async _readListing(ref: string, force: boolean): Promise<void> {
+      const seq = (this._listingSeq[ref] = (this._listingSeq[ref] || 0) + 1);
       const listing = await readWorktreeListing(ref);
-      if (seq !== this._listingSeq) return; // superseded → the newer read owns it
+      if (seq !== this._listingSeq[ref]) return; // superseded → the newer read owns it
       if (listing || force) this._storeListing(ref, listing);
     },
     _storeListing(ref: string, listing: Listing | null) {
@@ -168,7 +193,7 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
           ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) }
           : listing;
       this.worktreeListings = { ...this.worktreeListings, [ref]: shown };
-      window.WBConsole?.ingestWorktrees?.(ref, shown);
+      window.WBConsole?.ingestWorktrees?.(ref);
     },
     // A delete of `name` started: the listing leaves it out at once.
     hideWorktree(ref: string, name: string) {

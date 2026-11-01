@@ -644,10 +644,6 @@ export function wbFiles() {
       window.addEventListener("workbench:fleet-read", () => this.filesFollowFleet());
       window.addEventListener("workbench:peer-woken", (e) => this.filesFollowWake(e.detail.daemon));
       window.addEventListener("workbench:checkout-changed", () => this.filesFollowCheckout());
-      // `resumeSockets`: the shell's heartbeat verdict, for this socket too.
-      window.addEventListener("workbench:sockets-resume", (e) =>
-        this._treeSub?.resume?.(e.detail.stale),
-      );
       // The tab became visible, or a login: the socket sends what it missed.
       window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay?.());
       // `/` and Ctrl/Cmd+Shift+F (`wire()` in app.ts).

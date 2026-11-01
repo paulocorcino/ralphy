@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::{checkout_of, encoding_param};
 use crate::routes::blocking_read;
-use crate::{checkout, confine, dispatch, note, protocol, textcodec, tree};
+use crate::{checkout, dispatch, note, protocol, textcodec, tree};
 
 fn unavailable() -> serde_json::Value {
     serde_json::json!({ "status": "error", "reason": "unavailable" })
@@ -17,9 +17,10 @@ fn payload_str<'a>(cmd: &'a protocol::Command, key: &str) -> &'a str {
 }
 
 /// Answer one Observe verb. The optional `checkout` argument is read HERE, the
-/// one place every Observe verb takes its `path`: it becomes a rel PREFIX under
-/// the same registered root (`checkout::from_payload`), so confinement never
-/// learns a second root. `runs.list` ignores it (runs are primary-tree state).
+/// one place every Observe verb takes its `path`, and confined against the
+/// registered root (`checkout_of`). A read keeps a rel PREFIX under that root,
+/// so confinement never learns a second root; a walk starts at the confined
+/// folder. `runs.list` ignores it (runs are primary-tree state).
 #[expect(
     clippy::wildcard_enum_match_arm,
     reason = "the effect class sends only Observe verbs here and `Verb` has over 60 variants"
@@ -52,30 +53,16 @@ pub(super) async fn observe(
     }
 }
 
-/// A checkout is listed from ITS root, confined against the registered root
-/// first as the searches do: the ignore rules are anchored there, and the
-/// primary ignores `.ralphy/`, which would mark the whole worktree ignored.
+/// A checkout is listed from ITS confined root, as the searches are: the
+/// ignore rules are anchored there, and the primary ignores `.ralphy/`, which
+/// would mark the whole worktree ignored.
 async fn tree_list(
     repo_path: &Path,
-    checkout: Option<&checkout::Checkout>,
+    checkout: Option<&checkout::ConfinedCheckout>,
     asked: &str,
 ) -> serde_json::Value {
-    let repo_root = repo_path.to_path_buf();
-    let walk_rel = checkout.map(|c| c.prefix(""));
-    // `Checkout::prefix` trims the slashes; the checkout-rooted rel keeps doing so.
-    let path = if walk_rel.is_some() {
-        asked.trim_matches('/').to_string()
-    } else {
-        asked.to_string()
-    };
-    let listed = blocking_read(move || {
-        let root = match walk_rel {
-            None => repo_root,
-            Some(rel) => confine::confine(&repo_root, &rel)?,
-        };
-        tree::list(&root, &path)
-    })
-    .await;
+    let (root, path) = walk_target(repo_path, checkout, asked);
+    let listed = blocking_read(move || tree::list(&root, &path)).await;
     match listed {
         Some(Ok(entries)) => serde_json::json!({ "status": "ok", "entries": entries }),
         Some(Err(_)) => serde_json::json!({ "status": "error", "reason": "not found" }),
@@ -86,28 +73,23 @@ async fn tree_list(
 /// The two searches (ADR-0036 amendment 2026-09-15) take `query`, not `path`:
 /// they always walk from the root — the worktree's root under a `checkout`, so
 /// hits come back relative to it (`search::rel_of` strips the walk root). That
-/// walk root is resolved through `confine` against the REGISTERED root first: a
-/// worktree dir that is a symlink out of the repo must be refused here exactly
-/// as `tree.list` refuses it, never handed to the walker as a root that would
-/// confine against itself. Their budget is the wire default; nothing upstream
-/// caps an Observe read, so the walker stops itself and says `truncated`.
+/// walk root is the confined checkout's: a worktree dir that is a symlink out
+/// of the repo was refused as `unknown checkout` before, never handed to the
+/// walker as a root that would confine against itself. Their budget is the
+/// wire default; nothing upstream caps an Observe read, so the walker stops
+/// itself and says `truncated`.
 async fn tree_search(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
     repo_path: &Path,
-    checkout: Option<&checkout::Checkout>,
+    checkout: Option<&checkout::ConfinedCheckout>,
 ) -> serde_json::Value {
     let query = payload_str(cmd, "query").to_string();
-    let repo_root = repo_path.to_path_buf();
+    let (root, _) = walk_target(repo_path, checkout, "");
     let settings_root = repo_path.to_path_buf();
-    let walk_rel = checkout.map(|c| c.prefix(""));
     let budget = tree::SearchBudget::default();
     let find = verb == dispatch::Verb::TreeFind;
     let searched = blocking_read(move || {
-        let root = match walk_rel {
-            None => repo_root,
-            Some(rel) => confine::confine(&repo_root, &rel)?,
-        };
         if find {
             tree::find(&root, &query, &budget).map(|r| serde_json::json!(r))
         } else {
@@ -128,47 +110,31 @@ async fn tree_search(
     }
 }
 
-/// Where the properties verbs read from: the checkout's own root when there is
-/// one, and the path asked for relative to it. The ignore rules anchor at that
-/// root, as for `tree.list`: read from the primary root, every file of a
+/// Where a walk or a properties verb reads from: the confined checkout's own
+/// root when there is one, and the path asked for relative to it. The ignore
+/// rules anchor at that root: read from the primary root, every file of a
 /// worktree would be ignored, because the primary ignores `.ralphy/`.
-fn properties_target(
-    checkout: Option<&checkout::Checkout>,
+fn walk_target(
+    repo_path: &Path,
+    checkout: Option<&checkout::ConfinedCheckout>,
     asked: &str,
-) -> (Option<String>, String) {
+) -> (PathBuf, String) {
     match checkout {
-        Some(c) => (Some(c.prefix("")), asked.trim_matches('/').to_string()),
-        None => (None, asked.to_string()),
-    }
-}
-
-/// The checkout root, confined against the registered root as the searches do.
-fn properties_root(
-    repo_root: PathBuf,
-    walk_rel: Option<String>,
-) -> Result<PathBuf, confine::ConfineError> {
-    match walk_rel {
-        None => Ok(repo_root),
-        Some(rel) => confine::confine(&repo_root, &rel),
+        // `Checkout::prefix` trims the slashes; the checkout-rooted rel does too.
+        Some(c) => (c.root().to_path_buf(), asked.trim_matches('/').to_string()),
+        None => (repo_path.to_path_buf(), asked.to_string()),
     }
 }
 
 /// `file.stat`: the facts of one path, answered at once.
 async fn file_stat(
     repo_path: &Path,
-    checkout: Option<&checkout::Checkout>,
+    checkout: Option<&checkout::ConfinedCheckout>,
     asked: &str,
 ) -> serde_json::Value {
-    let (walk_rel, path) = properties_target(checkout, asked);
-    let repo_root = repo_path.to_path_buf();
+    let (root, path) = walk_target(repo_path, checkout, asked);
     let settings_root = repo_path.to_path_buf();
     let read = blocking_read(move || {
-        // A path outside the root answers like a missing one: no reply says which.
-        let root = properties_root(repo_root, walk_rel).map_err(|error| match error {
-            confine::ConfineError::Escape | confine::ConfineError::NotFound => {
-                tree::ReadError::NotFound
-            }
-        })?;
         // The primary's settings, not the checkout's, as for the searches.
         tree::stat(&root, &path, textcodec::fallback_for(&settings_root))
     })
@@ -184,18 +150,11 @@ async fn file_stat(
 /// says `truncated`; a second walk while one runs answers `busy`.
 async fn tree_size(
     repo_path: &Path,
-    checkout: Option<&checkout::Checkout>,
+    checkout: Option<&checkout::ConfinedCheckout>,
     asked: &str,
 ) -> serde_json::Value {
-    let (walk_rel, path) = properties_target(checkout, asked);
-    let repo_root = repo_path.to_path_buf();
+    let (root, path) = walk_target(repo_path, checkout, asked);
     let sized = blocking_read(move || {
-        // A path outside the root answers like a missing one: no reply says which.
-        let root = properties_root(repo_root, walk_rel).map_err(|error| match error {
-            confine::ConfineError::Escape | confine::ConfineError::NotFound => {
-                tree::SizeError::NotFound
-            }
-        })?;
         tree::size(&root, &path, tree::SizeBudget::default(), &tree::size::SLOT)
     })
     .await;

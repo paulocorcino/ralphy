@@ -16,9 +16,10 @@
 //! The worktree is a pointer FILE (`.git` = `gitdir: …`) written by hand — the
 //! resolver reads that file, never a git child (`checkout::is_linked`).
 //!
-//! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE` and `RALPHY_TEST_*` are
-//! process-global, so an env-setting integration test must be alone in its
-//! binary. The legs run SEQUENTIALLY inside one test so nothing races on them.
+//! `RALPHY_EXE_OVERRIDE` and `RALPHY_TEST_*` are process-global, so these
+//! env-setting tests are alone in their binary, and nextest runs each test in
+//! its own process. The legs of one test run SEQUENTIALLY so nothing races on
+//! them.
 
 #![expect(
     clippy::disallowed_methods,
@@ -124,20 +125,20 @@ fn assert_at_root(text: &str, root: &Path, leg: &str) {
     );
 }
 
-#[tokio::test]
-async fn git_backed_verbs_run_in_the_selected_worktree() {
-    let dir = tempfile::tempdir().unwrap();
+/// Register a temp repo holding the linked worktree `wt-a` and serve a daemon
+/// over it. Returns the port and the temp dir that holds the repo.
+async fn serve_worktree_repo() -> (u16, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("create the temp dir");
     let root = dir.path();
     let registry_path = root.join("repos.toml");
     let mut store = registry::RegistryStore::default();
-    let slug = "owner/cwd";
-    store.upsert(slug, &root.to_string_lossy());
-    registry::save_to(&store, &registry_path).unwrap();
+    store.upsert(SLUG, &root.to_string_lossy());
+    registry::save_to(&store, &registry_path).expect("save the registry");
 
     // The linked worktree as git records it: a pointer FILE, no git spawn.
     let wt = root.join(".ralphy").join("worktrees").join("wt-a");
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(wt.join(".git"), "gitdir: /r/.git/worktrees/wt-a\n").unwrap();
+    std::fs::create_dir_all(&wt).expect("create the worktree folder");
+    std::fs::write(wt.join(".git"), "gitdir: /r/.git/worktrees/wt-a\n").expect("write the pointer");
 
     std::env::set_var(
         "RALPHY_EXE_OVERRIDE",
@@ -145,9 +146,14 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
     );
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind a local port");
+    let port = listener
+        .local_addr()
+        .expect("read the bound address")
+        .port();
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
         registry_path,
@@ -157,9 +163,23 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
     );
+    // The shutdown sender lives as long as the server.
+    std::mem::forget(tx);
     tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(listener, app)
+            .await
+            .expect("serve the test app");
     });
+    (port, dir)
+}
+
+const SLUG: &str = "owner/cwd";
+
+#[tokio::test]
+async fn git_backed_verbs_run_in_the_selected_worktree() {
+    let (port, dir) = serve_worktree_repo().await;
+    let root = dir.path();
+    let slug = SLUG;
 
     // (a) changes.list under the selection: worktree cwd, argv untouched.
     let text = queried(
@@ -353,4 +373,78 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         "an unknown checkout must spawn nothing (sentinel found at {sentinel:?})"
     );
     std::env::remove_var("RALPHY_TEST_DONE_FILE");
+}
+
+/// A worktree folder that is a symlink out of the repo is `unknown checkout`
+/// for a git-backed verb, even when the folder holds a real pointer file, and
+/// nothing is spawned.
+#[tokio::test]
+async fn a_command_in_a_symlinked_checkout_is_refused() {
+    let (port, dir) = serve_worktree_repo().await;
+    let root = dir.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(
+        outside.path().join(".git"),
+        "gitdir: /r/.git/worktrees/wt-out\n",
+    )
+    .unwrap();
+    let link = root.join(".ralphy").join("worktrees").join("wt-out");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(outside.path(), &link);
+    #[cfg(not(windows))]
+    let linked = std::os::unix::fs::symlink(outside.path(), &link);
+    linked.expect("create a directory symlink");
+
+    let sentinel = root.join("spawned.txt");
+    std::env::set_var("RALPHY_TEST_DONE_FILE", &sentinel);
+    let reply = ask(
+        port,
+        1,
+        "changes.list",
+        json!({ "repo": SLUG, "checkout": "wt-out" }),
+    )
+    .await;
+    assert_eq!(
+        reply,
+        json!({ "status": "error", "message": "unknown checkout" }),
+        "a checkout that links out of the repo must be refused"
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        !sentinel.exists(),
+        "a refused checkout must spawn nothing (sentinel found at {sentinel:?})"
+    );
+}
+
+/// The cwd of a command in a checkout is the worktree folder as it is spelled
+/// under the registered path, not its canonical form: on Windows a canonical
+/// path starts with `\\?\`, which a child program may not accept. Measured on
+/// Windows 11 (build 26300): a child started with a `\\?\` cwd reports it
+/// without the prefix, so there the prefix assertion holds either way and the
+/// folder assertion is the one that fails.
+#[tokio::test]
+async fn a_checkout_cwd_is_the_lexical_folder() {
+    let (port, dir) = serve_worktree_repo().await;
+    let root = dir.path();
+    let text = queried(
+        &ask(
+            port,
+            1,
+            "changes.list",
+            json!({ "repo": SLUG, "checkout": "wt-a" }),
+        )
+        .await,
+        "changes",
+    );
+    let cwd = cwd_of(&text);
+    assert!(
+        !cwd.to_string_lossy().starts_with(r"\\?\"),
+        "the cwd must not be a verbatim path; got {cwd:?}"
+    );
+    let lexical = root.join(".ralphy").join("worktrees").join("wt-a");
+    assert_eq!(
+        cwd.canonicalize().expect("the path exists"),
+        lexical.canonicalize().expect("the path exists"),
+        "the child must run in the worktree; cwd was {cwd:?}"
+    );
 }

@@ -12,6 +12,7 @@ use axum::Json;
 use axum::Router;
 
 use super::RouterShared;
+use crate::peer::join::{ask_peers, name_unanswered};
 use crate::routes::read_peer_store;
 use crate::{agent_state, fleet, identity, peer, session};
 
@@ -101,12 +102,10 @@ pub(crate) async fn sessions_route(
     if local_only {
         return Json(rows).into_response();
     }
-    let (peers, _) = read_peer_store(peers_dir).await;
-    let replies = futures_util::future::join_all(peers.into_iter().map(|peer| async move {
-        let reply = peer::client::get(&peer, "/api/sessions?local=1").await;
-        (peer, reply)
-    }))
-    .await;
+    let replies = ask_peers(peers_dir, "/api/sessions?local=1").await;
+    // The rows keep their own parse and their own repo rule: the peer's id in
+    // front of the repo ref is the owner key of the session. The join only
+    // asks the peers and names the ones that did not answer.
     // A peer missing from the list is not a peer with no sessions: the page
     // must not relaunch, adopt or forget its consoles on this read (ADR-0050
     // amendment 2026-10-04, "a list that did not hear from a peer").
@@ -130,23 +129,9 @@ pub(crate) async fn sessions_route(
         }));
     }
     let mut response = Json(rows).into_response();
-    // A header, not a body field: the body stays the array every reader and
-    // the peer-to-peer `?local=1` form already parse.
-    if !unanswered.is_empty() {
-        match unanswered.join(",").parse() {
-            Ok(value) => {
-                response.headers_mut().insert(UNANSWERED_HEADER, value);
-            }
-            Err(e) => tracing::warn!(error = %e, "could not name the peers that did not answer"),
-        }
-    }
+    name_unanswered(&mut response, &unanswered);
     response
 }
-
-/// The response header of `GET /api/sessions` that names, comma-separated,
-/// the peers whose sessions the list does not hold because they did not
-/// answer. Absent when every peer answered.
-pub(crate) const UNANSWERED_HEADER: &str = "x-ralphy-unanswered";
 
 /// `POST /api/sessions/close?id=<id>[&repo=<repo-ref>]`: end a local session or
 /// route a peer-owned numeric id using its composite repo ref.
@@ -284,5 +269,65 @@ mod tests {
         assert_eq!(block["reason"], "the hook did not start", "{again}");
         assert_eq!(block["since"], "1970-01-01T00:00:00Z", "{again}");
         assert!(block.get("state").is_none(), "{again}");
+    }
+
+    /// A peer that answers with no session list is named in
+    /// `x-ralphy-unanswered`, never listed as a peer with no sessions.
+    #[tokio::test]
+    async fn sessions_name_a_peer_that_does_not_answer() {
+        /// The reply of the fake peer: a 200 whose body is no session list.
+        async fn answer(mut socket: tokio::net::TcpStream) -> std::io::Result<()> {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request = [0u8; 1024];
+            if socket.read(&mut request).await? == 0 {
+                return Ok(());
+            }
+            let reply = concat!(
+                "HTTP/1.1 200 OK",
+                "\r\nContent-Length: 2",
+                "\r\nConnection: close",
+                "\r\n\r\n{}"
+            );
+            socket.write_all(reply.as_bytes()).await
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a fake peer");
+        let port = listener.local_addr().expect("the fake peer address").port();
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                if let Err(e) = answer(socket).await {
+                    tracing::warn!(error = %e, "the fake peer could not answer");
+                }
+            }
+        });
+        let peers_dir = tempfile::tempdir().expect("a peers folder");
+        let peer = peer::PeerDescriptor {
+            daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAX".to_string(),
+            name: "peer".to_string(),
+            avatar: String::new(),
+            address: "127.0.0.1".to_string(),
+            port,
+            environment: "wsl".to_string(),
+            os: String::new(),
+            token: "peer-token".to_string(),
+            protocol_version: peer::PEER_PROTOCOL_VERSION,
+            nudge: None,
+            tunnel: None,
+        };
+        peer::write_descriptor(peers_dir.path(), &peer).expect("write the peer descriptor");
+        let response = sessions_route(
+            Arc::new(session::SessionManager::new()),
+            peers_dir.path().join("peers"),
+            None,
+            "windows".to_string(),
+            false,
+        )
+        .await;
+        let named = response
+            .headers()
+            .get(peer::join::UNANSWERED_HEADER)
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(named, Some(peer.daemon_id.as_str()));
     }
 }

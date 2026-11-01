@@ -3,8 +3,9 @@
 
    The tree, runs and changes subscriptions of a project. Each holds a
    channel of its own on the page's one socket (ADR-0082), which
-   `wb-daemon.ts` owns: it gives this module the socket's `join` and
-   `resume`, and its frame codec.
+   `wb-daemon.ts` owns: it gives this module the socket's `join` and its
+   frame codec. The page resumes in that module alone; a subscription hears it
+   as its channel opening again.
 --------------------------------------------------------------------------- */
 import type { Channel, ChannelKind, CloseReason, PageChannels } from "./wb-channels.ts";
 
@@ -32,7 +33,6 @@ type ChannelHandlers = {
 export type PageSocket = {
   /** Add a user; it returns the user's leave. */
   join: (user: SocketUser) => () => void;
-  resume: (stale: boolean) => boolean;
 };
 
 /** What `wb-daemon.ts` gives the subscriptions. */
@@ -99,7 +99,6 @@ export function createSubscriptions({
     });
     return {
       sendIfOpen: (frame: Uint8Array) => channel?.send(frame) ?? false,
-      resume: page.resume,
       close: () => {
         closed = true;
         clearTimeout(timer);
@@ -183,7 +182,6 @@ export function createSubscriptions({
         sub.sendIfOpen(frame("unwatch", rel));
       },
       replay,
-      resume: sub.resume,
       close: sub.close,
     };
   }
@@ -209,7 +207,7 @@ export function createSubscriptions({
         if (f.verb === "runs.dirty") onDirty();
       },
     });
-    return { resume: sub.resume, close: sub.close };
+    return { close: sub.close };
   }
 
   // Open ONE `changes` channel for a project (#310, ADR-0036 amendment).
@@ -229,7 +227,7 @@ export function createSubscriptions({
       },
       onPush: onFrame,
     });
-    return { resume: sub.resume, close: sub.close };
+    return { close: sub.close };
   }
 
   return { subscribeTree, subscribeRuns, subscribeChanges };

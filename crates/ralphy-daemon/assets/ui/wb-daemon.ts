@@ -15,7 +15,14 @@ import { apiFetch, commandReply, socketFrame } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import { sendWindow } from "./wb-events.ts";
-import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import {
+  resumeDecision,
+  pageIsStale,
+  CONNECT_TIMEOUT_MS,
+  HEARTBEAT_LOST_MS,
+  RESUME_DEBOUNCE_MS,
+} from "./wb-resume.ts";
+import type { ResumeTrigger } from "./wb-resume.ts";
 import { pageChannels } from "./wb-channels.ts";
 import type { Channel, ChannelSocket, CloseReason, PageChannels } from "./wb-channels.ts";
 import { createSubscriptions } from "./wb-daemon-subscriptions.ts";
@@ -35,6 +42,9 @@ type PresenceHandlers = {
 export type DaemonDeps = {
   /** The page's door for operator messages: a verb that could not start is flashed. */
   messages: Messages;
+  /** The wait between two resumes of the page socket; `RESUME_DEBOUNCE_MS`
+   *  when absent. Only a test sets it. */
+  resumeDebounceMs?: number;
 };
 
 // The channel layer's view of a WebSocket. `WebSocket.send` takes only bytes
@@ -60,6 +70,7 @@ export function createDaemon(
   deps: DaemonDeps,
 ) {
   const { messages } = deps;
+  const resumeDebounceMs = deps.resumeDebounceMs ?? RESUME_DEBOUNCE_MS;
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
   const TAG_COMMAND = 0x02;
@@ -331,7 +342,7 @@ export function createDaemon(
       resume: (stale: boolean) => {
         if (!ws) return false;
         const now = Date.now();
-        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        if (now - lastResumeAt < resumeDebounceMs) return false;
         const connectingMs = now - connectingSince;
         if (resumeDecision({ readyState: ws.readyState, stale, connectingMs }) === "none") {
           return false;
@@ -461,9 +472,8 @@ export function createDaemon(
   // Presence on channel 0 of the page socket (#204): the daemon pushes a
   // `[0x03][JSON]` heartbeat every ~2s carrying `{name, avatar, uptime_secs}`.
   // Invoke `onPresence(payload)` per tick; the reconnect re-lights the topbar
-  // after a daemon restart without a page reload. The heartbeat IS the shell's
-  // staleness signal, so a resume here is what re-arms the probe every other
-  // resume depends on.
+  // after a daemon restart without a page reload. The heartbeat is the
+  // page's stale signal (`noteHeartbeat`).
   // Channel 0 carries the daemon's pushes for the shown facts it owns
   // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`,
   // `attention.dirty`; ADR-0070 D2, ADR-0085 D10): each `[0x02]` frame goes to
@@ -480,6 +490,7 @@ export function createDaemon(
     onPresence: (presence: Presence) => void,
     { onPush, onOpen }: PresenceHandlers = {},
   ) {
+    hasHeartbeat = true;
     const leave = page.join({
       onOpen: (_channels: PageChannels, reopened: boolean) => onOpen?.(reopened),
       onBare: (bytes: Uint8Array) => {
@@ -489,13 +500,71 @@ export function createDaemon(
           return;
         }
         if (bytes[0] !== TAG_PRESENCE) return;
+        noteHeartbeat();
         try {
           onPresence(socketFrame<Presence>(bytes));
         } catch {}
       },
     });
-    return { resume: page.resume, close: leave };
+    return { close: leave };
   }
+
+  // ---- the resume of the page (ADR-0082, amendment of 2026-11-01) ----------
+  // The one owner of the page's resume. Each trigger is heard here once,
+  // "stale" is judged once (`pageIsStale`), the page socket resumes once,
+  // and then each `onPageResume` hook runs the console's own resume. No
+  // other module listens for a trigger to resume the page.
+  const resumeHooks: ((stale: boolean, trigger: ResumeTrigger) => void)[] = [];
+  function onPageResume(fn: (stale: boolean, trigger: ResumeTrigger) => void) {
+    resumeHooks.push(fn);
+  }
+  // `hasHeartbeat` is true once the page subscribed to presence: the shell
+  // does, the detached fence page does not. `lastHeartbeat` is 0 before the
+  // first heartbeat.
+  let hasHeartbeat = false;
+  let lastHeartbeat = 0;
+  let heartbeatWatch: ReturnType<typeof setTimeout> | undefined;
+  let hiddenAt = 0;
+  function heartbeatAgeMs() {
+    if (!hasHeartbeat) return null;
+    return lastHeartbeat ? Date.now() - lastHeartbeat : Infinity;
+  }
+  // Whether the page's heartbeat is lost; the account menu shows it.
+  function heartbeatStale() {
+    return (heartbeatAgeMs() ?? Infinity) > HEARTBEAT_LOST_MS;
+  }
+  function resumeOn(trigger: ResumeTrigger, hiddenMs: number) {
+    const stale = pageIsStale(trigger, heartbeatAgeMs(), hiddenMs);
+    page.resume(stale);
+    for (const fn of resumeHooks) fn(stale, trigger);
+  }
+  // Each heartbeat starts the watch again; the watch ends only when none
+  // came for `HEARTBEAT_LOST_MS`. So one loss is one resume, and a daemon
+  // that stays down is not dialled again: the page socket's own retry does
+  // that. A page that never had a heartbeat lost nothing.
+  function noteHeartbeat() {
+    lastHeartbeat = Date.now();
+    clearTimeout(heartbeatWatch);
+    heartbeatWatch = setTimeout(heartbeatLost, HEARTBEAT_LOST_MS);
+  }
+  // A desktop that slept with the tab in front may fire neither
+  // `visibilitychange` nor `online`, and its socket reads OPEN with no byte
+  // to come (#751). A hidden page resumes when it is shown instead.
+  function heartbeatLost() {
+    if (document.visibilityState === "visible") resumeOn("heartbeat", 0);
+  }
+  function onVisibility() {
+    if (document.visibilityState !== "visible") {
+      hiddenAt = Date.now();
+      return;
+    }
+    const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    resumeOn("visible", hiddenMs);
+  }
+  document.addEventListener("visibilitychange", onVisibility);
+  // A tablet resumes on a different link; its socket died without a close.
+  window.addEventListener("online", () => resumeOn("online", 0));
 
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
@@ -569,9 +638,8 @@ export function createDaemon(
     subscribeChanges,
     subscribePresence,
     openConsole,
-    // Resume the page socket: a stale one is replaced, and each console's
-    // channel ends with it, so the console opens one on the new socket.
-    resumePage: page.resume,
+    onPageResume,
+    heartbeatStale,
     afterSessionRead: page.afterSessionRead,
     reportPresence,
     onPresenceOpen,

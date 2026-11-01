@@ -81,6 +81,32 @@ pub struct AttentionRequest {
     pub dismissable: bool,
 }
 
+/// Who reads a peer's request, which decides its `repo`: the page finds the
+/// console under the peer's repo ref, so it reads `repo` prefixed; a person
+/// reads the repo as the peer's slug.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PeerReader {
+    Page,
+    Person,
+}
+
+/// A peer's request as `reader` reads it. `id` and `console` carry the peer's
+/// daemon id (`<daemon_id>/<x>`), so two daemons' `console:1` stay two
+/// requests and a link names the peer's console.
+pub(crate) fn from_peer(
+    daemon_id: &str,
+    mut request: AttentionRequest,
+    reader: PeerReader,
+) -> AttentionRequest {
+    let prefix = |value: &str| format!("{daemon_id}/{value}");
+    request.id = format!("{daemon_id}/{}", request.id);
+    request.console = request.console.as_deref().map(prefix);
+    if reader == PeerReader::Page {
+        request.repo = request.repo.as_deref().map(prefix);
+    }
+    request
+}
+
 /// The live run snapshots of one registered repo, under its registry key.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunSource {
@@ -272,6 +298,38 @@ mod tests {
                 reason: None,
             }),
         }
+    }
+
+    fn peer_request() -> AttentionRequest {
+        AttentionRequest {
+            id: "console:3".to_string(),
+            kind: Kind::ConsoleWaiting,
+            vendor: "claude".to_string(),
+            console: Some("owner/r#3".to_string()),
+            name: None,
+            repo: Some("owner/r".to_string()),
+            run: None,
+            issue: None,
+            since: "2026-10-28T10:00:00-03:00".to_string(),
+            detail: None,
+            dismissable: false,
+        }
+    }
+
+    #[test]
+    fn a_peer_request_for_a_person_keeps_the_repo_slug() {
+        let got = from_peer("daemon1", peer_request(), PeerReader::Person);
+        assert_eq!(got.id, "daemon1/console:3");
+        assert_eq!(got.console.as_deref(), Some("daemon1/owner/r#3"));
+        assert_eq!(got.repo.as_deref(), Some("owner/r"));
+    }
+
+    #[test]
+    fn a_peer_request_for_the_page_prefixes_the_repo() {
+        let got = from_peer("daemon1", peer_request(), PeerReader::Page);
+        assert_eq!(got.id, "daemon1/console:3");
+        assert_eq!(got.console.as_deref(), Some("daemon1/owner/r#3"));
+        assert_eq!(got.repo.as_deref(), Some("daemon1/owner/r"));
     }
 
     #[test]

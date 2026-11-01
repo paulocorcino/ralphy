@@ -258,8 +258,8 @@ export type ConsoleWin = HTMLElement &
 
 /**
  * What an entry module hands `createConsole`. The shell passes nothing; the
- * detached fence page passes all but `isStale`, so it cannot write the desk,
- * the stored view or the detach registry.
+ * detached fence page passes all, so it cannot write the desk, the stored
+ * view or the detach registry.
  */
 export type ConsoleOpts = {
   /** Where the desk changes go (`wb-desk-sink.ts`). */
@@ -272,8 +272,6 @@ export type ConsoleOpts = {
   canLaunch?: boolean;
   /** The detach registry and the lifecycle channel (`wb-detach-link.ts`). */
   detachLink?: DetachDeps["link"] & PopupRegistryDeps["link"];
-  /** Whether the sockets are stale after a resume. */
-  isStale?: () => boolean;
   /** The page's door for operator messages (`wb-messages.ts`). */
   messages?: Messages;
   /** The document's z stack (`wb-stage-stack.ts`), shared with the note cards. */

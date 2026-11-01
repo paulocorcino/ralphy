@@ -397,8 +397,6 @@ interface WindowEventMap {
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;
-  /** Re-open the sockets; `stale` is the heartbeat verdict. */
-  "workbench:sockets-resume": CustomEvent<{ stale: boolean }>;
   "workbench:fleet-read": CustomEvent<null>;
   /** A sleeping peer woke. */
   "workbench:peer-woken": CustomEvent<{ daemon: string }>;

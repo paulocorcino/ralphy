@@ -194,78 +194,30 @@ pub fn render(obs: &Observed, now: SystemTime) -> AgentState {
     }
 }
 
-/// What one poll of the tail saw: the state TRANSITIONS, in order, and
-/// whether ANY line folded — a repeated `working` is not a transition but it
-/// is proof of life, and the staleness clock (§6) must read it.
+/// What one fold of the read lines saw: the state TRANSITIONS, in order,
+/// and whether ANY line folded — a repeated `working` is not a transition
+/// but it is proof of life, and the staleness clock (§6) must read it.
 #[derive(Debug, Default)]
 pub struct Polled {
     pub transitions: Vec<Observed>,
     pub activity: bool,
 }
 
-/// The tail: reads what was appended since the last poll, folds each
-/// complete line, and reports the transitions — a change of state, or a
-/// `waiting` with a new detail (a second question is news; the same
-/// question re-asked is not).
+/// The reader of a status file: the complete lines appended since its last
+/// read. It folds nothing, so it can read while no lock on the state is held.
 pub struct Tail {
     path: PathBuf,
     offset: u64,
     carry: Vec<u8>,
-    fold: Fold,
-    vendor: HookVendor,
 }
 
 impl Tail {
-    pub fn new(path: PathBuf, vendor: HookVendor) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Tail {
             path,
             offset: 0,
             carry: Vec::new(),
-            fold: Fold::new(),
-            vendor,
         }
-    }
-
-    /// The operator wrote to the console (ADR-0085 D7.5). For a vendor that
-    /// sends no event when the operator grants a permission, an open
-    /// permission `waiting` ends here; the result is the new state, else
-    /// `None`.
-    pub fn operator_input(&mut self) -> Option<Observed> {
-        if self.vendor.sends_a_grant() {
-            return None;
-        }
-        let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-        let folded = self.fold.operator_input(ts)?;
-        Some(Observed {
-            state: folded.state.as_str(),
-            detail: folded.detail,
-            since: folded.ts,
-            seen: SystemTime::now(),
-            cause: folded.cause,
-        })
-    }
-
-    pub fn poll(&mut self) -> Polled {
-        let mut out = Polled::default();
-        for text in self.read_lines() {
-            let Some(line) = StatusLine::parse(text.trim()) else {
-                continue;
-            };
-            let map = self.vendor.map();
-            // Any line the map reads is proof of life, a subagent's too, and
-            // so is a plugin's first line.
-            out.activity |= map(&line).is_some() || self.vendor.is_first_line(&line);
-            if let Some(folded) = self.fold.apply(&line, map) {
-                out.transitions.push(Observed {
-                    state: folded.state.as_str(),
-                    detail: folded.detail,
-                    since: folded.ts,
-                    seen: SystemTime::now(),
-                    cause: folded.cause,
-                });
-            }
-        }
-        out
     }
 
     // The same read is in `ralphy-adapter-support/src/agent_state.rs`, and it stays two copies: the
@@ -273,7 +225,7 @@ impl Tail {
     // jscpd:ignore-start
     /// The complete lines appended since the last read. A partial last line
     /// waits for its newline.
-    fn read_lines(&mut self) -> Vec<String> {
+    pub fn read_lines(&mut self) -> Vec<String> {
         let mut lines = Vec::new();
         let Ok(mut file) = std::fs::File::open(&self.path) else {
             return lines;
@@ -296,6 +248,17 @@ impl Tail {
         lines
     }
     // jscpd:ignore-end
+}
+
+/// The observation of one folded state, seen at `seen`.
+fn observed(folded: fold::Observed, seen: SystemTime) -> Observed {
+    Observed {
+        state: folded.state.as_str(),
+        detail: folded.detail,
+        since: folded.ts,
+        seen,
+        cause: folded.cause,
+    }
 }
 
 /// Where a console's agent state comes from.
@@ -334,6 +297,40 @@ impl HookVendor {
             Agent::OpenCode => Some(HookVendor::OpenCode),
             Agent::Copilot | Agent::Cursor | Agent::Gemini | Agent::Kimi => None,
         }
+    }
+
+    /// Fold `lines` of this vendor, read at `now` from a [`Tail`], into
+    /// `fold`, and report the transitions — a change of state, or a
+    /// `waiting` with a new detail (a second question is news; the same
+    /// question re-asked is not).
+    pub fn fold_lines(self, fold: &mut Fold, lines: &[String], now: SystemTime) -> Polled {
+        let mut out = Polled::default();
+        for text in lines {
+            let Some(line) = StatusLine::parse(text.trim()) else {
+                continue;
+            };
+            let map = self.map();
+            // Any line the map reads is proof of life, a subagent's too, and
+            // so is a plugin's first line.
+            out.activity |= map(&line).is_some() || self.is_first_line(&line);
+            if let Some(folded) = fold.apply(&line, map) {
+                out.transitions.push(observed(folded, now));
+            }
+        }
+        out
+    }
+
+    /// The operator wrote to the console at `now` (ADR-0085 D7.5). For a
+    /// vendor that sends no event when the operator grants a permission, an
+    /// open permission `waiting` in `fold` ends here; the result is the new
+    /// state, else `None`.
+    pub fn fold_input(self, fold: &mut Fold, now: SystemTime) -> Option<Observed> {
+        if self.sends_a_grant() {
+            return None;
+        }
+        let ts = chrono::DateTime::<chrono::Utc>::from(now)
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        Some(observed(fold.operator_input(ts)?, now))
     }
 
     fn map(self) -> MapFn {
@@ -684,7 +681,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         let mut f = std::fs::File::create(&path).unwrap();
-        let mut tail = Tail::new(path.clone(), HookVendor::Claude);
+        let (mut tail, mut fold) = (Tail::new(path), Fold::new());
+        let mut poll =
+            || HookVendor::Claude.fold_lines(&mut fold, &tail.read_lines(), SystemTime::now());
         let line = |event: &str| {
             format!(r#"{{"event":"{event}","tool_name":"Bash","tool_input":null,"ts":"t"}}"#)
         };
@@ -692,11 +691,11 @@ mod tests {
         writeln!(f, "{}", line("PreToolUse")).unwrap();
         writeln!(f, "{}", line("Stop")).unwrap();
         f.flush().unwrap();
-        let polled = tail.poll();
+        let polled = poll();
         let got: Vec<&str> = polled.transitions.iter().map(|o| o.state).collect();
         assert_eq!(got, vec!["working", "done"]);
         assert!(polled.activity);
-        let polled = tail.poll();
+        let polled = poll();
         assert!(
             polled.transitions.is_empty() && !polled.activity,
             "nothing new"
@@ -706,11 +705,11 @@ mod tests {
         writeln!(f, "{}", line("UserPromptSubmit")).unwrap();
         writeln!(f, "{}", line("PreToolUse")).unwrap();
         f.flush().unwrap();
-        let polled = tail.poll();
+        let polled = poll();
         assert_eq!(polled.transitions.len(), 1, "one working transition");
         writeln!(f, "{}", line("PreToolUse")).unwrap();
         f.flush().unwrap();
-        let polled = tail.poll();
+        let polled = poll();
         assert!(
             polled.transitions.is_empty() && polled.activity,
             "{polled:?}"
@@ -726,8 +725,7 @@ mod tests {
         writeln!(f, "{}", perm("Bash")).unwrap();
         writeln!(f, "{}", perm("Edit")).unwrap();
         f.flush().unwrap();
-        let details: Vec<String> = tail
-            .poll()
+        let details: Vec<String> = poll()
             .transitions
             .into_iter()
             .map(|o| o.detail.unwrap_or_default())
@@ -896,8 +894,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         std::fs::write(&path, b"").unwrap();
-        let mut tail = Tail::new(path.clone(), HookVendor::OpenCode);
-        let first_line = tail.poll().activity.then_some(now);
+        let (mut tail, mut fold) = (Tail::new(path.clone()), Fold::new());
+        let mut poll = || HookVendor::OpenCode.fold_lines(&mut fold, &tail.read_lines(), now);
+        let first_line = poll().activity.then_some(now);
         assert_eq!(
             silence(source, first_input, first_line, None, now).as_deref(),
             Some(CLOCK_REASON),
@@ -910,7 +909,7 @@ mod tests {
             .unwrap();
         writeln!(f, r#"{{"event":"plugin.loaded","ts":"t0"}}"#).unwrap();
         f.flush().unwrap();
-        let polled = tail.poll();
+        let polled = poll();
         assert!(polled.transitions.is_empty(), "{polled:?}");
         let first_line = polled.activity.then_some(now);
         assert_eq!(

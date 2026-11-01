@@ -47,7 +47,8 @@ pub(super) fn start_pump(
 /// exited on its own.
 fn on_tick(sess: &ManagedSession, changes: &broadcast::Sender<()>) {
     // The agent-state tail rides the same tick (ADR-0059 §5).
-    if sess.poll_status(SystemTime::now()) {
+    let start_failure = crate::agent_state::start_check_failure();
+    if sess.poll_status(SystemTime::now(), start_failure.as_deref()) {
         notify(changes);
     }
     // One lock spanning the check + close so a client write/resize
@@ -56,6 +57,24 @@ fn on_tick(sess: &ManagedSession, changes: &broadcast::Sender<()>) {
     if session.has_exited() {
         // Drops the master → the reader drains then EOFs → break.
         session.close();
+    }
+}
+
+impl ManagedSession {
+    /// Read the lines the hooks appended since the last tick, then fold them
+    /// into the agent state at `now` (`AgentStatus::on_tick`). The file is
+    /// read before the state is locked, so an input never waits on the read.
+    /// The pump is the one reader of the tail. Returns whether the state the
+    /// list shows changed; `false` for a console without hooks.
+    pub(super) fn poll_status(&self, now: SystemTime, start_failure: Option<&str>) -> bool {
+        let Some(status) = &self.status else {
+            return false;
+        };
+        let lines = status.tail.lock().expect("tail mutex").read_lines();
+        self.agent_status
+            .lock()
+            .expect("agent_status mutex")
+            .on_tick(&lines, now, start_failure)
     }
 }
 
