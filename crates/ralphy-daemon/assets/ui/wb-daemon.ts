@@ -506,7 +506,7 @@ export function createDaemon(
         } catch {}
       },
     });
-    return { resume: page.resume, close: leave };
+    return { close: leave };
   }
 
   // ---- the resume of the page (ADR-0082, amendment of 2026-11-01) ----------

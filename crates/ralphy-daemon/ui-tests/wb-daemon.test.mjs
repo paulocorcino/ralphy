@@ -773,17 +773,24 @@ test("a reopened tree channel the daemon closes again waits for the next socket"
   assert.deepEqual(sentOn(sockets[1]), [["watch", "src"]], "the next socket opens it again");
 });
 
-test("resume(true) replaces an open tree socket and the new one replays the held set", () => {
-  const { sub, ws, sockets, open, withFakes } = treeSocket(null, undefined);
-  sub.watch("src");
-  assert.equal(
-    withFakes(() => sub.resume(true)),
-    true,
-  );
-  assert.equal(sockets.length, 2);
-  assert.equal(ws.onclose, null, "the retired socket can no longer schedule a retry");
-  open(sockets[1]);
-  assert.deepEqual(sentOn(sockets[1]), [["watch", "src"]]);
+// The page resumes in the door alone: a subscription has no resume of its
+// own, so its channel opens again on the new socket as a reopen.
+test("after a page resume the tree sends its watches again on the new socket", () => {
+  const page = eventPage();
+  const dirty = [];
+  page.withFakes(() => {
+    const sub = page.d.subscribeTree("o/r", (rel) => dirty.push(rel), null, undefined, undefined);
+    page.open(page.sockets[0]);
+    sub.watch("src");
+  });
+  const first = page.sockets[0];
+  page.online();
+  assert.equal(page.sockets.length, 2, "the page replaced its socket");
+  assert.equal(first.onclose, null, "the retired socket can no longer schedule a retry");
+  assert.deepEqual(dirty, [], "nothing is read before the new socket opens");
+  page.open(page.sockets[1]);
+  assert.deepEqual(sentOn(page.sockets[1]), [["watch", "src"]]);
+  assert.deepEqual(dirty, ["src"], "the held dir is read once, after the reopen");
 });
 
 // --- subscribePresence: the presence socket also carries the daemon's pushes

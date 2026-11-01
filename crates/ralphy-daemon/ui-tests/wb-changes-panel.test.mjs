@@ -107,13 +107,50 @@ test("each workbench event reaches the Changes view", () => {
   changes.loadChanges = (ref) => calls.push(`changes:${ref}`);
   changes.loadSync = (ref) => calls.push(`sync:${ref}`);
   changes.refreshChanges = () => calls.push("refresh");
-  changes._changesSub = { resume: (stale) => calls.push(`resume:${stale}`) };
   fire("workbench:project-changed", { slug: "o/b", previous: "o/a" });
   fire("workbench:head-moved", { ref: "o/r" });
   fire("workbench:changes-read", { ref: "o/r" });
   fire("workbench:changes-refresh", null);
-  fire("workbench:sockets-resume", { stale: true });
-  assert.deepEqual(calls, ["follow:o/b", "head:o/r", "changes:o/r", "sync:o/r", "refresh", "resume:true"]);
+  assert.deepEqual(calls, ["follow:o/b", "head:o/r", "changes:o/r", "sync:o/r", "refresh"]);
+});
+
+// The page resumes in the daemon door alone. The channel of the Changes view
+// opens again on the new socket, and that reopen is its one catch-up read.
+test("after a page resume the changes view reads once", () => {
+  const { shell, changes, fire } = page({ document: { visibilityState: "visible" } });
+  const reads = [];
+  changes.loadChanges = (ref) => reads.push(`changes:${ref}`);
+  changes.loadSync = (ref) => reads.push(`sync:${ref}`);
+  shell.$store.projects.setOpen("o/r");
+  const sockets = [];
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = () => 0;
+  globalThis.WebSocket = class {
+    constructor() {
+      this.readyState = 0;
+      sockets.push(this);
+    }
+    send() {}
+    close() {
+      this.readyState = 3;
+    }
+  };
+  try {
+    changes.mountChangesSub();
+    sockets[0].readyState = 1;
+    sockets[0].onopen();
+    assert.deepEqual(reads, [], "the first open reads nothing");
+    fire("online");
+    assert.equal(sockets.length, 2, "the page replaced its socket");
+    assert.deepEqual(reads, [], "nothing is read before the new socket opens");
+    sockets[1].readyState = 1;
+    sockets[1].onopen();
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    delete globalThis.WebSocket;
+    changes.destroyChangesSub();
+  }
+  assert.deepEqual(reads, ["changes:o/r", "sync:o/r"], "one read of each fact");
 });
 
 // The shell asks the Changes view for a read, and never calls it.

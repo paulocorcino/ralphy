@@ -525,10 +525,6 @@ export function wbChanges() {
       });
       // Opening the Changes view is a read trigger.
       window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
-      // No module sends this now: the daemon door resumes the page socket.
-      window.addEventListener("workbench:sockets-resume", (e) =>
-        this._changesSub?.resume?.(e.detail.stale),
-      );
       // Registered once; the tick asks whether the panel is open.
       this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
     },
