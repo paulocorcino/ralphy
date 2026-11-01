@@ -4,9 +4,8 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createFeeds } from "../assets/ui/wb-console-feeds.ts";
 
-function feeds(OPTS = {}) {
+function feeds() {
   return createFeeds({
-    OPTS,
     wins: new Set(),
     pageWindows: () => [],
     renderTitle() {},
@@ -14,15 +13,10 @@ function feeds(OPTS = {}) {
 }
 
 test("the getters return the last value fed, read after the factory was built", () => {
-  const f = feeds({ isStale: () => false });
+  const f = feeds();
   assert.deepEqual(f.lastSessions(), []);
   assert.equal(f.wakePeerNow(), null);
   assert.equal(f.readFleetNow(), null);
-  const probe = () => true;
-  f.setStaleProbe(probe);
-  assert.equal(f.staleProbeNow(), probe);
-  f.setStaleProbe(null);
-  assert.equal(f.staleProbeNow(), null);
   const wake = async () => true;
   const read = () => {};
   f.ingestFleet([], { wake, read });

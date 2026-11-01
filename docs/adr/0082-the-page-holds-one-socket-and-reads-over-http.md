@@ -284,3 +284,42 @@ socket's own shutdown wait (2 s) plus one second, before it drops the
 runtime. A console's `session-end {reason: "daemon-shutdown"}` reaches the
 page. Checked by the unit test `the_process_stop_waits_for_an_open_page_socket`.
 
+
+## Amendment (2026-11-01): one owner resumes the page
+
+**The daemon door owns the resume of the page.** `wb-daemon.ts` hears each
+trigger once: the page shown again (`visibilitychange`), `online`, and a
+heartbeat that stops while the page stays visible (#751). For each trigger
+it decides once whether the page socket is stale (`pageIsStale` in
+`wb-resume.ts`), resumes the page socket once, and then runs each hook that
+`onPageResume` registered. The console's hook (`wb-console-dormancy.ts`)
+runs each console's own resume, with the same verdict. No other module
+listens for a trigger to resume the page, and no other module judges
+"stale". Before this, four modules started a resume of the page socket (the
+store `connection`, the console's dormancy, the files and the Changes view),
+two of them judged "stale" each by its own rule, and only the debounce of
+the page socket made their calls one.
+
+**Rule 1: a page with a heartbeat is judged by its heartbeat.** The shell
+subscribes to presence, so it has the daemon's heartbeat (about every 2 s).
+On a return, the socket is stale when the last heartbeat is older than 6 s
+(`HEARTBEAT_LOST_MS`), however long the page was hidden. A desktop tab on
+another tab for minutes still hears the daemon: replacing its socket would
+only open every console again. A suspended tablet runs no JavaScript, so its
+last heartbeat is old when it comes back.
+
+**Rule 2: a page with no heartbeat is judged by how long it was hidden.**
+The detached fence page subscribes to no presence. Its socket is stale when
+it was hidden for more than 60 s (`RESUME_HIDDEN_MS`). An ordinary tab
+switch stays below that and changes nothing. `online` is always stale on
+both pages: the link the socket ran over is a different link now.
+
+A heartbeat loss resumes once: the watch starts again only on the next
+heartbeat, so a daemon that stays down is dialled by the page socket's own
+retry, not by each loss. A hidden page does not resume on the loss; it is
+judged when it is shown. The store `connection` reads the verdict
+(`heartbeatStale`) only to show it.
+
+Compliance: the ui-tests `one lost heartbeat opens one new page socket`,
+`a live heartbeat keeps the socket after a long hide` and `a page with no
+heartbeat is stale after 60 s hidden` (`wb-daemon.test.mjs`).

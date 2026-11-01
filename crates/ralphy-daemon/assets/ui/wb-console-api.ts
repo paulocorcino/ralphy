@@ -10,7 +10,12 @@
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
-import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import {
+  resumeDecision,
+  CONNECT_TIMEOUT_MS,
+  RESUME_DEBOUNCE_MS,
+  RESUME_HIDDEN_MS,
+} from "./wb-resume.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { gpuHolders, dormantAfterMs, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import type { createDeskRecords } from "./wb-desk-records.ts";
@@ -84,9 +89,16 @@ export function buildConsoleApi(parts: ConsoleParts) {
     wins,
   } = parts;
   return {
-    boot: desk.boot,
+    // The entry module calls `boot` after it built `WBDaemon`, so the
+    // console's resume can follow the door's from here.
+    boot: () => {
+      dormancy.followPageResume();
+      desk.boot();
+    },
     open: spawn.open,
     relaunchRequest: WBConsoleSession.relaunchRequest,
+    // The store `checkouts` says its worktree listing of a ref changed: the
+    // titles of that repo are drawn again.
     ingestWorktrees: title.ingestWorktrees,
     ingestSessions: feeds.ingestSessions,
     ingestProjects: feeds.ingestProjects,
@@ -153,8 +165,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
     FONT_MIN: WBConsoleInput.FONT_MIN,
     FONT_MAX: WBConsoleInput.FONT_MAX,
     FONT_DEFAULT: WBConsoleInput.FONT_DEFAULT,
-    setStaleProbe: feeds.setStaleProbe,
-    RESUME_HIDDEN_MS: WBConsoleSession.RESUME_HIDDEN_MS,
+    RESUME_HIDDEN_MS,
     RESUME_DEBOUNCE_MS,
     CONNECT_TIMEOUT_MS,
     pasteDecision: WBConsoleInput.pasteDecision,
@@ -189,6 +200,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
     checkouts: records.allCheckouts,
     checkoutMenu: title.checkoutMenu,
     checkoutMenuRows: title.checkoutMenuRows,
+    // Asks the store `checkouts` to read the listing of a ref.
     ensureListing: title.ensureListing,
     askNotice: messages.askNotice,
     // The note card asks the same question the stage's own verbs do (ADR-0064

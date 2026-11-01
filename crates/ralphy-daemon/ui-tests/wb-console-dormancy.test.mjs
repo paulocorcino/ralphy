@@ -24,7 +24,6 @@ function dormancy(p, wins = new Set()) {
     wins,
     stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
-    staleProbeNow: () => null,
     applyKeyBar() {},
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,
@@ -46,7 +45,6 @@ test("the dormancy registers no listener until listen(), then the page listeners
   assert.deepEqual(p.added, [
     "document:visibilitychange",
     "window:pagehide",
-    "window:online",
     "document:workbench:action",
     "document:workbench:tab-shown",
   ]);
@@ -54,13 +52,20 @@ test("the dormancy registers no listener until listen(), then the page listeners
 
 test("a hidden page tells each console, and a visible one takes it back before the resume", () => {
   const p = page();
+  const hooks = [];
+  p.window.WBDaemon = { onPageResume: (fn) => hooks.push(fn) };
   const said = [];
   const win = { _term: { notePage: (hidden) => said.push(hidden ? "hidden" : "shown"), resume: () => said.push("resume") } };
-  dormancy(p, new Set([win])).listen();
+  const d = dormancy(p, new Set([win]));
+  d.listen();
+  d.followPageResume();
   p.document.visibilityState = "hidden";
   p.handlers["document:visibilitychange"]();
   p.document.visibilityState = "visible";
+  // The console is built before the daemon door, so its listener runs first,
+  // and the door's resume reaches the hook after it.
   p.handlers["document:visibilitychange"]();
+  for (const fn of hooks) fn(false, "visible");
   p.handlers["window:pagehide"]();
   assert.deepEqual(said, ["hidden", "shown", "resume", "hidden"]);
 });
@@ -88,7 +93,6 @@ test("hiding the Consoles tab puts its consoles to sleep, and showing it wakes t
     wins: new Set([win]),
     stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
-    staleProbeNow: () => null,
     applyKeyBar() {},
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,
@@ -111,4 +115,44 @@ test("hiding the Consoles tab puts its consoles to sleep, and showing it wakes t
   p.handlers["document:workbench:tab-shown"]({ detail: { id: "consoles" } });
   assert.deepEqual(attached, [7]);
   assert.equal(win._dormant, false);
+});
+
+// Each trigger asks for its own work: a returning page revives its
+// placeholders, and a new link also sends the desk changes kept while it was
+// down. A heartbeat loss on a page in front does neither.
+test("a page resume routes the placeholder revival and the desk flush by trigger", () => {
+  const table = [
+    { trigger: "heartbeat", pending: true, revived: 0, flushed: [] },
+    { trigger: "visible", pending: true, revived: 1, flushed: [] },
+    { trigger: "online", pending: true, revived: 1, flushed: [0] },
+    { trigger: "online", pending: false, revived: 1, flushed: [] },
+  ];
+  for (const { trigger, pending, revived, flushed } of table) {
+    const p = page();
+    const hooks = [];
+    p.window.WBDaemon = { onPageResume: (fn) => hooks.push(fn) };
+    let revives = 0;
+    const flushes = [];
+    createDormancy({
+      window: p.window,
+      document: p.document,
+      wins: new Set(),
+      stack: { setFocusHook() {} },
+      sync: { hasPending: () => pending },
+      applyKeyBar() {},
+      budget: () => ({ scheduleGpu() {} }),
+      fillsViewport: () => false,
+      isFull: () => false,
+      windowShown: () => true,
+      attachTerminal: () => null,
+      scheduleDeskFlush: (ms) => flushes.push(ms),
+      revivePlaceholders: async () => {
+        revives += 1;
+      },
+    }).followPageResume();
+    for (const fn of hooks) fn(true, trigger);
+    const name = `${trigger}, desk changes ${pending ? "pending" : "none"}`;
+    assert.equal(revives, revived, `${name}: placeholder revivals`);
+    assert.deepEqual(flushes, flushed, `${name}: desk flushes`);
+  }
 });

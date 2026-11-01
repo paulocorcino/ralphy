@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTitle } from "../assets/ui/wb-console-title.ts";
+import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 
 // An element with the few DOM members the title uses. Listeners are kept so a
 // test can fire them.
@@ -144,18 +145,66 @@ test("a rename to an empty name takes the console prefix and the first free numb
   assert.deepEqual(writes.at(-1).fields, { consoleName: "vibeforge #3" });
 });
 
-test("the checkout button opens a menu with the worktrees of the console's repo", () => {
-  const { deps } = fakeDeps();
+// The page's store `checkouts`, built as `main.ts` builds it, on a window whose
+// daemon answers `worktree.list` with the worktrees of `repos[ref]`. The console is told by
+// the store through `WBConsole.ingestWorktrees`, so `title` is wired there.
+function pageWithStore(repos) {
+  const store = checkoutsStore({ messages: { flash() {} } });
+  const window = {
+    Alpine: { store: (name) => (name === "checkouts" ? store : undefined) },
+    WBDaemon: {
+      observe: async (verb, { repo }) =>
+        verb === "worktree.list" ? { status: "ok", checkouts: { worktrees: repos[repo] } } : null,
+    },
+    addEventListener() {},
+    dispatchEvent: () => true,
+  };
+  globalThis.window = window;
+  const { deps } = fakeDeps({ window });
   const title = createTitle(deps);
-  const win = fakeWindow({ _deskCheckout: "feat-a" });
+  window.WBConsole = { ingestWorktrees: title.ingestWorktrees };
+  return { store, title };
+}
+
+// The names of the rows of the menu the checkout button opens.
+function switcherRows(title, win) {
   const bar = fakeElement("span");
-  title.ingestWorktrees("paulocorcino/vibeforge", {
-    worktrees: [
-      { name: "feat-a", branch: "feat-a", dirty: true },
+  title.renderTitle(win, bar, { checkout: "primary" });
+  bar.children.find((k) => k.className === "session-checkout").fire("click");
+  const menu = win.children.find((k) => k.className === "session-checkout-menu");
+  return menu.children
+    .map((r) => r.children.find((k) => k.className === "session-checkout-name")?.textContent)
+    .filter(Boolean);
+}
+
+test("a worktree being deleted is not offered in the console switcher", async () => {
+  const { store, title } = pageWithStore({
+    "paulocorcino/vibeforge": [
+      { name: "feat-a", branch: "feat-a" },
       { name: "feat-b", branch: "feat-b" },
     ],
   });
-  title.ingestWorktrees("someone/else", { worktrees: [{ name: "other", branch: "other" }] });
+  const win = fakeWindow();
+  // The delete of feat-a is in flight when an agent window of this repo opens.
+  store.hideWorktree("paulocorcino/vibeforge", "feat-a");
+  title.ensureListing("paulocorcino/vibeforge");
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(switcherRows(title, win), ["primary", "feat-b"]);
+});
+
+test("the checkout button opens a menu with the worktrees of the console's repo", async () => {
+  const { store, title } = pageWithStore({
+    "paulocorcino/vibeforge": [
+      { name: "feat-a", branch: "feat-a", dirty: true },
+      { name: "feat-b", branch: "feat-b" },
+    ],
+    "someone/else": [{ name: "other", branch: "other" }],
+  });
+  const win = fakeWindow({ _deskCheckout: "feat-a" });
+  const bar = fakeElement("span");
+  // The store holds the listing of each repo; this console reads its own.
+  await store.ensureWorktreeListing("paulocorcino/vibeforge");
+  await store.ensureWorktreeListing("someone/else");
   title.renderTitle(win, bar, { checkout: "feat-a" });
   const button = bar.children.find((k) => k.className === "session-checkout");
   assert.ok(button, "an agent window that can relaunch has a checkout button");
@@ -167,6 +216,22 @@ test("the checkout button opens a menu with the worktrees of the console's repo"
   assert.deepEqual(names, ["primary", "feat-a", "feat-b", undefined]);
   assert.equal(rows[1].className, "session-checkout-item current");
   assert.equal(rows[3].className, "session-checkout-item create");
+});
+
+test("the store's notice draws again the titles of the repo whose listing changed", () => {
+  const wins = new Set();
+  const bars = {};
+  for (const [id, repo] of [["w1", "paulocorcino/vibeforge"], ["w2", "someone/else"]]) {
+    const bar = fakeElement("span");
+    const win = fakeWindow({ _deskId: id, _deskRepo: repo, _title: bar, _presentation: { checkout: "primary" } });
+    wins.add(win);
+    bars[id] = bar;
+  }
+  const { deps } = fakeDeps({ wins });
+  const title = createTitle(deps);
+  title.ingestWorktrees("paulocorcino/vibeforge");
+  assert.ok(bars.w1.children.length > 0, "the window of the repo is drawn");
+  assert.equal(bars.w2.children.length, 0, "the window of another repo is not");
 });
 
 test("tell me when it is done sets the mark", () => {

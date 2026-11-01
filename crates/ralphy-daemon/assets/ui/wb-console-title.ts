@@ -27,13 +27,14 @@ export type ConfirmOptions = {
 
 // What the title reads from the console, and nothing else.
 export type TitleDeps = {
-  // The console's page: the daemon client (`window.WBDaemon`) the listing
-  // read and the worktree create go through.
+  // The console's page: the store `checkouts` that holds the worktree
+  // listing, and the daemon client (`window.WBDaemon`) the worktree create
+  // goes through.
   window: Window;
   // The page the title builds its elements in and listens on.
   document: Document;
   // The console's options: the detached popup cannot launch, so it has no
-  // switcher, no listing read and no rename.
+  // switcher, no listing request and no rename.
   OPTS: { canLaunch?: boolean };
   // The console windows on this page.
   wins: Set<ConsoleWin>;

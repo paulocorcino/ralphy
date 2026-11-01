@@ -454,17 +454,12 @@ test("the fence cap is a number the shell can state, and the plane is at it from
 // `stale` is the caller's liveness verdict (the shell's presence heartbeat).
 // The decision table itself is pinned once, in wb-daemon.test.mjs.
 
-test("resumeAll and setStaleProbe are exported like the rest of the module's seam", () => {
+test("resumeAll is exported like the rest of the module's seam", () => {
   const c = load();
   assert.equal(typeof c.resumeAll, "function");
-  assert.equal(typeof c.setStaleProbe, "function");
   // With no window open there is nothing to resume, and it must not throw:
   // `online` fires in a document that has painted no console at all.
   assert.equal(c.resumeAll(true), 0);
-  // The probe seam is what keeps the shell's heartbeat verdict out of this
-  // module. Setting a non-function clears it rather than poisoning the path.
-  c.setStaleProbe(() => true);
-  c.setStaleProbe(null);
   assert.equal(c.resumeAll(false), 0);
 });
 

@@ -94,3 +94,69 @@ test("a change count read for one project keeps the counts of the others, and a 
   store.changeCountRead("o/r", null);
   assert.deepEqual(store.changesCount, { "o/r": null, "o/b": 0 });
 });
+
+// The daemon's `worktree.list`, answered by hand: `reads` records each call,
+// and `reply(ref, worktrees)` answers the call for `ref`.
+function manualDaemon() {
+  const reads = [];
+  const waiting = {};
+  globalThis.window.WBDaemon.observe = (verb, { repo }) => {
+    reads.push(repo);
+    return new Promise((resolve) => (waiting[repo] ||= []).push(resolve));
+  };
+  const reply = (ref, names) =>
+    waiting[ref].shift()({ status: "ok", checkouts: { worktrees: names.map((name) => ({ name, branch: name })) } });
+  return { reads, reply };
+}
+
+const names = (listing) => listing?.worktrees.map((w) => w.name);
+
+test("the listing of one repo is kept when another repo is read while it is in flight", async () => {
+  const { store } = page();
+  const daemon = manualDaemon();
+  const a = store.ensureWorktreeListing("o/a");
+  const b = store.ensureWorktreeListing("o/b");
+  daemon.reply("o/a", ["wt-a"]);
+  daemon.reply("o/b", ["wt-b"]);
+  await Promise.all([a, b]);
+  assert.deepEqual(names(store.listingOf("o/a")), ["wt-a"]);
+  assert.deepEqual(names(store.listingOf("o/b")), ["wt-b"]);
+});
+
+test("a listing read already in flight is not read again, unless forced", async () => {
+  const { store } = page();
+  const daemon = manualDaemon();
+  const first = store.ensureWorktreeListing("o/r");
+  const second = store.ensureWorktreeListing("o/r");
+  assert.deepEqual(daemon.reads, ["o/r"], "a console of the same repo shares the read");
+  daemon.reply("o/r", ["wt-a"]);
+  await Promise.all([first, second]);
+  await store.ensureWorktreeListing("o/r");
+  assert.equal(daemon.reads.length, 1, "a listing already held is not read again");
+  const forced = store.ensureWorktreeListing("o/r", true);
+  assert.equal(daemon.reads.length, 2, "a forced read always reads");
+  daemon.reply("o/r", ["wt-a", "wt-b"]);
+  await forced;
+  assert.deepEqual(names(store.listingOf("o/r")), ["wt-a", "wt-b"]);
+});
+
+test("the console is told that a listing changed, and reads it from the store without a delete in flight", async () => {
+  const { store } = page();
+  const told = [];
+  globalThis.window.WBConsole.ingestWorktrees = (...args) => told.push(args);
+  const daemon = manualDaemon();
+  const read = store.ensureWorktreeListing("o/r");
+  daemon.reply("o/r", ["wt-a", "wt-b"]);
+  await read;
+  assert.deepEqual(told, [["o/r"]], "the notice names the ref and carries no listing");
+  assert.deepEqual(names(store.listingOf("o/r")), ["wt-a", "wt-b"]);
+  store.hideWorktree("o/r", "wt-a");
+  assert.equal(told.length, 2, "a delete in flight changes the listing too");
+  assert.deepEqual(names(store.listingOf("o/r")), ["wt-b"]);
+  // The re-read of another delete does not bring the hidden worktree back.
+  const again = store.ensureWorktreeListing("o/r", true);
+  daemon.reply("o/r", ["wt-a", "wt-b"]);
+  await again;
+  assert.deepEqual(names(store.listingOf("o/r")), ["wt-b"]);
+  assert.equal(store.listingOf("o/none"), null, "a ref never read has no listing");
+});

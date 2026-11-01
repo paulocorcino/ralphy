@@ -422,7 +422,6 @@ function dormancyOf(wins) {
     wins: new Set(els),
     stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
-    staleProbeNow: () => null,
     applyKeyBar() {},
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: (w) => w.classList.contains("maximized"),
