@@ -1,63 +1,46 @@
 //! The agent state of a console as the manager shows it: the tick's
-//! changes, the silence rule, the operator's input, and the lock order
-//! between the tick and an input.
+//! changes, the silence rule, the operator's input, and the order of a tick
+//! and an input.
+
+use std::time::Duration;
 
 use super::*;
+use crate::agent_state::{HookVendor, SILENT_AFTER, STALE_AFTER};
 
-/// The pump's tick reports a change in what the list shows, so a `working`
-/// that ages into `unknown` with no new hook line is a change too: it pushes
-/// `sessions.dirty`, and a tab does not keep showing a hung agent as working.
-#[tokio::test]
-async fn a_working_state_that_ages_out_counts_as_a_change() {
-    use crate::agent_state::{Observed, StatusFiles, STALE_AFTER};
-    let manager = Arc::new(SessionManager::new());
-    let dir = std::env::temp_dir().join(format!("ralphy-age-out-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
-    spec.status = Some(StatusFiles::for_session(&dir, 1));
-    let (id, _att) = manager
-        .spawn_attached(
-            "owner/r".to_string(),
-            "claude".to_string(),
-            "agent".to_string(),
-            None,
-            None,
-            None,
-            spec,
-        )
-        .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-    let now = SystemTime::now();
-    *sess.agent_state.lock().expect("agent_state mutex") = Some(Observed {
-        state: "working",
-        detail: None,
-        since: "t".into(),
-        seen: now - STALE_AFTER + std::time::Duration::from_secs(1),
-        cause: None,
-    });
-    assert!(sess.poll_status(now), "the first state shown is a change");
-    assert!(!sess.poll_status(now), "the same state again is not");
-    let later = now + std::time::Duration::from_secs(2);
-    assert!(
-        sess.poll_status(later),
-        "working aged into unknown with no new line is a change"
-    );
-    assert!(!sess.poll_status(later), "unknown again is not");
-    manager.close(id);
-    #[expect(
-        clippy::unused_result_ok,
-        reason = "the cleanup of a scratch directory may find it gone"
-    )]
-    std::fs::remove_dir_all(&dir).ok();
+/// A Claude hook line of `event`.
+fn claude_line(event: &str) -> String {
+    format!("{{\"event\":\"{event}\",\"tool_name\":\"Bash\",\"tool_input\":null,\"ts\":\"t\"}}\n")
 }
 
-/// A console with hooks, spawned on the platform shell, and its session.
+/// A permission request for `Bash`, at hook time `ts`.
+fn permission(ts: &str) -> String {
+    format!(
+        "{{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"{ts}\"}}\n"
+    )
+}
+
+/// Append `line` to the status file at `path`.
+fn append(path: &std::path::Path, line: &str) {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .expect("open the status file");
+    file.write_all(line.as_bytes())
+        .expect("append the status line");
+}
+
+/// A console with hooks, spawned on the platform shell, its session, and
+/// its status file.
 fn hooked_console(
     manager: &Arc<SessionManager>,
     dir: &std::path::Path,
-) -> (SessionId, Attachment, Arc<ManagedSession>) {
+) -> (SessionId, Attachment, Arc<ManagedSession>, PathBuf) {
+    let files = crate::agent_state::StatusFiles::for_session(dir, 1);
+    let status = files.status.clone();
     let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
-    spec.status = Some(crate::agent_state::StatusFiles::for_session(dir, 1));
+    spec.status = Some(files);
     let (id, att) = manager
         .spawn_attached(
             "owner/r".to_string(),
@@ -70,7 +53,46 @@ fn hooked_console(
         )
         .expect("the platform shell must spawn");
     let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-    (id, att, sess)
+    (id, att, sess, status)
+}
+
+/// The block the list shows for `sess` at `now`.
+fn block_at(sess: &ManagedSession, now: SystemTime) -> Option<crate::agent_state::AgentState> {
+    sess.agent_status
+        .lock()
+        .expect("agent_status mutex")
+        .shown_at(now)
+}
+
+/// The state and detail the list shows for `sess` now.
+fn shown(sess: &ManagedSession) -> (Option<String>, Option<String>) {
+    let block = block_at(sess, SystemTime::now()).expect("a state");
+    (block.state, block.detail)
+}
+
+/// The pump's tick reports a change in what the list shows, so a `working`
+/// that ages into `unknown` with no new hook line is a change too: it pushes
+/// `sessions.dirty`, and a tab does not keep showing a hung agent as working.
+#[tokio::test]
+async fn a_working_state_that_ages_out_counts_as_a_change() {
+    let manager = Arc::new(SessionManager::new());
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (id, _att, sess, status) = hooked_console(&manager, dir.path());
+    append(&status, &claude_line("UserPromptSubmit"));
+    let now = SystemTime::now();
+    let seen = now - STALE_AFTER + Duration::from_secs(1);
+    assert!(
+        sess.poll_status(seen, None),
+        "the first state shown is a change"
+    );
+    assert!(!sess.poll_status(now, None), "the same state again is not");
+    let later = now + Duration::from_secs(2);
+    assert!(
+        sess.poll_status(later, None),
+        "working aged into unknown with no new line is a change"
+    );
+    assert!(!sess.poll_status(later, None), "unknown again is not");
+    manager.close(id);
 }
 
 /// A console that becomes silent says so in the log once, not at every tick.
@@ -78,10 +100,9 @@ fn hooked_console(
 async fn a_console_that_becomes_silent_logs_one_line() {
     let manager = Arc::new(SessionManager::new());
     let dir = tempfile::tempdir().expect("temp dir");
-    let (id, _att, sess) = hooked_console(&manager, dir.path());
-    let now = SystemTime::now();
-    *sess.first_input.lock().expect("first_input mutex") =
-        Some(now - crate::agent_state::SILENT_AFTER - std::time::Duration::from_secs(1));
+    let (id, att, sess, _status) = hooked_console(&manager, dir.path());
+    att.write(b"x").expect("a write");
+    let now = SystemTime::now() + SILENT_AFTER + Duration::from_secs(1);
 
     let log_path = dir.path().join("daemon.log");
     let log_file = std::fs::File::create(&log_path).expect("create the log");
@@ -91,7 +112,7 @@ async fn a_console_that_becomes_silent_logs_one_line() {
         .finish();
     let changes: Vec<bool> = tracing::subscriber::with_default(subscriber, || {
         (0..4u64)
-            .map(|i| sess.poll_status_with(now + std::time::Duration::from_secs(i), None))
+            .map(|i| sess.poll_status(now + Duration::from_secs(i), None))
             .collect()
     });
     assert_eq!(changes, vec![true, false, false, false]);
@@ -112,22 +133,32 @@ async fn a_console_that_becomes_silent_logs_one_line() {
 async fn the_silence_clock_starts_at_the_first_input() {
     let manager = Arc::new(SessionManager::new());
     let dir = tempfile::tempdir().expect("temp dir");
-    let (id, att, sess) = hooked_console(&manager, dir.path());
-    let first_input = || *sess.first_input.lock().expect("first_input mutex");
+    let (id, att, sess, _status) = hooked_console(&manager, dir.path());
+    let silent_at = |now: SystemTime| {
+        sess.poll_status(now, None);
+        block_at(&sess, now)
+            .is_some_and(|b| b.source == Some(crate::agent_state::Unreported::Silent))
+    };
+    let far = SystemTime::now() + SILENT_AFTER * 10;
     att.write(b"").expect("an empty write");
-    assert_eq!(first_input(), None, "an empty write is no input");
+    assert!(!silent_at(far), "an empty write is no input");
     att.write(b"\x1b[12;40R").expect("a cursor report");
-    assert_eq!(first_input(), None, "a terminal reply is no input");
+    assert!(!silent_at(far), "a terminal reply is no input");
     let before = SystemTime::now();
     att.write(b"x").expect("a write");
     let after = SystemTime::now();
-    let first = first_input().expect("the first write with bytes sets it");
-    assert!(before <= first && first <= after, "{first:?}");
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert!(
+        !silent_at(before + SILENT_AFTER),
+        "the clock started at the write, not before it"
+    );
+    assert!(
+        silent_at(after + SILENT_AFTER + Duration::from_millis(1)),
+        "the first write with bytes started the clock"
+    );
+    std::thread::sleep(Duration::from_millis(20));
     att.write(b"y").expect("a second write");
-    assert_eq!(
-        first_input(),
-        Some(first),
+    assert!(
+        silent_at(after + SILENT_AFTER + Duration::from_millis(10)),
         "a second write does not move it"
     );
     manager.close(id);
@@ -141,11 +172,7 @@ fn waiting_for_a_permission(
     agent: crate::session::Agent,
 ) -> (SessionId, Attachment, Arc<ManagedSession>) {
     let files = crate::agent_state::StatusFiles::for_agent(agent, dir, 1).expect("hooks");
-    std::fs::write(
-        &files.status,
-        "{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"t1\"}\n",
-    )
-    .expect("write the status line");
+    std::fs::write(&files.status, permission("t1")).expect("write the status line");
     let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
     spec.status = Some(files);
     let (id, att) = manager
@@ -160,14 +187,8 @@ fn waiting_for_a_permission(
         )
         .expect("the platform shell must spawn");
     let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-    sess.poll_status_with(SystemTime::now(), None);
+    sess.poll_status(SystemTime::now(), None);
     (id, att, sess)
-}
-
-/// The state and detail the list shows for `sess` now.
-fn shown(sess: &ManagedSession) -> (Option<String>, Option<String>) {
-    let block = sess.shown_at(SystemTime::now()).expect("a state");
-    (block.state, block.detail)
 }
 
 /// Codex sends no event when the operator grants a permission (ADR-0085
@@ -192,7 +213,7 @@ async fn operator_input_ends_a_codex_permission_wait() {
         )
     );
     assert!(
-        sess.poll_status_with(SystemTime::now(), None),
+        sess.poll_status(SystemTime::now(), None),
         "the next tick reports the change"
     );
     manager.close(id);
@@ -242,115 +263,54 @@ async fn a_console_launched_with_an_unreported_reason_shows_it_at_once() {
     manager.close(id);
 }
 
-/// An operator input that lands while a tick stores an older `waiting` is
-/// not lost: the tick keeps the tail locked until it stored the state, so
-/// the input folds after it and the shown state is the grant.
-#[tokio::test]
-async fn an_input_during_a_tick_is_not_overwritten_by_an_older_wait() {
-    let manager = Arc::new(SessionManager::new());
-    let dir = tempfile::tempdir().expect("temp dir");
-    let files =
-        crate::agent_state::StatusFiles::for_agent(crate::session::Agent::Codex, dir.path(), 1)
-            .expect("hooks");
-    std::fs::write(
-        &files.status,
-        "{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"t1\"}\n",
-    )
-    .expect("write the status line");
-    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
-    spec.status = Some(files);
-    let (id, _att) = manager
-        .spawn_attached(
-            "owner/r".to_string(),
-            "codex".to_string(),
-            "agent".to_string(),
-            None,
-            None,
-            None,
-            spec,
-        )
-        .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-    let input = std::sync::Mutex::new(None);
-    sess.poll_status_between(SystemTime::now(), None, || {
-        let writer = sess.clone();
-        *input.lock().expect("input mutex") =
-            Some(std::thread::spawn(move || writer.operator_input()));
-        // Time for the input to fold and store, if the tail let it.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-    });
-    let handle = input
-        .lock()
-        .expect("input mutex")
-        .take()
-        .expect("the input thread");
-    handle.join().expect("the input thread ends");
+/// A time on a fixed clock, `s` seconds after its start.
+fn at(s: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(1_000_000 + s)
+}
+
+/// The state and detail an [`AgentStatus`] shows at `now`.
+fn status_shows(status: &AgentStatus, now: SystemTime) -> (Option<String>, Option<String>) {
+    let block = status.shown_at(now).expect("a state");
+    (block.state, block.detail)
+}
+
+/// A Codex permission `waiting`, then the operator's input, then a tick that
+/// read no new line: the tick keeps the approval the input folded
+/// (ADR-0085 D7.5), and reports it as a change.
+#[test]
+fn an_input_then_an_empty_tick_keeps_the_approval() {
+    let mut status = AgentStatus::new(1, Some(HookVendor::Codex), None);
+    status.on_tick(&[permission("t1")], at(0), None);
     assert_eq!(
-        shown(&sess),
+        status_shows(&status, at(0)),
+        (Some("waiting".into()), Some("permission: Bash".into()))
+    );
+    status.on_input(at(1));
+    assert!(
+        status.on_tick(&[], at(2), None),
+        "the tick reports the change"
+    );
+    assert_eq!(
+        status_shows(&status, at(2)),
         (
             Some("working".into()),
             Some("approved, the tool runs".into())
         )
     );
-    manager.close(id);
 }
 
-/// A tick that lands while an operator input stores its `working` is not
-/// overwritten by it: the tick waits for the tail, then reads the newer
-/// `waiting` line.
-#[tokio::test]
-async fn a_tick_during_an_input_is_not_overwritten_by_the_older_input() {
-    let manager = Arc::new(SessionManager::new());
-    let dir = tempfile::tempdir().expect("temp dir");
-    let files =
-        crate::agent_state::StatusFiles::for_agent(crate::session::Agent::Codex, dir.path(), 1)
-            .expect("hooks");
-    let permission = |ts: &str| {
-        format!(
-            "{{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"{ts}\"}}\n"
-        )
-    };
-    std::fs::write(&files.status, permission("t1")).expect("write the status line");
-    let status = files.status.clone();
-    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
-    spec.status = Some(files);
-    let (id, _att) = manager
-        .spawn_attached(
-            "owner/r".to_string(),
-            "codex".to_string(),
-            "agent".to_string(),
-            None,
-            None,
-            None,
-            spec,
-        )
-        .expect("the platform shell must spawn");
-    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-    sess.poll_status_with(SystemTime::now(), None);
-    let tick = std::sync::Mutex::new(None);
-    sess.operator_input_between(|| {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&status)
-            .expect("open the status file");
-        file.write_all(permission("t2").as_bytes())
-            .expect("append the newer wait");
-        let poller = sess.clone();
-        *tick.lock().expect("tick mutex") = Some(std::thread::spawn(move || {
-            poller.poll_status_with(SystemTime::now(), None)
-        }));
-        // Time for the tick to read and store, if the tail let it.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-    });
-    let handle = tick
-        .lock()
-        .expect("tick mutex")
-        .take()
-        .expect("the tick thread");
-    handle.join().expect("the tick thread ends");
-    assert_eq!(shown(&sess).0, Some("waiting".into()));
-    manager.close(id);
+/// The operator's input, then a tick whose lines open a new permission: the
+/// newer `waiting` is shown, not the older approval.
+#[test]
+fn a_tick_after_an_input_shows_the_newer_waiting() {
+    let mut status = AgentStatus::new(1, Some(HookVendor::Codex), None);
+    status.on_tick(&[permission("t1")], at(0), None);
+    status.on_input(at(1));
+    status.on_tick(&[permission("t2")], at(2), None);
+    assert_eq!(
+        status_shows(&status, at(2)),
+        (Some("waiting".into()), Some("permission: Bash".into()))
+    );
 }
 
 /// The daemon's start check runs the ralphy program, so its failure makes a
@@ -383,8 +343,8 @@ async fn a_failed_start_check_silences_only_a_vendor_that_runs_ralphy() {
             )
             .expect("the platform shell must spawn");
         let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
-        sess.poll_status_with(SystemTime::now(), Some("exit 127"));
-        let shown = sess.shown_at(SystemTime::now());
+        sess.poll_status(SystemTime::now(), Some("exit 127"));
+        let shown = block_at(&sess, SystemTime::now());
         let got = shown.is_some_and(|b| b.source == Some(crate::agent_state::Unreported::Silent));
         assert_eq!(got, silent, "{agent:?}");
         manager.close(id);
