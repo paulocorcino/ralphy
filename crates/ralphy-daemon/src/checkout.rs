@@ -1,11 +1,13 @@
 //! The `checkout` argument of a repo-scoped verb (ADR-0036 `checkout`
 //! amendment, ADR-0063 §2): a worktree NAME the browser sends beside `repo`,
-//! resolved here under the SAME registered root — to a `rel` prefix
-//! (`.ralphy/worktrees/<name>/…`, [`Checkout::prefix`]) for the Observe verbs,
-//! so [`crate::confine`] and the watcher never learn a second root, and to the
-//! `current_dir` of the composed `ralphy` command ([`Checkout::dir`]) for the
-//! git-backed verbs (`Verb::takes_checkout_cwd`) — a client can never name a
-//! path either way.
+//! resolved here under the SAME registered root, then confined against it
+//! ([`Checkout::confine`]). The only way from a name to a directory is the
+//! [`ConfinedCheckout`] that step returns: a worktree folder that is a symlink
+//! out of the root never becomes a cwd, a walk root, a watch or a HEAD read.
+//! It gives a `rel` prefix (`.ralphy/worktrees/<name>/…`) for the reads, so
+//! [`crate::confine`] and the watcher never learn a second root, and a
+//! directory for the git-backed verbs (`Verb::takes_checkout_cwd`) and the
+//! walks — a client can never name a path either way.
 //!
 //! The resolver never spawns. Every Observe verb is documented "reads state,
 //! never spawns" ([`crate::dispatch`]), so the name is checked against the
@@ -18,6 +20,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use crate::confine::{self, ConfineError};
+
 /// Where linked worktrees live, relative to the primary root (ADR-0063 §1;
 /// the same constant the CLI's `worktree add` writes under).
 pub const WORKTREES_REL: &str = ".ralphy/worktrees";
@@ -27,8 +31,8 @@ pub const WORKTREES_REL: &str = ".ralphy/worktrees";
 pub const UNKNOWN: &str = "unknown checkout";
 
 /// A resolved worktree name: shape-gated and (for [`resolve`]) known to the
-/// caller's predicate. Its only powers are [`Checkout::prefix`] and
-/// [`Checkout::dir`].
+/// caller's predicate. Its powers are [`Checkout::prefix`] and
+/// [`Checkout::confine`]; a directory comes only from the confined value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Checkout {
     name: String,
@@ -40,10 +44,21 @@ impl Checkout {
         &self.name
     }
 
-    /// The worktree's directory under `root` — the `current_dir` a git-backed
-    /// verb's composed command runs in (ADR-0063 §2).
-    pub fn dir(&self, root: &Path) -> PathBuf {
+    /// The worktree's directory under `root`, not yet confined.
+    fn dir(&self, root: &Path) -> PathBuf {
         worktree_dir(root, &self.name)
+    }
+
+    /// Confine the worktree folder against the registered `primary` root: a
+    /// folder that resolves outside it (a symlink out) is
+    /// [`crate::confine::ConfineError::Escape`], a missing one `NotFound`.
+    pub fn confine(&self, primary: &Path) -> Result<ConfinedCheckout, ConfineError> {
+        let root = confine::confine(primary, &self.prefix(""))?;
+        Ok(ConfinedCheckout {
+            cwd: self.dir(primary),
+            root,
+            checkout: self.clone(),
+        })
     }
 
     /// The operator's `rel` prefixed under this worktree's directory. An empty
@@ -55,6 +70,50 @@ impl Checkout {
         } else {
             format!("{WORKTREES_REL}/{}/{rel}", self.name)
         }
+    }
+}
+
+/// A checkout whose folder was proven to stay inside the registered root
+/// ([`Checkout::confine`]). It names the folder in two forms, one for each use
+/// (ADR-0036 `checkout` amendment of 2026-11-01):
+///
+/// - [`ConfinedCheckout::cwd`] is the LEXICAL path, `<primary>/.ralphy/worktrees/<name>`,
+///   for the `current_dir` of a child. The canonical form on Windows starts with
+///   `\\?\`, and a child program may not accept that as its cwd.
+/// - [`ConfinedCheckout::root`] is the CANONICAL path, for a walk, a write root
+///   and the pointer read. [`crate::confine`] compares canonical paths, so a
+///   root in that form needs no second resolution.
+///
+/// A read that confines against the primary root keeps the prefixed `rel`
+/// ([`ConfinedCheckout::prefix`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfinedCheckout {
+    checkout: Checkout,
+    cwd: PathBuf,
+    root: PathBuf,
+}
+
+impl ConfinedCheckout {
+    /// The worktree name as the browser sent it.
+    pub fn name(&self) -> &str {
+        self.checkout.name()
+    }
+
+    /// The folder as it is spelled under the registered root: the `current_dir`
+    /// of a child (ADR-0063 §2).
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    /// The canonical folder: the root of a walk or a write.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The operator's `rel` prefixed under the worktree folder, for a read that
+    /// confines against the primary root ([`Checkout::prefix`]).
+    pub fn prefix(&self, rel: &str) -> String {
+        self.checkout.prefix(rel)
     }
 }
 
@@ -113,12 +172,13 @@ pub fn is_linked(root: &Path, name: &str) -> bool {
 /// HEAD moves: its gitdir, and the gitdir's `logs/` (git appends to
 /// `logs/HEAD` on every checkout, commit, reset and rebase). The primary's
 /// gitdir is `<root>/.git`, or what that file points to; a worktree's is what
-/// its pointer names. A gitdir outside `root` answers nothing: the watcher is
-/// bound to `root`. Only dirs that exist are named, because `notify` refuses a
-/// missing path and a repo with no commit has no `logs/`. Never spawns.
-pub fn head_rels(root: &Path, checkout: Option<&Checkout>) -> Vec<String> {
+/// the pointer in its confined folder names. A gitdir outside `root` answers
+/// nothing: the watcher is bound to `root`. Only dirs that exist are named,
+/// because `notify` refuses a missing path and a repo with no commit has no
+/// `logs/`. Never spawns.
+pub fn head_rels(root: &Path, checkout: Option<&ConfinedCheckout>) -> Vec<String> {
     let gitdir = match checkout {
-        Some(c) => ralphy_git_read::pointer_gitdir(&c.dir(root)),
+        Some(c) => ralphy_git_read::pointer_gitdir(c.root()),
         None => ralphy_git_read::git_dir(root),
     };
     let (Some(gitdir), Ok(canon_root)) = (gitdir, std::fs::canonicalize(root)) else {
@@ -308,15 +368,21 @@ mod tests {
         )
         .expect("relative pointer");
 
-        let a = lexical("wt-a").expect("name");
+        let a = lexical("wt-a")
+            .expect("name")
+            .confine(root)
+            .expect("inside");
         assert_eq!(
             head_rels(root, Some(&a)),
             vec![".git/worktrees/wt-a", ".git/worktrees/wt-a/logs"]
         );
-        let b = lexical("wt-b").expect("name");
+        let b = lexical("wt-b")
+            .expect("name")
+            .confine(root)
+            .expect("inside");
         assert_eq!(head_rels(root, Some(&b)), vec![".git/worktrees/wt-b"]);
         let gone = lexical("wt-z").expect("name");
-        assert!(head_rels(root, Some(&gone)).is_empty());
+        assert_eq!(gone.confine(root), Err(ConfineError::NotFound));
     }
 
     #[test]
@@ -335,6 +401,42 @@ mod tests {
         std::fs::create_dir_all(root.join("elsewhere")).expect("mkdir");
         std::fs::write(root.join(".git"), "gitdir: elsewhere\n").expect("pointer");
         assert!(head_rels(root, None).is_empty(), "off the standard layout");
+    }
+
+    /// A directory symlink `link` → `target`. Symlinks work on every host the
+    /// suite runs on, so a failure here is a failure, not a skip.
+    fn symlink_dir(target: &Path, link: &Path) {
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(target, link);
+        #[cfg(not(windows))]
+        let linked = std::os::unix::fs::symlink(target, link);
+        linked.expect("create a directory symlink");
+    }
+
+    /// The worktree folder is a symlink out of the root, and the pointer file
+    /// it holds names a standard gitdir INSIDE the root: only the folder
+    /// escapes, so only confining the folder refuses it.
+    #[test]
+    fn head_rels_of_a_symlinked_checkout_are_empty() {
+        let outside = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let gitdir = root.join(".git/worktrees/wt-out");
+        std::fs::create_dir_all(gitdir.join("logs")).expect("gitdir");
+        std::fs::write(
+            outside.path().join(".git"),
+            format!("gitdir: {}\n", gitdir.display()),
+        )
+        .expect("pointer into the root");
+        std::fs::create_dir_all(root.join(WORKTREES_REL)).expect("mkdir worktrees");
+        symlink_dir(outside.path(), &root.join(WORKTREES_REL).join("wt-out"));
+
+        let rels = lexical("wt-out")
+            .expect("name")
+            .confine(root)
+            .map(|c| head_rels(root, Some(&c)))
+            .unwrap_or_default();
+        assert!(rels.is_empty(), "{rels:?}");
     }
 
     // #410: the operator's doc names the fixed location, the create notice,

@@ -26,9 +26,10 @@ use super::dismissals::Dismissals;
 use super::done::{self, DeskFiles, Marks};
 use super::finals::Finals;
 use super::telegram::Notifier;
-use super::{list, AttentionRequest, RunSource, RunsRead};
+use super::{from_peer, list, AttentionRequest, PeerReader, RunSource, RunsRead};
+use crate::peer::join::{read_peer_lists, PeerList};
 use crate::registry;
-use crate::routes::{push, read_peer_lists, PeerList, Push};
+use crate::routes::{push, Push};
 use crate::session::{SessionInfo, SessionManager};
 
 /// How often the tick reads the runs.
@@ -120,12 +121,11 @@ pub(crate) async fn peer_requests(peers_dir: PathBuf) -> PeerRequests {
     };
     for PeerList { daemon_id, list } in lists {
         read.present.push(list.present.unwrap_or(false));
-        read.requests
-            .extend(list.requests.into_iter().map(|mut request| {
-                request.id = format!("{daemon_id}/{}", request.id);
-                request.console = request.console.map(|c| format!("{daemon_id}/{c}"));
-                request
-            }));
+        read.requests.extend(
+            list.requests
+                .into_iter()
+                .map(|request| from_peer(&daemon_id, request, PeerReader::Person)),
+        );
     }
     read
 }

@@ -16,12 +16,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use super::{RouterShared, UNANSWERED_HEADER};
+use super::RouterShared;
 use crate::attention::dismissals::Dismissals;
 use crate::attention::done::DeskFiles;
 use crate::attention::telegram::Notifier;
 use crate::attention::tick::{self, Dismissed, Runs};
-use crate::attention::{AttentionRequest, RunsRead};
+use crate::attention::{from_peer, AttentionRequest, PeerReader, RunsRead};
+use crate::peer::join::{name_unanswered, read_peer_lists, PeerList};
 use crate::routes::read_peer_store;
 use crate::{fleet, peer, presence_board, session};
 
@@ -39,75 +40,6 @@ pub(crate) struct AttentionList {
     pub(crate) requests: Vec<AttentionRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) present: Option<bool>,
-}
-
-/// The reply of each peer in `peers_dir` to `GET <path>`, asked at the same
-/// time.
-pub(crate) async fn ask_peers(
-    peers_dir: PathBuf,
-    path: &str,
-) -> Vec<(peer::PeerDescriptor, anyhow::Result<(u16, Vec<u8>)>)> {
-    let (peers, _) = read_peer_store(peers_dir).await;
-    futures_util::future::join_all(peers.into_iter().map(|peer| async move {
-        let reply = peer::client::get(&peer, path).await;
-        (peer, reply)
-    }))
-    .await
-}
-
-/// Name the peers in `unanswered` in the reply's `x-ralphy-unanswered`.
-pub(crate) fn name_unanswered(response: &mut Response, unanswered: &[String]) {
-    if unanswered.is_empty() {
-        return;
-    }
-    match unanswered.join(",").parse() {
-        Ok(value) => {
-            response.headers_mut().insert(UNANSWERED_HEADER, value);
-        }
-        Err(e) => tracing::warn!(error = %e, "could not name the peers that did not answer"),
-    }
-}
-
-/// One peer's own list, as its `?local=1` reply has it.
-pub(crate) struct PeerList {
-    pub(crate) daemon_id: String,
-    pub(crate) list: AttentionList,
-}
-
-/// The own list of each peer in `peers_dir`, and the ids of the peers that
-/// did not answer with one. An older peer has no such route, and is named
-/// too.
-pub(crate) async fn read_peer_lists(peers_dir: PathBuf) -> (Vec<PeerList>, Vec<String>) {
-    let mut lists = Vec::new();
-    let mut unanswered = Vec::new();
-    for (peer, reply) in ask_peers(peers_dir, "/api/attention?local=1").await {
-        let Ok((200, body)) = reply else {
-            unanswered.push(peer.daemon_id);
-            continue;
-        };
-        match serde_json::from_slice::<AttentionList>(&body) {
-            Ok(list) => lists.push(PeerList {
-                daemon_id: peer.daemon_id,
-                list,
-            }),
-            Err(_) => {
-                tracing::warn!(daemon_id = %peer.daemon_id, "peer returned an invalid attention list");
-                unanswered.push(peer.daemon_id);
-            }
-        }
-    }
-    (lists, unanswered)
-}
-
-/// A peer's request as the page reads it: `id`, `console` and `repo` carry
-/// the peer's daemon id, so two daemons' `console:1` stay two requests and
-/// the page finds the console under the peer's repo ref.
-fn from_peer(daemon_id: &str, mut request: AttentionRequest) -> AttentionRequest {
-    let prefix = |value: &str| format!("{daemon_id}/{value}");
-    request.id = format!("{daemon_id}/{}", request.id);
-    request.console = request.console.as_deref().map(prefix);
-    request.repo = request.repo.as_deref().map(prefix);
-    request
 }
 
 /// The runs of the last tick. A poisoned lock is logged and reads as none.
@@ -154,7 +86,7 @@ pub(crate) async fn attention_route(
         requests.extend(
             list.requests
                 .into_iter()
-                .map(|request| from_peer(&daemon_id, request)),
+                .map(|request| from_peer(&daemon_id, request, PeerReader::Page)),
         );
     }
     let mut response = Json(AttentionList {

@@ -11,7 +11,7 @@ use super::refuse::Refusal;
 use super::upgrade::{launch_record, Open, Opened};
 use super::SessionLabels;
 use crate::routes::blocking_read;
-use crate::{agent_state, auth, checkout, confine, registry, session};
+use crate::{agent_state, auth, checkout, registry, session};
 
 /// A launch whose repo, checkout and gates are settled: what is asked for and
 /// the directory the child runs in.
@@ -20,7 +20,7 @@ struct SettledLaunch {
     agent: session::Agent,
     repo: String,
     path: String,
-    checkout: Option<checkout::Checkout>,
+    checkout: Option<checkout::ConfinedCheckout>,
     cwd: PathBuf,
 }
 
@@ -64,11 +64,11 @@ impl Open {
         &self,
         agent: session::Agent,
         root: &Path,
-    ) -> Result<(Option<checkout::Checkout>, PathBuf), Refusal> {
+    ) -> Result<(Option<checkout::ConfinedCheckout>, PathBuf), Refusal> {
         let checkout = self.resolve_checkout(root).await?;
         let cwd = checkout
             .as_ref()
-            .map_or_else(|| root.to_path_buf(), |c| c.dir(root));
+            .map_or_else(|| root.to_path_buf(), |c| c.cwd().to_path_buf());
         self.vendor_gate(agent, root, &cwd)
             .await
             .map_err(|why| Refusal::refuse(StatusCode::BAD_REQUEST, why))?;
@@ -79,15 +79,17 @@ impl Open {
     /// confinement as every git-backed verb (`spawn_cwd`), off the runtime.
     /// INVARIANT: this returns BEFORE the Cursor gate, the Gemini gate, `spec_for`
     /// and every spawn — a bad name writes nothing and spawns nothing.
-    async fn resolve_checkout(&self, root: &Path) -> Result<Option<checkout::Checkout>, Refusal> {
+    async fn resolve_checkout(
+        &self,
+        root: &Path,
+    ) -> Result<Option<checkout::ConfinedCheckout>, Refusal> {
         let Some(name) = self.query.checkout.as_deref() else {
             return Ok(None);
         };
         let (name, primary) = (name.to_string(), root.to_path_buf());
         let resolved = blocking_read(move || {
             let c = checkout::resolve(&name, |n| checkout::is_linked(&primary, n))?;
-            confine::confine(&primary, &c.prefix(""))?;
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c)
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c.confine(&primary)?)
         })
         .await;
         match resolved {

@@ -18,7 +18,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use super::{ask_peers, name_unanswered, RouterShared};
+use super::RouterShared;
+use crate::peer::join::{ask_peers, name_unanswered};
 use crate::peer::telegram_claim;
 use crate::telegram_state::{self, SharedClaim, TelegramState};
 
@@ -100,6 +101,8 @@ async fn peer_states(t: &TelegramShared) -> (HashMap<String, String>, Vec<PeerVi
     if let (Some(id), Some(name)) = (&t.daemon_id, &t.name) {
         names.insert(id.clone(), name.clone());
     }
+    // No prefix here: a peer's state is one value under its own daemon id
+    // (`PeerView`), not a list whose entries two daemons could share an id of.
     let replies = ask_peers(t.peers_dir.clone(), "/api/telegram?local=1").await;
     names.extend(
         replies

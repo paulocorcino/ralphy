@@ -1,5 +1,8 @@
 //! The pure part of a tree connection: reading a client command and shaping the
-//! frames pushed back. Nothing here touches a socket, a watcher or the disk.
+//! frames pushed back. Nothing here touches a socket or a watcher, and only the
+//! checkout door ([`local_checkout`]) reads the disk.
+
+use std::path::Path;
 
 use serde_json::{json, Value};
 
@@ -50,8 +53,9 @@ pub(super) struct Request {
     /// runstate dir for a `runs.*` verb.
     pub(super) rel: String,
     pub(super) alias: Option<Alias>,
-    /// The checkout a `head.watch` names; `None` is the primary.
-    pub(super) head_checkout: Option<checkout::Checkout>,
+    /// The checkout a `watch` or `head.watch` names, shape-gated only; `None`
+    /// is the primary. A local watch passes it through [`local_checkout`].
+    pub(super) checkout: Option<checkout::Checkout>,
 }
 
 enum CheckoutArg {
@@ -82,13 +86,14 @@ fn checkout_arg(payload: &Value, runs: bool) -> CheckoutArg {
 
 /// Read a command. `None` drops the frame: an unknown verb, or a malformed
 /// `checkout` (the way an unknown route is dropped). The `checkout` is applied
-/// LEXICALLY — the shape gate only (ADR-0063 §2).
+/// LEXICALLY here — the shape gate only (ADR-0063 §2); a local watch resolves
+/// and confines it with [`local_checkout`], and a peer does the same for its own
+/// repos.
 pub(super) fn parse_request(cmd: &Command) -> Option<Request> {
     let verb = Verb::parse(&cmd.verb)?;
     let repo_ref = payload_str(&cmd.payload, "repo").to_string();
     let rel = watch::norm_rel(payload_str(&cmd.payload, "path"));
-    let (rel, alias, head_checkout) =
-        place(rel, verb.head(), checkout_arg(&cmd.payload, verb.runs()))?;
+    let (rel, alias, checkout) = place(rel, verb.head(), checkout_arg(&cmd.payload, verb.runs()))?;
     // The runs subscription ignores the payload path: its dir is fixed
     // (ADR-0047 §9), so a client cannot aim it elsewhere.
     let rel = if verb.runs() {
@@ -101,8 +106,33 @@ pub(super) fn parse_request(cmd: &Command) -> Option<Request> {
         repo_ref,
         rel,
         alias,
-        head_checkout,
+        checkout,
     })
+}
+
+/// The door of a local watch under a `checkout`: the name is resolved against
+/// the pointer file under the registered `root`, and its folder is confined
+/// there, as for a verb (`checkout::from_payload`, `Checkout::confine`).
+/// `Ok(None)` is the primary. `Err` refuses the watch: the caller holds nothing,
+/// and one line is logged here, because a watch socket has no refusal frame
+/// (ADR-0036 `checkout` amendment of 2026-11-01).
+pub(super) fn local_checkout(
+    req: &Request,
+    root: &Path,
+) -> Result<Option<checkout::ConfinedCheckout>, checkout::CheckoutError> {
+    let Some(c) = &req.checkout else {
+        return Ok(None);
+    };
+    let confined = checkout::resolve(c.name(), |n| checkout::is_linked(root, n))
+        .map_err(|e| e.to_string())
+        .and_then(|c| c.confine(root).map_err(|e| e.to_string()));
+    match confined {
+        Ok(confined) => Ok(Some(confined)),
+        Err(why) => {
+            tracing::warn!(checkout = c.name(), reason = %why, "refused a checkout watch");
+            Err(checkout::CheckoutError::Unknown)
+        }
+    }
 }
 
 type Placed = (String, Option<Alias>, Option<checkout::Checkout>);
@@ -114,7 +144,10 @@ fn place(rel: String, head: bool, arg: CheckoutArg) -> Option<Placed> {
         CheckoutArg::Named(c) if head => {
             Some((rel, Some((String::new(), c.name().to_string())), Some(c)))
         }
-        CheckoutArg::Named(c) => Some((c.prefix(&rel), Some((rel, c.name().to_string())), None)),
+        CheckoutArg::Named(c) => {
+            let shown = (rel.clone(), c.name().to_string());
+            Some((c.prefix(&rel), Some(shown), Some(c)))
+        }
         CheckoutArg::Malformed => None,
     }
 }
@@ -194,7 +227,7 @@ mod tests {
         .expect("a well formed checkout is kept");
         assert_eq!(req.rel, ".ralphy/worktrees/wt-a/src");
         assert_eq!(req.alias, Some(alias("src", "wt-a")));
-        assert!(req.head_checkout.is_none());
+        assert_eq!(req.checkout.as_ref().map(|c| c.name()), Some("wt-a"));
     }
 
     #[test]
@@ -206,7 +239,7 @@ mod tests {
         .expect("a head watch names a checkout");
         assert_eq!(req.rel, "src");
         assert_eq!(req.alias, Some(alias("", "wt-a")));
-        assert_eq!(req.head_checkout.as_ref().map(|c| c.name()), Some("wt-a"));
+        assert_eq!(req.checkout.as_ref().map(|c| c.name()), Some("wt-a"));
     }
 
     #[test]
