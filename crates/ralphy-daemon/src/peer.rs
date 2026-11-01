@@ -373,6 +373,19 @@ pub fn read_store(dir: &Path) -> (Vec<PeerDescriptor>, Vec<PeerReject>) {
     (accepted, rejected)
 }
 
+/// Read the peer store off the reactor. A panic inside `read_store` degrades to
+/// "no peers announced", so it is LOGGED rather than swallowed — silently
+/// shorter is exactly the failure the fleet view must never show.
+pub(crate) async fn read_peer_store(dir: PathBuf) -> (Vec<PeerDescriptor>, Vec<PeerReject>) {
+    match tokio::task::spawn_blocking(move || read_store(&dir)).await {
+        Ok(pair) => pair,
+        Err(e) => {
+            tracing::warn!(error = %e, "reading the peer store failed; serving no peers");
+            (Vec::new(), Vec::new())
+        }
+    }
+}
+
 /// The human label for an environment: the WSL distro when running inside one,
 /// else the OS release (`Ubuntu 24.04`, `macOS 15`) when it was read, else a
 /// presentable OS name. Pure so every branch is testable on any host.

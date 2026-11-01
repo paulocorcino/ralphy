@@ -11,8 +11,9 @@ use axum::routing::get;
 use axum::Json;
 use axum::Router;
 
+use super::encode_query_value;
 use super::RouterShared;
-use super::{encode_query_value, read_peer_store};
+use crate::peer::read_peer_store;
 use crate::StorePaths;
 use crate::{peer, registry, spend, usage};
 

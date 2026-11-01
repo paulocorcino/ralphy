@@ -7,8 +7,9 @@ use std::path::PathBuf;
 
 use axum::response::Response;
 
+use super::read_peer_store;
 use super::PeerDescriptor;
-use crate::routes::{read_peer_store, AttentionList};
+use crate::attention::AttentionList;
 
 /// The response header of a joined reply that names, comma-separated, the
 /// peers whose part the reply does not hold because they did not answer.

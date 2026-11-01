@@ -13,7 +13,7 @@ use axum::Router;
 
 use super::RouterShared;
 use crate::peer::join::{ask_peers, name_unanswered};
-use crate::routes::read_peer_store;
+use crate::peer::read_peer_store;
 use crate::{agent_state, fleet, identity, peer, session};
 
 /// Query for `POST /api/sessions/close`: which session to end.

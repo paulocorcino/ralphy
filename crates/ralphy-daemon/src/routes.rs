@@ -368,18 +368,3 @@ where
 {
     tokio::task::spawn_blocking(f).await.ok()
 }
-
-/// Read the peer store off the reactor. A panic inside `read_store` degrades to
-/// "no peers announced", so it is LOGGED rather than swallowed — silently
-/// shorter is exactly the failure the fleet view must never show.
-pub(crate) async fn read_peer_store(
-    dir: PathBuf,
-) -> (Vec<peer::PeerDescriptor>, Vec<peer::PeerReject>) {
-    match tokio::task::spawn_blocking(move || peer::read_store(&dir)).await {
-        Ok(pair) => pair,
-        Err(e) => {
-            tracing::warn!(error = %e, "reading the peer store failed; serving no peers");
-            (Vec::new(), Vec::new())
-        }
-    }
-}

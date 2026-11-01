@@ -16,8 +16,8 @@ use super::{
     PeerTreePoller, PeerWatchSet, TreeHost,
 };
 use crate::mux::ChannelSender;
+use crate::peer::read_peer_store;
 use crate::protocol::{self, Frame};
-use crate::routes::read_peer_store;
 use crate::{checkout, fleet, peer, registry, watch};
 
 type Key = (String, String);

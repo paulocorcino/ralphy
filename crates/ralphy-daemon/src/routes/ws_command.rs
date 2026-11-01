@@ -21,7 +21,8 @@ pub(crate) use registry_verbs::serve_registry;
 pub(crate) use wire::Wire;
 
 use super::audit_layer::SocketAudit;
-use super::{read_peer_store, send_command_on};
+use super::send_command_on;
+use crate::peer::read_peer_store;
 use crate::protocol::{Command, Frame};
 use crate::{dispatch, fleet, peer, protocol, registry, session};
 

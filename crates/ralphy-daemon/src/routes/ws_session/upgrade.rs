@@ -14,8 +14,8 @@ use super::refuse::{Refusal, Refuser};
 use super::traffic::Tab;
 use super::{dial_peer, peer_session_open, Opening, PeerDial, PeerRelay};
 use super::{SessionHost, SessionLabels, SessionQuery};
+use crate::peer::read_peer_store;
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
-use crate::routes::read_peer_store;
 use crate::{fleet, peer, registry, session};
 
 /// A console open, decided, and what answering it needs on the channel.

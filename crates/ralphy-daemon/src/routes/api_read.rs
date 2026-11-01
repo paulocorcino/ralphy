@@ -9,9 +9,9 @@ use axum::routing::get;
 use axum::Json;
 use axum::Router;
 
-use super::read_peer_store;
 use super::AgentLocator;
 use super::RouterShared;
+use crate::peer::read_peer_store;
 use crate::{dispatch, fleet, identity, peer, registry, rekey, roster};
 
 #[derive(serde::Deserialize)]
