@@ -268,9 +268,13 @@ ubiquitous language, and each crate is roughly one bounded context.
   [docs/BUILDING.md](./docs/BUILDING.md) → *Updating the local daemon from
   source*. The restart closes every console of the daemon. If your own
   process descends from the daemon (follow the parent PIDs up to the `pid=`
-  in `~/.ralphy/daemon.pid`), the restart ends you too: do not run it, ask
-  the person. Read the result from the exit code (0 OK, 1 failed and the
-  previous version runs, 2 no daemon runs, 4 cancelled) or `-Status`. Never
+  in `~/.ralphy/daemon.pid`), the restart ends you too: run it only when the
+  person asks you to in the current conversation, and before you run it,
+  say that your session will end. The update runs in a process that is not
+  your child, so it finishes without you, and the person reads its result
+  with `-Status`. With no such request, ask the person to run it. Read the
+  result from the exit code (0 OK, 1 failed and the previous version runs,
+  2 no daemon runs, 4 cancelled) or `-Status`. Never
   stop a `ralphy` process by its name: the person's own daemon runs on the
   same machine.
 - **Commit on the current branch.** Create a branch, push, or open a PR only
