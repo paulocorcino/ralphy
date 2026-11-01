@@ -2,6 +2,7 @@
 //! `claude` stdout and session transcripts that the process exit code alone
 //! can't distinguish (auth failures vs usage limits vs a genuine stall).
 
+use chrono::{DateTime, Datelike, Local, NaiveTime, Weekday};
 use ralphy_core::ResetAt;
 
 /// The actionable message surfaced when a run hits a Claude Code authentication
@@ -122,7 +123,59 @@ fn limit_line_text(v: &serde_json::Value) -> Option<String> {
 /// The reset of a Claude limit text: the parsed hint and the instant it names,
 /// or `None` when the text names no reset.
 pub(crate) fn claude_reset(text: &str) -> Option<ResetAt> {
-    parse_reset_hhmm(text).map(|hint| ResetAt::from_vendor_text(&hint))
+    let hint = parse_reset_hhmm(text)?;
+    let at = next_local_instant(&hint, Local::now()).map(|t| t.fixed_offset());
+    Some(ResetAt { text: hint, at })
+}
+
+/// The next local instant a reset hint names after `now`: a bare 24-hour
+/// `"HH:mm"` or a weekday-qualified `"Wkd HH:mm"`, the forms
+/// [`parse_reset_hhmm`] writes. A bare time is today when still ahead, else
+/// tomorrow. A weekday-qualified time is the next date on that weekday (today
+/// only when the time is still ahead, else next week). `None` when the hint is
+/// neither form. Pure over its inputs, so the rollover cases test without a clock.
+fn next_local_instant(hint: &str, now: DateTime<Local>) -> Option<DateTime<Local>> {
+    let trimmed = hint.trim().trim_end_matches('.').trim();
+    let (weekday, hhmm) = match trimmed.split_once(char::is_whitespace) {
+        Some((wd, rest)) => (Some(parse_weekday(wd.trim())?), rest.trim()),
+        None => (None, trimmed),
+    };
+    let (h, m) = hhmm.split_once(':')?;
+    let time = NaiveTime::from_hms_opt(h.parse().ok()?, m.parse().ok()?, 0)?;
+    let today = now.date_naive();
+    let days = match weekday {
+        None => i64::from(now.time() >= time),
+        Some(wd) => {
+            let cur = i64::from(today.weekday().num_days_from_monday());
+            let tgt = i64::from(wd.num_days_from_monday());
+            let days = (tgt - cur).rem_euclid(7);
+            // Same weekday today: keep today only if the time is still ahead.
+            if days == 0 && now.time() >= time {
+                7
+            } else {
+                days
+            }
+        }
+    };
+    (today + chrono::Duration::days(days))
+        .and_time(time)
+        .and_local_timezone(Local)
+        .single()
+}
+
+/// Parse a three-letter weekday abbreviation (case-insensitive). `None` for
+/// anything else.
+fn parse_weekday(s: &str) -> Option<Weekday> {
+    match s.to_lowercase().as_str() {
+        "mon" => Some(Weekday::Mon),
+        "tue" => Some(Weekday::Tue),
+        "wed" => Some(Weekday::Wed),
+        "thu" => Some(Weekday::Thu),
+        "fri" => Some(Weekday::Fri),
+        "sat" => Some(Weekday::Sat),
+        "sun" => Some(Weekday::Sun),
+        _ => None,
+    }
 }
 
 /// Parse a reset time from a usage-limit transcript. Looks for a pattern like
@@ -130,8 +183,8 @@ pub(crate) fn claude_reset(text: &str) -> Option<ResetAt> {
 /// `HH:mm` (minutes default to `00` when absent). When a day-of-week prefixes the
 /// time it is captured, Title-cased, and prepended (`"Tue 00:30"`); a bare time
 /// stays bare (`"15:00"`). Returns `None` when no match is found. Ports
-/// `Get-ResetDateTime`; the optional weekday lets the core compute the next
-/// correct occurrence rather than assuming "today".
+/// `Get-ResetDateTime`; the optional weekday lets [`next_local_instant`] find the
+/// next correct occurrence rather than assuming "today".
 pub(crate) fn parse_reset_hhmm(text: &str) -> Option<String> {
     use regex::Regex;
     let re = Regex::new(r"(?i)resets\s+(?:([a-z]{3})\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)")
@@ -183,10 +236,60 @@ mod tests {
     #[test]
     fn transcript_limit_detects_real_429_error_line() {
         let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
-        assert_eq!(
-            transcript_limit(&t),
-            Some(Some(ResetAt::from_vendor_text("08:10")))
-        );
+        assert_eq!(transcript_limit(&t), Some(claude_reset("resets 8:10am")));
+    }
+
+    /// Build a fixed `DateTime<Local>` for the deterministic parse table.
+    fn local(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
+        use chrono::TimeZone;
+        Local.with_ymd_and_hms(y, mo, d, h, mi, 0).single().unwrap()
+    }
+
+    /// 2026-06-09 is a Tuesday.
+    #[test]
+    fn reset_text_parses_to_the_next_local_instant() {
+        let cases = [
+            // (hint, now, expected)
+            (
+                "15:00",
+                local(2026, 6, 9, 16, 0),
+                Some(local(2026, 6, 10, 15, 0)),
+            ),
+            (
+                "15:00",
+                local(2026, 6, 9, 10, 0),
+                Some(local(2026, 6, 9, 15, 0)),
+            ),
+            (
+                "15:00.",
+                local(2026, 6, 9, 10, 0),
+                Some(local(2026, 6, 9, 15, 0)),
+            ),
+            (
+                "18:13",
+                local(2026, 6, 9, 10, 0),
+                Some(local(2026, 6, 9, 18, 13)),
+            ),
+            (
+                "Fri 09:00",
+                local(2026, 6, 9, 10, 0),
+                Some(local(2026, 6, 12, 9, 0)),
+            ),
+            (
+                "Tue 15:00",
+                local(2026, 6, 9, 16, 0),
+                Some(local(2026, 6, 16, 15, 0)),
+            ),
+            (
+                "Tue 15:00",
+                local(2026, 6, 9, 10, 0),
+                Some(local(2026, 6, 9, 15, 0)),
+            ),
+            ("not a time", local(2026, 6, 9, 10, 0), None),
+        ];
+        for (hint, now, expected) in cases {
+            assert_eq!(next_local_instant(hint, now), expected, "hint {hint:?}");
+        }
     }
 
     #[test]

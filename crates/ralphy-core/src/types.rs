@@ -135,8 +135,9 @@ pub enum Outcome {
 }
 
 /// When a usage limit lifts: the vendor's own words, and the instant they name.
-/// `at` is `None` when the words name no instant the core can read; the run
-/// clock then waits the synthetic window instead.
+/// The adapter that read the limit fills `at` from its own vendor's text; it
+/// is `None` when the words name no instant, and the run clock then waits the
+/// synthetic window instead.
 #[derive(Clone, PartialEq, Eq)]
 pub struct ResetAt {
     pub text: String,

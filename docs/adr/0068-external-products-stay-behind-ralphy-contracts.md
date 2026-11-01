@@ -79,6 +79,11 @@ no adapter, but only by the component named as its owner in
   becomes true only for new code. Existing code is contained, not refactored.
 - The reset-time parsing in `clock.rs` breaks D2. It moves to the adapters
   (a typed reset instant in `Outcome::Limit`) the next time that code changes.
+  Amendment (2026-11-01): the move is done. `Outcome::Limit` carries a
+  `ResetAt` (the vendor's text and the instant it names). The Claude and Codex
+  adapters parse their own reset text into it, and `clock.rs` only waits on
+  the instant. No other adapter reads a reset text today, so the zoneless
+  numeric date-time of Z.ai/GLM is read by the Codex parse until one does.
 
 ## Considered options
 
@@ -101,8 +106,8 @@ no adapter, but only by the component named as its owner in
   a ratchet (`forge_use_matches_the_baseline`): baseline 20 `gh issue view`
   lines under `assets/prompts/`; the check fails if the count changes.
 - D2 (agent vendors in core): not checked by code: a vendor date format in
-  core cannot be found reliably by a pattern. Known violation:
-  `crates/ralphy-core/src/runner/clock.rs`.
+  core cannot be found reliably by a pattern. The known violation in
+  `crates/ralphy-core/src/runner/clock.rs` is fixed (amendment of 2026-11-01).
 - D4: checked by the compiler: `is_closed` and `create_issue` have no
   default, so a tracker that does not implement them does not build.
 - D5: checked by `crates/xtask/tests/ratchets/` as a ratchet

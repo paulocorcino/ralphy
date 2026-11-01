@@ -410,7 +410,7 @@ mod tests {
         let t = limit_jsonl("You've reached your usage limit; resets 3:00pm");
         assert_eq!(
             classify_outcome(None, false, Some(&t)),
-            Outcome::Limit(Some(ResetAt::from_vendor_text("15:00")))
+            Outcome::Limit(claude_reset("resets 3:00pm"))
         );
     }
 
@@ -421,7 +421,7 @@ mod tests {
         let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
         assert_eq!(
             classify_outcome(None, false, Some(&t)),
-            Outcome::Limit(Some(ResetAt::from_vendor_text("08:10")))
+            Outcome::Limit(claude_reset("resets 8:10am"))
         );
     }
 
@@ -481,9 +481,7 @@ mod tests {
         let out = "You've reached your usage limit; resets 3:00pm";
         assert_eq!(
             classify_exec_call(out, false, 5),
-            Some(HeadlessReason::Limit(Some(ResetAt::from_vendor_text(
-                "15:00"
-            ))))
+            Some(HeadlessReason::Limit(claude_reset("resets 3:00pm")))
         );
     }
 
@@ -523,9 +521,7 @@ mod tests {
         let out = "You've reached your usage limit; resets 3:00pm";
         assert_eq!(
             classify_exec_call(out, true, 2),
-            Some(HeadlessReason::Limit(Some(ResetAt::from_vendor_text(
-                "15:00"
-            ))))
+            Some(HeadlessReason::Limit(claude_reset("resets 3:00pm")))
         );
     }
 
@@ -537,9 +533,7 @@ mod tests {
         let out = "RALPHY_DONE_EXIT\nYou've reached your usage limit; resets 3:00pm";
         assert_eq!(
             classify_exec_call(out, true, 0),
-            Some(HeadlessReason::Limit(Some(ResetAt::from_vendor_text(
-                "15:00"
-            ))))
+            Some(HeadlessReason::Limit(claude_reset("resets 3:00pm")))
         );
     }
 
