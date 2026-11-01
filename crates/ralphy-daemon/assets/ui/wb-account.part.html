@@ -1,4 +1,4 @@
-      <div class="menu-wrap rail-acct" x-data="wbAccount">
+      <div class="menu-wrap rail-acct" x-data="wbAccount" :class="{ 'menu-open': avatarMenu }">
         <button class="avatar-btn" :title="$store.connection.identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="$store.connection.identityMark()"></span>
           <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo

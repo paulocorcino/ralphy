@@ -197,7 +197,7 @@ reads them, and the peer's presence (`"present"`), from the peer's
 `?local=1` attention list on each tick, so the operator at a page of the
 peer is present for the main too. Each daemon has one Telegram state:
 `off` (no bot), `sends` (it sends), or `through-main` (a main sends for it);
-the attention panel shows it per daemon, and `ralphy doctor` prints it. Two
+`ralphy doctor` prints it (the attention panel does not show it). Two
 daemons that are each other's peers, both with a bot, do not claim each
 other: the one whose daemon id sorts first is the main. An older peer has
 no claim route and keeps sending by itself if it has a bot; until both run

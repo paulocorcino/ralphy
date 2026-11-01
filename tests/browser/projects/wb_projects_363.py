@@ -9,8 +9,8 @@ with no manual refresh while the daemon's own `/api/repos` agrees.
 Scenario a  every project row carries a laid-out `.project-remove` control
 Scenario b  clicking it opens the confirm, whose message contains the literal
             `Files on disk are kept.`
-Scenario c  Cancel opens ZERO `/ws/command` sockets (an `add_init_script`
-            WebSocket spy sampled at document start) and leaves BOTH rows
+Scenario c  Cancel sends ZERO `project.remove` commands (a request listener
+            on the page from before it loads) and leaves BOTH rows
 Scenario d  Confirm makes the row vanish with no reload and no Refresh click
             (`wait_for_function` on row absence), and `GET /api/repos` then
             returns exactly 1 entry — the OTHER slug
@@ -179,24 +179,22 @@ CONFIRM_STATE = """
 }
 """
 
-# Sampled at DOCUMENT START, before the app runs: a socket opened and closed
-# before the assertion would be invisible to any later read (#334 trap).
-WS_SPY = """
-window.__wbSockets = [];
-const Native = window.WebSocket;
-window.WebSocket = function (url, protocols) {
-  window.__wbSockets.push(String(url));
-  return protocols === undefined ? new Native(url) : new Native(url, protocols);
-};
-window.WebSocket.prototype = Native.prototype;
-Object.assign(window.WebSocket, {
-  CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3,
-});
-"""
+# The page sends a one-reply command as `POST /api/command` with the verb in
+# its JSON body. The listener is on the page before it loads, so no request is
+# missed (#334 trap).
+def spy_commands(page):
+    sent = []
+
+    def on_request(request):
+        if request.method == "POST" and request.url.endswith("/api/command"):
+            sent.append(request.post_data or "")
+
+    page.on("request", on_request)
+    return sent
 
 
-def command_sockets(page):
-    return page.evaluate("() => (window.__wbSockets || []).filter(u => u.includes('/ws/command'))")
+def remove_commands(sent):
+    return [body for body in sent if '"verb":"project.remove"' in body]
 
 
 def row_locator_for(page, slug):
@@ -252,8 +250,8 @@ def main():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             ctx = browser.new_context(viewport={"width": 1440, "height": 900})
-            ctx.add_init_script(WS_SPY)
             page = ctx.new_page()
+            commands = spy_commands(page)
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
@@ -282,10 +280,10 @@ def main():
             # --- scenario b: the confirm, and what it promises ----------------
             # The baseline is sampled BEFORE the click, not before the Cancel:
             # an implementation that fired `project.remove` at click time and
-            # only then confirmed would open its socket between the two, and a
+            # only then confirmed would send its command between the two, and a
             # delta measured from after-the-click would still read zero. The
-            # invariant is "no socket across the click AND the cancel".
-            before = len(command_sockets(page))
+            # invariant is "no command across the click AND the cancel".
+            before = len(remove_commands(commands))
             row_locator_for(page, drop_slug).click()
             page.wait_for_function(f"() => {MODALS}.confirmModal.open === true", timeout=10000)
             page.wait_for_function(
@@ -312,20 +310,20 @@ def main():
                   "labels={}".format(confirm["confirmLabel"]))
 
             # --- scenario c: Cancel makes NO daemon call ----------------------
-            mid = len(command_sockets(page))
+            mid = len(remove_commands(commands))
             check(
-                "opening the confirm opens no socket by itself",
+                "opening the confirm sends no project.remove by itself",
                 mid == before,
                 "before={} after-click={}".format(before, mid),
             )
             page.evaluate(f"() => {MODALS}.confirmRespond(false)")
             page.wait_for_function(f"() => {MODALS}.confirmModal.open === false", timeout=10000)
-            # Give a would-be socket a real chance to appear: an assertion that
+            # Give a would-be command a real chance to appear: an assertion that
             # samples in the same tick passes even against a broken order.
             page.wait_for_timeout(600)
-            after = len(command_sockets(page))
+            after = len(remove_commands(commands))
             check(
-                "Cancel opens ZERO /ws/command sockets, across the click AND the cancel",
+                "Cancel sends ZERO project.remove commands, across the click AND the cancel",
                 after == before,
                 "before-click={} after-cancel={}".format(before, after),
             )
@@ -388,7 +386,7 @@ def main():
                 "  c.askConfirm = () => Promise.resolve(true);"
                 "  c.__origAskConfirm = orig; }"
             )
-            sockets_before = len(command_sockets(page))
+            commands_before = len(remove_commands(commands))
             page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
             page.evaluate(
                 "(slug) => " + SH + ".removeProject({ slug: slug, path: slug })",
@@ -396,9 +394,9 @@ def main():
             )
             page.wait_for_timeout(1500)
             check(
-                "…and it really reached the daemon (a /ws/command socket was opened)",
-                len(command_sockets(page)) > sockets_before,
-                "before={} after={}".format(sockets_before, len(command_sockets(page))),
+                "…and it really reached the daemon (a project.remove command was sent)",
+                len(remove_commands(commands)) > commands_before,
+                "before={} after={}".format(commands_before, len(remove_commands(commands))),
             )
             rows = page.evaluate(PROJECT_ROWS)
             check(

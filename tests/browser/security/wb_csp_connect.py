@@ -351,7 +351,7 @@ def main():
         check("TOTP confirmed", post_form(LOCAL, "/api/security/totp/confirm", {"code": totp.fresh()})["confirmed"])
         check("require-login on", post_form(LOCAL, "/api/security/require-login", {"enable": "true"})["ok"])
         try:
-            urllib.request.urlopen(LOCAL + "/api/projects", timeout=5)
+            urllib.request.urlopen(LOCAL + "/api/repos", timeout=5)
             gated = False
         except urllib.error.HTTPError as e:
             gated = e.code in (401, 403)

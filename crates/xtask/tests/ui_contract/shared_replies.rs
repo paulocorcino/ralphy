@@ -8,9 +8,11 @@ use super::*;
 /// files. The removal of the `ws-command` and `ws-tree` routes takes 2 UI
 /// routes away: 28 UI routes, 78 types without a reply. The removal of the
 /// `ws-session` route takes 1 more: 27 UI routes, 77 types without a reply.
+/// The attention panel stopped reading `GET /api/telegram`, so its two reply
+/// files (`api-telegram`, `api-telegram-main`) went away: 79.
 /// Counting rules are in [`message_types`]. A new type starts with a shared
 /// reply; a new reply file lowers this number.
-const UNSHARED_BASELINE: usize = 77;
+const UNSHARED_BASELINE: usize = 79;
 
 #[test]
 fn message_types_without_a_shared_reply_match_the_baseline() {

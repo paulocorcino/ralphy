@@ -23,6 +23,14 @@
   gap: 0.4rem;
   background: var(--chrome);
 }
+/* While the account menu or the attention panel is open, the rail goes above
+   the sidebar and the Runs panel (150 on a phone, where both float over the
+   page), so the open menu is not under them. It stays under the context menu
+   (200) and the modals (500). Closed, it keeps 40: on a phone the Runs panel
+   is as wide as the screen and covers the rail. */
+.rail:has(> .menu-open) {
+  z-index: 160;
+}
 /* `>` is load-bearing: the account menu hangs INSIDE the rail now, and an
    unscoped `.rail button` turned each of its items into a 32px icon box. These
    rules describe the rail's OWN controls — its direct children — only. The
@@ -75,9 +83,12 @@
   line-height: 16px;
   text-align: center;
 }
-/* The panel opens to the SIDE, as the account menu does: the rail is 48px. */
+/* The panel opens to the SIDE, as the account menu does: the rail is 48px.
+   The button is the last control of the rail, so the panel's bottom is
+   level with it and the panel grows upward. */
 .rail .attention-panel {
-  top: 0;
+  top: auto;
+  bottom: 0;
   left: calc(100% + 12px);
   right: auto;
   width: 300px;

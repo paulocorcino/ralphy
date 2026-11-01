@@ -158,6 +158,14 @@ workbench in a real browser, against a daemon with a scratch store
 ignores. Never write them under `docs/`, and never commit them: a screenshot is
 the evidence of one run, and the script makes it again.
 
+To see that the page called the daemon, watch the request, not a socket. The
+page opens one socket, `/ws`, when it loads. A command with one reply is a
+`POST /api/command` whose JSON body names the verb, and a verb that streams
+runs on a channel of `/ws`. A spy that counts sockets of another path counts
+zero and passes when nothing happened. `every_cited_route_is_served`
+(`crates/xtask/tests/ui_contract/`) fails when a script cites a route that the
+daemon does not serve.
+
 ## Cost
 
 The suite is bound by process creation on Windows (see

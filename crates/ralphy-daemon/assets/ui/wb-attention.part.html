@@ -1,4 +1,4 @@
-      <div class="menu-wrap rail-attention" x-data="wbAttention">
+      <div class="menu-wrap rail-attention" x-data="wbAttention" :class="{ 'menu-open': open }">
         <button :class="{ active: open }" @click.stop="toggle()" title="Requests that wait for you">
           <svg x-icon="'bell'"></svg>
           <span class="attention-badge" x-show="count() > 0" x-text="count()" x-cloak></span>
@@ -27,7 +27,5 @@
               <span class="switch-track"></span>
             </label>
           </div>
-          <div class="attention-notify attention-telegram" x-show="telegram" x-text="telegram"></div>
-          <template x-for="r in telegramPeers" :key="r"><div class="attention-notify attention-telegram" x-text="r"></div></template>
         </div>
       </div>

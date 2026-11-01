@@ -30,11 +30,6 @@
    permission. With it on, a request id this page did not know before shows
    one browser notification while the tab is hidden.
 
-   The panel's last lines are the Telegram state of this daemon and of each
-   of its peers (`GET /api/telegram`, joined by the daemon the page talks
-   to): whether it tells the operator who is away from every page about a
-   console that waits, leaves that to its main daemon, or is off.
-
    A link in a Telegram message opens the page with
    `?console=<daemon_id>/<session id>`: once the session list is read, that
    console is shown as "Go to the console" shows it, and the parameter is
@@ -80,45 +75,6 @@ export type AttentionRequest = {
 
 /** The reply of `GET /api/attention`. */
 export type AttentionReply = { requests: AttentionRequest[] };
-
-/** One daemon's Telegram state (`TelegramState` in `telegram_state.rs`):
- * `main` is the id of the main daemon that sends for it, and `main_name` its
- * name when the daemon that answered knows it. */
-export type TelegramStateReply = {
-  state: "off" | "sends" | "through-main";
-  main?: string;
-  main_name?: string;
-};
-
-/** A peer's state in the joined reply (`PeerView` in `api_telegram.rs`). */
-export type PeerTelegram = TelegramStateReply & { daemon_id: string; environment: string };
-
-/** The reply of `GET /api/telegram`: this daemon's state, and its peers'. */
-export type TelegramReply = TelegramStateReply & { peers?: PeerTelegram[] };
-
-/** The panel's line for one daemon's Telegram state. */
-export function telegramText(reply: TelegramStateReply) {
-  switch (reply.state) {
-    case "off":
-      return "Telegram: off";
-    case "sends":
-      return "Telegram: sends from this machine";
-    case "through-main":
-      return `Telegram: through ${reply.main_name || reply.main || "the main daemon"}`;
-    default: {
-      const unknown: never = reply.state;
-      return unknown;
-    }
-  }
-}
-
-/** The panel's line for each peer of the reply: its environment, then its
- * state. */
-export function peerTelegramLines(reply: TelegramReply) {
-  return (reply.peers || []).map(
-    (peer) => `${peer.environment || peer.daemon_id} · ${telegramText(peer)}`,
-  );
-}
 
 /** How many times, a quarter of a second apart, the page tries to show the
  * console its URL names: the session list and the desk are read at load. */
@@ -246,10 +202,6 @@ export function wbAttention() {
     notifyOn: false,
     _known: null as Set<string> | null,
     _dismissing: new Set<string>(),
-    // The Telegram line of the panel; "" before the first read. Then one
-    // line per peer.
-    telegram: "",
-    telegramPeers: [] as string[],
     // The console the page URL names, until it is shown.
     _link: null as { daemon: string; session: number } | null,
     _linkTimer: 0,
@@ -258,7 +210,6 @@ export function wbAttention() {
     init() {
       this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
       void this.read();
-      void this.readTelegram();
       this._link = consoleLinkOf(window.location.search);
       if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
       window.addEventListener("workbench:attention-reread", () => {
@@ -291,19 +242,6 @@ export function wbAttention() {
       } catch {
         // A daemon that does not answer: the last list stays, and the next
         // push or reopened socket reads again.
-      }
-    },
-
-    // A failed read keeps the last line.
-    async readTelegram() {
-      try {
-        const r = await apiFetch("GET /api/telegram");
-        if (!r.ok) return;
-        const reply = await r.json();
-        this.telegram = telegramText(reply);
-        this.telegramPeers = peerTelegramLines(reply);
-      } catch {
-        // A daemon that does not answer: the panel keeps the last line.
       }
     },
 
@@ -384,7 +322,6 @@ export function wbAttention() {
       const was = this.open;
       sendWindow(window, "workbench:menus-close");
       this.open = !was;
-      if (this.open) void this.readTelegram();
     },
     close() {
       this.open = false;

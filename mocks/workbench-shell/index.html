@@ -152,7 +152,7 @@
           <!-- New console: pick an agent → spawns a floating console for the
                selected repo (openSlug), or the home dir if none. impl: this is
                where a real session/PTY is launched (agent × repo), like the
-               daemon's /ws/session. -->
+               daemon's console channel on /ws. -->
           <div class="menu-wrap">
             <button class="btn accent" @click.stop="agentMenu = !agentMenu">
               <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>

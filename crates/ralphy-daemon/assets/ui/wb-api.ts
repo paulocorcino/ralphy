@@ -25,7 +25,7 @@ import type { MissingUsage, SpendDoc, SpendRecord } from "./wb-spend-types.d.ts"
 import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
-import type { AttentionReply, TelegramReply } from "./wb-attention.ts";
+import type { AttentionReply } from "./wb-attention.ts";
 import type { LoginNoticesReply } from "./wb-login-notice.ts";
 import { reportStall } from "./wb-stall.ts";
 
@@ -116,11 +116,6 @@ interface ApiRoutes {
   "GET /api/attention": { ok: AttentionReply };
   /** `409` for a request that still waits, `404` for an unknown id. */
   "POST /api/attention/dismiss": { ok: { dismissed: true } };
-  /** This daemon's Telegram state, read from its config at each request,
-   * and each peer's. A daemon a main daemon claimed is `through-main`, with
-   * the id of that `main?`. The names of the peers that did not answer are
-   * in `x-ralphy-unanswered`. */
-  "GET /api/telegram": { ok: TelegramReply };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
     ok: {

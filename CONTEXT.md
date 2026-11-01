@@ -429,7 +429,7 @@ One thing a human must decide now, such as an agent waiting for an answer,
 a **run** that ended blocked or was reaped, a **silent** console, or a stuck
 squad. The daemon works out the list of attention requests from
 their sources; one ends when its source ends, or, for a finished run, when
-the operator dismisses it. Not built yet. (ADR-0085)
+the operator dismisses it. (ADR-0085)
 _Avoid_: alert, notification, inbox, task.
 
 **Operating mode (unattended / supervised)**:

@@ -88,11 +88,6 @@
            the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
            over the sidebar: a 48px column has no room to drop one downward. -->
       <!-- part: wb-account.part.html -->
-      <!-- The attention list (wb-attention.ts): the requests that wait for the
-           operator, as the daemon computed them. The badge is the count, hidden
-           at 0; the same count is in the tab title. The panel opens to the SIDE,
-           as the account menu does. -->
-      <!-- part: wb-attention.part.html -->
       <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><svg x-icon="'folder-tree'"></svg></button>
       <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
            cross-repo aggregate this UI never computes (#317, PRD #314). The
@@ -107,6 +102,11 @@
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
       <button :class="{ active: $store.modals.modalOpen('settingsOpen') }" @click="$dispatch('workbench:menus-close'); $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
+      <!-- The attention list (wb-attention.ts): the requests that wait for the
+           operator, as the daemon computed them. The badge is the count, hidden
+           at 0; the same count is in the tab title. It is the last control of
+           the rail, so its panel opens to the SIDE and grows upward. -->
+      <!-- part: wb-attention.part.html -->
     </nav>
 
     <!-- sidebar: project accordion. impl: `$store.projects.projects` comes from the daemon
