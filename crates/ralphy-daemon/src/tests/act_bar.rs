@@ -192,7 +192,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     );
     assert!(
         app_js.contains(
-            r#"failure = "Could not reach the daemon. Check whether the worktree was deleted.";"#
+            r#"return "Could not reach the daemon. Check whether the worktree was deleted.";"#
         ),
         "an unanswered worktree remove must not read as a completed one"
     );

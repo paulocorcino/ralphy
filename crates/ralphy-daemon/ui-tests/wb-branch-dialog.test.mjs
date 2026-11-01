@@ -228,3 +228,35 @@ test("a refused delete brings the row back with a notice; a kept branch is a fla
   assert.equal(d.flashed.length, 1);
   assert.match(d.flashed[0], /branch 'wt-b' kept: it has commits not on main/);
 });
+
+test("a delete whose report throws can be tried again", async () => {
+  const d = deleter();
+  await d.store.ensureWorktreeListing("o/r", true);
+  globalThis.window.WBConsole.askNotice = () => {
+    throw new Error("the notice broke");
+  };
+  const a = assert.rejects(d.dialog.removeWorktree("o/r", { name: "wt-a" }), /the notice broke/);
+  await d.tick();
+  await d.settle("wt-a", { status: "error", message: "worktree 'wt-a' has a live console: close it first" });
+  await a;
+  assert.deepEqual(d.dialog.worktreeRemoving, {});
+  const b = d.dialog.removeWorktree("o/r", { name: "wt-a" });
+  await d.tick();
+  assert.deepEqual(d.sent.filter(([v]) => v === "worktree.remove"), [["worktree.remove", "wt-a"], ["worktree.remove", "wt-a"]]);
+  d.setListed(["wt-b"]);
+  await d.settle("wt-a", { status: "ok" });
+  await b;
+});
+
+test("a delete that throws before it is sent does not hide the row", async () => {
+  const d = deleter();
+  await d.store.ensureWorktreeListing("o/r", true);
+  let ingests = 0;
+  globalThis.window.WBConsole.ingestWorktrees = () => {
+    if (++ingests === 1) throw new Error("a title broke");
+  };
+  await assert.rejects(d.dialog.removeWorktree("o/r", { name: "wt-a" }), /a title broke/);
+  assert.deepEqual(d.sent.filter(([v]) => v === "worktree.remove"), [], "nothing was sent");
+  await d.store.ensureWorktreeListing("o/r", true);
+  assert.deepEqual(d.shown(), ["wt-a", "wt-b"]);
+});
