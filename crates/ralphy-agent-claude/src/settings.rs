@@ -696,9 +696,10 @@ mod tests {
                 .map(|e| hook_text(&e["hooks"][0]))
                 .any(|c| c.ends_with("hook stop"));
             assert_eq!(sentinel, sentinel_wanted, "{name}: sentinel presence");
-            // The command names THIS binary.
-            let cmd = hook_text(&hooks["SessionStart"][0]["hooks"][0]);
-            let exe = hook_exe().unwrap().to_string_lossy().into_owned();
+            // The command names THIS binary. On Windows the shell form (no
+            // `claude` ≥ 2.1.139 on the machine) writes the path with `/`.
+            let cmd = hook_text(&hooks["SessionStart"][0]["hooks"][0]).replace('\\', "/");
+            let exe = hook_exe().unwrap().to_string_lossy().replace('\\', "/");
             assert!(cmd.contains(&exe), "{name}: {cmd}");
         }
     }
