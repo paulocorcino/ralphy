@@ -10,5 +10,10 @@
   "devDependencies": {
     "@milkdown/crepe": "7.22.3",
     "esbuild": "0.28.2"
+  },
+  "overrides": {
+    "micromark-extension-math": {
+      "katex": "0.19.1"
+    }
   }
 }

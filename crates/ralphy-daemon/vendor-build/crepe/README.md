@@ -37,3 +37,12 @@ built by something else — or a recipe changed without a rebuild — reds.
 Measured at 7.22.3: **crepe.js 718 KB, crepe.css 20 KB** (≈234 KB gzipped
 together). The build prints both sizes; a bump that doubles them is a decision,
 not a detail.
+
+## The `katex` override in `package.json`
+
+`micromark-extension-math` asks for `katex ^0.16`, and npm installed its own
+copy, 0.16.47. That version has a known advisory, fixed in 0.18.2. The override
+gives it the copy Crepe already uses (0.19.1), so the lockfile has one KaTeX.
+KaTeX is not in the bundle: the build output is the same with or without the
+override. Remove the override when `micromark-extension-math` asks for a
+KaTeX version without the advisory.
