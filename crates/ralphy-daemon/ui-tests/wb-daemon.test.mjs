@@ -1122,6 +1122,51 @@ test("a live heartbeat keeps the socket after a long hide", (t) => {
   assert.deepEqual(page.resumes, [[false, "visible"]]);
 });
 
+// The other side of the rule: the page heard no heartbeat for longer than the
+// loss limit while it was hidden, so its socket reads OPEN with no byte to
+// come. The hidden page fires no loss watch, so the return is what judges it.
+test("a heartbeat older than the loss limit makes a page stale when it is shown", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const page = eventPage();
+  const { d, sockets, open, withFakes } = page;
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  page.beat(sockets[0]);
+  now += 1000;
+  page.hide();
+  now += 119_000;
+  page.show();
+  assert.equal(sockets.length, 2, "one new page socket");
+  assert.equal(sockets[0].readyState, 3, "the silent socket is closed");
+  assert.deepEqual(page.resumes, [[true, "visible"]]);
+});
+
+// Each heartbeat ends the watch of the one before. A watch left behind per
+// beat would fire 6 s after its own beat and replace the socket of a page
+// that hears the daemon.
+test("a page that hears a heartbeat every 2 s never resumes on a loss", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const page = eventPage({ resumeDebounceMs: 0 });
+  const { d, sockets, open, withFakes } = page;
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  for (let i = 0; i < 5; i += 1) {
+    page.beat(sockets[0]);
+    now += 2000;
+  }
+  // 10 s passed since the first beat; the last one is 2 s old. The only watch
+  // that may still be armed is the last one: run every other one.
+  const watches = page.timers.filter((x) => x.ms === HEARTBEAT_LOST);
+  assert.equal(watches.length, 5, "one watch armed per heartbeat");
+  withFakes(() => {
+    for (const w of watches.slice(0, -1)) w.fn();
+  });
+  assert.equal(sockets.length, 1, "no new socket");
+  assert.deepEqual(page.resumes, []);
+});
+
 // The detached fence page subscribes to no presence, so it has no heartbeat
 // to ask: how long it was hidden is its verdict.
 test("a page with no heartbeat is stale after 60 s hidden", (t) => {
