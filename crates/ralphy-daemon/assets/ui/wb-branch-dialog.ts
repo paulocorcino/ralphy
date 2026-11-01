@@ -277,8 +277,12 @@ export function wbBranchDialog() {
       return (this.worktreeRemoving[slug] || []).includes(name);
     },
     _setRemoving(slug: string, name: string, on: boolean) {
-      const rest = (this.worktreeRemoving[slug] || []).filter((n) => n !== name);
-      this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: on ? [...rest, name] : rest };
+      // A repo with no delete in flight has no entry: the browser checks wait
+      // for an empty object.
+      const { [slug]: old = [], ...others } = this.worktreeRemoving;
+      const rest = old.filter((n) => n !== name);
+      const names = on ? [...rest, name] : rest;
+      this.worktreeRemoving = names.length ? { ...others, [slug]: names } : others;
     },
     // After the re-read: a worktree still listed was refused; a listing that
     // could not be read says nothing, so the reply decides.

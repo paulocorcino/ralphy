@@ -216,6 +216,7 @@ test("a refused delete brings the row back with a notice; a kept branch is a fla
   await d.settle("wt-a", { status: "error", message: "worktree 'wt-a' has uncommitted changes: commit or discard them first" });
   await a;
   assert.deepEqual(d.shown(), ["wt-a", "wt-b"]);
+  assert.deepEqual(d.dialog.worktreeRemoving, {}, "a settled delete leaves no entry for its repo");
   assert.equal(d.notices.length, 1);
   assert.match(d.notices[0], /has uncommitted changes/);
   d.setListed(["wt-a"]);
