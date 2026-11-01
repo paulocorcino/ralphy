@@ -8,6 +8,52 @@ mod attempt;
 mod replay;
 mod resume;
 
+/// Attaches while a pump publishes `chunks`, with one attach in the middle
+/// for certain: the pump publishes the first half, waits until the test
+/// thread made one attach, then publishes the rest while the test thread
+/// attaches again, at most `most` times. Returns the middle attach and the
+/// later ones.
+fn attach_during_a_pump(
+    kept: &Arc<Mutex<KeptOutput>>,
+    tx: &broadcast::Sender<Vec<u8>>,
+    chunks: Vec<Vec<u8>>,
+    most: usize,
+    attach: impl Fn() -> Subscribed,
+) -> (Subscribed, Vec<Subscribed>) {
+    let (half_tx, half_rx) = std::sync::mpsc::channel();
+    let (attached_tx, attached_rx) = std::sync::mpsc::channel();
+    let pump = std::thread::spawn({
+        let (kept, tx) = (kept.clone(), tx.clone());
+        move || {
+            let half = chunks.len() / 2;
+            let mut chunks = chunks.into_iter();
+            for chunk in chunks.by_ref().take(half) {
+                publish(&kept, &tx, chunk);
+            }
+            half_tx
+                .send(())
+                .expect("the test thread waits for the half");
+            attached_rx
+                .recv()
+                .expect("the test thread says when it attached");
+            for chunk in chunks {
+                publish(&kept, &tx, chunk);
+            }
+        }
+    });
+    half_rx
+        .recv()
+        .expect("the pump says when half is published");
+    let middle = attach();
+    attached_tx.send(()).expect("the pump waits for the attach");
+    let mut later = Vec::new();
+    while !pump.is_finished() && later.len() < most {
+        later.push(attach());
+    }
+    pump.join().expect("the pump thread does not panic");
+    (middle, later)
+}
+
 #[test]
 fn scrollback_ring_is_bounded() {
     let mut ring = std::collections::VecDeque::new();

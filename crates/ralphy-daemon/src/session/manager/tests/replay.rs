@@ -1,4 +1,5 @@
 use super::*;
+use crate::session::manager::kept::between_replay_and_subscribe;
 
 /// A cursor-up redraw is right only at the width it was written at (#689).
 /// Output written at 120 columns, then a resize to 60, then more output: the
@@ -30,67 +31,79 @@ fn a_replay_rebuilds_the_screen_after_a_width_change() {
 
 /// EXACTLY-ONCE REPLAY INVARIANT at the seam: a pump publishes numbered
 /// lines while attaches happen on another thread. Every attach sees each line
-/// exactly once, in its replay or on its live receiver.
+/// exactly once, in its replay or on its live receiver. The pump waits for
+/// one attach in the middle, so the test does not depend on the scheduler.
 #[test]
 fn every_line_is_in_the_replay_or_on_the_live_receiver_once() {
-    // A round where the scheduler ran every attach before or after the pump
-    // proves nothing, so it is run again.
-    let rounds = (0..5)
-        .take_while(|_| attach_while_publishing() == 0)
-        .count();
-    assert!(
-        rounds < 5,
-        "no attach happened while the pump ran, in 5 rounds"
-    );
-}
-
-/// One round of the test above. Returns how many attaches got a replay with
-/// some, but not all, of the lines.
-fn attach_while_publishing() -> usize {
     const LINES: usize = 800;
     let line = |i: usize| format!("L{i:04} {}", "-".repeat(70));
     let kept = Arc::new(Mutex::new(KeptOutput::new(1, 24, 80)));
     let (tx, _) = broadcast::channel(BROADCAST_CAP);
-    let start = Arc::new(std::sync::Barrier::new(2));
-    let pump = std::thread::spawn({
-        let (kept, tx, start) = (kept.clone(), tx.clone(), start.clone());
-        move || {
-            start.wait();
-            for i in 0..LINES {
-                publish(&kept, &tx, format!("{}\r\n", line(i)).into_bytes());
-            }
-        }
-    });
-    start.wait();
-    let mut attaches = Vec::new();
+    let chunks = (0..LINES)
+        .map(|i| format!("{}\r\n", line(i)).into_bytes())
+        .collect();
     // Each attach is checked below, and a check costs a screen; 100 attaches
     // keep the test short.
-    while !pump.is_finished() && attaches.len() < 100 {
-        attaches.push(replay_and_subscribe(&kept, &tx, None));
-    }
-    pump.join().expect("the pump thread does not panic");
+    let (middle, later) = attach_during_a_pump(&kept, &tx, chunks, 100, || {
+        replay_and_subscribe(&kept, &tx, None)
+    });
 
-    let expected: Vec<String> = (0..LINES).map(line).collect();
-    let mut during = 0;
-    for (n, Subscribed { replay, mut rx, .. }) in attaches.into_iter().enumerate() {
+    let replayed = |replay: &[u8]| -> Vec<String> {
         let mut screen = Screen::new(24, 80, screen::SCROLLBACK_LINES);
-        screen.feed(&replay);
-        let mut seen: Vec<String> = screen
+        screen.feed(replay);
+        screen
             .text()
             .lines()
             .filter(|l| !l.is_empty())
             .map(str::to_owned)
-            .collect();
-        if (1..LINES).contains(&seen.len()) {
-            during += 1;
-        }
-        while let Ok(chunk) = rx.try_recv() {
+            .collect()
+    };
+    let expected: Vec<String> = (0..LINES).map(line).collect();
+    assert_eq!(
+        replayed(&middle.replay),
+        expected[..LINES / 2],
+        "the middle attach replays the first half"
+    );
+    for (n, mut sub) in std::iter::once(middle).chain(later).enumerate() {
+        let mut seen = replayed(&sub.replay);
+        while let Ok(chunk) = sub.rx.try_recv() {
             let text = String::from_utf8(chunk).expect("the test writes ASCII");
             seen.extend(text.lines().map(str::to_owned));
         }
         assert_eq!(seen, expected, "attach {n}");
     }
-    during
+}
+
+/// EXACTLY-ONCE REPLAY INVARIANT with no second thread: a publish tried
+/// after an attach took its replay, and before it subscribed, must wait for
+/// the lock. Then it reaches the live receiver, and the attach sees it once.
+#[test]
+fn a_publish_between_the_replay_and_the_subscribe_waits_for_the_lock() {
+    let kept = Arc::new(Mutex::new(KeptOutput::new(1, 24, 80)));
+    let (tx, _) = broadcast::channel(BROADCAST_CAP);
+    publish(&kept, &tx, b"before\r\n".to_vec());
+    let waited = std::rc::Rc::new(std::cell::Cell::new(false));
+    between_replay_and_subscribe::set({
+        let (kept, tx, waited) = (kept.clone(), tx.clone(), waited.clone());
+        // A publish takes the lock; a busy lock makes it wait.
+        move || match kept.try_lock() {
+            Ok(free) => {
+                drop(free);
+                publish(&kept, &tx, b"between\r\n".to_vec());
+            }
+            Err(_) => waited.set(true),
+        }
+    });
+    let mut sub = replay_and_subscribe(&kept, &tx, Some(0));
+    if waited.get() {
+        publish(&kept, &tx, b"between\r\n".to_vec());
+    }
+    assert_eq!(sub.offset, sub.replay.len() as u64);
+    let mut seen = sub.replay;
+    while let Ok(chunk) = sub.rx.try_recv() {
+        seen.extend(chunk);
+    }
+    assert_eq!(seen, b"before\r\nbetween\r\n");
 }
 
 /// The writer and a watcher get the same replay: the screen snapshot.

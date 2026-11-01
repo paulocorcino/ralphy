@@ -185,6 +185,8 @@ pub(super) fn replay_and_subscribe(
     let mut kept = kept.lock().expect("kept output mutex");
     let (replay, resume) = kept.replay(since);
     let offset = kept.written;
+    #[cfg(test)]
+    between_replay_and_subscribe::run();
     let rx = tx.subscribe();
     let size = kept.size.subscribe();
     let replay_size = *size.borrow();
@@ -196,5 +198,28 @@ pub(super) fn replay_and_subscribe(
         rx,
         size,
         replay_size,
+    }
+}
+
+/// A point inside [`replay_and_subscribe`], after the replay and before the
+/// subscribe, where a test runs a step of its own on the attaching thread.
+/// It lets a test try a publish at the one moment the lock must keep out.
+#[cfg(test)]
+pub(super) mod between_replay_and_subscribe {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static STEP: RefCell<Option<Box<dyn FnOnce()>>> = RefCell::new(None);
+    }
+
+    /// Runs `step` at the point, in the next attach on this thread only.
+    pub(in crate::session::manager) fn set(step: impl FnOnce() + 'static) {
+        STEP.with(|s| *s.borrow_mut() = Some(Box::new(step)));
+    }
+
+    pub(super) fn run() {
+        if let Some(step) = STEP.with(|s| s.borrow_mut().take()) {
+            step();
+        }
     }
 }
