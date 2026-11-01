@@ -253,3 +253,77 @@ async fn search_with_a_symlinked_checkout_is_refused_like_a_listing() {
         );
     }
 }
+
+/// Send a tree-channel `watch` of the root of `checkout`.
+async fn watch_checkout(ws: &mut page::Channel, slug: &str, checkout: &str) {
+    let frame = Frame::Command(Command {
+        id: 0,
+        verb: "watch".to_string(),
+        payload: serde_json::json!({ "repo": slug, "path": "", "checkout": checkout }),
+    });
+    ws.send(Message::Binary(protocol::encode(&frame).into()))
+        .await
+        .expect("send the frame");
+}
+
+/// The `checkout` of the first `tree.dirty` push within `window`; `None` when
+/// no push came.
+async fn dirty_checkout(ws: &mut page::Channel, window: Duration) -> Option<String> {
+    tokio::time::timeout(window, async {
+        while let Some(msg) = ws.next().await {
+            let Ok(Message::Binary(bytes)) = msg else {
+                continue;
+            };
+            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                if cmd.verb == "tree.dirty" {
+                    return cmd.payload["checkout"].as_str().map(String::from);
+                }
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// A worktree folder that is a symlink out of the repo is not watched, even
+/// when the pointer file it holds names a gitdir inside the repo: a change in
+/// the linked folder is never pushed. The normal worktree on the same channel
+/// is the positive control.
+#[tokio::test]
+async fn a_symlinked_checkout_gets_no_watch() {
+    let (port, slug, root) = serve_checkout_repo().await;
+    let outside = tempfile::tempdir().expect("create the temp dir");
+    let gitdir = root
+        .join(".git/worktrees/wt-out")
+        .to_string_lossy()
+        .replace('\\', "/");
+    std::fs::write(outside.path().join(".git"), format!("gitdir: {gitdir}\n"))
+        .expect("write the pointer");
+    let link = root.join(".ralphy/worktrees/wt-out");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(outside.path(), &link);
+    #[cfg(not(windows))]
+    let linked = std::os::unix::fs::symlink(outside.path(), &link);
+    linked.expect("create a directory symlink");
+
+    let mut ws = page::tree(port).await;
+    watch_checkout(&mut ws, &slug, "wt-out").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    std::fs::write(outside.path().join("new.txt"), b"x").expect("write new.txt");
+    assert_eq!(
+        dirty_checkout(&mut ws, Duration::from_secs(3)).await,
+        None,
+        "a change behind the link must not be pushed"
+    );
+
+    watch_checkout(&mut ws, &slug, "wt-a").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    std::fs::write(root.join(".ralphy/worktrees/wt-a/f.txt"), b"x").expect("write f.txt");
+    assert_eq!(
+        dirty_checkout(&mut ws, Duration::from_secs(10)).await,
+        Some("wt-a".to_string()),
+        "the normal worktree is still watched"
+    );
+}

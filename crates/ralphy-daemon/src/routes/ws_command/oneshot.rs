@@ -69,17 +69,29 @@ pub(crate) async fn collect_config(
     .await
 }
 
-/// Resolve the optional `checkout` key of `cmd` against `repo_path`. `Err` is
-/// the reply to send in its place: `unknown checkout` for a name that does not
-/// resolve (the text the shell drops its selection on), `unavailable` when the
-/// pointer-file read could not run. The read is a filesystem read like every
-/// Observe sibling: off the runtime, so a cold `/mnt/c` never parks a worker.
+/// Resolve the optional `checkout` key of `cmd` against `repo_path`, and
+/// confine its folder there. `Err` is the reply to send in its place: `unknown
+/// checkout` for a name that does not resolve or a folder that leaves the root
+/// (the text the shell drops its selection on), `unavailable` when the read
+/// could not run. The reads are filesystem reads like every Observe sibling:
+/// off the runtime, so a cold `/mnt/c` never parks a worker.
 pub(crate) async fn checkout_of(
     cmd: &protocol::Command,
     repo_path: &Path,
-) -> Result<Option<checkout::Checkout>, serde_json::Value> {
+) -> Result<Option<checkout::ConfinedCheckout>, serde_json::Value> {
     let (payload, root) = (cmd.payload.clone(), repo_path.to_path_buf());
-    match blocking_read(move || checkout::from_payload(&payload, &root)).await {
+    let confined = blocking_read(move || match checkout::from_payload(&payload, &root)? {
+        None => Ok(None),
+        Some(c) => c.confine(&root).map(Some).map_err(|e| {
+            confine::miss(
+                checkout::CheckoutError::Unknown,
+                "confining the checkout",
+                &e,
+            )
+        }),
+    })
+    .await;
+    match confined {
         Some(Ok(c)) => Ok(c),
         Some(Err(e)) => Err(serde_json::json!({ "status": "error", "message": e.to_string() })),
         None => Err(serde_json::json!({ "status": "error", "reason": "unavailable" })),
@@ -90,10 +102,10 @@ pub(crate) async fn checkout_of(
 /// git-backed family (`Verb::takes_checkout_cwd`), the registry path for every
 /// other verb — which never reads the key, so it never answers `unknown
 /// checkout` either. Resolved AFTER the argv composed (a malformed param keeps
-/// its "invalid … options" reply) and BEFORE any spawn. The worktree dir is
-/// confined against the registered root exactly as the searches confine their
-/// walk root: a `.ralphy/worktrees/<name>` that is a symlink out of the repo
-/// is `unknown checkout` here too, never a cwd for `changes discard`.
+/// its "invalid … options" reply) and BEFORE any spawn. The cwd is the lexical
+/// folder of the confined checkout: a `.ralphy/worktrees/<name>` that is a
+/// symlink out of the repo is `unknown checkout`, never a cwd for `changes
+/// discard`.
 pub(crate) async fn spawn_cwd(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
@@ -102,15 +114,9 @@ pub(crate) async fn spawn_cwd(
     if !verb.takes_checkout_cwd() {
         return Ok(repo_path.to_path_buf());
     }
-    let Some(c) = checkout_of(cmd, repo_path).await? else {
-        return Ok(repo_path.to_path_buf());
-    };
-    let (root, rel) = (repo_path.to_path_buf(), c.prefix(""));
-    match blocking_read(move || confine::confine(&root, &rel)).await {
-        Some(Ok(_)) => Ok(c.dir(repo_path)),
-        Some(Err(_)) => Err(serde_json::json!({ "status": "error", "message": checkout::UNKNOWN })),
-        None => Err(serde_json::json!({ "status": "error", "reason": "unavailable" })),
-    }
+    Ok(checkout_of(cmd, repo_path)
+        .await?
+        .map_or_else(|| repo_path.to_path_buf(), |c| c.cwd().to_path_buf()))
 }
 
 /// Answer one non-streaming verb by effect class. The optional `checkout`
@@ -176,26 +182,10 @@ async fn note_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Va
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    // The worktree dir is confined against the REGISTERED root before it is
-    // used as one, exactly as `spawn_cwd` confines it: a
-    // `.ralphy/worktrees/<name>` that is a symlink out of the repo is
-    // `unknown checkout` here too, never a root a write confines against.
-    let root = match &checkout {
-        None => repo_path.to_path_buf(),
-        Some(c) => {
-            let (base, prefix) = (repo_path.to_path_buf(), c.prefix(""));
-            match blocking_read(move || confine::confine(&base, &prefix)).await {
-                Some(Ok(_)) => c.dir(repo_path),
-                Some(Err(_)) => {
-                    return serde_json::json!({
-                        "status": "error",
-                        "message": checkout::UNKNOWN,
-                    })
-                }
-                None => return serde_json::json!({ "status": "error", "reason": "unavailable" }),
-            }
-        }
-    };
+    // `checkout_of` confined the worktree folder against the REGISTERED root:
+    // a `.ralphy/worktrees/<name>` that is a symlink out of the repo is
+    // `unknown checkout`, never a root a write confines against.
+    let root = checkout.map_or_else(|| repo_path.to_path_buf(), |c| c.root().to_path_buf());
     let markdown = markdown.to_string();
     match blocking_read(move || note::write(&root, &rel, &markdown)).await {
         Some(Ok(())) => serde_json::json!({ "status": "ok" }),

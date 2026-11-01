@@ -713,7 +713,8 @@ is refused exactly as `tree.list` refuses it. The watch socket applies the
 shape gate only (no reply frame to refuse in; the `tree.list` of the same
 level precedes every watch) and DROPS a frame whose `checkout` is present but
 malformed — an empty string or a non-string never silently holds a primary
-watch.
+watch. (The amendment of 2026-11-01 below replaces the last two sentences:
+every door now takes one confined value, the watch door included.)
 
 ## Amendment (2026-09-16): the registry self-heals on a gained remote
 
@@ -1451,3 +1452,38 @@ not change.
 - The verb count grows from 53 to 54.
 - `.ralphy/uploads/` is a new folder that the daemon owns, like
   `.ralphy/clipboard/`.
+
+## Amendment (2026-11-01, issue #842): a checkout gives only a confined root
+
+This amends the `checkout` part of the `worktree.list` amendment
+(2026-09-15).
+
+- **One value.** `Checkout::confine` confines
+  `<root>/.ralphy/worktrees/<name>` against the registered root (§5) and
+  returns a `ConfinedCheckout`. It is the only way from a checkout name to
+  a directory: `Checkout` has no public directory method. Every door that
+  uses the folder takes this value: the Observe verbs, the `current_dir` of
+  the git-backed verbs, `note.write`, the console launch, the `/ws/tree`
+  `watch` and `head.watch`, and the read of the HEAD pointer
+  (`checkout::head_rels`). A folder that leaves the root (a symlink out of
+  the repo) is `unknown checkout` from every verb, the reads included.
+- **Two strategies, one per use.** `ConfinedCheckout::cwd` is the lexical
+  path, for the `current_dir` of a child: the canonical form on Windows
+  starts with `\\?\`, and a child program may not accept that.
+  `ConfinedCheckout::root` is the canonical path, for a walk, a write root
+  and the pointer read: confinement compares canonical paths. A read that
+  confines against the primary root keeps the prefixed `rel`.
+- **The watch door confines.** `/ws/tree` still applies the shape gate and
+  drops a malformed frame. For a local watch it then resolves the name
+  against the pointer file and confines the folder. A refusal holds no
+  watch and writes one log line. The socket has no refusal frame; the
+  `tree.list` of the same level answers `unknown checkout` first. A peer
+  applies the same door to its own repos.
+
+**Rejected:**
+
+- **Keep the directory method public, with a doc comment.** A caller can
+  still skip the confinement. That is how two doors missed it before
+  (`cfba9d8b`, `a494cab3`).
+- **A refusal frame on the watch socket.** The socket has none, and the
+  listing that comes before every watch already tells the client.
