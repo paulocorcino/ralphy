@@ -87,6 +87,8 @@ export function buildConsoleApi(parts: ConsoleParts) {
     boot: desk.boot,
     open: spawn.open,
     relaunchRequest: WBConsoleSession.relaunchRequest,
+    // The store `checkouts` says its worktree listing of a ref changed: the
+    // titles of that repo are drawn again.
     ingestWorktrees: title.ingestWorktrees,
     ingestSessions: feeds.ingestSessions,
     ingestProjects: feeds.ingestProjects,
@@ -189,6 +191,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
     checkouts: records.allCheckouts,
     checkoutMenu: title.checkoutMenu,
     checkoutMenuRows: title.checkoutMenuRows,
+    // Asks the store `checkouts` to read the listing of a ref.
     ensureListing: title.ensureListing,
     askNotice: messages.askNotice,
     // The note card asks the same question the stage's own verbs do (ADR-0064

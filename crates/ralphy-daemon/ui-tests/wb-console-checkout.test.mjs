@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createCheckoutSwitcher } from "../assets/ui/wb-console-checkout.ts";
+import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 
 // An element with the few DOM members the menu and the prompt use. `all`
 // records every element the document made, so a test finds the prompt's
@@ -72,11 +73,25 @@ function openPrompt({ branchList, adds }) {
     },
   };
   const emitted = [];
-  globalThis.WB = { emit: (type, detail) => emitted.push([type, detail]) };
+  const store = checkoutsStore({ messages: { flash() {} } });
+  const window = {
+    WBDaemon: daemon,
+    Alpine: { store: () => store },
+    addEventListener() {},
+    dispatchEvent: () => true,
+  };
+  globalThis.window = window;
+  // The shell's `worktree-created` action reads the listing again (wb-wire.ts).
+  globalThis.WB = {
+    emit: (type, detail) => {
+      emitted.push([type, detail]);
+      if (type === "worktree-created") void store.ensureWorktreeListing(detail.project, true);
+    },
+  };
   const relaunched = [];
   const writes = [];
   const switcher = createCheckoutSwitcher({
-    window: { WBDaemon: daemon },
+    window,
     document,
     OPTS: {},
     wins: new Set(),
@@ -152,8 +167,19 @@ test("a worktree.add the daemon never answers asks the prompt again, with the er
   assert.deepEqual(t.emitted[0][1], { project: "o/r", name: "feat-x", message: "made" });
   assert.deepEqual(t.relaunched, ["feat-x"]);
   assert.deepEqual(t.writes, [{ checkout: "feat-x" }]);
-  const verbs = t.calls.map(([verb]) => verb);
-  assert.deepEqual(verbs, ["branch.list", "worktree.add", "worktree.add", "worktree.list"], "the listing is read again after the create");
+});
+
+test("a worktree created from a console is listed by one read", async () => {
+  const t = openPrompt({ branchList: ok, adds: [{ status: "ok", message: "made" }] });
+  await settle();
+  const prompt = promptFields(t.all);
+  prompt.name.value = "feat-x";
+  prompt.create.fire("click");
+  await settle();
+  assert.deepEqual(
+    t.calls.filter(([verb]) => verb === "worktree.list"),
+    [["worktree.list", { repo: "o/r" }]],
+  );
 });
 
 test("the prompt starts from the current branch the daemon names, in a list of its branches", async () => {

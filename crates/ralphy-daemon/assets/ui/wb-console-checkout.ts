@@ -64,12 +64,12 @@ type WorktreeAnswer = { name: string; base: string } | null;
 
 // What the switcher reads from the console, and nothing else.
 export type CheckoutDeps = {
-  // The console's page: the daemon client (`window.WBDaemon`) the listing
-  // read and the worktree create go through.
+  // The console's page: the store `checkouts` that holds the listing, and the
+  // daemon client (`window.WBDaemon`) the worktree create goes through.
   window: Window;
   // The page the menu and the prompt build their elements in and listen on.
   document: Document;
-  // The console's options: the detached popup cannot launch, so it reads no
+  // The console's options: the detached popup cannot launch, so it asks for no
   // listing.
   OPTS: { canLaunch?: boolean };
   // The console windows on this page.
@@ -102,34 +102,26 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
 
   // ---- the title's worktree segment as a switcher (#412) --------------------
   //
-  // Listing per repo ref. Only a repo with at least one worktree gets a
-  // switcher. Fed by the shell (`ingestWorktrees`, from every `worktree.list` it
-  // reads for the picker) and, for a repo the picker never opened, by ONE read
-  // of our own per ref at the first agent window — `worktree.list` is a git
-  // spawn, so never per render and never periodic.
-  const worktreeListings: Record<string, Listing | null> = {};
-  const listingReads = new Map<string, Promise<void>>();
-  function ingestWorktrees(ref: string, listing: Listing | null | undefined) {
+  // The listing per repo ref is the store `checkouts`' (wb-checkouts-store.ts),
+  // which leaves out a worktree whose delete is in flight. The console holds no
+  // copy: it reads the store at each use and redraws the titles of a repo when
+  // the store says its listing changed (`ingestWorktrees`). Only a repo with at
+  // least one worktree gets a switcher.
+  function listingOf(ref: string | null | undefined) {
+    return window.Alpine?.store("checkouts")?.listingOf(ref) ?? null;
+  }
+  function ingestWorktrees(ref: string) {
     if (!ref) return;
-    worktreeListings[ref] = listing || null;
     for (const win of wins) {
       if (win._deskRepo === ref && win._title && win._presentation) {
         renderTitle(win, win._title, win._presentation);
       }
     }
   }
+  // Asks the store to read the repo's listing: one read per ref, cached.
   function ensureListing(ref: string | null | undefined, force = false) {
-    if (!ref || ref === "~" || (ref in worktreeListings && !force) || listingReads.has(ref)) return;
-    const daemon = window.WBDaemon;
-    if (typeof daemon?.observe !== "function" || OPTS.canLaunch === false) return;
-    const read = daemon
-      .observe("worktree.list", { repo: ref })
-      .then((reply) => {
-        ingestWorktrees(ref, reply && reply.status === "ok" ? reply.checkouts || null : null);
-      })
-      .catch(() => ingestWorktrees(ref, null))
-      .finally(() => listingReads.delete(ref));
-    listingReads.set(ref, read);
+    if (OPTS.canLaunch === false) return;
+    void window.Alpine?.store("checkouts")?.ensureWorktreeListing(ref, force);
   }
   // The switcher's rows: `primary` first, then the worktrees in listing order,
   // each with its dirty flag; the current one marked. With `sessions` (rows with
@@ -306,7 +298,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     checkoutMenu({
       anchor,
       host: win,
-      rows: checkoutMenuRows(worktreeListings[ref], win._deskCheckout ?? null, sessionsOfRepo(ref)),
+      rows: checkoutMenuRows(listingOf(ref), win._deskCheckout ?? null, sessionsOfRepo(ref)),
       onPick: (row) => {
         void switchCheckout(win, row.primary ? null : row.name);
       },
@@ -517,7 +509,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       const ask = await askWorktree({
         base,
         branches,
-        listing: worktreeListings[repo],
+        listing: listingOf(repo),
         error,
         name,
       });
@@ -560,9 +552,8 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     } catch {}
     return { branches, base };
   }
-  // The listing is read again, then the shell is told the worktree exists.
+  // The shell is told the worktree exists; it reads the listing again.
   function announceWorktree(repo: string, name: string, reply: { message?: unknown }) {
-    ensureListing(repo, true);
     WB.emit("worktree-created", {
       project: repo,
       name,
