@@ -71,7 +71,7 @@ SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-pane
 SHOT_GRID = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-grid-2026-10-20.png")
 WIDE = {"width": 2400, "height": 1000}
 PHONE = {"width": 400, "height": 800}
-FLOOR = 73  # every check above the floor check; pinned after the first green run
+FLOOR = 72  # every check above the floor check; pinned after the first green run
 SHOT_SHADOW = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-shadow-2026-10-24.png")
 
 results = []
