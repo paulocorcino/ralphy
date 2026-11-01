@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use ralphy_adapter_support::{
-    run_init_session, run_json_session_held, run_text_session, run_text_session_held, HeadlessCall,
-    JsonSession, PromptGate, TextSession,
+    run_init_session, run_json_session, run_json_session_held, run_text_session,
+    run_text_session_held, HeadlessCall, JsonSession, PromptGate, TextSession,
 };
 
 use super::*;
@@ -30,10 +30,11 @@ fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
     assert!(log_path.is_file(), "the log file was written");
     remove_scratch(&log_path);
 
-    // Auth detector fires on the stdout marker → Err carries auth_msg + log path.
+    // The auth detector matches the log, but the child exited 0: the log is only
+    // a log, and the session keeps its result.
     let log_path = temp_log("text-auth");
     remove_scratch(&log_path);
-    let err = run_text_session(
+    let log = run_text_session(
         TextSession {
             cmd: child_cmd("clean"),
             prompt: "ignored prompt",
@@ -45,16 +46,8 @@ fn run_text_session_returns_the_log_and_bails_on_auth_then_timeout() {
         },
         |log| log.contains(CLEAN_STDOUT),
     )
-    .expect_err("an auth match must bail");
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("AUTH FAILED"),
-        "err names the auth message: {msg}"
-    );
-    assert!(
-        msg.contains(&log_path.display().to_string()),
-        "err names the log path: {msg}"
-    );
+    .expect("a child that exited 0 is not an auth failure");
+    assert!(log.contains(CLEAN_STDOUT), "the log is returned: {log}");
     remove_scratch(&log_path);
 
     // Sleep child (no auth match) → timeout bail with timeout_msg.
@@ -114,6 +107,109 @@ fn run_init_session_clears_a_stale_artifact_before_the_run() {
     assert!(
         !out_path.exists(),
         "the stale artifact was removed before the run"
+    );
+    remove_scratch(&log_path);
+}
+
+// These mirror the constants in `src/bin/headless_test_child.rs`.
+const AUTH_TEXT: &str = "not-logged-in: please run login";
+const ARTIFACT_TEXT: &str = "the-artifact";
+
+fn has_auth_text(log: &str) -> bool {
+    log.contains(AUTH_TEXT)
+}
+
+/// Run `child_cmd(mode)` plus `args` as a text session whose detector is
+/// [`has_auth_text`].
+fn auth_text_session(
+    mode: &str,
+    args: &[&str],
+    timeout: Duration,
+    log: &Path,
+) -> anyhow::Result<String> {
+    let mut cmd = child_cmd(mode);
+    cmd.args(args);
+    run_text_session(
+        TextSession {
+            cmd,
+            prompt: "ignored prompt",
+            timeout,
+            log_path: log,
+            spawn_err: "failed to spawn the test child",
+            auth_msg: "AUTH FAILED",
+            timeout_msg: "TIMED OUT",
+        },
+        has_auth_text,
+    )
+}
+
+#[test]
+fn a_clean_text_session_with_auth_text_returns_its_log() {
+    let log_path = temp_log("clean-auth-text");
+    remove_scratch(&log_path);
+    let log = auth_text_session("auth-exit", &["0"], Duration::from_secs(30), &log_path)
+        .expect("a child that exits 0 keeps its result, whatever its log quotes");
+    assert!(log.contains(AUTH_TEXT), "the log is returned: {log}");
+    remove_scratch(&log_path);
+}
+
+#[test]
+fn a_clean_json_session_with_auth_text_returns_its_artifact() {
+    let log_path = temp_log("clean-auth-json-log");
+    let out_path = temp_log("clean-auth-json-out");
+    remove_scratch(&log_path);
+    remove_scratch(&out_path);
+    let mut cmd = child_cmd("artifact-then-auth");
+    cmd.arg(&out_path);
+    let artifact = run_json_session(
+        JsonSession {
+            cmd,
+            prompt: "ignored prompt",
+            timeout: Duration::from_secs(30),
+            log_path: &log_path,
+            out_path: &out_path,
+            spawn_err: "failed to spawn the test child",
+            auth_msg: "AUTH FAILED",
+            timeout_msg: "TIMED OUT",
+            missing_msg: "NO ARTIFACT",
+        },
+        has_auth_text,
+        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+    )
+    .expect("a session that wrote its artifact and exited 0 keeps it");
+    assert_eq!(artifact, ARTIFACT_TEXT);
+    remove_scratch(&log_path);
+    remove_scratch(&out_path);
+}
+
+#[test]
+fn a_failed_session_with_auth_text_returns_the_auth_error() {
+    let log_path = temp_log("failed-auth-text");
+    remove_scratch(&log_path);
+    let err = auth_text_session("auth-exit", &["1"], Duration::from_secs(30), &log_path)
+        .expect_err("a child that exits 1 with a login error is an auth failure");
+    assert_eq!(
+        format!("{err}"),
+        format!("AUTH FAILED (see {})", log_path.display())
+    );
+    remove_scratch(&log_path);
+}
+
+#[test]
+fn a_timed_out_session_with_auth_text_returns_the_auth_error() {
+    let log_path = temp_log("timeout-auth-text");
+    remove_scratch(&log_path);
+    let err = auth_text_session(
+        "auth-then-sleep",
+        &[],
+        Duration::from_millis(1500),
+        &log_path,
+    )
+    .expect_err("a killed child with a login error in its log is an auth failure");
+    assert_eq!(
+        format!("{err}"),
+        format!("AUTH FAILED (see {})", log_path.display()),
+        "the auth error comes before the timeout error"
     );
     remove_scratch(&log_path);
 }

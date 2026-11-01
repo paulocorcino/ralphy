@@ -55,6 +55,13 @@
 //!   `SessionStart` line to the file named by `RALPHY_STATUS_FILE`, then behave
 //!   as `record-stdin`. The shape of a Claude session that fires its first hook
 //!   event on its own, before it has read a prompt.
+//! - `auth-exit <code>` — write [`AUTH_TEXT`] to stdout, then exit with `<code>`.
+//!   A vendor CLI that quotes a login error in its log, with or without failing.
+//! - `auth-then-sleep` — write [`AUTH_TEXT`] to stdout, then sleep ~60s: the same
+//!   log from a child that never exits on its own.
+//! - `artifact-then-auth <path>` — write [`ARTIFACT_TEXT`] to the file `<path>`,
+//!   write [`AUTH_TEXT`] to stdout, then exit 0: a session that did its work and
+//!   whose log quotes a login error.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
@@ -91,6 +98,12 @@ pub const DEGRADED_MARKER: &str = "Waiting for API response";
 /// orphan — capturing it proves the reader reached EOF past the leaked pipe.
 pub const LEAK_MARKER: &str = "output-before-the-leak";
 
+/// The stdout line the `auth-*` children write: a login error the test's own
+/// detector matches on.
+pub const AUTH_TEXT: &str = "not-logged-in: please run login";
+/// The file body the `artifact-then-auth` child writes.
+pub const ARTIFACT_TEXT: &str = "the-artifact";
+
 /// How long `session-start-then-record` waits before it writes its `SessionStart` line.
 pub const SESSION_START_DELAY: Duration = Duration::from_millis(500);
 
@@ -103,6 +116,12 @@ fn record_stdin() {
         eprintln!("failed to record stdin to {path}: {e}");
         std::process::exit(3);
     }
+}
+
+/// Write [`AUTH_TEXT`] to stdout as a full line, flushed.
+fn print_auth_text() {
+    println!("{AUTH_TEXT}");
+    let _ = std::io::stdout().flush();
 }
 
 /// Append the `SessionStart` hook line to `$RALPHY_STATUS_FILE`.
@@ -239,6 +258,26 @@ fn main() {
             std::thread::sleep(SESSION_START_DELAY);
             announce_session_start();
             record_stdin();
+        }
+        "auth-exit" => {
+            print_auth_text();
+            let code = std::env::args()
+                .nth(2)
+                .and_then(|c| c.parse::<i32>().ok())
+                .unwrap_or(0);
+            std::process::exit(code);
+        }
+        "auth-then-sleep" => {
+            print_auth_text();
+            std::thread::sleep(Duration::from_secs(60));
+        }
+        "artifact-then-auth" => {
+            let path = std::env::args().nth(2).unwrap_or_default();
+            if let Err(e) = std::fs::write(&path, ARTIFACT_TEXT) {
+                eprintln!("failed to write the artifact to {path}: {e}");
+                std::process::exit(3);
+            }
+            print_auth_text();
         }
         "large" => {
             // A repeating byte pattern, written in one shot, so the test can assert

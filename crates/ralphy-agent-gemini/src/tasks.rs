@@ -102,7 +102,7 @@ pub(crate) fn one_shot_command(
 /// only when no plan was written, and `classify_gemini_outcome`'s is
 /// `(!succeeded).then(…)` ("a revocation must never flip a run that succeeded").
 fn one_shot_succeeded(out: &ralphy_adapter_support::HeadlessOutput) -> bool {
-    out.exit.map(|s| s.success()).unwrap_or(false) && !out.timed_out
+    out.exited_cleanly()
 }
 
 /// The one-shot's stop ladder for a session that did NOT succeed, in the SAME
@@ -148,6 +148,14 @@ pub(crate) fn one_shot_stop(log: &str, exit_code: Option<i32>, timed_out: bool) 
 /// send must cost none of that.
 fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) -> Result<String> {
     let out = ralphy_adapter_support::run_headless(cmd, prompt, timeout).context(SPAWN_ERR)?;
+    judge_one_shot(out, log_path)
+}
+
+/// Everything [`run_one_shot`] does once the child has finished: persist the log,
+/// keep the log of a session that succeeded, and turn any other end into an error.
+/// A login error in the log is judged only for a session that did not succeed:
+/// the log of a good run may quote one.
+fn judge_one_shot(out: ralphy_adapter_support::HeadlessOutput, log_path: &Path) -> Result<String> {
     let succeeded = one_shot_succeeded(&out);
     let (code, timed_out) = (out.exit.and_then(|s| s.code()), out.timed_out);
     let mut log = out.stdout;
@@ -158,13 +166,13 @@ fn run_one_shot(cmd: Command, prompt: &str, timeout: Duration, log_path: &Path) 
     )]
     let _ = fs::write(log_path, &log);
 
-    if is_gemini_auth_error(&log) {
-        bail!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display());
-    }
     if succeeded {
         // The `--output-format stream-json` stream is captured in `log`; callers
         // that need token usage (consolidate) fold it, the rest drop it.
         return Ok(log);
+    }
+    if is_gemini_auth_error(&log) {
+        bail!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display());
     }
     match one_shot_stop(&log, code, timed_out) {
         Some(msg) => bail!("{msg} (see {})", log_path.display()),
@@ -521,39 +529,100 @@ mod tests {
     /// managed host prints the tool-server notice in every log, and a backlog or
     /// triage thread may merely MENTION a rate limit — neither may cost a session
     /// that exited 0 its artifact.
-    ///
-    /// Pinned on the source because the alternative is spawning a real child: the
-    /// production path must consult `one_shot_stop` only AFTER the success gate,
-    /// and must return early on success.
     #[test]
     fn a_successful_one_shot_is_never_failed_by_its_own_log() {
         // The rungs are live on these strings — which is exactly why the gate
         // must exist.
-        assert!(one_shot_stop("MCP server disabled by administrator\n", Some(0), false).is_some());
-        assert!(one_shot_stop("the backlog mentions a rate limit\n", Some(0), false).is_some());
+        assert!(one_shot_stop(
+            "MCP server disabled by administrator
+",
+            Some(0),
+            false
+        )
+        .is_some());
+        assert!(one_shot_stop(
+            "the backlog mentions a rate limit
+",
+            Some(0),
+            false
+        )
+        .is_some());
 
-        let src = crate::tests::production_text(include_str!("tasks.rs"));
-        let body = &src[src
-            .find("fn run_one_shot(")
-            .expect("run_one_shot must exist")..];
-        let at = |needle: &str| {
-            body.find(needle)
-                .unwrap_or_else(|| panic!("run_one_shot must contain {needle:?}"))
-        };
-        assert!(
-            at("if succeeded {") < at(concat!("one_shot_", "stop(&log")),
-            "the success gate must precede the ladder, or a green session's own \
-             words can fail it"
-        );
-        assert!(
-            at("return Ok(log)") < at(concat!("one_shot_", "stop(&log")),
-            "a successful session must return before the ladder is consulted"
-        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        for text in [
+            "MCP server disabled by administrator
+",
+            "the backlog mentions a rate limit
+",
+        ] {
+            let log_path = dir.path().join("one-shot.log");
+            let kept = judge_one_shot(finished(0, text), &log_path)
+                .expect("a session that exited 0 is not failed by its own log");
+            assert_eq!(kept, text);
+        }
+
         // …and the log is persisted before ANY bail, so every error message's
         // `(see <log>)` points at a file that exists.
-        assert!(
-            at("fs::write(log_path") < at("bail!("),
-            "the combined log must be written before the first bail"
+        let log_path = dir.path().join("failed.log");
+        judge_one_shot(
+            finished(
+                1,
+                "Error: quota exceeded
+",
+            ),
+            &log_path,
+        )
+        .expect_err("a failed session is an error");
+        assert_eq!(
+            fs::read_to_string(&log_path).expect("the log was written"),
+            "Error: quota exceeded
+"
+        );
+    }
+
+    /// A finished child with the given exit code, whose stdout is `stdout`.
+    fn finished(code: i32, stdout: &str) -> ralphy_adapter_support::HeadlessOutput {
+        #[cfg(unix)]
+        let exit = std::os::unix::process::ExitStatusExt::from_raw(code << 8);
+        #[cfg(windows)]
+        let exit = std::os::windows::process::ExitStatusExt::from_raw(code as u32);
+        ralphy_adapter_support::HeadlessOutput {
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+            timed_out: false,
+            idle_killed: false,
+            stopped: false,
+            exit: Some(exit),
+        }
+    }
+
+    #[test]
+    fn a_clean_one_shot_with_auth_text_keeps_its_log() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log_path = dir.path().join("one-shot.log");
+        let text = "Please set an Auth method in your settings
+";
+        let kept = judge_one_shot(finished(0, text), &log_path)
+            .expect("a one-shot that exited 0 keeps its result");
+        assert_eq!(kept, text);
+    }
+
+    #[test]
+    fn a_failed_one_shot_with_auth_text_is_an_auth_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log_path = dir.path().join("one-shot.log");
+        let err = judge_one_shot(
+            finished(
+                1,
+                "Please set an Auth method in your settings
+",
+            ),
+            &log_path,
+        )
+        .expect_err("a one-shot that failed with a login error is an auth failure");
+        assert_eq!(
+            err.to_string(),
+            format!("{GEMINI_AUTH_ERROR_MSG} (see {})", log_path.display())
         );
     }
 

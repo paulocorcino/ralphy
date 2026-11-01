@@ -99,7 +99,7 @@ impl ClaudeAgent {
         // The detectors read the text of the stream; the raw log stays on
         // disk as it came.
         let text = stream_text(&r.log);
-        if is_claude_auth_error(&text) {
+        if is_exec_auth_failure(r.exited_cleanly, &text) {
             bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
         }
 
@@ -190,6 +190,13 @@ impl ClaudeAgent {
         );
         Ok(headless_reason_to_outcome(HeadlessReason::MaxCalls))
     }
+}
+
+/// Whether a headless exec call failed on login: a login error in its text, from
+/// a call that did not exit cleanly. A call that exited cleanly keeps its result,
+/// whatever its text quotes.
+fn is_exec_auth_failure(exited_cleanly: bool, text: &str) -> bool {
+    !exited_cleanly && is_claude_auth_error(text)
 }
 
 /// The headless `-p` degraded-line matcher, handed to the shared runner's
@@ -352,6 +359,13 @@ mod tests {
             "message": { "role": "assistant", "content": [ { "type": "text", "text": text } ] }
         })
         .to_string()
+    }
+
+    #[test]
+    fn a_clean_exec_with_auth_text_is_not_an_auth_error() {
+        let text = "Not logged in \u{00b7} Please run /login\n";
+        assert!(!is_exec_auth_failure(true, text));
+        assert!(is_exec_auth_failure(false, text));
     }
 
     #[test]

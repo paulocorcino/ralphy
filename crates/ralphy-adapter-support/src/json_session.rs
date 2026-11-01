@@ -183,9 +183,15 @@ pub fn run_init_session<T>(
 /// Sibling of [`run_json_session`] for one-shots that produce **no JSON artifact**
 /// (Claude's `consolidate_knowledge`): spawn via [`run_headless`], combine
 /// stdout+stderr into the log and persist it at `log_path`, `bail!` on an auth
-/// failure (`auth_error(&log)`), then `bail!` on a wall timeout — in that exact
-/// order — and return the combined log verbatim on success. This is the shared
-/// body [`run_json_session`] layers its read+validate onto.
+/// failure, then `bail!` on a wall timeout — in that exact order — and return the
+/// combined log verbatim on success. This is the shared body [`run_json_session`]
+/// layers its read+validate onto.
+///
+/// An auth failure is `auth_error(&log)` on a run that did not exit cleanly (see
+/// [`HeadlessOutput::exited_cleanly`](crate::HeadlessOutput::exited_cleanly)): a
+/// session that exited 0 keeps its result even when its log quotes a login error.
+/// A killed child has no clean exit, so a timeout with an auth line still reports
+/// the auth error.
 pub fn run_text_session(
     session: TextSession<'_>,
     auth_error: impl Fn(&str) -> bool,
@@ -224,6 +230,7 @@ fn text_session(
         None => run_headless(cmd, prompt, timeout),
     }
     .map_err(|e| with_spawn_context(e, spawn_err))?;
+    let exited_cleanly = r.exited_cleanly();
     let mut log = r.stdout;
     log.push_str(&r.stderr);
     #[expect(
@@ -232,7 +239,7 @@ fn text_session(
     )]
     let _ = fs::write(log_path, &log);
 
-    if auth_error(&log) {
+    if !exited_cleanly && auth_error(&log) {
         bail!("{} (see {})", auth_msg, log_path.display());
     }
     if r.timed_out {
