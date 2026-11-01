@@ -4,7 +4,7 @@
 //! ladder that orders those signals into a core [`Outcome`] (Camada 2), so the
 //! precedence is verified once instead of drifting across three CLIs.
 
-use ralphy_core::Outcome;
+use ralphy_core::{Outcome, ResetAt};
 
 /// The vendor-extracted signals a session's raw end state reduces to, before the
 /// shared precedence ladder orders them (ADR-0023 D1). Each field is filled by the
@@ -17,9 +17,9 @@ pub struct CompletionSignals {
     /// A `RALPHY_BLOCKED_EXIT <reason>` sentinel was seen; carries the trimmed reason.
     pub blocked: Option<String>,
     /// A *trustworthy* usage limit fired. Outer `Some` = a limit was detected;
-    /// inner `Option<String>` = the parsed reset hint (`None` when none was found).
+    /// inner `Option<ResetAt>` = the parsed reset (`None` when none was found).
     /// Trustworthiness is a vendor decision made during extraction (D1/D5).
-    pub limit: Option<Option<String>>,
+    pub limit: Option<Option<ResetAt>>,
     /// A new commit landed this call. Progress signal only — it feeds streak
     /// heuristics, never the `Done` gate (ADR-0023 D3).
     pub committed: bool,
@@ -58,14 +58,18 @@ mod tests {
 
     #[test]
     fn ladder_matches_adr_0023_d2() {
+        let reset = ResetAt {
+            text: "R".into(),
+            at: None,
+        };
         // (a) limit outranks timeout.
         assert_eq!(
             classify(CompletionSignals {
-                limit: Some(Some("R".into())),
+                limit: Some(Some(reset.clone())),
                 timed_out: true,
                 ..Default::default()
             }),
-            Outcome::Limit(Some("R".into()))
+            Outcome::Limit(Some(reset))
         );
         // (b) limit outranks done.
         assert_eq!(

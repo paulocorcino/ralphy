@@ -1,6 +1,8 @@
 //! Codex authentication and usage-limit text detection: signals recovered from
 //! `codex exec` stdout/stderr that the process exit code alone can't distinguish.
 
+use ralphy_core::ResetAt;
+
 /// The actionable message surfaced when a run hits a Codex authentication
 /// failure — the account is signed out or its credentials were revoked.
 pub(crate) const CODEX_AUTH_ERROR_MSG: &str =
@@ -53,6 +55,12 @@ pub(crate) fn parse_codex_reset_hint(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The reset of a Codex limit message: the vendor's text and the instant it
+/// names, or `None` when the message names no reset.
+pub(crate) fn codex_reset(text: &str) -> Option<ResetAt> {
+    parse_codex_reset_hint(text).map(|hint| ResetAt::from_vendor_text(&hint))
 }
 
 #[cfg(test)]

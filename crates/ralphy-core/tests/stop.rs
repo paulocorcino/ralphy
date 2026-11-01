@@ -170,7 +170,10 @@ impl Agent for StoppingAgent {
             ralphy_core::stop::request();
         }
         let outcome = if self.limit_first && self.executed.borrow().len() == 1 {
-            Outcome::Limit(Some("15:00".into()))
+            Outcome::Limit(Some(ResetAt {
+                text: "15:00".into(),
+                at: None,
+            }))
         } else {
             Outcome::Done
         };

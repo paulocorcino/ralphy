@@ -2,6 +2,8 @@
 //! `claude` stdout and session transcripts that the process exit code alone
 //! can't distinguish (auth failures vs usage limits vs a genuine stall).
 
+use ralphy_core::ResetAt;
+
 /// The actionable message surfaced when a run hits a Claude Code authentication
 /// failure — the account is signed out or has never been logged in.
 pub(crate) const CLAUDE_AUTH_ERROR_MSG: &str =
@@ -78,13 +80,12 @@ pub(crate) fn is_limit_text(text: &str) -> bool {
 /// The reset hint is parsed from that error line's own text via
 /// [`parse_reset_hhmm`] (e.g. `"You've hit your session limit · resets 8:10am"`
 /// → `Some("08:10")`).
-pub(crate) fn transcript_limit(jsonl: &str) -> Option<Option<String>> {
+pub(crate) fn transcript_limit(jsonl: &str) -> Option<Option<ResetAt>> {
     // Shares the line-delimited-JSON scan scaffold with OpenCode's limit parser
     // (`scan_json_lines`); the rate-limit *predicate* and reset-hint *format* stay
     // Claude-specific.
     ralphy_adapter_support::scan_json_lines(jsonl, |v| {
-        line_is_rate_limit_error(v)
-            .then(|| limit_line_text(v).as_deref().and_then(parse_reset_hhmm))
+        line_is_rate_limit_error(v).then(|| limit_line_text(v).as_deref().and_then(claude_reset))
     })
 }
 
@@ -116,6 +117,12 @@ fn limit_line_text(v: &serde_json::Value) -> Option<String> {
         .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
         .collect();
     (!text.is_empty()).then_some(text)
+}
+
+/// The reset of a Claude limit text: the parsed hint and the instant it names,
+/// or `None` when the text names no reset.
+pub(crate) fn claude_reset(text: &str) -> Option<ResetAt> {
+    parse_reset_hhmm(text).map(|hint| ResetAt::from_vendor_text(&hint))
 }
 
 /// Parse a reset time from a usage-limit transcript. Looks for a pattern like
@@ -176,7 +183,10 @@ mod tests {
     #[test]
     fn transcript_limit_detects_real_429_error_line() {
         let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
-        assert_eq!(transcript_limit(&t), Some(Some("08:10".into())));
+        assert_eq!(
+            transcript_limit(&t),
+            Some(Some(ResetAt::from_vendor_text("08:10")))
+        );
     }
 
     #[test]

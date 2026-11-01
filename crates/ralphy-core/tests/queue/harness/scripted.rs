@@ -13,7 +13,16 @@ use super::repo::git;
 /// `PlanLimit` error (a usage limit before any plan was written); once the
 /// queue drains, `plan()` succeeds normally.
 pub(crate) enum PlanScript {
-    Limit(Option<String>),
+    Limit(Option<ResetAt>),
+}
+
+/// A limit's reset with the vendor's `text` and no instant. The scripted
+/// clock records only the text, so no test here needs the instant.
+pub(crate) fn reset_text(text: &str) -> Option<ResetAt> {
+    Some(ResetAt {
+        text: text.to_string(),
+        at: None,
+    })
 }
 
 /// Where a scripted agent refuses with `HooksUnproven`.

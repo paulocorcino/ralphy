@@ -8,6 +8,8 @@
 //! it in. These helpers return a `bool`/`Option`, never an `Outcome`: the seam
 //! ADR-0002 protects (each adapter's `classify_*`) stays untouched.
 
+use ralphy_core::ResetAt;
+
 /// Return `true` when `text` matches any auth marker **group**. The outer slice is
 /// OR (any group matching wins); each inner slice is AND (every substring in the
 /// group must be present in `text`). Matching is case-insensitive, so **markers
@@ -53,14 +55,14 @@ pub fn scan_json_lines<T>(
 /// - `None` — no limit was detected.
 ///
 /// The vendor supplies both halves: `is_limit` decides whether `text` shows a
-/// usage limit at all, and `reset_hint` extracts the (best-effort) reset string in
+/// usage limit at all, and `reset_hint` extracts the (best-effort) reset from
 /// that vendor's own format. Used by the text-based Claude and Codex detectors;
 /// OpenCode's structural JSON parser produces the same shape via [`scan_json_lines`].
 pub fn detect_limit(
     text: &str,
     is_limit: impl Fn(&str) -> bool,
-    reset_hint: impl Fn(&str) -> Option<String>,
-) -> Option<Option<String>> {
+    reset_hint: impl Fn(&str) -> Option<ResetAt>,
+) -> Option<Option<ResetAt>> {
     is_limit(text).then(|| reset_hint(text))
 }
 

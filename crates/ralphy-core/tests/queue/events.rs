@@ -168,7 +168,13 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
     let repo = init_repo("exec-usage-resume");
     let queue = vec![issue(7)];
     let agent = ScriptedAgent::scripted(vec![
-        (Outcome::Limit(Some("15:00".into())), false),
+        (
+            Outcome::Limit(Some(ralphy_core::ResetAt {
+                text: "15:00".into(),
+                at: None,
+            })),
+            false,
+        ),
         (Outcome::Done, true),
     ])
     .with_exec_usages(vec![
@@ -458,4 +464,49 @@ fn pins_usage_limit_vocabulary() {
     );
 
     pin(&events, "reset reached — resuming", &["message"]);
+}
+
+#[test]
+fn a_limit_wait_event_carries_the_vendor_reset_text() {
+    // The runner waits on the `ResetAt` the adapter put in `Outcome::Limit`:
+    // the vendor's own words reach the wait event unchanged. The instant is
+    // more than the 5-minute wake buffer in the past, so the real clock
+    // resumes on its first loop turn.
+    let repo = init_repo("limit-wait-vendor-text");
+    let past = chrono::Local::now() - chrono::Duration::minutes(30);
+    let reset = ralphy_core::ResetAt {
+        text: "3:05 PM".into(),
+        at: Some(past.fixed_offset()),
+    };
+    let agent = ScriptedAgent::scripted(vec![
+        (Outcome::Limit(Some(reset)), false),
+        (Outcome::Done, true),
+    ]);
+    let tracker = RecordingTracker::default();
+
+    let (report, events) = capture_run(|| {
+        run_queue(
+            &cfg(&repo, "stamp-limit-wait-vendor-text", false),
+            &[issue(7)],
+            &agent,
+            &tracker,
+            &ralphy_core::WallClock { deadline: None },
+        )
+    });
+    assert!(report.unwrap().stop.is_none());
+
+    let sleep = pin(
+        &events,
+        "usage limit — waiting for reset",
+        &["hint", "message", "reset", "target_epoch"],
+    );
+    assert_eq!(sleep.get("hint"), "3:05 PM");
+    assert_eq!(
+        sleep.get("target_epoch"),
+        (past + chrono::Duration::minutes(5))
+            .timestamp()
+            .to_string()
+    );
+
+    remove_scratch(&repo);
 }

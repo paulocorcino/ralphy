@@ -1,7 +1,6 @@
 //! The execute phase: run the executor over the plan and classify its outcome.
 
 use anyhow::Result;
-use chrono::Local;
 use tracing::info;
 
 use crate::{Execution, Issue, Outcome, Plan, ResetAt, Usage};
@@ -172,9 +171,7 @@ fn advance_streak(streak: u32, before_sha: &Option<String>, after_sha: &Option<S
 fn resume_target(outcome: &Outcome, stop_on_limit_exec: bool) -> Option<(ResetAt, bool)> {
     match outcome {
         // A scheduled reset (Codex/Claude) auto-resumes at its target time.
-        Outcome::Limit(Some(r)) if !stop_on_limit_exec => {
-            Some((ResetAt::from_vendor_text(r, Local::now()), false))
-        }
+        Outcome::Limit(Some(r)) if !stop_on_limit_exec => Some((r.clone(), false)),
         // A limit with no parseable reset is an account-wide pause: park a
         // synthetic ~30-min window and retry, unbounded until the deadline or a
         // human interrupt (ADR-0030). Marked `synthetic` so the no-progress cap

@@ -12,11 +12,11 @@ use anyhow::{bail, Context, Result};
 use ralphy_adapter_support::{
     classify, failed_run_stop, CompletionSignals, HeadlessCall, RunFacts, RunStop, PROMPT_EXECUTE,
 };
-use ralphy_core::{git, plan, Outcome, Plan, Workspace};
+use ralphy_core::{git, plan, Outcome, Plan, ResetAt, Workspace};
 use tracing::info;
 
 use crate::auth::{
-    is_claude_auth_error, is_limit_text, parse_reset_hhmm, transcript_limit, CLAUDE_AUTH_ERROR_MSG,
+    claude_reset, is_claude_auth_error, is_limit_text, transcript_limit, CLAUDE_AUTH_ERROR_MSG,
 };
 use crate::plan::materialize_plugin;
 use crate::settings::SettingsFile;
@@ -248,7 +248,7 @@ pub(crate) fn classify_outcome(
 pub(crate) enum HeadlessReason {
     Done,
     Blocked(String),
-    Limit(Option<String>),
+    Limit(Option<ResetAt>),
     Timeout,
     Stuck,
     MaxCalls,
@@ -268,7 +268,7 @@ pub(crate) fn classify_exec_call(
     let signals = CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(out) || open_steps == 0,
         blocked: ralphy_adapter_support::blocked_reason(out),
-        limit: ralphy_adapter_support::detect_limit(out, is_limit_text, parse_reset_hhmm),
+        limit: ralphy_adapter_support::detect_limit(out, is_limit_text, claude_reset),
         committed: false,
         timed_out: !exited,
         exited_ok: exited,
@@ -410,7 +410,7 @@ mod tests {
         let t = limit_jsonl("You've reached your usage limit; resets 3:00pm");
         assert_eq!(
             classify_outcome(None, false, Some(&t)),
-            Outcome::Limit(Some("15:00".into()))
+            Outcome::Limit(Some(ResetAt::from_vendor_text("15:00")))
         );
     }
 
@@ -421,7 +421,7 @@ mod tests {
         let t = limit_jsonl("You've hit your session limit · resets 8:10am (America/Bahia)");
         assert_eq!(
             classify_outcome(None, false, Some(&t)),
-            Outcome::Limit(Some("08:10".into()))
+            Outcome::Limit(Some(ResetAt::from_vendor_text("08:10")))
         );
     }
 
@@ -481,7 +481,9 @@ mod tests {
         let out = "You've reached your usage limit; resets 3:00pm";
         assert_eq!(
             classify_exec_call(out, false, 5),
-            Some(HeadlessReason::Limit(Some("15:00".into())))
+            Some(HeadlessReason::Limit(Some(ResetAt::from_vendor_text(
+                "15:00"
+            ))))
         );
     }
 
@@ -521,7 +523,9 @@ mod tests {
         let out = "You've reached your usage limit; resets 3:00pm";
         assert_eq!(
             classify_exec_call(out, true, 2),
-            Some(HeadlessReason::Limit(Some("15:00".into())))
+            Some(HeadlessReason::Limit(Some(ResetAt::from_vendor_text(
+                "15:00"
+            ))))
         );
     }
 
@@ -533,7 +537,9 @@ mod tests {
         let out = "RALPHY_DONE_EXIT\nYou've reached your usage limit; resets 3:00pm";
         assert_eq!(
             classify_exec_call(out, true, 0),
-            Some(HeadlessReason::Limit(Some("15:00".into())))
+            Some(HeadlessReason::Limit(Some(ResetAt::from_vendor_text(
+                "15:00"
+            ))))
         );
     }
 

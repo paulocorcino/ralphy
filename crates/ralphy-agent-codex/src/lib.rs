@@ -43,9 +43,7 @@ mod usage;
 /// session delivers fetched screenshots by argv path (ADR-0025 §4).
 pub const ACCEPTS_IMAGES: bool = true;
 
-use auth::{
-    is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint, CODEX_AUTH_ERROR_MSG,
-};
+use auth::{codex_reset, is_codex_auth_error, is_codex_limit_text, CODEX_AUTH_ERROR_MSG};
 use cleanup::remove_stale_file;
 use command::{
     build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
@@ -245,12 +243,8 @@ impl Agent for CodexAgent {
             // it through the same stop-and-report / auto-resume path as an
             // execute-time `Outcome::Limit`, rather than aborting the whole run.
             |log| {
-                ralphy_adapter_support::detect_limit(
-                    log,
-                    is_codex_limit_text,
-                    parse_codex_reset_hint,
-                )
-                .map(|reset| PlanLimit { reset }.into())
+                ralphy_adapter_support::detect_limit(log, is_codex_limit_text, codex_reset)
+                    .map(|reset| PlanLimit { reset }.into())
             },
         )?;
 

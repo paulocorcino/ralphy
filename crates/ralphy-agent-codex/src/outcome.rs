@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use ralphy_adapter_support::{CompletionSignals, HeadlessCall, HeadlessRun};
 use ralphy_core::Outcome;
 
-use crate::auth::{is_codex_auth_error, is_codex_limit_text, parse_codex_reset_hint};
+use crate::auth::{codex_reset, is_codex_auth_error, is_codex_limit_text};
 use crate::CodexAgent;
 
 /// The headless **degraded-line** matcher, handed to the shared runner's
@@ -49,7 +49,7 @@ pub(crate) fn classify_codex_outcome(
     log: &str,
 ) -> Outcome {
     let limit = if !exited_cleanly {
-        ralphy_adapter_support::detect_limit(log, is_codex_limit_text, parse_codex_reset_hint)
+        ralphy_adapter_support::detect_limit(log, is_codex_limit_text, codex_reset)
     } else {
         None
     };
@@ -142,13 +142,33 @@ mod tests {
 
     // ── classify_codex_outcome — limit branch ───────────────────────────────
 
+    /// The reset text of a limit outcome; `None` for any other outcome or a
+    /// limit with no reset.
+    fn reset_text(outcome: Outcome) -> Option<String> {
+        match outcome {
+            Outcome::Limit(reset) => reset.map(|r| r.text),
+            Outcome::Done | Outcome::Blocked(_) | Outcome::Timeout | Outcome::Stuck => None,
+        }
+    }
+
     #[test]
     fn classify_limit_with_reset_hint() {
         let log = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
         assert_eq!(
-            classify_codex_outcome(false, false, false, "", log),
-            Outcome::Limit(Some("2026-06-09T18:00:00Z".into()))
+            reset_text(classify_codex_outcome(false, false, false, "", log)).as_deref(),
+            Some("2026-06-09T18:00:00Z")
         );
+    }
+
+    #[test]
+    fn a_limit_carries_its_reset_text_and_instant() {
+        let log = "You've hit your usage limit. Try again at 3:05 PM.";
+        let Outcome::Limit(Some(reset)) = classify_codex_outcome(false, false, false, "", log)
+        else {
+            panic!("expected a limit with a reset");
+        };
+        assert_eq!(reset.text, "3:05 PM");
+        assert!(reset.at.is_some(), "the instant is set: {reset:?}");
     }
 
     #[test]
@@ -181,14 +201,15 @@ mod tests {
         // ADR-0023 D4 P3: a trustworthy limit on a timed-out run yields Limit, not
         // Timeout — resume-after-reset is the conservative error.
         assert_eq!(
-            classify_codex_outcome(
+            reset_text(classify_codex_outcome(
                 false,
                 true,
                 false,
                 "",
                 "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z."
-            ),
-            Outcome::Limit(Some("2026-06-09T18:00:00Z".into()))
+            ))
+            .as_deref(),
+            Some("2026-06-09T18:00:00Z")
         );
     }
 }

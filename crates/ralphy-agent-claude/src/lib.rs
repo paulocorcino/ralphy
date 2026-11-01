@@ -42,7 +42,7 @@ mod usage;
 /// triage session reasons over a fetched screenshot directly (ADR-0025 §4).
 pub const ACCEPTS_IMAGES: bool = true;
 
-use auth::{is_claude_auth_error, is_limit_text, parse_reset_hhmm, CLAUDE_AUTH_ERROR_MSG};
+use auth::{claude_reset, is_claude_auth_error, is_limit_text, CLAUDE_AUTH_ERROR_MSG};
 use cleanup::remove_stale_file;
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};
@@ -359,7 +359,7 @@ fn plan_from_run(plan_path: &Path, log_path: &Path, run: RunFacts, log: &str) ->
     if !written {
         if is_limit_text(log) {
             return Err(PlanLimit {
-                reset: parse_reset_hhmm(log),
+                reset: claude_reset(log),
             }
             .into());
         }

@@ -25,13 +25,14 @@ fn synthetic_instant(now: DateTime<Local>) -> DateTime<Local> {
 }
 
 impl ResetAt {
-    /// Read the instant out of a vendor's reset text, relative to `now`. Text
-    /// that names no instant gives `at: None`, which waits the synthetic window.
-    /// Temporary: the adapters will own this parse.
-    pub(crate) fn from_vendor_text(text: &str, now: DateTime<Local>) -> Self {
+    /// Read the instant out of a vendor's reset text, relative to the local
+    /// time now. Text that names no instant gives `at: None`, which waits the
+    /// synthetic window. Temporary: the Claude and Codex adapters call it until
+    /// they own this parse (ADR-0068 D2).
+    pub fn from_vendor_text(text: &str) -> Self {
         Self {
             text: text.to_string(),
-            at: next_reset(text, now).map(|t| t.fixed_offset()),
+            at: next_reset(text, Local::now()).map(|t| t.fixed_offset()),
         }
     }
 }
@@ -386,7 +387,7 @@ mod tests {
         };
         let tomorrow = (Local::now() + chrono::Duration::days(1)).to_rfc3339();
         let started = Instant::now();
-        let reset = ResetAt::from_vendor_text(&tomorrow, Local::now());
+        let reset = ResetAt::from_vendor_text(&tomorrow);
         assert_eq!(clock.wait_for_reset(&reset), WaitOutcome::DeadlinePassed);
         assert!(
             started.elapsed() < Duration::from_secs(1),

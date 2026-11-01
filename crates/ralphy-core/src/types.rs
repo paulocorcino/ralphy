@@ -131,16 +131,25 @@ pub enum Outcome {
     Blocked(String),
     Timeout,
     Stuck,
-    Limit(Option<String>),
+    Limit(Option<ResetAt>),
 }
 
 /// When a usage limit lifts: the vendor's own words, and the instant they name.
 /// `at` is `None` when the words name no instant the core can read; the run
 /// clock then waits the synthetic window instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ResetAt {
     pub text: String,
     pub at: Option<chrono::DateTime<chrono::FixedOffset>>,
+}
+
+/// Debug shows only `text`, as a quoted string: the non-green event and the
+/// run summary render an [`Outcome`] with Debug, and the events platform reads
+/// that `outcome` field, so `Limit(Some("15:00"))` keeps its shape.
+impl std::fmt::Debug for ResetAt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.text, f)
+    }
 }
 
 /// A usage/rate limit hit during *planning* — before any plan artifact was
@@ -149,15 +158,15 @@ pub struct ResetAt {
 /// same wait-and-resume / stop-and-report machinery as an execute-time
 /// [`Outcome::Limit`]. `reset` carries the parsed reset hint when present.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("usage limit hit during planning{}", reset_hint(.reset.as_deref()))]
+#[error("usage limit hit during planning{}", reset_hint(.reset.as_ref()))]
 pub struct PlanLimit {
-    pub reset: Option<String>,
+    pub reset: Option<ResetAt>,
 }
 
 /// The ` (reset ~<hint>)` tail of a [`PlanLimit`] message, or nothing.
-fn reset_hint(reset: Option<&str>) -> String {
+fn reset_hint(reset: Option<&ResetAt>) -> String {
     match reset {
-        Some(r) => format!(" (reset ~{r})"),
+        Some(r) => format!(" (reset ~{})", r.text),
         None => String::new(),
     }
 }
@@ -372,10 +381,23 @@ mod tests {
     }
 
     #[test]
+    fn a_limit_outcome_renders_its_reset_text_as_before() {
+        let at = chrono::DateTime::parse_from_rfc3339("2026-06-09T15:00:00-03:00").ok();
+        let outcome = Outcome::Limit(Some(ResetAt {
+            text: "15:00".into(),
+            at,
+        }));
+        assert_eq!(format!("{outcome:?}"), r#"Limit(Some("15:00"))"#);
+    }
+
+    #[test]
     fn core_errors_keep_their_text_plan_and_hooks() {
         assert_eq!(
             PlanLimit {
-                reset: Some("14:00".into())
+                reset: Some(ResetAt {
+                    text: "14:00".into(),
+                    at: None,
+                })
             }
             .to_string(),
             "usage limit hit during planning (reset ~14:00)"
