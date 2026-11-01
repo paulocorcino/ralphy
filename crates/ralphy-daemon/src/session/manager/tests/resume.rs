@@ -115,23 +115,10 @@ fn a_resume_still_works_after_the_screen_broke() {
 /// EXACTLY-ONCE REPLAY INVARIANT with `since`: attaches that resume at one
 /// byte count while a pump publishes get, in their tail and then on their
 /// live receiver, exactly the bytes after that count, and an `offset` at the
-/// end of the tail.
+/// end of the tail. The pump waits for one attach in the middle, so the test
+/// does not depend on the scheduler.
 #[test]
 fn a_resume_while_publishing_gets_every_byte_after_since_once() {
-    // A round where the scheduler ran every attach before or after the pump
-    // proves nothing, so it is run again.
-    let rounds = (0..5)
-        .take_while(|_| resume_while_publishing() == 0)
-        .count();
-    assert!(
-        rounds < 5,
-        "no resume happened while the pump ran, in 5 rounds"
-    );
-}
-
-/// One round of the test above. Returns how many attaches got a tail with
-/// some, but not all, of the lines published after `since`.
-fn resume_while_publishing() -> usize {
     const LINES: usize = 800;
     let line = |i: usize| format!("L{i:04} {}\r\n", "-".repeat(70)).into_bytes();
     let kept = Arc::new(Mutex::new(KeptOutput::new(1, 24, 80)));
@@ -140,39 +127,27 @@ fn resume_while_publishing() -> usize {
         publish(&kept, &tx, line(i));
     }
     let since = replay_and_subscribe(&kept, &tx, None).offset;
-    let start = Arc::new(std::sync::Barrier::new(2));
-    let pump = std::thread::spawn({
-        let (kept, tx, start) = (kept.clone(), tx.clone(), start.clone());
-        move || {
-            start.wait();
-            for i in 10..LINES {
-                publish(&kept, &tx, line(i));
-            }
-        }
+    let chunks: Vec<Vec<u8>> = (10..LINES).map(line).collect();
+    let half: Vec<u8> = chunks[..chunks.len() / 2].concat();
+    let (middle, later) = attach_during_a_pump(&kept, &tx, chunks, 200, || {
+        replay_and_subscribe(&kept, &tx, Some(since))
     });
-    start.wait();
-    let mut attaches = Vec::new();
-    while !pump.is_finished() && attaches.len() < 200 {
-        attaches.push(replay_and_subscribe(&kept, &tx, Some(since)));
-    }
-    pump.join().expect("the pump thread does not panic");
 
+    assert_eq!(
+        middle.replay, half,
+        "the middle attach resumes with the first half"
+    );
     let all: Vec<u8> = (0..LINES).flat_map(line).collect();
     let expected = &all[usize::try_from(since).expect("a small count")..];
-    let mut during = 0;
-    for (n, mut sub) in attaches.into_iter().enumerate() {
+    for (n, mut sub) in std::iter::once(middle).chain(later).enumerate() {
         assert!(sub.resume, "attach {n} resumes");
         assert_eq!(sub.offset, since + sub.replay.len() as u64, "attach {n}");
-        if (1..expected.len()).contains(&sub.replay.len()) {
-            during += 1;
-        }
         let mut seen = sub.replay;
         while let Ok(chunk) = sub.rx.try_recv() {
             seen.extend(chunk);
         }
         assert_eq!(seen, expected, "attach {n}");
     }
-    during
 }
 
 /// An attach names the byte count and whether it resumed: a reattach at the
