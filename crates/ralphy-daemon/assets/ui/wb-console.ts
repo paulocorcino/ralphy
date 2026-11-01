@@ -176,6 +176,15 @@ export function createConsole(
     startBeat: () => detach.startBeat(),
     stopBeat: () => detach.stopBeat(),
   });
+  // The detached popup and the node harness have no tabs store: their
+  // consoles are always on screen. A console in a tab is on screen while
+  // its tab is the active one (ADR-0037 §3d). The dormancy rule and the GPU
+  // budget both read it.
+  const windowShown = (win: ConsoleWin) => {
+    const tabs = window.Alpine?.store("tabs");
+    if (!tabs) return true;
+    return inTab(win) ? win.classList.contains("tab-shown") : tabs.active === "consoles";
+  };
   // ---- dormancy and resume: `wb-console-dormancy.ts` ---------------------------
   // Built before the window states, which take `refreshCover`. Its listeners
   // wait for `listen()`.
@@ -189,14 +198,7 @@ export function createConsole(
     budget: () => budget,
     fillsViewport: (win: ConsoleWin) => fillsViewport(win),
     isFull: (win: HTMLElement) => isFull(win),
-    // The detached popup and the node harness have no tabs store: their
-    // consoles are always on screen. A console in a tab is on screen while
-    // its tab is the active one (ADR-0037 §3d).
-    windowShown: (win: ConsoleWin) => {
-      const tabs = window.Alpine?.store("tabs");
-      if (!tabs) return true;
-      return inTab(win) ? win.classList.contains("tab-shown") : tabs.active === "consoles";
-    },
+    windowShown,
     attachTerminal: (body: HTMLElement, termOpts: TerminalOpts) => attachTerminal(body, termOpts),
     scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
     revivePlaceholders: () => revivePlaceholders(),
@@ -256,6 +258,7 @@ export function createConsole(
     wins,
     workspace,
     isCovered,
+    windowShown,
     applyDormancy,
     IntersectionObserver:
       typeof IntersectionObserver === "function" ? IntersectionObserver : undefined,

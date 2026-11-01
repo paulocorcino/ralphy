@@ -63,6 +63,7 @@ function fakeDeps(more = {}) {
     wins: new Set(),
     workspace: () => ({ id: "workspace" }),
     isCovered: () => false,
+    windowShown: () => true,
     applyDormancy: () => "stay",
     IntersectionObserver: undefined,
     queueMicrotask: (task) => tasks.push(task),
@@ -146,6 +147,23 @@ test("with no observer a tracked window counts as seen and the budget rebalances
   assert.equal(covered._term.gpu, false, "a covered window never holds one");
 });
 
+test("a window the observer calls visible holds no context while its tab is hidden", () => {
+  // A file tab hides the stage with `visibility: hidden`: the observer still
+  // reports every window, so only the shown rule takes the contexts back.
+  let shown = false;
+  const { deps, runTasks } = fakeDeps({ windowShown: () => shown });
+  const win = Object.assign(fakeWindow(1), { _visible: true });
+  deps.wins.add(win);
+  const budget = createGpuBudget(deps);
+  budget.scheduleGpu();
+  runTasks();
+  assert.equal(win._term.gpu, false, "hidden behind a file tab");
+  shown = true;
+  budget.scheduleGpu();
+  runTasks();
+  assert.equal(win._term.gpu, true, "the Consoles tab is back");
+});
+
 test("many scheduleGpu calls in one turn give one rebalance", () => {
   const { deps, tasks, runTasks } = fakeDeps();
   let reads = 0;
@@ -210,6 +228,7 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
   };
   assert.throws(missing("queueMicrotask"), TypeError);
   assert.throws(missing("isCovered"), TypeError);
+  assert.throws(missing("windowShown"), TypeError);
   assert.throws(missing("wins"), TypeError);
 });
 
