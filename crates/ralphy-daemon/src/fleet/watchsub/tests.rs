@@ -71,6 +71,38 @@ async fn traversal_is_refused_without_creating_a_sub() {
     assert!(!watchers.repo_active("owner/repo"));
 }
 
+/// A folder that links out of the root is resolved, not only read as text: it
+/// gets no OS watch, and a folder inside the root in the same set still does.
+#[tokio::test]
+async fn a_folder_that_links_out_of_the_root_is_not_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let link = dir.path().join("linked");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(outside.path(), &link);
+    #[cfg(not(windows))]
+    let linked = std::os::unix::fs::symlink(outside.path(), &link);
+    linked.expect("create a directory symlink");
+    std::fs::create_dir(dir.path().join("inside")).unwrap();
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let subs = WatchSubs::new(watchers.clone());
+
+    let paths = ["linked".to_string(), "inside".to_string()];
+    subs.subscribe("s", "owner/repo", dir.path(), &paths)
+        .unwrap();
+
+    assert_eq!(
+        watchers.watch_refcount("owner/repo", "linked"),
+        0,
+        "a folder that links out of the root must not be watched"
+    );
+    assert_eq!(
+        watchers.watch_refcount("owner/repo", "inside"),
+        1,
+        "a folder inside the root is still watched"
+    );
+}
+
 /// TWO subscriptions on ONE repo is the shape that matters: the nudge broadcast
 /// is per-repo, so the root subscription's events reach the docs subscription's
 /// receiver. Ending the wait on one of those was what turned every unrelated

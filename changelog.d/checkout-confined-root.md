@@ -1,4 +1,4 @@
 ---
 kind: fix
 ---
-A worktree folder that links out of the project is no longer watched or read.
+A folder that links out of the project is no longer watched, and a worktree folder that does so is not read.

@@ -192,13 +192,15 @@ impl WatcherManager {
     /// event paths (which notify reports canonicalized) compare cleanly.
     pub fn watch(&self, repo: &str, root: &Path, rel: &str) -> Result<DirtyRx> {
         let rel = norm_rel(rel);
-        // Reject traversal LEXICALLY (like `confine`): a `..` component would make
-        // `root.join(rel)` establish an OS watch OUTSIDE the repo root. Nudges for
-        // such paths are dropped downstream, but the out-of-root watch itself is
-        // resource abuse — refuse it before touching the debouncer.
+        // `root.join(rel)` must stay inside the root, or the OS watch reports
+        // changes outside it (ADR-0036 §5). A `..` is refused by its text first, so
+        // a missing path that climbs out is not read as a plain miss; then the path
+        // is resolved, so a folder that links out of the root is refused too.
         if rel.split('/').any(|c| c == "..") {
             anyhow::bail!("watch path escapes the repo root: {rel}");
         }
+        crate::confine::confine(root, &rel)
+            .with_context(|| format!("watch path is not inside the repo root: {rel}"))?;
         let canon_root = std::fs::canonicalize(root)
             .with_context(|| format!("canonicalizing watch root {}", root.display()))?;
         let mut repos = lock(&self.repos);

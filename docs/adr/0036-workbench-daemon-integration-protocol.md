@@ -1477,11 +1477,14 @@ This amends the `checkout` part of the `worktree.list` amendment
   drops a malformed frame. For a local watch it then resolves the name
   against the pointer file and confines the folder. A refusal holds no
   watch and writes one log line. The socket has no refusal frame; the
-  `tree.list` of the same level answers `unknown checkout` first. The door
-  confines the checkout folder on the local daemon only. A watch of a peer's
-  repo, and a plain watch path with no `checkout` key, are still checked only
-  for `..` in the text. A folder that links out of the root through those
-  paths is not refused yet. This is a known gap, left for a follow-up.
+  `tree.list` of the same level answers `unknown checkout` first.
+- **Every watch path is resolved.** The watch registry
+  (`WatcherManager::watch`) refuses a `..` by its text, then resolves the path
+  with `confine` against the root it watches. So a plain watch path with no
+  `checkout` key, a path inside a confined checkout, and a peer's watch
+  subscription (`/api/peer/tree/poll`, which arms through the same registry)
+  hold no OS watch on a folder that links out of the root. The peer skips such
+  a path like a missing one.
 
 **Rejected:**
 
