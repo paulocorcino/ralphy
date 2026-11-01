@@ -2073,7 +2073,7 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "ralphy-adapter-support"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2086,7 +2086,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-claude"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2104,7 +2104,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-codex"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2121,7 +2121,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-copilot"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-cursor"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-gemini"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-kimi"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2184,7 +2184,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-agent-opencode"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -2201,7 +2201,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-cli"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2250,7 +2250,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-core"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2269,7 +2269,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-daemon"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-git-read"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "serde",
@@ -2333,7 +2333,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-pricing"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "chrono",
  "serde",
@@ -2345,7 +2345,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-proc-util"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "libc",
@@ -2358,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-pty"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "portable-pty",
@@ -2366,7 +2366,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-release"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "chrono",
  "semver",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-run-snapshot"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "serde",
  "serde_json",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "ralphy-telegram"
-version = "0.1.0-rc.41"
+version = "0.1.0-rc.42"
 dependencies = [
  "anyhow",
  "directories",

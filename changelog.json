@@ -1,6 +1,135 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.42",
+      "date": "2026-11-01",
+      "announce": true,
+      "entries": [
+        {
+          "id": "830",
+          "kind": "breaking",
+          "text": "Update each peer daemon too, or it is refused. A workbench page open during the update reloads once.",
+          "headline": "🔌 **Update each peer too** — an older peer daemon is refused until it runs this version"
+        },
+        {
+          "id": "717",
+          "kind": "security",
+          "text": "Every device signs in once after the update, and each login can now be ended alone."
+        },
+        {
+          "id": "764",
+          "kind": "security",
+          "text": "On Windows, the Claude guard runs again in workbench runs after `ralphy daemon install`; on Linux, consoles survive a binary update."
+        },
+        {
+          "id": "767",
+          "kind": "security",
+          "text": "An unattended Claude session now stops before it works when its hooks, the guard included, cannot run."
+        },
+        {
+          "id": "822",
+          "kind": "security",
+          "text": "The daemon no longer passes its secrets to the programs it runs to check hooks, read versions and read git."
+        },
+        {
+          "id": "console-secret-env",
+          "kind": "security",
+          "text": "Consoles and the programs the daemon starts no longer get the daemon's Telegram and events tokens in their environment."
+        },
+        {
+          "id": "740",
+          "kind": "feature",
+          "text": "The workbench page holds one connection to the daemon for its consoles, and a slow link keeps covered consoles awake longer.",
+          "headline": "🔌 **One socket** — the page holds one connection to the daemon for all its consoles"
+        },
+        {
+          "id": "746",
+          "kind": "feature",
+          "text": "Drop files on a folder of the files tree, or pick them with Upload… in its menu, to upload them to the project.",
+          "headline": "📤 **File upload** — drop files from your computer on a folder of the files tree"
+        },
+        {
+          "id": "748",
+          "kind": "feature",
+          "text": "Open a console in its own tab with the + button at the end of the tab strip, and slice the tab into columns and rows.",
+          "headline": "🗂️ **Console tabs** — open consoles of the stage in their own tab"
+        },
+        {
+          "id": "777",
+          "kind": "feature",
+          "text": "Codex and OpenCode consoles and runs show working, waiting and done. A Claude console shows waiting when an MCP server asks a question."
+        },
+        {
+          "id": "778",
+          "kind": "feature",
+          "text": "A bell on the rail lists what waits for you, and a bell in a console title tells you when that console is done.",
+          "headline": "🔔 **Attention list** — the consoles that wait for you, on the rail"
+        },
+        {
+          "id": "779",
+          "kind": "feature",
+          "text": "When you are away from every page, Telegram tells you about a console that waits, also on a WSL or SSH peer, with a link to it."
+        },
+        {
+          "id": "claude-classic-screen",
+          "kind": "feature",
+          "text": "A project setting starts Claude consoles in Claude's classic view, so the conversation has a scrollbar.",
+          "headline": "📜 **Claude in the console's text** — a scrollbar for Claude consoles"
+        },
+        {
+          "id": "slice-row-swaps",
+          "kind": "feature",
+          "text": "In the Slice list, a click on a console puts it in this column, and the icon beside it opens a new column.",
+          "topic": "columns"
+        },
+        {
+          "id": "worktree-chip-icon",
+          "kind": "feature",
+          "text": "The branch name of a project shows a folder icon when the files show a worktree, not the main checkout."
+        },
+        {
+          "id": "751",
+          "kind": "fix",
+          "text": "A console that cannot send what you type now says so and reconnects, also after the computer wakes from sleep."
+        },
+        {
+          "id": "753",
+          "kind": "fix",
+          "text": "The note editor is updated to Milkdown Crepe 7.22.3, with its fixes for list markers, links and toolbars."
+        },
+        {
+          "id": "763",
+          "kind": "fix",
+          "text": "A console no longer garbles a line with an emoji, and a console in full screen, opened from a column, fits the screen."
+        },
+        {
+          "id": "768",
+          "kind": "fix",
+          "text": "`ralphy doctor` and each daemon now check that the Claude hooks run on their machine."
+        },
+        {
+          "id": "769",
+          "kind": "fix",
+          "text": "A Claude console whose hooks send nothing now shows a warning dot that says why."
+        },
+        {
+          "id": "801",
+          "kind": "fix",
+          "text": "The login switch says why it did not turn on, and a failed daemon start no longer leaves its pid file behind."
+        },
+        {
+          "id": "console-scrollbar",
+          "kind": "fix",
+          "text": "A console now always shows its scrollbar when it has text to scroll, not only while the mouse is over it."
+        },
+        {
+          "id": "windows-autostart",
+          "kind": "fix",
+          "text": "On Windows, the daemon now starts at logon, and `ralphy schedule` tasks now run."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.41",
       "date": "2026-10-19",
       "announce": true,
