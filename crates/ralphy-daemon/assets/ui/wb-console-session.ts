@@ -68,11 +68,6 @@ export function encodeShown() {
 const MAX_FAILED_REOPENS = 10;
 const WATCH_AFTER = 3;
 
-// How long a popup, which has no presence heartbeat to ask, counts as hidden
-// before its sockets are taken as stale on resume (the rule is `wb-resume.ts`).
-// An ordinary desktop tab switch stays below it and churns nothing.
-export const RESUME_HIDDEN_MS = 60000;
-
 // Whether a new window attaches at once or starts asleep. A window that
 // reattaches to a known session starts asleep, and the observer's first
 // report (it always sends one for a new target) wakes it if it is visible.

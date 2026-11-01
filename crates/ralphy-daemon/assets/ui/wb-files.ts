@@ -644,7 +644,7 @@ export function wbFiles() {
       window.addEventListener("workbench:fleet-read", () => this.filesFollowFleet());
       window.addEventListener("workbench:peer-woken", (e) => this.filesFollowWake(e.detail.daemon));
       window.addEventListener("workbench:checkout-changed", () => this.filesFollowCheckout());
-      // `resumeSockets`: the shell's heartbeat verdict, for this socket too.
+      // No module sends this now: the daemon door resumes the page socket.
       window.addEventListener("workbench:sockets-resume", (e) =>
         this._treeSub?.resume?.(e.detail.stale),
       );

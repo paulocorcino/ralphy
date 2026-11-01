@@ -108,6 +108,9 @@ test("fmtUptime steps down through the units and never renders a negative", () =
 // The binding cannot see ticks STOP; the clock that `init` starts must.
 test("presenceStale turns true on the clock once the heartbeat is older than the limit", async () => {
   const { store } = storeOnly();
+  // The daemon door owns the heartbeat's time and judges it.
+  let lost = false;
+  window.WBDaemon = { heartbeatStale: () => lost };
   const ticks = [];
   const realSetInterval = globalThis.setInterval;
   const realFetch = globalThis.fetch;
@@ -121,12 +124,9 @@ test("presenceStale turns true on the clock once the heartbeat is older than the
   }
   const clock = ticks.find((t) => t.ms === 1000);
   assert.ok(clock, "init starts the one-second presence clock");
-  // The resume on a lost heartbeat has its own test below.
-  store.resumeSockets = () => {};
-  store._lastHeartbeat = Date.now();
   clock.fn();
   assert.equal(store.presenceStale, false, "a fresh heartbeat is not stale");
-  store._lastHeartbeat = Date.now() - 7000;
+  lost = true;
   clock.fn();
   assert.equal(store.presenceStale, true, "three missed heartbeats are stale");
 });
@@ -153,44 +153,6 @@ test("init holds the page socket on its session read", () => {
   assert.deepEqual(calls, [["after", "function"], ["join"]]);
 });
 
-// #751: a desktop that slept with the tab in front fires no page event. The
-// clock resumes the page once, when the heartbeat stops while it is visible.
-test("a heartbeat that stops while the page is visible resumes the sockets and the consoles once", () => {
-  const { store } = storeOnly();
-  const ticks = [];
-  const realSetInterval = globalThis.setInterval;
-  const realFetch = globalThis.fetch;
-  globalThis.setInterval = (fn, ms) => (ticks.push({ fn, ms }), 0);
-  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => null });
-  try {
-    store.init();
-  } finally {
-    globalThis.setInterval = realSetInterval;
-    globalThis.fetch = realFetch;
-  }
-  const clock = ticks.find((t) => t.ms === 1000);
-  const calls = [];
-  store.resumeSockets = (stale) => calls.push(["sockets", stale]);
-  window.WBConsole = { resumeAll: (stale) => calls.push(["consoles", stale]) };
-
-  clock.fn();
-  assert.deepEqual(calls, [], "a page that never had a heartbeat lost nothing");
-  store._lastHeartbeat = Date.now();
-  clock.fn();
-  store._lastHeartbeat = Date.now() - 7000;
-  clock.fn();
-  assert.deepEqual(calls, [["sockets", true], ["consoles", true]]);
-  clock.fn();
-  assert.equal(calls.length, 2, "one resume per loss, not one per tick");
-
-  store._lastHeartbeat = Date.now();
-  clock.fn();
-  document.visibilityState = "hidden";
-  store._lastHeartbeat = Date.now() - 7000;
-  clock.fn();
-  assert.equal(calls.length, 2, "a hidden page resumes on its return instead");
-});
-
 test("returning to the tab reads the release view again", () => {
   const calls = [];
   const { state, store, window } = connectedPage(VISIBLE);
@@ -198,7 +160,6 @@ test("returning to the tab reads the release view again", () => {
   state.rereadDesk = () => calls.push("rereadDesk");
   state.$store.release.loadRelease = () => calls.push("loadRelease");
   state.$store.projects.loadRepos = () => calls.push("loadRepos");
-  store.resumeSockets = () => calls.push("resumeSockets");
   state.$store.runs.hydrateRuns = () => {};
   store.onTabVisible();
   // Each read happens once; their order is not what the tab depends on.
@@ -208,25 +169,6 @@ test("returning to the tab reads the release view again", () => {
     "loadRelease",
     "loadRepos",
     "rereadDesk",
-    "resumeSockets",
-  ]);
-});
-
-test("resumeSockets resumes the page socket once, and tells the panels", () => {
-  const resumed = [];
-  const { state } = loadShell({
-    window: { dispatchEvent: (e) => resumed.push([e.type, e.detail.stale]) },
-  });
-  const store = state.$store.connection;
-  state.$store.runs._runsSub = { resume: (stale) => resumed.push(["_runsSub", stale]) };
-  store._presenceSub = { resume: (stale) => resumed.push(["_presenceSub", stale]) };
-  store.resumeSockets(true);
-  // The runs ride the page socket that presence resumes: no resume of
-  // their own. The files (wb-files.test.mjs) and the Changes view
-  // (wb-changes-panel.test.mjs) hear the event.
-  assert.deepEqual(resumed, [
-    ["_presenceSub", true],
-    ["workbench:sockets-resume", true],
   ]);
 });
 
@@ -354,7 +296,7 @@ test("visible and login ask the open panels to read again", () => {
   const { state } = loaded;
   const store = state.$store.connection;
   for (const name of ["loadRepos", "loadAgents"]) state.$store.projects[name] = () => {};
-  for (const name of ["resumeSockets", "loadIdentity"]) store[name] = () => {};
+  store.loadIdentity = () => {};
   state.$store.runs.hydrateRuns = () => {};
   const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
   store.onTabVisible();

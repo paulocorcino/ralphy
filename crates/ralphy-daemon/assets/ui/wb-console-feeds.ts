@@ -1,11 +1,11 @@
 /* ---------------------------------------------------------------------------
    The console's feeds: the last facts the Alpine stores handed it.
 
-   `createFeeds(deps)` keeps the last session list, the project names, the
-   fleet and the stale probe that the stores `projects` and `connection`
-   feed in (a Shown fact has one owner; the console keeps only its last
-   answer), the ids of new records and the Go-to list. Values that change are read through `lastSessions()`,
-   `wakePeerNow()`, `readFleetNow()` and `staleProbeNow()`. It reads the console
+   `createFeeds(deps)` keeps the last session list, the project names and
+   the fleet that the store `projects` feeds in (a Shown fact has one owner;
+   the console keeps only its last answer), the ids of new records and the
+   Go-to list. Values that change are read through `lastSessions()`,
+   `wakePeerNow()` and `readFleetNow()`. It reads the console
    only through `deps` (#621).
 --------------------------------------------------------------------------- */
 import { WBConsoleName } from "./wb-console-name.ts";
@@ -15,15 +15,13 @@ import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { apiFetch } from "./wb-api.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { ConsoleOpts, ConsoleWin, Presentation } from "./wb-types.d.ts";
+import type { ConsoleWin, Presentation } from "./wb-types.d.ts";
 
 const { sessionRowFor, agentStateTitle } = WBConsoleSession;
 const { agentDotOf } = WBProject;
 
 // What the feeds read from the console, and nothing else.
 export type FeedsDeps = {
-  // The page's injected options: the stale probe the shell passes.
-  OPTS: Pick<ConsoleOpts, "isStale">;
   // Every console window: a feed redraws what it shows.
   wins: Set<ConsoleWin>;
   // Every console window of the page, in DOM order.
@@ -33,7 +31,7 @@ export type FeedsDeps = {
 };
 
 export function createFeeds(deps: FeedsDeps) {
-  const { OPTS, wins, pageWindows, renderTitle } = deps;
+  const { wins, pageWindows, renderTitle } = deps;
 
   function newId(prefix: string) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
@@ -171,16 +169,9 @@ export function createFeeds(deps: FeedsDeps) {
     }
   }
 
-  // `visibilitychange` and `online` both land on one iOS resume; without the
-  // probe seam the popup would have no verdict at all.
-  let staleProbe = OPTS.isStale || null;
-  function setStaleProbe(fn: (() => boolean) | null) {
-    staleProbe = typeof fn === "function" ? fn : null;
-  }
   const lastSessions = () => lastSessionsRead;
   const wakePeerNow = () => wakePeer;
   const readFleetNow = () => readFleet;
-  const staleProbeNow = () => staleProbe;
 
   return {
     newId,
@@ -194,10 +185,8 @@ export function createFeeds(deps: FeedsDeps) {
     ingestFleet,
     ingestSessions,
     list,
-    setStaleProbe,
     lastSessions,
     wakePeerNow,
     readFleetNow,
-    staleProbeNow,
   };
 }

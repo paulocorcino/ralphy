@@ -372,8 +372,7 @@ const sentOn = (s, kind = "tree") => {
 // The daemon door with fake sockets and timers. Timers are captured, never
 // run: the handshake deadline and the 3s retry are fired by hand, so no test
 // waits on a real clock.
-function pageSockets() {
-  const d = load();
+function pageSockets(d = load()) {
   const sockets = [];
   const timers = [];
   const FakeSocket = class {
@@ -447,6 +446,55 @@ function pageSockets() {
   return { d, sockets, timers, open, push, drop, runRetries, withFakes, withFakesAsync };
 }
 
+// `pageSockets` on a window and a document that keep their listeners, so a
+// test fires the page's own events. `deps` is added to the door's deps.
+function eventPage(deps = {}) {
+  const listeners = { window: {}, document: {} };
+  const on = (bag) => (type, fn) => (bag[type] ||= []).push(fn);
+  const window = { addEventListener: on(listeners.window) };
+  const document = { visibilityState: "visible", addEventListener: on(listeners.document) };
+  const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  const d = createDaemon(window, document, location, { messages: { flash() {} }, ...deps });
+  const page = pageSockets(d);
+  const fire = (target, type) =>
+    page.withFakes(() => {
+      for (const fn of listeners[target][type] || []) fn({ type });
+    });
+  const setVisibility = (state) => {
+    document.visibilityState = state;
+    fire("document", "visibilitychange");
+  };
+  // A presence heartbeat on socket `s`.
+  const beat = (s) => {
+    const bytes = new Uint8Array([0x03, ...new TextEncoder().encode(JSON.stringify({ uptime_secs: 1 }))]);
+    page.withFakes(() => s.onmessage({ data: bytes.buffer }));
+  };
+  // Run each captured timer of `ms` once, as the browser would when it ends.
+  const runTimers = (ms) =>
+    page.withFakes(() => {
+      for (const t of page.timers.filter((x) => x.ms === ms)) {
+        const fn = t.fn;
+        t.fn = () => {};
+        fn();
+      }
+    });
+  const resumes = [];
+  d.onPageResume?.((stale, trigger) => resumes.push([stale, trigger]));
+  return {
+    ...page,
+    document,
+    resumes,
+    beat,
+    runTimers,
+    online: () => fire("window", "online"),
+    hide: () => setVisibility("hidden"),
+    show: () => setVisibility("visible"),
+  };
+}
+
+// Three missed ~2 s heartbeats: the page's link is gone.
+const HEARTBEAT_LOST = 6000;
+
 function treeSocket(checkout, onHead, onFailed) {
   const page = pageSockets();
   const dirty = [];
@@ -477,7 +525,8 @@ test("one socket carries presence, tree, runs and changes", () => {
   assert.equal(new Set(ids).size, 3, "a channel each");
   assert.deepEqual(sentOn(sockets[0], "runs"), [["runs.watch", ""]]);
   const beat = new Uint8Array([0x03, ...new TextEncoder().encode(JSON.stringify({ uptime_secs: 2 }))]);
-  sockets[0].onmessage({ data: beat.buffer });
+  // Under the fakes: a heartbeat starts the watch for the next one.
+  withFakes(() => sockets[0].onmessage({ data: beat.buffer }));
   push(sockets[0], "runs", "runs.dirty", { repo: "o/r" });
   push(sockets[0], "changes", "changes.dirty", { repo: "o/r" });
   assert.deepEqual(beats, [{ uptime_secs: 2 }]);
@@ -773,7 +822,13 @@ test("subscribePresence hands a command frame to onPush and each open to onOpen"
   };
   ws.onmessage(frame(0x02, { id: 0, verb: "sessions.dirty", payload: {} }));
   ws.onmessage(frame(0x02, { id: 0, verb: "desk.dirty", payload: { tab: "t1" } }));
-  ws.onmessage(frame(0x03, { uptime_secs: 4 }));
+  // A heartbeat starts the watch for the next one: no real timer.
+  globalThis.setTimeout = () => 0;
+  try {
+    ws.onmessage(frame(0x03, { uptime_secs: 4 }));
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
   assert.deepEqual(pushes, [
     ["sessions.dirty", {}],
     ["desk.dirty", { tab: "t1" }],
@@ -962,7 +1017,7 @@ test("a page socket that a drop left with no user does not reconnect", () => {
 // `socket-lost` joins the page socket again inside that end. The resume
 // leaves one socket: a second one would open the console twice.
 test("a resume of a socket whose only user is a console makes one socket and opens the console once", () => {
-  const { d, sockets, open, withFakes } = pageSockets();
+  const { d, sockets, open, withFakes, online, resumes } = eventPage();
   const reopen = (since) =>
     d.openConsole({ id: 5, since }, {
       onFrame() {},
@@ -972,10 +1027,8 @@ test("a resume of a socket whose only user is a console makes one socket and ope
     });
   withFakes(() => reopen(0));
   open(sockets[0]);
-  assert.equal(
-    withFakes(() => d.resumePage(true)),
-    true,
-  );
+  online();
+  assert.deepEqual(resumes, [[true, "online"]], "a new link is always stale");
   assert.equal(sockets.length, 2, "one new socket");
   for (const s of sockets.slice(1)) if (s.readyState === 0) open(s);
   const opens = sockets.slice(1).flatMap((s) => s.sent.filter((f) => f.verb === "channel.open"));
@@ -988,7 +1041,7 @@ test("a resume of a socket whose only user is a console makes one socket and ope
 // #834: the daemon reads the frames sent before a close, so a console names
 // its leave on the old socket before the resume closes it.
 test("a resume lets each console send its last frame on the old socket", () => {
-  const { d, sockets, open, withFakes } = pageSockets();
+  const { d, sockets, open, withFakes, online } = eventPage();
   const states = [];
   withFakes(() =>
     d.openConsole({ id: 5 }, {
@@ -998,6 +1051,91 @@ test("a resume lets each console send its last frame on the old socket", () => {
     }),
   );
   open(sockets[0]);
-  withFakes(() => d.resumePage(true));
+  online();
   assert.deepEqual(states, [1], "called once, while the old socket is open");
+});
+
+// --- the resume triggers: the door hears each one once and judges "stale" once
+
+// #751: a desktop that slept with the tab in front fires no page event, and
+// its socket reads OPEN with no byte to come. The heartbeat that stops is the
+// trigger, and it opens one socket, not one per module that heard it.
+test("one lost heartbeat opens one new page socket", () => {
+  const page = eventPage({ resumeDebounceMs: 0 });
+  const { d, sockets, open, withFakes } = page;
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  page.beat(sockets[0]);
+  page.runTimers(HEARTBEAT_LOST);
+  for (const s of sockets.slice(1)) open(s);
+  page.runTimers(HEARTBEAT_LOST);
+  assert.equal(sockets.length, 2, "exactly one new page socket");
+  assert.equal(sockets[0].readyState, 3, "the silent socket is closed");
+  assert.deepEqual(page.resumes, [[true, "heartbeat"]], "the consoles hear it once");
+});
+
+// One resume per loss, so a daemon that is down is not dialled again and
+// again. A page that never had a heartbeat lost nothing; a hidden one
+// resumes on its return instead.
+test("a heartbeat loss resumes once, and never on a page that is hidden or never heard one", () => {
+  const silent = eventPage({ resumeDebounceMs: 0 });
+  silent.withFakes(() => silent.d.subscribePresence(() => {}));
+  silent.open(silent.sockets[0]);
+  silent.runTimers(HEARTBEAT_LOST);
+  assert.equal(silent.sockets.length, 1, "no heartbeat yet: nothing was lost");
+
+  const page = eventPage({ resumeDebounceMs: 0 });
+  page.withFakes(() => page.d.subscribePresence(() => {}));
+  page.open(page.sockets[0]);
+  page.beat(page.sockets[0]);
+  page.document.visibilityState = "hidden";
+  page.runTimers(HEARTBEAT_LOST);
+  assert.equal(page.sockets.length, 1, "a hidden page does not resume on the loss");
+  assert.deepEqual(page.resumes, []);
+});
+
+// A desktop tab on another tab for minutes still hears the daemon: its
+// socket is alive, and replacing it would only churn the consoles.
+test("a live heartbeat keeps the socket after a long hide", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const page = eventPage();
+  const { d, sockets, open, withFakes } = page;
+  withFakes(() => d.subscribePresence(() => {}));
+  open(sockets[0]);
+  page.beat(sockets[0]);
+  now += 1000;
+  page.hide();
+  now += 119_000;
+  page.beat(sockets[0]);
+  now += 1000;
+  page.show();
+  assert.equal(sockets.length, 1, "no new socket");
+  assert.equal(sockets[0].readyState, 1, "the socket stays open");
+  assert.deepEqual(page.resumes, [[false, "visible"]]);
+});
+
+// The detached fence page subscribes to no presence, so it has no heartbeat
+// to ask: how long it was hidden is its verdict.
+test("a page with no heartbeat is stale after 60 s hidden", (t) => {
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  const shownAfter = (hiddenMs) => {
+    const page = eventPage();
+    const reopen = (since) =>
+      page.d.openConsole({ id: 5, since }, {
+        onFrame() {},
+        onClosed: (reason) => {
+          if (reason === "socket-lost") reopen(since + 1);
+        },
+      });
+    page.withFakes(() => reopen(0));
+    page.open(page.sockets[0]);
+    page.hide();
+    now += hiddenMs;
+    page.show();
+    return { sockets: page.sockets.length, resumes: page.resumes };
+  };
+  assert.deepEqual(shownAfter(61_000), { sockets: 2, resumes: [[true, "visible"]] });
+  assert.deepEqual(shownAfter(59_000), { sockets: 1, resumes: [[false, "visible"]] });
 });

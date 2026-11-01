@@ -59,7 +59,8 @@ const consoleOpts = {
 window.WBConsole = createConsole(window, document, location, consoleOpts);
 // The verb bridge: a pasted image becomes a clipboard drop through
 // `image.write` (ADR-0055), and the consoles module reaches the daemon through
-// `window.WBDaemon` exactly as it does in the workbench.
+// `window.WBDaemon` exactly as it does in the workbench. This page subscribes
+// to no presence, so the door judges its resume by how long it was hidden.
 window.WBDaemon = createDaemon(window, document, location, { messages });
 // The note cards, before `wireDetachedFence` posts "ready".
 window.WBNotes = createNotes(window, document, {

@@ -185,7 +185,6 @@ const CONSOLE_MEMBERS = [
   "setDeskFailureHook function",
   "setDeskGoneHook function",
   "setFont function",
-  "setStaleProbe function",
   "setWin function",
   "spawnRectIn function",
   "stackWin function",

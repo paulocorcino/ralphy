@@ -24,7 +24,6 @@ function dormancy(p, wins = new Set()) {
     wins,
     stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
-    staleProbeNow: () => null,
     applyKeyBar() {},
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,
@@ -46,7 +45,6 @@ test("the dormancy registers no listener until listen(), then the page listeners
   assert.deepEqual(p.added, [
     "document:visibilitychange",
     "window:pagehide",
-    "window:online",
     "document:workbench:action",
     "document:workbench:tab-shown",
   ]);
@@ -54,13 +52,20 @@ test("the dormancy registers no listener until listen(), then the page listeners
 
 test("a hidden page tells each console, and a visible one takes it back before the resume", () => {
   const p = page();
+  const hooks = [];
+  p.window.WBDaemon = { onPageResume: (fn) => hooks.push(fn) };
   const said = [];
   const win = { _term: { notePage: (hidden) => said.push(hidden ? "hidden" : "shown"), resume: () => said.push("resume") } };
-  dormancy(p, new Set([win])).listen();
+  const d = dormancy(p, new Set([win]));
+  d.listen();
+  d.followPageResume();
   p.document.visibilityState = "hidden";
   p.handlers["document:visibilitychange"]();
   p.document.visibilityState = "visible";
+  // The console is built before the daemon door, so its listener runs first,
+  // and the door's resume reaches the hook after it.
   p.handlers["document:visibilitychange"]();
+  for (const fn of hooks) fn(false, "visible");
   p.handlers["window:pagehide"]();
   assert.deepEqual(said, ["hidden", "shown", "resume", "hidden"]);
 });
@@ -88,7 +93,6 @@ test("hiding the Consoles tab puts its consoles to sleep, and showing it wakes t
     wins: new Set([win]),
     stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
-    staleProbeNow: () => null,
     applyKeyBar() {},
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,

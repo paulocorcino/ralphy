@@ -525,7 +525,7 @@ export function wbChanges() {
       });
       // Opening the Changes view is a read trigger.
       window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
-      // A resume of the page's sockets (`resumeSockets`).
+      // No module sends this now: the daemon door resumes the page socket.
       window.addEventListener("workbench:sockets-resume", (e) =>
         this._changesSub?.resume?.(e.detail.stale),
       );

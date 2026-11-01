@@ -2,10 +2,13 @@
    The console's dormancy: sleep, wake, the cover rule and the resume.
 
    `createDormancy(deps)` sleeps a window off the viewport and wakes it on
-   return, keeps the covered rule, and resumes the page socket and every
-   console when the page comes back from a suspend. Building it registers no listener: `listen()`
+   return, keeps the covered rule, and resumes every console when the page
+   comes back from a suspend. Building it registers no listener: `listen()`
    sets the focus hook and registers the page listeners, and the console
-   calls it once, after its desk. `changed` tells the page that the window
+   calls it once, after its desk. `followPageResume()` hands the console's
+   resume to the daemon door, which owns the triggers and the stale verdict
+   (`onPageResume` in wb-daemon.ts); the console's boot calls it, after the
+   entry module built `WBDaemon`. `changed` tells the page that the window
    set changed. It reads the
    console only through `deps`. The rules are `dormancyDecision` in
    `wb-console-session.ts`; the watch and the GPU budget are
@@ -18,15 +21,16 @@ import { inTab } from "./wb-console-place.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
+import type { ResumeTrigger } from "./wb-resume.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
 
 const { keyboardInset } = WBConsoleInput;
-const { dormancyDecision, RESUME_HIDDEN_MS } = WBConsoleSession;
+const { dormancyDecision } = WBConsoleSession;
 
 // What the dormancy reads from the console, and nothing else.
 export type DormancyDeps = {
-  // The console's page: the `online` listener and the visual viewport.
+  // The console's page: `WBDaemon`, the `pagehide` listener and the visual viewport.
   window: Window;
   // The page the listeners and the fresh session bodies are made in.
   document: Document;
@@ -34,10 +38,8 @@ export type DormancyDeps = {
   wins: Set<ConsoleWin>;
   // The document's z stack (`wb-stage-stack.ts`): `listen()` sets the focus hook.
   stack: Pick<Stack, "setFocusHook">;
-  // The desk changes not sent yet: the `online` listener sends them.
+  // The desk changes not sent yet: a resume on `online` sends them.
   sync: Pick<ReturnType<typeof WBDeskSync.createSync>, "hasPending">;
-  // The stale probe the shell fed, read at each resume.
-  staleProbeNow: () => (() => boolean) | null;
   // Shows or hides the key bar of a window. Built later: a lazy arrow.
   applyKeyBar: (win: ConsoleWin) => void;
   // The GPU budget. Built later: a lazy arrow.
@@ -63,7 +65,6 @@ export function createDormancy(deps: DormancyDeps) {
     wins,
     stack,
     sync,
-    staleProbeNow,
     applyKeyBar,
     budget,
     fillsViewport,
@@ -73,32 +74,12 @@ export function createDormancy(deps: DormancyDeps) {
     scheduleDeskFlush,
     revivePlaceholders,
   } = deps;
-  // Coming back from a suspend. Registered in EVERY document that runs this
-  // module (shell and each popup): each owns the sockets of the windows it
-  // paints, and nothing else would revive them.
-  let hiddenAt = 0;
-
-  // The verdict the probe gives, or — with no probe, which is the popup — how
-  // long this document was hidden. `Infinity` for the network events: `online`
-  // fires precisely because the link the sockets ran over is a different link now.
-  function isStale(hiddenMs: number) {
-    const staleProbe = staleProbeNow();
-    if (staleProbe) {
-      try {
-        return staleProbe() === true;
-      } catch {
-        return true;
-      }
-    }
-    return hiddenMs > RESUME_HIDDEN_MS;
-  }
-
-  // The page socket first: the consoles' channels ride it (ADR-0082 D4). A
-  // stale socket is replaced, each channel ends with it, and its console
-  // opens one on the new socket with its byte count; the consoles' own
-  // resume below then finds that open waiting and leaves it.
+  // Each console's own resume. The daemon door resumed the page socket
+  // first: the consoles' channels ride it (ADR-0082 D4). A stale socket was
+  // replaced, each channel ended with it, and its console opened one on the
+  // new socket with its byte count; `resume` then finds that open waiting
+  // and leaves it.
   function resumeAll(stale: boolean) {
-    window.WBDaemon?.resumePage(stale);
     let woke = 0;
     for (const w of wins) {
       // A placeholder has no terminal, and a window whose session ended latches
@@ -106,6 +87,37 @@ export function createDormancy(deps: DormancyDeps) {
       if (w._term?.resume(stale)) woke += 1;
     }
     return woke;
+  }
+
+  // The console's work on each resume of the page. Registered in EVERY
+  // document that runs this module (shell and each popup): each owns the
+  // sockets of the windows it paints, and nothing else would revive them.
+  function onPageResume(stale: boolean, trigger: ResumeTrigger) {
+    resumeAll(stale);
+    switch (trigger) {
+      // The heartbeat stopped on a page that stayed on screen: no placeholder
+      // waited for a return.
+      case "heartbeat":
+        return;
+      case "visible":
+        void revivePlaceholders();
+        return;
+      case "online":
+        void revivePlaceholders();
+        // Desk changes kept while the link was down go now.
+        if (sync.hasPending()) scheduleDeskFlush(0);
+        return;
+      default: {
+        const unreachable: never = trigger;
+        return unreachable;
+      }
+    }
+  }
+  let following = false;
+  function followPageResume() {
+    if (following) return;
+    following = true;
+    window.WBDaemon?.onPageResume(onPageResume);
   }
 
   // Tell the daemon's log that this page went hidden or came back, so a
@@ -244,28 +256,16 @@ export function createDormancy(deps: DormancyDeps) {
       // asks too, but not when the focus came from a note card.
       focused: () => budget().scheduleGpu(),
     });
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") {
-        hiddenAt = Date.now();
-        notePage(true);
-        return;
-      }
-      const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
-      hiddenAt = 0;
-      notePage(false);
-      resumeAll(isStale(hiddenMs));
-      void revivePlaceholders();
-    });
+    // Only the daemon's log reads this; the resume is the daemon door's. The
+    // console is built before `WBDaemon`, so on a return this listener runs
+    // before the door's, and `shown` goes out on the old socket.
+    document.addEventListener("visibilitychange", () =>
+      notePage(document.visibilityState !== "visible"),
+    );
     // A page that closes, or that iOS freezes, may fire only this one.
     window.addEventListener("pagehide", () => notePage(true));
     // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
     // so the restore this would catch cannot happen here.
-    window.addEventListener("online", () => {
-      resumeAll(true);
-      void revivePlaceholders();
-      // Desk changes kept while the link was down go now.
-      if (sync.hasPending()) scheduleDeskFlush(0);
-    });
 
     // The key-bar setting changed. The shell re-emits every save on
     // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
@@ -319,5 +319,13 @@ export function createDormancy(deps: DormancyDeps) {
     sendDocument(document, "workbench:consoles-changed", { count: wins.size });
   }
 
-  return { resumeAll, applyDormancy, isCovered, refreshCover, listen, changed };
+  return {
+    resumeAll,
+    applyDormancy,
+    isCovered,
+    refreshCover,
+    listen,
+    followPageResume,
+    changed,
+  };
 }

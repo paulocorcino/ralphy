@@ -124,7 +124,6 @@ export function createConsole(
   // ---- the feeds: `wb-console-feeds.ts` ----------------------------------------
   // Built before the title, which takes the project names and the session list.
   const feeds = createFeeds({
-    OPTS,
     wins,
     pageWindows,
     renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
@@ -140,7 +139,6 @@ export function createConsole(
     lastSessions,
     wakePeerNow,
     readFleetNow,
-    staleProbeNow,
   } = feeds;
 
   // ---- the title: `wb-console-title.ts` ----------------------------------------
@@ -187,7 +185,6 @@ export function createConsole(
     wins,
     stack,
     sync,
-    staleProbeNow,
     applyKeyBar: (win: ConsoleWin) => applyKeyBar(win),
     budget: () => budget,
     fillsViewport: (win: ConsoleWin) => fillsViewport(win),
