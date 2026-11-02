@@ -152,16 +152,16 @@ fn a_line_of_rust_may_have_100_characters() {
         "é".repeat(100)
     );
     assert_eq!(
-        Rule::Width.count(Lang::Rust, &text),
+        Rule::Width.count(Lang::Rust, &text, Count::Code),
         Some(1),
         "101 characters; 100 accented letters are 200 bytes but 100 characters"
     );
     assert_eq!(
-        Rule::Width.count(Lang::TypeScript, &text),
+        Rule::Width.count(Lang::TypeScript, &text, Count::Code),
         None,
         "only Rust is measured"
     );
-    assert_eq!(Rule::Width.count(Lang::Html, &text), None);
+    assert_eq!(Rule::Width.count(Lang::Html, &text, Count::Code), None);
 }
 
 #[test]
@@ -227,4 +227,135 @@ fn tests_are_read_and_vendored_code_is_not() {
         .collect();
     names.sort();
     assert_eq!(names, ["a/src/lib.rs", "a/tests/flow.rs", "ui/app.ts"]);
+}
+
+/// A temp tree with `files` written under it, as `(path, text)` pairs.
+fn tree(files: &[(&str, String)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    for (rel, text) in files {
+        let path = dir.path().join(rel);
+        let parent = path.parent().expect("a relative path with a parent");
+        std::fs::create_dir_all(parent).expect("create the parent");
+        std::fs::write(&path, text).expect("write the file");
+    }
+    dir
+}
+
+fn size_row(path: &str, lines: usize) -> StrictRow {
+    StrictRow::Size {
+        path: path.to_string(),
+        lines,
+    }
+}
+
+#[test]
+fn strict_counts_every_line() {
+    let text = format!(
+        "{}{}{}",
+        "let a = 1;
+"
+        .repeat(400),
+        "// note
+"
+        .repeat(50),
+        "
+"
+        .repeat(51)
+    );
+    let dir = tree(&[("crates/a/src/lib.rs", text.clone())]);
+    assert_eq!(
+        strict_report(dir.path()).expect("report"),
+        [size_row("crates/a/src/lib.rs", 501)]
+    );
+    assert_eq!(lines_of_code(Lang::Rust, &text), 400);
+    assert!(measure(dir.path()).expect("measure").is_empty());
+}
+
+#[test]
+fn strict_counts_the_inline_test_module() {
+    let text = format!(
+        "{}#[cfg(test)]
+mod tests {{
+{}}}
+",
+        "let a = 1;
+"
+        .repeat(300),
+        "    let b = 2;
+"
+        .repeat(198)
+    );
+    assert_eq!(text.lines().count(), 501);
+    let dir = tree(&[("crates/a/src/lib.rs", text)]);
+    assert_eq!(
+        strict_report(dir.path()).expect("report"),
+        [size_row("crates/a/src/lib.rs", 501)]
+    );
+}
+
+#[test]
+fn strict_width_reads_typescript_lines_with_their_number() {
+    let text = format!(
+        "const a = 1;
+const b = 2;
+{}
+{}
+",
+        "x".repeat(101),
+        "é".repeat(100)
+    );
+    let dir = tree(&[("crates/ui/a.ts", text)]);
+    assert_eq!(
+        strict_report(dir.path()).expect("report"),
+        [StrictRow::Width {
+            path: "crates/ui/a.ts".to_string(),
+            line: 3,
+            width: 101
+        }]
+    );
+}
+
+#[test]
+fn strict_width_skips_html() {
+    let page = format!(
+        "{}<p>{}</p>
+",
+        "<p>x</p>
+"
+        .repeat(500),
+        "y".repeat(101)
+    );
+    let dir = tree(&[("crates/ui/index.html", page)]);
+    assert_eq!(
+        strict_report(dir.path()).expect("report"),
+        [size_row("crates/ui/index.html", 501)]
+    );
+}
+
+#[test]
+fn strict_report_lists_and_does_not_fail() {
+    let dir = tree(&[
+        (
+            "crates/b/src/big.rs",
+            "let a = 1;
+"
+            .repeat(501),
+        ),
+        (
+            "crates/a/src/wide.ts",
+            format!(
+                "{}
+",
+                "x".repeat(101)
+            ),
+        ),
+    ]);
+    let rows = strict_report(dir.path()).expect("it lists, and does not fail");
+    assert_eq!(
+        rows.iter().map(StrictRow::render).collect::<Vec<_>>(),
+        [
+            "crates/a/src/wide.ts:1	101	characters, over the width of 100",
+            "crates/b/src/big.rs	501	lines, over the limit of 500 (every line counted)",
+        ]
+    );
 }

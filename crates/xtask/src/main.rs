@@ -99,7 +99,7 @@ fn main() -> Result<ExitCode> {
                  ui-groups [--root <repo>] [--verbose]\n  \
                  capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]\n  \
                  vendor-lock <out>\n  \
-                 oversized [--base <rev>]\n  \
+                 oversized [--base <rev> | --strict]\n  \
                  complexity --check [--base <rev>]"
             );
             return Ok(ExitCode::from(2));
