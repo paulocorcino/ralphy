@@ -6,7 +6,8 @@
 /// failure (no OAuth session and no token). Stops a logged-out infinite
 /// plan-retry.
 pub(crate) const COPILOT_AUTH_ERROR_MSG: &str =
-    "Copilot is not authenticated (no authentication information found) — run `copilot login` and retry";
+    "Copilot is not authenticated (no authentication information found) — run `copilot login` and \
+     retry";
 
 /// Return `true` when `text` shows a Copilot authentication failure. A logged-out
 /// `copilot` exits 1 having printed `Error: No authentication information found.`

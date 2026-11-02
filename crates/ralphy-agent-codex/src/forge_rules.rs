@@ -34,7 +34,8 @@ fn forge_rules() -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "prefix_rule(pattern=[{pattern}], decision=\"forbidden\", justification=\"{JUSTIFICATION}\")\n"
+                "prefix_rule(pattern=[{pattern}], decision=\"forbidden\", \
+                 justification=\"{JUSTIFICATION}\")\n"
             )
         })
         .collect()

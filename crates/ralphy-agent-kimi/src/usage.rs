@@ -126,11 +126,27 @@ mod tests {
         // - a non-`usage.record` line that IS scoped `turn` (dropping the `type`
         //   guard → 3622 + 8888).
         let lines = [
-            r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":3411,"output":91,"inputCacheRead":10,"inputCacheCreation":1},"usageScope":"turn"}"#,
-            r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":211,"output":20,"inputCacheRead":5,"inputCacheCreation":2},"usageScope":"turn"}"#,
-            r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":9999,"output":9999,"inputCacheRead":9999,"inputCacheCreation":9999},"usageScope":"session"}"#,
-            r#"{"type":"context.append_loop_event","event":{"usage":{"inputOther":3411,"output":91}}}"#,
-            r#"{"type":"turn.summary","usage":{"inputOther":8888,"output":8888},"usageScope":"turn"}"#,
+            concat!(
+                r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":3411,"#,
+                r#""output":91,"inputCacheRead":10,"inputCacheCreation":1},"usageScope":"turn"}"#
+            ),
+            concat!(
+                r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":211,"#,
+                r#""output":20,"inputCacheRead":5,"inputCacheCreation":2},"usageScope":"turn"}"#
+            ),
+            concat!(
+                r#"{"type":"usage.record","model":"kimi-code/k3","usage":{"inputOther":9999,"#,
+                r#""output":9999,"inputCacheRead":9999,"inputCacheCreation":9999},"#,
+                r#""usageScope":"session"}"#
+            ),
+            concat!(
+                r#"{"type":"context.append_loop_event","event":{"usage":{"inputOther":3411,"#,
+                r#""output":91}}}"#
+            ),
+            concat!(
+                r#"{"type":"turn.summary","usage":{"inputOther":8888,"output":8888},"#,
+                r#""usageScope":"turn"}"#
+            ),
         ];
         let usage = parse_kimi_wire_usage(&lines.join("\n"), Some("kimi-code/k3".into()));
         assert_eq!(usage.input, 3622, "summed inputOther across the two turns");

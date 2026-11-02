@@ -325,7 +325,9 @@ mod tests {
         std::fs::write(
             &log_path,
             concat!(
-                r#"{"type":"session.mcp_servers_loaded","data":{"servers":[{"name":"github-mcp-server","status":"connected","source":"builtin","transport":"http"}]},"ephemeral":true}"#,
+                r#"{"type":"session.mcp_servers_loaded","#,
+                r#""data":{"servers":[{"name":"github-mcp-server","status":"connected","#,
+                r#""source":"builtin","transport":"http"}]},"ephemeral":true}"#,
                 "\n"
             ),
         )

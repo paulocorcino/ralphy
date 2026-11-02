@@ -116,7 +116,8 @@ pub fn draft_issues(
 }
 
 /// Run a one-shot headless `kimi` knowledge-consolidation session in `ws`'s repo
-/// cwd: pass the shared consolidation charter on argv and wait up to `timeout`. The session's only deliverable is the rewritten `KNOWLEDGE.md`,
+/// cwd: pass the shared consolidation charter on argv and wait up to `timeout`.
+/// The session's only deliverable is the rewritten `KNOWLEDGE.md`,
 /// which the caller verifies; the consumed notes are archived by the caller, not
 /// here. Mirrors the Claude adapter's `consolidate_knowledge` signature so the cli
 /// can dispatch on the selected agent. `effort` is a documented no-op
