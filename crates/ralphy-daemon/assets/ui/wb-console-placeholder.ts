@@ -5,13 +5,11 @@
    (same chrome, same box, no session), relaunches it or attaches it to the
    session that runs it now, brings placeholders back on a resume, and keeps
    the relaunch marks the columns wait for. It reads the console only through
-   `deps`. The rules are `placeholderSession` in `wb-desk-folds.ts` and the
-   peer rules in `wb-console-session.ts`; a live window is
-   `wb-console-spawn.ts` (#621).
+   `deps`. The rules are in `wb-console-placeholder-reads.ts` and the peer rules
+   in `wb-console-session.ts`; a live window is `wb-console-spawn.ts` (#621).
 --------------------------------------------------------------------------- */
 import * as WBConsoleSession from "./wb-console-session.ts";
-import * as WBDeskFolds from "./wb-desk-folds.ts";
-import { WBWindowState } from "./wb-window-state.ts";
+import { checkoutStillThere, liveSessionFor } from "./wb-console-placeholder-reads.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
@@ -31,11 +29,8 @@ const {
   peerOfflineView,
   peerActionLabel,
   heldReturnDecision,
-  unheardRef,
   relaunchRequest,
 } = WBConsoleSession;
-const { placeholderSession, isUnknownCheckout } = WBDeskFolds;
-const { sessionIdOf } = WBWindowState;
 
 // What the placeholder reads from the console, and nothing else. Every dep is
 // built before it; the spawn, the desk, the detach and the dormancy take its
@@ -106,41 +101,14 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     spawnWindow,
     deskOf,
     recordBirth,
-    readSessions,
     peerGroups,
     wakePeerNow,
-    reloadDesk,
-    loadDesk,
     forgetRecord,
     askConfirm,
     applyExtent,
     changed,
   } = deps;
 
-  // Whether the worktree a relaunch asks for is still there (#411). The daemon
-  // refuses a launch into a missing worktree with a `400` BEFORE the socket
-  // upgrades, and a browser cannot read that status. So ask first, through the
-  // cheapest Observe read that takes a checkout (no spawn): the ONE reply that
-  // means the tree is gone is `unknown checkout`. Anything else — an
-  // unreachable daemon included — lets the launch decide.
-  async function checkoutStillThere(
-    repo: string | null | undefined,
-    checkout: string | null | undefined,
-  ) {
-    const daemon = window.WBDaemon;
-    if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
-    let reply;
-    try {
-      reply = await daemon.observe("tree.list", { repo, path: "", checkout });
-    } catch {
-      return true;
-    }
-    return !isUnknownCheckout(reply);
-  }
-
-  // Spawn an agent console — unless the worktree it asks for is gone, in which
-  // case a placeholder SAYS so (#411). A console must never silently land on
-  // the primary tree because its own vanished (the #409 gates).
   // Desk ids whose window a relaunch took off the stage and has not put back
   // yet: the columns (`wbColumns`) wait for them instead of dropping them.
   const relaunching = new Set<string | undefined>();
@@ -159,6 +127,9 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     }
   }
 
+  // Spawn an agent console, unless the worktree it asks for is gone: then a
+  // placeholder SAYS so (#411). A console must never silently land on the
+  // primary tree because its own vanished (the #409 gates).
   async function spawnOrMissing(
     req: TerminalOpts,
     label: string | null | undefined,
@@ -166,40 +137,13 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     carry: SpawnCarry,
   ) {
     try {
-      if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
+      if (req.checkout && !(await checkoutStillThere(window, repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
       }
       return spawnWindow(req, label, repo, carry);
     } finally {
       relaunching.delete(carry?.id);
     }
-  }
-
-  // The live session a placeholder should attach to, read NOW: the page was
-  // loaded before another device started this console, so neither the mirror
-  // nor the load-time session list knows it. `null` when the list says it does
-  // not run; `undefined` when that is not known — the list cannot be read, or
-  // it did not hear from the record's peer.
-  async function liveSessionFor(win: ConsoleWin, record: SpawnCarry) {
-    await reloadDesk();
-    let sessions;
-    try {
-      const read = await readSessions();
-      if (unheardRef(record.repo, read.unheard)) return undefined;
-      sessions = read.sessions;
-    } catch {
-      return undefined;
-    }
-    const layout: WBDeskFolds.FoldRecord[] = loadDesk();
-    // Deleted by another page: this window still stands for it.
-    if (!layout.some((rec) => rec.id === win._deskId)) {
-      layout.push({ ...record, id: win._deskId, sessionId: null });
-    }
-    const held = [...wins]
-      .filter((w) => w !== win && !w.classList.contains("placeholder"))
-      .map((w) => ({ id: sessionIdOf(w), repo: w._deskRepo }))
-      .filter((h) => h.id != null);
-    return placeholderSession({ layout, sessions, recordId: win._deskId, held });
   }
 
   // Bring every placeholder whose console now runs somewhere back as an attached
@@ -388,7 +332,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // A placeholder restored for a recorded worktree asks whether that tree is
     // still there (no spawn), so the box says "gone" on load, not on the click.
     else if (record.checkout) {
-      void checkoutStillThere(record.repo, record.checkout).then((there) => {
+      void checkoutStillThere(window, record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
       });
     }
@@ -419,7 +363,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     let checking: Promise<HostedSession | null | undefined> | null = null;
     const check = () => {
       if (!checking) {
-        checking = liveSessionFor(win, record)
+        checking = liveSessionFor(deps, win, record)
           .catch(() => undefined)
           .finally(() => {
             checking = null;

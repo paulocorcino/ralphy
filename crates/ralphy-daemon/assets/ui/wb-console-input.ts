@@ -199,8 +199,12 @@ export function applyCtrlLatch(latched: boolean, d: string) {
 // startup `ESC[6n` is always there), so these answers are dropped while it
 // replays. A modified F3 (`CSI 1;5R`) has the same bytes as a cursor answer;
 // the replay lasts a moment, so that collision is accepted.
-const TERMINAL_REPLY =
-  /^\x1b(?:\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)|P[\s\S]*\x1b\\|\]\d+;[\s\S]*(?:\x07|\x1b\\))$/;
+const CSI_REPLY = /\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)/;
+const DCS_REPLY = /P[\s\S]*\x1b\\/;
+const OSC_REPLY = /\]\d+;[\s\S]*(?:\x07|\x1b\\)/;
+const TERMINAL_REPLY = new RegExp(
+  `^\\x1b(?:${CSI_REPLY.source}|${DCS_REPLY.source}|${OSC_REPLY.source})$`,
+);
 export function isTerminalReply(d: string) {
   return typeof d === "string" && TERMINAL_REPLY.test(d);
 }

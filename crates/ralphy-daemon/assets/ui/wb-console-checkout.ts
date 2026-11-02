@@ -11,6 +11,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBWindowState } from "./wb-window-state.ts";
+import { askWorktree } from "./wb-console-worktree.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { Listing } from "./wb-project.ts";
 import type { ConsoleWin, DeskWindowFields, Presentation } from "./wb-types.d.ts";
@@ -51,16 +52,6 @@ export type CheckoutMenuOptions = {
   onRemove?: (row: CheckoutRow) => void | Promise<void>;
   onCreate?: () => void;
 };
-
-// What the new worktree prompt is opened with, and what it answers.
-type WorktreeAsk = {
-  base: string;
-  branches: string[];
-  listing: Listing | null | undefined;
-  error?: string;
-  name?: string;
-};
-type WorktreeAnswer = { name: string; base: string } | null;
 
 // What the switcher reads from the console, and nothing else.
 export type CheckoutDeps = {
@@ -316,7 +307,9 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
       title: `Restart in ${checkout ?? "primary"}?`,
-      message: `Restarts the ${win._deskAgent} session in ${where}. You lose the text in this console.`,
+      message:
+        `Restarts the ${win._deskAgent} session in ${where}. ` +
+        "You lose the text in this console.",
       confirmLabel: "Restart",
     });
     if (!ok) return;
@@ -351,148 +344,6 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     }
   }
 
-  // The "new worktree" prompt: a name (worktree AND branch, ADR-0063 §2) and
-  // the base branch. The name gate is `WBProject.worktreeCreateRow`; a refusal
-  // the daemon DID send (`error`) re-opens with the message under the field.
-  // Resolves `{name, base}` or `null` on cancel.
-  function askWorktree({
-    base,
-    branches,
-    listing,
-    error = "",
-    name = "",
-  }: WorktreeAsk): Promise<WorktreeAnswer> {
-    const scrim = document.createElement("div");
-    scrim.className = "modal-scrim wb-confirm";
-    const modal = document.createElement("div");
-    modal.className = "modal confirm-modal wb-worktree";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-label", "New worktree");
-    const head = document.createElement("div");
-    head.className = "modal-head";
-    head.innerHTML = '<i class="bi bi-folder-plus"></i>';
-    const heading = document.createElement("span");
-    heading.className = "modal-title";
-    heading.textContent = "New worktree";
-    head.append(heading);
-    const form = document.createElement("div");
-    form.className = "wb-worktree-form";
-    const nameLabel = document.createElement("label");
-    nameLabel.textContent = "Name";
-    const nameInput = document.createElement("input");
-    nameInput.className = "prompt-input";
-    nameInput.placeholder = "Worktree and branch name";
-    nameInput.value = name;
-    const baseLabel = document.createElement("label");
-    baseLabel.textContent = "From";
-    const baseInput = baseField(base, branches);
-    const note = document.createElement("p");
-    note.className = "wb-worktree-note";
-    note.textContent = `${WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. You lose the text in this console.`;
-    const err = document.createElement("p");
-    err.className = "prompt-error";
-    err.textContent = error;
-    err.hidden = !error;
-    form.append(nameLabel, nameInput, baseLabel, baseInput, note, err);
-    const foot = document.createElement("div");
-    foot.className = "modal-foot";
-    const cancel = document.createElement("button");
-    cancel.className = "btn";
-    cancel.type = "button";
-    cancel.textContent = "Cancel";
-    const go = document.createElement("button");
-    go.className = "btn accent";
-    go.type = "button";
-    go.textContent = "Create & restart";
-    foot.append(cancel, go);
-    modal.append(head, form, foot);
-    scrim.append(modal);
-    document.body.append(scrim);
-    nameInput.focus();
-    nameInput.select();
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const done = (value: WorktreeAnswer) => {
-        if (settled) return;
-        settled = true;
-        document.removeEventListener("keydown", onKey, true);
-        scrim.remove();
-        resolve(value);
-      };
-      const problem = () =>
-        WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
-      const submit = () => {
-        const row = WBProject?.worktreeCreateRow?.(
-          listing || { worktrees: [] },
-          baseInput.value,
-          nameInput.value,
-        );
-        if (!row) {
-          err.textContent = problem() || "Choose a branch to start from.";
-          err.hidden = false;
-          nameInput.focus();
-          return;
-        }
-        done({ name: row.name, base: row.base });
-      };
-      // The mask runs on every edit, typed or pasted: a refused character
-      // never shows, and there is no message. The caret stays after the
-      // last kept character. The create stays disabled, without a message,
-      // while the name is still one the daemon would refuse.
-      const mask = WBProject?.maskWorktreeName || ((s: string) => s);
-      nameInput.addEventListener("input", () => {
-        const raw = nameInput.value;
-        const masked = mask(raw);
-        if (masked !== raw) {
-          const caret = mask(raw.slice(0, nameInput.selectionStart ?? raw.length)).length;
-          nameInput.value = masked;
-          nameInput.setSelectionRange(caret, caret);
-        }
-        err.textContent = "";
-        err.hidden = true;
-        go.disabled = !!problem();
-      });
-      go.disabled = !!problem();
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          done(null);
-        } else if (e.key === "Enter" && modal.contains(document.activeElement)) {
-          e.stopPropagation();
-          if (document.activeElement === cancel) done(null);
-          else submit();
-        }
-      };
-      document.addEventListener("keydown", onKey, true);
-      cancel.addEventListener("click", () => done(null));
-      go.addEventListener("click", submit);
-    });
-  }
-
-  // The prompt's base branch field: a list of the known branches with `base`
-  // chosen, or free text when no branch could be read.
-  function baseField(base: string, branches: string[]) {
-    if (!branches?.length) {
-      const input = document.createElement("input");
-      input.className = "prompt-input";
-      input.value = base || "";
-      input.placeholder = "Branch to start from";
-      return input;
-    }
-    const select = document.createElement("select");
-    select.className = "prompt-input";
-    for (const b of branches) {
-      const opt = document.createElement("option");
-      opt.value = b;
-      opt.textContent = b;
-      select.append(opt);
-    }
-    select.value = branches.includes(base) ? base : (branches[0] ?? "");
-    return select;
-  }
-
   // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
   // shell, and move THIS console into it (the prompt already said it restarts).
   // Base list is `branch.list`, one read per prompt; unreadable → free text.
@@ -506,7 +357,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     let error = "";
     let name = "";
     for (;;) {
-      const ask = await askWorktree({
+      const ask = await askWorktree(document, {
         base,
         branches,
         listing: listingOf(repo),

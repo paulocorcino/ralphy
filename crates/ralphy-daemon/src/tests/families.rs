@@ -67,6 +67,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-place.ts"),
     ),
     (
+        "wb-console-placeholder-reads.ts",
+        include_str!("../../assets/ui/wb-console-placeholder-reads.ts"),
+    ),
+    (
         "wb-console-placeholder.ts",
         include_str!("../../assets/ui/wb-console-placeholder.ts"),
     ),
@@ -83,8 +87,16 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-session.ts"),
     ),
     (
+        "wb-console-spawn-records.ts",
+        include_str!("../../assets/ui/wb-console-spawn-records.ts"),
+    ),
+    (
         "wb-console-spawn.ts",
         include_str!("../../assets/ui/wb-console-spawn.ts"),
+    ),
+    (
+        "wb-console-strips.ts",
+        include_str!("../../assets/ui/wb-console-strips.ts"),
     ),
     (
         "wb-console-tabs.ts",
@@ -109,6 +121,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-console-touch.ts",
         include_str!("../../assets/ui/wb-console-touch.ts"),
+    ),
+    (
+        "wb-console-worktree.ts",
+        include_str!("../../assets/ui/wb-console-worktree.ts"),
     ),
     (
         "wb-stage-chrome.ts",

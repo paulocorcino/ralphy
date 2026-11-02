@@ -3,18 +3,8 @@
 
    Consoles are draggable, resizable windows on the STAGE, a plane the VIEWPORT
    (`#workspace`, `overflow:auto`) scrolls over. This module builds the console
-   from its parts and returns them as `WBConsole`. The parts are: the desk
-   records `wb-desk-records.ts`; the desk `wb-desk.ts`; the feeds
-   `wb-console-feeds.ts`; the title and the worktree switcher
-   `wb-console-title.ts`; the popups `wb-desk-popups.ts`; sleep and resume
-   `wb-console-dormancy.ts`; the parts of the stage `wb-stage-parts.ts` (the
-   window states, the columns, the fence list, the view and the chrome); the
-   GPU budget `wb-console-gpu.ts`; the opener's side of a detach
-   `wb-desk-detach.ts`; the key bar `wb-console-keys.ts`; the terminal (a
-   live xterm.js on a PTY) `wb-console-terminal.ts`; the fences
-   `wb-stage-fences.ts`; the window birth
-   `wb-console-spawn.ts`; the placeholder `wb-console-placeholder.ts`; the
-   `WBConsole` object `wb-console-api.ts`.
+   from its parts and returns them as `WBConsole`. Each part is the module
+   its `import` line names and its `// ----` section below says.
 
    Importing this module does nothing. Each entry module calls `createConsole`
    once per page, sets `window.WBConsole`, and calls `boot` after the page has
