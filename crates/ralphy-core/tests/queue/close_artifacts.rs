@@ -121,7 +121,9 @@ fn ledgerless_plan_bounces_and_writes_no_evidence() {
 #[test]
 fn green_close_posts_handoff_and_friction_comment() {
     let repo = init_repo("handoff-close");
-    let extra = "## Handoff\n\n- **Delivered**: lab fixtures (abc1234)\n- **Residue**: Setup-Lab.ps1 never ran clean-slate\n\n## Plan friction\n\n- the plan treated the lab as a given precondition";
+    let extra = "## Handoff\n\n- **Delivered**: lab fixtures (abc1234)\n- **Residue**: \
+    Setup-Lab.ps1 never ran clean-slate\n\n## Plan friction\n\n- the plan treated the lab as a \
+    given precondition";
     let queue = vec![issue(1)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_extra(extra);
     let tracker = RecordingTracker::default();
@@ -160,8 +162,11 @@ fn green_close_posts_handoff_and_friction_comment() {
 #[test]
 fn green_close_appends_knowledge_used_citations() {
     let repo = init_repo("citations-close");
-    let cited = "## Handoff\n\n- **Delivered**: fix (abc1234)\n- **Knowledge used**:\n  - \"Toolchain & platform\" — cargo test needs docker up first\n  - handoffs.md #5: schema rejects empty DEVICEID\n\n## Plan friction\n\n- none";
-    let none = "## Handoff\n\n- **Delivered**: docs (def5678)\n- **Knowledge used**: none\n\n## Plan friction\n\n- none";
+    let cited = "## Handoff\n\n- **Delivered**: fix (abc1234)\n- **Knowledge used**:\n  - \
+    \"Toolchain & platform\" — cargo test needs docker up first\n  - handoffs.md #5: schema \
+    rejects empty DEVICEID\n\n## Plan friction\n\n- none";
+    let none = "## Handoff\n\n- **Delivered**: docs (def5678)\n- **Knowledge used**: none\n\n## \
+    Plan friction\n\n- none";
     let queue = vec![issue(1), issue(2)];
     let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
         .with_plan_extra_for(1, cited)
@@ -324,7 +329,9 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
             closed_issues: HashSet::from([2]),
             handoffs: HashMap::from([(
                 2u64,
-                "## Handoff\n\n- **Delivered**: lab fixtures\n- **Commands that work**: docker compose up -d".to_string(),
+                "## Handoff\n\n- **Delivered**: lab fixtures\n- **Commands that work**: docker \
+                compose up -d"
+                    .to_string(),
             )]),
             ..Default::default()
         };

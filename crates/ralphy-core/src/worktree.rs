@@ -61,7 +61,10 @@ impl UnstageOutcome {
             UnstageOutcome::Unstaged { .. } => return None,
             UnstageOutcome::NoPaths => "cannot unstage: no paths were given".to_string(),
             UnstageOutcome::NotInChangeSet { path } => {
-                format!("cannot unstage: {path} has no change — it may be committed or reverted already")
+                format!(
+                    "cannot unstage: {path} has no change — it may be committed or reverted \
+                already"
+                )
             }
         })
     }
@@ -99,7 +102,10 @@ impl DiscardOutcome {
             DiscardOutcome::Discarded { .. } => return None,
             DiscardOutcome::NoPaths => "cannot discard: no paths were given".to_string(),
             DiscardOutcome::NotInChangeSet { path } => {
-                format!("cannot discard: {path} has no change — it may be committed or reverted already")
+                format!(
+                    "cannot discard: {path} has no change — it may be committed or reverted \
+                already"
+                )
             }
             DiscardOutcome::Conflicted { path } => {
                 format!(

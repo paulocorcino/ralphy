@@ -148,13 +148,19 @@ mod tests {
     use super::*;
 
     /// A canonical draft covering all three verdicts, pinning the wire format.
-    const SAMPLE_JSON: &str = r###"{
+    const SAMPLE_JSON: &str = concat!(
+        r###"{
         "items": [
-            { "number": 12, "verdict": "promote", "comment": "<!-- ralphy:promote-evidence -->\n## Evidence (AFK)\n- src/foo.rs:42 raises on empty input" },
-            { "number": 15, "verdict": "consolidate", "comment": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\n..." },
-            { "number": 18, "verdict": "bounce", "comment": "Missing acceptance criteria and a repro." }
+            { "number": 12, "verdict": "promote", "###,
+        r###""comment": "<!-- ralphy:promote-evidence -->\n## Evidence (AFK)\n"###,
+        r###"- src/foo.rs:42 raises on empty input" },
+            { "number": 15, "verdict": "consolidate", "###,
+        r###""comment": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\n..." },
+            { "number": 18, "verdict": "bounce", "###,
+        r###""comment": "Missing acceptance criteria and a repro." }
         ]
-    }"###;
+    }"###
+    );
 
     #[test]
     fn triage_draft_parses_sample_json() {
@@ -206,7 +212,10 @@ mod tests {
     #[test]
     fn escalate_parses_validates_and_requires_comment() {
         // A genuine escalate item parses, and validates once it carries a comment.
-        let json = r#"{ "number": 21, "verdict": "escalate", "comment": "A maintainer must decide the pricing-rule change; see ## Evidence." }"#;
+        let json = concat!(
+            r#"{ "number": 21, "verdict": "escalate", "#,
+            r#""comment": "A maintainer must decide the pricing-rule change; see ## Evidence." }"#
+        );
         let item: TriageItem = serde_json::from_str(json).expect("parse escalate");
         assert_eq!(item.verdict, TriageVerdict::Escalate);
         TriageDraft { items: vec![item] }

@@ -62,8 +62,8 @@ struct Tool {
 
 /// The probe list: common language runtimes, package managers, and the shell
 /// tools agents reach for in verify/smoke steps (`gh` included — Ralphy's own
-/// workflow is GitHub-driven, and its omission once read as "not installed"). Curated for signal over
-/// coverage — niche toolchains (JVM, .NET) are intentionally omitted to keep the
+/// workflow is GitHub-driven, and its omission once read as "not installed"). Curated for
+/// signal over coverage — niche toolchains (JVM, .NET) are intentionally omitted to keep the
 /// brief short; only tools found on this machine appear in the output. `python`
 /// and `python3` are both probed because the canonical name differs by OS.
 const TOOLS: &[Tool] = &[

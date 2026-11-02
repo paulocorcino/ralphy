@@ -271,7 +271,8 @@ some note
 
     #[test]
     fn infeasible_reason_reads_feasible_section_with_verdict_tail() {
-        let md = "# Plan for #3\n\n## Feasible: no\nThe issue bundles six PRD tasks; split into W1-T01..T06.\n\n## Steps\n";
+        let md = "# Plan for #3\n\n## Feasible: no\nThe issue bundles six PRD tasks; split into \
+        W1-T01..T06.\n\n## Steps\n";
         let reason = infeasible_reason(md).expect("reason present");
         assert!(reason.contains("bundles six PRD tasks"));
     }
@@ -295,9 +296,11 @@ some note
     #[test]
     fn is_bundle_verdict_reads_the_heading_before_the_prose() {
         // A feasible verdict whose prose denies being a bundle.
-        let yes = "# Plan\n\n## Feasible: yes\nNot a bundle: diagnosis §11 maps this work to #511 alone.\n\n## Steps\n- [x] a\n";
+        let yes = "# Plan\n\n## Feasible: yes\nNot a bundle: diagnosis §11 maps this work to #511 \
+        alone.\n\n## Steps\n- [x] a\n";
         assert!(!is_bundle_verdict(yes));
-        let no = "# Plan\n\n## Feasible: no\nThe issue bundles six PRD tasks; split into W1-T01..T06.\n\n## Steps\n";
+        let no = "# Plan\n\n## Feasible: no\nThe issue bundles six PRD tasks; split into \
+        W1-T01..T06.\n\n## Steps\n";
         assert!(is_bundle_verdict(no));
         let generic = "# Plan\n\n## Feasible: no\nNo verifiable done condition.\n\n## Steps\n";
         assert!(!is_bundle_verdict(generic));

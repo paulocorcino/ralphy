@@ -153,7 +153,8 @@ impl GhTracker {
                 number,
                 login = %d.login,
                 association = %d.association,
-                "dropped issue comment from a non-collaborator — set queue.trust_all_comments=true to include it"
+                "dropped issue comment from a non-collaborator — set queue.trust_all_comments=true \
+                to include it"
             );
         }
         Ok(comments.kept)
