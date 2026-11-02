@@ -168,8 +168,20 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
     ),
     ("wb-desk.ts", include_str!("../../assets/ui/wb-desk.ts")),
     (
+        "wb-desk-converge.ts",
+        include_str!("../../assets/ui/wb-desk-converge.ts"),
+    ),
+    (
+        "wb-desk-detach-notes.ts",
+        include_str!("../../assets/ui/wb-desk-detach-notes.ts"),
+    ),
+    (
         "wb-desk-detach.ts",
         include_str!("../../assets/ui/wb-desk-detach.ts"),
+    ),
+    (
+        "wb-desk-flush.ts",
+        include_str!("../../assets/ui/wb-desk-flush.ts"),
     ),
     (
         "wb-desk-folds.ts",
@@ -178,6 +190,14 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-desk-history.ts",
         include_str!("../../assets/ui/wb-desk-history.ts"),
+    ),
+    (
+        "wb-desk-peer.ts",
+        include_str!("../../assets/ui/wb-desk-peer.ts"),
+    ),
+    (
+        "wb-desk-popup-message.ts",
+        include_str!("../../assets/ui/wb-desk-popup-message.ts"),
     ),
     (
         "wb-desk-popups.ts",

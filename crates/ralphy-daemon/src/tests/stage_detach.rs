@@ -53,6 +53,7 @@ fn shell_detaches_a_fence() {
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../../assets/ui/wb-desk.ts"),
         include_str!("../../assets/ui/wb-desk-restore.ts"),
+        include_str!("../../assets/ui/wb-desk-flush.ts"),
         include_str!("../../assets/ui/wb-desk-detach.ts"),
     ]
     .concat();
@@ -274,6 +275,7 @@ fn shell_survives_a_reload_with_its_detach() {
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../../assets/ui/wb-desk.ts"),
         include_str!("../../assets/ui/wb-desk-restore.ts"),
+        include_str!("../../assets/ui/wb-desk-flush.ts"),
         include_str!("../../assets/ui/wb-desk-detach.ts"),
     ]
     .concat();
