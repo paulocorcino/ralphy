@@ -254,9 +254,14 @@ mod tests {
         write(
             &stores.codex_dir.join("sessions/rollout-codex.jsonl"),
             concat!(
-                "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-meta\",\"cwd\":\"C:\\\\repo\"}}\n",
-                "{\"timestamp\":\"2026-07-29T00:00:01Z\",\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
-                "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"output_tokens\":2}}}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"type\":\"session_meta\",",
+                "\"payload\":{\"id\":\"codex-meta\",\"cwd\":\"C:\\\\repo\"}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:01Z\",\"type\":\"turn_context\",",
+                "\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"type\":\"event_msg\",",
+                "\"payload\":{\"type\":\"token_count\",",
+                "\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,",
+                "\"output_tokens\":2}}}}\n",
             ),
         );
 
@@ -284,14 +289,23 @@ mod tests {
             &stores
                 .claude_projects_dir
                 .join("workspace/sess-claude.jsonl"),
-            r#"{"timestamp":"2026-07-29T00:00:00Z","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#,
+            concat!(
+                r#"{"timestamp":"2026-07-29T00:00:00Z","message":{"id":"m1","#,
+                r#""model":"claude-opus-4-8","usage":{"input_tokens":10,"output_tokens":0,"#,
+                r#""cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#
+            ),
         );
         write(
             &stores.codex_dir.join("sessions/rollout-codex.jsonl"),
             concat!(
-                "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-meta\",\"cwd\":\"C:\\\\repo\"}}\n",
-                "{\"timestamp\":\"2026-07-29T00:00:01Z\",\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
-                "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"output_tokens\":2}}}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"type\":\"session_meta\",",
+                "\"payload\":{\"id\":\"codex-meta\",\"cwd\":\"C:\\\\repo\"}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:01Z\",\"type\":\"turn_context\",",
+                "\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
+                "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"type\":\"event_msg\",",
+                "\"payload\":{\"type\":\"token_count\",",
+                "\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,",
+                "\"output_tokens\":2}}}}\n",
             ),
         );
         let copilot = Connection::open(&stores.copilot_db).unwrap();
@@ -314,15 +328,21 @@ mod tests {
         drop(copilot);
         write(
             &stores.cursor_dir.join("chats/hash/sess-cursor/meta.json"),
-            r#"{"schemaVersion":1,"createdAtMs":1784593842510,"hasConversation":true,"updatedAtMs":1784593855173,"cwd":"C:\\repo"}"#,
+            concat!(
+                r#"{"schemaVersion":1,"createdAtMs":1784593842510,"hasConversation":true,"#,
+                r#""updatedAtMs":1784593855173,"cwd":"C:\\repo"}"#
+            ),
         );
         write(
             &stores
                 .gemini_dir
                 .join("tmp/project/chats/sess-gemini.jsonl"),
             concat!(
-                "{\"sessionId\":\"sess-gemini\",\"startTime\":\"2026-07-29T00:00:00Z\",\"lastUpdated\":\"2026-07-29T00:00:01Z\",\"kind\":\"main\"}\n",
-                "{\"id\":\"turn\",\"type\":\"gemini\",\"tokens\":{\"input\":10,\"output\":2,\"cached\":0,\"thoughts\":0,\"tool\":0,\"total\":12},\"model\":\"gemini-3.5-flash\"}\n",
+                "{\"sessionId\":\"sess-gemini\",\"startTime\":\"2026-07-29T00:00:00Z\",",
+                "\"lastUpdated\":\"2026-07-29T00:00:01Z\",\"kind\":\"main\"}\n",
+                "{\"id\":\"turn\",\"type\":\"gemini\",\"tokens\":{\"input\":10,\"output\":2,",
+                "\"cached\":0,\"thoughts\":0,\"tool\":0,\"total\":12},",
+                "\"model\":\"gemini-3.5-flash\"}\n",
             ),
         );
         write(
@@ -333,7 +353,12 @@ mod tests {
             &stores
                 .kimi_code_dir
                 .join("sessions/ws/sess-kimi/agents/main/wire.jsonl"),
-            r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usage":{"inputOther":10,"output":2,"inputCacheRead":0,"inputCacheCreation":0},"usageScope":"turn","time":1780319377010}"#,
+            concat!(
+                r#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","#,
+                r#""usage":{"inputOther":10,"output":2,"#,
+                r#""inputCacheRead":0,"inputCacheCreation":0},"#,
+                r#""usageScope":"turn","time":1780319377010}"#
+            ),
         );
         let opencode = Connection::open(&stores.opencode_db).unwrap();
         opencode
@@ -342,7 +367,8 @@ mod tests {
                  CREATE TABLE session (id TEXT, directory TEXT);
                  INSERT INTO message VALUES (
                     'm1', 'sess-opencode',
-                    '{\"role\":\"assistant\",\"modelID\":\"k2p6\",\"tokens\":{\"input\":10,\"output\":2}}'
+                    '{\"role\":\"assistant\",\"modelID\":\"k2p6\",\"tokens\":{\"input\":10,\
+                    \"output\":2}}'
                  );",
             )
             .unwrap();
