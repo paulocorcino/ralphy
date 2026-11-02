@@ -5,7 +5,11 @@
 // runs the `host.*` verbs and feeds what they answer to `next`; the progress of
 // `host check|add|remove` arrives as raw output chunks of JSON lines (the CLI's
 // `--json` mode), which `feed` splits into events.
-import { isRecord } from "./wb-api.ts";
+import { progress, sentence } from "./wb-hosts-progress.ts";
+
+export { feed } from "./wb-hosts-progress.ts";
+export { helpTabs, WRONG_ADDRESS } from "./wb-hosts-help.ts";
+export type { HelpTab } from "./wb-hosts-help.ts";
 
 /** An SSH config host the form can pick (`host.aliases`). */
 export type Alias = { alias: string; hostname?: string; user?: string; port?: number | string };
@@ -110,12 +114,6 @@ export type Action =
   | { type: "exit"; verb: string; code: number | null | undefined }
   | { type: "help-tab"; tab: string };
 
-export type HelpTab = {
-  id: string;
-  name: string;
-  steps: { text: string | null; command: string | null }[];
-};
-
 export function initial(): State {
   return {
     open: false,
@@ -194,112 +192,6 @@ export function fields(dest: string | null | undefined): {
 // A new form on `tab`, keeping what does not belong to one host.
 function fresh(s: State, tab: State["tab"]): State {
   return Object.assign(initial(), { open: s.open, aliases: s.aliases, tab: tab });
-}
-
-// Split raw output into JSON-line events. `buf` carries a partial last line
-// to the next chunk; a line that is not an event object is dropped.
-export function feed(
-  buf: string | null | undefined,
-  chunk: string | null | undefined,
-): { rest: string; events: Progress[] } {
-  const parts = (String(buf || "") + String(chunk || "")).split("\n");
-  // `split` always returns at least one part.
-  const rest = parts.pop() ?? "";
-  const events: Progress[] = [];
-  for (const raw of parts) {
-    const line = raw.trim();
-    if (!line) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    // The one unchecked step: the daemon runs its own `ralphy` executable,
-    // so a line is an event of the same build, as a reply of `apiFetch` is.
-    if (isRecord(parsed) && typeof parsed.event === "string") {
-      events.push(parsed as Progress);
-    }
-  }
-  return { rest: rest, events: events };
-}
-
-// The CLI's errors are chained, so they start lowercase; shown alone they
-// start a sentence.
-function sentence(text: string | null | undefined): string {
-  const t = String(text || "");
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-function upsert(checks: Check[], check: Check): Check[] {
-  const at = checks.findIndex((c) => c.id === check.id);
-  if (at < 0) return checks.concat([check]);
-  const copy = checks.slice();
-  copy[at] = check;
-  return copy;
-}
-
-// The check a `check` event reports, as the dialog keeps it.
-function checkOf(ev: Extract<Progress, { event: "check" }>): Check {
-  return {
-    id: ev.id,
-    label: ev.label || ev.id,
-    status: ev.status,
-    text: ev.text || "",
-    command: ev.command || null,
-  };
-}
-
-// What `ralphy host install` would send, from an `install` event.
-function installOf(ev: Extract<Progress, { event: "install" }>): Install {
-  return {
-    version: String(ev.version || ""),
-    target: String(ev.target || ""),
-    source: ev.source === "release" ? ("release" as const) : ("this-computer" as const),
-    folder: String(ev.folder || ""),
-  };
-}
-
-// The state after a `failed` event.
-function failedState(s: State, ev: Extract<Progress, { event: "failed" }>): State {
-  const failure = {
-    kind: ev.kind || "other",
-    message: sentence(ev.message),
-    keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
-  };
-  const after: State = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
-  // Sign-in failed: back to the fields, where the password is typed.
-  if (ev.kind === "auth_refused") after.step = "connection";
-  if (ev.kind === "password_refused") Object.assign(after, { step: "connection", password: "" });
-  return after;
-}
-
-// One progress event of the CLI's `--json` mode.
-function progress(s: State, ev: Progress | undefined): State {
-  if (!ev) return s;
-  switch (ev.event) {
-    // Signed in: a key works now, so the password is not kept.
-    case "connected":
-      return Object.assign({}, s, { os: ev.os || "", password: "" });
-    case "check":
-      return Object.assign({}, s, { checks: upsert(s.checks, checkOf(ev)) });
-    case "fixed":
-      return Object.assign({}, s, {
-        checks: s.checks.map((c) =>
-          c.id === ev.id ? Object.assign({}, c, { status: "pass" }) : c,
-        ),
-      });
-    case "install":
-      return Object.assign({}, s, { install: installOf(ev) });
-    case "note":
-      return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
-    case "failed":
-      return failedState(s, ev);
-    case "added":
-      return Object.assign({}, s, { done: true, addedName: String(ev.name || "") });
-    default:
-      return s;
-  }
 }
 
 // Edit is the add flow with the host's connection filled in. The
@@ -530,76 +422,3 @@ export function installText(s: State): string {
     " on the host."
   );
 }
-
-// How to turn on the SSH server, per system, when the connection failed
-// before the dialog could learn the host's system.
-export function helpTabs(): HelpTab[] {
-  return [
-    {
-      id: "windows",
-      name: "Windows",
-      steps: [
-        {
-          text: "In PowerShell as administrator, install the SSH server and start it.",
-          command: "Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0",
-        },
-        { text: null, command: "Start-Service sshd" },
-        { text: null, command: "Set-Service -Name sshd -StartupType Automatic" },
-        {
-          text: "Check that the firewall lets SSH in.",
-          command: "Get-NetFirewallRule -Name OpenSSH-Server-In-TCP",
-        },
-        {
-          text: "When the rule is missing, create it.",
-          command:
-            "New-NetFirewallRule -Name OpenSSH-Server-In-TCP -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22",
-        },
-        {
-          text: "Sign in with the account password, not the “Windows Hello” PIN.",
-          command: null,
-        },
-        {
-          text: "With a Microsoft account, the user name is the local one. This command shows it.",
-          command: "whoami",
-        },
-      ],
-    },
-    {
-      id: "macos",
-      name: "macOS",
-      steps: [
-        {
-          text: "On macOS 13 and later, turn on “Remote Login” in “System Settings › General › Sharing”.",
-          command: null,
-        },
-        {
-          text: "On macOS 12, turn on “Remote Login” in “System Preferences › Sharing”.",
-          command: null,
-        },
-      ],
-    },
-    {
-      id: "linux",
-      name: "Linux",
-      steps: [
-        {
-          text: "Install the SSH server and start it. On Debian and Ubuntu:",
-          command: "sudo apt install openssh-server && sudo systemctl enable --now ssh",
-        },
-        {
-          text: "On Fedora:",
-          command: "sudo dnf install openssh-server && sudo systemctl enable --now sshd",
-        },
-      ],
-    },
-  ];
-}
-
-export const WRONG_ADDRESS = {
-  text: "A refused connection can also mean a wrong address. Read the address on the host itself.",
-  commands: [
-    { name: "macOS", command: "ipconfig getifaddr en0" },
-    { name: "Linux", command: "hostname -I" },
-    { name: "Windows", command: "ipconfig" },
-  ],
-};
