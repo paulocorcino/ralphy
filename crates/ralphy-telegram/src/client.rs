@@ -338,7 +338,10 @@ mod tests {
                     "ok": true,
                     "result": [
                         { "update_id": 1, "message": { "text": "/start", "chat": { "id": 1 } } },
-                        { "update_id": 2, "edited_message": { "text": "/start", "chat": { "id": 2 } } },
+                        {
+                            "update_id": 2,
+                            "edited_message": { "text": "/start", "chat": { "id": 2 } }
+                        },
                         { "update_id": 3, "message": { "text": "/start@bot", "chat": { "id": 3 } } }
                     ]
                 }),

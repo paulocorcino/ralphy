@@ -330,7 +330,8 @@ mod tests {
         assert_eq!(
             listing(d.path()),
             before,
-            "opt-in must NOT write the opt-out — that would suppress the indexing the operator asked for"
+            "opt-in must NOT write the opt-out — \
+             that would suppress the indexing the operator asked for"
         );
     }
 

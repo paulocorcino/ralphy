@@ -258,7 +258,10 @@ mod tests {
     #[test]
     fn opencode_maps_tokens_ignoring_cost_and_reasoning() {
         let tmp = tempfile::tempdir().unwrap();
-        let data = r#"{"role":"assistant","cost":999.0,"modelID":"k2p6","tokens":{"input":2168,"output":100,"reasoning":40,"cache":{"write":0,"read":11264}}}"#;
+        let data = concat!(
+            r#"{"role":"assistant","cost":999.0,"modelID":"k2p6","tokens":{"input":2168,"#,
+            r#""output":100,"reasoning":40,"cache":{"write":0,"read":11264}}}"#
+        );
         let db = seed_db(tmp.path(), &[("ses_1", data)], &[]);
         let records = scan(&db, &[], None);
         assert_eq!(records.len(), 1);
@@ -359,8 +362,14 @@ mod tests {
     fn opencode_since_filters_by_last_ts() {
         let tmp = tempfile::tempdir().unwrap();
         // created ms: old = 2026-07-01, new = 2026-07-10.
-        let old = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5},"time":{"created":1782000000000}}"#;
-        let new = r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":5},"time":{"created":1783000000000}}"#;
+        let old = concat!(
+            r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5},"#,
+            r#""time":{"created":1782000000000}}"#
+        );
+        let new = concat!(
+            r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":5},"#,
+            r#""time":{"created":1783000000000}}"#
+        );
         let db = seed_db(tmp.path(), &[("ses_old", old), ("ses_new", new)], &[]);
         // since between the two created instants.
         let between = ms_to_rfc3339(Some(1782500000000));
@@ -432,9 +441,18 @@ mod tests {
     fn opencode_rows_of_one_session_and_model_sum_and_span_their_times() {
         let tmp = tempfile::tempdir().unwrap();
         // Written out of time order, so the span is not the first or last row.
-        let mid = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":1,"cache":{"read":2,"write":3}},"time":{"created":1782500000000}}"#;
-        let late = r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":4,"cache":{"read":5,"write":6}},"time":{"created":1783000000000}}"#;
-        let early = r#"{"role":"assistant","modelID":"m","tokens":{"input":30,"output":9,"cache":{"read":7,"write":8}},"time":{"created":1782000000000}}"#;
+        let mid = concat!(
+            r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":1,"#,
+            r#""cache":{"read":2,"write":3}},"time":{"created":1782500000000}}"#
+        );
+        let late = concat!(
+            r#"{"role":"assistant","modelID":"m","tokens":{"input":20,"output":4,"#,
+            r#""cache":{"read":5,"write":6}},"time":{"created":1783000000000}}"#
+        );
+        let early = concat!(
+            r#"{"role":"assistant","modelID":"m","tokens":{"input":30,"output":9,"#,
+            r#""cache":{"read":7,"write":8}},"time":{"created":1782000000000}}"#
+        );
         let db = seed_db(
             tmp.path(),
             &[("ses_1", mid), ("ses_1", late), ("ses_1", early)],

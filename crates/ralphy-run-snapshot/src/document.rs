@@ -228,9 +228,10 @@ mod tests {
 
     #[test]
     fn plan_block_parses_and_is_absent_by_default() {
-        let snap: RunSnapshot = serde_json::from_str(
-            r#"{"v":1,"plan":{"issue":7,"steps":[{"text":"a","status":"checked"}]},"tomorrows_field":1}"#,
-        )
+        let snap: RunSnapshot = serde_json::from_str(concat!(
+            r#"{"v":1,"plan":{"issue":7,"steps":[{"text":"a","status":"checked"}]},"#,
+            r#""tomorrows_field":1}"#,
+        ))
         .unwrap();
         assert_eq!(snap.plan.issue, Some(7));
         assert_eq!(snap.plan.steps[0].status, "checked");

@@ -1,6 +1,5 @@
-//! Path & program resolution, plus the shared process-tree teardown primitives
-//! (`own_process_group` at spawn + `kill_tree` on teardown) that both the verify
-//! gate and the headless adapter runner rely on to not leak a grandchild.
+//! Path and program resolution, and the process-tree teardown that the verify
+//! gate and the headless adapter runner share.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
@@ -13,14 +12,8 @@ pub mod pid;
 
 pub use pid::pid_is_alive;
 
-/// Put `cmd`'s child into its own process group (Unix) so a later [`kill_tree`]
-/// can signal the whole tree via the negative pgid, not just the direct child.
-/// A no-op off Unix — Windows walks the tree by parent-PID at kill time instead,
-/// needing nothing at spawn. Call this on the `Command` before `spawn`.
-///
-/// This is the single source of truth for the spawn-side half of process-tree
-/// teardown, shared so the verify gate (core) and the headless adapter runner
-/// (adapter-support) can never disagree on how a killable tree is set up.
+/// Put `cmd`'s child into its own process group (Unix), so [`kill_tree`] can
+/// signal the whole tree; a no-op elsewhere. Call it before `spawn`.
 pub fn own_process_group(cmd: &mut Command) {
     #[cfg(unix)]
     {
@@ -32,10 +25,7 @@ pub fn own_process_group(cmd: &mut Command) {
 }
 
 /// Prepend `dir` to a `PATH` value, or `None` when it is already there.
-///
-/// Pure over its inputs so both branches unit-test without touching the
-/// environment. Comparison is by path equality, which is why the caller passes
-/// a resolved directory rather than whatever spelling produced it.
+/// Entries compare by path equality, so pass a resolved directory.
 pub fn path_with_dir(dir: &Path, current: Option<&std::ffi::OsStr>) -> Option<std::ffi::OsString> {
     let current = current.unwrap_or_else(|| std::ffi::OsStr::new(""));
     if std::env::split_paths(current).any(|entry| entry == dir) {
@@ -47,36 +37,14 @@ pub fn path_with_dir(dir: &Path, current: Option<&std::ffi::OsStr>) -> Option<st
     std::env::join_paths(joined).ok()
 }
 
-/// Put the directory `cmd`'s program was resolved from on the child's `PATH`.
-///
-/// [`locate_program`] deliberately finds programs that are NOT on `PATH` —
-/// `~/.local/bin`, and a version-managed Node install's global bin (ADR-0043
-/// D16). Finding the program there is only half of running it: an npm-installed
-/// CLI is a shim whose shebang is `#!/usr/bin/env node`, and in an nvm layout
-/// `node` is a **sibling in that same directory**, equally off `PATH`. So the
-/// child resolves, spawns, and dies on `env: 'node': No such file or directory`.
-///
-/// Measured live in the #353 capstone: inside a WSL distro the daemon reported
-/// `codex`, `copilot` and `gemini` as available — correctly, they are installed
-/// — while every one of them was unrunnable from the daemon's environment. That
-/// breaks [`locate_program`]'s stated invariant that "detection and execution can
-/// never disagree", and it breaks it in the dangerous direction: the roster
-/// offers an agent that cannot start.
-///
-/// Widening `PATH` by exactly one directory — the one ralphy itself chose to
-/// resolve from — is the narrowest repair. It grants the child no reach the
-/// parent did not already exercise in picking that program.
-///
-/// A no-op when the program is a bare name (nothing was resolved), when it has
-/// no parent, or when that directory is already on `PATH`. Honours a `PATH` the
-/// caller already set on `cmd`, so an adapter's own scrub still wins as the base.
+/// Put the directory `cmd`'s program was resolved from on the child's `PATH`:
+/// an npm CLI found off `PATH` (ADR-0043 D16) runs `#!/usr/bin/env node`, and
+/// `node` is next to it, also off `PATH` (#353). A `PATH` set on `cmd` is the base.
 pub fn program_dir_on_path(cmd: &mut Command) {
     let program = PathBuf::from(cmd.get_program());
     let Some(dir) = program.parent().filter(|p| !p.as_os_str().is_empty()) else {
         return;
     };
-    // A `PATH` the adapter already set on this `Command` is the base; otherwise
-    // the child would inherit ours, so that is what we extend.
     let existing = cmd
         .get_envs()
         .find(|(key, _)| key.eq_ignore_ascii_case(std::ffi::OsStr::new("PATH")))
@@ -88,20 +56,12 @@ pub fn program_dir_on_path(cmd: &mut Command) {
     }
 }
 
-/// Suppress the console window a child would otherwise flash. On Windows, a
-/// console program spawned by a parent that has **no console** (e.g. the
-/// daemon-dispatched `ralphy`, launched `DETACHED_PROCESS`) is given a fresh
-/// *visible* console by the OS; `CREATE_NO_WINDOW` gives it a hidden console
-/// instead, so no black window flashes. A no-op off Windows.
-///
-/// Only safe for children whose stdout/stderr are captured or redirected — an
-/// inherited-stdio child (one meant to print to the user's terminal) would lose
-/// its visible output. Call it on the `Command` before `spawn`/`output`.
+/// Give a child a hidden console on Windows, so no window flashes; a no-op
+/// elsewhere. Only for a child whose output is captured or redirected.
 pub fn no_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        /// `CREATE_NO_WINDOW` — a console app run with a hidden console.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
@@ -109,19 +69,10 @@ pub fn no_window(cmd: &mut Command) {
     let _ = cmd;
 }
 
-/// Keep this process's stdin, stdout and stderr out of the processes it starts
-/// from now on, unless a `Command` passes them on purpose. Call it before
-/// spawning a child that outlives this process.
-///
-/// On Windows, `Command::spawn` lets the child inherit every inheritable handle
-/// of the parent, not only the three it is given, and the standard handles
-/// this process got from a shell or `sshd` are inheritable. A detached daemon
-/// then holds its caller's stdout pipe until it exits, so a reader of that
-/// pipe never sees the end (measured 2026-10-02: `ralphy daemon restart | tail`
-/// waited until the daemon stopped). `std` passes a child inheritable
-/// duplicates of the handles it is given, `Stdio::inherit()` included, so later
-/// spawns are not affected. A no-op off Windows: there `Command` passes only
-/// fds 0, 1 and 2, and every other fd is close-on-exec.
+/// Keep this process's standard handles out of the children it starts from now
+/// on; a no-op off Windows. A detached daemon held the stdout pipe of its caller
+/// (measured 2026-10-02: `ralphy daemon restart | tail` waited for the daemon).
+/// A handle a `Command` passes is a duplicate, so it still works.
 #[cfg_attr(
     windows,
     expect(unsafe_code, reason = "FFI: GetStdHandle and SetHandleInformation")
@@ -155,42 +106,26 @@ pub fn keep_std_handles_from_children() {
     }
 }
 
-/// Kill `child` and every descendant it spawned, then reap it. `child.kill()`
-/// signals only the direct child, so a grandchild — an agent CLI's helper, or a
-/// dev server a `## Verify` command backgrounded — would survive and keep an
-/// inherited stdout/stderr pipe open, blocking a reader thread forever. On Windows
-/// a native process-tree walk terminates every descendant; on Unix a negative
-/// pgid signals the process group the child leads (set via [`own_process_group`]
-/// at spawn). Both arms work when the direct child has ALREADY exited — the
-/// tree-kill-before-collect callers depend on reaping orphans of a dead parent.
-/// Best-effort on every arm; always reaps the direct child so no zombie lingers.
+/// Kill `child` and every descendant, then reap it. `child.kill()` alone leaves
+/// a grandchild that keeps an inherited pipe open and blocks its reader. Works
+/// when `child` has already exited. Best-effort.
 pub fn kill_tree(child: &mut Child) {
     kill_tree_by_pid(child.id());
     #[expect(
         clippy::let_underscore_must_use,
         reason = "the child may have exited already, and the tree kill above is the one that counts"
     )]
-    let _ = child.kill(); // direct child / fallback
+    let _ = child.kill();
     #[expect(
         clippy::let_underscore_must_use,
         reason = "the child may have been reaped already; this call only prevents a zombie"
     )]
-    let _ = child.wait(); // reap so no zombie lingers
+    let _ = child.wait();
 }
 
-/// Kill the process tree rooted at `pid` by OS pid alone — for a child this crate
-/// does not own as a [`Child`] (e.g. a `ralphy-pty` session, whose PTY child is
-/// not a `std::process::Child`). On Windows a Toolhelp snapshot walk finds every
-/// descendant by parent-PID and terminates each; on Unix the pid doubles as a
-/// process-group id (the PTY child is a session leader, or was placed in its own
-/// group via [`own_process_group`]), so a negative pgid signals the whole group.
-///
-/// Both arms reap orphans of an already-dead root: living descendants still
-/// record the dead parent's PID (Windows) and the process group outlives its
-/// leader (Unix). `taskkill /F /T`, the previous Windows arm, aborts its walk
-/// when the root PID is no longer running — exactly the exit-leaking-grandchild
-/// shape (#156) — which is why the walk is native. Best-effort, and does not
-/// reap — the caller owns reaping its handle.
+/// Kill the process tree rooted at `pid`, a child not owned as a [`Child`].
+/// Windows walks the table by parent pid, Unix signals the group `pid` leads;
+/// both reach the orphans of a dead root, which `taskkill /F /T` did not (#156).
 #[cfg_attr(
     unix,
     expect(unsafe_code, reason = "FFI: libc::kill on the process group")
@@ -200,18 +135,8 @@ pub fn kill_tree_by_pid(pid: u32) {
     kill_tree_windows(pid);
     #[cfg(unix)]
     {
-        // A negative pgid signals the whole process group — as one syscall, not as
-        // an argument to `kill(1)`. Shelling out spent the group id as text on a
-        // utility that has to guess whether a leading `-` opens an option or names
-        // a group: procps-ng `kill -KILL -<pgid>` killed the *calling* shell's
-        // group here, which turned every `run_headless` into a suicide and is what
-        // wedged the Linux gate (the runner died mid-step, so it uploaded no log at
-        // all). `libc::kill` cannot be misread — it takes the negative pgid as a
-        // number.
-        //
-        // `kill(-1, ...)` means "every process we may signal", so a pgid of 1 is
-        // refused rather than broadcast; it can only arise from a bad caller, and
-        // the blast radius of being wrong is the whole session.
+        // Not `kill(1)`: procps-ng read `-<pgid>` as an option and killed our own
+        // group. A pgid of 1 is refused: `kill(-1, ...)` signals every process.
         if pid > 1 {
             // Negating a u32 that fits pid_t: pids are well under i32::MAX.
             let pgid = -(pid as i32);
@@ -221,11 +146,8 @@ pub fn kill_tree_by_pid(pid: u32) {
     }
 }
 
-/// The Windows arm of [`kill_tree_by_pid`]: snapshot the process table, walk the
-/// parent-PID edges breadth-first from `root`, and terminate every process found
-/// (root first, so a live root can't spawn replacements mid-walk). A recorded
-/// parent pid can be a reused number; [`tree_to_kill`] holds the rules that keep
-/// such a process out of the walk.
+/// The Windows arm of [`kill_tree_by_pid`]: snapshot the process table and end
+/// each pid [`tree_to_kill`] gives, root first so it cannot start new children.
 #[cfg(windows)]
 #[expect(
     unsafe_code,
@@ -238,7 +160,6 @@ fn kill_tree_windows(root: u32) {
     };
     use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
 
-    // One snapshot of the whole (pid, parent-pid) table.
     let mut table: Vec<(u32, u32)> = Vec::new();
     // SAFETY: the snapshot handle is checked before use and closed once;
     // `entry` is a zeroed PROCESSENTRY32 with `dwSize` set, as the API requires.
@@ -265,7 +186,6 @@ fn kill_tree_windows(root: u32) {
         // SAFETY: the handle is checked for null before use and closed once.
         unsafe {
             let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
-            // Null on failure — already gone, or access denied. Best-effort.
             if !handle.is_null() {
                 TerminateProcess(handle, 1);
                 CloseHandle(handle);
@@ -274,25 +194,12 @@ fn kill_tree_windows(root: u32) {
     }
 }
 
-/// The pids a tree kill rooted at `root` ends: `root`, then breadth-first every
-/// process whose recorded parent is already in the set. `table` is the
-/// (pid, parent pid) snapshot; `created` gives a process's creation time, or
-/// `None` when it cannot be read (the process is gone, or access is denied).
-///
-/// A recorded parent pid is only a number, and Windows reuses numbers. Two
-/// rules keep a reused number from pulling in a process that is not a child:
-/// - `me`, the process doing the kill, is never in the set, and the walk does
-///   not go through it. A daemon's recorded parent is the launcher that exited
-///   right after starting it; when a console process later got that same pid
-///   and was closed, the walk ended the daemon itself, with no line in its log
-///   (measured 2026-10-05: three deaths in three days).
-/// - A process created before the parent it records is not that parent's
-///   child, so the edge is skipped. When either time is unknown the edge is
-///   kept, because a dead root has no time to compare and its orphans must
-///   still be ended.
-///
-/// The set doubles as the visited list: a reused parent pid can make the edges
-/// cyclic, so membership is checked before a pid is added.
+/// The pids a tree kill rooted at `root` ends: `root`, then breadth-first each
+/// process whose recorded parent is in the set. Windows reuses pids, so `me` is
+/// never in the set nor walked through (a reused launcher pid made the walk end
+/// the daemon: three deaths, measured 2026-10-05), and a process created before
+/// its recorded parent is skipped; an unknown time keeps the edge, so the
+/// orphans of a dead root still end. The set is also the visited list.
 #[cfg(any(windows, test))]
 fn tree_to_kill(
     root: u32,
@@ -323,8 +230,7 @@ fn tree_to_kill(
     doomed
 }
 
-/// Whether a process was created before the parent it records, so it is not
-/// that parent's child. An unknown time on either side keeps the edge.
+/// Whether a child was created before its recorded parent; an unknown time is `false`.
 #[cfg(any(windows, test))]
 fn created_before_parent(parent_created: Option<u64>, child_created: Option<u64>) -> bool {
     matches!(
@@ -333,8 +239,7 @@ fn created_before_parent(parent_created: Option<u64>, child_created: Option<u64>
     )
 }
 
-/// When `pid` was created, in 100 ns units since 1601 (a `FILETIME`), or `None`
-/// when the process cannot be opened.
+/// When `pid` was created, as a `FILETIME`, or `None` when it cannot be opened.
 #[cfg(windows)]
 #[expect(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
 fn process_created(pid: u32) -> Option<u64> {
@@ -361,15 +266,8 @@ fn process_created(pid: u32) -> Option<u64> {
     }
 }
 
-/// Resolve a home-scoped store/config path: when `override_base` is `Some` (a
-/// vendor `$XXX_HOME` env var), the path is `override_base.join(tail)` — the
-/// override replaces the whole `home_dir()/home_rel` base, so `home_rel` is
-/// ignored. When `None`, it is `home_dir()?/home_rel/tail`. Returns `None` only
-/// when no override is given and no home is known.
-///
-/// The three-part shape (base + `home_rel` + `tail`) is what lets Codex's
-/// `$CODEX_HOME/config.toml` and `<home>/.codex/config.toml` share one helper: the
-/// `config.toml` tail joins onto whichever base wins.
+/// A home-scoped path: `override_base/tail` when a vendor `$XXX_HOME` is set,
+/// else `home_dir()/home_rel/tail`; `None` when neither is known.
 pub fn home_scoped_path(
     override_base: Option<std::ffi::OsString>,
     home_rel: &Path,
@@ -381,41 +279,18 @@ pub fn home_scoped_path(
     }
 }
 
-/// Resolve `name` to the path of the executable a headless `Command` should
-/// spawn, searching `PATH` and — on Windows — every `PATHEXT` extension. Falls
-/// back to the bare `name` so the spawn error still names the missing program.
-///
-/// This exists because Windows ships many agent CLIs as npm shims with **no**
-/// `.exe` (e.g. `opencode.cmd`): `Command::new("opencode")` only ever tries
-/// `opencode` and `opencode.exe`, so it reports "program not found" even though
-/// `opencode.cmd` is on `PATH`. Resolving the full path (including the `.cmd`
-/// extension) lets `std`'s `Command` launch the batch shim directly. A native
-/// `.exe` (the common case off Windows, and for Codex) is found first and
-/// returned unchanged.
-///
-/// Only `std::process::Command` escapes the arguments of a `.bat`/`.cmd`
-/// program for the command processor (cmd.exe). The PTY path (`ralphy-pty`,
-/// through `portable-pty`) does not: there, `ralphy-pty` refuses to start a
-/// batch program when cmd.exe would not read its command line as text — an
-/// argument holds a command character (`&`, `%`, …), or the program path holds
-/// a space and an argument is quoted too.
+/// Resolve `name` to the program a headless `Command` spawns, such as an npm
+/// shim `opencode.cmd` that `Command::new` does not find, else the bare `name`.
+/// Only `std`'s `Command` escapes a `.cmd` command line; `ralphy-pty` refuses
+/// a batch program whose command line cmd.exe would not read as text.
 pub fn resolve_program(name: &str) -> std::ffi::OsString {
     locate_program(name)
         .map(PathBuf::into_os_string)
         .unwrap_or_else(|| name.into())
 }
 
-/// Locate `name` as an executable: search `PATH` (+`PATHEXT` on Windows), then
-/// fall back to the XDG-conventional `~/.local/bin` where user-installed CLIs (and
-/// Ralphy itself, see the cli's `install` module) land but which a non-login shell
-/// often omits from `PATH`. Returns the resolved path, or `None` when not found
-/// anywhere.
-///
-/// This is the single source of truth for "is this program available, and where" —
-/// `resolve_program` (what every adapter spawns) and `ralphy init`'s environment
-/// gate both go through it, so **detection and execution can never disagree**: a
-/// CLI under `~/.local/bin` that the gate would otherwise miss on a bare `PATH`
-/// probe is both reported present and actually spawned.
+/// Locate `name` on `PATH`, then in `~/.local/bin` and an nvm bin. Both
+/// [`resolve_program`] and `ralphy init` use it, so they never disagree.
 pub fn locate_program(name: &str) -> Option<PathBuf> {
     locate_program_with(
         name,
@@ -425,8 +300,7 @@ pub fn locate_program(name: &str) -> Option<PathBuf> {
     )
 }
 
-/// Pure core of [`locate_program`] over its inputs, so the `~/.local/bin` fallback
-/// unit-tests against a temp home without touching the real environment.
+/// [`locate_program`] over its inputs.
 pub fn locate_program_with(
     name: &str,
     path_var: Option<std::ffi::OsString>,
@@ -444,25 +318,13 @@ pub fn locate_program_with(
     if is_executable_file(&cand) {
         return Some(cand);
     }
-    // Last resort: a version-managed Node install, whose global bin is off `PATH`
-    // in a non-login shell (ADR-0043 D16).
     nvm_candidates(&home, name)
         .into_iter()
         .find(|c| is_executable_file(c))
 }
 
-/// True when `dir` is a Windows drive mounted into a Linux filesystem —
-/// `/mnt/<letter>/…`, the WSL interop layout.
-///
-/// Under WSL the Windows `PATH` leaks into the Linux one, so a vendor CLI
-/// installed on Windows (`/mnt/c/Users/x/AppData/Roaming/npm/gemini`) is found by
-/// a plain `PATH` search and then fails to execute as a Linux program — or worse,
-/// executes the Windows binary against Linux paths (ADR-0043 D16). A Linux search
-/// must skip those directories and keep looking.
-///
-/// Pure over its input and OS-independent, so both directions unit-test on every
-/// platform; the `cfg!(unix)` decision of whether to APPLY it lives at the call
-/// site in [`find_program`].
+/// Whether `dir` is a Windows drive in WSL (`/mnt/<letter>/…`): a Windows CLI
+/// there cannot run as a Linux program (ADR-0043 D16).
 pub fn is_windows_mount_path(dir: &Path) -> bool {
     let mut comps = dir.components();
     let Some(std::path::Component::RootDir) = comps.next() else {
@@ -476,28 +338,12 @@ pub fn is_windows_mount_path(dir: &Path) -> bool {
     }
     matches!(comps.next(),
         Some(std::path::Component::Normal(drive))
-            if drive.to_str().is_some_and(|d| d.len() == 1 && d.chars().all(|c| c.is_ascii_alphabetic())))
+            if drive.to_str().is_some_and(|d| d.len() == 1
+                && d.chars().all(|c| c.is_ascii_alphabetic())))
 }
 
-/// Every `<home>/.nvm/versions/node/*/bin/<name>`, NEWEST version first.
-///
-/// A version-managed Node install puts npm's global bin under the active Node
-/// version rather than on a stable path, and a non-login shell (which is what a
-/// daemon or a CI step gets) often carries neither the nvm shims nor the active
-/// version's bin on `PATH` (ADR-0043 D16).
-///
-/// The order is load-bearing, not cosmetic: `locate_program_with` takes the FIRST
-/// hit, and a plain lexicographic sort hands it `v10.24.0` over `v9.11.2` and
-/// `v20` over `v22` — systematically the older runtime. Ordering on the parsed
-/// numeric components picks the newest and stays deterministic rather than
-/// filesystem-order dependent.
-///
-/// Unix-shaped by construction; nvm-windows' `%APPDATA%\nvm\vX\` layout differs
-/// and is not covered, so this fallback is inert on Windows — where npm's global
-/// bin is on `PATH` anyway.
-///
-/// Pure over its inputs — it only reads the directory listing — so it unit-tests
-/// against a temp home on every platform.
+/// Every `<home>/.nvm/versions/node/*/bin/<name>`, newest version by number
+/// first (ADR-0043 D16): a string sort puts `v10` before `v9`.
 pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
     let versions = home.join(".nvm").join("versions").join("node");
     let Ok(entries) = std::fs::read_dir(&versions) else {
@@ -515,14 +361,11 @@ pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
             (key, dir.join("bin").join(name))
         })
         .collect();
-    // Newest first; the path breaks ties so the order is total.
     found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     found.into_iter().map(|(_, p)| p).collect()
 }
 
-/// The numeric components of a version directory name like `v22.22.2`, for
-/// ordering. A non-numeric segment contributes `0`, so an unparsable name sorts
-/// low rather than panicking or winning.
+/// The numbers of a version name like `v22.22.2`; a part that is not a number is `0`.
 fn version_key(name: &str) -> Vec<u64> {
     name.trim_start_matches('v')
         .split('.')
@@ -530,12 +373,8 @@ fn version_key(name: &str) -> Vec<u64> {
         .collect()
 }
 
-/// True when `path` is the shape `cursor-agent`'s shell classifier accepts as
-/// git-bash — its own detector keys on `/git.*bash\.exe$/i` (ADR-0042 D20). A
-/// `bash.exe` that is not under a `git` path — notably `%SystemRoot%\System32\
-/// bash.exe`, the **WSL launcher** — is NOT git-bash: pinning `SHELL` to it would
-/// make the vendor spawn WSL, not a POSIX shell on the host. Pure and
-/// OS-independent so both directions unit-test on every platform.
+/// Whether `path` is git-bash as `cursor-agent` detects it, `/git.*bash\.exe$/i`
+/// (ADR-0042 D20). `System32\bash.exe` is the WSL launcher, not git-bash.
 pub fn is_git_bash_shape(path: &Path) -> bool {
     let lower = path.to_string_lossy().to_ascii_lowercase();
     lower
@@ -543,26 +382,15 @@ pub fn is_git_bash_shape(path: &Path) -> bool {
         .is_some_and(|head| head.contains("git"))
 }
 
-/// Locate git-bash (`bash.exe`) — the shell `cursor-agent`'s classifier picks over
-/// PowerShell for POSIX shell tool calls (ADR-0042 D20). `None` means no git-bash
-/// is present, and the caller must then leave `SHELL` unset rather than point it at
-/// a missing binary.
-///
-/// The two standard Git-for-Windows install roots are probed first — the exact
-/// paths the vendor's own detector uses — then `PATH`. Only a git-bash-*shaped* hit
-/// is accepted ([`is_git_bash_shape`]): a bare `bash.exe` on `PATH` is as likely to
-/// be the WSL launcher, which is not git-bash.
-///
-/// Pure over its inputs so all shapes unit-test against temp trees with an empty
-/// `PATH`, matching [`locate_cursor_with`](cursor::locate_cursor_with).
+/// Locate git-bash, which `cursor-agent` prefers (ADR-0042 D20): the two Git
+/// roots, then an [`is_git_bash_shape`] hit on `PATH`. `None` leaves `SHELL`.
 pub fn locate_git_bash_with(
     path_var: Option<std::ffi::OsString>,
     pathext: Option<std::ffi::OsString>,
     program_files: Option<PathBuf>,
     program_files_x86: Option<PathBuf>,
 ) -> Option<PathBuf> {
-    // `Git\bin\bash.exe` is git-bash; `Git\cmd\` (sometimes the only dir on PATH)
-    // carries git.exe but no bash — hence the explicit `bin` probe here.
+    // `Git\cmd\`, sometimes the only Git folder on PATH, holds no bash.
     for root in [program_files, program_files_x86].into_iter().flatten() {
         let cand = root.join("Git").join("bin").join("bash.exe");
         if cand.is_file() {
@@ -572,8 +400,7 @@ pub fn locate_git_bash_with(
     find_program("bash", path_var, pathext).filter(|p| is_git_bash_shape(p))
 }
 
-/// Locate git-bash against the real environment (ADR-0042 D20). `None` when no
-/// git-bash is installed — the run then leaves `SHELL` as the operator has it.
+/// [`locate_git_bash_with`] over the real environment.
 pub fn locate_git_bash() -> Option<PathBuf> {
     locate_git_bash_with(
         std::env::var_os("PATH"),
@@ -583,19 +410,15 @@ pub fn locate_git_bash() -> Option<PathBuf> {
     )
 }
 
-/// The home directory, from the platform's usual env var (`USERPROFILE` on
-/// Windows, else `HOME`). Exported so every adapter shares one definition instead
-/// of re-deriving the `USERPROFILE`-or-`HOME` dance.
+/// The home directory: `USERPROFILE`, else `HOME`.
 pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)
 }
 
-/// True when `p` is a regular file the OS would actually run. On Unix this
-/// requires an execute bit, so a non-executable data file sharing the program's
-/// name on `PATH` can't shadow a real binary later in the search; off Unix, being
-/// a regular file is enough (Windows gates executability on `PATHEXT` separately).
+/// Whether `p` is a regular file the OS would run: on Unix it needs an execute
+/// bit; on Windows `PATHEXT` decides elsewhere.
 #[cfg(unix)]
 fn is_executable_file(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
@@ -609,9 +432,7 @@ fn is_executable_file(p: &Path) -> bool {
     p.is_file()
 }
 
-/// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows. Pure
-/// over its inputs so it unit-tests against a temp dir. Mirrors the Claude
-/// adapter's private resolver; lives here so every headless adapter shares it.
+/// Search `path_var` for `name`, trying each `PATHEXT` extension on Windows.
 pub fn find_program(
     name: &str,
     path_var: Option<std::ffi::OsString>,
@@ -620,9 +441,6 @@ pub fn find_program(
     let path_var = path_var?;
     let exts = pathext_list(pathext);
     for dir in std::env::split_paths(&path_var) {
-        // Under WSL the Windows PATH leaks in: a `/mnt/c/…` hit is a Windows
-        // binary that cannot run as a Linux program (ADR-0043 D16). Skip it and
-        // keep searching rather than returning an unrunnable path.
         if cfg!(unix) && is_windows_mount_path(&dir) {
             continue;
         }
@@ -637,8 +455,7 @@ pub fn find_program(
     None
 }
 
-/// The `PATHEXT` extensions to try, empty off Windows. An unset or non-UTF-8
-/// `PATHEXT` falls back to `.EXE`.
+/// The `PATHEXT` extensions to try, empty off Windows; unset or not UTF-8 is `.EXE`.
 fn pathext_list(pathext: Option<std::ffi::OsString>) -> Vec<String> {
     if !cfg!(windows) {
         return Vec::new();
@@ -652,13 +469,8 @@ fn pathext_list(pathext: Option<std::ffi::OsString>) -> Vec<String> {
         .collect()
 }
 
-/// Is `direct`, a file named as given, runnable as it is?
-///
-/// On Windows a file is only executable when its extension is in PATHEXT,
-/// so a bare extensionless `direct` must be skipped — npm ships agent CLIs
-/// as a pair (`opencode` shell shim + `opencode.cmd`), and returning the
-/// extensionless shim yields "not a valid Win32 application" (os error 193).
-/// Off Windows, any existing file on PATH is a candidate as-is.
+/// Whether `direct` runs as named. On Windows its extension must be in `PATHEXT`:
+/// npm's extensionless shim gives "not a valid Win32 application" (os error 193).
 fn direct_runnable(direct: &Path, exts: &[String]) -> bool {
     if !cfg!(windows) {
         return is_executable_file(direct);
