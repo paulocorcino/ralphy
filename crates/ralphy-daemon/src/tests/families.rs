@@ -67,6 +67,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-place.ts"),
     ),
     (
+        "wb-console-placeholder-reads.ts",
+        include_str!("../../assets/ui/wb-console-placeholder-reads.ts"),
+    ),
+    (
         "wb-console-placeholder.ts",
         include_str!("../../assets/ui/wb-console-placeholder.ts"),
     ),
@@ -83,8 +87,16 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-session.ts"),
     ),
     (
+        "wb-console-spawn-records.ts",
+        include_str!("../../assets/ui/wb-console-spawn-records.ts"),
+    ),
+    (
         "wb-console-spawn.ts",
         include_str!("../../assets/ui/wb-console-spawn.ts"),
+    ),
+    (
+        "wb-console-strips.ts",
+        include_str!("../../assets/ui/wb-console-strips.ts"),
     ),
     (
         "wb-console-tabs.ts",
@@ -109,6 +121,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-console-touch.ts",
         include_str!("../../assets/ui/wb-console-touch.ts"),
+    ),
+    (
+        "wb-console-worktree.ts",
+        include_str!("../../assets/ui/wb-console-worktree.ts"),
     ),
     (
         "wb-stage-chrome.ts",
@@ -152,8 +168,20 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
     ),
     ("wb-desk.ts", include_str!("../../assets/ui/wb-desk.ts")),
     (
+        "wb-desk-converge.ts",
+        include_str!("../../assets/ui/wb-desk-converge.ts"),
+    ),
+    (
+        "wb-desk-detach-notes.ts",
+        include_str!("../../assets/ui/wb-desk-detach-notes.ts"),
+    ),
+    (
         "wb-desk-detach.ts",
         include_str!("../../assets/ui/wb-desk-detach.ts"),
+    ),
+    (
+        "wb-desk-flush.ts",
+        include_str!("../../assets/ui/wb-desk-flush.ts"),
     ),
     (
         "wb-desk-folds.ts",
@@ -162,6 +190,14 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-desk-history.ts",
         include_str!("../../assets/ui/wb-desk-history.ts"),
+    ),
+    (
+        "wb-desk-peer.ts",
+        include_str!("../../assets/ui/wb-desk-peer.ts"),
+    ),
+    (
+        "wb-desk-popup-message.ts",
+        include_str!("../../assets/ui/wb-desk-popup-message.ts"),
     ),
     (
         "wb-desk-popups.ts",
@@ -235,7 +271,8 @@ fn the_console_family_lists_every_module_on_disk() {
     let listed: Vec<&str> = CONSOLE_FAMILY.iter().map(|(name, _)| *name).collect();
     assert_eq!(
         listed, on_disk,
-        "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list every console family \
+        "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list every \
+         console family \
          module under assets/ui, in its order: add the new module to CONSOLE_FAMILY"
     );
 }
@@ -426,7 +463,8 @@ fn the_shell_family_lists_every_module_on_disk() {
     let listed: Vec<&str> = SHELL_FAMILY.iter().map(|(name, _)| *name).collect();
     assert_eq!(
         listed, expected,
-        "SHELL_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list app.ts, then wb-wire.ts \
+        "SHELL_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list app.ts, \
+         then wb-wire.ts \
          and wb-icon.ts when they exist, then every module main.ts registers an Alpine \
          component or Alpine store from, sorted: add the module to SHELL_FAMILY"
     );

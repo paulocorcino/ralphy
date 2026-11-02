@@ -182,7 +182,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // object that names its members (`wb-console-api.ts`, which
                 // imports the geometry, the session folds, the input folds
                 // and the resume rule), the title, the fence list, the detach, the view, the
-                // terminal, the window chrome, the popup registry, the fences, the desk and its records and
+                // terminal, the window chrome, the popup registry, the fences, the desk
+                // and its records and
                 // restore, the console name,
                 // the input folds, the key bar, the feeds, the dormancy, the parts of the stage
                 // (which import the window states, the columns, the fence list, the view and the
@@ -265,7 +266,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
 /// only works if the pane declares itself a container: drop the
 /// `container-type` and every rule inside the query goes silently inert,
 /// with nothing on the JS side to notice. Pinned here for that reason, and
-/// the threshold is pinned at ONE number because `wb-file-viewer.ts` measures
+/// the threshold is pinned at ONE number because `wb-file-viewer-code.ts` measures
 /// the same 560 to trim Monaco's gutter — two numbers would fold the
 /// captions and the gutter at different widths.
 #[test]
@@ -290,10 +291,11 @@ fn the_narrow_pane_criterion_is_the_panes_own_width() {
             "the stylesheet must fold `{name}` at 560px: `{query}`"
         );
     }
-    let js = include_str!("../../assets/ui/wb-file-viewer.ts");
+    let js = include_str!("../../assets/ui/wb-file-viewer-code.ts");
     assert!(
         js.contains("const NARROW_PX = 560;"),
-        "wb-file-viewer.ts must trim the gutter at the SAME 560px the stylesheet folds the captions"
+        "wb-file-viewer-code.ts must trim the gutter at the SAME 560px the stylesheet \
+         folds the captions"
     );
 }
 

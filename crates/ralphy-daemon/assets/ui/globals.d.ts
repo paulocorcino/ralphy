@@ -1,6 +1,5 @@
-// The names a module reads on `window` or bare (ADR-0075 D9): the instances
-// an entry module creates for its page and the event bus. Each surface lists
-// only what a module calls. The vendored libraries' types are in
+// The names a module reads on `window` or bare (ADR-0075 D9): the page instances
+// and the event bus, each with only what a module calls. Vendored types:
 // `globals-vendor.d.ts`.
 
 /** A value JSON can carry. */
@@ -19,8 +18,7 @@ type CommandPayload = {
   [field: string]: JsonValue | undefined;
 };
 
-// `filter(Boolean)` keeps only the truthy items, but the lib's own type for it
-// keeps the falsy members in the item type.
+// The lib's type for `filter(Boolean)` keeps the falsy members.
 interface Array<T> {
   filter(predicate: BooleanConstructor): Exclude<T, false | 0 | "" | null | undefined>[];
 }
@@ -357,10 +355,8 @@ type OpenRequest = {
   as?: "bytes";
 };
 
-// The `workbench:*` events (#633): every name a module sends or hears, and its
-// `detail`. An event with no detail has `null`, as `new CustomEvent(name)`
-// gives. `wb-events.ts` sends them; `src/tests/` fails on a `workbench:`
-// name in a module or in `index.html` that is not listed here.
+// The `workbench:*` events (#633): every name a module or a page sends or hears,
+// with its `detail` (`null` for none). `src/tests/` fails on a name not listed here.
 
 /** The `workbench:*` events sent on `window`. The `-open` events that
  * `index.html` sends with `$dispatch` reach the window, where a dialog hears
@@ -496,7 +492,6 @@ declare var WBDaemon: Window["WBDaemon"];
 declare var WBViewer: Window["WBViewer"];
 declare var WB: Window["WB"];
 
-// A timer the page may not have set yet is `null`, and clearing it does
-// nothing: the HTML timer API turns the id into a number, `null` into 0.
+// Clearing a `null` timer does nothing: the HTML timer API turns `null` into 0.
 declare function clearTimeout(id: number | null | undefined): void;
 declare function clearInterval(id: number | null | undefined): void;

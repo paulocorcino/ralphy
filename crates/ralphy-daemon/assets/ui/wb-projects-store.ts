@@ -4,16 +4,15 @@
 
    The store is the one owner of this fact, and of the fleet, the agent
    roster and the live sessions (#621). Its fields change only through its
-   own methods. `shell()` code reads `this.$store.projects`,
-   the markup reads `$store.projects`, a component reads it through the
-   `$store` magic, and code outside Alpine reads `Alpine.store("projects")`.
-   A helper that needs other `shell()` state too stays in `shell()`.
+   own methods. `shell()` code reads `this.$store.projects`, the markup reads
+   `$store.projects`, and code outside Alpine reads `Alpine.store("projects")`.
 
    It reads no `shell()` member and calls no component; it reads the store
    `connection`. Its `init()` reads the projects and the agents, hears
    `workbench:repos-reread` and `workbench:sessions-reread`, and starts the
    peer read. It tells the files that the fleet was read with
-   `workbench:fleet-read`, and the consoles through `WBConsole`.
+   `workbench:fleet-read`, and the consoles through `WBConsole`. The peer rows
+   and the update of a peer are in wb-projects-fleet.ts.
 
    `main.ts` registers it as `projects`. `projectsStore` builds it without
    Alpine, so `node --test` can test it (ADR-0073 D3, D6).
@@ -22,13 +21,19 @@ import { WBAgents } from "./wb-agents.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
-import * as WBHosts from "./wb-hosts.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
+import {
+  carriedDaemonName,
+  carriedEnv,
+  carriedState,
+  readFleet,
+  updatePeer,
+  wakeRefusal,
+} from "./wb-projects-fleet.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Project } from "./wb-project.ts";
-import type { ApiResponse, FleetRepoRow } from "./wb-api.ts";
 import type { FleetPeer, Group, ReadState, RosterRow, Timer } from "./wb-shell-types.d.ts";
 
 /** What `main.ts` gives the store. */
@@ -37,122 +42,9 @@ export type ProjectsStoreDeps = {
   messages: Messages;
 };
 
-// Run one `host` verb to its end. Resolves to null when it succeeded, else to
-// the sentence that says why it failed: the CLI's own failure line when it
-// printed one.
-function runHostVerb(verb: string, payload: Record<string, string>): Promise<string | null> {
-  return new Promise((resolve) => {
-    let s = WBHosts.initial();
-    window.WBDaemon.spawn(verb, payload, (st) => {
-      if (st.status === "output") {
-        const fed = WBHosts.feed(s.buf, st.chunk);
-        s = Object.assign({}, s, { buf: fed.rest });
-        for (const event of fed.events) s = WBHosts.next(s, { type: "event", event });
-      } else if (st.status === "exited") {
-        resolve(
-          st.code === 0 ? null : s.failure?.message || `The command ended with code ${st.code}.`,
-        );
-      } else {
-        resolve(WBFail.failed(st, "The daemon did not start the command."));
-      }
-    });
-  });
-}
-
-// The live state a local row keeps when `/api/repos` is read again: the dot
-// stays until `refreshLive` answers, and an offline row that answers is idle.
-function carriedState(reachable: boolean, prev: Project | undefined) {
-  if (!reachable) return "offline";
-  return prev?.state === "offline" ? "idle" : prev?.state || "idle";
-}
-
-// The environment label and the daemon name stay until `loadFleet` answers.
-function carriedEnv(prev: Project | undefined) {
-  return prev?.env || "";
-}
-
-function carriedDaemonName(prev: Project | undefined) {
-  return prev?.daemonName || "";
-}
-
-// `/api/fleet` is the ONLY source of this daemon's own environment label and
-// name; `mine` is its row of this daemon. The rows are written in place.
-function stampLocalRows(
-  projects: Project[],
-  mine: { environment?: string; os?: string; daemon_name?: string },
-) {
-  for (const p of projects) {
-    p.env = mine.environment || "";
-    p.os = mine.os || "";
-    p.daemonName = mine.daemon_name || "";
-  }
-}
-
-// The rows of a fleet read: this daemon's own (its facts stamp the local
-// rows) and every peer's.
-function fleetRows(repos: FleetRepoRow[] | undefined) {
-  const rows = Array.isArray(repos) ? repos : [];
-  return { mine: rows.find((x) => x.local), peers: rows.filter((x) => !x.local).map(peerRow) };
-}
-
-// One peer's repo as a project row.
-function peerRow(x: FleetRepoRow) {
-  return {
-    // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
-    key: x.key,
-    slug: x.slug,
-    name: x.name || x.slug,
-    path: x.path || "",
-    root: WBFleet.peerRoot(x),
-    branch: x.branch || "",
-    branches: [],
-    // The peer's OWN working-tree facts, same classification as `loadRepos`.
-    dirty: !!x.dirty,
-    state: x.reachable ? "idle" : "offline",
-    remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
-    remoteUrl: x.remote || "",
-    tree: [],
-    ...peerFacts(x),
-  };
-}
-
-// What makes a row a peer row: the daemon that serves it and its state.
-function peerFacts(x: FleetRepoRow) {
-  return {
-    daemon: x.daemon_id,
-    daemonName: x.daemon_name || "",
-    env: x.environment || "",
-    os: x.os || "",
-    peerState: x.peer_state || "",
-  };
-}
-
-// Why a wake did not leave the peer usable: the daemon's own sentence names
-// the environment and what is wrong.
-async function wakeRefusal(
-  r: ApiResponse<"POST /api/fleet/nudge">,
-  woke: { diagnosis?: string } | null,
-) {
-  const refusal = r.ok ? null : await r.json().catch(() => null);
-  return WBFail.failed(
-    { message: woke?.diagnosis || refusal?.error },
-    "Could not wake the peer: the peer did not answer.",
-  );
-}
-
-// Why a failed `/api/fleet` read failed: the daemon's own words when it
-// answered, else that it did not.
-function fleetFailReason(e: unknown) {
-  return String((e as Error)?.message || "").startsWith("the daemon")
-    ? (e as Error).message
-    : "the daemon did not answer";
-}
-
 export function projectsStore(deps: ProjectsStoreDeps) {
   return {
-    // The ref of the open project (`repoRef`), or null.
     openSlug: null as string | null,
-    // `loadRepos()` fills this at init.
     projects: [] as Project[],
     // The open project's ref as the key of a per-project record. With no
     // project open the key is "null", which no project ref is, so a read
@@ -177,18 +69,15 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     repoRef(p: Project) {
       return WBFleet.repoRef(p);
     },
-    // The open project's row, for the panels scoped to `openSlug` that reuse a
-    // per-row control (the Changes head's checkout chip).
+    // The open project's row, for the panels that reuse a per-row control.
     openProject() {
       return this.projects.find((p) => this.repoRef(p) === this.openSlug) || null;
     },
-    // The current git branch of the open project (for the "current" mode blurb).
     openProjectBranch() {
       return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
     },
     // The branch chip lives on the Files bar (#332), which only the OPEN
-    // project renders. `.project-slug` carries the ADR-0008 D7 identity in
-    // `data-slug`, which is how the browser tests find a row.
+    // project renders.
     rowOpen(p: Project) {
       return this.openSlug === this.repoRef(p);
     },
@@ -204,9 +93,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       const name = WBProject.projectName(row);
       return row.daemon && row.env ? `${name} · ${row.env}` : name;
     },
-    // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
-    // a remoteless repo, plus the environment of a peer. Never a hash key or
-    // a daemon id.
+    // The tooltip twin of `projectLabel`: `owner/repo` or the full folder of
+    // a remoteless repo, plus the environment of a peer.
     projectTitle(ref: string | null | undefined) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
@@ -215,8 +103,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       return row.daemon && row.env ? `${who} · ${row.env}` : who;
     },
 
-    // The adapter roster comes from `/api/agents`, never a list here:
-    // onboarding a vendor must not need a frontend change (#304).
+    // The adapter roster comes from `/api/agents`, never a list here (#304).
     agents: [] as ReturnType<typeof WBAgents.runRows>,
     roster: [] as RosterRow[],
     // A failed `/api/repos` (#202): a visible error. Cleared on login
@@ -227,31 +114,26 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     reposRead: null as ReadState,
     fleetRead: null as ReadState,
     fleetError: "",
-    // The peers the daemon could not read (a peer file it cannot parse, or a
-    // peer store it cannot list): they list no project, so the sidebar says
-    // so instead of showing an empty fleet (ADR-0070 D4).
+    // The peers the daemon could not read: they list no project, so the
+    // sidebar says so instead of showing an empty fleet (ADR-0070 D4).
     fleetRejectNote: "",
     sessionsRead: null as ReadState,
-    // The live sessions: the New-console menu, the release dialogs and the
-    // checkout chip read them.
     liveSessions: [] as HostedSession[],
     // The peer rows of the last good `/api/fleet`, kept when a read fails.
     _fleetRows: [] as Project[],
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
     // fleet of one, or a daemon too old to serve the route.
     fleetPeers: [] as FleetPeer[],
-    // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
-    // seconds, and the key stops a second click sending a second nudge.
+    // Peers with a wake in flight, keyed by daemon_id: a second click sends no
+    // second nudge.
     waking: {} as Record<string, boolean>,
     // SSH hosts with an update in flight, keyed by daemon_id.
     updating: {} as Record<string, boolean>,
-    // A repo refresh in flight. The list does NOT auto-refresh (only the live
-    // dots do, via the heartbeat); the button picks up a new repo or a
-    // branch/dirty change.
+    // A repo refresh in flight. The list does not refresh by itself; the
+    // button picks up a new repo or a branch/dirty change.
     reposLoading: false,
 
-    // Alpine calls this once, when `main.ts` registers the store, before
-    // the shell. `main.ts` builds `WBConsole` first.
+    // Alpine calls this once, when `main.ts` registers the store.
     init() {
       void this.loadRepos();
       void this.loadAgents();
@@ -297,12 +179,10 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         this.agents = state.agents;
       }
     },
-    // Hydrate the accordion from the daemon's repo registry. `remote` is
-    // inferred from the slug shape
-    // (`git::project_slug`'s `path-<hash>` fallback is a remoteless repo).
-    // `git: false` skips the change set and the branch: a peer tick or a
-    // project-list push says nothing about them (fact index: their own push,
-    // and a periodic read only while the Changes panel is open).
+    // Hydrate the accordion from the daemon's repo registry. `git: false`
+    // skips the change set and the branch: a peer tick or a project-list push
+    // says nothing about them (fact index: their own push, and a periodic
+    // read only while the Changes panel is open).
     async loadRepos({ git = true } = {}) {
       this.reposLoading = true;
       try {
@@ -349,10 +229,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
             value: true,
             at: Date.now(),
           });
-          // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
-          // per-peer timeout, and holding `reposLoading` open for that would make
-          // a peer's absence stall the LOCAL sidebar's spinner and live dots.
-          // Federation is additive in latency too.
+          // NOT awaited: a down peer costs `/api/fleet` its 2 s timeout, and a
+          // peer's absence must not stall the LOCAL sidebar's spinner.
           void this.loadFleet();
         } else {
           this.reposFailed(`the daemon answered ${r.status}`);
@@ -384,9 +262,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       this.reposError = `Could not load the projects from the daemon: ${reason}.`;
     },
 
-    // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
-    // local `/api/repos` pass, plus the peer list the group headers render.
-    // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
+    // The fleet read is in wb-projects-fleet.ts.
     fleetRejectText(peers: FleetPeer[]) {
       const bad = peers.filter((p) => p.state === "malformed");
       if (!bad.length) return "";
@@ -394,52 +270,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       return `Could not read ${what}: ${bad.map((p) => p.diagnosis || p.name).join("; ")}`;
     },
     async loadFleet() {
-      // Two project reads close together (a wake fires the visible tab and the
-      // socket reopen) must not both append the peers: the newest read owns
-      // the peer rows, and they replace, never add to, what is there.
-      const seq = ++this._fleetSeq;
-      const localRows = () => this.projects.filter((p) => !p.daemon);
-      try {
-        const r = await apiFetch("GET /api/fleet");
-        if (seq !== this._fleetSeq) return;
-        if (r.status === 404) {
-          // A daemon older than the fleet: a fleet of one, not a failure.
-          this.fleetPeers = [];
-          this.fleetError = "";
-          this.fleetRejectNote = "";
-          return;
-        }
-        if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
-        const fleet = await r.json();
-        if (seq !== this._fleetSeq) return;
-        this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
-        this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
-        const { mine, peers } = fleetRows(fleet.repos);
-        if (mine) stampLocalRows(this.projects, mine);
-        this._fleetRows = peers;
-        this.setProjects(localRows().concat(this._fleetRows));
-        this.shareProjectNames();
-        this.shareFleet();
-        // The files compare the peer of the open project with this read.
-        sendWindow(window, "workbench:fleet-read");
-        this.fleetRead = WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
-        this.fleetError = "";
-      } catch (e) {
-        if (seq !== this._fleetSeq) return;
-        // After a good read the peers and their rows stay, marked not current
-        // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
-        const reason = fleetFailReason(e);
-        this.fleetRead = WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
-        if (this.fleetRead.goodAt) {
-          this.setProjects(localRows().concat(this._fleetRows));
-          this.shareProjectNames();
-        } else {
-          this.fleetPeers = [];
-        }
-        this.fleetError = WBFail.notCurrent(this.fleetRead, (ms) =>
-          window.Alpine.store("connection").fmtClock(ms),
-        );
-      }
+      await readFleet(this);
     },
     _fleetSeq: 0,
 
@@ -464,9 +295,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       this.setProjects(this.projects.filter((r) => r.daemon !== daemon));
     },
 
-    // Wake a sleeping peer. The operator's action is the consent (as push,
-    // ADR-0046), which is why this lives in the workbench: a daemon nudging on
-    // every probe would be supervising by accident (ADR-0052 §4).
+    // Wake a sleeping peer. The operator's action is the consent (ADR-0052 §4).
     // `/api/fleet/nudge` resolves when the environment is USABLE.
     async wakePeer(daemonId: string) {
       if (!daemonId || this.waking[daemonId]) return false;
@@ -490,30 +319,10 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       }
     },
 
-    // Install this computer's Ralphy on an SSH host that speaks another
-    // protocol, then add it again: `host add` reads the host anew and saves
-    // its descriptor with the same local port. The click is the operator's
-    // permission to install on the host (ADR-0067).
-    async updatePeer(daemonId: string) {
-      const peer = this.fleetPeers.find((p) => p.daemon_id === daemonId);
-      if (!peer?.destination || this.updating[daemonId]) return false;
-      this.updating[daemonId] = true;
-      try {
-        const payload: Record<string, string> = { destination: peer.destination, name: peer.name };
-        if (peer.identity_file) payload.identity = peer.identity_file;
-        for (const verb of ["host.install", "host.add"]) {
-          const failure = await runHostVerb(verb, payload);
-          if (failure !== null) {
-            deps.messages.flash(`Could not update Ralphy on ${peer.name}. ${failure}`);
-            return false;
-          }
-        }
-        // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
-        await this.loadRepos();
-        return true;
-      } finally {
-        delete this.updating[daemonId];
-      }
+    // Install this computer's Ralphy on an SSH host, then add it again
+    // (wb-projects-fleet.ts).
+    updatePeer(daemonId: string) {
+      return updatePeer(this, deps.messages, daemonId);
     },
     peerUpdatable(g: Group) {
       return WBFleet.updatable(g);
@@ -611,8 +420,6 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       );
     },
 
-    // Every console on this daemon is its child, so the update's restart ends
-    // them all, the agents inside included. `/api/sessions` lists them.
     // The consoles this daemon hosts. A peer's rows in `/api/sessions` carry the
     // peer's `daemon_id`; they end only when that peer restarts.
     localSessions() {

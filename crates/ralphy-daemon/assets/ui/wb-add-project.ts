@@ -6,15 +6,19 @@
 // button label, the help line and the WSL path mapping come out of here.
 
 import { WBFail } from "./wb-fail.ts";
-
-/** A peer of `/api/fleet`, as far as this dialog reads it. */
-type Peer = {
-  daemon_id: string;
-  name: string;
-  environment?: string;
-  state?: string;
-  diagnosis?: string;
-};
+import type { Peer } from "./wb-add-project-path.ts";
+import {
+  basename,
+  endsWithSep,
+  lastName,
+  mapWsl,
+  sameName,
+  samePath,
+  sepOf,
+  withSep,
+} from "./wb-add-project-path.ts";
+import { entries, listed } from "./wb-add-project-list.ts";
+import { nextMove, nextPick, nextReply, nextText } from "./wb-add-project-next.ts";
 
 /** What the folder the text names would do when it is added. */
 type Target = {
@@ -27,10 +31,10 @@ type Target = {
 };
 
 /** The newest `dir.list` reply, as the daemon sent it. */
-type Listing = DaemonReplies["dir.list"];
+export type Listing = DaemonReplies["dir.list"];
 
 /** A row of the folder list: a listed folder, or the `..` row that goes up. */
-type Row = { name: string; repo: boolean; added: boolean; error?: string; up?: boolean };
+export type Row = { name: string; repo: boolean; added: boolean; error?: string; up?: boolean };
 
 /** What the dialog tells the fold. */
 export type Step =
@@ -102,55 +106,6 @@ function initial(): State {
   };
 }
 
-// The separator of the daemon's paths, read from what it answered.
-function sepOf(state: State) {
-  // Only a Windows daemon lists drives, with an empty folder path.
-  if (state.listing?.dir?.path === "") return "\\";
-  const sample = pathSample(state);
-  return /^[A-Za-z]:/.test(sample) || sample.includes("\\") ? "\\" : "/";
-}
-
-// A path the daemon answered, or else the text in the field.
-function pathSample(state: State) {
-  const l = state.listing;
-  return l?.start || l?.dir?.path || state.text || "";
-}
-
-function isSep(c: string) {
-  return c === "/" || c === "\\";
-}
-
-function endsWithSep(text: string) {
-  const last = text.at(-1);
-  return last !== undefined && isSep(last);
-}
-
-function withSep(path: string, sep: string) {
-  return endsWithSep(path) ? path : path + sep;
-}
-
-// `C:\Dev\..` and `/home/me/..\` go up one level, as in a shell.
-function collapseDots(text: string) {
-  const m = /^(.*[\\/])[^\\/]+[\\/]\.\.([\\/]?)$/.exec(text);
-  return m ? m[1] : text;
-}
-
-// A pasted `\\wsl.localhost\<distro>\…` or `\\wsl$\<distro>\…` path. `null`
-// when the text is not one; else the peer's id and the Linux path, or the
-// distro that has no peer.
-function mapWsl(text: string, peers: Peer[] | null | undefined) {
-  const m = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)([\\/].*)?$/i.exec(text || "");
-  const distro = m?.[1];
-  if (!m || distro === undefined) return null;
-  const rest = (m[2] || "/").replace(/\\/g, "/");
-  const peer = (peers || []).find((p) => {
-    const named = /^WSL: (.+)$/i.exec(p.environment || "")?.[1];
-    return named !== undefined && named.toLowerCase() === distro.toLowerCase();
-  });
-  if (!peer) return { missing: distro };
-  return { daemon: peer.daemon_id, path: rest };
-}
-
 // The Where choices: this computer, then every peer. A peer that does not
 // answer is shown but cannot be chosen.
 function places(peers: Peer[] | null | undefined) {
@@ -171,58 +126,6 @@ function places(peers: Peer[] | null | undefined) {
 function request(state: State) {
   if (state.needStart) return { daemon: state.daemon };
   return { daemon: state.daemon, path: state.text };
-}
-
-// The folder name the text ends with, after the last separator.
-function lastName(text: string) {
-  const i = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"));
-  return text.slice(i + 1);
-}
-
-function parentText(text: string) {
-  const i = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"));
-  return text.slice(0, i + 1);
-}
-
-function basename(path: string) {
-  return lastName(path.replace(/[\\/]+$/, "")) || path;
-}
-
-// The folders the daemon listed.
-function listed(state: State): Row[] {
-  return (state.listing && state.listing.entries) || [];
-}
-
-// The text that lists the folder above the listed one: its parent, or ""
-// (the drive list) above a Windows drive root. `null` at the top.
-function upText(state: State) {
-  const dir = state.listing && state.listing.dir;
-  if (!dir || !dir.path || !endsWithSep(state.text)) return null;
-  const trimmed = dir.path.replace(/[\\/]+$/, "");
-  if (!trimmed) return null;
-  if (/^[A-Za-z]:$/.test(trimmed)) return "";
-  return parentText(trimmed) || null;
-}
-
-// The rows of the list under the field: `..` first when there is a folder
-// above, then the listed folders.
-function entries(state: State) {
-  const rows = listed(state);
-  return upText(state) === null
-    ? rows
-    : ([{ name: "..", up: true, repo: false, added: false }] as Row[]).concat(rows);
-}
-
-function sameName(a: string, b: string, sep: string) {
-  return sep === "\\" ? a.toLowerCase() === b.toLowerCase() : a === b;
-}
-
-function samePath(a: string, b: string, sep: string) {
-  const norm = (p: string) => {
-    const s = (p || "").replace(/[\\/]+$/, "").replace(/\\/g, "/");
-    return sep === "\\" ? s.toLowerCase() : s;
-  };
-  return norm(a) === norm(b);
 }
 
 // The folder the text names and what adding it would do:
@@ -409,119 +312,6 @@ function reset(state: State, patch: Partial<State>) {
     },
     patch,
   );
-}
-
-// The operator typed: a pasted WSL path moves to that peer, else the text is
-// kept as typed.
-function nextText(state: State, ev: Extract<Step, { type: "text" }>) {
-  if (state.adding) return state;
-  const wsl = mapWsl(ev.text, ev.peers);
-  if (wsl && wsl.missing) {
-    return Object.assign({}, state, {
-      text: ev.text,
-      wslMissing: wsl.missing,
-      active: -1,
-      error: "",
-    });
-  }
-  if (wsl) {
-    return Object.assign({}, state, {
-      daemon: wsl.daemon,
-      text: wsl.path,
-      needStart: false,
-      chosen: true,
-      listing: null,
-      failure: "",
-      wslMissing: "",
-      active: -1,
-      error: "",
-    });
-  }
-  return Object.assign({}, state, {
-    text: collapseDots(ev.text),
-    needStart: false,
-    chosen: true,
-    wslMissing: "",
-    active: -1,
-    error: "",
-  });
-}
-
-// The daemon answered a folder list: a newer request keeps the state, a
-// failure keeps the failure, and the start folder fills a field the operator
-// has not touched.
-function nextReply(state: State, ev: Extract<Step, { type: "reply" }>) {
-  if (ev.seq !== state.seq) return state;
-  const reply = ev.reply || {};
-  if (reply.status !== "ok") {
-    return Object.assign({}, state, {
-      answered: ev.seq,
-      listing: null,
-      listedText: state.sentText,
-      failure: reply.message || reply.reason || "the folder list failed",
-      loading: false,
-      active: -1,
-    });
-  }
-  const patch: Partial<State> = {
-    answered: ev.seq,
-    listing: reply,
-    listedText: state.sentText,
-    failure: "",
-    loading: false,
-    active: -1,
-  };
-  if (state.sentText === null && reply.start) {
-    const sep = /^[A-Za-z]:/.test(reply.start) || reply.start.includes("\\") ? "\\" : "/";
-    patch.text = withSep(reply.start, sep);
-    patch.listedText = patch.text;
-    patch.needStart = false;
-  }
-  return Object.assign({}, state, patch);
-}
-
-// The arrows: the highlight moves by one row and wraps.
-function nextMove(state: State, ev: Extract<Step, { type: "move" }>) {
-  const n = entries(state).length;
-  if (!n) return state;
-  const edge = ev.by > 0 ? 0 : n - 1;
-  const at = state.active < 0 ? edge : (state.active + ev.by + n) % n;
-  return Object.assign({}, state, { active: at });
-}
-
-// The folder the typed text names: the text itself when it ends with a separator.
-function typedFolder(text: string) {
-  return endsWithSep(text) ? text : parentText(text);
-}
-
-// A row was picked: `..` goes up, a folder goes down one level.
-function nextPick(state: State, ev: Extract<Step, { type: "pick" }>) {
-  if (state.adding) return state;
-  const sep = sepOf(state);
-  if (ev.up) {
-    const up = upText(state);
-    if (up === null) return state;
-    return Object.assign({}, state, {
-      text: up,
-      needStart: false,
-      chosen: true,
-      active: -1,
-      error: "",
-    });
-  }
-  // The rows on screen belong to the listed folder, not to the text: a
-  // pick made before the next listing arrives must not add its name to
-  // the folder the previous pick already chose.
-  const dir = state.listing && state.listing.dir;
-  const base = dir ? withSep(dir.path, sep) : typedFolder(state.text);
-  const text = dir && dir.path === "" ? ev.name : base + ev.name;
-  return Object.assign({}, state, {
-    text: withSep(text, sep),
-    needStart: false,
-    chosen: true,
-    active: -1,
-    error: "",
-  });
 }
 
 function next(state: State, ev: Step) {

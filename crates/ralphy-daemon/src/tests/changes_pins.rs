@@ -1,4 +1,5 @@
-//! The Monaco swap, the changes list, the discard control and two shell bindings, pinned over the served assets.
+//! The Monaco swap, the changes list, the discard control and two shell bindings,
+//! pinned over the served assets.
 
 use super::*;
 
@@ -69,11 +70,12 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     );
 
     let viewer = include_str!("../../assets/ui/wb-file-viewer.ts");
+    let code = include_str!("../../assets/ui/wb-file-viewer-code.ts");
     let slot = include_str!("../../assets/ui/wb-file-viewer-slot.ts");
     let read_only = include_str!("../../assets/ui/wb-file-viewer-read-only.ts");
     assert!(
-        viewer.contains("WBMonaco.create"),
-        "wb-file-viewer.ts must mount its editor through WBMonaco"
+        code.contains("WBMonaco.create"),
+        "wb-file-viewer-code.ts must mount its editor through WBMonaco"
     );
     // The mirror pane (ADR-0037 §3c) is a SECOND editor over the pane's
     // model, never a second model: `wb_monaco_308.py` counts models per
@@ -86,6 +88,7 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     let outgoing = concat!("Code", "Mirror(");
     for (name, js) in [
         ("wb-file-viewer.ts", viewer),
+        ("wb-file-viewer-code.ts", code),
         ("wb-file-viewer-slot.ts", slot),
         ("wb-file-viewer-read-only.ts", read_only),
     ] {
@@ -329,13 +332,20 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // it went with the top bar, because the sidebar already names the open
     // project on its top row. So the pin moves to the surfaces that still
     // put the project's name on screen. It is deliberately NOT
-    // `contains("$store.projects.projectLabel($store.projects.openSlug)")` any more — ten call sites satisfy
+    // `contains("$store.projects.projectLabel($store.projects.openSlug)")` any more —
+    // ten call sites satisfy
     // that substring, so it would stay green with every one of these
     // surfaces reverted to the raw ref.
     let html = super::INDEX_HTML;
     for pin in [
-        r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? $store.projects.projectLabel("#,
-        r#"<span class="spend-project" x-text="$store.projects.projectLabel($store.projects.openSlug)""#,
+        concat!(
+            r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? "#,
+            r#"$store.projects.projectLabel("#
+        ),
+        concat!(
+            r#"<span class="spend-project" x-text="$store.projects.projectLabel("#,
+            r#"$store.projects.openSlug)""#
+        ),
     ] {
         assert!(
             html.contains(pin),

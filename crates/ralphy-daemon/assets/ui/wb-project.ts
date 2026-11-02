@@ -12,7 +12,8 @@
    `worktreeRows` and `worktreeCreateRow`, what the branch picker SAYS about a
    project's checkouts (ADR-0063 §2/§4); `chipLabel`, `checkoutAfter` and
    `checkoutAfterListing` are what the chip says under a selected checkout and
-   when that selection is dropped (#406, #409). The acts that row can start — opening the branch modal,
+   when that selection is dropped (#406, #409). The acts that row can start —
+   opening the branch modal,
    removing the project, refreshing its changes — read and write component
    state and stay where that state is.
    --------------------------------------------------------------------------- */

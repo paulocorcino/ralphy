@@ -239,7 +239,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         const at = Number(reply?.char_index ?? 0) + 1;
         const ask = messages.askInShell({
           title: `Could not save as ${p.encoding}`,
-          message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
+          message:
+            `Character ${at} is not representable in ${p.encoding}. ` +
+            `Save the file as UTF-8 instead?`,
           confirmLabel: "Save as UTF-8",
         });
         // No shell, no dialog: the pane already says "Could not save" and why.

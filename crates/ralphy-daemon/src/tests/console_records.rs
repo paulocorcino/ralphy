@@ -1,4 +1,5 @@
-//! The records a console and a note card write: stacking, desk changes, the console name and the session identity.
+//! The records a console and a note card write: stacking, desk changes, the console name
+//! and the session identity.
 
 use super::*;
 
@@ -14,9 +15,10 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // (CI's included) embeds the asset with CRLF.
     let console = include_str!("../../assets/ui/wb-console-api.ts").replace("\r\n", "\n");
     let stack = include_str!("../../assets/ui/wb-stage-stack.ts");
-    // The card is built by two modules: `wb-notes.ts` and its chrome.
+    // The card is built by three modules: `wb-notes.ts`, its assembly and its chrome.
     let card = [
         include_str!("../../assets/ui/wb-notes.ts"),
+        include_str!("../../assets/ui/wb-notes-build.ts"),
         include_str!("../../assets/ui/wb-notes-chrome.ts"),
     ]
     .concat();
@@ -152,6 +154,22 @@ fn the_shell_writes_the_desk_only_as_changes() {
         (
             "wb-notes-editor.ts",
             include_str!("../../assets/ui/wb-notes-editor.ts"),
+        ),
+        (
+            "wb-notes-save.ts",
+            include_str!("../../assets/ui/wb-notes-save.ts"),
+        ),
+        (
+            "wb-notes-build.ts",
+            include_str!("../../assets/ui/wb-notes-build.ts"),
+        ),
+        (
+            "wb-notes-look.ts",
+            include_str!("../../assets/ui/wb-notes-look.ts"),
+        ),
+        (
+            "wb-notes-header.ts",
+            include_str!("../../assets/ui/wb-notes-header.ts"),
         ),
         (
             "wb-notes-on-top.ts",

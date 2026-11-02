@@ -201,7 +201,8 @@ async fn remember_me_mints_a_week_long_cookie_that_authorizes() {
 /// false, and localhost is always authed.
 #[tokio::test]
 async fn api_session_reports_the_policy_and_whether_authed() {
-    let get_session = |router: axum::Router, header: Option<(header::HeaderName, String)>| async move {
+    type HeaderPair = (header::HeaderName, String);
+    let get_session = |router: axum::Router, header: Option<HeaderPair>| async move {
         let mut request = Request::builder().uri("/api/session");
         if let Some((name, value)) = header {
             request = request.header(name, value);

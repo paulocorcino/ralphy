@@ -148,7 +148,9 @@ export function settingsDialog() {
           const refusal = r.ok ? null : await r.json().catch(() => null);
           this.deskHistory.loaded = false;
           this.deskHistory.rows = [];
-          this.deskHistory.error = `Could not read the desk history: ${refusal?.error || "the daemon gave no reason"}.`;
+          this.deskHistory.error =
+            "Could not read the desk history: " +
+            `${refusal?.error || "the daemon gave no reason"}.`;
           return;
         }
         const when = (ms: number) => new Date(ms).toLocaleString();
@@ -195,7 +197,9 @@ export function settingsDialog() {
         const version = r.ok ? await r.json().catch(() => null) : null;
         if (!version) {
           const refusal = r.ok ? null : await r.json().catch(() => null);
-          this.deskHistory.error = `Could not download the desk layout: ${refusal?.error || "the daemon gave no reason"}.`;
+          this.deskHistory.error =
+            "Could not download the desk layout: " +
+            `${refusal?.error || "the daemon gave no reason"}.`;
           return;
         }
         const blob = new Blob([JSON.stringify(version, null, 2)], { type: "application/json" });

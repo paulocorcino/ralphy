@@ -84,7 +84,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
+        <button class="vbtn" data-act="find" title="Find" aria-label="Find"
+          ><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
@@ -116,8 +117,11 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         <span class="viewer-path"></span>
         <span class="img-meta"></span>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"><i class="bi bi-arrows-angle-expand"></i><span class="vbtn-label">Actual size</span></button>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+        <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"
+          ><i class="bi bi-arrows-angle-expand"></i
+          ><span class="vbtn-label">Actual size</span></button>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"
+          ><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         ${detachBtnHtml(rec)}
       </div>
       <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
@@ -179,7 +183,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         <span class="viewer-path"></span>
         <span class="spacer"></span>
         <span class="viewer-save-err" style="display:none"></span>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"
+          ><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
       </div>
       <div class="viewer-body refused-body">
         <i class="bi bi-file-earmark-x"></i>
@@ -190,7 +195,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     need(el, ".refused-text").textContent = refusalText(rec.refused);
     if (rec.refused === "binary") {
       need(el, ".refused-hint").textContent =
-        "This file may be text in an older encoding. Set the fallback encoding in “Settings”, or reopen the file with another encoding.";
+        "This file may be text in an older encoding. Set the fallback encoding in “Settings”, " +
+        "or reopen the file with another encoding.";
     }
     holder().append(el);
     need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);

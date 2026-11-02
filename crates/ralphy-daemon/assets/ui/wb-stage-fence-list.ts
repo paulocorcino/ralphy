@@ -6,11 +6,9 @@
 
    `createFenceList(deps)` returns the functions the console, its chrome, its
    fences, its desk, its view and the `WBConsole` API use (ADR-0075 D7). They
-   read the console only through `deps`, and `FenceListDeps` lists every read,
-   so `tsc` refuses a read outside it. `wb-console.ts` creates one per console,
-   before its view, and keeps the fence records (`fences`, `notes`), the desk
-   and the lifecycle channel. The focused fence is per-client state and lives
-   here.
+   read the console only through `deps`, and `FenceListDeps` lists every read.
+   `wb-console.ts` creates one per console, before its view. The focused fence
+   is per-client state and lives here.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
@@ -108,14 +106,10 @@ export function createFenceList(deps: FenceListDeps) {
   const { isDetached, detachedMembers } = popups;
 
   // ---- the fence floor ---------------------------------------------------------
-  // The fence element, its two gestures, tiling and detaching are
-  // `wb-stage-fences.ts`.
   const FENCE_NAME_MAX = 60;
 
-  // The refusal flash `createFence` schedules. Module scope so a gesture
-  // starting inside its 600 ms window can CANCEL it: otherwise the timer strips
-  // a `fence-invalid` the gesture put there, and with the cursor at rest no
-  // move re-adds it.
+  // The refusal flash `createFence` schedules. A gesture starting inside its 600 ms
+  // window cancels it: else the timer strips a `fence-invalid` the gesture put there.
   let fenceFlash: { el: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
   function clearFenceFlash() {
     if (fenceFlash == null) return;
@@ -133,11 +127,9 @@ export function createFenceList(deps: FenceListDeps) {
     return null;
   }
 
-  // Re-derive every fence's count readout from the stage (#342). Membership is
-  // never stored, so this folds the LIVE rects — from `renderFences`,
-  // `setWin` and `forgetRecord`. NOT from `applyExtent`: it fires per
-  // mousemove, and `offsetLeft` on a `.tiling` window is the INTERPOLATED
-  // value mid-transition.
+  // Re-derive every fence's count readout from the LIVE rects (#342), from
+  // `renderFences`, `setWin` and `forgetRecord`. NOT from `applyExtent`: it fires
+  // per mousemove, and `offsetLeft` on a `.tiling` window is interpolated.
   function refreshFenceChrome() {
     const st = stage();
     // A hidden tab measures 0 and this fold reads MEASURED rects: refreshing
@@ -145,9 +137,8 @@ export function createFenceList(deps: FenceListDeps) {
     // on the first frame that can measure.
     if (!st || !st.offsetWidth || !st.offsetHeight) return;
     const els = indexFences(st);
-    // A DETACHED fence's consoles are in a popup, so the membership fold
-    // answers zero — but the fence is emptied, not empty (ADR-0051 §7a). Take
-    // the count from the registry for those; the fold stays pure.
+    // A DETACHED fence is emptied, not empty (ADR-0051 §7a): take its count from
+    // the registry; the fold stays pure.
     const away = detachedMembers();
     for (const s of fenceSummaries(readFenceRects(st), readWindowRects(st))) {
       const el = els.get(s.id);
@@ -178,12 +169,9 @@ export function createFenceList(deps: FenceListDeps) {
     }
   }
 
-  // A card held by a locked fence is read-only for the same reason, and by
-  // the same derivation (ADR-0064 §8) — the record is not rewritten. NOT in
-  // the popup: `mountDetached` re-origins its members' rects into this
-  // window while `fences` still holds the shell's stage coordinates, so the
-  // derivation there would match a card to whatever fence happens to cover
-  // the translated point.
+  // A card held by a locked fence is read-only, by the same derivation
+  // (ADR-0064 §8). NOT in the popup: `mountDetached` re-origins its members'
+  // rects while `fences` holds the shell's coordinates.
   function markHeldNotes(st: HTMLElement) {
     for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<NoteCard>(".note-card")) {
       const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
@@ -204,9 +192,8 @@ export function createFenceList(deps: FenceListDeps) {
     }
   }
 
-  // The two DOM reads `refreshFenceChrome` and `fenceList` share: the stage is
-  // where a fence and a window ARE, and membership is derived from those live
-  // rects, never from `fences` or `wins`.
+  // The two DOM reads `refreshFenceChrome` and `fenceList` share: membership is
+  // derived from live rects, never from `fences` or `wins`.
   function readFenceRects(st: HTMLElement) {
     return [...st.querySelectorAll<FenceElement>(".fence")].map((el) => ({
       id: el.dataset.fenceId,
@@ -231,17 +218,13 @@ export function createFenceList(deps: FenceListDeps) {
     }));
   }
 
-  // The fence list the toolbar picker shows (#343) — the same fold the fence
-  // chrome reads. A SNAPSHOT at menu open, like `list()`.
   // The fence RECORDS (id, name, rect, locked), not the chrome summaries: the
   // note card derives its lock from the fence holding it and needs the rects.
   function fenceRecords() {
     return fences().map((f: DeskFence) => ({ ...f }));
   }
 
-  // The cards, rendered by `wb-notes.ts`. Called wherever `renderFences` is —
-  // the two collections go on the plane together or the extent is folded over
-  // half of them.
+  // Called wherever `renderFences` is: both go on the plane together.
   function renderNotes() {
     window.WBNotes?.render();
   }
@@ -359,19 +342,12 @@ export function createFenceList(deps: FenceListDeps) {
     else if (focusedFence) focusFence(focusedFence);
   }
 
-  // The next default name, from the numbers ALREADY on the plane, not the
-  // count: `fences.length + 1` freezes at FENCE_MAX, so every fence past the
-  // cap was born "Fence 13" (MEASURED), and the fence list IS the plane's map.
-  // Only `Fence <n>` counts: a rename to "backend" must not move the next
-  // default, and "Fence 99" is a number the operator chose.
   function atFenceCap() {
     return fences().length >= FENCE_MAX;
   }
   function createFence() {
-    // AT THE CAP, REFUSE: the daemon refuses a fence past it too.
-    // Refusing and SAYING SO are two jobs: this module knows no Alpine, so it
-    // answers `false` and `newFence()` in app.ts does the talking; `atFenceCap`
-    // is exported so the row can be disabled BEFORE the click.
+    // AT THE CAP, REFUSE: the daemon refuses too. This module knows no Alpine, so
+    // it answers `false` and `newFence()` in app.ts says so.
     if (atFenceCap()) return false;
     const { offset, viewport } = workspaceView(workspace());
     const slot = nextFenceSlot(

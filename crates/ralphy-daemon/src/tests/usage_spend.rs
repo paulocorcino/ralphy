@@ -7,8 +7,12 @@ async fn api_usage_serves_run_records_and_honors_since() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("owner-repo.jsonl"),
-        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
-         {\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-b\",\"outcome\":\"ok\",\"tokens\":{\"input\":20,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\
+        \"m\",\"session_id\":\"sess-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":0,\
+        \"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
+         {\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\
+         \"m\",\"session_id\":\"sess-b\",\"outcome\":\"ok\",\"tokens\":{\"input\":20,\"output\":0,\
+         \"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
     )
     .unwrap();
 
@@ -103,8 +107,13 @@ async fn api_spend_serves_one_projects_priced_summary_without_the_ledger() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("owner-repo.jsonl"),
-        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
-         {\"project\":\"other/repo\",\"issue\":2,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"claude-opus-4-8\",\"session_id\":\"sess-b\",\"outcome\":\"ok\",\"tokens\":{\"input\":50000,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\
+        \"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\
+        \"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
+         {\"project\":\"other/repo\",\"issue\":2,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\
+         \"claude-opus-4-8\",\"session_id\":\"sess-b\",\"outcome\":\"ok\",\"tokens\":{\"input\":\
+         50000,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:\
+         00\"}\n",
     )
     .unwrap();
 
@@ -167,8 +176,12 @@ async fn api_usage_scopes_to_a_project_and_marks_unpriced_rows() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("owner-repo.jsonl"),
-        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"session_id\":\"sess-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
-         {\"project\":\"other/repo\",\"issue\":2,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":50000,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\
+        \"unknown\",\"session_id\":\"sess-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\
+        \"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
+         {\"project\":\"other/repo\",\"issue\":2,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\
+         \"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":50000,\"output\":0,\"cache_read\":0,\
+         \"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
     )
     .unwrap();
 
@@ -243,7 +256,9 @@ async fn api_spend_refuses_an_unknown_period() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("owner-repo.jsonl"),
-        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n",
+        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\
+        \"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\
+        \"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n",
     )
     .unwrap();
     let spend_get = |uri: &'static str| {

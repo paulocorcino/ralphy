@@ -21,7 +21,8 @@
 // field of the desk.
 //
 // Four writers share the key (the console's offset, the shell's tabs, the
-// settings toggle, the attention list's notification switch), which is why `patch` is read-modify-write: any one of them
+// settings toggle, the attention list's notification switch), which is why
+// `patch` is read-modify-write: any one of them
 // writing the whole record would clobber the others'.
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 

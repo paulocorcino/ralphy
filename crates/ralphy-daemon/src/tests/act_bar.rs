@@ -56,7 +56,10 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     let html = super::INDEX_HTML;
     for pin in [
         r#"data-act="fetch" :disabled="$store.connection.writeLocked() || !!syncBusy""#,
-        r#"data-act="pull" :disabled="$store.connection.writeLocked() || !!syncBusy || !!pullBlocked()""#,
+        concat!(
+            r#"data-act="pull" :disabled="$store.connection.writeLocked() || "#,
+            r#"!!syncBusy || !!pullBlocked()""#
+        ),
         r#"data-act="push" :disabled="$store.connection.writeLocked() || !!syncBusy""#,
         r#":class="{ busy: syncBusy === 'fetch' }""#,
         r#":class="{ busy: syncBusy === 'pull' }""#,
@@ -166,17 +169,23 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // act is SENT with the checkout.
     let mutate = squeeze(js_method_body(
         &app_js,
-        "async _mutateBranch(verb: string, slug: string | null, name: string, revert: () => void) {",
+        "async _mutateBranch(verb: string, slug: string | null, name: string, revert: () => void) \
+        {",
     ));
     assert!(
         mutate.contains(
             r#"this._branchRefused("Couldnotreachthedaemon.Checkwhetherthebranchchanged.")"#
         ),
-        "the daemon-mode throw arm must report; an unanswered branch change must not read as a completed one"
+        "the daemon-mode throw arm must report; an unanswered branch change must not read as a \
+        completed one"
     );
     assert!(
-        app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.$store.checkouts.checkoutOf(slug))"),
-        "a branch act under a selected worktree is sent WITH the checkout — the worktree's HEAD moves, never the primary's"
+        app_js.contains(
+            "WBDaemon.withCheckout({ repo: slug, name }, \
+        this.$store.checkouts.checkoutOf(slug))"
+        ),
+        "a branch act under a selected worktree is sent WITH the checkout — the worktree's HEAD \
+        moves, never the primary's"
     );
     assert!(
         !app_js.contains("pick primary before switching branches"),

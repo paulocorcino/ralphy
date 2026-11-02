@@ -4,16 +4,18 @@
    `createSpawn(deps)` builds a live console window (the chrome, the terminal,
    the parked and peer strips, the restart and the close) and writes what its
    birth and its session change in its desk record. `open` is the operator's
-   new console, under the desk cap. It reads the console only
-   through `deps`. The rules are `birthDecision` and `peerOfflineView` in
-   `wb-console-session.ts`; the key bar is `wb-console-keys.ts` (#621).
+   new console, under the desk cap. It reads the console only through `deps`.
+   The rule is `birthDecision` in `wb-console-session.ts`; the key bar is
+   `wb-console-keys.ts`; the strips are `wb-console-strips.ts`; the desk
+   record is `wb-console-spawn-records.ts` (#621).
 --------------------------------------------------------------------------- */
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { DESK_MAX } from "./wb-desk-folds.ts";
-import { need } from "./wb-dom-need.ts";
+import { createSpawnRecords } from "./wb-console-spawn-records.ts";
+import { showParked, showPeerDown } from "./wb-console-strips.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal-types.d.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
@@ -22,16 +24,14 @@ import type {
   ConsoleTerm,
   ConsoleWin,
   DeskRecord,
-  DeskSessionFields,
   DeskWindowFields,
   ExtentOpts,
   Presentation,
   Rect,
   SpawnCarry,
-  WindowSnapshot,
 } from "./wb-types.d.ts";
 
-const { birthDecision, peerOfflineView, peerActionLabel, consoleCommand } = WBConsoleSession;
+const { birthDecision, consoleCommand } = WBConsoleSession;
 const { sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
 
 // What the window birth reads from the console, and nothing else. Every dep
@@ -158,6 +158,14 @@ export function createSpawn(deps: SpawnDeps) {
     spawnOrMissing,
     markRelaunch,
   } = deps;
+  const { recordBirth, recordSession, deskOf } = createSpawnRecords({
+    createRecord,
+    setWin,
+    currentDesk,
+    reloadDesk,
+    recordLeft,
+    restoreRect,
+  });
 
   // The state `sleepWindow` leaves. `_visible` is false until the observer
   // reports: a window not yet reported reads as visible, and any
@@ -208,71 +216,9 @@ export function createSpawn(deps: SpawnDeps) {
       if (hintEl) hintEl.textContent = "";
     }
 
-    // A held window's strip: the fleet's sentence for the peer, its action, and
-    // the daemon's diagnosis under Details. Built once, then reworded on each
-    // fleet read.
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
-    const showPeerDown = (group: Group | null) => {
-      let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
-      if (!strip) {
-        strip = document.createElement("div");
-        strip.className = "session-peer-down";
-        const text = document.createElement("span");
-        text.className = "session-peer-down-text";
-        const detail = document.createElement("details");
-        detail.className = "session-detail";
-        const summary = document.createElement("summary");
-        summary.textContent = "Details";
-        detail.append(summary, document.createElement("p"));
-        const btn = document.createElement("button");
-        btn.className = "session-reconnect";
-        btn.addEventListener("click", (e: MouseEvent) => {
-          e.stopPropagation();
-          if (btn.dataset.act === "wake") void wakePeerNow()?.(peerDaemon);
-          else readFleetNow()?.();
-        });
-        strip.append(text, detail, btn);
-        win.insertBefore(strip, body);
-      }
-      const view = peerOfflineView(group, null, win._deskEnvironment);
-      need(strip, ".session-peer-down-text").textContent = view.text;
-      const detail = need(strip, ".session-detail");
-      need(detail, "p").textContent = view.detail || "";
-      detail.hidden = !view.detail;
-      const btn = need(strip, ".session-reconnect");
-      btn.dataset.act = view.action || "";
-      const actionLabel = peerActionLabel(view.action);
-      btn.hidden = !actionLabel;
-      if (actionLabel) btn.textContent = actionLabel;
-    };
-
-    // The parked strip: this window watches a session another window drives.
-    // Built once; returns the strip.
-    const showParked = (): HTMLElement => {
-      const shown = win.querySelector<HTMLElement>(".session-parked");
-      if (shown) return shown;
-      const strip = document.createElement("div");
-      strip.className = "session-parked";
-      const text = document.createElement("span");
-      // The titlebar already names the agent and the repo; repeating them here
-      // wraps the strip on a phone.
-      text.textContent = "Read-only. Another window has control.";
-      const hint = document.createElement("span");
-      hint.className = "session-parked-hint";
-      const btn = document.createElement("button");
-      btn.className = "session-reconnect";
-      btn.dataset.act = "take-over";
-      btn.textContent = "Take over";
-      btn.addEventListener("click", (e: MouseEvent) => {
-        e.stopPropagation();
-        win._term?.takeOver();
-      });
-      strip.append(text, hint, btn);
-      // The body read now, not `body`: a dormant window gets a new body node
-      // (`sleepWindow`), and the old one is no longer a child of `win`.
-      win.insertBefore(strip, win.querySelector(".session-body"));
-      return strip;
-    };
+    const peerStrip = { document, peerDaemon, wakePeerNow, readFleetNow };
+    const parked = () => showParked(document, win);
 
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
@@ -309,14 +255,14 @@ export function createSpawn(deps: SpawnDeps) {
       // and output; the strip's button is the only way `takeover` is ever sent
       // (#334, ADR-0051 §9).
       onPark: () => {
-        showParked();
+        parked();
       },
       // A watcher's keystroke never reaches the child (gated in
       // `attachTerminal`); this pulses the strip so the refusal is SEEN (#335).
       // A watcher built with no park (a dormant watcher that wakes) has no
       // strip yet, so the first refused key builds it (#751).
       onWatchedInput: () => {
-        const strip = showParked();
+        const strip = parked();
         clearTimeout(nudgeTimer);
         strip.classList.add("is-nudged");
         const hintEl = strip.querySelector(".session-parked-hint");
@@ -354,7 +300,7 @@ export function createSpawn(deps: SpawnDeps) {
             readFleet: () => readFleetNow()?.(),
           }
         : {}),
-      onPeerHold: (group) => showPeerDown(group),
+      onPeerHold: (group) => showPeerDown(peerStrip, win, body, group),
       onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
       onLink: (state) => {
         switch (state) {
@@ -490,75 +436,6 @@ export function createSpawn(deps: SpawnDeps) {
     return win;
   }
 
-  // What a birth writes. A window whose record is in the view writes only the
-  // fields its birth changed (a relaunch in the primary tree, a name the
-  // record lacked) — never its rect, which came from the record. A window
-  // carried from an adopted, unrecorded one stays unrecorded. Any other
-  // window is a new console: its record is created.
-  function recordBirth(win: ConsoleWin, carry: SpawnCarry | undefined) {
-    const r = currentDesk().find((x) => x.id === win._deskId);
-    if (r) {
-      const fields = birthFields(r, win);
-      if (Object.keys(fields).length) setWin(win, fields);
-      return;
-    }
-    if (carry?.unrecorded) {
-      win._deskUnrecorded = true;
-      setTimeout(() => adoptOrphan(win), ADOPT_GRACE_MS);
-      return;
-    }
-    createRecord(win);
-  }
-
-  // How long an adopted console waits for the record the page that launched
-  // it writes. A launch and its create land within a second; a console whose
-  // record no page will write (another device removed it) still gets one.
-  const ADOPT_GRACE_MS = 10000;
-  function adoptOrphan(win: ConsoleWin) {
-    if (!win.isConnected || !win._deskUnrecorded) return;
-    // A fresh read first: the record may have landed without a push here.
-    void reloadDesk().then(() => {
-      if (!win.isConnected || !win._deskUnrecorded) return;
-      if (currentDesk().some((r) => r.id === win._deskId)) return;
-      recordLeft(win);
-    });
-  }
-
-  // The session the daemon announced, and the worktree with it, written only
-  // when they differ from the record: a reconnect changes nothing else.
-  function recordSession(win: ConsoleWin) {
-    const r = currentDesk().find((x) => x.id === win._deskId);
-    if (!r) return;
-    const fields: DeskWindowFields = {};
-    const session = {
-      sessionId: sessionIdOf(win),
-      daemonId: win._deskDaemonId ?? null,
-      environment: win._deskEnvironment ?? null,
-    };
-    if (sessionDiffers(r, session)) fields.session = session;
-    if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
-    if (Object.keys(fields).length) setWin(win, fields);
-  }
-
-  // The window's placement as a desk record, to carry identity and box across
-  // a rebuild (takeover, placeholder → live console).
-  function deskOf(win: ConsoleWin): WindowSnapshot {
-    return {
-      unrecorded: !!win._deskUnrecorded,
-      id: win._deskId,
-      repo: win._deskRepo,
-      agent: win._deskAgent,
-      kind: win._deskKind,
-      daemonId: win._deskDaemonId,
-      environment: win._deskEnvironment,
-      checkout: win._deskCheckout ?? null,
-      locked: !!win._deskLocked,
-      consoleName: win._deskConsoleName ?? null,
-      rect: restoreRect(win),
-      max: win.classList.contains("maximized"),
-    };
-  }
-
   // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
   // is no agent — a normal shell in the repo dir, labelled "console", or, with
   // `command`, a shell running that command and labelled by it (the same label
@@ -602,29 +479,4 @@ function launchRecord(termOpts: TerminalOpts, win: ConsoleWin): TerminalOpts {
   // dies mid-launch still leaves it behind.
   if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
   return termOpts;
-}
-
-// The fields of the record `r` that the birth of `win` changed: a relaunch in
-// another tree, a name the record lacked.
-function birthFields(r: DeskRecord, win: ConsoleWin): DeskWindowFields {
-  const fields: DeskWindowFields = {};
-  if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
-  if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
-    fields.consoleName = win._deskConsoleName;
-  }
-  return fields;
-}
-
-// The window is in another checkout than its record names.
-function checkoutDiffers(r: DeskRecord, win: ConsoleWin) {
-  return (r.checkout ?? null) !== (win._deskCheckout ?? null);
-}
-
-// The session the daemon announced is not the one the record names.
-function sessionDiffers(r: DeskRecord, session: DeskSessionFields) {
-  return (
-    (r.sessionId ?? null) !== session.sessionId ||
-    (r.daemonId ?? null) !== session.daemonId ||
-    (r.environment ?? null) !== session.environment
-  );
 }

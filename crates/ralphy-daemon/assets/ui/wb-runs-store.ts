@@ -72,7 +72,8 @@ export function runsStore(_deps: RunsStoreDeps) {
     runsError: "",
     currentRunId: null as string | null,
     runsRead: {} as Record<string, Read>,
-    _runsSub: null as Subscription | null, // the live run-snapshot subscription for the open project, if any
+    // The live run-snapshot subscription for the open project, if any.
+    _runsSub: null as Subscription | null,
 
     // Alpine calls this once, when `main.ts` registers the store.
     init() {

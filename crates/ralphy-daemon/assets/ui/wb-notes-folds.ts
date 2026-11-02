@@ -1,24 +1,86 @@
 /* ---------------------------------------------------------------------------
-   The note card's folds and front matter (ADR-0064 §§4, 7, 8, 14; ADR-0073 D8).
+   The note card's folds (ADR-0064 §§4, 7, 8, 14; ADR-0073 D8).
 
-   The constants of a note (its tones, hands, sizes and the default directory),
-   the functions that read and write its front-matter block, and the pure rules
-   a card is laid out and slept by. Nothing here reads the DOM, the clock, a
-   timer or `window`, except where a card is painted (`applyLook`, `noCredential`)
-   or the fence geometry is asked (`lockedBy`, `spawnRect`).
+   The pure rules a card is laid out, named and slept by. The look is in
+   `wb-notes-look.ts` and the front matter in `wb-notes-header.ts`; this module
+   re-exports both, so an importer names one module. Nothing here reads the
+   DOM, the clock, a timer or `window`, except where the fence geometry is
+   asked (`lockedBy`, `spawnRect`).
 
    `wb-notes.ts` keeps every name of `NOTE_FOLDS` in its returned object.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
-import type {
-  DeskFence,
-  NoteCard,
-  NoteLook,
-  NoteSource,
-  Offset,
-  Rect,
-  Size,
-} from "./wb-types.d.ts";
+import {
+  DEFAULT_FILL,
+  DEFAULT_FONT,
+  DEFAULT_INK,
+  DEFAULT_SIZE,
+  DEFAULT_TONE,
+  FILLS,
+  FONTS,
+  INKS,
+  NEW_NOTE_STYLE,
+  SIZES,
+  TONES,
+  fillOf,
+  fontOf,
+  inkOf,
+  sizeOf,
+  toneOf,
+} from "./wb-notes-look.ts";
+import {
+  bodyOf,
+  colorOf,
+  legacyTitleOf,
+  styleOf,
+  titleFieldOf,
+  veiledOf,
+  withStyle,
+  withTitle,
+  withVeil,
+} from "./wb-notes-header.ts";
+import type { DeskFence, NoteSource, Offset, Rect, Size } from "./wb-types.d.ts";
+
+export {
+  ADD_TITLE,
+  DEFAULT_FILL,
+  DEFAULT_FONT,
+  DEFAULT_INK,
+  DEFAULT_SIZE,
+  DEFAULT_TONE,
+  EMPTY_TITLE_HINT,
+  FILLS,
+  FONTS,
+  INKS,
+  NEW_NOTE_STYLE,
+  REMOVE_TITLE,
+  SIZES,
+  SWATCH_NAME,
+  TONES,
+  applyLook,
+  fillOf,
+  fontOf,
+  inkOf,
+  lookOf,
+  noCredential,
+  sizeOf,
+  toneOf,
+} from "./wb-notes-look.ts";
+export {
+  bodyOf,
+  colorOf,
+  fieldOf,
+  legacyTitleOf,
+  splitFrontMatter,
+  styleOf,
+  titleFieldOf,
+  titleYaml,
+  veiledOf,
+  withHeader,
+  withStyle,
+  withTitle,
+  withVeil,
+} from "./wb-notes-header.ts";
 
 /** What `noteDormancyDecision` reads: the card's facts and the clock. */
 export type DormancyFacts = {
@@ -42,73 +104,6 @@ export const NOTE_MIN = { width: 160, height: 100 };
 // enough for the editor's slash menu, which mounts INSIDE the editor and is
 // clipped by a smaller card (measured; see vendor-build/crepe/entry.js).
 export const NOTE_DEFAULT = { width: 320, height: 260 };
-// The tones the file's front matter may name (ADR-0064 §3). The stylesheet
-// owns the actual colours; this list is the closed set. The daemon reads no
-// field of the front matter — its codec carries bytes — so the shell is the
-// one side that has to agree with itself.
-export const TONES = ["ochre", "sage", "rose", "slate", "plum", "sand"];
-// The empty line's title control (ADR-0064, 2026-09-27 amendment). The
-// words live here, not in the vendored bundle, so `xtask ui-copy` reads them.
-export const ADD_TITLE = "Add title";
-export const REMOVE_TITLE = "Remove title";
-export const EMPTY_TITLE_HINT = "Write a title";
-export const DEFAULT_TONE = "sand";
-// How much of the tone the card's GROUND takes. `wash` is ADR-0064 §8's
-// quiet tint; `solid` is the tone itself, which is what makes "a yellow note
-// with white text" possible at all — a 10 % tint over a dark ground is not a
-// colour anyone would call yellow. The stylesheet owns both mixes.
-export const FILLS = ["wash", "solid"];
-export const DEFAULT_FILL = "wash";
-// The ink, chosen BESIDE the ground so the pair is the operator's: the
-// theme's own text, a near-white and a near-black for the solid fills, and
-// the six tones again for a coloured hand. Unknown names fall back like a
-// tone's.
-export const INKS = ["default", "light", "dark"].concat(TONES);
-export const DEFAULT_INK = "default";
-// The hand the note is written in (asked 2026-09-22). A CLOSED SET like
-// every other field of the look, and for a reason this one makes sharper: a
-// free `font-family` string would put a font the writer happens to have
-// installed into a file someone else opens, and the card would paint as a
-// fallback nobody chose. The names are ROLES; 01-base.css owns which stack
-// each is on this machine (13-notes.css).
-export const FONTS = ["sans", "serif", "mono"];
-export const DEFAULT_FONT = "sans";
-// The reading size, as a STEP and not a pixel count. `--reading-size` is the
-// plane's own (ADR-0035) and each step is a ratio of it, so a note keeps its
-// relation to the chrome around it instead of pinning a number that stops
-// agreeing with the rest of the workbench the moment that scale moves.
-export const SIZES = ["xs", "s", "m", "l", "xl"];
-export const DEFAULT_SIZE = "m";
-// What the palette calls each name of the sets above. The file keeps the
-// key; only the tooltip and the accessible name read this.
-export const SWATCH_NAME: Record<string, string> = {
-  ochre: "Ochre",
-  sage: "Sage",
-  rose: "Rose",
-  slate: "Slate",
-  plum: "Plum",
-  sand: "Sand",
-  wash: "Tint",
-  solid: "Solid",
-  default: "Theme",
-  light: "Light",
-  dark: "Dark",
-  sans: "Sans serif",
-  serif: "Serif",
-  mono: "Monospace",
-  xs: "Extra small",
-  s: "Small",
-  m: "Medium",
-  l: "Large",
-  xl: "Extra large",
-};
-// What a NEW note is dressed in, which is NOT the same question as what an
-// absent field means. The `DEFAULT_*` above are the READING fallback — a
-// file that names no `fill:` is a wash — and changing them to restyle new
-// notes would restyle every note already written, because the field they
-// omit is the one being redefined. So the operator's choice (2026-09-22)
-// lives here and is written out explicitly by `withHeader`.
-export const NEW_NOTE_STYLE = { tone: "ochre", fill: "solid", ink: "dark" };
 // The default landing directory (ADR-0064 §4), mirrored from `note::DIR`.
 export const DEFAULT_DIR = ".ralphy/notes";
 // Autosave: quiet for this long and the note is written (ADR-0064 §7). Short
@@ -130,23 +125,6 @@ export function titleOf(markdown: string | null | undefined, fallback?: string) 
   const legacy = legacyTitleOf(bodyOf(markdown));
   if (legacy) return legacy.name;
   return fallback === undefined ? "Untitled note" : fallback;
-}
-
-// The body's leading `#` heading, when that is what the body opens with —
-// `{name, rest}`, or `null`. Deliberately NOT "the first `#` anywhere", the
-// old rule: with the title out of the document, a `#` further down is a
-// section the operator wrote and absorbing it into the header would delete
-// text nobody asked to move.
-export function legacyTitleOf(body: string | null | undefined) {
-  const lines = String(body || "").split("\n");
-  let at = 0;
-  while (at < lines.length && lines[at]?.trim() === "") at += 1;
-  const name = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "")?.[1];
-  if (name === undefined) return null;
-  // The blank line that separated the heading from the text goes with it.
-  let after = at + 1;
-  if ((lines[after] ?? "").trim() === "") after += 1;
-  return { name, rest: lines.slice(after).join("\n") };
 }
 
 // When this note was last written, for the footer (ADR-0064 §7 as amended).
@@ -216,237 +194,6 @@ export function stampName(now?: Date | number) {
     p(d.getUTCMinutes()) +
     p(d.getUTCSeconds())
   );
-}
-
-// The tone a record/document names, defaulted. Never throws on a tone from a
-// hand-edited file: an unknown name is sand.
-export function toneOf(name: string | null | undefined): string {
-  return TONES.includes(name as string) ? (name as string) : DEFAULT_TONE;
-}
-export function fillOf(name: string | null | undefined): string {
-  return FILLS.includes(name as string) ? (name as string) : DEFAULT_FILL;
-}
-export function inkOf(name: string | null | undefined): string {
-  return INKS.includes(name as string) ? (name as string) : DEFAULT_INK;
-}
-export function fontOf(name: string | null | undefined): string {
-  return FONTS.includes(name as string) ? (name as string) : DEFAULT_FONT;
-}
-export function sizeOf(name: string | null | undefined): string {
-  return SIZES.includes(name as string) ? (name as string) : DEFAULT_SIZE;
-}
-
-// The look a card is WEARING, in the two places it has to be: the fields the
-// writers read, and the `data-*` the stylesheet selects on. One function
-// because the look grew from three fields to five — every site that set them
-// by hand was a place the next field would be forgotten, and a card wearing
-// four of five is a card whose file and paint disagree.
-export function applyLook(el: NoteCard, style: Partial<NoteLook> | null | undefined) {
-  el._noteTone = toneOf(style?.tone);
-  el._noteFill = fillOf(style?.fill);
-  el._noteInk = inkOf(style?.ink);
-  el._noteFont = fontOf(style?.font);
-  el._noteSize = sizeOf(style?.size);
-  el.dataset.tone = el._noteTone;
-  el.dataset.fill = el._noteFill;
-  el.dataset.ink = el._noteInk;
-  el.dataset.font = el._noteFont;
-  el.dataset.size = el._noteSize;
-}
-
-// What that card is wearing, as the shape every writer takes.
-export function lookOf(el: NoteCard): NoteLook {
-  return {
-    tone: el._noteTone,
-    fill: el._noteFill,
-    ink: el._noteInk,
-    font: el._noteFont,
-    size: el._noteSize,
-  };
-}
-
-// A field on a card is NOT a credential. Measured (2026-09-22): renaming a
-// note raised the browser's "save your password?" prompt with the note's
-// title offered as the username — the password manager had classified the
-// title box as the login form's user field, because every input the page
-// leaves unowned by a `<form>` is grouped into one synthetic form with the
-// login password beside it. The attributes below are the documented way out,
-// and the two `data-*` ones say the same thing to 1Password and LastPass,
-// which read their own.
-export function noCredential(input: HTMLInputElement) {
-  input.type = "text";
-  input.autocomplete = "off";
-  input.setAttribute("autocorrect", "off");
-  input.setAttribute("autocapitalize", "off");
-  input.setAttribute("data-1p-ignore", "");
-  input.setAttribute("data-lpignore", "true");
-  input.setAttribute("data-form-type", "other");
-}
-
-// ---- front matter -----------------------------------------------------------
-// Byte-identical to `note::with_color`/`color_of`/`body_of` in the daemon:
-// the two sides write the same header for the same note, so an autosave after
-// a read never rewrites the file for no reason. One field, a closed set — a
-// YAML parser here would be a dependency for `color: sage`.
-
-// The length of the `---` line that opens a front matter, or 0 when there is none.
-function openingLength(text: string) {
-  if (text.startsWith("---\n")) return 4;
-  return text.startsWith("---\r\n") ? 5 : 0;
-}
-
-export function splitFrontMatter(markdown: string | null | undefined) {
-  const text = String(markdown || "");
-  const open = openingLength(text);
-  if (!open) return null;
-  const rest = text.slice(open);
-  let offset = 0;
-  for (const line of rest.split("\n")) {
-    if (line.replace(/\r$/, "") === "---") {
-      return { inner: rest.slice(0, offset), body: rest.slice(offset + line.length + 1) };
-    }
-    offset += line.length + 1;
-  }
-  return null;
-}
-
-// The document without its front matter — what the editor shows.
-export function bodyOf(markdown: string | null | undefined) {
-  const split = splitFrontMatter(markdown);
-  return split ? split.body : String(markdown || "");
-}
-
-// One field out of the block, by name, or `null` when it is absent or names
-// something outside its closed set.
-export function fieldOf(markdown: string | null | undefined, key: string, set: string[]) {
-  const split = splitFrontMatter(markdown);
-  if (!split) return null;
-  const re = new RegExp("^\\s*" + key + ":\\s*(\\S+)\\s*$");
-  for (const line of split.inner.split("\n")) {
-    const value = re.exec(line.replace(/\r$/, ""))?.[1];
-    if (value !== undefined) return set.includes(value) ? value : null;
-  }
-  return null;
-}
-
-// The colour the document names, or `null`.
-export function colorOf(markdown: string | null | undefined) {
-  return fieldOf(markdown, "color", TONES);
-}
-
-// Does this note OPEN VEILED (ADR-0064 §8 as amended)? `hidden: true` is the
-// note saying it is not for whoever happens to be looking at the screen.
-// Deliberately NOT part of `styleOf`: the look is how the card is painted,
-// and this decides whether there is anything painted at all.
-export function veiledOf(markdown: string | null | undefined) {
-  return fieldOf(markdown, "hidden", ["true", "false"]) === "true";
-}
-
-// The `title:` field — free text, so it cannot go through `fieldOf`'s closed
-// set. `null` when the block has none, which is what tells `titleOf` to look
-// for the legacy heading. Written as a double-quoted YAML scalar and read as
-// one, because a title says "Sprint 12: what is left" often enough that a
-// bare value would be invalid YAML to anyone else's parser.
-export function titleFieldOf(markdown: string | null | undefined) {
-  const split = splitFrontMatter(markdown);
-  if (!split) return null;
-  for (const line of split.inner.split("\n")) {
-    const raw = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""))?.[1];
-    if (raw === undefined) continue;
-    if (!raw.startsWith('"')) return raw;
-    return raw
-      .slice(1, raw.endsWith('"') && raw.length > 1 ? -1 : undefined)
-      .replace(/\\(["\\])/g, "$1");
-  }
-  return null;
-}
-export function titleYaml(name: string) {
-  return '"' + String(name).replace(/[\\"]/g, "\\$&") + '"';
-}
-
-// The whole look of the card, defaulted: the ground's tone, how much of it
-// the ground takes, and the ink over it (ADR-0064 §8, amended 2026-09-22).
-export function styleOf(markdown: string | null | undefined) {
-  return {
-    tone: toneOf(colorOf(markdown) || DEFAULT_TONE),
-    fill: fillOf(fieldOf(markdown, "fill", FILLS) || DEFAULT_FILL),
-    ink: inkOf(fieldOf(markdown, "ink", INKS) || DEFAULT_INK),
-    font: fontOf(fieldOf(markdown, "font", FONTS) || DEFAULT_FONT),
-    size: sizeOf(fieldOf(markdown, "size", SIZES) || DEFAULT_SIZE),
-  };
-}
-
-// `body` under the one front-matter block this shell writes. ONE shape, so
-// an autosave never rewrites the header for no reason — and the three
-// defaults are OMITTED, so a note nobody restyled and nobody named carries
-// the same single `color:` line it always did. `title` leads because it is
-// the document's name; `fill`/`ink` trail because they are refinements of
-// the colour above them.
-export function withHeader(
-  body: string,
-  title: string | null | undefined,
-  style: Partial<NoteLook> | null | undefined,
-  veiled?: boolean,
-) {
-  const name = String(title || "")
-    .replace(/[\r\n]+/g, " ")
-    .trim();
-  const lines: string[] = [];
-  if (name) lines.push(`title: ${titleYaml(name)}`);
-  lines.push(`color: ${toneOf(style?.tone)}`, ...refinementLines(style));
-  // Last, and only when true: `hidden: false` is what every note in the
-  // world already is, and writing it would put a line in every file to say
-  // nothing.
-  if (veiled) lines.push("hidden: true");
-  return `---\n${lines.join("\n")}\n---\n${body}`;
-}
-
-// The header lines of the look after the colour: a default is omitted.
-function refinementLines(style: Partial<NoteLook> | null | undefined) {
-  const fill = fillOf(style?.fill);
-  const ink = inkOf(style?.ink);
-  const font = fontOf(style?.font);
-  const size = sizeOf(style?.size);
-  const lines: string[] = [];
-  if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
-  if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
-  if (font !== DEFAULT_FONT) lines.push(`font: ${font}`);
-  if (size !== DEFAULT_SIZE) lines.push(`size: ${size}`);
-  return lines;
-}
-
-// Restyling keeps the name, whatever the caller happens to hold: the two
-// fields live in one block and a writer that knows about only one of them
-// would drop the other every time it ran.
-export function withStyle(markdown: string | null | undefined, style: Partial<NoteLook>) {
-  // The FIELD, never `titleOf`: promoting a legacy heading here would half
-  // migrate a note — the name in the header and the heading still in the
-  // body — on a gesture that was about colour. `withTitle` is the one
-  // migration door.
-  return withHeader(bodyOf(markdown), titleFieldOf(markdown) ?? "", style, veiledOf(markdown));
-}
-
-// The veil, as a WRITE — the ONE door that changes it, which is what lets
-// every other writer carry it without knowing what it is for.
-export function withVeil(markdown: string | null | undefined, veiled: boolean) {
-  return withHeader(bodyOf(markdown), titleFieldOf(markdown) ?? "", styleOf(markdown), !!veiled);
-}
-
-// The visible name, as a WRITE (ADR-0064 §4 as amended 2026-09-22: the title
-// is a front-matter field, so retitling never touches the body and never
-// renames the file — the latter is what `⋯ → Rename file…` is for).
-//
-// This is also the ONE place a legacy note migrates: the heading the old
-// rule called the title is lifted out of the body and into the header, so
-// the name stops being shown twice. It happens on a retitle and nowhere else
-// — opening a note rewrites nothing.
-export function withTitle(markdown: string | null | undefined, title: string | null | undefined) {
-  const name = String(title || "")
-    .replace(/[\r\n]+/g, " ")
-    .trim();
-  const body = bodyOf(markdown);
-  const legacy = legacyTitleOf(body);
-  return withHeader(legacy ? legacy.rest : body, name, styleOf(markdown), veiledOf(markdown));
 }
 
 // Is this card read-only? Its own `locked`, or the lock of the fence that

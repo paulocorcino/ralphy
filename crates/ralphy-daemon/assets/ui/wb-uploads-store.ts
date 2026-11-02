@@ -102,7 +102,9 @@ export function refusalText(reply: PartReply | null): string {
       return "Ralphy cannot write a file there.";
     case undefined:
     default:
-      return `The daemon refused the upload: ${reply.reason || reply.message || "no reason given"}.`;
+      return (
+        `The daemon refused the upload: ` + `${reply.reason || reply.message || "no reason given"}.`
+      );
   }
 }
 

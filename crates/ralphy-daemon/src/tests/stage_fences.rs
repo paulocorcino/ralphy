@@ -87,7 +87,10 @@ fn shell_draws_fences_below_the_windows() {
     );
     let squeezed: String = js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains(r#"name.addEventListener("mousedown", (e: MouseEvent) => { if (name.readOnly) e.preventDefault(); });"#),
+        squeezed.contains(concat!(
+            r#"name.addEventListener("mousedown", (e: MouseEvent) => { "#,
+            r#"if (name.readOnly) e.preventDefault(); });"#
+        )),
         "a single click on a read-only fence name must leave no trace at all"
     );
     // Enter is the ONLY commit. `change` fires on blur, so committing there
@@ -139,7 +142,10 @@ fn shell_draws_fences_below_the_windows() {
     // The toolbar says why before the click and again if one gets through — the
     // #318 idiom, since `wb-console.ts` reaches no shell and can only refuse.
     assert!(
-        app.contains("if (WBConsole.createFence() === false) this.$store.modals.flash(this.fenceCapMessage());"),
+        app.contains(
+            "if (WBConsole.createFence() === false) \
+        this.$store.modals.flash(this.fenceCapMessage());"
+        ),
         "newFence must let the module refuse, and say so when it does"
     );
     // The dimming reads the REACTIVE snapshot, not the module's array. MEASURED:

@@ -26,7 +26,9 @@ export const PHONE_MAX_WIDTH = 560;
 // and keeps its desktop chrome. The landscape part reads the PRIMARY pointer:
 // it names a phone turned sideways, and `any-pointer` would give the phone
 // layout to a touch laptop with a short window.
-export const PHONE_QUERY = `(max-width: ${PHONE_MAX_WIDTH}px), (pointer: coarse) and (max-height: ${PHONE_MAX_WIDTH}px)`;
+export const PHONE_QUERY =
+  `(max-width: ${PHONE_MAX_WIDTH}px), ` +
+  `(pointer: coarse) and (max-height: ${PHONE_MAX_WIDTH}px)`;
 
 // Any touch surface. `any-pointer` rather than `pointer`: an iPad with a
 // trackpad keyboard reports a FINE primary pointer and still has a

@@ -199,7 +199,8 @@ export function wbBranchDialog() {
           ? null
           : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
         const prev = p?.branch;
-        if (p) this.$store.projects.setRowGit(p, { branch: name }); // optimistic — the chip updates immediately
+        // optimistic — the chip updates immediately
+        if (p) this.$store.projects.setRowGit(p, { branch: name });
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
         void this._mutateBranch("branch.switch", slug, name, () => {

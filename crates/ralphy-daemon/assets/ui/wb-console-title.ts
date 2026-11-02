@@ -332,8 +332,10 @@ export function createTitle(deps: TitleDeps) {
     const ok = await askConfirm({
       title: "Restart session?",
       message: ended
-        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. You lose the text in this console.`
-        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. You lose the text in this console.`,
+        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. ` +
+          "You lose the text in this console."
+        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. ` +
+          "You lose the text in this console.",
       confirmLabel: "Restart",
       danger: !ended,
     });

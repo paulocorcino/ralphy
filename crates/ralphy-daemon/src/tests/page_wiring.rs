@@ -56,9 +56,10 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     // meant to set never applies. Measured in the browser, since no unit test
     // in this tree renders Alpine.
     assert!(
-        html.contains(
-            r#":class="[g.state, $store.projects.peerFault(g) ? 'fault' : '', $store.projects.waking[g.daemon] ? 'waking' : '']""#
-        ),
+        html.contains(concat!(
+            r#":class="[g.state, $store.projects.peerFault(g) ? 'fault' : '', "#,
+            r#"$store.projects.waking[g.daemon] ? 'waking' : '']""#
+        )),
         "the wake glyph's :class must bind plain strings, never a nested object"
     );
     // `asleep` is the ordinary course of a day, not a fault. The rule is in

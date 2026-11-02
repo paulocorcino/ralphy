@@ -18,18 +18,20 @@
    (app.ts) keeps; `main.ts` passes them in `deps`. `main.ts` registers the
    store as `tabs`, after `release`. `tabsStore` builds it without Alpine, so
    `node --test` can test it (ADR-0073 D3, D6). Opening a Changes row into a
-   diff tab is in wb-tabs-store-diff.ts, and opening a file into a tab in
-   wb-tabs-store-open.ts.
+   diff tab is in wb-tabs-store-diff.ts, opening a file into a tab in
+   wb-tabs-store-open.ts, the tab menu in wb-tabs-store-menu.ts, and the
+   stored view in wb-tabs-store-view.ts.
    --------------------------------------------------------------------------- */
 import { openDiff } from "./wb-tabs-store-diff.ts";
 import { fetchContent, openLink, openTab } from "./wb-tabs-store-open.ts";
+import { renderMenu, showSlotMenu } from "./wb-tabs-store-menu.ts";
+import { persistView, restoreView } from "./wb-tabs-store-view.ts";
 import { fileTabId } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
 import { consoleTab, consoleTabId, freshTabId, isConsoleTabId } from "./wb-console-tabs.ts";
 import { WBColumns } from "./wb-columns.ts";
 import type { Messages } from "./wb-messages.ts";
-import type { StoredTab } from "./wb-client-view.ts";
 import type {
   CanvasTab,
   ChangeEntry,
@@ -59,16 +61,6 @@ function movedBy(
 ): t is CanvasTab & { path: string; project: string } {
   if (t.kind === "diff" || t.project !== openSlug) return false;
   return t.path === from || !!t.path?.startsWith(`${from}/`);
-}
-
-// The stored file tabs that can open again: each needs a project and a path.
-function storedFileTabs(tabs: StoredTab[] | undefined) {
-  return (tabs || []).filter((t) => !!t && !!t.project && !!t.path);
-}
-
-// The stored active tab while this store carries it, else Consoles.
-function restoredActive(want: string | null | undefined, tabs: CanvasTab[]) {
-  return want && tabs.some((t) => t.id === want) ? want : "consoles";
 }
 
 // `deps` is the shape every store takes; the tabs tell the operator through
@@ -433,83 +425,15 @@ export function tabsStore(deps: TabsStoreDeps) {
     },
 
     // --- the per-client view: the open file tabs (issue #339) ----------------
-    // The tabs half of `wb.view.v1` (`wb-console.ts` owns the offset half;
-    // `patch` merges). Only `file:` tabs are stored: a `diff:` tab's sides are
-    // LIVE git state.
-    // Set while `restoreView` opens the stored tabs: `fetchContent` closes a
-    // tab whose read fails, and those closes would otherwise REWRITE the store.
+    // The tabs half of `wb.view.v1` (wb-tabs-store-view.ts).
     _restoring: false,
     persistView() {
-      if (this._restoring) return;
-      const files = this.tabs
-        .filter((t) => t.id.startsWith("file:"))
-        .map((t) => ({
-          project: t.project,
-          path: t.path,
-          title: t.title,
-          kind: t.kind,
-          // The pin (#406) survives a reload.
-          checkout: t.checkout ?? null,
-        }));
-      const consoleTabs = this.consoleTabs().map((t) => ({
-        id: t.id,
-        deskId: t.deskId || "",
-        title: t.title,
-        grid: t.grid || [],
-      }));
-      // A stored `active` naming a tab this store does not carry would leave
-      // the canvas blank: degrade to Consoles.
-      const alive =
-        this.active === "consoles" ||
-        consoleTabs.some((t) => t.id === this.active) ||
-        files.some(
-          (f) =>
-            f.project !== undefined &&
-            f.path !== undefined &&
-            fileTabId(f.project, f.path, f.checkout) === this.active,
-        );
-      window.WBView?.patch({
-        tabs: files,
-        consoleTabs,
-        active: alive ? this.active : "consoles",
-        // ALWAYS written, null included: `patch` is read-modify-write, and a
-        // key left out would let a stale pin outlive the tab it named.
-        split: WBSplit.toStored(this.slot, this.splitRatio, this.tabs),
-      });
+      persistView(this);
     },
 
     _viewRestored: false,
-    // Latched, and AUTH-GATED by its callers: a pre-login `file.read` is
-    // refused, `fetchContent` closes the tab, and that close persists the loss.
     restoreView() {
-      if (this._viewRestored) return;
-      this._viewRestored = true;
-      this.restoreConsoleTabs();
-      const stored = window.WBView?.read();
-      if (!stored) return;
-      this._restoring = true;
-      try {
-        for (const t of storedFileTabs(stored.tabs)) {
-          this.openTab({
-            project: t.project,
-            path: t.path,
-            title: t.title || t.path,
-            ftype: t.kind,
-            checkout: t.checkout ?? null,
-          });
-        }
-        // After the tab entries exist (the panes land async; the viewer
-        // paints single until they do) and before the activation that paints.
-        this.slot = WBSplit.fromStored(stored.split, this.tabs);
-        this.splitRatio = stored.split?.ratio ?? null;
-        this.activate(restoredActive(stored.active, this.tabs));
-      } finally {
-        // The reads are async: hold the suppressor so a refusal landing later
-        // cannot rewrite the store. A LATER close persists normally.
-        setTimeout(() => {
-          this._restoring = false;
-        }, 3000);
-      }
+      restoreView(this);
     },
     // --- context menu -----------------------------------------------------
     // A tab's menu (ADR-0037 §3c): the slot's two entry points and Close.
@@ -524,72 +448,12 @@ export function tabsStore(deps: TabsStoreDeps) {
       else this.showSlotMenu(x, y, t);
     },
     showSlotMenu(x: number, y: number, t: CanvasTab) {
-      const pinned = this.slot?.kind === "pin" && this.slot.id === t.id;
-      const mirrored = this.slot?.kind === "mirror";
-      const wide = this.splitAvailable();
-      const narrowTitle = wide ? "" : "Needs a wider canvas";
-      const items = [
-        pinned
-          ? { label: "Unpin", icon: "bi-pin-angle", run: () => this.clearSlot() }
-          : {
-              label: "Open to the side",
-              icon: "bi-layout-split",
-              disabled: !wide,
-              title: narrowTitle,
-              run: () => this.pinTab(t.id),
-            },
-        t.kind === "code" &&
-          (mirrored
-            ? { label: "Close mirror", icon: "bi-files", run: () => this.toggleMirror() }
-            : {
-                label: "Mirror editor",
-                icon: "bi-files",
-                disabled: !wide,
-                title: narrowTitle,
-                run: () => {
-                  this.activate(t.id);
-                  this.toggleMirror();
-                },
-              }),
-        { sep: true as const },
-        { label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) },
-      ].filter(Boolean);
-      this.renderMenu(x, y, items);
+      showSlotMenu(this, x, y, t);
     },
 
-    // Paint `items` into the one `#ctxmenu` and keep it on-screen. An item is
-    // `{ label, icon, run }` with optional `sep`, `danger`, `disabled`, `title`.
+    // Paint `items` into the one `#ctxmenu` (wb-tabs-store-menu.ts).
     renderMenu(x: number, y: number, items: MenuItem[]) {
-      const menu = document.getElementById("ctxmenu") as HTMLElement;
-      menu.innerHTML = "";
-      for (const it of items) {
-        if (it.sep) {
-          const hr = document.createElement("div");
-          hr.className = "ctx-sep";
-          menu.append(hr);
-          continue;
-        }
-        const b = document.createElement("button");
-        b.className = "ctx-item" + (it.danger ? " danger" : "");
-        // Built as elements: a label can name a file, and a file name is text.
-        const icon = document.createElement("i");
-        icon.className = "bi " + it.icon;
-        const label = document.createElement("span");
-        label.textContent = it.label;
-        b.append(icon, label);
-        if (it.disabled) b.disabled = true;
-        if (it.title) b.title = it.title;
-        b.onclick = () => {
-          this.hideMenu();
-          it.run();
-        };
-        menu.append(b);
-      }
-      menu.style.display = "block";
-      const w = menu.offsetWidth,
-        h = menu.offsetHeight;
-      menu.style.left = Math.min(x, innerWidth - w - 8) + "px";
-      menu.style.top = Math.min(y, innerHeight - h - 8) + "px";
+      renderMenu(this, x, y, items);
     },
 
     hideMenu() {

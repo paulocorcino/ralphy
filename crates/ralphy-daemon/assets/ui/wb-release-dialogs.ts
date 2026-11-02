@@ -124,7 +124,10 @@ export function releaseDialogs() {
       const n = u.peerConsoles || 0;
       if (!n) return `Then Ralphy updates the WSL copy too: ${names}.`;
       const consoles = n === 1 ? "its 1 console closes" : `its ${n} consoles close`;
-      return `Then Ralphy updates the WSL copy too: ${names}. If it takes a new version, ${consoles} as well.`;
+      return (
+        `Then Ralphy updates the WSL copy too: ${names}. ` +
+        `If it takes a new version, ${consoles} as well.`
+      );
     },
     cancelUpdate() {
       this.relUpdate = {
@@ -192,7 +195,8 @@ export function releaseDialogs() {
             ...this.relUpdate,
             phase: "error",
             error:
-              "The new version did not start, so the previous version runs again. The file .ralphy/update.log in your home folder says why.",
+              "The new version did not start, so the previous version runs again. " +
+              "The file .ralphy/update.log in your home folder says why.",
           };
           return;
         }
@@ -201,7 +205,8 @@ export function releaseDialogs() {
         ...this.relUpdate,
         phase: "error",
         error:
-          "Ralphy did not come back in two minutes. The file .ralphy/update.log in your home folder says why.",
+          "Ralphy did not come back in two minutes. " +
+          "The file .ralphy/update.log in your home folder says why.",
       };
     },
     async setReleaseWatch(enable: boolean) {

@@ -26,7 +26,8 @@
    into its window, or "Go to the console", dismisses it.
 
    "Notify me in this browser" is a switch of this device (the per-client
-   view, `wb-client-view.ts`), off until the operator turns it on, which is when the browser is asked for
+   view, `wb-client-view.ts`), off until the operator turns it on,
+   which is when the browser is asked for
    permission. With it on, a request id this page did not know before shows
    one browser notification while the tab is hidden.
 

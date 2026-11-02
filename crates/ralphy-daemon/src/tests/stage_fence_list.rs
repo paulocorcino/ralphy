@@ -244,6 +244,7 @@ fn shell_lists_the_fences() {
     );
     assert!(
         css.contains("--console-text:"),
-        "the focus ring's colour token must exist — an undefined one voids the whole shorthand (#343)"
+        "the focus ring's colour token must exist — an undefined one voids the whole shorthand \
+        (#343)"
     );
 }

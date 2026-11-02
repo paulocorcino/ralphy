@@ -230,80 +230,7 @@
               </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
-              <li class="project" :class="{ open: $store.projects.rowOpen(p), peer: !!p.daemon, unavailable: !$store.projects.peerAvailable(g) }">
-            <!-- click toggles the project open/closed (mounts/destroys tree) -->
-            <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
-                 branch chip moved to the Files bar below, which only the open
-                 project renders (#332). It sits on the row, never on
-                 `.project-slug`: the name's own title still wins when the
-                 pointer is over the name. The slug, the ADR-0008 D7 identity,
-                 rides `data-slug` for the browser tests. -->
-            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="$store.projects.peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
-              <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
-              <!-- status dot: the project's daemon-reachability *right now* —
-                   green = live (session/daemon active there), grey = idle
-                   (registered & reachable but stopped), red = offline
-                   (unreachable path). Orthogonal to the provenance icon beside
-                   it (GitHub vs local-only). A local-only repo can be live; a
-                   GitHub repo can be offline. -->
-              <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state, p.dotDetail)"></span>
-              <!-- provenance: a GitHub-backed repo vs one that lives only on
-                   this disk. Orthogonal to the daemon-reachability dot above. -->
-              <i
-                class="remote"
-                :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
-                :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
-              ></i>
-              <span class="project-slug" x-text="repoLabel(p)" :title="$store.projects.projectTitle($store.projects.repoRef(p))" :data-slug="p.slug"></span>
-              <!-- The branch chip carries the change count. Collapsed, only the
-                   count shows — the branch is in `rowTitle` — so a closed row
-                   costs the name nothing (#332); open, the chip grows its branch
-                   and becomes the switcher. ONE element either way, so the count
-                   and the branch cannot disagree about which tree they describe:
-                   both read the selected checkout (#407). A collapsed chip is
-                   inert — its click falls through to the row's toggle. -->
-              <button
-                class="branch-chip"
-                x-show="$store.projects.rowOpen(p) || projectBadge($store.projects.repoRef(p)).show"
-                :class="{ dirty: $store.checkouts.chipDirty(p), disabled: !$store.checkouts.canSwitchBranch(p), collapsed: !$store.projects.rowOpen(p) }"
-                :tabindex="$store.projects.rowOpen(p) ? 0 : -1"
-                @click="branchChipClick(p, $event)"
-                :title="$store.projects.rowOpen(p) ? $store.checkouts.branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
-              >
-                <span class="branch-chip-ref" x-show="$store.projects.rowOpen(p)">
-                  <svg x-icon="$store.checkouts.chipIcon(p)"></svg>
-                  <span class="branch-chip-name" x-text="$store.checkouts.chipLabel(p)"></span>
-                </span>
-                <!-- The change count survives the promotion to a rail view
-                     (#317): readable here with no click and no navigation, the
-                     exact property PRD #297 built the section for. Renders ONLY
-                     for a count that was read and is not zero — never for a
-                     failed read. Until a count lands, the dot is the open chip's
-                     dirty signal. -->
-                <span
-                  class="chg-badge"
-                  x-show="projectBadge($store.projects.repoRef(p)).show"
-                  x-text="projectBadge($store.projects.repoRef(p)).text"
-                ></span>
-                <span class="branch-chip-dot"
-                      x-show="$store.projects.rowOpen(p) && !projectBadge($store.projects.repoRef(p)).show && $store.checkouts.chipDirty(p) && $store.checkouts.canSwitchBranch(p)"></span>
-              </button>
-              <!-- Unregister, never delete (#363). `@click.stop` because the
-                   whole `.project-head` toggles the project open — the removal
-                   must not also mount the tree of the row it is dropping. The
-                   confirm dialog says the directory on disk survives; the verb
-                   is `project.remove`, which spawns `ralphy daemon remove`. -->
-              <button
-                class="project-remove"
-                type="button"
-                @click.stop="removeProject(p)"
-                title="Remove from Ralphy"
-                aria-label="Remove project"
-              >
-                <svg x-icon="'x'"></svg>
-              </button>
-            </div>
-              </li>
+              <!-- part: wb-project-row.part.html -->
             </template>
           </div>
         </template>
@@ -496,83 +423,9 @@
     ==================================================================== -->
     <!-- part: wb-branch-dialog.part.html -->
 
-    <!-- ===================================================================
-         Confirm dialog — the design-system replacement for the native
-         window.confirm on destructive actions (delete). Driven by
-         `confirmModal` + `askConfirm()` (the store `modals`): the scrim dims the canvas so
-         the choice has focus, Enter confirms unless a button has focus (that
-         button's own click answers), Escape/scrim/✕ cancels. The Enter that
-         confirms is default-prevented: closing hands focus back to the opener,
-         and its keypress would otherwise click that button again.
-    ==================================================================== -->
-    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('$store.modals.confirmModal.open', () => $store.modals.confirmRespond(false))">
-      <div
-        class="modal confirm-modal"
-        role="alertdialog"
-        aria-modal="true"
-        :aria-label="$store.modals.confirmModal.title"
-        @keydown.enter.window="$store.modals.confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), $store.modals.confirmRespond(true))"
-      >
-        <div class="modal-head">
-          <i class="bi bi-exclamation-triangle" x-show="$store.modals.confirmModal.danger" style="color: var(--danger)"></i>
-          <i class="bi bi-question-circle" x-show="!$store.modals.confirmModal.danger"></i>
-          <span class="modal-title" x-text="$store.modals.confirmModal.title"></span>
-          <span class="spacer"></span>
-          <button class="modal-x" @click="$store.modals.confirmRespond(false)" title="Close"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <p class="confirm-body" x-text="$store.modals.confirmModal.message"></p>
-        <div class="modal-foot">
-          <button class="btn" @click="$store.modals.confirmRespond(false)" x-text="$store.modals.confirmModal.cancelLabel"></button>
-          <button
-            class="btn"
-            :class="$store.modals.confirmModal.danger ? 'danger' : 'accent'"
-            @click="$store.modals.confirmRespond(true)"
-            x-text="$store.modals.confirmModal.confirmLabel"
-          ></button>
-        </div>
-      </div>
-    </div>
+    <!-- part: wb-confirm-dialog.part.html -->
 
-    <!-- ===================================================================
-         Prompt dialog — the design-system replacement for the native
-         window.prompt when the workbench needs one word from the operator
-         (naming a new file or folder). Driven by `promptModal` + `askPrompt()`
-         (the store `modals`). Enter submits through `promptSubmit()`, which validates and
-         keeps the dialog OPEN on a bad name so it can be fixed in place;
-         Escape/scrim/✕ cancel and resolve null.
-    ==================================================================== -->
-    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('$store.modals.promptModal.open', () => $store.modals.promptRespond(null))">
-      <div
-        class="modal prompt-modal"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="$store.modals.promptModal.title"
-      >
-        <div class="modal-head">
-          <i class="bi bi-input-cursor-text"></i>
-          <span class="modal-title" x-text="$store.modals.promptModal.title"></span>
-          <span class="spacer"></span>
-          <button class="modal-x" @click="$store.modals.promptRespond(null)" title="Close"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <p class="prompt-where" x-text="$store.modals.promptModal.message" x-show="$store.modals.promptModal.message"></p>
-        <input
-          id="prompt-input"
-          class="prompt-input"
-          type="text"
-          autocomplete="off"
-          spellcheck="false"
-          :value="$store.modals.promptModal.value"
-          :placeholder="$store.modals.promptModal.placeholder"
-          @input="$store.modals.promptTyped($event.target.value)"
-          @keydown.enter.prevent="$store.modals.promptSubmit()"
-        />
-        <p class="prompt-error" x-show="$store.modals.promptModal.error" x-text="$store.modals.promptModal.error"></p>
-        <div class="modal-foot">
-          <button class="btn" @click="$store.modals.promptRespond(null)">Cancel</button>
-          <button class="btn accent" @click="$store.modals.promptSubmit()" x-text="$store.modals.promptModal.confirmLabel"></button>
-        </div>
-      </div>
-    </div>
+    <!-- part: wb-prompt-dialog.part.html -->
 
     <!-- ===================================================================
          Move destination picker (issue #364) — browses real directories one

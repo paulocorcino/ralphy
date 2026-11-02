@@ -361,7 +361,10 @@ fn session_query_name_is_cut_to_40_and_empty_is_absent() {
 /// parse, and a row without one serialises without the key.
 #[test]
 fn a_peer_sessions_body_without_checkout_still_parses() {
-    let body = r#"[{"id":1,"repo":"o/r","agent":"claude","kind":"agent","started_at":1,"daemon_id":"d","environment":"Windows"}]"#;
+    let body = concat!(
+        r#"[{"id":1,"repo":"o/r","agent":"claude","kind":"agent","#,
+        r#""started_at":1,"daemon_id":"d","environment":"Windows"}]"#
+    );
     let rows: Vec<HostedSessionInfo> = serde_json::from_str(body).unwrap();
     assert_eq!(rows[0].checkout, None);
     let back = serde_json::to_value(&rows[0]).unwrap();

@@ -60,6 +60,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 APP_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-wire.ts")
 FILES_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-files.ts")
+FILES_MOVE_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-files-move.ts")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
@@ -345,10 +346,13 @@ def main():
             )
             files_src = Path(FILES_TS).read_text(encoding="utf-8")
             perform = files_src.split("async performMove(from: string, to: string) {", 1)[1].split("\n    },", 1)[0]
+            move_src = Path(FILES_MOVE_TS).read_text(encoding="utf-8")
+            move_entry = move_src.split("export async function moveEntry(", 1)[1].split("\n}", 1)[0]
+            reveals = "moveEntry(this, from, to)" in perform and "files.revealRel(" in move_entry
             check(
                 "performMove reveals through the named revealRel primitive",
-                "revealRel(" in perform,
-                "found={}".format("revealRel(" in perform),
+                reveals,
+                "found={}".format(reveals),
             )
 
             # --- scenario a: the menu row, for a file AND for a folder ---------

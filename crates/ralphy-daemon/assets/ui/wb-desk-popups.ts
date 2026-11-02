@@ -88,7 +88,8 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
   // across an F5 and kills it with the tab. Every transition goes through
   // `commitDetached` so the two never disagree.
   let detached: string[] = [];
-  const fencePopups = new Map<string, PopupEntry>(); // fenceId -> { handle, members, fence, poll, peer }
+  // fenceId -> { handle, members, fence, poll, peer }
+  const fencePopups = new Map<string, PopupEntry>();
 
   function isDetached(id: string) {
     return detached.includes(id);
