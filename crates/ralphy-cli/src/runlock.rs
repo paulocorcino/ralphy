@@ -83,7 +83,11 @@ impl Drop for RunLockGuard {
     fn drop(&mut self) {
         if let Err(e) = fs::remove_file(&self.path) {
             if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(error = %e, path = %self.path.display(), "could not remove run.lock");
+                tracing::warn!(
+                    error = %e,
+                    path = %self.path.display(),
+                    "could not remove run.lock"
+                );
             }
         }
     }
@@ -105,7 +109,8 @@ pub(crate) fn guard_run_lock(
 ) -> Result<()> {
     if let LockState::HeldAlive(info) = inspect(&ws.run_lock_path(), is_alive) {
         anyhow::bail!(
-            "refusing to {verb}: a run holds this repo's lock (pid {}, since {}) — wait for it to finish or stop it",
+            "refusing to {verb}: a run holds this repo's lock (pid {}, since {}) \
+             — wait for it to finish or stop it",
             info.pid,
             info.started_at
         );

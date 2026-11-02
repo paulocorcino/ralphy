@@ -43,15 +43,23 @@ fn recovery_reports_totals_persists_map_and_never_rewrites_jsonl() {
     std::fs::write(
         usage.join("owner-repo.jsonl"),
         concat!(
-            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"sess-resolved\",\"tokens\":{\"input\":10,\"output\":20,\"cache_read\":30,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:00Z\"}\n",
-            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"sess-still-recoverable\",\"tokens\":{\"input\":4,\"output\":5,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:00Z\"}\n",
-            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"tokens\":{\"input\":5,\"output\":10,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:01Z\"}\n",
+            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\
+             \"session_id\":\"sess-resolved\",\"tokens\":{\"input\":10,\"output\":20,\
+             \"cache_read\":30,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:00Z\"}\n",
+            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\
+             \"session_id\":\"sess-still-recoverable\",\"tokens\":{\"input\":4,\"output\":5,\
+             \"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:00Z\"}\n",
+            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\
+             \"tokens\":{\"input\":5,\"output\":10,\"cache_read\":0,\"cache_creation\":0},\
+             \"ts\":\"2026-07-29T00:00:01Z\"}\n",
         ),
     )
     .unwrap();
     std::fs::write(
         claude.join("sess-resolved.jsonl"),
-        "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"message\":{\"id\":\"m1\",\"model\":\"claude-opus-4-8\",\"usage\":{\"input_tokens\":60,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        "{\"timestamp\":\"2026-07-29T00:00:00Z\",\"message\":{\"id\":\"m1\",\
+         \"model\":\"claude-opus-4-8\",\"usage\":{\"input_tokens\":60,\"output_tokens\":0,\
+         \"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
     )
     .unwrap();
     let before = jsonl_snapshot(&usage);
@@ -82,12 +90,16 @@ fn recovery_reports_totals_persists_map_and_never_rewrites_jsonl() {
             .append(true)
             .open(usage.join("owner-repo.jsonl"))
             .unwrap(),
-        "{{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"sess-new\",\"tokens\":{{\"input\":7,\"output\":5,\"cache_read\":0,\"cache_creation\":0}},\"ts\":\"2026-07-29T00:00:02Z\"}}"
+        "{{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\
+         \"session_id\":\"sess-new\",\"tokens\":{{\"input\":7,\"output\":5,\"cache_read\":0,\
+         \"cache_creation\":0}},\"ts\":\"2026-07-29T00:00:02Z\"}}"
     )
     .unwrap();
     std::fs::write(
         claude.join("sess-new.jsonl"),
-        "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"message\":{\"id\":\"m2\",\"model\":\"claude-sonnet-5\",\"usage\":{\"input_tokens\":12,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"message\":{\"id\":\"m2\",\
+         \"model\":\"claude-sonnet-5\",\"usage\":{\"input_tokens\":12,\"output_tokens\":0,\
+         \"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
     )
     .unwrap();
     let before_second = jsonl_snapshot(&usage);
@@ -126,14 +138,19 @@ fn recovery_reports_colliding_session_models_as_conflicts() {
     std::fs::write(
         usage.join("owner-repo.jsonl"),
         concat!(
-            "{\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"shared\",\"tokens\":{\"input\":3},\"ts\":\"1\"}\n",
-            "{\"agent\":\"codex\",\"model\":\"unknown\",\"session_id\":\"shared\",\"tokens\":{\"input\":7},\"ts\":\"2\"}\n",
+            "{\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"shared\",\
+             \"tokens\":{\"input\":3},\"ts\":\"1\"}\n",
+            "{\"agent\":\"codex\",\"model\":\"unknown\",\"session_id\":\"shared\",\
+             \"tokens\":{\"input\":7},\"ts\":\"2\"}\n",
         ),
     )
     .unwrap();
     std::fs::write(
         claude.join("shared.jsonl"),
-        r#"{"timestamp":"2026-07-29T00:00:00Z","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":3}}}"#,
+        concat!(
+            r#"{"timestamp":"2026-07-29T00:00:00Z","message":{"id":"m1","#,
+            r#""model":"claude-opus-4-8","usage":{"input_tokens":3}}}"#,
+        ),
     )
     .unwrap();
     std::fs::write(
@@ -141,7 +158,9 @@ fn recovery_reports_colliding_session_models_as_conflicts() {
         concat!(
             "{\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-meta\"}}\n",
             "{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
-            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":7,\"output_tokens\":0,\"cached_input_tokens\":0}}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\
+             \"info\":{\"total_token_usage\":{\"input_tokens\":7,\"output_tokens\":0,\
+             \"cached_input_tokens\":0}}}}\n",
         ),
     )
     .unwrap();

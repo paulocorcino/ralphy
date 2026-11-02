@@ -181,30 +181,44 @@ fn commits_line(data: &PanelData, opts: RenderOpts) -> String {
 fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
     let stop_raw = match stop {
         PanelStop::Deadline => {
-            "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).".to_string()
+            "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed \
+             past it)."
+                .to_string()
         }
         PanelStop::NonGreen { number, outcome } => {
             format!("Stopped: #{number} finished non-green ({outcome}). Branch handed back.")
         }
         PanelStop::StopBefore { number } => {
-            format!("Stopped: stop-before label on #{number}. Remove the label and re-run to continue.")
+            format!(
+                "Stopped: stop-before label on #{number}. \
+                 Remove the label and re-run to continue."
+            )
         }
         PanelStop::Limit {
             number,
             reset: Some(t),
         } => {
-            format!("Stopped: usage limit on #{number}. Reset ~{t}; re-run to continue (or it stalled with no progress).")
+            format!(
+                "Stopped: usage limit on #{number}. Reset ~{t}; re-run to continue \
+                 (or it stalled with no progress)."
+            )
         }
         PanelStop::Limit {
             number,
             reset: None,
         } => {
-            format!("Stopped: usage limit on #{number}. No parseable reset time; re-run after the limit clears.")
+            format!(
+                "Stopped: usage limit on #{number}. No parseable reset time; \
+                 re-run after the limit clears."
+            )
         }
         // Both arms say what happened to the WORK, because that is the only
         // thing the operator cannot see from having pressed the button.
         PanelStop::Stopped { number: Some(n) } => {
-            format!("Stopped: you stopped the run during #{n}. Branch handed back with the work in place; #{n} stays open.")
+            format!(
+                "Stopped: you stopped the run during #{n}. \
+                 Branch handed back with the work in place; #{n} stays open."
+            )
         }
         PanelStop::Stopped { number: None } => {
             "Stopped: you stopped the run between issues. Branch handed back.".to_string()

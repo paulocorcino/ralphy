@@ -1,7 +1,8 @@
 //! Run-lock-aware git branch ops and label mutation (ADR-0036 §6): `ralphy
 //! branch switch`, `ralphy branch create`, `ralphy worktree add` (ADR-0063 §2),
-//! `ralphy worktree remove` (ADR-0063 §1's gates), `ralphy label set` — plus the reads beside them, `ralphy branch list` and
-//! `ralphy worktree list` (ADR-0063 §1), which never consult the lock. Each mutating verb
+//! `ralphy worktree remove` (ADR-0063 §1's gates), `ralphy label set` — plus the
+//! reads beside them, `ralphy branch list` and `ralphy worktree list` (ADR-0063
+//! §1), which never consult the lock. Each mutating verb
 //! inspects `.ralphy/run.lock` (`crate::runlock`) and refuses under
 //! [`runlock::LockState::HeldAlive`] before making any `git`/`gh` call — a
 //! mutation reached before the guard defeats its purpose (ADR-0036 §6). Every
