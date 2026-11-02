@@ -172,7 +172,10 @@ fn the_prompt_is_computed_before_the_child_is_spawned() {
 /// string, or that keyed on `type`, dropped both and the stop went mute.
 #[test]
 fn the_vendor_error_object_is_read_in_both_observed_shapes() {
-    let under_result = r#"{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: quota]"}}"#;
+    let under_result = concat!(
+        r#"{"type":"result","status":"error","#,
+        r#""error":{"type":"unknown","message":"[API Error: quota]"}}"#
+    );
     let fold = fold_gemini_stream(under_result);
     assert_eq!(
         fold.vendor_error.as_deref(),
@@ -182,7 +185,10 @@ fn the_vendor_error_object_is_read_in_both_observed_shapes() {
     assert!(fold.saw_result);
 
     // The auth record: no `type` key whatsoever.
-    let typeless = r#"{"session_id":"s1","error":{"type":"Error","message":"Please set an Auth method in your settings.json","code":41}}"#;
+    let typeless = concat!(
+        r#"{"session_id":"s1","error":{"type":"Error","#,
+        r#""message":"Please set an Auth method in your settings.json","code":41}}"#
+    );
     let fold = fold_gemini_stream(typeless);
     assert_eq!(
         fold.vendor_error.as_deref(),
@@ -240,9 +246,10 @@ fn a_provider_throttle_is_a_limit_with_no_reset_hint() {
     // The fold MUST carry a vendor sentence: that is the value an
     // implementation would be tempted to smuggle into the reset slot, and a
     // fold without one cannot tell the two apart.
-    let fold = fold_gemini_stream(
-        r#"{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: 429 quota exceeded]"}}"#,
-    );
+    let fold = fold_gemini_stream(concat!(
+        r#"{"type":"result","status":"error","#,
+        r#""error":{"type":"unknown","message":"[API Error: 429 quota exceeded]"}}"#
+    ));
     assert!(fold.vendor_error.is_some(), "the fixture must carry prose");
     for phrase in [
         "Error: 429 Too Many Requests",

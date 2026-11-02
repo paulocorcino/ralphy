@@ -193,7 +193,8 @@ impl OpenCodeAgent {
         self
     }
 
-    /// Set the per-issue wall-clock budget in minutes (mirrors `ClaudeAgent::with_max_minutes_per_issue`).
+    /// Set the per-issue wall-clock budget in minutes (mirrors
+    /// `ClaudeAgent::with_max_minutes_per_issue`).
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
@@ -370,7 +371,8 @@ impl Agent for OpenCodeAgent {
         if let Some(Some(reset)) = &detected {
             info!(
                 %reset,
-                "opencode reported a usage-limit reset — discarding (OpenCode resets are unschedulable by policy)"
+                "opencode reported a usage-limit reset — discarding \
+                 (OpenCode resets are unschedulable by policy)"
             );
         }
         let limit = unschedulable_opencode_limit(detected);

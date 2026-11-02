@@ -130,7 +130,10 @@ mod tests {
         let jsonl = concat!(
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{}}}"#,
             "\n",
-            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":841957,"cached_input_tokens":735616,"output_tokens":10466,"reasoning_output_tokens":4242,"total_tokens":852423},"last_token_usage":{"input_tokens":10}}}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","#,
+            r#""info":{"total_token_usage":{"input_tokens":841957,"cached_input_tokens":735616,"#,
+            r#""output_tokens":10466,"reasoning_output_tokens":4242,"total_tokens":852423},"#,
+            r#""last_token_usage":{"input_tokens":10}}}}"#,
             "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
             "\n",
@@ -169,7 +172,11 @@ mod tests {
         let rollout = dir.path().join("rollout-test.jsonl");
         std::fs::write(
             &rollout,
-            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}}}"#,
+            concat!(
+                r#"{"type":"event_msg","payload":{"type":"token_count","#,
+                r#""info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"#,
+                r#""output_tokens":3}}}}"#
+            ),
         )
         .unwrap();
         let after = vec![rollout];

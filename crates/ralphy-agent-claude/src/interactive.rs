@@ -1,8 +1,5 @@
 //! Interactive execution over a PTY: the live `claude` session driver
-//! (`execute_outcome` → `drive_session`), the reader-thread + `mpsc` plumbing and
-//! the DSR (cursor-position) handshake, the logged-out login-TUI watch, the
-//! first-run gate pre-clearing (`~/.claude.json` workspace-trust + onboarding),
-//! and the `claude` binary resolver.
+//! (`execute_outcome` → `drive_session`), its poll loop and the binary resolver.
 
 use std::io::Write;
 use std::path::Path;
@@ -13,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{bail, Context, Result};
 use ralphy_adapter_support::{IdleWatch, ProgressBeat};
 use ralphy_core::{Outcome, Plan, Workspace};
-use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
+use ralphy_pty::{PtyCommand, PtySession, CURSOR_POSITION_REPLY};
 use tracing::info;
 
 use crate::api_watch::{ApiWatch, ApiWatchAction};
@@ -26,13 +23,18 @@ use crate::ClaudeAgent;
 
 mod first_run;
 mod proof;
+mod terminal;
 use first_run::ensure_interactive_session_ready;
 use proof::{status_len, ProofWait};
+pub(crate) use terminal::strip_pty_escapes;
+use terminal::{scan_dsr_request, LoginTuiWatch};
 #[cfg(test)]
 use {
     crate::EXEC_CHARTER,
     first_run::{with_onboarding_completed, with_workspace_trusted},
     proof::{charter_keys, GateAction, ProofGate},
+    ralphy_pty::CURSOR_POSITION_REQUEST,
+    terminal::is_login_tui_output,
 };
 
 fn interactive_args(
@@ -91,9 +93,7 @@ fn respawn_step(end: DriveEnd, respawned: &mut bool) -> RespawnStep {
 
 impl ClaudeAgent {
     /// Drive the execution session (headless `-p` loop or interactive PTY) to a
-    /// core [`Outcome`]. The token snapshot/wrap lives in [`crate::ClaudeAgent`]'s
-    /// `Agent::execute`; this keeps the completion-classification logic exactly as
-    /// it was.
+    /// core [`Outcome`].
     pub(crate) fn execute_outcome(&self, plan: &Plan, ws: &Workspace) -> Result<Outcome> {
         if self.exec.headless_exec {
             return self.execute_headless(plan, ws);
@@ -102,16 +102,14 @@ impl ClaudeAgent {
         std::fs::create_dir_all(&self.run_dir).context("creating the run directory")?;
         std::fs::create_dir_all(ws.ralphy_dir()).context("creating the .ralphy directory")?;
 
-        // The live session reads the charter from disk (the headless copy keeps
-        // the binary self-contained).
+        // The live session reads the charter from disk.
         std::fs::write(
             ws.ralphy_dir().join("exec.md"),
             ralphy_adapter_support::PROMPT_EXECUTE,
         )
         .context("writing .ralphy/exec.md")?;
 
-        // Pre-clear Claude's first-run interactive gates (workspace trust AND the
-        // theme/onboarding wizard) so the live session doesn't stall on a keypress.
+        // Pre-clear Claude's first-run gates (workspace trust, onboarding wizard).
         ensure_interactive_session_ready(ws.repo_root());
 
         let settings = self.write_exec_settings()?;
@@ -126,29 +124,23 @@ impl ClaudeAgent {
         let settings_path = settings.path;
         let plugin_dir = materialize_plugin(ws)?;
         let exec_model = self.resolve_exec_model(plan);
-        // Effort follows the same precedence as the model: operator flag wins,
-        // else the plan's `opus-high` rung raises it to high (ADR-0002, Amendment
-        // 2026-07-24).
+        // Effort follows the model's precedence: operator flag, else the plan's
+        // `opus-high` rung (ADR-0002, Amendment 2026-07-24).
         let exec_effort = self.resolve_exec_effort(plan);
         let flag_file = self.run_dir.join("status.flag");
         remove_stale_file(&flag_file);
-        // The agent-state tail (ADR-0059 §3): the hooks append, the watcher
-        // thread folds and emits transitions for as long as the child runs.
+        // The agent-state tail (ADR-0059 §3): the hooks append, the watcher folds.
         let status = crate::status::Watcher::start(&self.run_dir)?;
 
-        // The Stop hook writes the flag; it learns the path from this env var,
-        // inherited by claude through the PTY child.
+        // The Stop hook learns the flag path from an env var the PTY child inherits.
         let rc_name = self
             .run_dir
             .file_name()
             .map(|s| format!("ralphy-{}", s.to_string_lossy()))
             .unwrap_or_else(|| "ralphy".into());
 
-        // Build the claude argv: settings, skip-permissions, model, effort,
-        // optional remote-control; the pump types the charter later.
-        // A closure so the respawn loop can rebuild an IDENTICAL command (the
-        // second child resumes from the on-disk `plan.md`, untouched between
-        // spawns — see `prompt.execute.md` resume instruction).
+        // A closure, so the respawn loop rebuilds an IDENTICAL command: the second
+        // child resumes from the on-disk `plan.md` (see `prompt.execute.md`).
         let build_cmd = || {
             PtyCommand::new(resolve_claude_binary())
                 .cwd(ws.repo_root())
@@ -183,11 +175,9 @@ impl ClaudeAgent {
             .unwrap_or(SystemTime::UNIX_EPOCH);
 
         // Respawn budget = exactly 1: a child stuck degraded past the API watch's
-        // kill is re-spawned once against `plan.md`; a second degradation returns
-        // `Timeout`. Kill-before-return is invariant on EVERY iteration — the
-        // `session.kill()` sits before `match end?` so an `Err` from
-        // `drive_session` still reclaims the child, and there is no early
-        // `return`/`?` between `spawn` and `kill`.
+        // kill is re-spawned once; a second degradation returns `Timeout`.
+        // `session.kill()` sits before `match end?`, and no `return`/`?` sits
+        // between `spawn` and `kill`, so an `Err` still reclaims the child.
         let mut respawned = false;
         let outcome = loop {
             remove_stale_file(&flag_file);
@@ -209,8 +199,7 @@ impl ClaudeAgent {
                 transcript_since,
                 proof,
             );
-            // Reclaim: kill the tree and drop the session (closes the ConPTY).
-            // Unconditional so the child never outlives us on error paths.
+            // Kill the tree and drop the session (closes the ConPTY), on every path.
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the child may have exited already, and the tree is reclaimed"
@@ -284,16 +273,12 @@ struct SessionPump<'a> {
     dsr_carry: Vec<u8>,
     login_watch: LoginTuiWatch,
     api_watch: ApiWatch,
-    // Idle watchdog (docs/adr/0038). The progress signal is transcript growth
-    // and ONLY transcript growth: the TUI redraws its spinner forever, so PTY
-    // bytes keep arriving from a child that is thoroughly wedged and would
-    // make this watchdog permanently blind. That coarser signal is why the
-    // interactive window is the larger default — a legitimate long tool call
-    // advances no transcript while it runs.
+    // Idle watchdog (docs/adr/0038). Progress is transcript growth ONLY: the TUI
+    // redraws its spinner forever, so PTY bytes would blind the watchdog. That
+    // coarser signal is why the interactive window is the larger default.
     idle_watch: IdleWatch,
     idle_beat: Arc<ProgressBeat>,
-    // Last observed transcript length; a growth between polls is the
-    // "activity resumed" signal that clears a degraded state.
+    // Last transcript length; growth between polls clears a degraded state.
     last_len: usize,
     proof: ProofWait,
 }
@@ -333,12 +318,8 @@ impl<'a> SessionPump<'a> {
         if self.flag_file.exists() {
             return Ok(Some(SessionExit::Flag));
         }
-        // The operator's stop (docs/adr/0054). The PTY path shares no type
-        // with the headless pump, so it needs its own read — right beside the
-        // sentinel above, which is the same species of cooperative signal.
-        //
-        // Nothing is killed here: the caller already reaps the session
-        // unconditionally on every exit path, so a second kill would be a
+        // The operator's stop (docs/adr/0054). Nothing is killed here: the caller
+        // reaps the session on every exit path, and a second kill would be a
         // second owner of the child.
         if ralphy_core::stop::requested() {
             info!("operator stop — ending the interactive session");
@@ -405,10 +386,8 @@ impl<'a> SessionPump<'a> {
         } else {
             advanced = false;
             if self.login_watch.detected() {
-                // Logged-out interactive session: the login TUI stalls
-                // without exiting, so fail fast with the auth message
-                // instead of burning the wall budget into a misleading
-                // `Timeout` (issue #72). The caller kills the session.
+                // The login TUI stalls without exiting: fail fast with the auth
+                // message, not a misleading `Timeout` (issue #72).
                 bail!("{CLAUDE_AUTH_ERROR_MSG}");
             }
         }
@@ -421,14 +400,10 @@ impl<'a> SessionPump<'a> {
             ApiWatchAction::Respawn => return Ok(Some(SessionExit::Respawn)),
             ApiWatchAction::None => {}
         }
-        // Deliberately no re-spawn here, unlike the API-banner path above:
-        // a visible retry banner is evidence the child is trying and may
-        // recover, whereas silence is evidence of nothing. End the drive as
-        // the timeout it already is rather than spend a respawn on a guess.
+        // No re-spawn here, unlike the API-banner path: a retry banner shows the
+        // child is trying, whereas silence shows nothing.
         if self.idle_watch.expired(&self.idle_beat, Instant::now()) {
-            // The same canonical helper the headless path calls, so the
-            // operator-facing event does not depend on which child shape
-            // happened to be driving (docs/adr/0038).
+            // The headless path calls the same helper (docs/adr/0038).
             ralphy_core::emit::idle_reaped(
                 self.idle_watch
                     .window()
@@ -501,131 +476,6 @@ fn ended_transcript(
     latest_transcript_text_since(transcript_dir, transcript_since).or_else(latest_transcript_text)
 }
 
-/// Flatten raw PTY bytes into matchable text: ANSI escape sequences are
-/// dropped, and the ones that *position* text (CSI cursor-forward `ESC[nC`,
-/// cursor-position `ESC[r;cH`/`f`) become a single space — the interactive TUI
-/// separates the words of one visual line with cursor moves instead of spaces
-/// (`Not<ESC[1C>logged<ESC[1C>in`), so without this no substring can match.
-/// CR/LF also become spaces so a phrase split across writes still joins.
-pub(crate) fn strip_pty_escapes(raw: &[u8]) -> String {
-    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
-    let mut i = 0;
-    while i < raw.len() {
-        match raw[i] {
-            0x1b => i = skip_escape(raw, i + 1, &mut out),
-            b'\r' | b'\n' => {
-                out.push(b' ');
-                i += 1;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// Skip the escape whose ESC byte sits just before `i`; return the index of the
-/// next byte to read.
-fn skip_escape(raw: &[u8], i: usize, out: &mut Vec<u8>) -> usize {
-    match raw.get(i) {
-        Some(b'[') => skip_csi(raw, i + 1, out),
-        Some(b']') => skip_osc(raw, i + 1),
-        // Two-byte escape (ESC c, ESC =, ...): drop the pair.
-        Some(_) => i + 1,
-        None => i,
-    }
-}
-
-/// Skip a CSI body from `i`: params/intermediates until a final byte in
-/// 0x40-0x7e. The cursor moves `C`, `H` and `f` leave a space in `out`.
-fn skip_csi(raw: &[u8], mut i: usize, out: &mut Vec<u8>) -> usize {
-    while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
-        i += 1;
-    }
-    if matches!(raw.get(i), Some(b'C') | Some(b'H') | Some(b'f')) {
-        out.push(b' ');
-    }
-    i + 1
-}
-
-/// Skip an OSC body from `i`: swallow until BEL or ST (ESC `\`).
-fn skip_osc(raw: &[u8], mut i: usize) -> usize {
-    while i < raw.len() {
-        if raw[i] == 0x07 {
-            return i + 1;
-        }
-        if raw[i] == 0x1b && raw.get(i + 1) == Some(&b'\\') {
-            return i + 2;
-        }
-        i += 1;
-    }
-    i
-}
-
-/// Return `true` when raw interactive PTY output shows the logged-out REPL.
-/// The signature is the status-line pair `Not logged in · Run /login`
-/// (captured from CLI v2.1.198 — see tests/fixtures/login_tui_exec.log); the
-/// headless banner says `Please run /login`, so `run /login` matches both.
-/// Both substrings are required, mirroring [`is_claude_auth_error`]'s AND rule.
-fn is_login_tui_output(raw: &[u8]) -> bool {
-    let text = strip_pty_escapes(raw).to_lowercase();
-    text.contains("not logged in") && text.contains("run /login")
-}
-
-/// Rolling watch over the live PTY stream for the logged-out login TUI.
-///
-/// A logged-out *interactive* session renders the login TUI and stalls without
-/// exiting, so the `child_exited` auth check never runs and the session used
-/// to burn its whole wall budget and surface as a misleading `Timeout`
-/// (issue #72). The watch accumulates a bounded tail of the raw output and is
-/// consulted on the session's poll cadence.
-///
-/// Once the JSONL transcript shows any activity the watch disarms for the rest
-/// of the session: a live transcript proves the model loop started (a
-/// logged-out session never produces one), and from then on agent output that
-/// merely *echoes* the signature — reading this source, for instance — must
-/// not trip it.
-struct LoginTuiWatch {
-    buf: Vec<u8>,
-    disarmed: bool,
-}
-
-impl LoginTuiWatch {
-    /// Plenty for the login screen; the TUI redraws, so the signature recurs.
-    const MAX_BUF: usize = 32 * 1024;
-
-    fn new() -> Self {
-        Self {
-            buf: Vec::new(),
-            disarmed: false,
-        }
-    }
-
-    /// Accumulate a PTY chunk (keeps the most recent [`Self::MAX_BUF`] bytes).
-    fn feed(&mut self, chunk: &[u8]) {
-        if self.disarmed {
-            return;
-        }
-        self.buf.extend_from_slice(chunk);
-        if self.buf.len() > Self::MAX_BUF {
-            let cut = self.buf.len() - Self::MAX_BUF;
-            self.buf.drain(..cut);
-        }
-    }
-
-    /// Transcript activity observed — stop watching and drop the buffer.
-    fn disarm(&mut self) {
-        self.disarmed = true;
-        self.buf = Vec::new();
-    }
-
-    fn detected(&self) -> bool {
-        !self.disarmed && is_login_tui_output(&self.buf)
-    }
-}
-
 /// Resolve the `claude` executable to an absolute path, mirroring the ps1
 /// oracle's `$Claude` resolution. This matters because the PTY backend rebuilds
 /// `PATH` from the Windows registry and ignores runtime `PATH` edits, so a bare
@@ -636,27 +486,6 @@ impl LoginTuiWatch {
 /// can never disagree about where (or whether) `claude` is installed.
 pub(crate) fn resolve_claude_binary() -> std::ffi::OsString {
     ralphy_adapter_support::resolve_program("claude")
-}
-
-/// Index of the first occurrence of `needle` in `haystack`.
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-/// Rolling-tail DSR scanner. Appends `chunk` to `carry`, searches the combined
-/// buffer for `CURSOR_POSITION_REQUEST`, then truncates `carry` to the last
-/// `CURSOR_POSITION_REQUEST.len() - 1` bytes so a split sequence spanning the
-/// next chunk can still match. Returns `true` if the sequence was found.
-fn scan_dsr_request(carry: &mut Vec<u8>, chunk: &[u8]) -> bool {
-    carry.extend_from_slice(chunk);
-    let found = find_subslice(carry, CURSOR_POSITION_REQUEST).is_some();
-    let keep = CURSOR_POSITION_REQUEST.len().saturating_sub(1);
-    if carry.len() > keep {
-        carry.drain(..carry.len() - keep);
-    }
-    found
 }
 
 #[cfg(test)]

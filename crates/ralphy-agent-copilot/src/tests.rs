@@ -112,7 +112,8 @@ fn prompt_plan_copilot_has_no_execution_model_line() {
 #[test]
 fn escape_hatch_suppresses_the_connected_failure() {
     let stream = concat!(
-        r#"{"type":"session.mcp_servers_loaded","data":{"servers":[{"name":"github-mcp-server","status":"connected","source":"builtin","transport":"http"}]},"ephemeral":true}"#,
+        r#"{"type":"session.mcp_servers_loaded","data":{"servers":[{"name":"github-mcp-server","#,
+        r#""status":"connected","source":"builtin","transport":"http"}]},"ephemeral":true}"#,
         "\n"
     );
     let strict = CopilotAgent::new(None, PathBuf::from("/run"));
@@ -162,7 +163,8 @@ fn the_receipt_guard_is_wired_into_both_phases() {
 fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
     let required = vec!["reviewer".to_string(), "staged-plan".to_string()];
     let missing = concat!(
-        r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]},"ephemeral":true}"#,
+        r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]},"#,
+        r#""ephemeral":true}"#,
         "\n"
     );
     let agent = CopilotAgent::new(None, PathBuf::from("/run"));
@@ -180,7 +182,8 @@ fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
 
     // A receipt listing both passes through the seam.
     let complete = concat!(
-        r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"},{"name":"staged-plan"}]},"ephemeral":true}"#,
+        r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"},"#,
+        r#"{"name":"staged-plan"}]},"ephemeral":true}"#,
         "\n"
     );
     assert!(agent.check_skills_loaded(complete, &required).is_ok());

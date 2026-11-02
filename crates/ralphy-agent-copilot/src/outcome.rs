@@ -175,16 +175,26 @@ mod tests {
         );
     }
 
-    const ANSWER: &str = r#"{"type":"assistant.message","id":"a1","data":{"model":"claude-sonnet-5","content":"all green\nRALPHY_DONE_EXIT","toolRequests":[],"outputTokens":75}}"#;
+    const ANSWER: &str = concat!(
+        r#"{"type":"assistant.message","id":"a1","data":{"model":"claude-sonnet-5","#,
+        r#""content":"all green\nRALPHY_DONE_EXIT","toolRequests":[],"outputTokens":75}}"#
+    );
 
     /// The terminal envelope from spike §2, with the change counters ZEROED even
     /// though the agent committed through the shell tool. Lives in the test module
     /// so `no_code_changes_read` can scan the production half for the same literal.
-    const RESULT_ZEROED: &str = r#"{"type":"result","sessionId":"d911b7f0","exitCode":0,"usage":{"premiumRequests":0.33,"codeChanges":{"linesAdded":0,"linesRemoved":0,"filesModified":[]}}}"#;
+    const RESULT_ZEROED: &str = concat!(
+        r#"{"type":"result","sessionId":"d911b7f0","exitCode":0,"#,
+        r#""usage":{"premiumRequests":0.33,"codeChanges":{"linesAdded":0,"linesRemoved":0,"#,
+        r#""filesModified":[]}}}"#
+    );
 
     #[test]
     fn copilot_final_text_returns_last_toolless_assistant() {
-        let working = r#"{"type":"assistant.message","id":"a0","data":{"content":"working","toolRequests":[{"name":"shell"}]}}"#;
+        let working = concat!(
+            r#"{"type":"assistant.message","id":"a0","data":{"content":"working","#,
+            r#""toolRequests":[{"name":"shell"}]}}"#
+        );
         let tool = r#"{"type":"tool.execution_complete","id":"t0","data":{"ok":true}}"#;
         let text = copilot_final_text(&format!("{working}\n{tool}\n{ANSWER}\n{RESULT_ZEROED}\n"));
         assert!(text.ends_with("RALPHY_DONE_EXIT"), "got: {text:?}");
@@ -198,7 +208,10 @@ mod tests {
     fn copilot_final_text_ignores_a_trailing_tool_request_turn() {
         // A toolRequests turn AFTER the answer must NOT win: this discriminates the
         // "skip pending-tool turns" rule from "just take the last assistant line".
-        let trailing = r#"{"type":"assistant.message","id":"a2","data":{"content":"more","toolRequests":[{"name":"shell"}]}}"#;
+        let trailing = concat!(
+            r#"{"type":"assistant.message","id":"a2","data":{"content":"more","#,
+            r#""toolRequests":[{"name":"shell"}]}}"#
+        );
         let text = copilot_final_text(&format!("{ANSWER}\n{trailing}\n"));
         assert!(text.ends_with("RALPHY_DONE_EXIT"), "got: {text:?}");
         assert!(
@@ -210,7 +223,10 @@ mod tests {
     #[test]
     fn copilot_final_text_drops_ephemeral_records() {
         // A streaming delta emitted AFTER the durable answer must not win.
-        let partial = r#"{"type":"assistant.message","id":"a3","ephemeral":true,"data":{"content":"partial","toolRequests":[]}}"#;
+        let partial = concat!(
+            r#"{"type":"assistant.message","id":"a3","ephemeral":true,"#,
+            r#""data":{"content":"partial","toolRequests":[]}}"#
+        );
         let text = copilot_final_text(&format!("{ANSWER}\n{partial}\n"));
         assert!(text.ends_with("RALPHY_DONE_EXIT"), "got: {text:?}");
         assert!(

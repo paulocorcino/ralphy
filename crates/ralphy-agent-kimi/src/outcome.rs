@@ -141,9 +141,16 @@ mod tests {
 
     #[test]
     fn kimi_final_text_returns_last_toolless_assistant() {
-        let line1 = r#"{"role":"assistant","content":[{"type":"text","text":"working"}],"tool_calls":[{"type":"function","id":"tool_1","function":{"name":"WriteFile","arguments":"{}"}}]}"#;
+        let line1 = concat!(
+            r#"{"role":"assistant","content":[{"type":"text","text":"working"}],"#,
+            r#""tool_calls":[{"type":"function","id":"tool_1","function":{"name":"WriteFile","#,
+            r#""arguments":"{}"}}]}"#
+        );
         let line2 = r#"{"role":"tool","content":"ok","tool_call_id":"tool_1"}"#;
-        let line3 = r#"{"role":"assistant","content":[{"type":"think","think":"done"},{"type":"text","text":"all green\nRALPHY_DONE_EXIT"}]}"#;
+        let line3 = concat!(
+            r#"{"role":"assistant","content":[{"type":"think","think":"done"},{"type":"text","#,
+            r#""text":"all green\nRALPHY_DONE_EXIT"}]}"#
+        );
         let stdout = format!("{line1}\n{line2}\n{line3}\n");
         let text = kimi_final_text(&stdout);
         assert!(
@@ -162,8 +169,15 @@ mod tests {
     fn kimi_final_text_ignores_a_trailing_tool_call_turn() {
         // A tool_calls turn AFTER the answer must NOT win: this discriminates the
         // "skip tool_calls turns" rule from "just take the last assistant line".
-        let answer = r#"{"role":"assistant","content":[{"type":"text","text":"all green\nRALPHY_DONE_EXIT"}]}"#;
-        let trailing = r#"{"role":"assistant","content":[{"type":"text","text":"more"}],"tool_calls":[{"type":"function","id":"t2","function":{"name":"Bash","arguments":"{}"}}]}"#;
+        let answer = concat!(
+            r#"{"role":"assistant","content":[{"type":"text","#,
+            r#""text":"all green\nRALPHY_DONE_EXIT"}]}"#
+        );
+        let trailing = concat!(
+            r#"{"role":"assistant","content":[{"type":"text","text":"more"}],"#,
+            r#""tool_calls":[{"type":"function","id":"t2","function":{"name":"Bash","#,
+            r#""arguments":"{}"}}]}"#
+        );
         let text = kimi_final_text(&format!("{answer}\n{trailing}\n"));
         assert!(text.ends_with("RALPHY_DONE_EXIT"), "got: {text:?}");
         assert!(
@@ -177,14 +191,21 @@ mod tests {
         // Kimi's FINAL answer turn carries `content` as a bare string, not an
         // array of parts — the sentinel rides there. Regression from a live run
         // where a green issue was misread as Stuck (the string turn was skipped).
-        let line = r#"{"role":"assistant","content":"All plan steps are implemented, committed, and the verification gate passes.\n\nRALPHY_DONE_EXIT"}"#;
+        let line = concat!(
+            r#"{"role":"assistant","#,
+            r#""content":"All plan steps are implemented, committed, and the verification gate "#,
+            r#"passes.\n\nRALPHY_DONE_EXIT"}"#
+        );
         assert!(kimi_final_text(line).ends_with("RALPHY_DONE_EXIT"));
     }
 
     #[test]
     fn kimi_final_text_keeps_empty_tool_calls_answer() {
         // A terminal turn with an empty `tool_calls: []` is still the final answer.
-        let line = r#"{"role":"assistant","content":[{"type":"text","text":"done\nRALPHY_DONE_EXIT"}],"tool_calls":[]}"#;
+        let line = concat!(
+            r#"{"role":"assistant","content":[{"type":"text","text":"done\nRALPHY_DONE_EXIT"}],"#,
+            r#""tool_calls":[]}"#
+        );
         assert!(kimi_final_text(line).ends_with("RALPHY_DONE_EXIT"));
     }
 

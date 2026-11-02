@@ -7,7 +7,9 @@ use super::*;
 /// run as degraded.
 #[test]
 fn the_startup_preamble_is_not_a_degraded_run() {
-    const PREAMBLE: &str = "Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended…\n\
+    const PREAMBLE: &str =
+        "Warning: 256-color support not detected. Using a terminal with at least \
+             256-color support is recommended…\n\
              YOLO mode is enabled. All tool calls will be automatically approved.\n\
              YOLO mode is enabled. All tool calls will be automatically approved.\n\
              Ripgrep is not available. Falling back to GrepTool.\n";
@@ -306,9 +308,10 @@ fn a_model_404_is_named_but_yields_to_a_hard_stop() {
 #[test]
 fn both_channels_feed_the_diagnosis() {
     // (a) stdout only: the typed error object is read into the fold.
-    let stdout_only = fold_gemini_stream(
-        r#"{"type":"result","status":"error","error":{"type":"unknown","message":"[API Error: An unknown error occurred.]"}}"#,
-    );
+    let stdout_only = fold_gemini_stream(concat!(
+        r#"{"type":"result","status":"error","#,
+        r#""error":{"type":"unknown","message":"[API Error: An unknown error occurred.]"}}"#
+    ));
     let vendor = stdout_only
         .vendor_error
         .as_deref()

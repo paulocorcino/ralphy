@@ -97,7 +97,12 @@ mod tests {
 
     #[test]
     fn scan_json_lines_returns_first_match_and_skips_noise() {
-        let stream = "not json\n{\"type\":\"other\"}\n{\"type\":\"target\",\"v\":7}\n{\"type\":\"target\",\"v\":9}";
+        let stream = concat!(
+            "not json\n",
+            "{\"type\":\"other\"}\n",
+            "{\"type\":\"target\",\"v\":7}\n",
+            "{\"type\":\"target\",\"v\":9}",
+        );
         let got = scan_json_lines(stream, |v| {
             (v.get("type").and_then(|t| t.as_str()) == Some("target"))
                 .then(|| v.get("v").and_then(|n| n.as_u64()))

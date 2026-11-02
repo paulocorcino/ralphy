@@ -19,8 +19,10 @@ fn clean_run() -> HeadlessRun {
 
 fn rollout(model_tokens: u64) -> String {
     format!(
-            "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":{model_tokens},\"cached_input_tokens\":0,\"output_tokens\":0}}}}}}}}"
-        )
+        "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\
+             \"info\":{{\"total_token_usage\":{{\"input_tokens\":{model_tokens},\
+             \"cached_input_tokens\":0,\"output_tokens\":0}}}}}}}}"
+    )
 }
 
 fn serialized_ledger_model(usage: &ralphy_core::Usage) -> String {

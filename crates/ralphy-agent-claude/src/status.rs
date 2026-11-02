@@ -171,7 +171,8 @@ fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
         .map(|p| p.display().to_string())
         .unwrap_or_else(|e| format!("the ralphy program (not found: {e:#})"));
     cause.push_str(&format!(
-        "no SessionStart hook event came in {} s; the hooks in {} run {}. Fix the cause and start again",
+        "no SessionStart hook event came in {} s; the hooks in {} run {}. \
+         Fix the cause and start again",
         window.as_secs(),
         ralphy_proc_util::hook_form::native(settings).display(),
         program
@@ -203,7 +204,8 @@ pub(crate) fn refuse_or_go_on(
     }
     Err(anyhow::Error::new(ralphy_core::HooksUnproven {
         cause: format!(
-            "{}. To run without the proof on this machine, run `ralphy config set {WAIVER_KEY} true`",
+            "{}. To run without the proof on this machine, \
+             run `ralphy config set {WAIVER_KEY} true`",
             cause.cause
         ),
     }))

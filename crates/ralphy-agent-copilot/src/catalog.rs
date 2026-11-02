@@ -39,12 +39,16 @@ const UNSELECTABLE_SENTINEL: &str = "zzz-not-real";
 /// Surfaced when the probe ran but logged no CAPI model list — a logged-out
 /// operator, an account that cannot pin a model, or an inherited token that made
 /// the CLI refuse to start. Actionable, never a panic.
-pub const COPILOT_CATALOG_ERROR_MSG: &str = "Copilot model catalog unavailable (the preflight probe logged no CAPI model list) — run `copilot login`, then confirm the account can pin a model with `copilot --model <id>`";
+pub const COPILOT_CATALOG_ERROR_MSG: &str =
+    "Copilot model catalog unavailable (the preflight probe logged no CAPI model list) — run \
+     `copilot login`, then confirm the account can pin a model with `copilot --model <id>`";
 
 /// Surfaced when the probe fetched the catalog but the vendor never rejected the
 /// deliberately invalid `--model`: the probe may have run a BILLED turn, so the
 /// result is refused rather than trusted.
-pub const COPILOT_PROBE_BILLED_MSG: &str = "Copilot preflight probe did not reject its invalid --model: the probe may have spent a model call — treat the catalog as unavailable and report it upstream";
+pub const COPILOT_PROBE_BILLED_MSG: &str =
+    "Copilot preflight probe did not reject its invalid --model: the probe may have spent a model \
+     call — treat the catalog as unavailable and report it upstream";
 
 /// The rate card of one model, in nano-AIU per 1M tokens as the vendor reports it.
 /// NOT a cost model: Copilot bills in AI credits with an independent per-model

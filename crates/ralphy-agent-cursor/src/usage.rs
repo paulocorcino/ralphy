@@ -16,7 +16,8 @@ use ralphy_core::Usage;
 /// counts tokens. The two numbers are not expected to match, and every run
 /// states that once (`note_usage_provenance`).
 pub(crate) const CURSOR_CREDIT_NOTE: &str =
-    "cursor bills in dollar-denominated credits; ralphy counts tokens — the two numbers are not expected to match";
+    "cursor bills in dollar-denominated credits; ralphy counts tokens — the two numbers are not \
+     expected to match";
 
 /// Sum every `{"type":"result"}` record's `usage` block within one stream
 /// (ADR-0042 D11): the spike measured exactly one `result` per run, so this is

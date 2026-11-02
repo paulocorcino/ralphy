@@ -226,14 +226,18 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
         "one read of the operator's root, bound once"
     );
     for handed_to_child in [
-            concat!("build_gemini_", "command(\n                &session_id,\n                model,\n                ws.repo_root(),\n                &operator"),
-            concat!("root::operator_", "root()?,"),
-        ] {
-            assert!(
-                !lib.contains(handed_to_child),
-                "lib.rs must never hand the operator's own root to a child (D4)"
-            );
-        }
+        concat!(
+            "build_gemini_",
+            "command(\n                &session_id,\n                model,\n",
+            "                ws.repo_root(),\n                &operator"
+        ),
+        concat!("root::operator_", "root()?,"),
+    ] {
+        assert!(
+            !lib.contains(handed_to_child),
+            "lib.rs must never hand the operator's own root to a child (D4)"
+        );
+    }
 
     // The one-shot path (#259) funnels through ONE helper for the same
     // reason: four verbs each choosing their own `home` argument is four

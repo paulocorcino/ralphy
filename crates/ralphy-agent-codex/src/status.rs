@@ -211,15 +211,18 @@ mod tests {
         let ws = ralphy_core::Workspace::new(&repo);
         let run_dir = temp.path().join("run");
         let status_file = run_dir.join(STATUS_FILE);
-        let agent = crate::CodexAgent::new(Some("gpt-5-codex".into()), run_dir).with_run_hook(
-            move || {
+        let agent =
+            crate::CodexAgent::new(Some("gpt-5-codex".into()), run_dir).with_run_hook(move || {
                 use std::io::Write;
                 let mut f = std::fs::OpenOptions::new()
                     .append(true)
                     .open(&status_file)?;
                 writeln!(
                     f,
-                    r#"{{"event":"PermissionRequest","session_id":"s1","tool_name":"Bash","ts":"t1"}}"#
+                    concat!(
+                        r#"{{"event":"PermissionRequest","session_id":"s1","tool_name":"Bash","#,
+                        r#""ts":"t1"}}"#
+                    )
                 )?;
                 Ok(ralphy_adapter_support::HeadlessRun {
                     stdout: String::new(),
@@ -230,8 +233,7 @@ mod tests {
                     stopped: false,
                     exit_code: Some(0),
                 })
-            },
-        );
+            });
         let plan = ralphy_core::Plan {
             path: ws.plan_path(),
             open_steps: 1,

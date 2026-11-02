@@ -78,27 +78,9 @@ mod tests {
 
     /// Captured 2026-07-21 via `gemini skills list` in a fresh, untrusted
     /// scratch cwd, no `--skip-trust`, all three embedded skills materialized
-    /// (`.ralphy/gemprobe/skills-list.txt`, scratch and not committed — pasted
-    /// here verbatim since the source file itself is not part of the tree).
-    const LIVE_LISTING: &str = r#"Skipping project agents due to untrusted folder. To enable, ensure that the project root is trusted.
-Ripgrep is not available. Falling back to GrepTool.
-Project hooks disabled because the folder is not trusted.
-Discovered Agent Skills:
-
-reviewer [Enabled]
-  Description: Use ONLY when the user explicitly invokes /reviewer (literal slash command). Performs a native, findings-first review with a deterministic coverage audit run by the reviewer before emission (`scripts/fact_pack.py` + `scripts/audit.py`). Four subagent capabilities (defect-hunter, test-auditor, verifier, scout) are spawnable on judgment, not always-on. During validation this skill must NOT match generic "code review" requests.
-  Location:    C:\Dev\ralphy\.ralphy\gemprobe\gem-probe\gemini-home\.gemini\skills\reviewer\SKILL.md
-
-setup-pocock [Enabled]
-  Description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` so the engineering skills know this repo's issue tracker (GitHub or local markdown), triage label vocabulary, domain doc layout, and — optionally — a PRD/roadmap track model. Run before first use of `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out` — or if those skills appear to be missing context about the issue tracker, triage labels, or domain docs.
-  Location:    C:\Dev\ralphy\.ralphy\gemprobe\gem-probe\gemini-home\.gemini\skills\setup-pocock\SKILL.md
-
-staged-plan [Enabled]
-  Description: Design a self-contained multi-stage plan whose markdown is the operational contract — every execution detail (Execution model, Hand-off conventions, retry rule, working-tree policy, reviewer gate, pre-execution placeholder gate) is encoded in the plan file itself. This is a PLANNING skill — it produces a plan and stops. Use when the user wants to design, scaffold, or decompose work into a staged subagent track. Typical invocations - "design a staged plan", "decompose this into stages", "scaffold a multi-stage plan", "plan in stages", "create a staged execution plan". Do NOT invoke during Phase 2 execution — the plan markdown is self-sufficient and re-invoking the skill is redundant.
-  Location:    C:\Dev\ralphy\.ralphy\gemprobe\gem-probe\gemini-home\.gemini\skills\staged-plan\SKILL.md
-
-EXIT:0
-"#;
+    /// (`.ralphy/gemprobe/skills-list.txt`, scratch and not committed — kept
+    /// verbatim in the fixture since the source file is not part of the tree).
+    const LIVE_LISTING: &str = include_str!("../fixtures/gemini-skills-list-live.txt");
 
     fn base(tag: &str) -> tempfile::TempDir {
         tempfile::Builder::new()

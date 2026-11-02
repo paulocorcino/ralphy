@@ -169,7 +169,8 @@ mod tests {
     /// rejects that text, so without the strip the guard would silently pass.
     #[test]
     fn copilot_config_jsonc_line_comments_are_stripped() {
-        let src = "// User settings belong in settings.json.\n// This file is managed automatically.\n{\"continueOnAutoMode\": true}";
+        let src = "// User settings belong in settings.json.\n// This file is managed \
+             automatically.\n{\"continueOnAutoMode\": true}";
         assert!(
             serde_json::from_str::<serde_json::Value>(src).is_err(),
             "the fixture must be JSONC, not JSON"
@@ -179,7 +180,12 @@ mod tests {
 
     fn receipt(status: &str) -> String {
         format!(
-            r#"{{"type":"session.mcp_servers_loaded","data":{{"servers":[{{"name":"github-mcp-server","status":"{status}","source":"builtin","transport":"http"}}]}}}}"#
+            concat!(
+                r#"{{"type":"session.mcp_servers_loaded","#,
+                r#""data":{{"servers":[{{"name":"github-mcp-server","status":"{}","#,
+                r#""source":"builtin","transport":"http"}}]}}}}"#
+            ),
+            status
         )
     }
 

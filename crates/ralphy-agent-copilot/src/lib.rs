@@ -231,7 +231,7 @@ impl CopilotAgent {
             .as_ref()
     }
 
-    /// Set the per-issue wall-clock budget in minutes (mirrors `KimiAgent::with_max_minutes_per_issue`).
+    /// Set the per-issue wall-clock budget in minutes.
     pub fn with_max_minutes_per_issue(mut self, minutes: u64) -> Self {
         self.budget = self.budget.with_max_minutes_per_issue(minutes);
         self
