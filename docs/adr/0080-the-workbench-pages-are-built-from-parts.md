@@ -97,6 +97,9 @@ a limit of 500 lines of code. A line inside `<!-- … -->` does not count. The
 rule of ADR-0022 §7 applies: a new file over the limit fails, and an old
 large file may not grow.
 
+*Replaced by ADR-0022 §9 (2026-11-02): an `.html` file has at most 500 lines,
+every line counted, comments included, and no old file is exempt.*
+
 ## Consequences
 
 The work is done in phases. A phase starts only when the phase before it
@@ -165,7 +168,7 @@ markup.
   the 14 dialogs in document order.
 - D8: not checked by code: the PR of each move shows the diff of the built
   page before and after, and it must be empty.
-- D9: checked by `cargo run -q -p xtask -- oversized --base main` in CI.
+- D9: checked by `cargo run -q -p xtask -- oversized --check` in CI (ADR-0022 §9).
 
 ## Amendment 2026-10-29 — a test may read a page put together from its parts
 

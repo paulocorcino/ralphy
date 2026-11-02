@@ -475,14 +475,11 @@ jobs:
           ./jscpd --baseline-from-ref "origin/$BASE_REF" --fail-on-new-clones 0 crates
 
   oversized:
-    name: no file grows past its size limit
-    # Fails when a source file over its limit (500 lines of code in Rust,
-    # TypeScript and HTML; comments and blank lines do not count) is larger than on
-    # the base branch: a new file, a file that grows past the limit, or an old
-    # large file that grows. An old large file may shrink (ADR-0022 §7). Fails
-    # too when a Rust file has more lines over 100 characters than on the base
-    # branch (ADR-0022 §8).
-    if: github.event_name == 'pull_request'
+    name: no file is over its size or width limit
+    # Fails when a source file has more than 500 lines, every line counted
+    # (code, comments, blank lines and tests, in Rust, TypeScript and HTML), or
+    # a line of Rust or TypeScript has more than 100 characters. An old file
+    # has no exception (ADR-0022 §9).
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -490,13 +487,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The sizes on the base need history a depth-1 clone does not have.
-          fetch-depth: 0
 
-      - name: No file over its limit grows against the base branch
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: cargo run --locked -q -p xtask -- oversized --base "origin/$BASE_REF"
+      - name: No file or line is over its limit
+        run: cargo run --locked -q -p xtask -- oversized --check
 
   complexity:
     name: no function grows past its complexity limit

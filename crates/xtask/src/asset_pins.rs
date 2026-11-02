@@ -159,6 +159,7 @@ pub(crate) fn gather(root: &Path) -> Result<Vec<Pin>> {
     for rel in [
         "crates/ralphy-daemon/src/tests.rs",
         "crates/ralphy-daemon/src/dispatch.rs",
+        "crates/ralphy-daemon/src/dispatch/tests.rs",
         "crates/ralphy-daemon/src/spend/tests.rs",
         "crates/ralphy-daemon/src/usage/tests.rs",
     ] {
