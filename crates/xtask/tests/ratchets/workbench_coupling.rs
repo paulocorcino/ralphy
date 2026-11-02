@@ -220,7 +220,10 @@ fn flash_errors(actual: &BTreeMap<String, usize>, baseline: &[(&str, usize)]) ->
         actual,
         &baseline,
         |file, n| {
-            format!("{file}: {n} use(s) of `_flashAction` in a module that has none in SHELL_FLASH_REACH")
+            format!(
+                "{file}: {n} use(s) of `_flashAction` in a module that has none in \
+                 SHELL_FLASH_REACH"
+            )
         },
         |file, expected, found| {
             format!(

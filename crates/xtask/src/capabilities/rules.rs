@@ -52,19 +52,23 @@ static RUST_PROCESS: LazyLock<Regex> = LazyLock::new(|| {
 });
 static RUST_UNSAFE: LazyLock<Regex> = LazyLock::new(|| re(r"\bunsafe\s*(\{|fn\b|impl\b|extern\b)"));
 static RUST_SECRET_ENV: LazyLock<Regex> = LazyLock::new(|| {
-    re(
-        r#"(?i)\b(env::var(_os)?|option_env!|env!)\s*\(\s*"[^"]*(token|secret|passw|api_?key|credential|private)"#,
-    )
+    re(concat!(
+        r#"(?i)\b(env::var(_os)?|option_env!|env!)\s*\(\s*"#,
+        r#""[^"]*(token|secret|passw|api_?key|credential|private)"#,
+    ))
 });
 static CREDENTIAL_PATH: LazyLock<Regex> = LazyLock::new(|| {
-    re(
-        r"(\.ssh[/\\]|\bid_rsa\b|\bid_ed25519\b|\.aws[/\\]credentials|\.netrc\b|\.git-credentials\b|\.npmrc\b|\.pypirc\b|\.docker[/\\]config\.json|\bdocument\.cookie\b)",
-    )
+    re(concat!(
+        r"(\.ssh[/\\]|\bid_rsa\b|\bid_ed25519\b|\.aws[/\\]credentials|\.netrc\b|",
+        r"\.git-credentials\b|\.npmrc\b|\.pypirc\b|\.docker[/\\]config\.json|",
+        r"\bdocument\.cookie\b)",
+    ))
 });
 static JS_DYNAMIC: LazyLock<Regex> = LazyLock::new(|| {
-    re(
-        r"(\beval\s*\(|\bnew\s+Function\s*\(|\batob\s*\(|String\.fromCharCode|\bimport\s*\(\s*['`]https?:)",
-    )
+    re(concat!(
+        r"(\beval\s*\(|\bnew\s+Function\s*\(|\batob\s*\(|String\.fromCharCode|",
+        r"\bimport\s*\(\s*['`]https?:)",
+    ))
 });
 static URL_HOST: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)\b(?:https?|wss?)://([a-z0-9][a-z0-9.-]*\.[a-z]{2,})"));

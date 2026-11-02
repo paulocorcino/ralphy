@@ -42,7 +42,9 @@ fn websocket_sites_match_the_baseline() {
         .sum();
     assert_eq!(
         actual, WEBSOCKET_SITES,
-        "`new WebSocket(` sites in {UI_DIR}: a command with one reply goes over `POST /api/command`; when a site was removed, lower WEBSOCKET_SITES in crates/xtask/tests/ratchets/type_escapes.rs"
+        "`new WebSocket(` sites in {UI_DIR}: a command with one reply goes over \
+         `POST /api/command`; when a site was removed, lower WEBSOCKET_SITES in \
+         crates/xtask/tests/ratchets/type_escapes.rs"
     );
 }
 

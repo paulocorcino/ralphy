@@ -170,12 +170,16 @@ fn peer_reply_hash(
     sorted.sort_unstable();
     for (file, name) in sorted {
         let Some((cs, toks)) = lexed.get(file) else {
-            errors.push(format!("{file} declares no type {name}: there is no {file} in {UI_DIR}; update PEER_REPLY_TYPES"));
+            errors.push(format!(
+                "{file} declares no type {name}: there is no {file} in {UI_DIR}; \
+                 update PEER_REPLY_TYPES"
+            ));
             continue;
         };
         let Some(range) = type_declaration(toks, name) else {
             errors.push(format!(
-                "{file} declares no type {name}: a type in PEER_REPLY_TYPES was renamed or moved; update the list"
+                "{file} declares no type {name}: a type in PEER_REPLY_TYPES was renamed or moved; \
+                 update the list"
             ));
             continue;
         };

@@ -92,7 +92,8 @@ fn main() -> Result<ExitCode> {
                 "usage: cargo run -p xtask -- <cmd>\n\
                  \n  \
                  refresh-seed [--url <models.dev url>] [--seed <path>] [--live-file <path>]\n  \
-                 changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>] [--force]\n  \
+                 changelog --check | --pending | --notes <version> | --release <version> \
+                 [--date <ymd>] [--out <dir>] [--force]\n  \
                  bump <version>\n  \
                  asset-pins [--root <repo>] [--verbose]\n  \
                  ui-copy [--root <repo>] [--json | --check]\n  \
@@ -244,13 +245,19 @@ mod tests {
     const SEED: &str = r#"{
       "anthropic": {
         "models": {
-          "claude-opus-4-8": { "cost": { "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75 } },
-          "claude-4.6-opus": { "cost": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 } }
+          "claude-opus-4-8": { "cost": {
+            "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75
+          } },
+          "claude-4.6-opus": { "cost": {
+            "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25
+          } }
         }
       },
       "openai": {
         "models": {
-          "gpt-5.5": { "cost": { "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 5.0 } }
+          "gpt-5.5": { "cost": {
+            "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 5.0
+          } }
         }
       }
     }"#;
@@ -264,10 +271,14 @@ mod tests {
         // Live re-prices opus lower and omits the Copilot dotted form entirely.
         let live = json!({
             "anthropic": { "models": {
-                "claude-opus-4-8": { "cost": { "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25 } }
+                "claude-opus-4-8": { "cost": {
+                  "input": 5, "output": 25, "cache_read": 0.5, "cache_write": 6.25
+                } }
             }},
             "openai": { "models": {
-                "gpt-5.5": { "cost": { "input": 5, "output": 30, "cache_read": 0.5, "cache_write": 5.0 } }
+                "gpt-5.5": { "cost": {
+                  "input": 5, "output": 30, "cache_read": 0.5, "cache_write": 5.0
+                } }
             }}
         });
         let out = parse(&refresh(SEED, &live).unwrap());
@@ -317,11 +328,17 @@ mod tests {
         // the input order.
         let shuffled = r#"{
           "openai": { "models": {
-            "gpt-5.5": { "cost": { "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 5.0 } }
+            "gpt-5.5": { "cost": {
+              "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 5.0
+            } }
           }},
           "anthropic": { "models": {
-            "claude-opus-4-8": { "cost": { "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75 } },
-            "claude-4.6-opus": { "cost": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 } }
+            "claude-opus-4-8": { "cost": {
+              "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75
+            } },
+            "claude-4.6-opus": { "cost": {
+              "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25
+            } }
           }}
         }"#;
         let once = refresh(shuffled, &live).unwrap();

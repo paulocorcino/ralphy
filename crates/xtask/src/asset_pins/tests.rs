@@ -335,7 +335,10 @@ fn needles_keep_every_literal_of_a_long_assert_whole() {
     let src = r#"
     fn t() {
         let js = include_str!("../assets/ui/wb-console.js");
-        assert!(js.contains("create.title = \"cut a new worktree and restart this console in it\";"), "the create button explains itself");
+        assert!(
+            js.contains("create.title = \"cut a new worktree and restart this console in it\";"),
+            "the create button explains itself"
+        );
     }
 "#;
     let mut out = Vec::new();
