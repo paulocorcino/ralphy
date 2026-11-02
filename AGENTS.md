@@ -205,10 +205,15 @@ ubiquitous language, and each crate is roughly one bounded context.
   in TypeScript. The ratchet `complexity_exceptions_do_not_grow` counts
   them, and the count may only go down
   ([ADR-0081](./docs/adr/0081-function-complexity-is-a-gate.md)).
-- **Comments state what the code cannot show:** an invariant, a measured fact
-  (with the tool and version), a limit, or the ADR/issue that decided it. A
-  comment does not describe the previous diff, the bug report, or a rejected
-  alternative. When code moves, its comment moves with it or is deleted.
+- **Comments are lean, written for the next agent that edits the code.** A
+  comment holds only what the code cannot show: an invariant, a measured fact
+  (with the tool and version), a limit, or the ADR/issue that decided it. One
+  line where one line is enough; a doc comment says what the item is for in
+  one sentence. Every comment line is read by each agent that opens the file
+  and counts toward the file's size limit, so a line that tells the
+  agent nothing new is deleted. A comment does not describe the previous
+  diff, the bug report, or a rejected alternative. When code moves, its
+  comment moves with it or is deleted.
 - **Text a user reads never cites an ADR.** An ADR number or a `docs/adr` path
   means something only to a developer of Ralphy. This covers UI text, `--help`
   (clap prints the `///` doc comments of the CLI structs), log lines, error
