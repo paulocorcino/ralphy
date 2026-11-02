@@ -85,7 +85,11 @@ pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result
             Ok(labels) if is_human_gate(&labels) => human.push(n),
             Ok(_) => {}
             Err(e) => {
-                warn!(blocker = n, error = %e, "could not fetch blocker labels — treating as agent work");
+                warn!(
+                    blocker = n,
+                    error = %e,
+                    "could not fetch blocker labels — treating as agent work"
+                );
             }
         }
     }
@@ -135,7 +139,11 @@ pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
     match cx.tracker.issue_comments(issue.number) {
         Ok(comments) => issue.comments = comments,
         Err(e) => {
-            warn!(number = issue.number, error = %e, "fetching issue comments failed — gating and planning with body only")
+            warn!(
+                number = issue.number,
+                error = %e,
+                "fetching issue comments failed — gating and planning with body only"
+            )
         }
     }
 
