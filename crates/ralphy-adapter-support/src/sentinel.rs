@@ -13,13 +13,19 @@ pub const DONE_SENTINEL: &str = "RALPHY_DONE_EXIT";
 /// contract. Planning has no completion sentinel — the runner detects success
 /// by `.ralphy/plan.md` appearing on disk — so unlike the exec charter this
 /// names no sentinel.
-pub const PLAN_CHARTER: &str = "Read .ralphy/plan-charter.md and follow it exactly to plan the issue described by .ralphy/issue.json. Write the plan to .ralphy/plan.md.";
+pub const PLAN_CHARTER: &str = concat!(
+    "Read .ralphy/plan-charter.md and follow it exactly to plan the issue ",
+    "described by .ralphy/issue.json. Write the plan to .ralphy/plan.md.",
+);
 
 /// The one-line execution charter delivered per issue. It points the agent at the
 /// full execution charter written to `.ralphy/exec.md` at the top of each execute
 /// call (mirroring [`PLAN_CHARTER`]) and names the completion sentinel. Byte-identical
 /// to the Claude adapter's private copy.
-pub const EXEC_CHARTER: &str = "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md for this issue. Emit RALPHY_DONE_EXIT when finished.";
+pub const EXEC_CHARTER: &str = concat!(
+    "Read .ralphy/exec.md and follow it exactly to implement .ralphy/plan.md ",
+    "for this issue. Emit RALPHY_DONE_EXIT when finished.",
+);
 
 /// The vendor-neutral execution charter, embedded once here (like [`PLAN_CHARTER`])
 /// and referenced by every adapter, instead of each `include_str!`-ing its own
