@@ -46,3 +46,14 @@ fn save_then_load_trims_trailing_newline() {
     save_token_to("abc123\n", &path).unwrap();
     assert_eq!(load_token_from(&path).unwrap(), Some("abc123".into()));
 }
+
+/// A non-empty override is the token, as it was given: the daemon checks
+/// every request against it.
+#[test]
+fn the_env_override_is_the_effective_token_as_given() {
+    let token = "0123abcd".repeat(8);
+    assert_eq!(
+        effective_token_from(Some(token.clone())).unwrap(),
+        Some(token)
+    );
+}
