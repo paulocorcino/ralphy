@@ -165,20 +165,17 @@ ubiquitous language, and each crate is roughly one bounded context.
   not change the `pub` surface or its import paths; re-export from the parent
   module. A change to the public API is a design decision, not a side effect.
 - **File size is measured by tools, not by you.** Write the code, then run
-  the gate; do not plan a change around a size. An inline
-  `#[cfg(test)] mod tests { … }` block over 500 lines fails an `xtask` test;
-  its message says how to move it. On a pull request, a source file over its
-  limit may not grow: 500 lines of code in Rust, TypeScript and HTML,
-  test code included, comment and blank lines not counted. A new file over the
-  limit fails, and so does a file that grows past it or an old large file
-  that grows; an old large file may shrink. A line of Rust may have 100
-  characters, comments and strings included: a change may not add a wide
-  line, and an old one may stay. Wrap the comment, continue the string with
-  `\` or `concat!`, or move the test data to `tests/fixtures/`. The local
-  form of both checks:
+  the gate; do not plan a change around a size. A source file has at most
+  500 lines, every line counted: code, comments, blank lines and tests, in
+  Rust, TypeScript and HTML. A line of Rust or TypeScript has at most 100
+  characters, comments and strings included; HTML lines are not measured.
+  Wrap the comment, continue the string with `\` or `concat!` (in
+  TypeScript, join `"…" +` pieces), or move the test data to
+  `tests/fixtures/`. The gate fails every file over a limit, old or new.
+  The local form:
 
   ```sh
-  cargo run -q -p xtask -- oversized --base main
+  cargo run -q -p xtask -- oversized --check
   ```
 
   When a size check fails, the split is part of your task: split along a

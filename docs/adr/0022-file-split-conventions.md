@@ -221,6 +221,8 @@ in the same CI job. Measured on `9fd3c9c1`: 591 lines of Rust are wider
 than 100 characters, in 247 files. Almost all of them are string literals
 or comments.
 
+In force since 2026-11-02, when issue #853 closed.
+
 ## Consequences
 
 - The series is N small, reviewable, behaviour-preserving PRs that a human
@@ -235,15 +237,11 @@ or comments.
 
 ## Compliance
 
-- §7: checked by `cargo run -p xtask -- oversized --base <rev>`, which the
-  `oversized` job in `.github/workflows/ci.yml` runs on each pull request
-  against its base branch. With no argument, the command lists the files
-  over their limit. Its rules are tested in `crates/xtask/src/oversized.rs`.
-- §8: checked by the same command and CI job as §7, and tested in the same
-  file.
-- §9: listed by `cargo run -p xtask -- oversized --strict` and tested in
-  `crates/xtask/src/oversized/tests.rs` until issue #853 closes; then checked
-  by the `oversized` job in `.github/workflows/ci.yml`.
+- §7: replaced by §9.
+- §8: replaced by §9.
+- §9: checked by `cargo run -p xtask -- oversized --check`, which the
+  `oversized` job runs on every push; tested in
+  `crates/xtask/src/oversized/tests.rs`.
 
 - §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
   (`crates/ralphy-cli/src/events/mod.rs`).
@@ -254,5 +252,4 @@ or comments.
   `cargo nextest run --workspace`, `cargo test --workspace --doc`). The
   `/rust-skills` review is not checked by code: it is reviewed in the PR.
 - §5: not checked by code: reviewed in the PR.
-- §6: checked by `crates/xtask/tests/inline_test_modules.rs`
-  (no_inline_test_module_outgrows_the_budget).
+- §6: replaced by §9.

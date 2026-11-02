@@ -1,41 +1,6 @@
 use super::*;
 
 #[test]
-fn comments_blanks_and_the_test_module_do_not_count() {
-    let src = "//! crate doc\n\
-               /// item doc\n\
-               fn a() {\n\
-               \n\
-                   // why\n\
-                   let x = 1; // trailing comment, still code\n\
-               }\n\
-               #[cfg(test)]\n\
-               mod tests;\n\
-               fn b() {}\n\
-               #[cfg(test)]\n\
-               pub(crate) mod more {\n\
-               fn t() {}\n\
-               }\n";
-    assert_eq!(
-        code_lines(src),
-        6,
-        "fn a, let, close, the `mod tests;` attribute and line, fn b"
-    );
-}
-
-#[test]
-fn a_block_comment_does_not_count() {
-    let src = "/**\n\
-                * A doc block.\n\
-                * let x = 1;\n\
-                */\n\
-               const a = 1;\n\
-               /* one line */\n\
-               let b = *p;\n";
-    assert_eq!(code_lines(src), 2, "`const a` and `let b` only");
-}
-
-#[test]
 fn every_language_has_a_limit_of_500_code_lines() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let root = dir.path();
@@ -54,10 +19,10 @@ fn every_language_has_a_limit_of_500_code_lines() {
         std::fs::create_dir_all(parent).expect("create the parent");
         std::fs::write(&path, line.repeat(lines)).expect("write the file");
     }
-    let over: Vec<String> = measure(root)
-        .expect("measure")
-        .into_iter()
-        .map(|file| file.path)
+    let over: Vec<String> = report(root)
+        .expect("report")
+        .iter()
+        .map(|row| row.path().to_string())
         .collect();
     assert_eq!(
         over,
@@ -71,79 +36,6 @@ fn every_language_has_a_limit_of_500_code_lines() {
 }
 
 #[test]
-fn an_html_comment_is_not_code() {
-    let src = "<div>
-               <!-- a comment
-               that spans
-               <p>not code</p>
-               -->
-               <!-- one line -->
-               
-               <b>x</b> <!-- after code -->
-               </div>
-";
-    assert_eq!(
-        lines_of_code(Lang::Html, src),
-        3,
-        "`<div>`, the line with code before a comment, `</div>`"
-    );
-    let after = "<!-- opens
-closes --> <i>y</i>
-";
-    assert_eq!(lines_of_code(Lang::Html, after), 1, "code after `-->`");
-}
-
-#[test]
-fn a_page_that_grows_past_its_limit_fails() {
-    let page = |code: usize| {
-        let mut text = String::from(
-            "<!-- a long
-comment
-of three lines -->
-",
-        );
-        text.push_str(
-            &"<p>x</p>
-"
-            .repeat(code),
-        );
-        text
-    };
-    let file = Oversized {
-        rule: Rule::Size,
-        path: "crates/a/ui/index.html".to_string(),
-        lines: lines_of_code(Lang::Html, &page(501)),
-    };
-    assert_eq!(file.lines, 501);
-    let grown = growth_since(&file, &page(500)).expect("it grew by one code line");
-    assert!(
-        grown.starts_with("crates/a/ui/index.html: 500 -> 501"),
-        "{grown}"
-    );
-    assert_eq!(growth_since(&file, &page(501)), None, "the same size");
-}
-
-#[test]
-fn a_file_over_its_limit_may_shrink_but_not_grow() {
-    let file = Oversized {
-        rule: Rule::Size,
-        path: "crates/a/src/big.rs".to_string(),
-        lines: 900,
-    };
-    assert_eq!(growth_error(&file, 900), None, "the same size");
-    assert_eq!(growth_error(&file, 950), None, "it shrank");
-    let grown = growth_error(&file, 899).expect("it grew by one line");
-    assert!(
-        grown.starts_with("crates/a/src/big.rs: 899 -> 900"),
-        "{grown}"
-    );
-    assert!(
-        growth_error(&file, 0).is_some(),
-        "a file the base does not have"
-    );
-}
-
-#[test]
 fn a_line_of_rust_may_have_100_characters() {
     let text = format!(
         "{}\n{}\n{}\n",
@@ -152,16 +44,12 @@ fn a_line_of_rust_may_have_100_characters() {
         "é".repeat(100)
     );
     assert_eq!(
-        Rule::Width.count(Lang::Rust, &text, Count::Code),
-        Some(1),
+        wide_line_rows(&text),
+        [(2, 101)],
         "101 characters; 100 accented letters are 200 bytes but 100 characters"
     );
-    assert_eq!(
-        Rule::Width.count(Lang::TypeScript, &text, Count::Code),
-        None,
-        "only Rust is measured"
-    );
-    assert_eq!(Rule::Width.count(Lang::Html, &text, Count::Code), None);
+    assert!(Lang::Rust.has_width() && Lang::TypeScript.has_width());
+    assert!(!Lang::Html.has_width(), "an HTML line is not measured");
 }
 
 #[test]
@@ -173,31 +61,13 @@ fn a_rust_file_with_a_wide_line_is_listed() {
     let wide = format!("let a = \"{}\";\n", "x".repeat(100));
     std::fs::write(src.join("wide.rs"), &wide).expect("write wide.rs");
     std::fs::write(src.join("narrow.rs"), "let a = 1;\n").expect("write narrow.rs");
-    let over: Vec<(Rule, String, usize)> = measure(root)
-        .expect("measure")
-        .into_iter()
-        .map(|file| (file.rule, file.path, file.lines))
-        .collect();
-    assert_eq!(over, [(Rule::Width, "crates/a/src/wide.rs".to_string(), 1)]);
-}
-
-#[test]
-fn a_new_wide_line_fails_and_an_old_one_may_stay() {
-    let line = format!("    // {}\n", "x".repeat(100));
-    let file = Oversized {
-        rule: Rule::Width,
-        path: "crates/a/src/lib.rs".to_string(),
-        lines: 2,
-    };
     assert_eq!(
-        growth_since(&file, &line.repeat(2)),
-        None,
-        "the same two lines"
-    );
-    let grown = growth_since(&file, &line).expect("one wide line more");
-    assert!(
-        grown.starts_with("crates/a/src/lib.rs: 1 -> 2 lines wider than 100 characters"),
-        "{grown}"
+        report(root).expect("report"),
+        [Row::Width {
+            path: "crates/a/src/wide.rs".to_string(),
+            line: 1,
+            width: 111
+        }]
     );
 }
 
@@ -241,8 +111,8 @@ fn tree(files: &[(&str, String)]) -> tempfile::TempDir {
     dir
 }
 
-fn size_row(path: &str, lines: usize) -> StrictRow {
-    StrictRow::Size {
+fn size_row(path: &str, lines: usize) -> Row {
+    Row::Size {
         path: path.to_string(),
         lines,
     }
@@ -264,11 +134,9 @@ fn strict_counts_every_line() {
     );
     let dir = tree(&[("crates/a/src/lib.rs", text.clone())]);
     assert_eq!(
-        strict_report(dir.path()).expect("report"),
+        report(dir.path()).expect("report"),
         [size_row("crates/a/src/lib.rs", 501)]
     );
-    assert_eq!(lines_of_code(Lang::Rust, &text), 400);
-    assert!(measure(dir.path()).expect("measure").is_empty());
 }
 
 #[test]
@@ -288,7 +156,7 @@ mod tests {{
     assert_eq!(text.lines().count(), 501);
     let dir = tree(&[("crates/a/src/lib.rs", text)]);
     assert_eq!(
-        strict_report(dir.path()).expect("report"),
+        report(dir.path()).expect("report"),
         [size_row("crates/a/src/lib.rs", 501)]
     );
 }
@@ -306,8 +174,8 @@ const b = 2;
     );
     let dir = tree(&[("crates/ui/a.ts", text)]);
     assert_eq!(
-        strict_report(dir.path()).expect("report"),
-        [StrictRow::Width {
+        report(dir.path()).expect("report"),
+        [Row::Width {
             path: "crates/ui/a.ts".to_string(),
             line: 3,
             width: 101
@@ -327,7 +195,7 @@ fn strict_width_skips_html() {
     );
     let dir = tree(&[("crates/ui/index.html", page)]);
     assert_eq!(
-        strict_report(dir.path()).expect("report"),
+        report(dir.path()).expect("report"),
         [size_row("crates/ui/index.html", 501)]
     );
 }
@@ -350,12 +218,64 @@ fn strict_report_lists_and_does_not_fail() {
             ),
         ),
     ]);
-    let rows = strict_report(dir.path()).expect("it lists, and does not fail");
+    let rows = report(dir.path()).expect("it lists, and does not fail");
     assert_eq!(
-        rows.iter().map(StrictRow::render).collect::<Vec<_>>(),
+        rows.iter().map(Row::render).collect::<Vec<_>>(),
         [
             "crates/a/src/wide.ts:1	101	characters, over the width of 100",
             "crates/b/src/big.rs	501	lines, over the limit of 500 (every line counted)",
         ]
     );
+}
+
+/// The error of `check` on a tree of `files`.
+fn check_error(files: &[(&str, String)]) -> String {
+    let dir = tree(files);
+    let error = check(dir.path()).expect_err("the tree breaks the rule");
+    format!("{error:#}")
+}
+
+#[test]
+fn check_fails_a_file_of_501_lines_whatever_they_hold() {
+    let error = check_error(&[("crates/a/src/notes.rs", "// a note\n".repeat(501))]);
+    assert!(error.contains("crates/a/src/notes.rs"), "{error}");
+}
+
+#[test]
+fn check_fails_a_typescript_line_of_101_characters() {
+    let text = format!("const a = 1;\n{}\n", "x".repeat(101));
+    let error = check_error(&[("crates/ui/wide.ts", text)]);
+    assert!(error.contains("crates/ui/wide.ts:2"), "{error}");
+}
+
+#[test]
+fn check_measures_html_size_but_not_width() {
+    let error = check_error(&[("crates/ui/big.html", "<p>x</p>\n".repeat(501))]);
+    assert!(error.contains("crates/ui/big.html"), "{error}");
+    let wide = format!("{}<p>{}</p>\n", "<p>x</p>\n".repeat(499), "y".repeat(101));
+    let dir = tree(&[("crates/ui/wide.html", wide)]);
+    assert!(check(dir.path()).is_ok(), "an HTML line is not measured");
+}
+
+#[test]
+fn check_passes_a_tree_within_the_rule() {
+    let line = format!("{}\n", "a".repeat(100));
+    let dir = tree(&[
+        ("crates/a/src/lib.rs", line.repeat(500)),
+        ("crates/ui/app.ts", line.repeat(500)),
+        ("crates/ui/index.html", line.repeat(500)),
+    ]);
+    check(dir.path()).expect("500 lines of 100 characters fit");
+}
+
+#[test]
+fn the_base_and_strict_flags_are_refused() {
+    for args in [vec!["--base", "main"], vec!["--strict"]] {
+        let args: Vec<String> = args.into_iter().map(String::from).collect();
+        let error = oversized_cmd(&args).expect_err("the flag is gone");
+        assert!(
+            error.to_string().contains("usage: oversized [--check]"),
+            "{error}"
+        );
+    }
 }
