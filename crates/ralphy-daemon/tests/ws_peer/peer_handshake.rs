@@ -136,7 +136,8 @@ async fn a_wrong_bearer_is_a_legible_rejection() {
     assert_eq!(
         status.diagnosis(&t.environment),
         format!(
-            "{ENV} refused the token. Another daemon may answer on this port, or the token changed. Add the host again."
+            "{ENV} refused the token. Another daemon may answer on this port, \
+             or the token changed. Add the host again."
         ),
         "a tunnel peer must not get the WSL advice"
     );
@@ -173,7 +174,8 @@ async fn a_hello_from_another_daemon_is_refused_and_names_both_ids() {
     assert_eq!(
         status.diagnosis(&d.environment),
         format!(
-            "Ralphy did not connect to {ENV}: another daemon answers at 127.0.0.1:{port}: it is 01OTHERDAEMON, not 01EXPECTED."
+            "Ralphy did not connect to {ENV}: another daemon answers at 127.0.0.1:{port}: \
+             it is 01OTHERDAEMON, not 01EXPECTED."
         )
     );
 
@@ -188,7 +190,8 @@ async fn a_hello_from_another_daemon_is_refused_and_names_both_ids() {
     assert_eq!(
         status.diagnosis(&d.environment),
         format!(
-            "Ralphy did not connect to {ENV}: another daemon answers at 127.0.0.1:{port}: it is 01OTHERDAEMON, not 01EXPECTED. Add the host again."
+            "Ralphy did not connect to {ENV}: another daemon answers at 127.0.0.1:{port}: \
+             it is 01OTHERDAEMON, not 01EXPECTED. Add the host again."
         ),
         "a tunnel descriptor is fixed by adding the host again"
     );

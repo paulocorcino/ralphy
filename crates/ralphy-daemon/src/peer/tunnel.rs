@@ -21,14 +21,16 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Child;
-use std::sync::{Arc, LazyLock, Mutex};
-use std::thread::JoinHandle;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
 use super::client::{classify_self_dial, SelfRef};
 use super::{PeerDescriptor, TunnelSpec};
+use said::{watch_stderr, Said};
+
+mod said;
 
 #[cfg(test)]
 mod tests;
@@ -123,77 +125,6 @@ fn spawn_detached(argv: &[String]) -> Result<Child> {
     crate::child_env::remove_secrets(&mut cmd);
     cmd.spawn()
         .with_context(|| format!("starting the tunnel `{}`", argv.join(" ")))
-}
-
-/// The longest `ssh` line kept, in characters.
-const SAID_MAX_CHARS: usize = 300;
-
-/// How long a replaced `ssh`'s stderr reader may take to see EOF.
-const SAID_SETTLE: Duration = Duration::from_millis(200);
-
-/// The last non-empty line an `ssh` wrote on its stderr, kept by a thread that
-/// reads the pipe to EOF.
-struct Said {
-    line: Arc<Mutex<Option<String>>>,
-    reader: Option<JoinHandle<()>>,
-}
-
-impl Said {
-    /// The last line, once the reader has seen EOF or [`SAID_SETTLE`] passed.
-    fn settle(self) -> Option<String> {
-        if let Some(reader) = &self.reader {
-            let until = Instant::now() + SAID_SETTLE;
-            while !reader.is_finished() && Instant::now() < until {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        }
-        self.line.lock().unwrap_or_else(|e| e.into_inner()).take()
-    }
-}
-
-/// Take `child`'s stderr and keep its last non-empty line. The thread reads to
-/// EOF, so the `ssh` never blocks on a full pipe while this daemon runs.
-fn watch_stderr(child: &mut Child) -> Said {
-    let line = Arc::new(Mutex::new(None));
-    let reader = child.stderr.take().and_then(|stderr| {
-        let slot = line.clone();
-        let started = std::thread::Builder::new()
-            .name("tunnel-stderr".into())
-            .spawn(move || keep_last_line(stderr, &slot));
-        match started {
-            Ok(handle) => Some(handle),
-            Err(e) => {
-                tracing::warn!(error = %e, "could not start the tunnel stderr reader");
-                None
-            }
-        }
-    });
-    Said { line, reader }
-}
-
-fn keep_last_line(stderr: impl std::io::Read, slot: &Mutex<Option<String>>) {
-    use std::io::BufRead;
-    let mut stderr = std::io::BufReader::new(stderr);
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        match stderr.read_until(b'\n', &mut buf) {
-            Ok(0) => break,
-            Ok(_) => {
-                let text = String::from_utf8_lossy(&buf);
-                let text = text.trim();
-                if !text.is_empty() {
-                    let kept: String = text.chars().take(SAID_MAX_CHARS).collect();
-                    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(kept);
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(e) => {
-                tracing::debug!(error = %e, "reading the tunnel stderr failed");
-                break;
-            }
-        }
-    }
 }
 
 /// How long to wait before the next `ssh` after the one before exited with no
@@ -318,7 +249,11 @@ impl Tunnels {
                 continue;
             }
             if let Err(e) = self.ensure(&d.daemon_id, spec) {
-                tracing::warn!(peer = %d.environment, error = %format!("{e:#}"), "could not open the tunnel to a peer");
+                tracing::warn!(
+                    peer = %d.environment,
+                    error = %format!("{e:#}"),
+                    "could not open the tunnel to a peer"
+                );
             }
         }
     }
@@ -390,7 +325,11 @@ fn reap_held(
         // before the new one binds it: kill, then reap.
         let child = &mut held.child;
         if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
-            tracing::warn!(peer = %daemon_id, error = %e, "could not stop the tunnel of an edited host");
+            tracing::warn!(
+                peer = %daemon_id,
+                error = %e,
+                "could not stop the tunnel of an edited host"
+            );
         }
         // What the old ssh said was about the old host.
         state.last_said.remove(daemon_id);
@@ -430,9 +369,19 @@ fn log_close(daemon_id: &str, wait: Duration, said: Option<&String>, before: Opt
     let retry_in_secs = wait.as_secs();
     let words = said.map_or("", String::as_str);
     if quiet_close(wait, said, before) {
-        tracing::debug!(peer = %daemon_id, said = words, retry_in_secs, "the tunnel to a peer closed");
+        tracing::debug!(
+            peer = %daemon_id,
+            said = words,
+            retry_in_secs,
+            "the tunnel to a peer closed"
+        );
     } else {
-        tracing::info!(peer = %daemon_id, said = words, retry_in_secs, "the tunnel to a peer closed");
+        tracing::info!(
+            peer = %daemon_id,
+            said = words,
+            retry_in_secs,
+            "the tunnel to a peer closed"
+        );
     }
 }
 

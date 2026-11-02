@@ -400,7 +400,8 @@ fn a_waiting_tunnel_is_closed_and_says_when_it_tries_again() {
     let soon = classify_tunnel("svrapp", Ok(waiting(30)), "refused".into(), said);
     assert_eq!(
         soon.diagnosis("Linux"),
-        "The tunnel to svrapp is closed: ssh said \"Connection timed out\". Ralphy tries again in 30 seconds."
+        "The tunnel to svrapp is closed: ssh said \"Connection timed out\". \
+         Ralphy tries again in 30 seconds."
     );
     let wait = |retry_in| {
         let status = classify_tunnel("h", Ok(Ensured::Waiting { retry_in }), String::new(), None);

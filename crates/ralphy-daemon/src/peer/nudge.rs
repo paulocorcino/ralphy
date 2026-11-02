@@ -191,7 +191,11 @@ impl Keepalives {
         }
         let pid_file = keepalive_pid_file(store, distro);
         if let Some(pid) = read_pid(&pid_file).filter(|pid| is_keepalive(*pid)) {
-            tracing::info!(%distro, pid, "keeping the WSL distro running with the keepalive a previous daemon started");
+            tracing::info!(
+                %distro,
+                pid,
+                "keeping the WSL distro running with the keepalive a previous daemon started"
+            );
             held.insert(distro.to_string(), Held::Adopted(pid));
             return Ok(false);
         }
@@ -199,7 +203,12 @@ impl Keepalives {
         // The keepalive already holds the distro; a pid file that cannot be
         // written only costs the next daemon one more `wsl.exe`.
         if let Err(e) = std::fs::write(&pid_file, child.id().to_string()) {
-            tracing::warn!(%distro, path = %pid_file.display(), error = %e, "could not record the keepalive pid");
+            tracing::warn!(
+                %distro,
+                path = %pid_file.display(),
+                error = %e,
+                "could not record the keepalive pid"
+            );
         }
         held.insert(distro.to_string(), Held::Spawned(child));
         Ok(true)
