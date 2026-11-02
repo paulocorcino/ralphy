@@ -109,7 +109,10 @@ mod tests {
         assert!(out.contains(
             "===== BEGIN .ralphy/plan.md =====\n- [ ] step one\n===== END .ralphy/plan.md ====="
         ));
-        assert!(out.contains("===== BEGIN .ralphy/issue.json =====\n{\"number\":7}\n===== END .ralphy/issue.json ====="));
+        assert!(out.contains(
+            "===== BEGIN .ralphy/issue.json =====\n{\"number\":7}\n\
+             ===== END .ralphy/issue.json ====="
+        ));
         // The plan comes before the issue: the charter's reading order.
         assert!(out.find("plan.md").unwrap() < out.find("issue.json").unwrap());
     }

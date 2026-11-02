@@ -120,7 +120,10 @@ fn an_opencode_run_emits_the_agent_state_of_its_plugin() {
             .open(&status_file)?;
         writeln!(
             f,
-            r#"{{"event":"permission.asked","session_id":"ses_1","tool_name":"bash","tool_use_id":"per_1","ts":"t1"}}"#
+            concat!(
+                r#"{{"event":"permission.asked","session_id":"ses_1","tool_name":"bash","#,
+                r#""tool_use_id":"per_1","ts":"t1"}}"#,
+            )
         )?;
         Ok(ralphy_adapter_support::HeadlessRun {
             stdout: String::new(),

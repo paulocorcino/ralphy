@@ -139,9 +139,10 @@ mod tests {
         // The exact assistant `data` shape captured live (2026-06-15): cost is
         // present-and-zero (must be ignored) and reasoning is a separate field
         // that must NOT be added (total reconciles as input+output+cache.read).
-        let data: serde_json::Value = serde_json::from_str(
-            r#"{"role":"assistant","cost":0,"modelID":"k2p6","tokens":{"total":13532,"input":2168,"output":100,"reasoning":0,"cache":{"write":0,"read":11264}}}"#,
-        )
+        let data: serde_json::Value = serde_json::from_str(concat!(
+            r#"{"role":"assistant","cost":0,"modelID":"k2p6","tokens":{"total":13532,"#,
+            r#""input":2168,"output":100,"reasoning":0,"cache":{"write":0,"read":11264}}}"#,
+        ))
         .unwrap();
         let usage = usage_from_opencode_message(&data).expect("assistant row maps");
         assert_eq!(usage.input, 2168);
@@ -192,23 +193,29 @@ mod tests {
         ));
         remove_scratch_file(&db_path);
 
-        let data = r#"{"role":"assistant","cost":0,"modelID":"k2p6","tokens":{"total":13532,"input":2168,"output":100,"reasoning":0,"cache":{"write":0,"read":11264}}}"#;
+        let data = concat!(
+            r#"{"role":"assistant","cost":0,"modelID":"k2p6","tokens":{"total":13532,"#,
+            r#""input":2168,"output":100,"reasoning":0,"cache":{"write":0,"read":11264}}}"#,
+        );
         {
             let conn = Connection::open(&db_path).expect("open temp db");
             // The real `message` table schema captured from opencode.db.
             conn.execute(
-                "CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)",
+                "CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, \
+                 time_updated INTEGER, data TEXT)",
                 [],
             )
             .unwrap();
             conn.execute(
-                "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO message (id, session_id, time_created, time_updated, data) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params!["msg_1", "ses_test", 1, 2, data],
             )
             .unwrap();
             // A row for a DIFFERENT session must not bleed into the sum.
             conn.execute(
-                "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO message (id, session_id, time_created, time_updated, data) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params!["msg_2", "ses_other", 1, 2, data],
             )
             .unwrap();

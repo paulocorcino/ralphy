@@ -159,7 +159,8 @@ mod tests {
         .unwrap();
         std::fs::write(
             dir.path().join("b-allow.toml"),
-            b"[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = \"git push\"\ndecision = \"allow\"\npriority = 900\n",
+            b"[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = \"git push\"\n\
+              decision = \"allow\"\npriority = 900\n",
         )
         .unwrap();
         std::fs::write(
