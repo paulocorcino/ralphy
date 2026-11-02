@@ -1,0 +1,74 @@
+              <li class="project" :class="{ open: $store.projects.rowOpen(p), peer: !!p.daemon, unavailable: !$store.projects.peerAvailable(g) }">
+            <!-- click toggles the project open/closed (mounts/destroys tree) -->
+            <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
+                 branch chip moved to the Files bar below, which only the open
+                 project renders (#332). It sits on the row, never on
+                 `.project-slug`: the name's own title still wins when the
+                 pointer is over the name. The slug, the ADR-0008 D7 identity,
+                 rides `data-slug` for the browser tests. -->
+            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="$store.projects.peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
+              <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
+              <!-- status dot: the project's daemon-reachability *right now* —
+                   green = live (session/daemon active there), grey = idle
+                   (registered & reachable but stopped), red = offline
+                   (unreachable path). Orthogonal to the provenance icon beside
+                   it (GitHub vs local-only). A local-only repo can be live; a
+                   GitHub repo can be offline. -->
+              <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state, p.dotDetail)"></span>
+              <!-- provenance: a GitHub-backed repo vs one that lives only on
+                   this disk. Orthogonal to the daemon-reachability dot above. -->
+              <i
+                class="remote"
+                :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
+                :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
+              ></i>
+              <span class="project-slug" x-text="repoLabel(p)" :title="$store.projects.projectTitle($store.projects.repoRef(p))" :data-slug="p.slug"></span>
+              <!-- The branch chip carries the change count. Collapsed, only the
+                   count shows — the branch is in `rowTitle` — so a closed row
+                   costs the name nothing (#332); open, the chip grows its branch
+                   and becomes the switcher. ONE element either way, so the count
+                   and the branch cannot disagree about which tree they describe:
+                   both read the selected checkout (#407). A collapsed chip is
+                   inert — its click falls through to the row's toggle. -->
+              <button
+                class="branch-chip"
+                x-show="$store.projects.rowOpen(p) || projectBadge($store.projects.repoRef(p)).show"
+                :class="{ dirty: $store.checkouts.chipDirty(p), disabled: !$store.checkouts.canSwitchBranch(p), collapsed: !$store.projects.rowOpen(p) }"
+                :tabindex="$store.projects.rowOpen(p) ? 0 : -1"
+                @click="branchChipClick(p, $event)"
+                :title="$store.projects.rowOpen(p) ? $store.checkouts.branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
+              >
+                <span class="branch-chip-ref" x-show="$store.projects.rowOpen(p)">
+                  <svg x-icon="$store.checkouts.chipIcon(p)"></svg>
+                  <span class="branch-chip-name" x-text="$store.checkouts.chipLabel(p)"></span>
+                </span>
+                <!-- The change count survives the promotion to a rail view
+                     (#317): readable here with no click and no navigation, the
+                     exact property PRD #297 built the section for. Renders ONLY
+                     for a count that was read and is not zero — never for a
+                     failed read. Until a count lands, the dot is the open chip's
+                     dirty signal. -->
+                <span
+                  class="chg-badge"
+                  x-show="projectBadge($store.projects.repoRef(p)).show"
+                  x-text="projectBadge($store.projects.repoRef(p)).text"
+                ></span>
+                <span class="branch-chip-dot"
+                      x-show="$store.projects.rowOpen(p) && !projectBadge($store.projects.repoRef(p)).show && $store.checkouts.chipDirty(p) && $store.checkouts.canSwitchBranch(p)"></span>
+              </button>
+              <!-- Unregister, never delete (#363). `@click.stop` because the
+                   whole `.project-head` toggles the project open — the removal
+                   must not also mount the tree of the row it is dropping. The
+                   confirm dialog says the directory on disk survives; the verb
+                   is `project.remove`, which spawns `ralphy daemon remove`. -->
+              <button
+                class="project-remove"
+                type="button"
+                @click.stop="removeProject(p)"
+                title="Remove from Ralphy"
+                aria-label="Remove project"
+              >
+                <svg x-icon="'x'"></svg>
+              </button>
+            </div>
+              </li>

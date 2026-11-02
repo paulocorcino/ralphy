@@ -1,0 +1,36 @@
+    <!-- ===================================================================
+         Confirm dialog — the design-system replacement for the native
+         window.confirm on destructive actions (delete). Driven by
+         `confirmModal` + `askConfirm()` (the store `modals`): the scrim dims the canvas so
+         the choice has focus, Enter confirms unless a button has focus (that
+         button's own click answers), Escape/scrim/✕ cancels. The Enter that
+         confirms is default-prevented: closing hands focus back to the opener,
+         and its keypress would otherwise click that button again.
+    ==================================================================== -->
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('$store.modals.confirmModal.open', () => $store.modals.confirmRespond(false))">
+      <div
+        class="modal confirm-modal"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-label="$store.modals.confirmModal.title"
+        @keydown.enter.window="$store.modals.confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), $store.modals.confirmRespond(true))"
+      >
+        <div class="modal-head">
+          <i class="bi bi-exclamation-triangle" x-show="$store.modals.confirmModal.danger" style="color: var(--danger)"></i>
+          <i class="bi bi-question-circle" x-show="!$store.modals.confirmModal.danger"></i>
+          <span class="modal-title" x-text="$store.modals.confirmModal.title"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="$store.modals.confirmRespond(false)" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <p class="confirm-body" x-text="$store.modals.confirmModal.message"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="$store.modals.confirmRespond(false)" x-text="$store.modals.confirmModal.cancelLabel"></button>
+          <button
+            class="btn"
+            :class="$store.modals.confirmModal.danger ? 'danger' : 'accent'"
+            @click="$store.modals.confirmRespond(true)"
+            x-text="$store.modals.confirmModal.confirmLabel"
+          ></button>
+        </div>
+      </div>
+    </div>
