@@ -4,12 +4,21 @@
 //! `pwsh -Command`) runs a script of its own, so the guard judges what runs,
 //! not the word that starts the segment.
 
+/// The shell that runs a command. Some words mean different things in each:
+/// `rm -r` is the POSIX flag in one and `Remove-Item -Recurse` in the other.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Shell {
+    /// bash, sh, zsh, and `cmd`, whose delete words the rules read the same.
+    Posix,
+    PowerShell,
+}
+
 /// What one segment runs.
 pub(super) enum Runs<'a> {
     /// A command: its words, from the command word on.
     Command(&'a [String]),
     /// A script that a shell runs: the guard judges it as a command of its own.
-    Script(String),
+    Script(String, Shell),
     /// A script the guard cannot read (`pwsh -EncodedCommand`).
     Unreadable,
     /// `xargs` and its words: the arguments of the command come from the input.
@@ -25,10 +34,13 @@ pub(super) fn what_runs(tokens: &[String]) -> Runs<'_> {
     let rest = &words[1..];
     match command_name(first).as_str() {
         "xargs" => Runs::FromInput(rest),
-        "bash" | "sh" | "zsh" | "dash" => {
-            posix_script(rest).map_or(Runs::Command(words), Runs::Script)
-        }
-        "cmd" => cmd_script(rest).map_or(Runs::Command(words), Runs::Script),
+        "bash" | "sh" | "zsh" | "dash" => posix_script(rest)
+            .map_or(Runs::Command(words), |script| {
+                Runs::Script(script, Shell::Posix)
+            }),
+        "cmd" => cmd_script(rest).map_or(Runs::Command(words), |script| {
+            Runs::Script(script, Shell::Posix)
+        }),
         "powershell" | "pwsh" => powershell_script(rest).unwrap_or(Runs::Command(words)),
         _ => Runs::Command(words),
     }
@@ -122,7 +134,7 @@ fn powershell_script(args: &[String]) -> Option<Runs<'static>> {
             return Some(Runs::Unreadable);
         }
         if is_prefix_of(&lower, "-command") {
-            return Some(Runs::Script(args[i + 1..].join(" ")));
+            return Some(Runs::Script(args[i + 1..].join(" "), Shell::PowerShell));
         }
     }
     None

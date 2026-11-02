@@ -1,6 +1,7 @@
 use super::*;
 use serde_json::json;
 
+mod powershell;
 mod wrappers;
 
 fn bash(cmd: &str) -> Value {
