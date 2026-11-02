@@ -144,7 +144,8 @@ const MARKER: &str = "# Added by `ralphy install`: puts ralphy on PATH.";
 fn posix_block(dir: &str) -> String {
     let q = format!("'{}'", dir.replace('\'', r"'\''"));
     format!(
-        "{MARKER}\ncase \":${{PATH}}:\" in\n    *:{q}:*) ;;\n    *) export PATH={q}:\"$PATH\" ;;\nesac\n"
+        "{MARKER}\ncase \":${{PATH}}:\" in\n    \
+         *:{q}:*) ;;\n    *) export PATH={q}:\"$PATH\" ;;\nesac\n"
     )
 }
 

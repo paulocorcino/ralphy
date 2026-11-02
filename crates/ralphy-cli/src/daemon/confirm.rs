@@ -68,7 +68,8 @@ pub(crate) fn confirm_close(
             };
             writeln!(
                 out,
-                "{} console{plural} open on the daemon. This closes {them} and stops the agents inside:",
+                "{} console{plural} open on the daemon. \
+                 This closes {them} and stops the agents inside:",
                 open.len(),
             )?;
             for session in &open {

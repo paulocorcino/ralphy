@@ -160,7 +160,9 @@ mod tests {
     #[test]
     fn the_binary_comes_from_the_unit_not_from_path() {
         // The shape systemd 255 prints for `show -p ExecStart --value`.
-        let text = "{ path=/home/paulo/.local/bin/ralphy ; argv[]=/home/paulo/.local/bin/ralphy daemon ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\n";
+        let text = "{ path=/home/paulo/.local/bin/ralphy ; \
+                    argv[]=/home/paulo/.local/bin/ralphy daemon ; ignore_errors=no ; \
+                    start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\n";
         assert_eq!(
             exec_start_path(text).as_deref(),
             Some("/home/paulo/.local/bin/ralphy")

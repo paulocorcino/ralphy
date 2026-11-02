@@ -79,7 +79,8 @@ where
     // `user.email` are the two that actually bite.
     git::initial_commit(path).with_context(|| {
         format!(
-            "recording the initial commit in the repository just created at {} (it exists but is empty)",
+            "recording the initial commit in the repository just created at {} \
+             (it exists but is empty)",
             path.display()
         )
     })?;

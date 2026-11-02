@@ -1,0 +1,431 @@
+use super::*;
+
+// The same test is in `ralphy-pricing` and `ralphy-release`. Each tests its own
+// agent: this one downloads the update, so it has other limits.
+// jscpd:ignore-start
+/// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
+/// never has, and #443 keeps it that way. The default agent proves the
+/// variable is one ureq reads, so the check on ours is not empty.
+#[test]
+fn the_download_agent_ignores_a_proxy_in_the_environment() {
+    let saved = std::env::var_os("ALL_PROXY");
+    std::env::set_var("ALL_PROXY", "http://127.0.0.1:9");
+    let default_uses_it = ureq::Agent::new_with_defaults().config().proxy().is_some();
+    let ours_uses_it = agent().config().proxy().is_some();
+    match saved {
+        Some(v) => std::env::set_var("ALL_PROXY", v),
+        None => std::env::remove_var("ALL_PROXY"),
+    }
+    assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
+    assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
+}
+// jscpd:ignore-end
+
+/// Serve `response` once on a loopback port. The release crate has a richer
+/// harness; this one exists because the cap is a property of `download`,
+/// which lives here.
+fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<()>) {
+    use std::io::Write;
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let handle = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut sink = [0u8; 1024];
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the test client may have closed the connection"
+            )]
+            let _ = std::io::Read::read(&mut stream, &mut sink);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the test client may have closed the connection"
+            )]
+            let _ = stream.write_all(&response);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the test client may have closed the connection"
+            )]
+            let _ = stream.flush();
+        }
+    });
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    (port, handle)
+}
+
+fn http_response(status: u16, body: &str) -> Vec<u8> {
+    format!(
+        "HTTP/1.1 {status} OK
+Content-Length: {}
+Connection: close
+
+{body}",
+        body.len()
+    )
+    .into_bytes()
+}
+
+fn scratch(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("ralphy-apply-{}-{tag}", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("scratch");
+    dir
+}
+
+#[test]
+fn the_host_maps_to_a_published_target() {
+    // Whatever runs the suite must be a platform the project publishes for;
+    // if that stops being true, this is the test that says so.
+    assert!(
+        host_target().is_some(),
+        "no published archive for {}/{}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+}
+
+#[test]
+fn each_published_target_has_its_os_and_arch() {
+    assert_eq!(target_for("linux", "x86_64"), Some("linux-x64"));
+    assert_eq!(target_for("macos", "x86_64"), Some("macos-x64"));
+    assert_eq!(target_for("macos", "aarch64"), Some("macos-arm64"));
+    assert_eq!(target_for("windows", "x86_64"), Some("windows-x64"));
+    assert_eq!(target_for("linux", "aarch64"), Some("linux-arm64"));
+    assert_eq!(
+        target_for("linux", "riscv64"),
+        None,
+        "no Linux RISC-V build"
+    );
+    assert_eq!(
+        target_for("windows", "aarch64"),
+        None,
+        "no Windows ARM64 build"
+    );
+}
+
+/// Every target `target_for` names is built by the release workflow, and
+/// every target the workflow builds is reachable: a name that differs
+/// between the two is found here, not when a release is cut.
+#[test]
+fn target_for_and_the_release_matrix_name_the_same_targets() {
+    let release = include_str!("../../../../../.github/workflows/release.yml");
+    let built: Vec<&str> = release
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("target_name: "))
+        .collect();
+    let mut mapped: Vec<&str> = ["windows", "linux", "macos"]
+        .iter()
+        .flat_map(|os| ["x86_64", "aarch64"].map(|arch| target_for(os, arch)))
+        .flatten()
+        .collect();
+    let mut built_sorted = built.clone();
+    built_sorted.sort_unstable();
+    mapped.sort_unstable();
+    assert_eq!(mapped, built_sorted);
+}
+
+#[test]
+fn another_targets_binary_is_found_by_its_own_name() {
+    for (target, other) in [("linux-x64", "ralphy.exe"), ("windows-x64", "ralphy")] {
+        let dir = scratch(&format!("other-{target}"));
+        let wanted = binary_for_target(target);
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            for (entry, body) in [(wanted, b"wanted"), (other, b"other!")] {
+                zip.start_file::<_, ()>(
+                    format!("ralphy-v1-{target}/{entry}"),
+                    zip::write::SimpleFileOptions::default(),
+                )
+                .expect("entry");
+                std::io::Write::write_all(&mut zip, body).expect("write");
+            }
+            zip.finish().expect("finish");
+        }
+        let found =
+            unpack_binary(&buf, "ralphy-v1-x.zip", &dir.join("out"), wanted).expect("unpack");
+        assert_eq!(std::fs::read(&found).expect("read"), b"wanted", "{target}");
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[test]
+fn a_checksum_file_is_the_hash_before_the_two_spaces() {
+    let hash = "a".repeat(64);
+    assert_eq!(
+        parse_checksum(&format!("{hash}  ralphy-v1-linux-x64.tar.gz\n")).expect("parse"),
+        hash
+    );
+    assert_eq!(
+        parse_checksum(&format!("{}  file\n", hash.to_uppercase())).expect("parse"),
+        hash,
+        "case must not decide a comparison"
+    );
+}
+
+#[test]
+fn something_that_is_not_a_digest_is_refused() {
+    assert!(parse_checksum("").is_err());
+    assert!(parse_checksum("not-a-hash  file\n").is_err());
+    assert!(parse_checksum(&format!("{}  file\n", "a".repeat(63))).is_err());
+}
+
+#[test]
+fn a_flipped_byte_is_refused() {
+    let bytes = b"the release archive";
+    let good = format!("{:x}", Sha256::digest(bytes));
+    verify(bytes, &good).expect("the archive we hashed must verify");
+
+    let mut tampered = bytes.to_vec();
+    tampered[0] ^= 0x01;
+    let err = verify(&tampered, &good).expect_err("one flipped byte must refuse the update");
+    assert!(err.to_string().contains("checksum mismatch"), "{err}");
+}
+
+/// Archives made by the release workflow's own tools: `7z a -tzip` (7-Zip
+/// 24.09, the Windows format) and `tar -czf` (GNU tar 1.35, the Linux
+/// format). Each carries `ralphy-v0.0.0-fixture/{ralphy,ralphy.exe}`, the
+/// same 1408-byte text, so every host finds its own binary name. The
+/// expected digests come from `sha256sum`, not from the crate under test
+/// (#443).
+const FIXTURE_ZIP: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/update/release.zip"
+));
+const FIXTURE_TAR_GZ: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/update/release.tar.gz"
+));
+const FIXTURE_ZIP_SHA256: &str = "2da033c7535aa2aade9f2506aadd86cf3550cd67b32b2a6b4e996ba2c2b61978";
+const FIXTURE_TAR_GZ_SHA256: &str =
+    "9fd2107dd9ca716df5c74b6b7db9078c37b79713817db2b80ad48aa4e6c52839";
+const FIXTURE_BINARY_SHA256: &str =
+    "2d40fd17b353c54885c58fbc3a17fd72b2cfd69b2f7830fedb174b33c9827dd5";
+
+#[test]
+fn the_digest_is_lowercase_hex_as_sha256sum_writes_it() {
+    // FIPS 180-2 test vector for "abc".
+    verify(
+        b"abc",
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    )
+    .expect("sha256(\"abc\") in lowercase hex");
+    verify(FIXTURE_ZIP, FIXTURE_ZIP_SHA256).expect("the zip fixture matches sha256sum");
+    verify(FIXTURE_TAR_GZ, FIXTURE_TAR_GZ_SHA256).expect("the tar.gz fixture matches sha256sum");
+}
+
+#[test]
+fn archives_made_by_the_release_tools_unpack() {
+    for (bytes, name, tag) in [
+        (FIXTURE_ZIP, "ralphy-v0.0.0-fixture.zip", "fixture-zip"),
+        (
+            FIXTURE_TAR_GZ,
+            "ralphy-v0.0.0-fixture.tar.gz",
+            "fixture-targz",
+        ),
+    ] {
+        let dir = scratch(tag);
+        let found = unpack(bytes, name, &dir.join("out")).expect("unpack");
+        let binary = std::fs::read(&found).expect("read");
+        verify(&binary, FIXTURE_BINARY_SHA256)
+            .unwrap_or_else(|e| panic!("{name} unpacked a changed binary: {e}"));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the scratch directory may be gone"
+        )]
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[test]
+fn an_archive_with_no_binary_is_refused_before_anything_is_touched() {
+    let dir = scratch("empty-archive");
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        zip.start_file::<_, ()>(
+            "ralphy-v1-x/README.md",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .expect("entry");
+        std::io::Write::write_all(&mut zip, b"docs only").expect("write");
+        zip.finish().expect("finish");
+    }
+    let err = unpack(&buf, "ralphy-v1-x.zip", &dir.join("out"))
+        .expect_err("an archive with no binary must refuse");
+    assert!(err.to_string().contains("carries no"), "{err}");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_zip_yields_the_binary_at_any_depth() {
+    let dir = scratch("zip");
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        zip.start_file::<_, ()>(
+            format!("ralphy-v1-x/{}", binary_name()),
+            zip::write::SimpleFileOptions::default(),
+        )
+        .expect("entry");
+        std::io::Write::write_all(&mut zip, b"new binary").expect("write");
+        zip.finish().expect("finish");
+    }
+    let found = unpack(&buf, "ralphy-v1-x.zip", &dir.join("out")).expect("unpack");
+    assert_eq!(std::fs::read(&found).expect("read"), b"new binary");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_tar_gz_yields_the_binary_too() {
+    // The Linux and macOS format. It was reachable only through the
+    // `#[ignore]`d live test, so the primary non-Windows update path had no
+    // gate at all: a broken gzip or tar branch shipped green.
+    let dir = scratch("targz");
+    let mut gz = Vec::new();
+    {
+        let encoder = flate2::write::GzEncoder::new(&mut gz, flate2::Compression::fast());
+        let mut builder = tar::Builder::new(encoder);
+        let payload = b"new binary";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(payload.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder
+            .append_data(
+                &mut header,
+                format!("ralphy-v1-x/{}", binary_name()),
+                &payload[..],
+            )
+            .expect("entry");
+        builder.into_inner().expect("tar").finish().expect("gzip");
+    }
+
+    let found = unpack(&gz, "ralphy-v1-x.tar.gz", &dir.join("out")).expect("unpack");
+    assert_eq!(std::fs::read(&found).expect("read"), b"new binary");
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_body_larger_than_it_published_is_refused() {
+    // The download is capped just above the size the release published, so a
+    // redirect target that streams without end cannot fill memory before the
+    // checksum ever gets to refuse it.
+    // A body with no published size is capped at UNSIZED_CAP — the shape a
+    // `.sha256` takes, where anything past one short line is a lie.
+    let body = "x".repeat(200_000);
+    let (port, handle) = serve_once(http_response(200, &body));
+    let url = format!("http://127.0.0.1:{port}/");
+    let err = download(&url, None).expect_err("more than the cap must be refused");
+    assert!(err.to_string().contains("more than the"), "{err}");
+    drop(handle);
+
+    // And a body inside the published size plus its slack is taken.
+    let small = "y".repeat(32);
+    let (port, handle) = serve_once(http_response(200, &small));
+    let url = format!("http://127.0.0.1:{port}/");
+    assert_eq!(
+        download(&url, Some(32))
+            .expect("a body of its published size is fine")
+            .len(),
+        32
+    );
+    drop(handle);
+}
+
+#[test]
+fn an_unknown_archive_format_is_refused() {
+    let dir = scratch("format");
+    assert!(unpack(b"whatever", "ralphy-v1-x.7z", &dir).is_err());
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The one test that touches the network, and the only way to prove the
+/// download → checksum → unpack path against what is actually published.
+/// Ignored by default so CI and an offline machine never reach for it; run
+/// it deliberately:
+///
+/// ```text
+/// cargo nextest run -p ralphy-cli -E 'test(takes_a_published_release)' --run-ignored all
+/// ```
+///
+/// It replaces nothing: the binary is unpacked into a temp dir and dropped.
+#[test]
+#[ignore = "reaches github.com; run deliberately"]
+fn it_takes_a_published_release_and_verifies_it() {
+    use ralphy_release::fetch::{self, RefreshOpts};
+
+    let target = host_target().expect("a published host");
+    let cache = std::env::temp_dir().join(format!("ralphy-live-{}.json", std::process::id()));
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch file may be gone"
+    )]
+    let _ = std::fs::remove_file(&cache);
+    let mut opts = RefreshOpts::new(&cache);
+    opts.force = true;
+    opts.offline = false;
+    fetch::refresh_if_stale(&opts);
+
+    let releases = fetch::load(&cache);
+    assert!(!releases.is_empty(), "the project publishes releases");
+    let (release, archive, checksum) = releases
+        .iter()
+        .find_map(|r| r.archive_for(target).map(|(a, c)| (r, a, c)))
+        .expect("some published release carries an archive for this host");
+
+    let bytes =
+        download(&archive.browser_download_url, Some(archive.size)).expect("download the archive");
+    let sums = download(&checksum.browser_download_url, None).expect("download the checksum");
+    let expected =
+        parse_checksum(&String::from_utf8_lossy(&sums)).expect("the published checksum parses");
+    verify(&bytes, &expected).expect("the published archive matches its published checksum");
+
+    let dir = scratch("live");
+    let staged = unpack(&bytes, &archive.name, &dir).expect("unpack");
+    assert!(
+        std::fs::metadata(&staged).expect("staged binary").len() > 1_000_000,
+        "a real ralphy binary, not a stub"
+    );
+    println!(
+        "verified {} ({}, {} bytes)",
+        release.tag_name,
+        archive.name,
+        bytes.len()
+    );
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch directory may be gone"
+    )]
+    let _ = std::fs::remove_dir_all(&dir);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the scratch file may be gone"
+    )]
+    let _ = std::fs::remove_file(&cache);
+}
