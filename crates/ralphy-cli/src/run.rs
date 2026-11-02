@@ -1,9 +1,5 @@
-//! The `ralphy run` orchestrator: parse-resolved flags in hand, this drives the
-//! whole run lifecycle — preflight the agents, build the queue, wire the notifier
-//! and CloudEvents sink, resolve the per-run knobs, build the adapter(s), hand off
-//! to the core queue loop, and render the final panel. `main.rs` stays the thin
-//! composition root that dispatches here; the ordering-sensitive lifecycle side
-//! effects (env scrubs, presenter finalize, teardown) live in `run_cmd` itself.
+//! The `ralphy run` orchestrator: `run_cmd` drives the whole run lifecycle and keeps
+//! its ordering-sensitive side effects (env scrubs, presenter finalize, teardown).
 
 use anyhow::Result;
 use ralphy_core::{
@@ -14,9 +10,11 @@ use tracing::{info, warn};
 use crate::cli::RunArgs;
 use crate::{config, events, runlock, runstate, split_agent, telegram, ui};
 
+mod derived;
+mod lifecycle;
+mod queue_built;
 // `pub(crate)` only so `runstate::capture`'s #[cfg(test)] pins can drive the real
 // `emit_run_finished` (#219). Bin crate: no public surface is widened.
-mod lifecycle;
 pub(crate) mod report;
 mod snapshot_engine;
 pub(crate) mod summary;
@@ -26,6 +24,8 @@ use lifecycle::{
     finalize_run, finish_border, finish_if_idle, install_observability, start_delivery,
 };
 
+use derived::{prune_old_run_folders, repo_relative_plan_path, resolve_verify_timeout_minutes};
+use queue_built::emit_queue_built;
 use report::{empty_queue_scope, render_final_panel};
 pub(crate) use wiring::strip_secret_tokens_from_env;
 use wiring::{
@@ -37,18 +37,10 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     // Anchors the `run.finished` `duration_s` (ADR-0019) — the run's wall-clock.
     let run_start = std::time::Instant::now();
 
-    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription
-    // quota (matching the ps1 oracle behaviour).
-    //
-    // Why `""` and not `remove_var`: setting to the empty string deliberately
-    // mirrors the PowerShell oracle, which assigns `""` rather than unsetting.
-    // Claude's handling of an absent key vs. an empty key is not verified, so we
-    // keep the same sentinel value to stay on the tested path.
-    //
-    // Edition-2024 migration note: in Rust edition 2024, `std::env::set_var` (and
-    // `remove_var`) become `unsafe` functions. When the crate migrates to edition
-    // 2024, this call must be wrapped in an `unsafe` block with a comment
-    // reiterating the single-threaded argument of the `expect` below.
+    // Clear any inherited ANTHROPIC_API_KEY so the agent draws on the subscription quota.
+    // `""`, not `remove_var`: the PowerShell oracle assigns `""`, and how Claude treats an
+    // absent key is not verified.
+    // Edition 2024 makes `set_var` unsafe: this call then needs an `unsafe` block.
     #[expect(
         clippy::disallowed_methods,
         reason = "this is the first statement of the run on the main thread, so no \
@@ -61,8 +53,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let plan_agent = resolve_plan_agent(args.plan_agent, args.agent);
     preflight_agents(args.agent, plan_agent)?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    // The process `runid` is minted HERE, not inside the events-sink branch: the
-    // run snapshot is keyed by it and is published unconditionally (ADR-0047 §4).
+    // Minted here: the run snapshot is keyed by it and published unconditionally (ADR-0047 §4).
     let runid = events::emitter::new_runid();
     let ws = Workspace::new(&repo_root);
     let run_dir = ws.run_dir(&stamp);
@@ -75,21 +66,14 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
 
     let log_file = std::fs::File::create(run_dir.join("ralphy.log")).ok();
 
-    // Wire the run's observability stack — notifier ring/Layer, CloudEvents sink
-    // ring/Layer, the events-token env scrub, and the tracing subscriber — in one
-    // place, returning the handles the later worker starts consume. The scrub runs
-    // there BEFORE any worker thread, so the block stays ordering-safe.
-    // Kept whole (rather than destructured) so `start_delivery` can be the ONE
-    // place a delivery worker is spawned — every exit path AFTER it reaches a
-    // started worker. (The `?` bails above it — lock acquire, queue build — still
-    // return with the rings unstarted; those are error exits, not run borders.)
+    // The notifier and sink rings/Layers, the events-token env scrub (BEFORE any worker
+    // thread) and the tracing subscriber. `obs` stays whole so `start_delivery` is the ONE
+    // place a delivery worker is spawned; a `?` bail above it returns with the rings unstarted.
     let obs = install_observability(log_file, &args, &repo_root);
     let presenter = &obs.presenter;
     let events_slug = obs.events_slug.clone();
 
-    // The repo name feeds the run title (below); the branding header is printed once
-    // that title is known, so the console face is seeded by the same title as the
-    // Telegram card — identical per run, varying across runs.
+    // The repo name feeds the run title, which seeds the header face and the Telegram card.
     let repo_name = repo_root
         .file_name()
         .and_then(|s| s.to_str())
@@ -103,25 +87,19 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     )]
     std::fs::create_dir_all(ws.ralphy_dir()).ok();
 
-    // Resolved above the lock check because the `--if-idle` deferral needs it for its
-    // run title: a pure per-repo config read (`github/labels.rs`), no side effect.
+    // Above the lock check: the `--if-idle` deferral needs it for its title. A pure read.
     let effective_labels = github::resolve_queue_labels(&args.queue_label, &repo_root);
 
-    // Presence lock (issue #72): the concurrency policy lives in the invocation.
-    // `--if-idle` defers to a live run (clean exit 0, so a scheduler's history
-    // shows no false failures); without it a live lock only warns — intentional
-    // concurrency stays the human's call. Stale locks (dead PID after a crash
-    // or reboot) are taken over so a crash never silences a schedule.
+    // Presence lock (issue #72): `--if-idle` defers to a live run with exit 0; without it a
+    // live lock only warns. A stale lock (dead PID) is taken over.
     match runlock::inspect(&ws.run_lock_path(), runlock::pid_is_alive) {
         runlock::LockState::HeldAlive(info) if args.if_idle => {
             let since = chrono::DateTime::parse_from_rfc3339(&info.started_at)
                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or(info.started_at);
             let msg = format!("skipped: run in progress since {since}, pid {}", info.pid);
-            // The deferral is a run BORDER, not a silent return: it rides the bus so
-            // every sink sees it (ADR-0019 amendment, #222). The workers start here
-            // and both `shutdown()`s run on this path AFTER the emit, so the ring is
-            // drained rather than discarded.
+            // The deferral is a run BORDER (ADR-0019 amendment, #222): it rides the bus, and
+            // both `shutdown()`s run AFTER the emit so the ring drains.
             let title = telegram::notifier::derive_title(
                 repo_name,
                 0,
@@ -129,8 +107,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 None,
                 args.title.as_deref(),
             );
-            // The run never cut a branch, so report the branch the repo is actually
-            // on — not the `afk/run-<stamp>` a real run would have created.
+            // No branch was cut: report the branch the repo is on.
             let (notifier, events_handle, snapshot_handle) = start_delivery(
                 &obs,
                 &title,
@@ -161,19 +138,14 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     }
     // Held for the rest of run_cmd; Drop removes the file on every exit path.
     let _run_lock = runlock::acquire(&ws.run_lock_path())?;
-    // CROSS-PATH INVARIANT (ADR-0047 §8): bound immediately after the run lock, so
-    // on EVERY exit path — `?` propagation, the empty-queue border, the normal end
-    // — it drops AFTER the worker handles are shut down and the document cannot
-    // outlive the process. A worker DETACHED by the 5s shutdown bound
-    // (`delivery.rs`) may still write after this drop; that leftover is exactly the
-    // §8 orphan the reader's dead-pid sweep deletes.
+    // CROSS-PATH INVARIANT (ADR-0047 §8): bound right after the run lock, so on EVERY exit
+    // path it drops AFTER the worker handles shut down. A worker detached by the 5s shutdown
+    // bound (`delivery.rs`) may still write after the drop; the reader's dead-pid sweep
+    // deletes that orphan.
     let _snapshot_guard = snapshot_engine::snapshot_guard(&repo_root, &runid, &run_dir);
 
-    // Load the persisted settings once here (ADR-0010) BEFORE the queue build so the
-    // `queue.assignee` default is available to the label-queue path (and, further
-    // down, the events ctx). A load failure warns and falls back to defaults so a
-    // malformed settings file never aborts a run. Precedence for each knob: per-run
-    // flag > settings.json > hardcoded default.
+    // Loaded once (ADR-0010) BEFORE the queue build: `queue.assignee` filters the label
+    // queue. A load failure warns and uses defaults. Each knob: flag > settings.json > default.
     let settings = match ralphy_core::Settings::load(&ws) {
         Ok(s) => s,
         Err(e) => {
@@ -182,34 +154,26 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         }
     };
     prune_old_run_folders(&ws, &settings, &run_dir, args.dry_run);
-    // The effective assignee filter for the label-built queue (ADR-0021): flag >
-    // `--no-assignee` > persisted `queue.assignee` > none. `--only-issue`/`--issues`
-    // bypass it below so an explicit selection always fetches unfiltered.
+    // The assignee filter of the label queue (ADR-0021): flag > `--no-assignee` > persisted
+    // `queue.assignee` > none. `--only-issue`/`--issues` bypass it.
     let assignee = config::resolve_assignee(
         args.assignee.as_deref(),
         args.no_assignee,
         settings.queue.assignee.as_deref(),
     );
 
-    // Build the queue and the explicitly-named ("forced") issue set. Pure of the
-    // lifecycle ordering (no env/thread side effects), so it lives outside the
-    // orchestrator; see `build_run_queue` for the two-path selection + dependency sort.
+    // The queue and the explicitly named ("forced") issue set; see `build_run_queue`.
     let (queue, forced_issues) =
         build_run_queue(&args, assignee.as_deref(), &effective_labels, &repo_root)?;
 
-    // Derive the run title once, before any on-screen line, so it can seed both the
-    // console branding header and the Telegram card — the face then matches across
-    // both surfaces and varies per run (a different queue → a different face).
-    // A single named issue (`--only-issue N`, or `--issues N` with one entry)
-    // titles the card with that issue's own title; a multi-issue list falls back
-    // to the "N issues" form.
+    // The run title seeds both the console header and the Telegram card. A single named
+    // issue titles the card with its own title; a longer list falls back to "N issues".
     let single_title = if forced_issues.len() == 1 {
         queue.first().map(|i| i.title.clone())
     } else {
         None
     };
-    // An explicit `--issues` selection isn't label-scoped, so don't tag the card
-    // with the (unused) default labels.
+    // An explicit `--issues` selection is not label-scoped: no default labels on the card.
     let title_labels: &[String] = if args.issues.is_empty() {
         &effective_labels
     } else {
@@ -223,36 +187,26 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.title.as_deref(),
     );
 
-    // Branding header + info line, seeded by the run title (see above). All info-line
-    // segments are best-effort — a detached HEAD or a local-only repo drops that part.
+    // Header and info line. Each info-line part is best-effort: a detached HEAD or a
+    // local-only repo drops it.
     presenter.print_header(&title);
     let start_branch = git::current_branch(&repo_root).ok();
     let repo_url = git::origin_url(&repo_root).map(|u| ui::normalize_remote_url(&u));
     presenter.print_info_line(repo_name, start_branch.as_deref(), repo_url.as_deref());
 
-    // NOTE: an empty queue does NOT return here (#222) — it rides the full triad
-    // (`queue.built` count 0 → `run.started` → `run.finished` no_work) and exits
-    // below, after the delivery workers have started and drained.
+    // An empty queue does NOT return here (#222): it rides the full triad (`queue.built`
+    // 0, `run.started`, `run.finished` no_work) and exits below.
     let order: Vec<String> = queue.iter().map(|i| format!("#{}", i.number)).collect();
-    // Where the run will halt: the first issue carrying `stop-before` in the sorted
-    // order (0 = none). An explicit selection (`--only-issue`/`--issues`) overrides
-    // the label, so the cut never applies there. Emitted so the pending bar can mark
-    // the boundary up front (the run won't touch that issue or anything after it).
-    // Mirrors the runner's gate in runner.rs.
-    // The CLI shares the runner's exact predicate (`first_stop_before`) so the
-    // boundary marker on the pending bar and the runner's own gate can never
-    // disagree; `0` is the "no stop-before" sentinel the event decoder expects.
+    // Where the run halts: the first `stop-before` issue in the sorted order (0 = none; an
+    // explicit selection overrides the label). The runner shares `first_stop_before`, so the
+    // pending bar's marker and the runner's gate cannot disagree.
     let stop_before = ralphy_core::first_stop_before(&queue, &forced_issues).unwrap_or(0);
 
-    // The human-return label set (ADR-0016): resolved once here and reused both for
-    // the enriched queue snapshot below and the `gh`-free core (`QueueConfig`).
+    // Resolved once (ADR-0016) for the queue snapshot and the `gh`-free core.
     let human_return_labels = github::resolve_human_return_labels(&repo_root);
 
-    // Emit the `queue built` telemetry (ADR-0020/-0021): the enriched per-issue
-    // snapshot and the applied assignee scope, terminating in the single stable
-    // `emit::queue_built` the notifier/presenter consume. Positioned after the
-    // header/info-line prints and before the notifier worker start, so the
-    // buffered-ring drain order is unchanged.
+    // After the header prints and before the notifier worker start, so the ring drain
+    // order is unchanged.
     emit_queue_built(
         &queue,
         &forced_issues,
@@ -270,12 +224,8 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         ),
     );
 
-    // Settings were loaded above (before the queue build) so `queue.assignee` could
-    // filter the label queue; the operating run branch resolved from them still feeds
-    // the events ctx below (ADR-0019 amendment #96), constant from the first event.
-    // Each adapter's settings section is opaque JSON to the core; deserialize
-    // the typed slices here with the same warn-and-default tolerance as the
-    // file load, so a malformed section never aborts a run (ADR-0002 amendment).
+    // An adapter's settings section is opaque JSON to the core: deserialize the typed slices
+    // here, warning and defaulting on a malformed section (ADR-0002 amendment).
     let claude_settings: ralphy_agent_claude::ClaudeSettings = settings
         .agent_settings(ralphy_agent_claude::ClaudeSettings::SECTION)
         .unwrap_or_else(|e| {
@@ -285,14 +235,20 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let opencode_settings: ralphy_agent_opencode::OpenCodeSettings = settings
         .agent_settings(ralphy_agent_opencode::OpenCodeSettings::SECTION)
         .unwrap_or_else(|e| {
-            warn!(error = %e, "malformed opencode settings section — its persisted defaults ignored");
+            warn!(
+                error = %e,
+                "malformed opencode settings section — its persisted defaults ignored"
+            );
             Default::default()
         });
     let persisted_opencode_model = opencode_settings.model.clone();
     let copilot_settings: ralphy_agent_copilot::CopilotSettings = settings
         .agent_settings(ralphy_agent_copilot::CopilotSettings::SECTION)
         .unwrap_or_else(|e| {
-            warn!(error = %e, "malformed copilot settings section — its persisted defaults ignored");
+            warn!(
+                error = %e,
+                "malformed copilot settings section — its persisted defaults ignored"
+            );
             Default::default()
         });
     let cursor_settings: ralphy_agent_cursor::CursorSettings = settings
@@ -322,21 +278,17 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
                 .and_then(|m| config::parse_branch_mode(m).ok())
         })
         .unwrap_or(BranchMode::New);
-    // The branch commits land on: a fresh `afk/run-<stamp>` in `new` mode (matching
-    // the format literal in `runner.rs`), the current branch in `current` mode.
+    // Constant from the first event (ADR-0019 amendment #96).
     let operating_branch = operating_branch(branch_mode, &stamp, start_branch.as_deref());
 
-    // Resolved HERE, above `start_delivery`, because both calls can `?`: every
-    // `?` must bail while the rings are still unstarted. A `?` BELOW the worker
-    // start would return without any `shutdown()`, leaving a live snapshot
-    // worker free to re-publish the document after `_snapshot_guard` removed it.
+    // Above `start_delivery`: a `?` below the worker start would skip `shutdown()` and let
+    // the snapshot worker re-publish after `_snapshot_guard` removed the document.
     let resolved_effort = ResolvedEffort {
         plan: config::resolve_effort(args.plan_effort, claude_settings.plan_effort.clone(), None)?,
         exec: config::resolve_effort(args.exec_effort, claude_settings.exec_effort.clone(), None)?,
     };
 
-    // Start both delivery workers now that the run context is known. Events emitted
-    // before this point (`queue built`) are buffered in the rings and drained on start.
+    // Events before this point (`queue built`) wait in the rings and drain on start.
     let (notifier, events_handle, snapshot_handle) = start_delivery(
         &obs,
         &title,
@@ -355,26 +307,13 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         }),
     );
 
-    // The run's global wall-clock deadline (if any), shared by the agent — which
-    // clamps each issue's budget to it — and the queue's between-issue clock.
+    // The run's wall-clock deadline: it clamps each issue's budget and gates the next issue.
     let run_deadline = args
         .deadline_hours
         .map(|h| std::time::Instant::now() + std::time::Duration::from_secs_f64(h * 3600.0));
 
-    // Select the adapter(s) per run and box as `&dyn Agent`; the core takes a
-    // single `&dyn Agent` and never learns which vendor it holds (docs/adr/0004).
-    // `--plan-agent` defaults to `--agent`: when they match, the executor box is
-    // handed to the core directly so the single-agent path carries no wrapper
-    // (byte-for-byte unchanged); otherwise a `SplitAgent` routes plan→planner,
-    // execute→executor (docs/adr/0009).
-    //
-    // The persisted settings snapshot + `base_branch`/`branch_mode` were resolved
-    // above (before the events ctx, so the operating branch is constant from the
-    // first event); every run knob below resolves against that same snapshot.
-    // ADR-0019 run-boundary event: emitted here, after branch-mode/base-branch
-    // resolution, so it carries the CLI-only run parameters the core never sees.
-    // The stream order is `queue.built` (above) then `run.started`; consumers order
-    // by `id`/`time` and tolerate it (docs/events.md).
+    // `run.started` (ADR-0019) carries the CLI-only run parameters the core never sees. It
+    // follows `queue.built` (docs/events.md).
     let branch_mode_str = match branch_mode {
         BranchMode::New => "new",
         BranchMode::Current => "current",
@@ -389,10 +328,8 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.deadline_hours.unwrap_or(0.0),
     );
 
-    // The empty-queue border (#222): the run emitted the full triad and did no work.
-    // Deliberately NOT routed through `finalize_run` — that would also trigger
-    // `maybe_consolidate_knowledge`, i.e. spawn a paid session on a run with nothing
-    // to consolidate. Both `shutdown()`s run here, after the emit, so the rings drain.
+    // The empty-queue border (#222): the full triad, no work. NOT `finalize_run`: that would
+    // spawn a paid consolidation session. Both `shutdown()`s run here, after the emit.
     if queue.is_empty() {
         report::emit_run_finished_no_work(run_start);
         finish_border(presenter, notifier, events_handle, snapshot_handle);
@@ -437,10 +374,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         args.exec_model.clone(),
         &gemini_settings,
     );
-    // The idle watchdog knob stays an `Option` through the composition root: an
-    // absent value is not "off", it is "let each execution path use the default
-    // its progress signal can support" (docs/adr/0038). `Some(0)` is the opt-out.
+    // Stays an `Option`: absent means each execution path uses the default its progress
+    // signal supports (docs/adr/0038); `Some(0)` opts out.
     let idle_minutes = args.idle_minutes.or(settings.idle_minutes);
+    // Boxed as `&dyn Agent` (docs/adr/0004). When `--plan-agent` equals `--agent` the executor
+    // goes to the core unwrapped; otherwise a `SplitAgent` routes plan to the planner and
+    // execute to the executor (docs/adr/0009).
     let executor = build_agent(
         args.agent,
         &args,
@@ -474,9 +413,6 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             executor,
         })
     };
-    // `human_return_labels` (ADR-0016) was resolved once above (for the enriched
-    // queue snapshot) and is handed here to the `gh`-free core, which skips any
-    // queued issue carrying one of these and continues the queue.
     let cfg = QueueConfig {
         repo_root,
         base_branch,
@@ -485,15 +421,12 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         branch_mode,
         forced_issues,
         human_return_labels,
-        // Limit stance for both phases. Every agent auto-resumes on a usage limit:
-        // a scheduled reset (Codex/Claude) waits to its target time, and a limit with
-        // no parseable reset (Kimi/OpenCode) parks a synthetic ~30-min poll window
-        // (ADR-0030). `--stop-on-limit` is the opt-out that stops-and-reports instead.
+        // Every agent auto-resumes on a usage limit (ADR-0030); `--stop-on-limit` stops and
+        // reports instead.
         stop_on_limit_plan: args.stop_on_limit,
         stop_on_limit_exec: args.stop_on_limit,
-        // The runner-enforced verify gate (ADR-0011): the per-repo fallback
-        // command (tokenized into one argv) used only when a plan emits no
-        // `## Verify` section, and the gate's own time budget.
+        // ADR-0011: the per-repo fallback command (one argv), used only when a plan has no
+        // `## Verify` section.
         verify_fallback: settings
             .verify
             .command
@@ -501,19 +434,13 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             .map(str::trim)
             .filter(|c| !c.is_empty())
             .map(|c| vec![ralphy_core::verify::tokenize(c)]),
-        // The gate owns its clock (docs/adr/0038): it no longer derives from the
-        // per-issue cap, which is opt-in and `0`/unbounded by default and would
-        // collapse the gate to a 0s timeout.
+        // The gate owns its clock (docs/adr/0038): the per-issue cap is `0` by default.
         verify_timeout: std::time::Duration::from_secs(
             resolve_verify_timeout_minutes(settings.verify.timeout_minutes).saturating_mul(60),
         ),
-        // ADR-0015: when set, a `Done` that resolves to no verify gate at all is
-        // parked for a human (`ready-for-human`) instead of closed on the
-        // self-report. Absent/false preserves the ADR-0011 warn-and-close.
+        // ADR-0015: a `Done` with no verify gate is parked for a human, not closed.
         require_verify_gate: settings.verify.require_verify_gate.unwrap_or(false),
-        // The completion token the core quotes in its repair briefs. Named once
-        // at the adapter layer; the core receives it as data and never learns
-        // the literal (ADR-0002 amendment, #79).
+        // Named once at the adapter layer; the core gets it as data (ADR-0002 amendment, #79).
         done_signal: ralphy_adapter_support::DONE_SENTINEL.to_owned(),
     };
 
@@ -521,9 +448,8 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let clock = WallClock {
         deadline: run_deadline,
     };
-    // Comment author trust (security audit 2026-09-21, F8): the tracker drops
-    // non-collaborator comments before they reach the planner or the
-    // blocked-by gate unless the operator opted out.
+    // Drops non-collaborator comments unless the operator opted out (security audit
+    // 2026-09-21, F8).
     let tracker = GhTracker::new(cfg.repo_root.clone())
         .with_comment_trust(settings.queue.trust_all_comments.unwrap_or(false));
 
@@ -535,10 +461,9 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
         .ok()
         .map(|r| summary::RunSummary::from_report(r, queue.len()));
 
-    // Finalize the presenter, consolidate knowledge, emit `run finished`, and tear
-    // down the notifier then the sink — in that exact order (ADR-0006/-0007/-0019).
-    // Kept before the `?` propagation so a non-green result still finalizes and
-    // pushes; `render_final_panel` runs after, only on the green path.
+    // Finalize the presenter, consolidate, emit `run finished`, tear down the notifier then
+    // the sink, in this order (ADR-0006/-0007/-0019). Before the `?`: a non-green result
+    // still finalizes.
     let consolidation_usage = finalize_run(
         args.agent,
         presenter,
@@ -568,202 +493,5 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
-/// The run's plan path relative to the repo root, with forward slashes — the form
-/// the browser hands straight to the confined `file.read` verb (ADR-0047 §5), which
-/// rejects an absolute path and a backslash-separated one alike.
-fn repo_relative_plan_path(repo_root: &std::path::Path, ws: &Workspace) -> String {
-    let plan = ws.plan_path();
-    plan.strip_prefix(repo_root)
-        .unwrap_or(&plan)
-        .to_string_lossy()
-        .replace('\\', "/")
-}
-
-/// Emit the ADR-0020/-0021 `queue built` telemetry: enrich it with the per-issue
-/// snapshot the runner would judge (`data.issues[]`) and mark the applied assignee
-/// scope, terminating in the single stable `emit::queue_built` the notifier /
-/// presenter consume. Both resolutions are best-effort telemetry — a `gh` blip warns
-/// and emits the legacy/unmarked shape rather than aborting the run. The caller
-/// positions this after the header/info-line prints and before the notifier worker
-/// start, so the buffered-ring drain order is unchanged.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the arguments are the separate facts of the queue that the event reports"
-)]
-fn emit_queue_built(
-    queue: &[ralphy_core::Issue],
-    forced_issues: &[u64],
-    human_return_labels: &[String],
-    repo_root: &std::path::Path,
-    args: &RunArgs,
-    assignee: Option<&str>,
-    order: &[String],
-    stop_before: u64,
-    scope: &str,
-) {
-    let issues_json = {
-        let tracker = GhTracker::new(repo_root);
-        match ralphy_core::resolve_queue_view(queue, forced_issues, human_return_labels, &tracker) {
-            Ok(view) => serde_json::to_string(&view.issues).unwrap_or_default(),
-            Err(e) => {
-                warn!(error = %e, "resolving the queue snapshot failed — emitting the legacy queue.built shape");
-                String::new()
-            }
-        }
-    };
-    // The filter is the *applied* one — `None` on an explicit `--issues`/`--only-issue`
-    // selection (which bypasses the assignee filter), matching how those paths fetch
-    // unfiltered; the concrete login is emitted, never the literal `@me`.
-    let applied_assignee = if !args.issues.is_empty() || args.only_issue.is_some() {
-        None
-    } else {
-        assignee.map(str::to_string)
-    };
-    let assignee_filter: Option<String> = match applied_assignee.as_deref() {
-        Some(a) => match github::resolve_login(a, repo_root) {
-            Ok(l) => Some(l),
-            Err(e) => {
-                warn!(error = %e, "resolving @me for the assignee_filter mark failed — emitting queue.built without the scope mark");
-                None
-            }
-        },
-        None => None,
-    };
-    ralphy_core::emit::queue_built(
-        queue.len() as u64,
-        &order.join(" -> "),
-        stop_before,
-        &issues_json,
-        assignee_filter.as_deref().unwrap_or(""),
-        scope,
-    );
-}
-
-/// The verify gate's time budget in minutes: the persisted `verify.timeout_minutes`,
-/// else [`ralphy_core::VERIFY_GATE_FALLBACK_MINUTES`].
-///
-/// Split out of the `QueueConfig` literal so the "the gate never inherits the
-/// per-issue cap" rule is a testable unit rather than an inline expression
-/// (docs/adr/0038). Unlike the per-issue cap, `0` is not a sentinel here — a
-/// gate with no timeout is not a thing the runner can enforce.
-fn resolve_verify_timeout_minutes(persisted: Option<u64>) -> u64 {
-    persisted
-        .filter(|m| *m > 0)
-        .unwrap_or(ralphy_core::VERIFY_GATE_FALLBACK_MINUTES)
-}
-
-/// Keep the newest `runs.keep` run folders and remove the older ones. A refused
-/// delete is a warning: pruning never fails a run.
-fn prune_old_run_folders(
-    ws: &Workspace,
-    settings: &ralphy_core::Settings,
-    run_dir: &std::path::Path,
-    dry_run: bool,
-) {
-    let keep = settings.runs.keep.unwrap_or(ralphy_core::DEFAULT_RUNS_KEEP);
-    let pruned =
-        ralphy_core::run_dirs::prune_run_dirs(&ws.runs_dir(), keep, run_dir, dry_run, |p| {
-            std::fs::remove_dir_all(p)
-        });
-    if !pruned.removed.is_empty() {
-        let verb = if dry_run { "would remove" } else { "removed" };
-        info!(
-            "{verb} {} old run folders (keeping the last {keep}; change with runs.keep)",
-            pruned.removed.len()
-        );
-    }
-    for (path, e) in &pruned.failed {
-        warn!(path = %path.display(), error = %e, "could not remove an old run folder");
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The document carries the plan's REPO-RELATIVE path, forward-slashed —
-    /// the confined `file.read` verb rejects an absolute path and a
-    /// backslash-separated one alike, so on Windows a regression here breaks
-    /// the panel's plan viewer while every Rust test stays green.
-    #[test]
-    fn repo_relative_plan_path_is_forward_slashed_and_relative() {
-        let root = std::env::temp_dir().join("ralphy-planpath-test");
-        let ws = Workspace::new(&root);
-        assert_eq!(repo_relative_plan_path(&root, &ws), ".ralphy/plan.md");
-    }
-
-    #[test]
-    fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
-        // Production text with whitespace removed: the calls, not their layout.
-        let code: String = include_str!("run.rs").split_whitespace().collect();
-        let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
-        // The argument list of the call that opens at `at` (just past its `(`),
-        // without a trailing comma.
-        let args_at = |open: usize| -> &str {
-            let mut depth = 1;
-            let len = code[open..]
-                .char_indices()
-                .find_map(|(j, c)| {
-                    match c {
-                        '(' => depth += 1,
-                        ')' => depth -= 1,
-                        _ => {}
-                    }
-                    (depth == 0).then_some(j)
-                })
-                .expect("a balanced call");
-            code[open..open + len].trim_end_matches(',')
-        };
-        // Each phase resolves from its OWN flag and its own setting.
-        for phase in ["plan", "exec"] {
-            let head = format!("{phase}:config::resolve_effort(");
-            let at = code
-                .find(&head)
-                .unwrap_or_else(|| panic!("the {phase} effort is resolved"));
-            assert_eq!(
-                args_at(at + head.len()),
-                format!("args.{phase}_effort,claude_settings.{phase}_effort.clone(),None"),
-                "the {phase} effort resolves from --{phase}-effort and claude.{phase}_effort"
-            );
-        }
-        // The executor and the split planner are each built with it.
-        let builds: Vec<&str> = code
-            .match_indices("build_agent(")
-            .filter(|(i, _)| !code[..*i].ends_with("fn"))
-            .map(|(i, m)| args_at(i + m.len()))
-            .collect();
-        assert!(
-            builds.len() >= 2,
-            "the executor and the planner: {builds:?}"
-        );
-        for args in builds {
-            assert!(
-                args.contains("&resolved_effort"),
-                "every agent build must receive the resolved effort: {args}"
-            );
-        }
-    }
-
-    #[test]
-    fn unset_max_minutes_resolves_to_uncapped() {
-        // The per-issue cap is opt-in (docs/adr/0038): an unset flag AND unset
-        // setting resolve to `0`, which `issue_deadline` reads as "no per-issue
-        // cap" — the issue is bounded only by `--deadline-hours`. Liveness is
-        // the idle watchdog's job, not this knob's; a finite default here would
-        // cut healthy long issues to catch a hang it cannot recognize.
-        let resolved = config::resolve_u64(None, None, ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE);
-        assert_eq!(resolved, 0);
-    }
-    #[test]
-    fn verify_timeout_no_longer_derives_from_the_per_issue_cap() {
-        // The gate owns its own clock (docs/adr/0038): with the cap uncapped
-        // (`0`, the default) verify must still get a finite window, and it must
-        // not silently inherit an unrelated per-issue cap either.
-        assert_eq!(
-            resolve_verify_timeout_minutes(None),
-            ralphy_core::VERIFY_GATE_FALLBACK_MINUTES
-        );
-        assert_eq!(resolve_verify_timeout_minutes(Some(15)), 15);
-        assert!(resolve_verify_timeout_minutes(None) > 0);
-    }
-}
+mod tests;
