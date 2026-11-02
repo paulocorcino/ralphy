@@ -283,7 +283,8 @@ fn scan_reports_new_hosts_and_crates_but_not_known_ones() {
     .expect("write lock");
     std::fs::write(
         dir.join("a.rs"),
-        "// https://known.example.com\nlet u = \"https://known.example.com/x\";\nlet v = \"https://new.example.org/y\";\n",
+        "// https://known.example.com\nlet u = \"https://known.example.com/x\";\n\
+         let v = \"https://new.example.org/y\";\n",
     )
     .expect("write a.rs");
     // The subprocess moves to a new file with a new indent: not a new capability.

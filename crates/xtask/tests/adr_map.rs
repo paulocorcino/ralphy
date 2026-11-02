@@ -84,7 +84,8 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     let kind = format_errors("k.md", "Status: proposed\nKind: structure\n");
     assert!(kind.len() == 1 && kind[0].contains("Kind"), "{kind:#?}");
 
-    let empty = "Status: proposed\nKind: structural\n\n## Compliance\n\n<!-- c -->\n\n## Amendment\n\n- D1: x\n";
+    let empty = "Status: proposed\nKind: structural\n\n## Compliance\n\n<!-- c -->\n\n\
+        ## Amendment\n\n- D1: x\n";
     let errors = format_errors("c.md", empty);
     assert!(
         errors.len() == 1 && errors[0].contains("Compliance"),
@@ -100,7 +101,8 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
         "{no_heading:#?}"
     );
 
-    let long_comment = "Status: proposed\nKind: structural\n\n## Compliance\n\n<!--\n- D1: an example\n  inside the comment\n-->\n";
+    let long_comment = "Status: proposed\nKind: structural\n\n## Compliance\n\n<!--\n\
+        - D1: an example\n  inside the comment\n-->\n";
     let errors = format_errors("m.md", long_comment);
     assert!(
         errors.len() == 1 && errors[0].contains("Compliance"),

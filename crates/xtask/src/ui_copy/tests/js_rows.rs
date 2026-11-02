@@ -275,7 +275,8 @@ window.WB_SETTINGS = [
     title: "Queue",
     blurb: "How issues are picked up.",
     items: [
-      { key: "queue.assignee", label: "Assignee filter", help: "Only issues assigned to this login." },
+      { key: "queue.assignee", label: "Assignee filter",
+        help: "Only issues assigned to this login." },
     ],
   },
 ];

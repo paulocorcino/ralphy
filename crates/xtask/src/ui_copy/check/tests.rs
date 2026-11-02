@@ -21,8 +21,10 @@ const RULES: &str = r#"{
   "contractions": { "banned": ["n't", "it's"], "use": "u", "reason": "r" },
   "copy_helpers": ["note"],
   "exemptions": [
-    { "file": "index.html", "text": "ralphy update", "rule": "banned:ralphy", "reason": "A command." },
-    { "file": "index.html", "text": "gone from the tree", "rule": "casing:first", "reason": "Stale." }
+    { "file": "index.html", "text": "ralphy update", "rule": "banned:ralphy",
+      "reason": "A command." },
+    { "file": "index.html", "text": "gone from the tree", "rule": "casing:first",
+      "reason": "Stale." }
   ]
 }"#;
 

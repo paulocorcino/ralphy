@@ -140,7 +140,8 @@ fn a_mirrored_value_that_differs_or_is_missing_is_reported() {
     assert_eq!(eval("x + 1"), None);
 
     let js = "function f(a) {\n  return a === \"x\" && g(\"y\");\n}\nconst z = \"no\";\n";
-    let rs = "fn f(a: &str) -> bool {\n    if a == \"x\" {\n        return g(\"y\");\n    }\n    false\n}\nconst Z: &str = \"no\";\n";
+    let rs = "fn f(a: &str) -> bool {\n    if a == \"x\" {\n        return g(\"y\");\n    }\n\
+        false\n}\nconst Z: &str = \"no\";\n";
     let want: BTreeSet<String> = ["x", "y"].map(String::from).into();
     assert_eq!(fn_body_strings(js, "f"), want);
     assert_eq!(fn_body_strings(rs, "f"), want);

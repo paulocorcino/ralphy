@@ -111,6 +111,8 @@ found. `ralphy-daemon/src/lib.rs` reached 178 production lines under an
 production code. The budget is enforced, not remembered:
 `crates/xtask/tests/inline_test_modules.rs` fails CI naming each module over it.
 
+*Replaced by §9 (2026-11-02) once the gate of §9 is on.*
+
 ### 7. The size limit is a gate (amendment, 2026-10-12)
 
 The line ratchets of ADR-0073 D8 held `app.ts` and `wb-console.ts` while
@@ -125,6 +127,7 @@ nothing stopped a file from growing, so each split waited for a human.
    of code are counted as in §5: comment lines, blank lines and the inline
    test module (it has its own budget, §6) do not count. A line that starts
    a `/* … */` block, and each line inside the block, is a comment too.
+   *Replaced by §9 (2026-11-02) once the gate of §9 is on.*
 2. **Every source file.** Every `.rs` and `.ts` file under `crates/` is
    measured, test code included: `tests/`, `tests.rs`, test child binaries
    and `.d.ts` files. `vendor/`, `node_modules/` and `target/` are not.
@@ -183,6 +186,35 @@ in nightly rustfmt, and the gate runs stable.
    output of a tool, to `tests/fixtures/`.
 4. **Rust only, for now.** The workbench TypeScript gets a formatter
    (issue #806). HTML is not measured.
+   *Replaced by §9 (2026-11-02) once the gate of §9 is on.*
+
+### 9. Every line counts (amendment, 2026-11-02)
+
+The count of §7 leaves out comment lines, blank lines and the inline test
+module, so files grew to 900 lines while the gate passed: `agent_state.rs` has
+921 lines and `restart.rs` has 971. An agent reads the whole file, comments and
+tests included, so the count must see the whole file.
+
+1. **The count.** A source file has at most 500 lines, every line counted: the
+   number `wc -l` shows (code, comments, blank lines, test code, and an inline
+   `#[cfg(test)]` module). This replaces the counting rule of the §5 amendment
+   and of §7 item 1, and §6: a file of 500 lines cannot hold a longer test
+   module.
+2. **The width.** §8 covers `.ts` files too: a TypeScript line has at most 100
+   characters. oxfmt formats TypeScript at `printWidth: 100`, so its wide lines
+   are strings and comments. HTML is measured for size, not for width: its long
+   lines are Alpine attributes, and no formatter checks them.
+3. **Fix all, then a plain rule.** The files over the new rule are fixed first,
+   in one pull request per area (issue #853). Meanwhile
+   `cargo run -p xtask -- oversized --strict` lists them and never fails, and
+   §7 and §8 hold as written. Then the gate holds the new rule with no base
+   branch: any file over 500 lines, or any Rust or TypeScript line over 100
+   characters, fails, on every push. §7 item 3 and §8 item 2 end then.
+
+Measured on `9c360eb7` with every line counted: 134 files are over 500 lines
+(107 source files and 27 test files), with 14,747 lines above the limit. 659
+Rust and TypeScript lines are over 100 characters, in 273 files. By size: 70
+files have 501 to 600 lines, 59 have 601 to 800, and 5 have 801 to 1,000.
 
 `cargo run -p xtask -- oversized`, which holds §7, holds this rule too,
 in the same CI job. Measured on `9fd3c9c1`: 591 lines of Rust are wider
@@ -209,6 +241,9 @@ or comments.
   over their limit. Its rules are tested in `crates/xtask/src/oversized.rs`.
 - §8: checked by the same command and CI job as §7, and tested in the same
   file.
+- §9: listed by `cargo run -p xtask -- oversized --strict` and tested in
+  `crates/xtask/src/oversized/tests.rs` until issue #853 closes; then checked
+  by the `oversized` job in `.github/workflows/ci.yml`.
 
 - §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
   (`crates/ralphy-cli/src/events/mod.rs`).
