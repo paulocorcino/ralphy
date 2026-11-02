@@ -112,7 +112,10 @@ fn carry_ledgers(sources: &[&str], to: &str) {
             }
             Ok(false) => {}
             Err(e) => {
-                tracing::warn!(error = %e, from, to = %to, "usage ledger not carried; the old file stays")
+                tracing::warn!(
+                    error = %e, from, to = %to,
+                    "usage ledger not carried; the old file stays"
+                )
             }
         }
     }

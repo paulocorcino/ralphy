@@ -2,162 +2,22 @@
 //! the semantic [`RunEvent`] stream (ADR-0007 D6).
 
 use super::event::RunEvent;
-use super::{SkipKind, UsageLite};
+use super::UsageLite;
 
-/// The per-issue status the card renders. Distinguishes ⏭️ skipped (a dependency
-/// or `stop-before` skip) from 🤷 infeasible (an empty plan), 🧩 needs-split (a
-/// bundle verdict awaiting a human split) and ⛔ blocked (a `Blocked` execution
-/// outcome) from a generic non-green stop.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IssueStatus {
-    Planning,
-    Executing,
-    /// A plan-only pass superseded by the next `issue started` (a dry run): the
-    /// issue got a plan and never executed, so it is terminal without a lifecycle
-    /// outcome of its own.
-    Planned,
-    Done,
-    Skipped,
-    Blocked,
-    Infeasible,
-    NeedsSplit,
-    NonGreen,
-    /// Stalled on a human gate (`ready-for-human`/`HITL`) in its dependency path
-    /// (ADR-0014). Distinct from a generic dependency skip so the operator can
-    /// see which chains are waiting on a person, not on the queue.
-    Hitl,
-}
-
-impl IssueStatus {
-    /// Whether this is a terminal status (the issue will not change further).
-    pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            IssueStatus::Planned
-                | IssueStatus::Done
-                | IssueStatus::Skipped
-                | IssueStatus::Blocked
-                | IssueStatus::Infeasible
-                | IssueStatus::NeedsSplit
-                | IssueStatus::NonGreen
-                | IssueStatus::Hitl
-        )
-    }
-
-    /// The wire name for the `run.finished.issues` rollup `status` field (#96):
-    /// `Some(name)` for a terminal status (one of `planned|done|skipped|blocked|
-    /// infeasible|needs_split|non_green|hitl`), `None` for the non-terminal
-    /// `Planning`/`Executing` — the rollup includes only terminal entries.
-    pub fn status_wire(&self) -> Option<&'static str> {
-        match self {
-            IssueStatus::Planned => Some("planned"),
-            IssueStatus::Done => Some("done"),
-            IssueStatus::Skipped => Some("skipped"),
-            IssueStatus::Blocked => Some("blocked"),
-            IssueStatus::Infeasible => Some("infeasible"),
-            IssueStatus::NeedsSplit => Some("needs_split"),
-            IssueStatus::NonGreen => Some("non_green"),
-            IssueStatus::Hitl => Some("hitl"),
-            IssueStatus::Planning | IssueStatus::Executing => None,
-        }
-    }
-}
-
-/// An active usage-limit sleep: the reset-time hint shown on the card and the
-/// Unix-seconds wake anchor the live countdown is computed against.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SleepState {
-    pub reset: String,
-    pub target_epoch: i64,
-}
-
-/// One issue in the run, in queue order.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueEntry {
-    pub number: u64,
-    pub title: String,
-    pub status: IssueStatus,
-    /// The skip reason, retained ONLY for a [`IssueStatus::Skipped`] entry so the
-    /// `run.finished.issues` rollup can carry `kind` on a skip (#96); `None` for
-    /// every non-skip entry.
-    pub kind: Option<SkipKind>,
-    /// The still-open issue(s) that gated a [`SkipKind::BlockedBy`] skip, retained so
-    /// the Telegram card and the `run.finished.issues` rollup can name them
-    /// (`blocked by #139`). Empty for every non-skip entry and for the other skip kinds.
-    pub blocked_by: Vec<u64>,
-    /// The current phase's display model for THIS issue, reset on `issue started`.
-    /// Distinct from the run-level [`RunState::cur_model`], which never resets and
-    /// degrades an empty exec model to `None` — the console's active line keeps the
-    /// empty-string form, so the two cannot be merged.
-    pub model: Option<String>,
-    /// The current phase's reasoning effort for THIS issue, reset on `issue started`.
-    pub effort: Option<String>,
-    /// The execution budget ceiling in minutes, from `executing`.
-    pub budget_min: Option<u64>,
-    /// The planning phase's usage, stashed at `plan written` so the `done` line can
-    /// show the issue total (plan + execute) and price each phase's model (ADR-0008 D8).
-    pub plan_usage: Option<UsageLite>,
-    /// The execution phase's usage, from `issue closed`.
-    pub exec_usage: Option<UsageLite>,
-    /// Vendor spawns this issue paid for, from `issue closed`. `None` for a
-    /// not-yet-closed or older entry.
-    pub invocations: Option<u64>,
-    /// Whether the idle watchdog stopped this issue's agent (docs/adr/0038).
-    pub idle_reaped: bool,
-}
-
-/// A light `{number, title}` reference for the `run.started.queue` scope list and
-/// the title source for the `run.finished.issues` rollup (ADR-0019 amendment #96).
-/// Seeded from the enriched `queue.built` snapshot into a dedicated
-/// [`RunState::queue`] field — kept OUT of [`RunState::issues`] so the Telegram card
-/// fold (which iterates `issues`) never renders not-yet-started issues.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueueRef {
-    pub number: u64,
-    pub title: String,
-}
-
-/// The agent's hook-reported state (ADR-0059 §1, ADR-0085 D1): `working`,
-/// `waiting`, `done` or `unknown`, with when it began and what a `waiting`
-/// agent asks.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentState {
-    pub state: String,
-    pub since: String,
-    pub detail: Option<String>,
-}
-
-/// A tally of issues by terminal/active status, for the card's counter line.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Counts {
-    /// Plan-only passes superseded by the next issue (a dry run).
-    pub planned: usize,
-    pub done: usize,
-    pub skipped: usize,
-    pub blocked: usize,
-    pub infeasible: usize,
-    pub needs_split: usize,
-    pub non_green: usize,
-    pub planning: usize,
-    pub executing: usize,
-    /// Issues stalled on a human gate in their path (ADR-0014) — the
-    /// "waiting on human" bucket, kept distinct from generic skips.
-    pub hitl: usize,
-}
+mod types;
+pub use types::{AgentState, Counts, IssueEntry, IssueStatus, QueueRef, SleepState};
 
 /// The transport-agnostic state of a run, folded from its event stream.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RunState {
-    /// The card title (derived by the caller, not from events).
+    /// The card title (set by the caller, not from events).
     pub title: String,
     /// The queue size from `queue built`.
     pub total: usize,
-    /// The queue's issue numbers in working order, from `queue built` — the source
-    /// of the console's derived queue bar (its pending list is `order` minus the
-    /// entries already terminal).
+    /// The queue's issue numbers in working order, from `queue built`: the source
+    /// of the console's queue bar.
     pub order: Vec<u64>,
-    /// The first issue carrying `stop-before`: the run halts before it, so the
-    /// derived queue bar marks the cut. `None` when no queue issue is tagged.
+    /// The first issue carrying `stop-before`: the run halts before it.
     pub stop_before: Option<u64>,
     /// The issues that have entered the lifecycle, in the order first seen.
     pub issues: Vec<IssueEntry>,
@@ -168,25 +28,18 @@ pub struct RunState {
     pub final_summary: Option<String>,
     /// The active usage-limit sleep, if the run is currently waiting for a reset.
     pub sleep: Option<SleepState>,
-    /// The active issue's child is in a sustained API-degraded state (issue #149):
-    /// set on `ApiDegraded`, cleared on `ApiRecovered`. Drives the live-region
-    /// retry indicator and the Telegram matched-pair push edge.
+    /// The active child is in a sustained API-degraded state (#149): set on
+    /// `ApiDegraded`, cleared on `ApiRecovered`.
     pub degraded: bool,
-    /// The agent's own state as its hooks last reported it (ADR-0059): set on
-    /// `AgentState`, cleared by every event that ends the child — a new issue,
-    /// the issue closing green or not, a reap, a usage-limit sleep, the
-    /// deadline, the operator's stop. A state belongs to the child that
-    /// produced it, and after those that child is gone (§1: a run in
-    /// `sleeping` has no agent at all).
+    /// The agent's state as its hooks last reported it (ADR-0059): set on
+    /// `AgentState`, cleared by every event that ends the child (a state belongs
+    /// to the child that produced it).
     pub agent: Option<AgentState>,
-    /// Whether the run has reached its terminal state. The worker flips this to
-    /// `true` just before the final card render so the card grows its `🏁` footer
-    /// (the consolidated single-component card — ADR-0007 D3); it stays `false`
-    /// through the live run so the issue list is the last visible group.
+    /// Whether the run has reached its terminal state; the worker sets it just
+    /// before the final card render so the card grows its `🏁` footer (ADR-0007 D3).
     pub finished: bool,
-    /// Live: the end-of-run knowledge consolidation is in progress over this many
-    /// loose notes. Set by `KnowledgeConsolidating`, cleared on completion (and
-    /// hidden once the run is `finished`, so a failed session leaves no stale line).
+    /// Live: the end-of-run knowledge consolidation covers this many loose notes;
+    /// cleared on completion and hidden once the run is `finished`.
     pub consolidating: Option<u64>,
     /// Terminal: notes folded into `KNOWLEDGE.md` by the end-of-run consolidation,
     /// surfaced as a `📚` segment in the card footer.

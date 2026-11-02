@@ -47,7 +47,10 @@ fn run_finished_rollup_keeps_the_kind_and_blockers_of_a_skip() {
     assert_eq!(
         v["data"]["issues"],
         json!([
-            { "number": 2, "title": "two", "status": "skipped", "kind": "blocked_by", "blocked_by": [1] }
+            {
+                "number": 2, "title": "two", "status": "skipped", "kind": "blocked_by",
+                "blocked_by": [1]
+            }
         ])
     );
 }

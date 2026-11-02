@@ -14,25 +14,27 @@ use super::super::ssh::{classify, ssh_error, HostOutput, HostShell, SshError, Ss
 
 pub(super) fn unknown_host(dest: &str) -> String {
     format!(
-        "the host key of {dest} is not known yet, so Ralphy sent nothing to it. Run `ssh {dest}` once, \
-         check that the fingerprint it shows is the host's, answer yes, then run this command again"
+        "the host key of {dest} is not known yet, so Ralphy sent nothing to it. \
+         Run `ssh {dest}` once, check that the fingerprint it shows is the host's, \
+         answer yes, then run this command again"
     )
 }
 
 pub(super) fn changed_host(dest: &str) -> String {
     format!(
-        "the host key of {dest} has changed, so Ralphy sent nothing to it. Find out why the key changed \
-         before you trust it: `ssh {dest}` shows the details"
+        "the host key of {dest} has changed, so Ralphy sent nothing to it. \
+         Find out why the key changed before you trust it: `ssh {dest}` shows the details"
     )
 }
 
 fn both_refused(dest: &str, public_line: &str) -> String {
     format!(
         "the host {dest} refused your SSH key and Ralphy's key. Give the account password \
-         (the workbench asks for it; the command reads it with --password-stdin), and Ralphy adds its key \
-         there. Or add this line to .ssh/authorized_keys on the host \
+         (the workbench asks for it; the command reads it with --password-stdin), \
+         and Ralphy adds its key there. Or add this line to .ssh/authorized_keys on the host \
          (for a Windows administrator: {}), then run this command again:\n{public_line}\n\
-         A key with a passphrase cannot reconnect alone when no SSH agent holds it, so Ralphy does not use it",
+         A key with a passphrase cannot reconnect alone when no SSH agent holds it, \
+         so Ralphy does not use it",
         keys_path(HostOs::Windows, true)
     )
 }
@@ -77,7 +79,8 @@ pub(crate) fn os_of(
 
 fn key_file_refused(dest: &str, key: &Path) -> String {
     format!(
-        "the host {dest} refused the key {}. A key with a passphrase works only when an SSH agent holds it",
+        "the host {dest} refused the key {}. \
+         A key with a passphrase works only when an SSH agent holds it",
         key.display()
     )
 }
@@ -115,12 +118,14 @@ pub(crate) fn connect(
                     // Not "added": the host is added only by Add host, and
                     // this line shows before the checks.
                     out.note(&format!(
-                        "Ralphy installed its SSH key on {dest}. The next connections do not need the password."
+                        "Ralphy installed its SSH key on {dest}. \
+                         The next connections do not need the password."
                     ))?;
                     let third = shell.run(Some(&key.path), &uname_cmd, b"")?;
                     if let Some(k) = classify(&third) {
                         let why = format!(
-                            "the host {dest} took the password but refused the key it has just received: {}",
+                            "the host {dest} took the password but refused the key \
+                             it has just received: {}",
                             third.stderr.trim()
                         );
                         return Err(ssh_error(k, why));

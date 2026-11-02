@@ -1,23 +1,17 @@
-//! The `ralphy hook guard` PreToolUse safety hook (originally a port of the
-//! retired `guard.ps1`; this file is now the canonical implementation).
+//! The `ralphy hook guard` PreToolUse safety hook.
 //!
 //! Claude Code runs this before every Bash/PowerShell/Edit/Write/MultiEdit/
-//! NotebookEdit call. Because the loop runs with --dangerously-skip-permissions (no
-//! interactive prompts), this hook is the main guardrail between the agent and
-//! a destructive command — but it is a best-effort deny-list, not a sandbox: a
-//! sufficiently creative command line can slip past the regexes.
+//! NotebookEdit call. The loop runs with --dangerously-skip-permissions, so this
+//! hook is the main guardrail against a destructive command — but it is a
+//! best-effort deny-list, not a sandbox: a creative command line can slip past.
 //!
-//! ADAPTER ASYMMETRY: only the Claude adapter installs this hook. Codex runs
-//! with `-s danger-full-access` and OpenCode with
-//! `--dangerously-skip-permissions`, and neither CLI offers a PreToolUse
-//! equivalent — for those adapters, safety rests on the isolated run branch
-//! and the self-review (see README "Command guardrails").
+//! Only the Claude adapter installs this hook; the other vendor CLIs offer no
+//! PreToolUse equivalent, so their safety rests on the isolated run branch and
+//! the self-review (see README "Command guardrails").
 //!
-//! Recursive deletes get a carve-out instead of a blanket deny: deleting
-//! inside the agent's worktree or the system temp dir is legitimate (build
-//! artifacts, `node_modules`, browser profiles from e2e runs) and is allowed;
-//! only targets that escape both — absolute paths elsewhere, `..`, `~`, or
-//! unresolvable `$VAR`/`%VAR%` expansions — are blocked.
+//! A recursive delete inside the worktree or the system temp dir is allowed
+//! ([`delete`]); a target that escapes both — an absolute path elsewhere, `..`,
+//! `~`, or an unresolvable `$VAR`/`%VAR%` — is blocked.
 //!
 //! The guard judges what a segment runs, not its first word
 //! ([`wrappers`]): it reads past `sudo`, `env`, `time`, `nice` and `nohup`,
@@ -29,32 +23,26 @@
 //! or functions the session defines.
 //!
 //! Protocol: exit 2 (reason to stderr) to block; exit 0 to allow.
-//!
-//! The deny-list logic is factored into [`evaluate_guard`], a pure function
-//! over the tool name, tool input, and a [`GuardContext`], so it unit-tests
-//! without touching the filesystem or environment.
+//! [`evaluate_guard`] is pure over the tool call and a [`GuardContext`].
 
 use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::Value;
 
+mod delete;
 mod wrappers;
 
-use wrappers::{command_name, Runs, Shell};
+use delete::{classify_delete, dotnet_delete_target, first_disallowed_target};
+use wrappers::{Runs, Shell};
 
 /// How many shells inside shells (`bash -c "bash -c …"`) the guard reads.
 /// A deeper script is denied: it is not something an agent needs.
 const MAX_NESTING: usize = 3;
 
 /// The Bash deny-list: each `(regex, why)` pair blocks a destructive command.
-/// All rules are case-insensitive (`(?i)`) — PowerShell is case-insensitive, so
-/// `remove-item` must be caught as surely as `Remove-Item`. Compiled once — the
-/// guard hook fires before *every* Bash/Edit/Write call, so recompiling these
-/// per invocation was wasted work on the one hot safety path.
-///
-/// Recursive deletes are NOT in this list — they get path-aware treatment in
-/// [`first_disallowed_target`] (allowed inside the worktree/temp).
+/// Every rule is case-insensitive (`(?i)`), as PowerShell is. Recursive deletes
+/// are not here: [`first_disallowed_target`] judges them by their paths.
 static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     [
         (
@@ -80,7 +68,10 @@ static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| 
         ),
         (
             // Global flags (`-R o/r`, `--repo=o/r`) may sit between `gh` and `pr`.
-            r"(?i)\bgh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+pr\s+(create|edit|ready|reopen|review|comment|merge|close)\b",
+            concat!(
+                r"(?i)\bgh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+pr\s+",
+                r"(create|edit|ready|reopen|review|comment|merge|close)\b",
+            ),
             "writing to a pull request is the operator's job",
         ),
         (
@@ -196,25 +187,6 @@ fn evaluate_command(cmd: &str, judge: Judge) -> GuardDecision {
     GuardDecision::Allow
 }
 
-/// PowerShell's .NET recursive delete, `[System.IO.Directory]::Delete(path,
-/// $true)`: its path is the first argument.
-static DOTNET_DELETE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r"(?i)\[(?:system\.)?io\.directory\]::delete\(",
-        r#"\s*['"]?([^,'"()]+?)['"]?\s*,\s*\$true\s*\)"#,
-    ))
-    .expect("valid guard regex")
-});
-
-/// The first path of a .NET recursive delete in `cmd` that a recursive
-/// delete may not touch.
-fn dotnet_delete_target(cmd: &str, ctx: &GuardContext) -> Option<String> {
-    DOTNET_DELETE
-        .captures_iter(cmd)
-        .map(|c| c[1].trim().to_string())
-        .find(|path| !recursive_delete_target_allowed(path, ctx))
-}
-
 /// The reason of the first deny rule `text` matches.
 fn denied_by_rules(text: &str) -> Option<String> {
     BASH_DENY_RULES
@@ -270,124 +242,6 @@ fn evaluate_words(words: &[String], segment_len: usize, judge: Judge) -> GuardDe
         )),
         None => GuardDecision::Allow,
     }
-}
-
-/// The shape of delete command a segment turned out to be.
-enum DeleteKind {
-    /// `rm` with combined/separate recursive+force flags.
-    Rm,
-    /// PowerShell `Remove-Item -Recurse`.
-    RemoveItem,
-    /// cmd.exe `del /s` or `rmdir /s`.
-    DelRmdir,
-}
-
-/// The first target of the command `words` that a recursive delete may not
-/// touch, or `None` when it is not a recursive delete or every target is
-/// allowed. A target must stay inside the worktree (`ctx.cwd`), the system
-/// temp dir, or `/tmp`; a relative path (no `..`) resolves under the
-/// worktree; `~`, `$VAR` and `%VAR%` cannot be resolved here.
-fn first_disallowed_target(words: &[String], judge: Judge) -> Option<String> {
-    let (kind, args) = classify_delete(words, judge.shell)?;
-    args.iter()
-        .find(|tok| !is_delete_flag(&kind, tok) && !recursive_delete_target_allowed(tok, judge.ctx))
-        .cloned()
-}
-
-/// Is `tok` an option of the delete command, not a target?
-fn is_delete_flag(kind: &DeleteKind, tok: &str) -> bool {
-    match kind {
-        DeleteKind::Rm | DeleteKind::RemoveItem => tok.starts_with('-'),
-        // cmd.exe switches: `/s`, `/q`, `/a:h`, … (also tolerate `-`).
-        DeleteKind::DelRmdir => {
-            tok.starts_with('-')
-                || (tok.starts_with('/')
-                    && tok.len() <= 4
-                    && tok[1..]
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == ':'))
-        }
-    }
-}
-
-/// Classify a command's words as a recursive delete, returning the kind and
-/// the argument words (everything after the command word). The wrapper words
-/// in front (`sudo`, `env`, …) are already skipped (`wrappers::what_runs`).
-fn classify_delete(words: &[String], shell: Shell) -> Option<(DeleteKind, &[String])> {
-    let cmd = command_name(words.first()?);
-    let args = &words[1..];
-    let kind = powershell_delete(&cmd, args, shell).or_else(|| shell_delete(&cmd, args))?;
-    Some((kind, args))
-}
-
-/// `Remove-Item` and its PowerShell aliases with `-Recurse`, written in full
-/// or cut short as PowerShell allows. In a POSIX shell `rm -r` is the POSIX
-/// flag, judged by [`shell_delete`], so there an alias needs at least
-/// `-re`; in PowerShell `rm -r` is `Remove-Item -Recurse`.
-fn powershell_delete(cmd: &str, args: &[String], shell: Shell) -> Option<DeleteKind> {
-    let shortest = match (cmd, shell) {
-        ("remove-item" | "ri", _) => 2,
-        ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::PowerShell) => 2,
-        ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::Posix) => 3,
-        _ => return None,
-    };
-    args.iter()
-        .any(|t| t.len() >= shortest && wrappers::is_prefix_of(&t.to_lowercase(), "-recurse"))
-        .then_some(DeleteKind::RemoveItem)
-}
-
-/// A POSIX `rm` that is recursive AND forced (parity with the original
-/// rule: `rm -r` alone still prompts per file), or cmd.exe `del /s` and
-/// `rmdir /s`.
-fn shell_delete(cmd: &str, args: &[String]) -> Option<DeleteKind> {
-    match cmd {
-        "rm" => {
-            let flags: Vec<&str> = args
-                .iter()
-                .filter(|t| t.starts_with('-'))
-                .map(String::as_str)
-                .collect();
-            let has = |short: char, long: &str| {
-                flags
-                    .iter()
-                    .any(|f| *f == long || (!f.starts_with("--") && f.contains(short)))
-            };
-            (has('r', "--recursive") && has('f', "--force")).then_some(DeleteKind::Rm)
-        }
-        "del" | "rmdir" | "rd" if args.iter().any(|t| t.eq_ignore_ascii_case("/s")) => {
-            Some(DeleteKind::DelRmdir)
-        }
-        _ => None,
-    }
-}
-
-/// Is `raw` an acceptable target for a recursive delete? Allowed: relative
-/// paths without `..` (they resolve under the worktree), and absolute paths
-/// under `ctx.cwd`, `ctx.temp_dir`, or `/tmp`.
-fn recursive_delete_target_allowed(raw: &str, ctx: &GuardContext) -> bool {
-    let p = raw.replace('\\', "/").to_lowercase();
-    let p = p.trim_end_matches('/');
-    // `/` (and `//`) trims to nothing: it is the root, not a relative path.
-    if p.is_empty() {
-        return false;
-    }
-    if p.split('/').any(|seg| seg == "..") {
-        return false;
-    }
-    if p.starts_with(['~', '$', '%']) {
-        return false;
-    }
-    let is_drive_absolute =
-        p.len() >= 2 && p.as_bytes()[1] == b':' && p.as_bytes()[0].is_ascii_alphabetic();
-    if p.starts_with('/') || is_drive_absolute {
-        return under(p, &ctx.cwd) || under(p, &ctx.temp_dir) || under(p, "/tmp");
-    }
-    true
-}
-
-/// Is normalised path `p` equal to or below normalised directory `dir`?
-fn under(p: &str, dir: &str) -> bool {
-    !dir.is_empty() && (p == dir || p.starts_with(&format!("{dir}/")))
 }
 
 /// Quote-aware whitespace tokeniser — just enough shell/PowerShell lexing to

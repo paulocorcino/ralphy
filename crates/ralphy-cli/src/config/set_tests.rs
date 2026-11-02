@@ -13,7 +13,8 @@ fn set_refuses_an_empty_value() {
     let err = set(&ws, "verify.command", "   ").unwrap_err();
     assert_eq!(
         err.to_string(),
-        "value for 'verify.command' must not be empty — use `config unset verify.command` to clear it"
+        "value for 'verify.command' must not be empty — use `config unset \
+         verify.command` to clear it"
     );
     assert!(!ws.settings_path().exists(), "nothing is written");
 }

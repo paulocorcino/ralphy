@@ -3,8 +3,9 @@ use crate::host::ssh::tests::out;
 use CheckId::*;
 
 // format of `id -u`, `id -un` and `loginctl show-user <user> --property=Linger`
-const LINUX_USER: &str = "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=yes\n\
---- git\ngit version 2.43.0\n--- gh\ngh version 2.45.0 (2024-03-04)\nhttps://github.com/cli/cli/releases/tag/v2.45.0\n";
+const LINUX_USER: &str = "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n\
+--- linger\nLinger=yes\n--- git\ngit version 2.43.0\n--- gh\ngh version 2.45.0 (2024-03-04)\n\
+https://github.com/cli/cli/releases/tag/v2.45.0\n";
 // `git --version` and `gh --version` are not found: their errors go to stderr.
 const LINUX_NO_GIT: &str = "--- uid\n1000\n--- linger\nLinger=yes\n--- git\n--- gh\n";
 const LINUX_ROOT: &str = "--- uid\n0\n--- user\nroot\n--- linger\nLinger=yes\n";
@@ -25,14 +26,18 @@ const WINDOWS_ADMIN: &str = "--- groups \r\n\r\nGROUP INFORMATION\r\n-----------
 Group Name                             Type             SID          Attributes\r\n\
 ====================================== ================ ============ ==========\r\n\
 Everyone                               Well-known group S-1-1-0      Mandatory group\r\n\
-BUILTIN\\Administrators                 Alias            S-1-5-32-544 Mandatory group, Enabled group\r\n\
---- autologon \r\n\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\r\n\
+BUILTIN\\Administrators                 Alias            S-1-5-32-544 \
+Mandatory group, Enabled group\r\n\
+--- autologon \r\n\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows \
+NT\\CurrentVersion\\Winlogon\r\n\
     AutoAdminLogon    REG_SZ    1\r\n\r\n--- standby \r\n\
-    Current AC Power Setting Index: 0x00000000\r\n    Current DC Power Setting Index: 0x00000384\r\n";
+    Current AC Power Setting Index: 0x00000000\r\n    Current \
+DC Power Setting Index: 0x00000384\r\n";
 const WINDOWS_USER: &str = "--- groups \r\n\r\nGROUP INFORMATION\r\n-----------------\r\n\
 Everyone                               Well-known group S-1-1-0      Mandatory group\r\n\
 BUILTIN\\Users                          Alias            S-1-5-32-545 Mandatory group\r\n\
---- autologon \r\n\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\r\n\
+--- autologon \r\n\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows \
+NT\\CurrentVersion\\Winlogon\r\n\
     AutoAdminLogon    REG_SZ    0\r\n\r\n--- standby \r\n\
     Current AC Power Setting Index: 0x00000708\r\n";
 
@@ -439,7 +444,8 @@ fn describe_answers_old_and_missing() {
     let missing = out(
         1,
         "",
-        "'ralphy' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n",
+        "'ralphy' is not recognized as an internal or external command,\r\n\
+         operable program or batch file.\r\n",
     );
     assert_eq!(classify_describe(&missing).unwrap(), RalphyOnHost::Missing);
     assert!(classify_describe(&out(1, "", "error: reading daemon.toml")).is_err());

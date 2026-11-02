@@ -70,7 +70,10 @@ fn hook_status_appends_one_line_per_call_and_always_answers_empty_json() {
 
     let (code, stdout) = run(
         Some(&file),
-        r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"which port?"}]}}"#,
+        concat!(
+            r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","#,
+            r#""tool_input":{"questions":[{"question":"which port?"}]}}"#,
+        ),
     );
     assert_eq!((code, stdout.as_str()), (0, "{}"));
     let (code, stdout) = run(
@@ -126,7 +129,10 @@ fn hook_status_prints_by_vendor() {
         let (code, stdout) = run_as(
             &["hook", "status", vendor],
             Some(&file),
-            r#"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"Bash","tool_use_id":"u1"}"#,
+            concat!(
+                r#"{"hook_event_name":"PreToolUse","session_id":"s1","#,
+                r#""tool_name":"Bash","tool_use_id":"u1"}"#,
+            ),
         );
         assert_eq!((code, stdout.as_str()), (0, want), "{vendor}");
         let lines = lines_of(&file);

@@ -86,14 +86,30 @@ impl InstalledOp {
     }
 }
 
-const LINUX_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger; echo "--- git"; git --version; echo "--- gh"; gh --version"#;
+const LINUX_PROBE: &str = concat!(
+    r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- "#,
+    r#"arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger; "#,
+    r#"echo "--- git"; git --version; echo "--- gh"; gh --version"#,
+);
 
 // macOS runs `git` only after `xcode-select -p` succeeds: without the Command
 // Line Tools, `/usr/bin/git` is a shim that offers to install them, maybe in a
 // window on the host's screen (not measured over SSH).
-const MACOS_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g; echo "--- git"; xcode-select -p >/dev/null 2>&1 && git --version; echo "--- gh"; gh --version"#;
+const MACOS_PROBE: &str = concat!(
+    r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- "#,
+    r#"arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults "#,
+    r#"read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset "#,
+    r#"-g; echo "--- git"; xcode-select -p >/dev/null 2>&1 && git --version; echo "--- gh"; gh "#,
+    r#"--version"#,
+);
 
-const WINDOWS_PROBE: &str = r#"echo --- host & hostname & echo --- user & echo %USERNAME% & echo --- groups & whoami /groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE & echo --- git & git --version & echo --- gh & gh --version"#;
+const WINDOWS_PROBE: &str = concat!(
+    r#"echo --- host & hostname & echo --- user & echo %USERNAME% & echo --- groups & whoami "#,
+    r#"/groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "#,
+    r#""HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- "#,
+    r#"standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE & echo --- git & git --version "#,
+    r#"& echo --- gh & gh --version"#,
+);
 
 /// Where `ralphy host install` puts the binary, in each shell's own words. It
 /// is under the home folder, so writing it needs no administrator.
@@ -124,14 +140,29 @@ fn ralphy(os: HostOs, args: &str) -> String {
 // The copy reads standard input to its end, so the file holds exactly the bytes
 // sent; `findstr` would treat them as text lines. The script has no `"` or `%`,
 // which cmd.exe cannot pass inside the quoted argument.
-const WINDOWS_WRITE_BINARY: &str = "powershell -NoProfile -NonInteractive -Command \"$d = Join-Path $env:USERPROFILE '.ralphy\\bin'; New-Item -ItemType Directory -Force -Path $d | Out-Null; $p = Join-Path $d 'ralphy.exe.part'; $f = [IO.File]::Create($p); [Console]::OpenStandardInput().CopyTo($f); $f.Close(); (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash\"";
+const WINDOWS_WRITE_BINARY: &str = "powershell -NoProfile -NonInteractive -Command \"$d = \
+ Join-Path $env:USERPROFILE '.ralphy\\bin'; New-Item -ItemType Directory -Force -Path $d | \
+ Out-Null; $p = Join-Path $d 'ralphy.exe.part'; $f = [IO.File]::Create($p); \
+ [Console]::OpenStandardInput().CopyTo($f); $f.Close(); (Get-FileHash -Algorithm SHA256 \
+ -LiteralPath $p).Hash\"";
 
-const UNIX_WRITE_BINARY: &str = r#"mkdir -p "$HOME/.ralphy/bin" && cat > "$HOME/.ralphy/bin/ralphy.part" && { sha256sum "$HOME/.ralphy/bin/ralphy.part" 2>/dev/null || shasum -a 256 "$HOME/.ralphy/bin/ralphy.part"; }"#;
+const UNIX_WRITE_BINARY: &str = concat!(
+    r#"mkdir -p "$HOME/.ralphy/bin" && cat > "$HOME/.ralphy/bin/ralphy.part" && { sha256sum "#,
+    r#""$HOME/.ralphy/bin/ralphy.part" 2>/dev/null || shasum -a 256 "#,
+    r#""$HOME/.ralphy/bin/ralphy.part"; }"#,
+);
 
 // A running binary cannot be overwritten on Windows, but it can be renamed.
-const WINDOWS_COMMIT_BINARY: &str = r#"cd /d "%USERPROFILE%\.ralphy\bin" && (if exist ralphy.exe.old del /f /q ralphy.exe.old) && (if exist ralphy.exe move /y ralphy.exe ralphy.exe.old) && move /y ralphy.exe.part ralphy.exe"#;
+const WINDOWS_COMMIT_BINARY: &str = concat!(
+    r#"cd /d "%USERPROFILE%\.ralphy\bin" && (if exist ralphy.exe.old del /f /q ralphy.exe.old) "#,
+    r#"&& (if exist ralphy.exe move /y ralphy.exe ralphy.exe.old) && move /y ralphy.exe.part "#,
+    r#"ralphy.exe"#,
+);
 
-const UNIX_COMMIT_BINARY: &str = r#"cd "$HOME/.ralphy/bin" && { if [ -e ralphy ]; then mv -f ralphy ralphy.old; fi; } && chmod +x ralphy.part && mv -f ralphy.part ralphy"#;
+const UNIX_COMMIT_BINARY: &str = concat!(
+    r#"cd "$HOME/.ralphy/bin" && { if [ -e ralphy ]; then mv -f ralphy ralphy.old; fi; } && "#,
+    r#"chmod +x ralphy.part && mv -f ralphy.part ralphy"#,
+);
 
 /// One word for a POSIX shell: bare when every character is safe, else single
 /// quotes with each `'` written as `'\''`.
@@ -160,14 +191,24 @@ pub(crate) fn quote_cmd(word: &str) -> Result<String> {
 // is written into the script. The shared administrators' file is ignored by
 // sshd unless only Administrators and SYSTEM can write it, so its ACL is set
 // every time.
-const WINDOWS_APPEND_KEY: &str = "powershell -NoProfile -NonInteractive -Command \"$ErrorActionPreference = 'Stop'; $p = PATH; New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null; $l = [Console]::In.ReadToEnd().Trim(); $t = ''; if (Test-Path -LiteralPath $p) { $t = [IO.File]::ReadAllText($p) }; if (-not $t.Contains('BODY')) { if ($t.Length -gt 0 -and -not $t.EndsWith([string][char]10)) { $t += [string][char]13 + [char]10 }; [IO.File]::WriteAllText($p, $t + $l + [char]13 + [char]10) }ACL\"";
+const WINDOWS_APPEND_KEY: &str = "powershell -NoProfile -NonInteractive -Command \
+ \"$ErrorActionPreference = 'Stop'; $p = PATH; New-Item -ItemType Directory -Force -Path \
+ (Split-Path $p) | Out-Null; $l = [Console]::In.ReadToEnd().Trim(); $t = ''; if (Test-Path \
+ -LiteralPath $p) { $t = [IO.File]::ReadAllText($p) }; if (-not $t.Contains('BODY')) { if \
+ ($t.Length -gt 0 -and -not $t.EndsWith([string][char]10)) { $t += [string][char]13 + [char]10 \
+ }; [IO.File]::WriteAllText($p, $t + $l + [char]13 + [char]10) }ACL\"";
 
 const WINDOWS_ADMIN_ACL: &str =
     "; icacls $p /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null";
 
 // `tail -c 1` is empty after command substitution when the file ends with a
 // line break, so one is added only when it is missing.
-const UNIX_APPEND_KEY: &str = r#"umask 077 && mkdir -p .ssh && chmod 700 .ssh && touch .ssh/authorized_keys && chmod 600 .ssh/authorized_keys && if grep -qF BODY .ssh/authorized_keys; then cat > /dev/null; else { if [ -s .ssh/authorized_keys ] && [ -n "$(tail -c 1 .ssh/authorized_keys)" ]; then echo; fi; cat; } >> .ssh/authorized_keys; fi"#;
+const UNIX_APPEND_KEY: &str = concat!(
+    r#"umask 077 && mkdir -p .ssh && chmod 700 .ssh && touch .ssh/authorized_keys && chmod 600 "#,
+    r#".ssh/authorized_keys && if grep -qF BODY .ssh/authorized_keys; then cat > /dev/null; else "#,
+    r#"{ if [ -s .ssh/authorized_keys ] && [ -n "$(tail -c 1 .ssh/authorized_keys)" ]; then "#,
+    r#"echo; fi; cat; } >> .ssh/authorized_keys; fi"#,
+);
 
 /// Whether `body` is a key's base64 field, so it can go into a script as it is.
 fn is_key_body(body: &str) -> bool {

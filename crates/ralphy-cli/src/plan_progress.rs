@@ -173,7 +173,8 @@ mod tests {
 
     #[test]
     fn parses_the_three_markers() {
-        let md = "## Steps\nprose line\n- not a step\n- [ ] open one\n- [x] checked one\n- [!] noticed one — noticed: surprise\n  - [X] indented checked\n";
+        let md = "## Steps\nprose line\n- not a step\n- [ ] open one\n- [x] checked one\n\
+                  - [!] noticed one — noticed: surprise\n  - [X] indented checked\n";
         let steps = parse_steps(md);
         assert_eq!(
             steps.iter().map(|s| s.status.wire()).collect::<Vec<_>>(),

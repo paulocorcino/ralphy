@@ -1,10 +1,5 @@
-//! The `RunEvent` -> CloudEvents 1.0 envelope mapping (ADR-0019).
-//!
-//! [`runevent_to_cloudevent`] is the single pure function that turns one folded
-//! [`RunEvent`] into a CloudEvents 1.0 structured-mode JSON envelope, matching the
-//! `docs/events.md` catalog. It is unit-tested per variant so a drift between an
-//! event and its wire shape fails a test rather than silently changing the
-//! contract — the per-variant tests are the source of truth the doc defers to.
+//! The `RunEvent` -> CloudEvents 1.0 envelope mapping (ADR-0019). The per-variant tests
+//! are the source of truth for the wire shape that `docs/events.md` describes.
 
 use serde_json::{json, Value};
 
@@ -12,26 +7,18 @@ use crate::runstate::{RunEvent, RunState, SkipKind, UsageLite};
 
 mod rollup;
 
-/// The per-run context every envelope shares: the `source` (`ralphy/<owner>/<repo>`),
-/// the `runid` correlation ULID minted at process start, the pre-serialized
-/// `data.emitter` identity object, and the constant-per-run `data.git` block
-/// (`{repository, branch}`) resolved before the ctx is built.
+/// The per-run context every envelope shares: `source` (`ralphy/<owner>/<repo>`), the
+/// `runid` ULID minted at process start, the `data.emitter` object and the `data.git` block.
 #[derive(Debug, Clone)]
 pub struct EventCtx {
     pub source: String,
     pub runid: String,
     pub emitter: Value,
-    /// The reserved `data.git` block merged into every envelope: `{repository,
-    /// branch}` — the owner/repo slug and the operating run branch commits land on.
-    /// Constant per run (ADR-0019 amendment #96).
+    /// The reserved `data.git` block: `{repository, branch}`, constant per run (ADR-0019).
     pub git: Value,
 }
 
-/// The reserved `data.agent` contextual block (ADR-0019 amendment #96): the current
-/// phase's `{name, model, effort}`. `name` is the current phase agent (plan agent
-/// while planning, exec agent while executing), falling back to the run's exec agent
-/// before any phase begins, or `null` when `run.started` has not been folded yet
-/// (e.g. on `queue.built`). `model`/`effort` are `null` before a phase begins.
+/// The reserved `data.agent` block (ADR-0019): `{name, model, effort}` of the current phase.
 fn agent_block(state: &RunState) -> Value {
     let name = state
         .cur_agent
@@ -45,8 +32,7 @@ fn issue_number_from_subject(subject: &str) -> Option<u64> {
     subject.strip_prefix("issue/").and_then(|s| s.parse().ok())
 }
 
-/// The title for an issue block: the folded `IssueEntry.title` when non-empty, else
-/// the `RunState.queue` seed (populated by `queue.built`), else an empty string.
+/// The folded issue title when non-empty, else the `queue.built` seed, else empty.
 fn issue_title(state: &RunState, number: u64) -> String {
     state
         .issues
@@ -64,18 +50,12 @@ fn issue_title(state: &RunState, number: u64) -> String {
         .unwrap_or_default()
 }
 
-/// The reserved `data.issue` block (ADR-0019 amendment #96) carried on every
-/// subject-scoped event: `{number, title}` with the title resolved via
-/// [`issue_title`].
+/// The reserved `data.issue` block (ADR-0019) of every subject-scoped event.
 fn issue_block(state: &RunState, number: u64) -> Value {
     json!({ "number": number, "title": issue_title(state, number) })
 }
 
-/// Assemble a CloudEvents 1.0 structured-mode envelope. `data` is the
-/// event-specific object; the reserved `emitter`/`git` blocks are merged into it,
-/// the contextual `agent` block on every type except `run.finished`, and the `issue`
-/// block on every subject-scoped event — the envelope still carries exactly one
-/// extension attribute, `runid` (ADR-0019 §3).
+/// A CloudEvents 1.0 envelope with exactly one extension attribute, `runid` (ADR-0019 §3).
 fn envelope(
     type_: &str,
     subject: Option<&str>,
@@ -87,12 +67,9 @@ fn envelope(
     if let Value::Object(ref mut map) = data {
         map.insert("emitter".to_string(), ctx.emitter.clone());
         map.insert("git".to_string(), ctx.git.clone());
-        // The contextual agent block rides every event except `run.finished`.
         if type_ != "dev.ralphy.run.finished" {
             map.insert("agent".to_string(), agent_block(state));
         }
-        // The issue block rides exactly the subject-scoped events (`issue.*`,
-        // `plan.*`); run-scoped events (no subject) carry none.
         if let Some(number) = subject.and_then(issue_number_from_subject) {
             map.insert("issue".to_string(), issue_block(state, number));
         }
@@ -115,17 +92,12 @@ fn envelope(
     Value::Object(ev)
 }
 
-/// Build a subject-less envelope for a synthetic `run.*` event that has no
-/// [`RunEvent`] source (the sink's own `run.heartbeat`). Shares the exact envelope
-/// assembly — specversion, id, time, runid, merged emitter — as the mapped events.
+/// A subject-less envelope for a synthetic `run.*` event with no [`RunEvent`] source.
 pub fn run_envelope(type_: &str, ctx: &EventCtx, state: &RunState, data: Value) -> Value {
     envelope(type_, None, ctx, state, data)
 }
 
-/// Build a `dev.ralphy.plan.step` envelope (#96): a single checkbox transition to
-/// `checked`/`noticed`, subject-scoped to `issue/<number>` (so the reserved `issue`
-/// block rides along), carrying `data = {text, status}` (the normalized step text).
-/// Emitted by the sink's plan-step poller, which owns the file-state diff.
+/// A `dev.ralphy.plan.step` envelope (#96): one checkbox moves to `checked` or `noticed`.
 pub fn plan_step_envelope(
     ctx: &EventCtx,
     state: &RunState,
@@ -142,14 +114,8 @@ pub fn plan_step_envelope(
     )
 }
 
-/// The `data` payload shared by the enriched `queue.built` and the on-demand
-/// `queue.snapshot` (ADR-0020): `{count, order, stop_before, issues,
-/// assignee_filter}`. Defined ONCE and used by both triggers so the two payloads
-/// can never diverge — `issues` is the per-issue snapshot array (`Value::Null` for
-/// the legacy shape when the resolver produced none). `assignee_filter` is the
-/// resolved concrete login the queue was scoped to (ADR-0021 §5), `null` = whole
-/// queue. The reserved `emitter` block is merged in later by
-/// [`envelope`]/[`run_envelope`].
+/// The `data` of `queue.built` and `queue.snapshot` (ADR-0020), built once so they cannot
+/// diverge. `assignee_filter` is the resolved login (ADR-0021 §5), `null` for the whole queue.
 pub fn queue_snapshot_data(
     issues: &Value,
     count: u64,
@@ -166,18 +132,12 @@ pub fn queue_snapshot_data(
     })
 }
 
-/// Wrap a [`queue_snapshot_data`] payload in the `dev.ralphy.queue.snapshot`
-/// envelope (ADR-0020): the on-demand `ralphy issues --push` emission, byte-for-byte
-/// the same `data` shape the runner's `queue.built` carries, only the envelope
-/// `type` differs. Subject-less, like `queue.built`. The `state` is the caller's
-/// (out-of-run `ralphy issues --push` passes a default, so the `agent` block is
-/// all-`null` — matching `queue.built` before `run.started` folds).
+/// The `dev.ralphy.queue.snapshot` envelope of `ralphy issues --push` (ADR-0020).
 pub fn queue_snapshot_envelope(data: Value, ctx: &EventCtx, state: &RunState) -> Value {
     run_envelope("dev.ralphy.queue.snapshot", ctx, state, data)
 }
 
-/// The `usage {up,cr,cw,out,model}` object carried on `plan.written` and
-/// `issue.closed` (docs/events.md); `model` is `null` when the adapter captured none.
+/// The `usage {up,cr,cw,out,model}` object of `plan.written` and `issue.closed`.
 fn usage_json(u: &UsageLite) -> Value {
     json!({
         "up": u.input,
@@ -188,18 +148,17 @@ fn usage_json(u: &UsageLite) -> Value {
     })
 }
 
-/// The `issue/<n>` subject carried on every `issue.*` event and on `plan.written`.
+/// The `issue/<n>` subject.
 fn subject_for(n: u64) -> String {
     format!("issue/{n}")
 }
 
-/// The [`SkipKind`] wire name on an `issue.skipped` event (docs/events.md).
+/// The [`SkipKind`] wire name on `issue.skipped`.
 fn skip_kind_name(kind: SkipKind) -> &'static str {
     kind.skip_wire()
 }
 
-/// Resolve a possibly-zero issue number (the adapter's planning/execution events
-/// carry no number) to the active issue, mirroring `RunState::resolve`.
+/// Resolve a zero issue number (adapter events carry none) to the active issue.
 fn resolve(state: &RunState, number: u64) -> Option<u64> {
     if number == 0 {
         state.active
@@ -208,12 +167,7 @@ fn resolve(state: &RunState, number: u64) -> Option<u64> {
     }
 }
 
-/// Map one folded [`RunEvent`] to a CloudEvents envelope, or `None` for an event
-/// the sink does not forward. `state` resolves the active issue number for the
-/// adapter events that carry `0` (planning/executing), mirroring the notifier fold.
-///
-/// Pure over `(ev, ctx, state)` apart from the per-event ULID `id` and UTC `time`
-/// the envelope stamps — those are asserted for presence/shape, not equality.
+/// Map one folded [`RunEvent`] to an envelope, or `None` when the sink does not forward it.
 pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -> Option<Value> {
     match ev {
         RunEvent::QueueBuilt {
@@ -222,8 +176,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             stop_before,
             issues,
             assignee_filter,
-            // LOG-ONLY (#222): the console notice's scope phrase never reaches the
-            // wire — `dev.ralphy.queue.built`'s shape is unchanged.
+            // Log-only (#222): the scope phrase never reaches the wire.
             scope: _,
         } => Some(envelope(
             "dev.ralphy.queue.built",
@@ -246,7 +199,6 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             json!({ "number": number, "title": title }),
         )),
         RunEvent::Planning { model, effort } => {
-            // The adapter event carries no number; the subject is the active issue.
             let subject = state.active.map(subject_for);
             Some(envelope(
                 "dev.ralphy.issue.planning",
@@ -262,8 +214,6 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             usage,
             steps,
         } => {
-            // The parsed checkbox steps as `[{text,status}]` (#96) — sourced from the
-            // runner's `steps_json`, so the mapper stays pure (no file I/O).
             let steps: Vec<Value> = steps
                 .iter()
                 .map(|(text, status)| json!({ "text": text, "status": status }))
@@ -306,8 +256,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             number,
             tokens,
             usage,
-            // The invocation count is a console/panel-only read-time view; it
-            // deliberately never rides the CloudEvents envelope. See docs/adr/0008 D8.
+            // Console-only view; it never rides the envelope (ADR-0008 D8).
             invocations: _,
         } => Some(envelope(
             "dev.ralphy.issue.closed",
@@ -354,7 +303,6 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "number": number, "on": on }),
         )),
-        // The run declined to start (#222): run-scoped, so no `subject`.
         RunEvent::RunSkipped { reason } => Some(envelope(
             "dev.ralphy.run.skipped",
             None,
@@ -369,13 +317,8 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "number": number }),
         )),
-        // Run-level, not issue-level, even when an issue was in flight: what
-        // happened is that the RUN was stopped. The subject still names the issue
-        // when there is one, so a consumer can attribute it. This arrives at the
-        // MOMENT of the stop; the matching `run.finished` (`outcome: stopped`)
-        // only lands after teardown, which is a different instant on a live board.
-        // `number: 0` is the between-issues sentinel, normalised to `null` here
-        // rather than shipping an issue number that does not exist.
+        // Run-level, sent at the moment of the stop (`run.finished` lands after teardown).
+        // The subject names the issue in flight; `number: 0` (between issues) becomes `null`.
         RunEvent::RunStopped { number } => Some(envelope(
             "dev.ralphy.run.stopped",
             (*number != 0).then(|| subject_for(*number)).as_deref(),
@@ -414,8 +357,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({}),
         )),
-        // The reap carries its window so a consumer can tell a tight operator
-        // setting from the path default without reading the run's config.
+        // The reap carries its window, so a consumer need not read the run's config.
         RunEvent::IdleReaped { idle_minutes } => Some(envelope(
             "dev.ralphy.run.idle_reaped",
             None,
@@ -423,8 +365,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "idle_minutes": idle_minutes }),
         )),
-        // The waiver let an unproven session go on (ADR-0072 D6): the cause
-        // is the refusal the session escaped.
+        // The cause is the refusal the waiver let the session escape (ADR-0072 D6).
         RunEvent::HooksUnprovenAllowed { cause } => Some(envelope(
             "dev.ralphy.run.hooks_unproven_allowed",
             None,
@@ -432,7 +373,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "cause": cause }),
         )),
-        // The agent's own state (ADR-0059 §2): on the active issue's subject.
+        // The agent's own state (ADR-0059 §2), on the active issue's subject.
         RunEvent::AgentState {
             state: agent_state,
             since,
@@ -472,17 +413,14 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
         RunEvent::RunStarted {
             repo,
             queue_labels,
-            // The exec agent is now conveyed uniformly by the `data.agent` block
-            // (`data.agent.name`), so the redundant scalar is dropped here; the
-            // distinct plan agent stays a scalar (the block only carries one name).
+            // The exec agent rides `data.agent.name`; the block holds only one name.
             agent: _,
             plan_agent,
             branch_mode,
             branch,
             deadline_hours,
         } => {
-            // The light scope list seeded by the preceding `queue.built` (#96) —
-            // `[{number,title}]`; the rich ADR-0020 snapshot stays on `queue.built`.
+            // The light `[{number,title}]` list seeded by `queue.built` (#96).
             let queue: Vec<Value> = state
                 .queue
                 .iter()
@@ -537,8 +475,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 }),
             ))
         }
-        // The raw plan snapshots (#96): issue-scoped, carrying the complete `plan.md`
-        // under `data.plan_md`. The reserved `issue` block rides via the subject.
+        // The raw plan snapshots (#96): the complete `plan.md` under `data.plan_md`.
         RunEvent::PlanOpened { number, plan_md } => Some(envelope(
             "dev.ralphy.plan.opened",
             Some(&subject_for(*number)),

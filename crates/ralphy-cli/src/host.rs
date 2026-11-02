@@ -1,7 +1,8 @@
 //! `ralphy host`: make a computer reached over SSH a peer, check it, and take
 //! it out again (ADR-0067). Sign-in uses a key or an agent, or a password given
-//! on standard input that adds Ralphy's key on the host; Ralphy never prompts. The workbench can run these as verbs, so each one prints what it
-//! did and exits non-zero when the work is incomplete.
+//! on standard input that adds Ralphy's key on the host; Ralphy never prompts. The
+//! workbench can run these as verbs, so each one prints what it did and exits
+//! non-zero when the work is incomplete.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -361,7 +362,10 @@ fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()>
     let token = match auth::effective_token() {
         Ok(token) => token,
         Err(e) => {
-            out.note(&format!("Could not read the access token of the daemon on this computer: {e:#}. The workbench opens the tunnel when it shows the host."))?;
+            out.note(&format!(
+                "Could not read the access token of the daemon on this computer: {e:#}. \
+                 The workbench opens the tunnel when it shows the host."
+            ))?;
             return Ok(());
         }
     };
@@ -377,7 +381,10 @@ fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()>
             return Ok(());
         }
         Err(e) => {
-            out.note(&format!("Could not ask the daemon on this computer to open the tunnel: {e}. The workbench opens it when it shows the host."))?;
+            out.note(&format!(
+                "Could not ask the daemon on this computer to open the tunnel: {e}. \
+                 The workbench opens it when it shows the host."
+            ))?;
             return Ok(());
         }
     };
@@ -393,7 +400,10 @@ fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()>
     };
     if status != 200 {
         let why = body["error"].as_str().unwrap_or("no reason given");
-        out.note(&format!("The daemon on this computer did not open the tunnel ({status}): {why}. The workbench opens it when it shows the host."))?;
+        out.note(&format!(
+            "The daemon on this computer did not open the tunnel ({status}): {why}. \
+             The workbench opens it when it shows the host."
+        ))?;
         return Ok(());
     }
     let state = body["state"].as_str().unwrap_or("unknown");

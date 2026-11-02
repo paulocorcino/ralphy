@@ -89,7 +89,8 @@ fn the_report_is_read_after_a_banner_and_an_unknown_tool_is_skipped() {
 
     let newer = json.replacen(
         "{\"tool\":\"python\"",
-        "{\"tool\":\"node\",\"name\":\"node\",\"ok\":true,\"required\":false,\"version\":null,\"text\":\"x\",\"fix\":null},{\"tool\":\"python\"",
+        "{\"tool\":\"node\",\"name\":\"node\",\"ok\":true,\"required\":false,\"version\":null,\
+         \"text\":\"x\",\"fix\":null},{\"tool\":\"python\"",
         1,
     );
     let parsed = parse_doctor(&out(0, &newer, "")).expect("a report");

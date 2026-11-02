@@ -73,10 +73,12 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
             // arguments is a ParserError in PowerShell.
             let tr = match &pre {
                 Some(pre) => format!(
-                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; & '{exe}' {pre} *>> '{log}'; & '{exe}' {args} *>> '{log}'\""
+                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; \
+                     & '{exe}' {pre} *>> '{log}'; & '{exe}' {args} *>> '{log}'\""
                 ),
                 None => format!(
-                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; & '{exe}' {args} *>> '{log}'\""
+                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; \
+                     & '{exe}' {args} *>> '{log}'\""
                 ),
             };
             vec![
@@ -101,7 +103,8 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
             let tag = &spec.cron_tag;
             let line = match &pre {
                 Some(pre) => format!(
-                    "{expr} cd '{wd}' && {{ '{exe}' {pre} ; '{exe}' {args} ; }} >> '{log}' 2>&1 {tag}"
+                    "{expr} cd '{wd}' && {{ '{exe}' {pre} ; '{exe}' {args} ; }} \
+                     >> '{log}' 2>&1 {tag}"
                 ),
                 None => format!("{expr} cd '{wd}' && '{exe}' {args} >> '{log}' 2>&1 {tag}"),
             };
