@@ -17,10 +17,11 @@
    --------------------------------------------------------------------------- */
 import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
+import { loadIssueDetail } from "./wb-board-detail.ts";
+import { boardFold, readFold, rowToIssue } from "./wb-board-read.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
-import type { BoardLabel } from "./wb-kanban.ts";
 import type { BoardIssue, BoardRow, ReadyPlan, RunPill, Timer } from "./wb-shell-types.d.ts";
 
 export function wbBoard() {
@@ -107,7 +108,8 @@ export function wbBoard() {
     planChipLabel() {
       const held = this.openPlan();
       if (!held) return "";
-      return `#${held.summary.issue} · ${WBRun.planPillLabel(held.summary, this.planIssueIsOpen())}`;
+      const pill = WBRun.planPillLabel(held.summary, this.planIssueIsOpen());
+      return `#${held.summary.issue} · ${pill}`;
     },
     openPlanModal() {
       const held = this.openPlan();
@@ -243,22 +245,9 @@ export function wbBoard() {
       this.maybeRefreshBoard("backstop");
     },
 
-    // A CLI fold row → the issue shape `wb-kanban.ts` expects. Body + comments
-    // are absent from the fold (`issue.show` fills them on open).
+    // A CLI fold row as an issue (wb-board-read.ts).
     boardRowToIssue(row: BoardRow) {
-      return {
-        number: row.number,
-        title: row.title || "",
-        state: row.state || "open",
-        reason: row.reason ?? row.state_reason ?? null,
-        labels: row.labels || [],
-        assignees: row.assignees || [],
-        blockedBy: rowBlockers(row),
-        created: row.created || "",
-        updated: row.updated || "",
-        body: "",
-        comments: [],
-      };
+      return rowToIssue(row);
     },
 
     // The four columns after search + label filter: Backlog by the chosen
@@ -296,7 +285,8 @@ export function wbBoard() {
     kanbanLabelOptions() {
       const seen = new Set<string>();
       for (const i of this.projectIssues()) for (const l of i.labels || []) seen.add(l);
-      // Distinct members, so no tie; `<` compares UTF-16 code units, as the sort without a compare function does.
+      // Distinct members, so no tie; `<` compares UTF-16 code units, as the
+      // sort without a compare function does.
       return [...seen].sort((a, b) => (a < b ? -1 : 1));
     },
 
@@ -359,46 +349,7 @@ export function wbBoard() {
     },
 
     async loadIssueDetail(number: number) {
-      const slug = this.$store.projects.openSlug;
-      this.issueError = null;
-      // Set BEFORE the first await so the markup never paints `_(empty)_` for
-      // a body still on the wire; cleared only by the NEWEST fetch.
-      this.issueLoading = true;
-      // INVARIANT (#302): a reply — content OR error — is applied only by the
-      // NEWEST fetch, and only while its project+issue is still the open
-      // drawer. The number alone is not enough: the board fold re-fires this
-      // on every refresh, and two projects routinely carry the same number.
-      const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
-      const stale = () =>
-        gen !== this._issueDetailGen ||
-        this.$store.projects.openSlug !== slug ||
-        this.kanbanSel !== number;
-      const fail = (msg: string) => {
-        if (stale()) return;
-        this.issueError = msg;
-        this.$store.modals.flash(msg);
-      };
-      try {
-        const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
-        if (WBFail.isError(reply)) {
-          fail(WBFail.failed(reply, "Could not load the issue."));
-          return;
-        }
-        const detail = shownIssue(reply);
-        if (!detail) {
-          fail("Could not load the issue.");
-          return;
-        }
-        if (stale() || !slug) return;
-        if (!this.$store.board.issueDetailRead(slug, number, detail)) return;
-        // Success owns the banner too: this one may land second.
-        this.issueError = null;
-      } catch {
-        // Transport error: the drawer says so rather than reading as empty.
-        fail("Could not load the issue.");
-      } finally {
-        if (!stale()) this.issueLoading = false;
-      }
+      await loadIssueDetail(this, number);
     },
     closeIssue() {
       this.kanbanSel = null;
@@ -543,45 +494,4 @@ export function wbBoard() {
       this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
     },
   });
-}
-
-// The `board.list` reply for the repo `slug`, or a rejection after `timeoutMs`.
-function boardFold(slug: string, timeoutMs: number) {
-  return Promise.race([
-    window.WBDaemon.observe("board.list", { repo: slug }),
-    new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error("board fold timed out")), timeoutMs),
-    ),
-  ]);
-}
-
-// The issues of a board fold, in the shape that `toIssue` makes, and the
-// colors of its labels.
-function readFold<T>(board: DaemonReplies["board.list"]["board"], toIssue: (row: BoardRow) => T) {
-  const b = board || {};
-  return { issues: (b.issues || []).map(toIssue), colors: labelColors(b.labels) };
-}
-
-// The repo's label colors by label name. A Map, so a label named
-// `constructor` reads as missing. A blank color is skipped: a bare "#" is
-// truthy and masks `labelColor`'s fallback.
-function labelColors(labels: BoardLabel[] | undefined) {
-  const colors = new Map<string, string>();
-  for (const l of labels || []) {
-    if (!l.color) continue;
-    colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
-  }
-  return colors;
-}
-
-// The issues that block a fold row, under either name the fold uses.
-function rowBlockers(row: BoardRow) {
-  return row.blocked_by || row.blockedBy || [];
-}
-
-// The issue of an `issue.show` reply, or null when the reply carries none.
-function shownIssue(reply: ReplyOf<"issue.show">) {
-  if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object")
-    return null;
-  return reply.issue;
 }
