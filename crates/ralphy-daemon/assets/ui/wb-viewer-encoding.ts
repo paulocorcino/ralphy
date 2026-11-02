@@ -42,7 +42,12 @@ export function encodingLabel(name: string | null | undefined, bom: boolean) {
 }
 
 export function encodingBtnHtml(rec: ViewerRecord) {
-  return `<button class="vbtn viewer-enc" data-act="encoding" title="Encoding — reopen or save with another" aria-label="Encoding"><span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span></button>`;
+  return (
+    `<button class="vbtn viewer-enc" data-act="encoding" ` +
+    `title="Encoding — reopen or save with another" aria-label="Encoding">` +
+    `<span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span>` +
+    `</button>`
+  );
 }
 
 export function refreshEncodingPill(rec: ViewerRecord) {

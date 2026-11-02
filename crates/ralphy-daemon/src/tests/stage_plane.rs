@@ -113,7 +113,10 @@ fn titlebar_touch_double_taps_and_holds() {
         // Without it a `mousedown` after the hold blurs the new name input.
         "e.preventDefault();",
         // Without it iOS Safari zooms the page on the double tap.
-        r#"if (!(e.target as HTMLElement).closest("button, .session-name-input")) e.preventDefault();"#,
+        concat!(
+            r#"if (!(e.target as HTMLElement).closest("button, .session-name-input")) "#,
+            r#"e.preventDefault();"#
+        ),
         "{ passive: false }",
         "dragBegins(pressed,",
         "HOLD_MS)",
@@ -402,7 +405,8 @@ fn shell_pins_the_frame_chrome() {
     for pin in ["pointer-events: none", "z-index: 130"] {
         assert!(
             foot.contains(pin),
-            "the .canvas-foot rule must keep {pin} — above the consoles, inert to the pointer (#338)"
+            "the .canvas-foot rule must keep {pin} — above the consoles, inert to the pointer \
+            (#338)"
         );
     }
 }

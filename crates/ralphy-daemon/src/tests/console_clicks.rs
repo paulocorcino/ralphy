@@ -118,9 +118,10 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // restore path goes through it and nothing else.
     let session = squeeze(include_str!("../../assets/ui/wb-console-session.ts"));
     assert!(
-        session.contains(
-            r#"if(record.kind!=="agent")return{console:true,repo,command:consoleCommand(record.agent)};"#
-        ),
+        session.contains(concat!(
+            r#"if(record.kind!=="agent")return{console:true,repo,"#,
+            r#"command:consoleCommand(record.agent)};"#
+        )),
         "a relaunched agent console must be requested by its vendor, not as a shell"
     );
     assert!(

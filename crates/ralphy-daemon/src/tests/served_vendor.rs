@@ -52,7 +52,8 @@ fn the_console_scrollbar_path_matches_the_vendored_xterm() {
         "this._viewport=this._register(this._instantiationService.createInstance(o.Viewport,",
         "this._scrollableElement=this._register(new h.SmoothScrollableElement(t,{vertical:1,",
         "void 0!==e.vertical&&(this._options.vertical=e.vertical)",
-        "this._horizontalScrollbar.updateOptions(this._options),this._verticalScrollbar.updateOptions(this._options)",
+        "this._horizontalScrollbar.updateOptions(this._options),\
+        this._verticalScrollbar.updateOptions(this._options)",
         "this._visibilityController.setVisibility(e.vertical)",
         "e[e.Visible=3]=\"Visible\"",
     ] {

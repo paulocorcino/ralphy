@@ -80,7 +80,8 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
             if rest[ident.len()..].trim_start().starts_with("= ") {
                 assert!(
                     MODULE_WINDOW_NAMES.contains(&ident.as_str()),
-                    "{name} sets window.{ident}: a module exports; it sets a window name only while markup, another page or a browser check reads it"
+                    "{name} sets window.{ident}: a module exports; it sets a window name only \
+                    while markup, another page or a browser check reads it"
                 );
             }
         }
@@ -160,7 +161,8 @@ fn every_workbench_event_name_is_in_the_typed_list() {
     }
     assert!(
         unknown.is_empty(),
-        "a workbench event name that globals.d.ts does not list (WindowEventMap or DocumentEventMap):\n{}",
+        "a workbench event name that globals.d.ts does not list (WindowEventMap or \
+        DocumentEventMap):\n{}",
         unknown.join("\n")
     );
     let unused: Vec<_> = window
@@ -183,7 +185,8 @@ fn every_workbench_event_name_is_in_the_typed_list() {
         if rest["workbench:".len() + event.len()..].starts_with(".window") {
             assert!(
                 window.contains(&event),
-                "index.html hears workbench:{event} on the window, and WindowEventMap does not list it"
+                "index.html hears workbench:{event} on the window, and WindowEventMap does not \
+                list it"
             );
         }
     }
@@ -229,7 +232,8 @@ fn every_alpine_component_can_be_built_and_has_a_test() {
     }
     assert!(
         found >= 7,
-        "expected at least the six dialog and section components and the projects store, found {found}"
+        "expected at least the six dialog and section components and the projects store, found \
+        {found}"
     );
 }
 

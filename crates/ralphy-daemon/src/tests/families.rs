@@ -271,7 +271,8 @@ fn the_console_family_lists_every_module_on_disk() {
     let listed: Vec<&str> = CONSOLE_FAMILY.iter().map(|(name, _)| *name).collect();
     assert_eq!(
         listed, on_disk,
-        "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list every console family \
+        "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list every \
+         console family \
          module under assets/ui, in its order: add the new module to CONSOLE_FAMILY"
     );
 }
@@ -462,7 +463,8 @@ fn the_shell_family_lists_every_module_on_disk() {
     let listed: Vec<&str> = SHELL_FAMILY.iter().map(|(name, _)| *name).collect();
     assert_eq!(
         listed, expected,
-        "SHELL_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list app.ts, then wb-wire.ts \
+        "SHELL_FAMILY in crates/ralphy-daemon/src/tests/families.rs must list app.ts, \
+         then wb-wire.ts \
          and wb-icon.ts when they exist, then every module main.ts registers an Alpine \
          component or Alpine store from, sorted: add the module to SHELL_FAMILY"
     );

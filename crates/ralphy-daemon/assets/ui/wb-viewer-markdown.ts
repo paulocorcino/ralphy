@@ -127,23 +127,34 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     el.innerHTML = `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
-        <button class="vbtn md-toc-btn" data-act="outline" title="Contents" aria-label="Contents"><i class="bi bi-list-ul"></i></button>
+        <button class="vbtn md-toc-btn" data-act="outline" title="Contents"
+          aria-label="Contents"><i class="bi bi-list-ul"></i></button>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-        <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="Changed on disk — reload" aria-label="Changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">Changed on disk — reload</span></button>
+        <button class="vbtn" data-act="find" title="Find" aria-label="Find">
+          <i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload">
+          <i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+        <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit">
+          <i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"
+          title="Changed on disk — reload" aria-label="Changed on disk — reload">
+          <i class="bi bi-exclamation-triangle"></i>
+          <span class="vbtn-label">Changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
         ${encodingBtnHtml(rec)}
-        <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
+        <button class="vbtn save" data-act="save" title="Save" aria-label="Save">
+          <i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
       <div class="md-find">
         <input class="md-find-input" placeholder="Find in page…" />
         <span class="md-find-count"></span>
-        <button class="vbtn" data-find="prev" title="Previous match" aria-label="Previous match"><i class="bi bi-chevron-up"></i></button>
-        <button class="vbtn" data-find="next" title="Next match" aria-label="Next match"><i class="bi bi-chevron-down"></i></button>
-        <button class="vbtn" data-find="close" title="Close search" aria-label="Close search"><i class="bi bi-x"></i></button>
+        <button class="vbtn" data-find="prev" title="Previous match"
+          aria-label="Previous match"><i class="bi bi-chevron-up"></i></button>
+        <button class="vbtn" data-find="next" title="Next match"
+          aria-label="Next match"><i class="bi bi-chevron-down"></i></button>
+        <button class="vbtn" data-find="close" title="Close search"
+          aria-label="Close search"><i class="bi bi-x"></i></button>
       </div>
       <div class="md-split">
         <nav class="md-outline"></nav>

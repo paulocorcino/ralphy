@@ -1,4 +1,5 @@
-//! The records a console and a note card write: stacking, desk changes, the console name and the session identity.
+//! The records a console and a note card write: stacking, desk changes, the console name
+//! and the session identity.
 
 use super::*;
 

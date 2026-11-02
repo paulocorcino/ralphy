@@ -315,7 +315,8 @@ fn shell_survives_a_reload_with_its_detach() {
         link.contains("sessionStorage.getItem(KEY)")
             && link.contains("sessionStorage.setItem(KEY,")
             && link.contains("new BroadcastChannel(CHANNEL)"),
-        "wb-detach-link.ts IS the registry and the channel — deleting it is not how #347 stays green"
+        "wb-detach-link.ts IS the registry and the channel — deleting it is not how #347 stays \
+        green"
     );
     assert!(
         link.contains(r#"const KEY = "wb.detach.v1""#)

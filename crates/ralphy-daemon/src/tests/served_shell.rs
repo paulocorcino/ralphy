@@ -250,7 +250,8 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
     let css = served_css();
     assert!(
         js.contains("new Terminal({ convertEol: false, theme: TERMINAL_THEME })"),
-        "wb-console-terminal.ts must hand xterm a theme — an unthemed Terminal is xterm's black default"
+        "wb-console-terminal.ts must hand xterm a theme — an unthemed Terminal is xterm's black \
+        default"
     );
     assert!(
         js.contains("background: \"#000000\""),

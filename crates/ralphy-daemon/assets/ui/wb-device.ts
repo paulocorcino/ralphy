@@ -115,7 +115,9 @@ export const WBDevice = (function () {
     if (!doc || !doc.body || !win.getComputedStyle) return null;
     const el = doc.createElement("div");
     el.style.cssText =
-      "position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
+      "position:fixed;visibility:hidden;" +
+      "padding:env(safe-area-inset-top) env(safe-area-inset-right) " +
+      "env(safe-area-inset-bottom) env(safe-area-inset-left)";
     doc.body.appendChild(el);
     const cs = win.getComputedStyle(el);
     const out = {
@@ -251,7 +253,8 @@ export const WBDevice = (function () {
       gpu: await attempt(() => gpu(win)),
       voices: await attempt(() => voices(win)),
       automation: await attempt(() => nav.webdriver),
-      // oxlint-disable-next-line typescript/no-deprecated -- the report has always sent this count; browsers keep `PluginArray.length` for pages that read it
+      // browsers keep `PluginArray.length` for pages that read it
+      // oxlint-disable-next-line typescript/no-deprecated -- the report has always sent this count
       plugins: await attempt(() => (nav.plugins ? nav.plugins.length : null)),
       pdf_viewer: await attempt(() => nav.pdfViewerEnabled),
       cookies: await attempt(() => nav.cookieEnabled),

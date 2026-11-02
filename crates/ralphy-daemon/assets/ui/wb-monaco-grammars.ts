@@ -8,10 +8,16 @@
 --------------------------------------------------------------------------- */
 import type { Monaco } from "./wb-monaco.ts";
 
-/** What a Monarch rule does with its match: a token name, a switch of state, or one action per regexp group. */
+/**
+ * What a Monarch rule does with its match: a token name, a switch of state, or
+ * one action per regexp group.
+ */
 type MonarchAction = string | { token: string; switchTo?: string } | MonarchAction[];
 
-/** One Monarch rule: a regexp with its action (and the state to push), or the rules of another state. */
+/**
+ * One Monarch rule: a regexp with its action (and the state to push), or the
+ * rules of another state.
+ */
 type MonarchRule = [RegExp, MonarchAction] | [RegExp, MonarchAction, string] | { include: string };
 
 /** A Monarch grammar: the rules of each tokenizer state. */
@@ -112,11 +118,19 @@ const MERMAID: MonarchGrammar = {
       [/\|[^|]*\|/, "string"],
       [/<?(?:-\.+->|-\.+-|==+>|={3,}|-{3,}|--[>xo)]>?|-[>)]>?)/, "operator"],
       [
-        /\b(?:stateDiagram-v2|stateDiagram|sankey-beta|xychart-beta|block-beta|graph|flowchart|sequenceDiagram|classDiagram|erDiagram|journey|gantt|pie|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram)\b/,
+        new RegExp(
+          "\\b(?:stateDiagram-v2|stateDiagram|sankey-beta|xychart-beta|block-beta|graph|" +
+            "flowchart|sequenceDiagram|classDiagram|erDiagram|journey|gantt|pie|gitGraph|" +
+            "mindmap|timeline|quadrantChart|requirementDiagram)\\b",
+        ),
         "keyword",
       ],
       [
-        /\b(?:subgraph|end|direction|participant|actor|[Nn]ote|loop|alt|else|opt|par|and|rect|activate|deactivate|classDef|class|style|linkStyle|click|title|section|dateFormat|accTitle|accDescr)\b/,
+        new RegExp(
+          "\\b(?:subgraph|end|direction|participant|actor|[Nn]ote|loop|alt|else|opt|par|" +
+            "and|rect|activate|deactivate|classDef|class|style|linkStyle|click|title|section|" +
+            "dateFormat|accTitle|accDescr)\\b",
+        ),
         "keyword",
       ],
       [/\b(?:TB|TD|BT|RL|LR|PK|FK|UK)\b/, "attribute.name"],

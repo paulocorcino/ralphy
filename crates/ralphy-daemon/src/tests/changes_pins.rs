@@ -1,4 +1,5 @@
-//! The Monaco swap, the changes list, the discard control and two shell bindings, pinned over the served assets.
+//! The Monaco swap, the changes list, the discard control and two shell bindings,
+//! pinned over the served assets.
 
 use super::*;
 
@@ -331,13 +332,20 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // it went with the top bar, because the sidebar already names the open
     // project on its top row. So the pin moves to the surfaces that still
     // put the project's name on screen. It is deliberately NOT
-    // `contains("$store.projects.projectLabel($store.projects.openSlug)")` any more — ten call sites satisfy
+    // `contains("$store.projects.projectLabel($store.projects.openSlug)")` any more —
+    // ten call sites satisfy
     // that substring, so it would stay green with every one of these
     // surfaces reverted to the raw ref.
     let html = super::INDEX_HTML;
     for pin in [
-        r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? $store.projects.projectLabel("#,
-        r#"<span class="spend-project" x-text="$store.projects.projectLabel($store.projects.openSlug)""#,
+        concat!(
+            r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? "#,
+            r#"$store.projects.projectLabel("#
+        ),
+        concat!(
+            r#"<span class="spend-project" x-text="$store.projects.projectLabel("#,
+            r#"$store.projects.openSlug)""#
+        ),
     ] {
         assert!(
             html.contains(pin),

@@ -12,7 +12,8 @@ async fn api_usage_carries_run_and_interactive_records() {
     let usage_dir = tempfile::tempdir().unwrap();
     std::fs::write(
         usage_dir.path().join("owner-repo.jsonl"),
-        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"plan\",\"session_id\":\"run-sess\",\"ts\":\"2026-06-15T12:00:00+00:00\"}\n",
+        "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"plan\",\"session_id\":\"run-sess\",\
+        \"ts\":\"2026-06-15T12:00:00+00:00\"}\n",
     )
     .unwrap();
 
@@ -21,7 +22,10 @@ async fn api_usage_carries_run_and_interactive_records() {
     std::fs::create_dir_all(&ws).unwrap();
     let line = |id: &str| {
         format!(
-            "{{\"requestId\":\"r1\",\"timestamp\":\"2026-07-10T10:00:00Z\",\"message\":{{\"id\":\"{id}\",\"model\":\"claude-opus-4-8\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}"
+            "{{\"requestId\":\"r1\",\"timestamp\":\"2026-07-10T10:00:00Z\",\"message\":{{\"id\":\
+            \"{id}\",\"model\":\"claude-opus-4-8\",\"usage\":{{\"input_tokens\":10,\
+            \"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":\
+            0}}}}}}"
         )
     };
     std::fs::write(ws.join("run-sess.jsonl"), line("m1")).unwrap();
@@ -109,9 +113,13 @@ async fn api_usage_carries_each_vendor_stores_interactive_records() {
     std::fs::create_dir_all(&roll).unwrap();
     let meta_id = "019c5131-651b-78f2-b8e7-93995bff4dad";
     let body = format!(
-        "{{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{{\"id\":\"{meta_id}\",\"cwd\":\"c:\\\\Dev\\\\x\"}}}}\n\
-         {{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"turn_context\",\"payload\":{{\"model\":\"gpt-5.3-codex\"}}}}\n\
-         {{\"timestamp\":\"2026-07-10T10:00:01Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":1000,\"cached_input_tokens\":800,\"output_tokens\":200}}}}}}}}\n"
+        "{{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{{\"id\":\
+        \"{meta_id}\",\"cwd\":\"c:\\\\Dev\\\\x\"}}}}\n\
+         {{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"turn_context\",\"payload\":\
+         {{\"model\":\"gpt-5.3-codex\"}}}}\n\
+         {{\"timestamp\":\"2026-07-10T10:00:01Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\
+         \"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":1000,\
+         \"cached_input_tokens\":800,\"output_tokens\":200}}}}}}}}\n"
     );
     std::fs::write(roll.join("rollout-int-abc.jsonl"), body).unwrap();
 
@@ -126,7 +134,10 @@ async fn api_usage_carries_each_vendor_stores_interactive_records() {
         .unwrap();
         conn.execute("CREATE TABLE session (id TEXT, directory TEXT)", [])
             .unwrap();
-        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":2168,"output":100,"cache":{"write":0,"read":11264}}}"#;
+        let data = concat!(
+            r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":2168,"#,
+            r#""output":100,"cache":{"write":0,"read":11264}}}"#
+        );
         conn.execute(
             "INSERT INTO message (id, session_id, data) VALUES (?1, ?2, ?3)",
             rusqlite::params!["msg_1", "ses_oc", data],
@@ -162,7 +173,9 @@ async fn api_usage_carries_each_vendor_stores_interactive_records() {
     let kimi_dir = tmp.path().join("kimi");
     let sess = kimi_dir.join("sessions").join("GRP").join("SESS");
     std::fs::create_dir_all(&sess).unwrap();
-    let line = "{\"timestamp\": 1770983410.0, \"message\": {\"type\": \"StatusUpdate\", \"payload\": {\"token_usage\": {\"input_other\": 100, \"output\": 10, \"input_cache_read\": 0, \"input_cache_creation\": 0}, \"message_id\": \"m1\"}}}";
+    let line = "{\"timestamp\": 1770983410.0, \"message\": {\"type\": \"StatusUpdate\", \
+    \"payload\": {\"token_usage\": {\"input_other\": 100, \"output\": 10, \"input_cache_read\": 0, \
+    \"input_cache_creation\": 0}, \"message_id\": \"m1\"}}}";
     std::fs::write(sess.join("wire.jsonl"), line).unwrap();
 
     let resp = router(
@@ -205,7 +218,8 @@ async fn api_usage_carries_each_vendor_stores_interactive_records() {
                 r.get("agent").and_then(|v| v.as_str()) == Some(agent)
                     && r.get("session_id").and_then(|v| v.as_str()) == Some(session_id)
             }),
-            "interactive must carry a {agent} record with session id {session_id}; got: {body_string}"
+            "interactive must carry a {agent} record with session id {session_id}; got: \
+            {body_string}"
         );
     }
     assert!(
@@ -226,7 +240,10 @@ async fn api_usage_carries_cursor_interactive_records() {
     std::fs::create_dir_all(&sess).unwrap();
     std::fs::write(
         sess.join("meta.json"),
-        r#"{"schemaVersion":1,"createdAtMs":1784593842510,"hasConversation":true,"updatedAtMs":1784593855173,"cwd":"C:\\Dev\\FinCal"}"#,
+        concat!(
+            r#"{"schemaVersion":1,"createdAtMs":1784593842510,"hasConversation":true,"#,
+            r#""updatedAtMs":1784593855173,"cwd":"C:\\Dev\\FinCal"}"#
+        ),
     )
     .unwrap();
 
@@ -292,8 +309,11 @@ async fn api_usage_carries_gemini_interactive_records() {
     .unwrap();
     std::fs::write(
         chats.join("session-x.jsonl"),
-        "{\"sessionId\":\"ralphy-probe-p1p2p3p4p6\",\"startTime\":\"2026-07-21T00:56:00Z\",\"lastUpdated\":\"2026-07-21T01:00:00Z\",\"kind\":\"main\"}\n\
-         {\"id\":\"78d80d17\",\"type\":\"gemini\",\"content\":\"OK\",\"tokens\":{\"input\":20637,\"output\":30,\"cached\":0,\"thoughts\":257,\"tool\":0,\"total\":20924},\"model\":\"gemini-3.1-pro-preview-customtools\"}\n",
+        "{\"sessionId\":\"ralphy-probe-p1p2p3p4p6\",\"startTime\":\"2026-07-21T00:56:00Z\",\
+        \"lastUpdated\":\"2026-07-21T01:00:00Z\",\"kind\":\"main\"}\n\
+         {\"id\":\"78d80d17\",\"type\":\"gemini\",\"content\":\"OK\",\"tokens\":{\"input\":20637,\
+         \"output\":30,\"cached\":0,\"thoughts\":257,\"tool\":0,\"total\":20924},\"model\":\
+         \"gemini-3.1-pro-preview-customtools\"}\n",
     )
     .unwrap();
 
