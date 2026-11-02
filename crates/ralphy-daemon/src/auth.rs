@@ -24,11 +24,17 @@ use subtle::ConstantTimeEq;
 
 use crate::{cookie, epoch, password, totp};
 
+mod host;
 mod policy;
 mod revoked;
+mod session;
 mod throttle;
 mod token;
 
+pub(crate) use host::host_name;
+#[cfg(test)]
+use host::normalize_declared;
+use host::{allowed_host_set, declared_host_set, host_eq, origin_host};
 pub use policy::{
     compute_policy, remote_images_enabled_in, remote_images_path_in, require_login_enabled_in,
     require_login_path_in, require_token_enabled_in, require_token_path_in, set_remote_images_in,
@@ -36,228 +42,19 @@ pub use policy::{
     Requirements,
 };
 pub use revoked::{revoked_logins_path_in, RevokedLogins};
+pub use session::SessionAuth;
 use throttle::LoginThrottle;
 pub use token::{
     effective_token, effective_token_from, ensure_token_at, env_token, generate_token, load_token,
     load_token_from, save_token_to, store_dir, token_path, token_path_in, TOKEN_ENV,
 };
 
-/// The browser-session credentials for a hardened network bind (issue #179): the
-/// signing-key token, the enrolled TOTP seed, and an OPTIONAL password. Held
-/// behind an `Arc` in [`AuthPolicy::Session`] so the policy stays cheap to clone.
-pub struct SessionAuth {
-    /// The daemon access token — doubles as the machine bearer AND the cookie
-    /// signing key. One secret, two roles (ADR-0032 §4, stateless-cookie).
-    pub token: String,
-    /// The enrolled TOTP seed (the core login factor).
-    pub totp: totp::Seed,
-    /// An optional password (defense-in-depth); `None` when the operator did not
-    /// enrol one.
-    pub password: Option<password::Hash>,
-    /// The live session epoch mixed into every cookie (ADR-0032 amendment §B):
-    /// bumping it invalidates all outstanding cookies at once.
-    pub epoch: epoch::SessionEpoch,
-    /// The revoked-login list, shared with the [`AuthState`] that revokes: a
-    /// cookie of a login on it is refused.
-    pub revoked: RevokedLogins,
-}
-
-impl SessionAuth {
-    /// Whether a `Cookie:` header carries a valid, unexpired session cookie
-    /// signed by this daemon's token AT THE CURRENT EPOCH.
-    pub fn cookie_valid(&self, cookie_header: Option<&str>, now: u64) -> bool {
-        self.cookie_login(cookie_header, now).is_some()
-    }
-
-    /// The login ID of a valid, unexpired session cookie in a `Cookie:` header,
-    /// signed by this daemon's token at the current epoch, of a login that was
-    /// not revoked; `None` otherwise.
-    pub fn cookie_login(&self, cookie_header: Option<&str>, now: u64) -> Option<cookie::LoginId> {
-        self.live_claims(cookie_header, now).map(|c| c.login)
-    }
-
-    /// The claims of a cookie that [`cookie_login`](Self::cookie_login) accepts.
-    fn live_claims(&self, cookie_header: Option<&str>, now: u64) -> Option<cookie::Claims> {
-        let value = cookie::from_cookie_header(cookie_header)?;
-        let claims = cookie::verify_claims(&self.token, self.epoch.get(), &value, now)?;
-        (!self.revoked.contains(&claims.login)).then_some(claims)
-    }
-
-    /// Attempt a login with anti-replay (amendment §D). The TOTP `code` must match
-    /// a step (±1) that is STRICTLY newer than `last_step`, AND — when a password
-    /// is enrolled — `password` must match. `kind` is the session length the
-    /// operator chose ("keep me signed in" → `Remembered`); it changes only the
-    /// cookie's lifetime, never the rigor of the check. Returns the outcome; on
-    /// success the caller persists `step` (the new last-consumed step) and sends
-    /// `cookie` with the `Max-Age` of `kind`.
-    pub fn login_checked(
-        &self,
-        code: &str,
-        password: Option<&str>,
-        kind: cookie::SessionKind,
-        now: u64,
-        last_step: Option<u64>,
-    ) -> LoginOutcome {
-        let Some(step) = self.totp.matched_step(code, now, 1) else {
-            return LoginOutcome::BadCredential;
-        };
-        if let Some(last) = last_step {
-            if step <= last {
-                return LoginOutcome::Replayed;
-            }
-        }
-        if let Some(expected) = &self.password {
-            match password {
-                Some(pw) if expected.verify(pw) => {}
-                _ => return LoginOutcome::BadCredential,
-            }
-        }
-        let iat = now;
-        let login = cookie::LoginId::mint();
-        let cookie = cookie::sign(
-            &self.token,
-            self.epoch.get(),
-            kind,
-            iat,
-            cookie::slide_exp(kind, iat, now),
-            login,
-        );
-        LoginOutcome::Ok {
-            cookie,
-            kind,
-            step,
-            login,
-        }
-    }
-
-    /// Credential-only login (no anti-replay, standard length): a thin wrapper
-    /// over [`login_checked`](Self::login_checked) returning just the cookie.
-    /// Kept for callers/tests that don't thread the last-step store.
-    pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
-        match self.login_checked(code, password, cookie::SessionKind::Standard, now, None) {
-            LoginOutcome::Ok { cookie, .. } => Some(cookie),
-            LoginOutcome::BadCredential | LoginOutcome::Replayed => None,
-        }
-    }
-
-    /// For an authorized session cookie, the re-issued cookie value (and its kind,
-    /// for the `Max-Age`) when idle-slide moves `exp` at least the kind's
-    /// hysteresis forward (amendment §D), else `None`. Preserves `iat`, the
-    /// kind and the login ID, so the absolute cap is never extended and the
-    /// re-issued cookie still belongs to the same login.
-    pub fn slide_cookie(
-        &self,
-        cookie_header: Option<&str>,
-        now: u64,
-    ) -> Option<(String, cookie::SessionKind)> {
-        let claims = self.live_claims(cookie_header, now)?;
-        let new_exp = cookie::slide_exp(claims.kind, claims.iat, now);
-        if new_exp.saturating_sub(claims.exp) < claims.kind.slide_min_secs() {
-            return None;
-        }
-        Some((
-            cookie::sign(
-                &self.token,
-                self.epoch.get(),
-                claims.kind,
-                claims.iat,
-                new_exp,
-                claims.login,
-            ),
-            claims.kind,
-        ))
-    }
-}
-
-/// Whether an `Authorization` header is `Bearer <token>` matching `expected`
-/// (constant-time). Shared by the `Bearer` and `Session` (machine) arms.
 /// The bound address the credential-free constructors report. Tests build a
 /// router without a listener, so there is no real address to name; the default
 /// port keeps [`AuthState::same_origin`] honest for anything that does send an
 /// `Origin`.
 fn default_bound_addr() -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], crate::DEFAULT_PORT))
-}
-
-/// The host part of a `Host` header, minus any port. Handles the bracketed IPv6
-/// form (`[::1]:7257`), where a plain `rsplit_once(':')` would cut the address.
-pub(crate) fn host_name(host: &str) -> &str {
-    if let Some(rest) = host.strip_prefix('[') {
-        return rest.split(']').next().unwrap_or(rest);
-    }
-    host.rsplit_once(':').map_or(host, |(name, _)| name)
-}
-
-/// The host spellings that name the daemon ITSELF for a given bind — the names a
-/// browser can legitimately have in its address bar, and therefore the only ones
-/// allowed in `Origin`/`Host`.
-///
-/// Derived from the bind, not hardcoded: §4 designs a non-loopback bind (a
-/// Tailscale interface IP) as the remote-access path, so pinning this to loopback
-/// refuses the operator's own browser on every route. A specific non-loopback
-/// bind makes loopback UNREACHABLE, so it is dropped from the set — naming an
-/// address the daemon does not answer on would only widen the allowlist.
-///
-/// A wildcard bind (`0.0.0.0`/`::`) answers on interfaces we cannot enumerate
-/// without probing the OS; loopback is included and everything else must be
-/// declared. That is the `configured` list: an operator-supplied allowlist of
-/// names they reach the daemon by (MagicDNS, a reverse-proxy hostname). It is
-/// also the DNS-rebinding boundary — an attacker domain that re-resolves to the
-/// daemon's IP is refused unless the operator named it.
-fn allowed_host_set(bound_ip: IpAddr, configured: &[String]) -> Vec<String> {
-    let mut hosts = Vec::new();
-    if bound_ip.is_loopback() || bound_ip.is_unspecified() {
-        hosts.push("127.0.0.1".to_string());
-        hosts.push("localhost".to_string());
-        hosts.push("::1".to_string());
-    }
-    if !bound_ip.is_loopback() && !bound_ip.is_unspecified() {
-        hosts.push(bound_ip.to_string());
-    }
-    hosts.extend(declared_host_set(configured));
-    hosts
-}
-
-/// The operator-declared hosts, normalized, with blanks dropped.
-fn declared_host_set(configured: &[String]) -> Vec<String> {
-    configured
-        .iter()
-        .map(|h| normalize_declared(h))
-        .filter(|h| !h.is_empty())
-        .collect()
-}
-
-/// Normalize one declared host: drop the scheme, the path, and the port, then
-/// lowercase.
-///
-/// Accepting a whole URL is not politeness, it is the failure mode. Tunnel CLIs
-/// print the endpoint as `https://<host>/`, so pasting that is the obvious
-/// gesture — and a bare `host_name` would take everything before the LAST colon
-/// and silently declare the host `https`. The operator then gets a blanket 403
-/// with nothing naming the cause.
-fn normalize_declared(raw: &str) -> String {
-    let host = raw.trim();
-    let host = host.split_once("://").map_or(host, |(_, rest)| rest);
-    let host = host.split('/').next().unwrap_or(host);
-    host_name(host).to_ascii_lowercase()
-}
-
-/// A host spelled for the authority part of an origin: IPv6 needs brackets.
-fn origin_host(host: &str) -> String {
-    match host.parse::<IpAddr>() {
-        Ok(IpAddr::V6(ip)) => format!("[{ip}]"),
-        _ => host.to_string(),
-    }
-}
-
-/// Whether two host strings name the same host. IPs compare as parsed addresses
-/// so alternate spellings of one address agree; names compare ASCII-caselessly.
-fn host_eq(a: &str, b: &str) -> bool {
-    match (a.parse::<IpAddr>(), b.parse::<IpAddr>()) {
-        (Ok(a), Ok(b)) => a == b,
-        (Err(_), Err(_)) => a.eq_ignore_ascii_case(b),
-        _ => false,
-    }
 }
 
 /// The daemon's live auth state (ADR-0032 amendment §A/§B): a runtime-swappable
@@ -385,6 +182,14 @@ impl AuthState {
         })
     }
 
+    /// The port this daemon's listener actually bound. The peer probe compares a
+    /// descriptor's announced port against it to refuse dialling itself
+    /// (ADR-0052 §2 — both daemons default to the same port and WSL's relay
+    /// publishes the peer's on this side).
+    pub fn bound_port(&self) -> u16 {
+        self.bound_addr.port()
+    }
+
     /// Whether this request's `Origin` is the daemon's own, i.e. NOT cross-site.
     ///
     /// Loopback is not a trust boundary against the operator's OWN browser: any
@@ -401,14 +206,6 @@ impl AuthState {
     /// The accepted set follows the BIND (`allowed_host_set`), not a hardcoded
     /// loopback list: §4 makes a network bind the remote-access path, and pinning
     /// this to loopback refused the operator's own browser over Tailscale.
-    /// The port this daemon's listener actually bound. The peer probe compares a
-    /// descriptor's announced port against it to refuse dialling itself
-    /// (ADR-0052 §2 — both daemons default to the same port and WSL's relay
-    /// publishes the peer's on this side).
-    pub fn bound_port(&self) -> u16 {
-        self.bound_addr.port()
-    }
-
     pub fn same_origin(&self, origin: Option<&str>) -> bool {
         let Some(origin) = origin else { return true };
         let port = self.bound_addr.port();

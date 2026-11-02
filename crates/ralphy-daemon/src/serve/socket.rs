@@ -70,7 +70,11 @@ impl BoundSocket {
         }
         if let Err(e) = std::fs::remove_file(path) {
             if e.kind() != io::ErrorKind::NotFound {
-                tracing::warn!(path = %path.display(), error = %e, "could not remove the daemon socket");
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "could not remove the daemon socket"
+                );
             }
         }
     }
