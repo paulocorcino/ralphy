@@ -1,6 +1,9 @@
 use super::*;
 use serde_json::json;
 
+mod powershell;
+mod wrappers;
+
 fn bash(cmd: &str) -> Value {
     json!({ "command": cmd })
 }
@@ -111,6 +114,7 @@ fn recursive_deletes_are_refused_outside_the_worktree_and_temp() {
     // (case, command, denied)
     let rows = [
         ("absolute", "rm -rf /etc/nginx", true),
+        ("the root", "rm -rf /", true),
         ("parent escape", "rm -rf ../sibling", true),
         ("home", "rm -rf ~/projects", true),
         ("$HOME", "rm -rf $HOME/projects", true),

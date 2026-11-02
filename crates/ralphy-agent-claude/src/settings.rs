@@ -23,7 +23,7 @@ fn base_settings(guard: &serde_json::Value) -> serde_json::Value {
         "hooks": {
             "PreToolUse": [
                 {
-                    "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+                    "matcher": "Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit",
                     "hooks": [ guard ]
                 }
             ]
@@ -580,7 +580,10 @@ mod tests {
         // the status hook second with `*`; the sentinel first on Stop.
         let pre = exec["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 2);
-        assert_eq!(pre[0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit");
+        assert_eq!(
+            pre[0]["matcher"],
+            "Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit"
+        );
         assert_eq!(
             pre[0]["hooks"][0]["command"],
             "\"ralphy.exe\" hook guard --cost-gate"
@@ -604,7 +607,10 @@ mod tests {
         // Plan: the guard first, then the status hooks — no sentinel, no timer.
         let pre = plan["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 2);
-        assert_eq!(pre[0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit");
+        assert_eq!(
+            pre[0]["matcher"],
+            "Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit"
+        );
         assert_eq!(pre[0]["hooks"][0]["command"], "\"ralphy.exe\" hook guard");
         assert_eq!(pre[1]["matcher"], "*");
         assert_eq!(pre[1]["hooks"][0]["command"], status);

@@ -1,8 +1,8 @@
 //! The `ralphy hook guard` PreToolUse safety hook (originally a port of the
 //! retired `guard.ps1`; this file is now the canonical implementation).
 //!
-//! Claude Code runs this before every Bash/Edit/Write/MultiEdit/NotebookEdit
-//! call. Because the loop runs with --dangerously-skip-permissions (no
+//! Claude Code runs this before every Bash/PowerShell/Edit/Write/MultiEdit/
+//! NotebookEdit call. Because the loop runs with --dangerously-skip-permissions (no
 //! interactive prompts), this hook is the main guardrail between the agent and
 //! a destructive command — but it is a best-effort deny-list, not a sandbox: a
 //! sufficiently creative command line can slip past the regexes.
@@ -19,6 +19,15 @@
 //! only targets that escape both — absolute paths elsewhere, `..`, `~`, or
 //! unresolvable `$VAR`/`%VAR%` expansions — are blocked.
 //!
+//! The guard judges what a segment runs, not its first word
+//! ([`wrappers`]): it reads past `sudo`, `env`, `time`, `nice` and `nohup`,
+//! and judges the script of `bash|sh|zsh -c`, `cmd /c|/k` and
+//! `powershell|pwsh -Command` as a command of its own, up to three shells
+//! deep. A deeper script, an encoded PowerShell command, and a recursive
+//! delete behind `xargs` (its targets come from the input) are denied.
+//! Still not read: `find … -exec`, `$(…)` command substitution, and aliases
+//! or functions the session defines.
+//!
 //! Protocol: exit 2 (reason to stderr) to block; exit 0 to allow.
 //!
 //! The deny-list logic is factored into [`evaluate_guard`], a pure function
@@ -30,6 +39,14 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::Value;
 
+mod wrappers;
+
+use wrappers::{command_name, Runs, Shell};
+
+/// How many shells inside shells (`bash -c "bash -c …"`) the guard reads.
+/// A deeper script is denied: it is not something an agent needs.
+const MAX_NESTING: usize = 3;
+
 /// The Bash deny-list: each `(regex, why)` pair blocks a destructive command.
 /// All rules are case-insensitive (`(?i)`) — PowerShell is case-insensitive, so
 /// `remove-item` must be caught as surely as `Remove-Item`. Compiled once — the
@@ -37,7 +54,7 @@ use serde_json::Value;
 /// per invocation was wasted work on the one hot safety path.
 ///
 /// Recursive deletes are NOT in this list — they get path-aware treatment in
-/// [`evaluate_recursive_delete`] (allowed inside the worktree/temp).
+/// [`first_disallowed_target`] (allowed inside the worktree/temp).
 static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     [
         (
@@ -120,14 +137,28 @@ pub struct GuardContext {
 /// `tool_input` is the `tool_input` object.
 pub fn evaluate_guard(tool_name: &str, tool_input: &Value, ctx: &GuardContext) -> GuardDecision {
     match tool_name {
-        "Bash" => evaluate_bash(tool_input, ctx),
+        // On Windows a session also runs commands with its `PowerShell` tool,
+        // whose input is a `command` like Bash's (measured on Claude Code
+        // 2.1.316, #810). The rules are case-insensitive and know PowerShell.
+        "Bash" => evaluate_tool_command(tool_input, ctx, Shell::Posix),
+        "PowerShell" => evaluate_tool_command(tool_input, ctx, Shell::PowerShell),
         "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => evaluate_file_write(tool_input, ctx),
         _ => GuardDecision::Allow,
     }
 }
 
-/// Deny-list for Bash commands, plus path-aware recursive-delete handling.
-fn evaluate_bash(tool_input: &Value, ctx: &GuardContext) -> GuardDecision {
+/// What one command is judged against: the context, the shell that runs it,
+/// and how many shells are around it.
+#[derive(Clone, Copy)]
+struct Judge<'a> {
+    ctx: &'a GuardContext,
+    shell: Shell,
+    depth: usize,
+}
+
+/// Deny-list for the command of a Bash or PowerShell call, plus path-aware
+/// recursive-delete handling.
+fn evaluate_tool_command(tool_input: &Value, ctx: &GuardContext, shell: Shell) -> GuardDecision {
     let cmd = tool_input
         .get("command")
         .and_then(Value::as_str)
@@ -135,14 +166,110 @@ fn evaluate_bash(tool_input: &Value, ctx: &GuardContext) -> GuardDecision {
     if cmd.trim().is_empty() {
         return GuardDecision::Allow;
     }
+    evaluate_command(
+        cmd,
+        Judge {
+            ctx,
+            shell,
+            depth: 0,
+        },
+    )
+}
 
-    for (re, why) in BASH_DENY_RULES.iter() {
-        if re.is_match(cmd) {
-            return GuardDecision::Deny((*why).to_string());
+/// Judge one command line: the deny rules over its whole text, then each of
+/// its segments.
+fn evaluate_command(cmd: &str, judge: Judge) -> GuardDecision {
+    if let Some(why) = denied_by_rules(cmd) {
+        return GuardDecision::Deny(why);
+    }
+    if let Some(tok) = dotnet_delete_target(cmd, judge.ctx) {
+        return GuardDecision::Deny(format!(
+            "recursive delete outside the worktree/temp is blocked ({tok})"
+        ));
+    }
+    for segment in cmd.split(['\n', ';', '&', '|']) {
+        let decision = evaluate_segment(segment, judge);
+        if decision != GuardDecision::Allow {
+            return decision;
         }
     }
+    GuardDecision::Allow
+}
 
-    evaluate_recursive_delete(cmd, ctx)
+/// PowerShell's .NET recursive delete, `[System.IO.Directory]::Delete(path,
+/// $true)`: its path is the first argument.
+static DOTNET_DELETE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"(?i)\[(?:system\.)?io\.directory\]::delete\(",
+        r#"\s*['"]?([^,'"()]+?)['"]?\s*,\s*\$true\s*\)"#,
+    ))
+    .expect("valid guard regex")
+});
+
+/// The first path of a .NET recursive delete in `cmd` that a recursive
+/// delete may not touch.
+fn dotnet_delete_target(cmd: &str, ctx: &GuardContext) -> Option<String> {
+    DOTNET_DELETE
+        .captures_iter(cmd)
+        .map(|c| c[1].trim().to_string())
+        .find(|path| !recursive_delete_target_allowed(path, ctx))
+}
+
+/// The reason of the first deny rule `text` matches.
+fn denied_by_rules(text: &str) -> Option<String> {
+    BASH_DENY_RULES
+        .iter()
+        .find(|(re, _)| re.is_match(text))
+        .map(|(_, why)| (*why).to_string())
+}
+
+/// Judge one segment by what it runs once its wrapper words are skipped.
+fn evaluate_segment(segment: &str, judge: Judge) -> GuardDecision {
+    let tokens = shell_tokens(segment);
+    match wrappers::what_runs(&tokens) {
+        Runs::Script(..) if judge.depth >= MAX_NESTING => {
+            GuardDecision::Deny("a shell nested this deep cannot be judged".into())
+        }
+        Runs::Script(script, shell) => evaluate_command(
+            &script,
+            Judge {
+                shell,
+                depth: judge.depth + 1,
+                ..judge
+            },
+        ),
+        Runs::Unreadable => GuardDecision::Deny("an encoded command cannot be judged".into()),
+        Runs::FromInput(args) => evaluate_from_input(args, judge.shell),
+        Runs::Command(words) => evaluate_words(words, tokens.len(), judge),
+    }
+}
+
+/// `xargs` runs its command with arguments from the input, which the guard
+/// cannot see: a recursive delete there is denied wherever it points.
+fn evaluate_from_input(args: &[String], shell: Shell) -> GuardDecision {
+    if (0..args.len()).any(|at| classify_delete(&args[at..], shell).is_some()) {
+        return GuardDecision::Deny(
+            "a recursive delete with targets from the input (xargs) is blocked".into(),
+        );
+    }
+    GuardDecision::Allow
+}
+
+/// Judge a command by its words. When wrapper words were skipped (`words`
+/// is shorter than the segment), the deny rules read the command again: the
+/// `format` rule looks only at the start of a command.
+fn evaluate_words(words: &[String], segment_len: usize, judge: Judge) -> GuardDecision {
+    if words.len() < segment_len {
+        if let Some(why) = denied_by_rules(&words.join(" ")) {
+            return GuardDecision::Deny(why);
+        }
+    }
+    match first_disallowed_target(words, judge) {
+        Some(tok) => GuardDecision::Deny(format!(
+            "recursive delete outside the worktree/temp is blocked ({tok})"
+        )),
+        None => GuardDecision::Allow,
+    }
 }
 
 /// The shape of delete command a segment turned out to be.
@@ -155,31 +282,15 @@ enum DeleteKind {
     DelRmdir,
 }
 
-/// Path-aware recursive-delete policy: split the command into pipeline/chain
-/// segments, and for each segment that is a recursive delete, require every
-/// target path to stay inside the worktree (`ctx.cwd`), the system temp dir,
-/// or `/tmp`. Relative paths (no `..`) resolve under the worktree and are
-/// allowed; `~`, `$VAR`, and `%VAR%` targets can't be resolved here and are
-/// denied.
-fn evaluate_recursive_delete(cmd: &str, ctx: &GuardContext) -> GuardDecision {
-    for segment in cmd.split(['\n', ';', '&', '|']) {
-        if let Some(tok) = first_disallowed_target(segment, ctx) {
-            return GuardDecision::Deny(format!(
-                "recursive delete outside the worktree/temp is blocked ({tok})"
-            ));
-        }
-    }
-    GuardDecision::Allow
-}
-
-/// The first target of `segment` that a recursive delete may not touch, or
-/// `None` when the segment is not a recursive delete or every target is
-/// allowed.
-fn first_disallowed_target(segment: &str, ctx: &GuardContext) -> Option<String> {
-    let tokens = shell_tokens(segment);
-    let (kind, args) = classify_delete(&tokens)?;
+/// The first target of the command `words` that a recursive delete may not
+/// touch, or `None` when it is not a recursive delete or every target is
+/// allowed. A target must stay inside the worktree (`ctx.cwd`), the system
+/// temp dir, or `/tmp`; a relative path (no `..`) resolves under the
+/// worktree; `~`, `$VAR` and `%VAR%` cannot be resolved here.
+fn first_disallowed_target(words: &[String], judge: Judge) -> Option<String> {
+    let (kind, args) = classify_delete(words, judge.shell)?;
     args.iter()
-        .find(|tok| !is_delete_flag(&kind, tok) && !recursive_delete_target_allowed(tok, ctx))
+        .find(|tok| !is_delete_flag(&kind, tok) && !recursive_delete_target_allowed(tok, judge.ctx))
         .cloned()
 }
 
@@ -199,21 +310,37 @@ fn is_delete_flag(kind: &DeleteKind, tok: &str) -> bool {
     }
 }
 
-/// Classify a tokenised segment as a recursive delete, returning the kind and
-/// the argument tokens (everything after the command word). A leading `sudo`
-/// is skipped so `sudo rm -rf …` is judged the same as `rm -rf …`.
-fn classify_delete(tokens: &[String]) -> Option<(DeleteKind, &[String])> {
-    let mut toks = tokens;
-    if toks.first().is_some_and(|t| t.eq_ignore_ascii_case("sudo")) {
-        toks = &toks[1..];
-    }
-    let cmd = toks.first()?.to_lowercase();
-    // Strip a path prefix (`/bin/rm`) and a Windows extension (`del.exe`).
-    let cmd = cmd.rsplit(['/', '\\']).next().unwrap_or(&cmd);
-    let cmd = cmd.strip_suffix(".exe").unwrap_or(cmd);
-    let args = &toks[1..];
+/// Classify a command's words as a recursive delete, returning the kind and
+/// the argument words (everything after the command word). The wrapper words
+/// in front (`sudo`, `env`, …) are already skipped (`wrappers::what_runs`).
+fn classify_delete(words: &[String], shell: Shell) -> Option<(DeleteKind, &[String])> {
+    let cmd = command_name(words.first()?);
+    let args = &words[1..];
+    let kind = powershell_delete(&cmd, args, shell).or_else(|| shell_delete(&cmd, args))?;
+    Some((kind, args))
+}
 
-    let kind = match cmd {
+/// `Remove-Item` and its PowerShell aliases with `-Recurse`, written in full
+/// or cut short as PowerShell allows. In a POSIX shell `rm -r` is the POSIX
+/// flag, judged by [`shell_delete`], so there an alias needs at least
+/// `-re`; in PowerShell `rm -r` is `Remove-Item -Recurse`.
+fn powershell_delete(cmd: &str, args: &[String], shell: Shell) -> Option<DeleteKind> {
+    let shortest = match (cmd, shell) {
+        ("remove-item" | "ri", _) => 2,
+        ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::PowerShell) => 2,
+        ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::Posix) => 3,
+        _ => return None,
+    };
+    args.iter()
+        .any(|t| t.len() >= shortest && wrappers::is_prefix_of(&t.to_lowercase(), "-recurse"))
+        .then_some(DeleteKind::RemoveItem)
+}
+
+/// A POSIX `rm` that is recursive AND forced (parity with the original
+/// rule: `rm -r` alone still prompts per file), or cmd.exe `del /s` and
+/// `rmdir /s`.
+fn shell_delete(cmd: &str, args: &[String]) -> Option<DeleteKind> {
+    match cmd {
         "rm" => {
             let flags: Vec<&str> = args
                 .iter()
@@ -225,27 +352,13 @@ fn classify_delete(tokens: &[String]) -> Option<(DeleteKind, &[String])> {
                     .iter()
                     .any(|f| *f == long || (!f.starts_with("--") && f.contains(short)))
             };
-            // Parity with the original rule: only recursive AND force deletes
-            // are policed (`rm -r` alone still prompts-per-file semantics).
-            if has('r', "--recursive") && has('f', "--force") {
-                DeleteKind::Rm
-            } else {
-                return None;
-            }
-        }
-        "remove-item"
-            if args
-                .iter()
-                .any(|t| t.to_lowercase().starts_with("-recurse")) =>
-        {
-            DeleteKind::RemoveItem
+            (has('r', "--recursive") && has('f', "--force")).then_some(DeleteKind::Rm)
         }
         "del" | "rmdir" | "rd" if args.iter().any(|t| t.eq_ignore_ascii_case("/s")) => {
-            DeleteKind::DelRmdir
+            Some(DeleteKind::DelRmdir)
         }
-        _ => return None,
-    };
-    Some((kind, args))
+        _ => None,
+    }
 }
 
 /// Is `raw` an acceptable target for a recursive delete? Allowed: relative
@@ -254,6 +367,10 @@ fn classify_delete(tokens: &[String]) -> Option<(DeleteKind, &[String])> {
 fn recursive_delete_target_allowed(raw: &str, ctx: &GuardContext) -> bool {
     let p = raw.replace('\\', "/").to_lowercase();
     let p = p.trim_end_matches('/');
+    // `/` (and `//`) trims to nothing: it is the root, not a relative path.
+    if p.is_empty() {
+        return false;
+    }
     if p.split('/').any(|seg| seg == "..") {
         return false;
     }
@@ -275,12 +392,20 @@ fn under(p: &str, dir: &str) -> bool {
 
 /// Quote-aware whitespace tokeniser — just enough shell/PowerShell lexing to
 /// pull path arguments (possibly containing spaces) out of a delete command.
+/// Inside double quotes `\"` is a `"`, so the script of
+/// `bash -c "bash -c \"…\""` keeps its inner quotes; a backslash anywhere
+/// else is kept, so a Windows path is read as it is written.
 fn shell_tokens(segment: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut quote: Option<char> = None;
-    for c in segment.chars() {
+    let mut chars = segment.chars().peekable();
+    while let Some(c) = chars.next() {
         match (quote, c) {
+            (Some('"'), '\\') if chars.peek() == Some(&'"') => {
+                cur.push('"');
+                chars.next();
+            }
             (Some(q), c) if c == q => quote = None,
             (None, '\'' | '"') => quote = Some(c),
             (None, c) if c.is_whitespace() => end_token(&mut out, &mut cur),
@@ -409,7 +534,7 @@ fn unreadable_shape(payload: &Value, tool_name: &str, tool_input: &Value) -> Opt
     }
     let has_str = |key: &str| tool_input.get(key).is_some_and(Value::is_string);
     match tool_name {
-        "Bash" if !has_str("command") => Some("no command"),
+        "Bash" | "PowerShell" if !has_str("command") => Some("no command"),
         "Edit" | "Write" | "MultiEdit" if !has_str("file_path") => Some("no file_path"),
         "NotebookEdit" if !has_str("file_path") && !has_str("notebook_path") => {
             Some("no notebook_path")
