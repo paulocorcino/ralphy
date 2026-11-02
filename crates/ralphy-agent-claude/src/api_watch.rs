@@ -207,8 +207,9 @@ mod tests {
         let mut w = ApiWatch::new();
         w.feed(BANNER);
         let t0 = Instant::now();
-        assert_eq!(w.poll(t0, false), ApiWatchAction::None); // clock starts at t0
-                                                             // Evict the banner with >MAX_BUF of non-banner bytes.
+        // The clock starts at t0.
+        assert_eq!(w.poll(t0, false), ApiWatchAction::None);
+        // Evict the banner with >MAX_BUF of non-banner bytes.
         w.feed(&vec![b'.'; 40 * 1024]);
         assert_eq!(
             w.poll(t0 + Duration::from_secs(200), false),
@@ -255,7 +256,10 @@ mod tests {
         let api_watch_kill = API_WATCH_KILL_MINUTES;
         assert!(
             idle_default > api_watch_kill,
-            "DEFAULT_INTERACTIVE_IDLE_MINUTES ({idle_default}) must stay above the ApiWatch kill ({api_watch_kill} min): lowering it below the kill silently preempts the #149 API respawn — the interactive idle watchdog reaps the child before the recovery attempt fires (issue #217 Part B)"
+            "DEFAULT_INTERACTIVE_IDLE_MINUTES ({idle_default}) must stay above the ApiWatch kill \
+             ({api_watch_kill} min): lowering it below the kill silently preempts the #149 API \
+             respawn — the interactive idle watchdog reaps the child before the recovery \
+             attempt fires (issue #217 Part B)"
         );
     }
 

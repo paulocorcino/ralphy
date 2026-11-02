@@ -55,9 +55,10 @@ pub(crate) fn is_claude_auth_error(text: &str) -> bool {
 /// [`transcript_limit`] for why a raw scan is unsafe there.
 pub(crate) fn is_limit_text(text: &str) -> bool {
     use regex::Regex;
-    let re = Regex::new(
-        r"(?i)(rate[_ -]?limit|usage limit|session limit|reached your .* limit|limit reached|resets\s+\d)",
-    )
+    let re = Regex::new(concat!(
+        r"(?i)(rate[_ -]?limit|usage limit|session limit|",
+        r"reached your .* limit|limit reached|resets\s+\d)"
+    ))
     .expect("valid regex");
     re.is_match(text)
 }
