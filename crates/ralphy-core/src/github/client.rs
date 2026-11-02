@@ -178,7 +178,10 @@ mod tests {
     #[test]
     fn transient_detector_matches_the_observed_504() {
         // The exact gateway response that aborted a run mid-evidence-comment.
-        let stderr = r#"failed to run git: non-200 OK status code: 504 Gateway Timeout body: "<!DOCTYPE html>...""#;
+        let stderr = concat!(
+            r#"failed to run git: non-200 OK status code: 504 Gateway Timeout "#,
+            r#"body: "<!DOCTYPE html>...""#,
+        );
         assert!(is_transient_gh_failure(stderr));
     }
 
@@ -209,7 +212,12 @@ mod tests {
     }
 
     // What gh 2.x prints for `gh issue list` when GH_TOKEN holds a dead token.
-    const STALE_TOKEN_STDERR: &str = r#"non-200 OK status code: 401 Unauthorized body: "{\r\n  \"message\": \"Bad credentials\",\r\n  \"documentation_url\": \"https://docs.github.com/rest\",\r\n  \"status\": \"401\"\r\n}""#;
+    const STALE_TOKEN_STDERR: &str = concat!(
+        r#"non-200 OK status code: 401 Unauthorized body: "{\r\n  "#,
+        r#"\"message\": \"Bad credentials\",\r\n  "#,
+        r#"\"documentation_url\": \"https://docs.github.com/rest\",\r\n  "#,
+        r#"\"status\": \"401\"\r\n}""#,
+    );
 
     #[test]
     fn a_rejected_token_names_its_variable_and_drops_the_raw_body() {
