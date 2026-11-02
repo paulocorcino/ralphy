@@ -224,7 +224,7 @@ fn warn_dropped(warned: &AtomicBool) -> bool {
     }
     warn!(
         target: "ralphy_cli::events::sink",
-        "dropping CloudEvents delivery after retries — endpoint unreachable or rejecting \r
+        "dropping CloudEvents delivery after retries — endpoint unreachable or rejecting \
          (further drops silenced this run)"
     );
     true
