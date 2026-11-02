@@ -97,6 +97,7 @@ fn the_explorer_opens_a_note_as_a_card() {
     // is no `note.rename`/`note.delete`, and adding one would re-derive the
     // confinement the carve-out already gives.
     let notes = include_str!("../../assets/ui/wb-notes.ts");
+    let build = include_str!("../../assets/ui/wb-notes-build.ts");
     let file = include_str!("../../assets/ui/wb-notes-file.ts");
     for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
         assert!(
@@ -110,7 +111,7 @@ fn the_explorer_opens_a_note_as_a_card() {
     let stage = include_str!("../../assets/ui/wb-notes-stage.ts");
     let chrome = include_str!("../../assets/ui/wb-notes-chrome.ts");
     let open = include_str!("../../assets/ui/wb-notes-open.ts");
-    for js in [notes, stage, file, chrome, open] {
+    for js in [notes, build, stage, file, chrome, open] {
         assert!(
             !js.contains("window.confirm(") && !js.contains("window.prompt("),
             "a note's file actions must use the workbench's own dialog and field"
@@ -128,12 +129,12 @@ fn the_explorer_opens_a_note_as_a_card() {
     // and a `setReadonly` wired back to it would silently take the note
     // away again.
     assert!(
-        !notes.contains("setReadonly(!!locked)"),
+        !notes.contains("setReadonly(!!locked)") && !build.contains("setReadonly(!!locked)"),
         "the lock pins the card; it must not put the editor in read-only \
          (ADR-0064 amendment)"
     );
     assert!(
-        notes.contains("locked: () => !!el._noteLocked"),
+        build.contains("locked: () => !!el._noteLocked"),
         "the lock must reach the drag and the resize, which are what it IS"
     );
 }
@@ -163,11 +164,12 @@ fn the_explorer_opens_a_note_as_a_card() {
 #[test]
 fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     let palette = include_str!("../../assets/ui/wb-notes-palette.ts");
-    let folds = include_str!("../../assets/ui/wb-notes-folds.ts");
+    let look = include_str!("../../assets/ui/wb-notes-look.ts");
+    let header = include_str!("../../assets/ui/wb-notes-header.ts");
     let css = include_str!("../../assets/ui/styles/13-notes.css");
     assert!(
-        folds.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
-            && folds.contains(r#"const SIZES = ["xs", "s", "m", "l", "xl"]"#),
+        look.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
+            && look.contains(r#"const SIZES = ["xs", "s", "m", "l", "xl"]"#),
         "the hand and the size must be closed sets, not a free font-family string"
     );
     for name in ["serif", "mono"] {
@@ -229,8 +231,8 @@ fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     // Written to the FILE, so a note keeps its face when the card is
     // closed and opened again — the look is the note's, not the desk's.
     assert!(
-        folds.contains("lines.push(`font: ${font}`)")
-            && folds.contains("lines.push(`size: ${size}`)"),
+        header.contains("lines.push(`font: ${font}`)")
+            && header.contains("lines.push(`size: ${size}`)"),
         "the hand and the size belong in the note's front matter (ADR-0064 §8)"
     );
 }

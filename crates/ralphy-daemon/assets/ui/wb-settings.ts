@@ -80,7 +80,8 @@ export const WB_SETTINGS: Section[] = [
     icon: "bi-window-stack",
     scope: "client",
     blurb:
-      "How consoles look, and how they are restored when this page opens. Saved in this browser only.",
+      "How consoles look, and how they are restored when this page opens. Saved in this browser " +
+      "only.",
     items: [
       {
         key: "consoles.font_size",
@@ -89,21 +90,27 @@ export const WB_SETTINGS: Section[] = [
         default: 15,
         min: 10,
         max: 28,
-        help: "The size of the text in every console, in pixels. Smaller text puts more characters in each column.",
+        help:
+          "The size of the text in every console, in pixels. Smaller text puts more characters " +
+          "in each column.",
       },
       {
         key: "consoles.relaunch_on_load",
         label: "Relaunch agent consoles on load",
         type: "toggle",
         default: false,
-        help: "Start a new agent CLI for each saved agent console on every page load. Plain shells are always restored.",
+        help:
+          "Start a new agent CLI for each saved agent console on every page load. Plain shells " +
+          "are always restored.",
       },
       {
         key: "consoles.key_bar",
         label: "Console key bar",
         type: "tristate",
         default: "unset",
-        help: "Shows Esc, Tab, Shift, Ctrl, Enter, the arrows and ^C under each console. By default, only on touch screens.",
+        help:
+          "Shows Esc, Tab, Shift, Ctrl, Enter, the arrows and ^C under each console. By default, " +
+          "only on touch screens.",
       },
     ],
   },
@@ -113,7 +120,8 @@ export const WB_SETTINGS: Section[] = [
     icon: "bi-hdd-network",
     scope: "daemon",
     blurb:
-      "The background service that hosts this UI. Shared by every project. Set the password and two-factor in the account menu, under “Security settings”.",
+      "The background service that hosts this UI. Shared by every project. Set the password and " +
+      "two-factor in the account menu, under “Security settings”.",
     items: [
       {
         key: "daemon.bind",
@@ -121,7 +129,9 @@ export const WB_SETTINGS: Section[] = [
         type: "text",
         placeholder: "127.0.0.1",
         default: "127.0.0.1",
-        help: "Address the daemon listens on. Any value other than 127.0.0.1 opens it to the network and requires an access token.",
+        help:
+          "Address the daemon listens on. Any value other than 127.0.0.1 opens it to the network " +
+          "and requires an access token.",
       },
       {
         key: "daemon.port",
@@ -159,7 +169,9 @@ export const WB_SETTINGS: Section[] = [
         // redirect, so the daemon denies the key at the remote boundary
         // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
         readonly: true,
-        help: "Sent as ‘Authorization: Bearer …’ with every event. Read-only here. Set it in a terminal on the host: ralphy config set events.token '…'",
+        help:
+          "Sent as ‘Authorization: Bearer …’ with every event. Read-only here. Set it in a " +
+          "terminal on the host: ralphy config set events.token '…'",
       },
     ],
   },
@@ -221,7 +233,9 @@ export const WB_SETTINGS: Section[] = [
         type: "text",
         placeholder: "GitHub login or @me",
         default: "",
-        help: "Only pick issues assigned to this GitHub login. Leave empty for any issue. Use @me for yourself.",
+        help:
+          "Only pick issues assigned to this GitHub login. Leave empty for any issue. Use @me " +
+          "for yourself.",
       },
       {
         key: "queue.trust_all_comments",
@@ -232,7 +246,11 @@ export const WB_SETTINGS: Section[] = [
         // agent's prompt, so the daemon denies the key at the remote boundary
         // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
         readonly: true,
-        help: "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository. Read-only here. Change it in a terminal: ralphy config set queue.trust_all_comments true",
+        help:
+          "Send comments from any GitHub account to the agent. When off, only comments from " +
+          "owners, members and collaborators are read. When on, anyone can add text to the " +
+          "prompt of a labelled issue on a public repository. Read-only here. Change it in a " +
+          "terminal: ralphy config set queue.trust_all_comments true",
       },
     ],
   },
@@ -257,7 +275,9 @@ export const WB_SETTINGS: Section[] = [
         type: "select",
         options: ["new", "current"],
         default: "new",
-        help: "With “new”, each run creates an afk/run-… branch. With “current”, runs commit on the current branch.",
+        help:
+          "With “new”, each run creates an afk/run-… branch. With “current”, runs commit on the " +
+          "current branch.",
       },
     ],
   },
@@ -289,7 +309,9 @@ export const WB_SETTINGS: Section[] = [
           "euc-kr",
         ],
         default: "windows-1252",
-        help: "How a file that is not UTF-8 or UTF-16 is read and saved. A file's tab can still reopen it with another encoding.",
+        help:
+          "How a file that is not UTF-8 or UTF-16 is read and saved. A file's tab can still " +
+          "reopen it with another encoding.",
       },
     ],
   },
@@ -312,7 +334,9 @@ export const WB_SETTINGS: Section[] = [
         // is the point — a gate you cannot see is worse than one you cannot
         // edit from a browser.
         readonly: true,
-        help: "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
+        help:
+          "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only " +
+          "here. Set it in a terminal: ralphy config set verify.command '…'",
       },
       {
         key: "verify.require_verify_gate",
@@ -375,14 +399,19 @@ export const WB_SETTINGS: Section[] = [
         label: "Give Claude the console name",
         type: "toggle",
         default: false,
-        help: "Start Claude with the console name as its session name, such as wb-fincal-1. Other Claude sessions use that name to send it messages. When off, Claude picks the name.",
+        help:
+          "Start Claude with the console name as its session name, such as wb-fincal-1. Other " +
+          "Claude sessions use that name to send it messages. When off, Claude picks the name.",
       },
       {
         key: "claude.console_classic_screen",
         label: "Keep Claude's text in the console",
         type: "toggle",
         default: false,
-        help: "Start Claude in its classic view. The conversation stays in the console's text, with a scrollbar. When off, Claude follows its own settings; its full-screen view scrolls by itself and shows no scrollbar. Applies to consoles opened after the change.",
+        help:
+          "Start Claude in its classic view. The conversation stays in the console's text, with " +
+          "a scrollbar. When off, Claude follows its own settings; its full-screen view scrolls " +
+          "by itself and shows no scrollbar. Applies to consoles opened after the change.",
       },
       {
         key: "claude.run_without_guard_proof_i_understand_the_risk",
@@ -393,7 +422,11 @@ export const WB_SETTINGS: Section[] = [
         // not run, so the daemon denies the key at the remote boundary
         // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
         readonly: true,
-        help: "Let a Claude session start even when its hooks cannot be checked. The guard may then not run. Each such session writes a warning to the run. Read-only here. Change it in a terminal: ralphy config set claude.run_without_guard_proof_i_understand_the_risk true",
+        help:
+          "Let a Claude session start even when its hooks cannot be checked. The guard may then " +
+          "not run. Each such session writes a warning to the run. Read-only here. Change it in " +
+          "a terminal: ralphy config set claude.run_without_guard_proof_i_understand_the_risk " +
+          "true",
       },
     ],
   },

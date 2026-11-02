@@ -74,7 +74,7 @@ fn shell_drags_only_past_a_threshold() {
     // And the card must actually PASS both hooks: the default is correct
     // for a window and wrong for a card, whose node has no `_deskLocked`
     // and whose rect belongs to another collection.
-    let notes_js = include_str!("../../assets/ui/wb-notes.ts");
+    let notes_js = include_str!("../../assets/ui/wb-notes-build.ts");
     for pin in [
         "locked: () => !!el._noteLocked",
         "onDrop: () => persistCards(el)",
