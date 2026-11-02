@@ -95,6 +95,8 @@ use super::*;
 use std::fs;
 
 mod find;
+mod git_bash;
+mod tree;
 
 /// Mark a freshly-written fixture executable so `find_program`'s Unix
 /// execute-bit check accepts it. A no-op off Unix (Windows gates on PATHEXT).
@@ -118,67 +120,6 @@ fn remove_scratch(dir: &Path) {
         reason = "cleanup of a test directory that may be gone, and no test reads it after"
     )]
     let _ = fs::remove_dir_all(dir);
-}
-
-/// A group kill reaches its target group and stops there — never the caller's.
-///
-/// `kill_tree_by_pid` used to spend the pgid as *text* on `kill(1)`, which has
-/// to guess whether a leading `-` opens an option or names a group. procps-ng
-/// guessed wrong and killed the calling process's group, so every
-/// `run_headless` teardown SIGKILLed the process that asked for it: locally the
-/// test, on CI the runner itself — which then uploaded no log, leaving the gate
-/// red with nothing to read.
-///
-/// Unix-only because process groups are: the Windows arm walks the process
-/// table by parent-PID and never had this exposure.
-#[cfg(unix)]
-#[test]
-fn a_group_kill_spares_the_callers_own_group() {
-    use std::time::Duration;
-
-    // A *dead* group leader's pid — the shape production actually hits, since
-    // the natural-exit path reaps the child before tearing down its tree.
-    let mut leader = Command::new("true");
-    own_process_group(&mut leader);
-    let mut leader = leader.spawn().expect("spawning `true` should succeed");
-    let dead_pgid = leader.id();
-    leader.wait().expect("reaping `true` should succeed");
-
-    // The witness deliberately stays in OUR process group (no
-    // `own_process_group`), so a kill that escapes its target takes it with us.
-    let mut bystander = Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .expect("spawning `sleep` should succeed");
-
-    kill_tree_by_pid(dead_pgid);
-
-    // SIGKILL is delivered without the target getting a say, but delivery is
-    // still asynchronous — give it a beat before concluding the witness lived.
-    std::thread::sleep(Duration::from_millis(200));
-    // `try_wait`, not `pid_is_alive`: a killed-but-unreaped child is a zombie,
-    // and `kill(pid, 0)` reports a zombie as alive.
-    let died = bystander
-        .try_wait()
-        .expect("polling the bystander should succeed")
-        .is_some();
-
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of the witness, which may have died already"
-    )]
-    let _ = bystander.kill();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of the witness, which may have died already"
-    )]
-    let _ = bystander.wait();
-
-    assert!(
-        !died,
-        "a kill aimed at group {dead_pgid} escaped and took out a bystander \
-             sharing the caller's process group"
-    );
 }
 
 #[test]
@@ -348,109 +289,6 @@ fn nvm_candidates_cover_a_version_managed_install() {
     }
 }
 
-/// ADR-0042 D20: git-bash under either standard root is the shape the vendor's
-/// classifier accepts; the WSL launcher (a `System32\bash.exe`) and git.exe are
-/// not, and pinning `SHELL` to the WSL bash would spawn WSL instead of a POSIX
-/// shell on the host.
-#[test]
-fn is_git_bash_shape_matches_the_vendor_regex() {
-    assert!(is_git_bash_shape(Path::new(
-        r"C:\Program Files\Git\bin\bash.exe"
-    )));
-    // Case-insensitive, like the vendor's `/…/i` regex.
-    assert!(is_git_bash_shape(Path::new(
-        r"C:\Program Files (x86)\Git\bin\BASH.EXE"
-    )));
-    // The WSL launcher: a bash.exe that is NOT git-bash.
-    assert!(!is_git_bash_shape(Path::new(
-        r"C:\Windows\System32\bash.exe"
-    )));
-    // git.exe is not a shell.
-    assert!(!is_git_bash_shape(Path::new(
-        r"C:\Program Files\Git\cmd\git.exe"
-    )));
-}
-
-/// D20: the two standard Git-for-Windows roots are probed first, `bin\bash.exe`
-/// under each. `is_file()` is OS-independent, so this resolves on every platform.
-#[test]
-fn locate_git_bash_prefers_the_program_files_roots() {
-    for from_x86 in [false, true] {
-        let root = tempfile::tempdir().unwrap();
-        let want = root.path().join("Git").join("bin").join("bash.exe");
-        fs::create_dir_all(want.parent().unwrap()).unwrap();
-        fs::write(&want, b"").unwrap();
-        let (pf, pf86) = if from_x86 {
-            (None, Some(root.path().to_path_buf()))
-        } else {
-            (Some(root.path().to_path_buf()), None)
-        };
-        let got = locate_git_bash_with(Some(std::ffi::OsString::new()), None, pf, pf86);
-        assert_eq!(got.as_deref(), Some(want.as_path()), "x86={from_x86}");
-    }
-}
-
-/// No install anywhere resolves to nothing — the caller then leaves `SHELL`
-/// alone rather than pinning it to a missing binary.
-#[test]
-fn locate_git_bash_is_none_when_nothing_is_installed() {
-    assert_eq!(
-        locate_git_bash_with(Some(std::ffi::OsString::new()), None, None, None),
-        None
-    );
-}
-
-/// D20: a `bash.exe` on `PATH` that is not git-bash (the WSL launcher shape) is
-/// rejected, while a git-shaped one is accepted. Windows-only: the `PATH` search
-/// keys on `PATHEXT`, which is a no-op off Windows.
-#[test]
-#[cfg(windows)]
-fn locate_git_bash_rejects_a_non_git_bash_on_path() {
-    // `is_git_bash_shape` scans the whole path for "git", so a tempdir whose
-    // random name happens to spell it (a real CI hit: `.tmpgiT4KM`) makes the
-    // fake `System32\bash.exe` below look git-shaped and flakes this test.
-    // Re-roll until the root is free of it.
-    let base = std::iter::repeat_with(|| tempfile::tempdir().unwrap())
-            .take(64)
-            .find(|d| {
-                !d.path()
-                    .to_string_lossy()
-                    .to_ascii_lowercase()
-                    .contains("git")
-            })
-            .expect("no \"git\"-free tempdir in 64 tries: the ambient temp root itself must contain \"git\"");
-
-    // A `System32\bash.exe` on PATH — the WSL launcher — must be rejected.
-    let sys = base.path().join("System32");
-    fs::create_dir_all(&sys).unwrap();
-    fs::write(sys.join("bash.exe"), b"").unwrap();
-    assert_eq!(
-        locate_git_bash_with(
-            Some(sys.clone().into_os_string()),
-            Some(".EXE".into()),
-            None,
-            None
-        ),
-        None,
-        "a non-git bash.exe on PATH must be rejected"
-    );
-
-    // A git-shaped `Git\bin\bash.exe` on PATH IS accepted.
-    let gitbin = base.path().join("Git").join("bin");
-    fs::create_dir_all(&gitbin).unwrap();
-    let want = gitbin.join("bash.exe");
-    fs::write(&want, b"").unwrap();
-    let got = locate_git_bash_with(
-        Some(gitbin.into_os_string()),
-        Some(".EXE".into()),
-        None,
-        None,
-    )
-    .expect("a git-shaped bash.exe on PATH must resolve");
-    assert!(is_git_bash_shape(&got), "resolved {got:?}");
-    assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("bash"));
-}
-
 #[test]
 fn find_program_returns_none_when_absent() {
     let path_var = std::env::temp_dir().into_os_string();
@@ -614,34 +452,4 @@ fn a_parent_that_leaves_a_detached_child() {
 #[ignore = "run only as the grandchild of std_handles_do_not_reach_a_detached_grandchild"]
 fn a_child_that_waits_a_minute() {
     std::thread::sleep(std::time::Duration::from_secs(60));
-}
-
-/// The process doing a tree kill is never ended by it, nor reached through it:
-/// a console whose pid reused the daemon launcher's number must not take the
-/// daemon (and the daemon's own children) down with it.
-#[test]
-fn a_tree_kill_never_ends_the_process_doing_it() {
-    // 10 is the console being closed; 20 is the caller, whose recorded parent
-    // is a launcher that exited and whose pid 10 now names; 30 is the caller's
-    // child; 40 is the console's real child.
-    let table = [(10, 1), (20, 10), (30, 20), (40, 10)];
-    let doomed = super::tree_to_kill(10, &table, 20, |_| None);
-    assert_eq!(doomed, vec![10, 40]);
-    assert!(super::tree_to_kill(20, &table, 20, |_| None).is_empty());
-}
-
-/// A process created before the parent it records is not that parent's child:
-/// the number was reused. A real child, and a child whose time is unknown,
-/// stay in the walk.
-#[test]
-fn a_process_older_than_its_recorded_parent_is_not_its_child() {
-    let table = [(10, 1), (20, 10), (30, 10), (40, 10)];
-    let created = |pid: u32| match pid {
-        10 => Some(500),
-        20 => Some(100), // older than 10: 10 reused 20's dead parent number
-        30 => Some(900),
-        _ => None,
-    };
-    let doomed = super::tree_to_kill(10, &table, 99, created);
-    assert_eq!(doomed, vec![10, 30, 40]);
 }
