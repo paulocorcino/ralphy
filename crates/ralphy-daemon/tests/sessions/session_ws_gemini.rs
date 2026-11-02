@@ -122,11 +122,13 @@ async fn assert_launches_contained(port: u16, home: &Path, policy: &Path) {
     let flat = flatten(&got);
     assert!(
         flat.contains(&want_env),
-        "the workbench child must run under the repo's OWN gemini root; wanted {want_env}, got:\n{got}"
+        "the workbench child must run under the repo's OWN gemini root; \
+        wanted {want_env}, got:\n{got}"
     );
     assert!(
         flat.contains(&want_argv),
-        "the workbench child must carry --policy pointing at the owned root's document; wanted {want_argv}, got:\n{got}"
+        "the workbench child must carry --policy pointing at the owned root's document; \
+        wanted {want_argv}, got:\n{got}"
     );
     ws.send(terminal(b"quit\r")).await.expect("send the frame");
 }

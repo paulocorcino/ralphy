@@ -151,7 +151,10 @@ async fn host_verbs_run_locally_with_no_repo() {
     let frames = replies(
         port,
         "host.trust",
-        serde_json::json!({"destination": "svrapp", "fingerprint": format!("SHA256:{}", "A".repeat(43))}),
+        serde_json::json!({
+            "destination": "svrapp",
+            "fingerprint": format!("SHA256:{}", "A".repeat(43))
+        }),
     )
     .await;
     assert_eq!(frames, [serde_json::json!({"status": "ok"})]);

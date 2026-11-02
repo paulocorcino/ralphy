@@ -42,7 +42,8 @@ impl Seed {
     pub fn otpauth_uri(&self, issuer: &str, account: &str) -> String {
         let secret = self.secret_base32();
         format!(
-            "otpauth://totp/{issuer}:{account}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
+            "otpauth://totp/{issuer}:{account}?secret={secret}&issuer={issuer}\
+            &algorithm=SHA1&digits=6&period=30"
         )
     }
 

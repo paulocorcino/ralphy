@@ -142,7 +142,10 @@ fn a_change_names_its_project_by_the_canonical_key() {
             create("window", stale),
             json!({ "op": "checkout-clear", "repo": "path-abc", "ifName": "wt-a" }),
             json!({ "op": "checkout", "repo": "path-abc", "name": "wt-b" }),
-            json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "file": { "repo": "path-abc", "path": "a.note" } } }),
+            json!({
+                "op": "set", "type": "note", "id": "n-1",
+                "fields": { "file": { "repo": "path-abc", "path": "a.note" } }
+            }),
         ],
         &aliases,
         NOW,
@@ -166,9 +169,10 @@ fn a_create_cuts_a_long_console_name_by_char() {
     assert_eq!(name.chars().count(), CONSOLE_NAME_MAX);
     let out = apply(
         desk,
-        &[
-            json!({ "op": "set", "type": "window", "id": "w-1", "fields": { "consoleName": "x".repeat(60) } }),
-        ],
+        &[json!({
+            "op": "set", "type": "window", "id": "w-1",
+            "fields": { "consoleName": "x".repeat(60) }
+        })],
         &BTreeMap::new(),
         NOW,
     );
@@ -185,7 +189,11 @@ fn the_done_mark_round_trips_on_the_desk_record() {
     let wire = serde_json::to_string(&desk.windows[0]).expect("a record serializes");
     assert!(!wire.contains("doneMark"), "no mark, no key: {wire}");
 
-    let set = |on: bool| json!({ "op": "set", "type": "window", "id": "w-1", "fields": { "doneMark": on } });
+    let set = |on: bool| {
+        json!({
+            "op": "set", "type": "window", "id": "w-1", "fields": { "doneMark": on }
+        })
+    };
     let on = apply(desk, &[set(true)], &BTreeMap::new(), NOW);
     assert!(on.changed && on.refused.is_empty(), "{:?}", on.refused);
     assert!(on.desk.windows[0].done_mark);
@@ -233,7 +241,10 @@ fn a_fence_or_note_with_a_bad_rect_or_checkout_is_refused_by_kind() {
         ),
         json!({ "op": "set", "type": "fence", "id": "f-1", "fields": { "rect": out_of_frame } }),
         json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "rect": out_of_frame } }),
-        json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "file": { "repo": "o/r", "path": "a.note", "checkout": "../x" } } }),
+        json!({
+            "op": "set", "type": "note", "id": "n-1",
+            "fields": { "file": { "repo": "o/r", "path": "a.note", "checkout": "../x" } }
+        }),
     ];
     let out = apply(DeskStore::default(), &changes, &BTreeMap::new(), NOW);
     let accepted = apply(DeskStore::default(), &changes[..2], &BTreeMap::new(), NOW);

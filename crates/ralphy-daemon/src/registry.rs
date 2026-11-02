@@ -6,7 +6,8 @@
 //! never mutate the process-global env (the `RALPHY_*_DIR` env-race trap). The
 //! CLI (which has `ralphy-core`) computes the slug and calls this store; this
 //! module never depends on `ralphy-core` (ADR-0032: the daemon must not import
-//! the core); it reads git facts through `ralphy-git-read` (ADR-0069). Reachability is computed at read time, never persisted — a stale
+//! the core); it reads git facts through `ralphy-git-read` (ADR-0069). Reachability is
+//! computed at read time, never persisted — a stale
 //! flag would contradict "never removed automatically" and self-healing.
 
 use std::collections::BTreeMap;

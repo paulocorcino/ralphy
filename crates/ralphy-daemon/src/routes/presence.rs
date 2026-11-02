@@ -170,7 +170,10 @@ async fn stamp_stores(registry_path: &Path, peers_dir: &Path) -> Option<(String,
     match tokio::task::spawn_blocking(move || (store_stamp(&r), peers_stamp(&p))).await {
         Ok(stamps) => Some(stamps),
         Err(e) => {
-            tracing::warn!(error = %e, "the store watch stopped; repos and peers are no longer pushed");
+            tracing::warn!(
+                error = %e,
+                "the store watch stopped; repos and peers are no longer pushed"
+            );
             None
         }
     }

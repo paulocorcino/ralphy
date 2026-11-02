@@ -107,7 +107,8 @@ async fn over_http(
         .await
         .expect("the test socket connects");
     let request = format!(
-        "POST /api/command HTTP/1.1\r\n{extra}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST /api/command HTTP/1.1\r\n{extra}Content-Type: application/json\r\n\
+        Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     stream

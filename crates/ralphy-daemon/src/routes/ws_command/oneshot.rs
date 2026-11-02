@@ -31,7 +31,8 @@ fn encoding_param(cmd: &protocol::Command) -> Result<Option<&'static Encoding>, 
 /// The reply when a Query or Mutate command passed the reply deadline. The
 /// command is not stopped.
 pub(crate) const STILL_RUNNING: &str =
-    "The command is still running after 60 seconds. Ralphy did not stop it, and its answer will not come here.";
+    "The command is still running after 60 seconds. Ralphy did not stop it, \
+    and its answer will not come here.";
 
 /// The reply when no command slot was free within the reply deadline.
 pub(crate) const NO_SLOT: &str =

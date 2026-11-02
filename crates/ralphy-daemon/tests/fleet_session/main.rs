@@ -282,7 +282,8 @@ async fn http_exchange(
         .map(|token| format!("Authorization: Bearer {token}\r\n"))
         .unwrap_or_default();
     let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}\
+        Content-Length: 0\r\nConnection: close\r\n\r\n"
     );
     stream
         .write_all(request.as_bytes())

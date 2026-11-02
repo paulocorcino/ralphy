@@ -55,7 +55,10 @@ async fn dir_list_reply(payload: &serde_json::Value, registry_path: &Path) -> se
             serde_json::json!({ "status": "error", "message": refusal.message() })
         }
         Ok(Err(e)) => {
-            tracing::warn!(error = %format!("{e:#}"), "failed to load the repo registry for dir.list");
+            tracing::warn!(
+                error = %format!("{e:#}"),
+                "failed to load the repo registry for dir.list"
+            );
             serde_json::json!({ "status": "error", "message": "repo registry unreadable" })
         }
         Err(e) => {
@@ -134,7 +137,10 @@ async fn added_reply(registry_path: &Path, requested: PathBuf) -> serde_json::Va
             serde_json::json!({ "status": "ok", "slug": slug, "name": name, "path": path })
         }
         Ok(Ok(None)) => {
-            serde_json::json!({ "status": "error", "message": "the project was not found in the registry after the add" })
+            serde_json::json!({
+                "status": "error",
+                "message": "the project was not found in the registry after the add"
+            })
         }
         Ok(Err(e)) => {
             tracing::warn!(error = %format!("{e:#}"), "could not read back the added project");

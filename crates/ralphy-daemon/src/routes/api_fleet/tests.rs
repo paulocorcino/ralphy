@@ -30,7 +30,11 @@ async fn serve_peer(mode: Arc<AtomicU8>) -> (u16, tokio::task::JoinHandle<()>) {
     let repos = move || {
         let mode = mode.load(Ordering::SeqCst);
         async move {
-            let row = |slug: &str| serde_json::json!([{ "slug": slug, "path": "/home/p/x", "reachable": true }]);
+            let row = |slug: &str| {
+                serde_json::json!([{
+                    "slug": slug, "path": "/home/p/x", "reachable": true
+                }])
+            };
             match mode {
                 GOOD => Json(row("owner/theirs")).into_response(),
                 REFUSED => {

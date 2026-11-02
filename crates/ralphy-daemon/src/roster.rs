@@ -84,7 +84,8 @@ mod tests {
             Agent::ALL.iter().map(|&a| agent_flag(a)).collect();
         assert_eq!(
             served, expected,
-            "the roster's ids must equal Agent::ALL's flags — a vendor missing here is invisible to the menu"
+            "the roster's ids must equal Agent::ALL's flags — a vendor missing here is \
+            invisible to the menu"
         );
         for row in &rows {
             assert_eq!(row.label, row.id, "label mirrors the flag");

@@ -268,7 +268,10 @@ pub(crate) fn local_usage_contribution(
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
         Err(e) => {
-            tracing::warn!(error = %e, "failed to load repo registry for the usage scan; serving unattributed");
+            tracing::warn!(
+                error = %e,
+                "failed to load repo registry for the usage scan; serving unattributed"
+            );
             registry::RegistryStore::default()
         }
     };

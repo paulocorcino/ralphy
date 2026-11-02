@@ -266,7 +266,8 @@ fn unknown_daemon(daemon_id: &str) -> serde_json::Value {
     serde_json::json!({
         "status": "error",
         "message": format!(
-            "No environment is announced as {daemon_id}. Its daemon has not written a peer descriptor into this store."
+            "No environment is announced as {daemon_id}. Its daemon has not written a peer \
+            descriptor into this store."
         ),
     })
 }

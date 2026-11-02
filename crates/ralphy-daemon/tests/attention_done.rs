@@ -61,7 +61,8 @@ async fn get(port: u16, path: &str) -> (u16, serde_json::Value) {
 async fn dismiss(port: u16, id: &str) -> u16 {
     let body = serde_json::json!({ "id": id }).to_string();
     let request = format!(
-        "POST /api/attention/dismiss HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST /api/attention/dismiss HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+        Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     exchange(port, &request).await.0

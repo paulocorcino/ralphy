@@ -73,7 +73,8 @@ pub(crate) async fn fleet_nudge_route(
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "error": format!(
-                    "Peer {} announced no way to wake it. A WSL peer needs `loginctl enable-linger` \
+                    "Peer {} announced no way to wake it. A WSL peer needs \
+                        `loginctl enable-linger` \
                      and a `ralphy-daemon.service` user unit.",
                     d.environment
                 )

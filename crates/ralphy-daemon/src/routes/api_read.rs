@@ -106,7 +106,10 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
         match registry::load_from(&registry_path) {
             Ok(healed) => build_views(&healed),
             Err(e) => {
-                tracing::warn!(error = %e, "repo registry unreadable after a re-key; serving the pre-heal list");
+                tracing::warn!(
+                    error = %e,
+                    "repo registry unreadable after a re-key; serving the pre-heal list"
+                );
                 views
             }
         }

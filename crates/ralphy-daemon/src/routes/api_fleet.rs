@@ -186,16 +186,29 @@ async fn read_peer_repos(d: &peer::PeerDescriptor) -> Option<fleet::PeerRepoStor
         Ok((200, body)) => match fleet::store_from_repos_json(&body) {
             Some(store) => Some(store),
             None => {
-                tracing::warn!(peer = %d.environment, "peer served an /api/repos body this daemon cannot read; keeping its last-known repos");
+                tracing::warn!(
+                    peer = %d.environment,
+                    "peer served an /api/repos body this daemon cannot read; \
+                    keeping its last-known repos"
+                );
                 None
             }
         },
         Ok((code, _)) => {
-            tracing::warn!(peer = %d.environment, %code, "peer answered the handshake but refused /api/repos; keeping its last-known repos");
+            tracing::warn!(
+                peer = %d.environment,
+                %code,
+                "peer answered the handshake but refused /api/repos; \
+                keeping its last-known repos"
+            );
             None
         }
         Err(e) => {
-            tracing::warn!(peer = %d.environment, error = %format!("{e:#}"), "could not read a peer's repos; keeping its last-known ones");
+            tracing::warn!(
+                peer = %d.environment,
+                error = %format!("{e:#}"),
+                "could not read a peer's repos; keeping its last-known ones"
+            );
             None
         }
     }
@@ -346,7 +359,10 @@ async fn local_rows(
     let local_store = match registry::load_from(registry_path) {
         Ok(store) => store,
         Err(e) => {
-            tracing::warn!(error = %e, "failed to load repo registry; federating an empty local list");
+            tracing::warn!(
+                error = %e,
+                "failed to load repo registry; federating an empty local list"
+            );
             registry::RegistryStore::default()
         }
     };

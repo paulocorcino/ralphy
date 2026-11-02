@@ -75,7 +75,8 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
         .await
         .expect("connect to the test server");
     let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+        Content-Length: 0\r\nConnection: close\r\n\r\n"
     );
     stream
         .write_all(req.as_bytes())
