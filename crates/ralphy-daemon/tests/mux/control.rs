@@ -159,3 +159,41 @@ async fn a_bare_frame_past_the_report_cap_closes_the_socket() {
         .await
         .expect("close the page socket");
 }
+
+/// One message of the page socket is at most one full piece and its header
+/// (`MAX_MESSAGE`): a piece one byte longer ends the socket.
+#[tokio::test]
+async fn a_message_past_one_full_piece_closes_the_socket() {
+    let daemon = serve().await;
+    let message = |len: usize| {
+        Message::Binary(
+            protocol::encode(&Frame::Channel {
+                channel: 2,
+                more: false,
+                piece: vec![b'x'; len],
+            })
+            .into(),
+        )
+    };
+
+    let mut ws = connect(&daemon).await;
+    ws.send(message(protocol::MAX_PIECE + 1))
+        .await
+        .expect("send a piece one byte past the cap");
+    assert!(
+        ends_within(&mut ws, WITHIN).await,
+        "a piece one byte past a full piece ends the socket"
+    );
+
+    // Negative control: a full piece is within the cap. Channel 2 is not
+    // open, so only the channel is refused.
+    let mut ws = connect(&daemon).await;
+    ws.send(message(protocol::MAX_PIECE))
+        .await
+        .expect("send a full piece");
+    assert_eq!(closed_reason(&mut ws, 2).await, "refused");
+    assert_still_open(&mut ws).await;
+    ws.send(Message::Close(None))
+        .await
+        .expect("close the page socket");
+}

@@ -220,6 +220,25 @@ fn title_case_weekday(wd: &str) -> String {
 mod tests {
     use super::*;
 
+    /// A reset can fall on any day: each of the seven abbreviations is read,
+    /// in any case, and nothing else is.
+    #[test]
+    fn every_weekday_abbreviation_is_read_in_any_case() {
+        for (text, day) in [
+            ("mon", Weekday::Mon),
+            ("Tue", Weekday::Tue),
+            ("WED", Weekday::Wed),
+            ("thu", Weekday::Thu),
+            ("Fri", Weekday::Fri),
+            ("sat", Weekday::Sat),
+            ("SUN", Weekday::Sun),
+        ] {
+            assert_eq!(parse_weekday(text), Some(day), "{text}");
+        }
+        assert_eq!(parse_weekday("tues"), None);
+        assert_eq!(parse_weekday(""), None);
+    }
+
     /// One real transcript api-error line carrying the limit banner `text`, in the
     /// exact shape Claude Code writes (`isApiErrorMessage`+`error`+`apiErrorStatus`).
     fn limit_jsonl(text: &str) -> String {
