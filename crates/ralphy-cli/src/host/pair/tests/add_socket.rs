@@ -94,7 +94,8 @@ fn a_socket_the_host_does_not_forward_falls_back_to_the_port() {
     let printed = String::from_utf8(report.into_inner()).unwrap();
     assert!(
         printed.contains(&format!(
-            "The host does not forward a connection to the daemon's socket ({NOT_FORWARDED}). This computer reaches the daemon through its port 7257."
+            "The host does not forward a connection to the daemon's socket ({NOT_FORWARDED}). \
+             This computer reaches the daemon through its port 7257."
         )),
         "{printed}"
     );
@@ -124,7 +125,9 @@ fn a_port_that_belongs_to_another_account_fails_the_add_before_writing() {
     assert_eq!(
         err,
         format!(
-            "the host does not forward a connection to the daemon's socket ({NOT_FORWARDED}), and its port 7257 belongs to another daemon (01ARZ3NDEKTSV4RRFFQ69G5FC1): ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd"
+            "the host does not forward a connection to the daemon's socket ({NOT_FORWARDED}), \
+             and its port 7257 belongs to another daemon (01ARZ3NDEKTSV4RRFFQ69G5FC1): \
+             ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd"
         )
     );
     assert!(!peers_dir(store.path()).exists());
@@ -153,7 +156,9 @@ fn a_port_that_belongs_to_another_account_fails_the_add_before_writing() {
     assert_eq!(
         err,
         format!(
-            "the host does not forward a connection to the daemon's socket ({NOT_FORWARDED}), and its port 7257 does not reach this account's daemon ({refused}): ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd"
+            "the host does not forward a connection to the daemon's socket ({NOT_FORWARDED}), \
+             and its port 7257 does not reach this account's daemon ({refused}): \
+             ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd"
         )
     );
     assert!(!peers_dir(store.path()).exists());

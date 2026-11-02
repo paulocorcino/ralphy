@@ -8,7 +8,8 @@ fn add_refuses_an_unknown_host_before_anything_else() {
         out(
             255,
             "",
-            "No ED25519 host key is known for svrapp and you have requested strict checking.\r\nHost key verification failed.\r\n",
+            "No ED25519 host key is known for svrapp and you have requested strict checking.\r\n\
+             Host key verification failed.\r\n",
         ),
     );
     let err = add(

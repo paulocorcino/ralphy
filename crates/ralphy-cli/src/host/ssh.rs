@@ -139,7 +139,8 @@ impl HostShell for Ssh {
             return Err(ssh_error(
                 SshFailure::Prompt,
                 format!(
-                    "the host {} asked {prompt:?}, and the password is the only answer Ralphy gives",
+                    "the host {} asked {prompt:?}, and the password is the only answer \
+                     Ralphy gives",
                     self.destination
                 ),
             ));

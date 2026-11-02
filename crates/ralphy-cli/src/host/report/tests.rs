@@ -138,6 +138,9 @@ fn json_connected_fixed_added_and_linger_lines() {
     assert_eq!(events[2]["command"], "sudo loginctl enable-linger paulo");
     assert_eq!(
         events[3],
-        serde_json::json!({"event": "added", "name": "vps", "daemon_id": "01ARZ3NDEKTSV4RRFFQ69G5FC0", "port": 7401})
+        serde_json::json!({
+            "event": "added", "name": "vps",
+            "daemon_id": "01ARZ3NDEKTSV4RRFFQ69G5FC0", "port": 7401
+        })
     );
 }

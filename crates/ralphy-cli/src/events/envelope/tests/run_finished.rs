@@ -69,7 +69,10 @@ fn run_finished_maps_outcome_totals_without_subject() {
         v["data"]["issues"],
         json!([
             { "number": 1, "title": "one", "status": "done" },
-            { "number": 2, "title": "two", "status": "skipped", "kind": "human_return", "blocked_by": [] },
+            {
+                "number": 2, "title": "two", "status": "skipped", "kind": "human_return",
+                "blocked_by": []
+            },
         ])
     );
     // `run.finished` carries NO agent block.

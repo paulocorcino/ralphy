@@ -146,7 +146,8 @@ fn classify_host_key_unknown() {
     let o = out(
         255,
         "",
-        "No ED25519 host key is known for svrapp and you have requested strict checking.\r\nHost key verification failed.\r\n",
+        "No ED25519 host key is known for svrapp and you have requested strict checking.\r\n\
+         Host key verification failed.\r\n",
     );
     assert_eq!(classify(&o), Some(SshFailure::HostKeyUnknown));
 }
@@ -156,7 +157,8 @@ fn classify_host_key_changed() {
     let o = out(
         255,
         "",
-        "@@@@@@@@\r\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\r\n@@@@@@@@\r\nHost key verification failed.\r\n",
+        "@@@@@@@@\r\n@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\r\n\
+         @@@@@@@@\r\nHost key verification failed.\r\n",
     );
     assert_eq!(classify(&o), Some(SshFailure::HostKeyChanged));
 }

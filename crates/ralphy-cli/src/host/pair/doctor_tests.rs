@@ -10,7 +10,17 @@ use crate::host::ssh::tests::{out, FakeHost};
 
 // format of `ralphy doctor --json` on a host with git, gh signed out, no
 // python and one agent CLI; it exits 1 because tools are missing.
-const DOCTOR: &str = r#"{"tools":[{"tool":"git","name":"git","ok":true,"required":true,"version":"git version 2.43.0","text":"git version 2.43.0","fix":null},{"tool":"gh","name":"gh","ok":false,"required":true,"version":"gh version 2.45.0","text":"installed, but not signed in","fix":"gh auth login"},{"tool":"python","name":"python","ok":false,"required":true,"version":null,"text":"not found as `python` or `python3`","fix":null},{"tool":"agent","name":"claude","ok":true,"required":true,"version":"2.1.0","text":"2.1.0","fix":null},{"tool":"linger","name":"lingering","ok":true,"required":false,"version":null,"text":"lingering is on","fix":null}]}"#;
+const DOCTOR: &str = concat!(
+    r#"{"tools":[{"tool":"git","name":"git","ok":true,"required":true,"version":"git version "#,
+    r#"2.43.0","text":"git version "#,
+    r#"2.43.0","fix":null},{"tool":"gh","name":"gh","ok":false,"required":true,"version":"gh "#,
+    r#"version 2.45.0","text":"installed, but not signed in","fix":"gh auth "#,
+    r#"login"},{"tool":"python","name":"python","ok":false,"required":true,"version":null,"#,
+    r#""text":"not found as `python` or "#,
+    r#"`python3`","fix":null},{"tool":"agent","name":"claude","ok":true,"required":true,"#,
+    r#""version":"2.1.0","text":"2.1.0","fix":null},{"tool":"linger","name":"lingering","#,
+    r#""ok":true,"required":false,"version":null,"text":"lingering is on","fix":null}]}"#,
+);
 
 fn checks_of(fake: &mut FakeHost) -> Vec<HostCheck> {
     let store = tempfile::tempdir().unwrap();

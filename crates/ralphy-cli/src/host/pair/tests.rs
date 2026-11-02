@@ -1,6 +1,7 @@
 use super::*;
 use crate::host::report::Report;
-use ralphy_daemon::peer::key::ensure_peer_key;
+use crate::host::ssh::SshFailure;
+use ralphy_daemon::peer::key::{ensure_peer_key, key_path_in};
 
 mod add;
 mod add_fix;
@@ -46,10 +47,10 @@ const HOST_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FC0";
 const PUBLIC: &str = "ssh-ed25519 BODY ralphy-peer@anvil";
 
 // format of `id -u`, `id -un` and `loginctl show-user`
-pub(super) const LINUX_PROBE: &str =
-    "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=yes\n";
-const LINUX_NO_LINGER: &str =
-    "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=no\n";
+pub(super) const LINUX_PROBE: &str = "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n\
+--- arch\nx86_64\n--- linger\nLinger=yes\n";
+const LINUX_NO_LINGER: &str = "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n\
+--- arch\nx86_64\n--- linger\nLinger=no\n";
 
 pub(super) fn local(store: &Path) -> Local<'_> {
     Local {

@@ -280,7 +280,10 @@ pub(crate) fn install(
         return Ok(());
     }
     if ralphy.is_newer() {
-        bail!("the Ralphy on {dest} is newer than this one, so it was not replaced: update Ralphy on this computer");
+        bail!(
+            "the Ralphy on {dest} is newer than this one, so it was not replaced: \
+             update Ralphy on this computer"
+        );
     }
     let offer = offer(&facts, local).map_err(|why| anyhow!(why))?;
 
@@ -288,7 +291,8 @@ pub(crate) fn install(
     move_daemon(&mut s, local, out)?;
     if matches!(ralphy, RalphyOnHost::Old { .. }) {
         out.note(&format!(
-            "`ralphy` on the PATH of {dest} is still the old version. To use the new one by hand, put {} first in PATH.",
+            "`ralphy` on the PATH of {dest} is still the old version. \
+             To use the new one by hand, put {} first in PATH.",
             offer.folder
         ))?;
     } else {
@@ -322,7 +326,8 @@ fn send_binary<S: HostShell>(
     match printed_hash(&written.stdout) {
         Some(hash) if hash == expected => {}
         Some(hash) => bail!(
-            "the copy on {dest} is not the binary that was sent (expected {expected}, the host computed {hash}), so nothing was replaced"
+            "the copy on {dest} is not the binary that was sent (expected {expected}, \
+             the host computed {hash}), so nothing was replaced"
         ),
         None => bail!(
             "{dest} did not print the hash of the copy, so nothing was replaced: {}",

@@ -8,7 +8,10 @@ fn describe() -> HostOp {
 fn render_describe_linux() {
     assert_eq!(
         render(Some(HostOs::Linux), &describe()).unwrap(),
-        r#"sh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" daemon describe --with-token; else ralphy daemon describe --with-token; fi'"#
+        concat!(
+            r#"sh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" "#,
+            r#"daemon describe --with-token; else ralphy daemon describe --with-token; fi'"#,
+        )
     );
 }
 
@@ -16,7 +19,10 @@ fn render_describe_linux() {
 fn render_describe_macos() {
     assert_eq!(
         render(Some(HostOs::MacOs), &describe()).unwrap(),
-        r#"zsh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" daemon describe --with-token; else ralphy daemon describe --with-token; fi'"#
+        concat!(
+            r#"zsh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" "#,
+            r#"daemon describe --with-token; else ralphy daemon describe --with-token; fi'"#,
+        )
     );
 }
 
@@ -24,7 +30,11 @@ fn render_describe_macos() {
 fn render_describe_windows() {
     assert_eq!(
         render(Some(HostOs::Windows), &describe()).unwrap(),
-        r#"if exist "%USERPROFILE%\.ralphy\bin\ralphy.exe" ("%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon describe --with-token) else (ralphy daemon describe --with-token)"#
+        concat!(
+            r#"if exist "%USERPROFILE%\.ralphy\bin\ralphy.exe" "#,
+            r#"("%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon describe --with-token) else "#,
+            r#"(ralphy daemon describe --with-token)"#,
+        )
     );
 }
 
@@ -32,7 +42,10 @@ fn render_describe_windows() {
 fn render_read_keys_windows_admin() {
     assert_eq!(
         render(Some(HostOs::Windows), &HostOp::ReadKeys { admin: true }).unwrap(),
-        r"if exist C:\ProgramData\ssh\administrators_authorized_keys type C:\ProgramData\ssh\administrators_authorized_keys"
+        concat!(
+            r"if exist C:\ProgramData\ssh\administrators_authorized_keys type ",
+            r"C:\ProgramData\ssh\administrators_authorized_keys",
+        )
     );
 }
 
@@ -88,11 +101,19 @@ fn render_set_name_quotes_inside_the_login_shell() {
     };
     assert_eq!(
         render(Some(HostOs::Linux), &op).unwrap(),
-        r#"sh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" daemon setup --name '\''my box'\'' --avatar 3; else ralphy daemon setup --name '\''my box'\'' --avatar 3; fi'"#
+        concat!(
+            r#"sh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" "#,
+            r#"daemon setup --name '\''my box'\'' --avatar 3; else ralphy daemon setup --name "#,
+            r#"'\''my box'\'' --avatar 3; fi'"#,
+        )
     );
     assert_eq!(
         render(Some(HostOs::Windows), &op).unwrap(),
-        r#"if exist "%USERPROFILE%\.ralphy\bin\ralphy.exe" ("%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon setup --name "my box" --avatar 3) else (ralphy daemon setup --name "my box" --avatar 3)"#
+        concat!(
+            r#"if exist "%USERPROFILE%\.ralphy\bin\ralphy.exe" "#,
+            r#"("%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon setup --name "my box" --avatar 3) "#,
+            r#"else (ralphy daemon setup --name "my box" --avatar 3)"#,
+        )
     );
 }
 
@@ -169,11 +190,18 @@ fn render_the_binary_write_skips_the_login_shell_and_prints_the_hash() {
 fn render_the_binary_commit_sets_the_old_one_aside() {
     assert_eq!(
         render(Some(HostOs::MacOs), &HostOp::CommitBinary).unwrap(),
-        r#"sh -c 'cd "$HOME/.ralphy/bin" && { if [ -e ralphy ]; then mv -f ralphy ralphy.old; fi; } && chmod +x ralphy.part && mv -f ralphy.part ralphy'"#
+        concat!(
+            r#"sh -c 'cd "$HOME/.ralphy/bin" && { if [ -e ralphy ]; then mv -f ralphy "#,
+            r#"ralphy.old; fi; } && chmod +x ralphy.part && mv -f ralphy.part ralphy'"#,
+        )
     );
     assert_eq!(
         render(Some(HostOs::Windows), &HostOp::CommitBinary).unwrap(),
-        r#"cd /d "%USERPROFILE%\.ralphy\bin" && (if exist ralphy.exe.old del /f /q ralphy.exe.old) && (if exist ralphy.exe move /y ralphy.exe ralphy.exe.old) && move /y ralphy.exe.part ralphy.exe"#
+        concat!(
+            r#"cd /d "%USERPROFILE%\.ralphy\bin" && (if exist ralphy.exe.old del /f /q "#,
+            r#"ralphy.exe.old) && (if exist ralphy.exe move /y ralphy.exe ralphy.exe.old) && "#,
+            r#"move /y ralphy.exe.part ralphy.exe"#,
+        )
     );
 }
 
