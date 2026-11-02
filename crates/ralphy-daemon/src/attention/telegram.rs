@@ -278,7 +278,11 @@ impl Sender {
                 if !self.failing.insert(id.clone()) {
                     return None;
                 }
-                tracing::warn!(request = %id, %error, "the Telegram message could not be sent; it is tried again");
+                tracing::warn!(
+                    request = %id,
+                    %error,
+                    "the Telegram message could not be sent; it is tried again"
+                );
                 Some(error)
             }
         }

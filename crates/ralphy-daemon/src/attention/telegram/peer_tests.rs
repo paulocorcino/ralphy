@@ -321,7 +321,12 @@ async fn a_page_on_the_peer_counts_as_present() {
     let report = protocol::encode(&protocol::Frame::Command(protocol::Command {
         id: 0,
         verb: "presence.report".to_string(),
-        payload: json!({ "visible": true, "lastInput": now, "now": now, "origin": "http://127.0.0.1:1" }),
+        payload: json!({
+            "visible": true,
+            "lastInput": now,
+            "now": now,
+            "origin": "http://127.0.0.1:1",
+        }),
     }));
     page.send(Wire::Binary(report.into()))
         .await

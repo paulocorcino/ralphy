@@ -15,7 +15,8 @@ fn claude_line(event: &str) -> String {
 /// A permission request for `Bash`, at hook time `ts`.
 fn permission(ts: &str) -> String {
     format!(
-        "{{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"ts\":\"{ts}\"}}\n"
+        "{{\"event\":\"PermissionRequest\",\"session_id\":\"s1\",\
+         \"tool_name\":\"Bash\",\"ts\":\"{ts}\"}}\n"
     )
 }
 

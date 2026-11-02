@@ -45,8 +45,10 @@ fn check_in(dir: &Path, name: &str, mut reply: Value, volatile: &[&str]) {
     let golden: Value = serde_json::from_str(&text)
         .unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()));
     assert_eq!(
-        reply, golden,
-        "the {name} reply differs from {}; if the change is intended, run the test with UPDATE_GOLDEN=1",
+        reply,
+        golden,
+        "the {name} reply differs from {}; if the change is intended, \
+        run the test with UPDATE_GOLDEN=1",
         path.display()
     );
 }

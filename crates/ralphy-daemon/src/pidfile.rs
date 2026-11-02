@@ -52,7 +52,11 @@ pub fn clear_in(dir: &Path) {
     let path = pid_path_in(dir);
     if let Err(e) = std::fs::remove_file(&path) {
         if e.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!(path = %path.display(), error = %e, "could not clear the daemon pid file");
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "could not clear the daemon pid file"
+            );
         }
     }
 }

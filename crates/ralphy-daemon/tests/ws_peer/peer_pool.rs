@@ -63,7 +63,8 @@ async fn counting_peer() -> (u16, Arc<AtomicUsize>) {
                     let hang_up = String::from_utf8_lossy(&buf[..read]).contains("/close-me");
                     let body = br#"{"status":"ok"}"#;
                     let head = format!(
-                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: {}\r\n\r\n",
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                         content-length: {}\r\nconnection: {}\r\n\r\n",
                         body.len(),
                         if hang_up { "close" } else { "keep-alive" }
                     );

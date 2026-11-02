@@ -277,7 +277,9 @@ fn warn_retired_console_worktree(registry_path: &Path) {
             for slug in store.retired_console_worktree() {
                 tracing::warn!(
                     %slug,
-                    "repos.toml: the `console_worktree` setting is no longer used and is removed the next time the file is saved; a console now opens in the worktree you pick"
+                    "repos.toml: the `console_worktree` setting is no longer used and is \
+                    removed the next time the file is saved; a console now opens in the \
+                    worktree you pick"
                 );
             }
         }

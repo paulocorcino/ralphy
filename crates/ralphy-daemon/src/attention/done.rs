@@ -90,7 +90,10 @@ pub(crate) async fn fire(
     let stored = match desk::load_from(&files.desk) {
         Ok(stored) => stored,
         Err(e) => {
-            tracing::warn!(error = %format!("{e:#}"), "the done marks could not be read from the desk");
+            tracing::warn!(
+                error = %format!("{e:#}"),
+                "the done marks could not be read from the desk"
+            );
             return;
         }
     };

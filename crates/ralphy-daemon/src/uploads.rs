@@ -259,7 +259,11 @@ fn sweep(root: &Path, now: SystemTime) {
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "part") && is_older(&path, cutoff) {
             if let Err(e) = std::fs::remove_file(&path) {
-                tracing::warn!(error = %e, path = %path.display(), "could not delete an old upload part");
+                tracing::warn!(
+                    error = %e,
+                    path = %path.display(),
+                    "could not delete an old upload part"
+                );
             }
         }
     }

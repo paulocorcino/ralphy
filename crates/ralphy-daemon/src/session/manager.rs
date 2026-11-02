@@ -8,32 +8,34 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::broadcast;
 
 use super::screen;
 use super::{EndReason, EvictToken, Session, SessionId, SessionInfo, SessionSpec};
 
 mod agent_status;
+mod attachment;
+mod id_seq;
 mod kept;
 mod pump;
 mod record;
 use agent_status::AgentStatus;
 pub use agent_status::TurnEnd;
+pub use attachment::{AttachError, Attachment};
+use id_seq::IdSeq;
 #[cfg(test)]
 use kept::publish;
 use kept::{replay_and_subscribe, KeptOutput, Subscribed};
 use pump::start_pump;
 pub use record::RecordClaim;
 
-/// Broadcast capacity (chunks) for the live fan-out. Generous so a briefly slow
-/// attach only `Lagged`s (the bridge tolerates a gap) rather than blocking the pump.
+/// Broadcast capacity (chunks) of the live fan-out: a slow attach lags, never blocks the pump.
 const BROADCAST_CAP: usize = 1024;
 
 /// A session the daemon owns (the tmux model): the PTY child plus the machinery
 /// that lets a client detach and reattach. `kept` is the ring and the screen; `tx`
-/// fans live output out to every attachment; `attached` holds the current single
-/// WRITER (`None` when detached), `watchers` the tokens of the read-only clients
-/// — any number of them, none holding the writer slot.
+/// fans live output out to every attachment; `attached` is the single writer
+/// (`None` when detached), `watchers` the read-only clients.
 struct ManagedSession {
     info: SessionInfo,
     session: Mutex<Session>,
@@ -80,13 +82,10 @@ impl ManagedSession {
         info
     }
 
-    /// Feed raw bytes to the child as terminal input. Behind the session mutex so
-    /// the single writer and a concurrent `close` do not race; the lock is held
-    /// only to queue the bytes, never for the PTY write itself. The first
-    /// write that is the operator's input starts the silence clock; a reply
-    /// the terminal sent by itself does not. The operator's input also ends
-    /// the permission `waiting` of a vendor that sends no grant event
-    /// (ADR-0085 D7.5); the next tick reports the change.
+    /// Feed raw bytes to the child as terminal input. The session lock is held
+    /// only to queue the bytes. The operator's input starts the silence clock
+    /// (a reply the terminal sent by itself does not) and ends the permission
+    /// `waiting` of a vendor that sends no grant event (ADR-0085 D7.5).
     fn write(&self, bytes: &[u8]) -> Result<()> {
         if !bytes.is_empty() && !crate::agent_state::is_terminal_report(bytes) {
             self.agent_status
@@ -101,12 +100,10 @@ impl ManagedSession {
     /// (ADR-0079 D3). The screen is resized only when the PTY accepted it.
     ///
     /// LOCK ORDER: `kept`, then `session`. This is the one place that holds
-    /// both; the pump, an attach, `write` and `close` each take one of them
-    /// alone, so the order cannot deadlock. `kept` is held across both
-    /// resizes, so no output is kept between them: the bytes the child
-    /// writes at the new size (ConPTY repaints at once) reach the screen
-    /// after its resize, and two resizes that race leave the PTY and the
-    /// screen at the same size.
+    /// both; every other path takes one alone, so the order cannot deadlock.
+    /// `kept` is held across both resizes, so output at the new size (ConPTY
+    /// repaints at once) reaches the screen after its resize, and two racing
+    /// resizes leave the PTY and the screen at the same size.
     fn resize(&self, rows: u16, cols: u16) -> Result<()> {
         let (rows, cols) = screen::clamp_size(rows, cols);
         let mut kept = self.kept.lock().expect("kept output mutex");
@@ -121,9 +118,8 @@ impl ManagedSession {
 }
 
 /// The daemon's set of live sessions (docs/adr/0032 §2, issue #166). Sessions
-/// belong to the manager, not to any connection: a client disconnect detaches, never
-/// closes. Constructed once inside `router()`; a `Weak` clone is handed to each
-/// pump so a finished child can remove itself.
+/// belong to the manager, not to any connection: a disconnect detaches, never
+/// closes. Each pump holds a `Weak` clone so a finished child removes itself.
 pub struct SessionManager {
     sessions: Mutex<BTreeMap<SessionId, Arc<ManagedSession>>>,
     ids: Mutex<IdSeq>,
@@ -139,52 +135,6 @@ pub struct SessionManager {
 /// Capacity of [`SessionManager::subscribe_changes`]. A receiver that lags
 /// reads the list again once, so a small buffer loses nothing.
 const CHANGES_CAP: usize = 32;
-
-/// The session id sequence. With a `file`, the last id issued is written there
-/// each time, and a manager built over the same file continues past it — so a
-/// restarted daemon never re-issues an id the last one used. A browser still
-/// holding `?id=N` from before the restart gets `404` instead of reattaching to
-/// whichever NEW session drew N.
-struct IdSeq {
-    last: SessionId,
-    file: Option<PathBuf>,
-}
-
-impl IdSeq {
-    /// Continue past what `file` recorded. A missing file is a first boot; an
-    /// unreadable or corrupt one is said out loud and restarts the sequence,
-    /// the pre-persistence behaviour, rather than refusing to serve sessions.
-    fn continuing(file: PathBuf) -> IdSeq {
-        let last = match std::fs::read_to_string(&file) {
-            Ok(text) => text.trim().parse::<SessionId>().unwrap_or_else(|e| {
-                tracing::warn!(file = %file.display(), error = %e, "session id record is corrupt; ids restart at 1");
-                0
-            }),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
-            Err(e) => {
-                tracing::warn!(file = %file.display(), error = %e, "session id record is unreadable; ids restart at 1");
-                0
-            }
-        };
-        IdSeq {
-            last,
-            file: Some(file),
-        }
-    }
-
-    /// Issue the next id and record it. Starts at 1: 0 reads as "unset" and the
-    /// codec's default session. A failed write is logged, not fatal — the id is
-    /// still unique within this daemon's life.
-    fn next(&mut self) -> SessionId {
-        self.last += 1;
-        if let Some(file) = &self.file {
-            if let Err(e) = std::fs::write(file, self.last.to_string()) {
-                tracing::warn!(file = %file.display(), error = %e, "could not record the last session id");
-            }
-        }
-        self.last
-    }
-}
 
 impl Default for SessionManager {
     fn default() -> Self {
@@ -228,10 +178,9 @@ impl SessionManager {
     }
 
     /// Spawn a fresh session, start its output pump, and attach to it. The caller
-    /// (the WS upgrade) gets the id (for the list/close endpoints and the codec's
-    /// `session` field) and an [`Attachment`] to bridge onto the socket. A fresh
-    /// session is never busy, so the initial attach always succeeds. `record` is
-    /// the window record the launch named; its [`RecordClaim`] is the caller's.
+    /// gets the id and an [`Attachment`] to bridge onto the socket. A fresh
+    /// session is never busy. `record` is the window record the launch named;
+    /// its [`RecordClaim`] is the caller's.
     #[expect(
         clippy::too_many_arguments,
         reason = "the session's labels, its record and its spec; a public method"
@@ -401,7 +350,10 @@ impl SessionManager {
                 let own = holder.is_some() && existing.holder.as_deref() == holder;
                 if !takeover
                     && own
-                    && matches!((attempt, existing.attempt), (Some(claim), Some(held)) if claim < held)
+                    && matches!(
+                        (attempt, existing.attempt),
+                        (Some(claim), Some(held)) if claim < held
+                    )
                 {
                     return Err(AttachError::Superseded);
                 }
@@ -432,13 +384,10 @@ impl SessionManager {
     }
 
     /// Attach to an existing session as a READ-ONLY watcher (issue #334): the
-    /// same replay and the same live stream, but the writer slot is untouched, so
-    /// this NEVER refuses with `Busy` and never evicts anyone. A client is a
-    /// watcher by construction — it asked to be one; there is no spectator mode
-    /// and no second route.
+    /// same replay and live stream, but the writer slot is untouched, so this
+    /// never refuses with `Busy` and never evicts anyone.
     ///
-    /// EXACTLY-ONCE REPLAY INVARIANT: replay+`subscribe()` under the `kept`
-    /// lock, exactly as [`attach`] does — the invariant holds for a watcher too.
+    /// The EXACTLY-ONCE REPLAY INVARIANT of [`attach`] holds for a watcher too.
     /// `since` is read as [`attach_as`] reads it.
     ///
     /// [`attach`]: SessionManager::attach
@@ -506,9 +455,8 @@ impl SessionManager {
     /// Close a session: remove it from the map, evict every attached client
     /// (writer AND watchers), and tree-kill the child (the pump then reaches EOF
     /// and self-removes, a no-op). Returns whether the id existed. Idempotent.
-    ///
-    /// The reason is `ChildExited` rather than a fourth word: this path DOES kill
-    /// the child, and the client's vocabulary is fixed at three (issue #334).
+    /// The reason is `ChildExited`: the client's vocabulary is fixed at three
+    /// (issue #334).
     pub fn close(&self, id: SessionId) -> bool {
         let sess = {
             let mut map = self.sessions.lock().expect("sessions mutex");
@@ -527,9 +475,8 @@ impl SessionManager {
     }
 }
 
-/// Tell the subscribers the session list changed. A send with no subscriber
-/// is `Err`, and a change nobody listens for needs no message: the next tab
-/// that opens reads the list anyway.
+/// Tell the subscribers the session list changed. With no subscriber there is
+/// nothing to tell: the next tab that opens reads the list anyway.
 fn notify(changes: &broadcast::Sender<()>) {
     if changes.send(()).is_err() {
         // No subscriber: nothing to tell.
@@ -545,162 +492,6 @@ fn evict_all(sess: &ManagedSession, reason: EndReason) {
     }
     for watcher in sess.watchers.lock().expect("watchers mutex").iter() {
         watcher.fire(reason);
-    }
-}
-
-/// Why an [`attach`] failed. `Unknown` → the id names no live session (`404`);
-/// `Busy` → a single writer is already attached and `takeover` was not set (`409`);
-/// `Superseded` → the slot's own holder already claimed it with a higher
-/// attempt, so this claim (not a take over) is a late socket ([`attach_as`]).
-///
-/// [`attach`]: SessionManager::attach
-/// [`attach_as`]: SessionManager::attach_as
-#[derive(Debug)]
-pub enum AttachError {
-    Unknown,
-    Busy,
-    Superseded,
-}
-
-/// A live attachment to a session: the replay `snapshot` to send first (the
-/// screen snapshot, or the raw ring once the screen is broken), a `rx`
-/// for the live stream, a `size` receiver that holds the session size `(rows,
-/// cols)` and changes when a resize by the writer changes it, and an `evict` token the
-/// bridge waits on to learn WHY it ended (taken over, child exited, daemon
-/// shutting down). `writer` is the role:
-/// `true` for the single writer, `false` for a watcher. Dropping it releases the
-/// writer slot (or deregisters the watcher) WITHOUT closing the session (the tmux
-/// detach).
-pub struct Attachment {
-    pub snapshot: Vec<u8>,
-    /// `snapshot` is the ring bytes after the `since` the attach named, for a
-    /// terminal that keeps what it shows (ADR-0079 D8). `false`: it is the
-    /// screen snapshot (or the raw ring), for a terminal that starts empty.
-    pub resume: bool,
-    /// The count of the session's output bytes at the end of `snapshot`. The
-    /// live stream starts at this count.
-    pub offset: u64,
-    pub rx: broadcast::Receiver<Vec<u8>>,
-    pub size: watch::Receiver<(u16, u16)>,
-    /// The session size `(rows, cols)` `snapshot` was written at. `size` may
-    /// already hold a later one.
-    pub(crate) replay_size: (u16, u16),
-    pub evict: Arc<EvictToken>,
-    pub writer: bool,
-    _guard: AttachGuard,
-    sess: Arc<ManagedSession>,
-}
-
-impl Attachment {
-    fn new(
-        subscribed: Subscribed,
-        token: Arc<EvictToken>,
-        writer: bool,
-        sess: Arc<ManagedSession>,
-    ) -> Attachment {
-        Attachment {
-            snapshot: subscribed.replay,
-            resume: subscribed.resume,
-            offset: subscribed.offset,
-            rx: subscribed.rx,
-            size: subscribed.size,
-            replay_size: subscribed.replay_size,
-            evict: token.clone(),
-            writer,
-            _guard: AttachGuard {
-                sess: sess.clone(),
-                token,
-                writer,
-            },
-            sess,
-        }
-    }
-
-    /// Feed a client keystroke to the child. The single-writer policy makes this
-    /// race-free with any other browser.
-    ///
-    /// A WATCHER's input is dropped here and reports `Ok(())` — a deliberate
-    /// policy no-op, not a swallowed error: nothing failed, the client simply
-    /// does not hold the baton, and returning `Err` would tear its bridge down
-    /// for typing into a window it is allowed to keep watching.
-    pub fn write(&self, bytes: &[u8]) -> Result<()> {
-        if !self.writer {
-            return Ok(());
-        }
-        self.sess.write(bytes)
-    }
-
-    /// Propagate a client resize to the PTY so the child's TUI reflows. A
-    /// watcher's resize is dropped for the same reason as its keystrokes (see
-    /// [`write`]) — one PTY has one geometry, and it belongs to the writer.
-    ///
-    /// [`write`]: Attachment::write
-    pub fn resize(&self, rows: u16, cols: u16) -> Result<()> {
-        if !self.writer {
-            return Ok(());
-        }
-        self.sess.resize(rows, cols)
-    }
-
-    /// Start again from the screen as it is now, for a bridge whose live
-    /// receiver lagged and lost bytes: a new `snapshot` (never a resume), its
-    /// `offset`, a new `rx` and a new `size`, taken under the `kept` lock as an
-    /// attach takes them, so the EXACTLY-ONCE REPLAY INVARIANT holds from here.
-    pub fn resync(&mut self) {
-        let subscribed = replay_and_subscribe(&self.sess.kept, &self.sess.tx, None);
-        self.snapshot = subscribed.replay;
-        self.resume = subscribed.resume;
-        self.offset = subscribed.offset;
-        self.rx = subscribed.rx;
-        self.size = subscribed.size;
-        self.replay_size = subscribed.replay_size;
-    }
-
-    /// Record `holder` and its `attempt` on the writer slot this attachment
-    /// holds — how a fresh launch, which claims its slot inside the spawn,
-    /// names its holder. A no-op for a watcher and for a slot another
-    /// attachment has since taken.
-    pub fn hold_as(&self, holder: &str, attempt: Option<u64>) {
-        if !self.writer {
-            return;
-        }
-        let mut slot = self.sess.attached.lock().expect("attached mutex");
-        if let Some(writer) = slot.as_mut() {
-            if Arc::ptr_eq(&writer.token, &self._guard.token) {
-                writer.holder = Some(holder.to_owned());
-                writer.attempt = attempt;
-            }
-        }
-    }
-}
-
-/// Deregisters this attachment on drop. A WRITER clears the single-writer slot —
-/// but ONLY when the slot still holds THIS attachment's token, so an evicted
-/// incumbent's guard-drop does not clobber the taker's slot (`ptr_eq` mismatch),
-/// which is what makes takeover race-free. A WATCHER removes exactly its own
-/// token from the watcher list, by the same identity test.
-struct AttachGuard {
-    sess: Arc<ManagedSession>,
-    token: Arc<EvictToken>,
-    writer: bool,
-}
-
-impl Drop for AttachGuard {
-    fn drop(&mut self) {
-        if self.writer {
-            let mut slot = self.sess.attached.lock().expect("attached mutex");
-            if let Some(existing) = slot.as_ref() {
-                if Arc::ptr_eq(&existing.token, &self.token) {
-                    *slot = None;
-                }
-            }
-        } else {
-            self.sess
-                .watchers
-                .lock()
-                .expect("watchers mutex")
-                .retain(|w| !Arc::ptr_eq(w, &self.token));
-        }
     }
 }
 

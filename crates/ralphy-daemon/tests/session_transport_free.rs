@@ -27,6 +27,27 @@ fn session_module_references_no_http_transport() {
                 "/src/session/manager.rs"
             )),
         ),
+        (
+            "session/manager/attachment.rs",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/session/manager/attachment.rs"
+            )),
+        ),
+        (
+            "session/manager/id_seq.rs",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/session/manager/id_seq.rs"
+            )),
+        ),
+        (
+            "session/spec/console.rs",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/session/spec/console.rs"
+            )),
+        ),
     ];
     for (name, src) in sources {
         for needle in ["axum", "WebSocket"] {

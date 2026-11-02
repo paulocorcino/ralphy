@@ -22,6 +22,10 @@ a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.l
 # cookie was computed under it, to show that format 3 no longer verifies.
 7c5e14041fa4830e2a4a29746a1b925a38efed4b:crates/ralphy-daemon/src/cookie.rs:generic-api-key:458
 
+# The same two fixed signing keys after the tests moved to cookie/tests.rs (#853).
+cac04c3fc0b4e73ac6b670cc97237857500de6d5:crates/ralphy-daemon/src/cookie/tests.rs:generic-api-key:37
+cac04c3fc0b4e73ac6b670cc97237857500de6d5:crates/ralphy-daemon/src/cookie/tests.rs:generic-api-key:99
+
 # The sample Sec-WebSocket-Key of RFC 6455 ("the sample nonce") in the test that the
 # old socket routes answer 404 (#830). It is a public example value, not a secret.
 d1617f5b56ec735d5cecf4f87b63a6ef70056709:crates/ralphy-daemon/src/tests/root_routes.rs:generic-api-key:109

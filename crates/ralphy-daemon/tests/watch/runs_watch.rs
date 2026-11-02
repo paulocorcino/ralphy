@@ -129,7 +129,9 @@ fn document() -> String {
         "started_at": "2026-07-25T10:00:00-03:00",
         "plan_path": ".ralphy/plan.md",
         "queue": { "total": 1, "order": [300], "stop_before": null },
-        "issues": [{ "number": 300, "title": "live runs", "status": "executing", "blocked_by": [] }],
+        "issues": [{
+            "number": 300, "title": "live runs", "status": "executing", "blocked_by": []
+        }],
         "phase": { "active": 300, "state": "executing", "sleep": null, "final_summary": null },
     })
     .to_string()

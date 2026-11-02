@@ -182,9 +182,18 @@ mod tests {
     fn presence_follows_the_five_minute_rule() {
         let malformed = [
             json!({ "visible": false }),
-            json!({ "visible": false, "lastInput": null, "now": 1.0, "origin": "javascript:alert(1)" }),
-            json!({ "visible": false, "lastInput": null, "now": 1.0, "origin": "https://a.example/x?y" }),
-            json!({ "visible": false, "lastInput": null, "now": 1.0, "origin": "https://a.example", "more": 1 }),
+            json!({
+                "visible": false, "lastInput": null, "now": 1.0,
+                "origin": "javascript:alert(1)"
+            }),
+            json!({
+                "visible": false, "lastInput": null, "now": 1.0,
+                "origin": "https://a.example/x?y"
+            }),
+            json!({
+                "visible": false, "lastInput": null, "now": 1.0,
+                "origin": "https://a.example", "more": 1
+            }),
             json!("hidden"),
         ];
         // (case, the reports the page sends at 0 s, checked at, present)

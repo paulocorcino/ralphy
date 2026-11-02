@@ -82,7 +82,8 @@ fn fill_page<'a>(
         match classify(line) {
             Line::Text => built.push_str(line),
             Line::Mixed => bail!(
-                "{page} has `{MARKER_OPEN}` with other text on its line: a marker is alone on its line"
+                "{page} has `{MARKER_OPEN}` with other text on its line: \
+                a marker is alone on its line"
             ),
             Line::Marker(name) => {
                 let Some((key, part)) = parts.get_key_value(name) else {

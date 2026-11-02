@@ -161,11 +161,15 @@ pub(crate) async fn reply(
         Ok(Ok(())) => serde_json::json!({ "status": "ok" }),
         Ok(Err(e)) => {
             tracing::warn!(error = format!("{e:#}"), "scroll probe write failed");
-            serde_json::json!({ "status": "error", "message": "the probe file could not be written" })
+            serde_json::json!({
+                "status": "error", "message": "the probe file could not be written"
+            })
         }
         Err(e) => {
             tracing::warn!(error = %e, "scroll probe task failed");
-            serde_json::json!({ "status": "error", "message": "the probe file could not be written" })
+            serde_json::json!({
+                "status": "error", "message": "the probe file could not be written"
+            })
         }
     }
 }

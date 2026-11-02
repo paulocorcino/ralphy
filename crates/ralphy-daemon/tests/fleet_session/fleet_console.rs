@@ -168,8 +168,10 @@ async fn http_json(port: u16, method: &str, path: &str, bearer: Option<&str>) ->
     let auth = bearer
         .map(|token| format!("Authorization: Bearer {token}\r\n"))
         .unwrap_or_default();
-    let request =
-        format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}Content-Length: 0\r\nConnection: close\r\n\r\n");
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{auth}\
+        Content-Length: 0\r\nConnection: close\r\n\r\n"
+    );
     stream
         .write_all(request.as_bytes())
         .await

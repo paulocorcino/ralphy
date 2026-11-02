@@ -97,7 +97,13 @@ fn build_policy(extra_img_src: &str) -> HeaderValue {
         .map(|body| format!(" 'sha256-{}'", script_hash(body)))
         .collect::<String>();
     let policy = format!(
-        "default-src 'self';          script-src 'self' 'unsafe-eval'{hashes};          style-src 'self' 'unsafe-inline';          img-src 'self' data: blob:{extra_img_src};          font-src 'self' data:;          connect-src 'self';          worker-src 'self' blob:;          object-src 'none';          base-uri 'none';          form-action 'self';          frame-ancestors 'none'"
+        "default-src 'self';          script-src 'self' 'unsafe-eval'{hashes};          \
+        style-src 'self' 'unsafe-inline';          \
+        img-src 'self' data: blob:{extra_img_src};          \
+        font-src 'self' data:;          connect-src 'self';          \
+        worker-src 'self' blob:;          object-src 'none';          \
+        base-uri 'none';          form-action 'self';          \
+        frame-ancestors 'none'"
     );
     HeaderValue::from_str(&policy).expect("the policy is ASCII by construction")
 }
@@ -171,7 +177,8 @@ mod tests {
 
     /// The hash form is what a browser computes: sha256 of the exact body,
     /// base64 — pinned against a value computed outside this crate
-    /// (`python -c "import hashlib,base64;print(base64.b64encode(hashlib.sha256(b'alert(1)').digest()).decode())"`).
+    /// (`python -c "import
+    /// hashlib,base64;print(base64.b64encode(hashlib.sha256(b'alert(1)').digest()).decode())"`).
     #[test]
     fn script_hash_matches_the_csp_hash_form() {
         assert_eq!(

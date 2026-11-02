@@ -18,7 +18,8 @@ use crate::protocol::Command;
 fn streams_refusal() -> serde_json::Value {
     serde_json::json!({
         "status": "error",
-        "message": "This command sends its output while it runs, so the workbench sends it on the command socket.",
+        "message": "This command sends its output while it runs, so the workbench sends it \
+        on the command socket.",
     })
 }
 

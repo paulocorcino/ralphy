@@ -1,7 +1,8 @@
 //! The `*_at` store helpers behind `/api/security/*`: path-explicit reads and
 //! writes of the real enrolment files under the daemon store (`daemon-token`,
 //! `daemon-totp`, `daemon-totp.pending`, `daemon-password`,
-//! `daemon-require-login`, `daemon-remote-images`), so a test passes a tempdir and the routes stay thin.
+//! `daemon-require-login`, `daemon-remote-images`), so a test passes a tempdir
+//! and the routes stay thin.
 
 use std::path::Path;
 

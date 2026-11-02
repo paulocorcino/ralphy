@@ -29,7 +29,8 @@ fn check(cmd: &Command, verb: Verb, secret_ok: bool) -> Result<Checked, serde_js
         tracing::warn!("refused a host password that came over plain http from the network");
         return Err(serde_json::json!({
             "status": "error",
-            "message": "A password is accepted only over https or from this computer. Use a key, or open the workbench over https.",
+            "message": "A password is accepted only over https or from this computer. \
+            Use a key, or open the workbench over https.",
         }));
     }
     match dispatch::host_argv(verb, &cmd.payload) {

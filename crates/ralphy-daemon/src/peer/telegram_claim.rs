@@ -62,10 +62,17 @@ async fn claim_peer(peer: &PeerDescriptor, daemon_id: &str) -> Claimed {
     match &claimed {
         Claimed::Taken => {}
         Claimed::OldPeer => {
-            tracing::debug!(daemon_id = %peer.daemon_id, "the peer has no Telegram claim route; it is an older version");
+            tracing::debug!(
+                daemon_id = %peer.daemon_id,
+                "the peer has no Telegram claim route; it is an older version"
+            );
         }
         Claimed::Refused(why) => {
-            tracing::debug!(daemon_id = %peer.daemon_id, %why, "the peer did not take the Telegram claim");
+            tracing::debug!(
+                daemon_id = %peer.daemon_id,
+                %why,
+                "the peer did not take the Telegram claim"
+            );
         }
     }
     claimed

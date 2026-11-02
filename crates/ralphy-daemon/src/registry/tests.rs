@@ -47,7 +47,8 @@ fn a_retired_console_worktree_key_loads_and_is_not_written_back() {
     let path = dir.path().join("repos.toml");
     std::fs::write(
         &path,
-        "[repos.\"owner/repo\"]\npath = \"/old\"\nconsole_worktree = true\n\n[repos.\"owner/plain\"]\npath = \"/plain\"\n",
+        "[repos.\"owner/repo\"]\npath = \"/old\"\nconsole_worktree = true\n\
+        \n[repos.\"owner/plain\"]\npath = \"/plain\"\n",
     )
     .unwrap();
 

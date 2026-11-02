@@ -210,9 +210,19 @@ fn read_poll_reply(
                     .take(200)
                     .collect::<String>();
                 if failures == 0 {
-                    tracing::warn!(repo = %repo_ref, body = %body, "a peer answered a tree poll with something that is not a poll result");
+                    tracing::warn!(
+                        repo = %repo_ref,
+                        body = %body,
+                        "a peer answered a tree poll with something that is not a poll result"
+                    );
                 } else {
-                    tracing::debug!(repo = %repo_ref, failures, body = %body, "a peer answered a tree poll with something that is not a poll result again");
+                    tracing::debug!(
+                        repo = %repo_ref,
+                        failures,
+                        body = %body,
+                        "a peer answered a tree poll with something that is not a poll \
+                        result again"
+                    );
                 }
                 empty(PollCycle::Unreadable)
             }
@@ -226,9 +236,18 @@ fn read_poll_reply(
             // cause — "address already in use" here is the port pool going
             // dry, which is otherwise invisible until the whole panel dies.
             if failures == 0 {
-                tracing::warn!(repo = %repo_ref, error = %format!("{error:#}"), "a peer tree poll failed");
+                tracing::warn!(
+                    repo = %repo_ref,
+                    error = %format!("{error:#}"),
+                    "a peer tree poll failed"
+                );
             } else {
-                tracing::debug!(repo = %repo_ref, failures, error = %format!("{error:#}"), "a peer tree poll failed again");
+                tracing::debug!(
+                    repo = %repo_ref,
+                    failures,
+                    error = %format!("{error:#}"),
+                    "a peer tree poll failed again"
+                );
             }
             empty(PollCycle::Failed)
         }
@@ -293,7 +312,11 @@ pub(crate) fn spawn_peer_tree_poller(
         loop {
             let started = Instant::now();
             let Some(answer) = poll_until_set_moves(&peer, &slug, &sub, &set).await else {
-                tracing::debug!(repo = %repo_ref, sub = %sub, "peer tree poll restarted: the watch set moved");
+                tracing::debug!(
+                    repo = %repo_ref,
+                    sub = %sub,
+                    "peer tree poll restarted: the watch set moved"
+                );
                 failures = 0;
                 pause(PollCycle::Restarted).await;
                 continue;
@@ -365,10 +388,20 @@ fn log_unconfirmed_close(peer: &str, sub: &str, closed: anyhow::Result<(u16, Vec
     match closed {
         Ok((200, _)) => {}
         Ok((code, _)) => {
-            tracing::warn!(peer = %peer, sub = %sub, status = code, "a peer refused to close a tree subscription");
+            tracing::warn!(
+                peer = %peer,
+                sub = %sub,
+                status = code,
+                "a peer refused to close a tree subscription"
+            );
         }
         Err(error) => {
-            tracing::warn!(peer = %peer, sub = %sub, error = %format!("{error:#}"), "closing a peer tree subscription failed");
+            tracing::warn!(
+                peer = %peer,
+                sub = %sub,
+                error = %format!("{error:#}"),
+                "closing a peer tree subscription failed"
+            );
         }
     }
 }

@@ -5,7 +5,9 @@ use super::*;
 mod store;
 
 /// A literal pre-#406 desk: one window table, no `[checkouts]`.
-const OLD_DESK_TOML: &str = "[[windows]]\nid = \"w1\"\nrepo = \"owner/repo\"\nagent = \"claude\"\nkind = \"console\"\nmax = false\nts = 1\n\n[windows.rect]\nleft = 1.0\ntop = 2.0\nwidth = 3.0\nheight = 4.0\n";
+const OLD_DESK_TOML: &str = "[[windows]]\nid = \"w1\"\nrepo = \"owner/repo\"\n\
+    agent = \"claude\"\nkind = \"console\"\nmax = false\nts = 1\n\n[windows.rect]\n\
+    left = 1.0\ntop = 2.0\nwidth = 3.0\nheight = 4.0\n";
 
 fn record(id: &str, ts: i64) -> DeskRecord {
     DeskRecord {

@@ -227,8 +227,10 @@ fn ordering_is_deterministic() {
 #[test]
 fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() {
     let body = br#"[
-      {"slug":"owner/a","path":"/home/a","reachable":true,"branch":"main","dirty":false,"remote":"https://github.com/owner/a.git","root":"/home/a","extra":1},
-      {"slug":"owner/b","path":"/home/b","reachable":false,"branch":null,"dirty":true,"remote":null},
+      {"slug":"owner/a","path":"/home/a","reachable":true,"branch":"main","dirty":false,
+        "remote":"https://github.com/owner/a.git","root":"/home/a","extra":1},
+      {"slug":"owner/b","path":"/home/b","reachable":false,"branch":null,
+        "dirty":true,"remote":null},
       {"slug":"owner/old","path":"/home/old","reachable":true}
     ]"#;
     let store = store_from_repos_json(body).expect("a well-formed /api/repos body folds");
@@ -259,7 +261,8 @@ fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() 
 #[test]
 fn a_peers_former_slugs_map_to_the_federated_keys() {
     let body = br#"[
-      {"slug":"owner/repo","path":"/home/repo","reachable":true,"former_slugs":["path-abc","path-def"]},
+      {"slug":"owner/repo","path":"/home/repo","reachable":true,
+        "former_slugs":["path-abc","path-def"]},
       {"slug":"owner/old","path":"/home/old","reachable":true}
     ]"#;
     let store = store_from_repos_json(body).expect("the body folds");

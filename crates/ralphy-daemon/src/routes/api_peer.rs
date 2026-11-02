@@ -157,7 +157,11 @@ pub(crate) async fn peer_tree_poll_route(
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
         Err(e) => {
-            tracing::warn!(path = %registry_path.display(), error = %format!("{e:#}"), "could not read the repo registry for a peer tree poll");
+            tracing::warn!(
+                path = %registry_path.display(),
+                error = %format!("{e:#}"),
+                "could not read the repo registry for a peer tree poll"
+            );
             return Json(serde_json::json!({
                 "status": "error",
                 "message": "repo registry unreadable"
@@ -176,7 +180,11 @@ pub(crate) async fn peer_tree_poll_route(
     if poll.runs {
         let runstate = root.join(watch::RUNSTATE_REL);
         if let Err(e) = std::fs::create_dir_all(&runstate) {
-            tracing::warn!(path = %runstate.display(), error = %e, "failed to create peer runstate watch directory");
+            tracing::warn!(
+                path = %runstate.display(),
+                error = %e,
+                "failed to create peer runstate watch directory"
+            );
         }
         if !poll.paths.iter().any(|path| path == watch::RUNSTATE_REL) {
             poll.paths.push(watch::RUNSTATE_REL.to_string());

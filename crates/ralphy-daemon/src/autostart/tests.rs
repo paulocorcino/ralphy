@@ -153,7 +153,8 @@ fn launchd_plist_runs_at_load_and_keeps_alive_on_failure_only() {
     let plist = launchd_plist(&spec());
     for needle in [
         "<key>Label</key>\n  <string>dev.ralphy.daemon</string>",
-        "<key>ProgramArguments</key>\n  <array>\n    <string>/usr/local/bin/ralphy</string>\n    <string>daemon</string>\n  </array>",
+        "<key>ProgramArguments</key>\n  <array>\n    \
+         <string>/usr/local/bin/ralphy</string>\n    <string>daemon</string>\n  </array>",
         "<key>RunAtLoad</key>\n  <true/>",
         "<key>KeepAlive</key>\n  <dict>\n    <key>SuccessfulExit</key>\n    <false/>\n  </dict>",
         "<key>StandardOutPath</key>\n  <string>/home/me/.ralphy/daemon.log</string>",
@@ -176,7 +177,8 @@ fn launchd_plist_pins_the_installers_path() {
     let plist = launchd_plist(&path_spec(path));
     assert!(
         plist.contains(&format!(
-            "<key>EnvironmentVariables</key>\n  <dict>\n    <key>PATH</key>\n    <string>{path}</string>\n  </dict>"
+            "<key>EnvironmentVariables</key>\n  <dict>\n    <key>PATH</key>\n    \
+             <string>{path}</string>\n  </dict>"
         )),
         "{plist}"
     );

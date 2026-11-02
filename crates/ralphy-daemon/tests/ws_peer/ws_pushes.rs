@@ -74,7 +74,9 @@ async fn request(port: u16, method: &str, path: &str, body: &str) -> String {
         .expect("connect to the test server");
     sock.write_all(
         format!(
-            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\
+             Content-Type: application/json\r\nContent-Length: {}\r\n\
+             Connection: close\r\n\r\n{body}",
             body.len()
         )
         .as_bytes(),
@@ -116,7 +118,13 @@ async fn change_until_push(
 /// Upload `seq` of a tab: one desk change that creates a window.
 fn one_window(seq: u64) -> String {
     format!(
-        r#"{{"seq":{seq},"changes":[{{"op":"create","type":"window","record":{{"id":"w-a","repo":"owner/repo","agent":"claude","kind":"console","rect":{{"left":10.0,"top":20.0,"width":640.0,"height":480.0}},"max":false,"sessionId":7}}}}]}}"#
+        concat!(
+            r#"{{"seq":{},"changes":[{{"op":"create","type":"window","#,
+            r#""record":{{"id":"w-a","repo":"owner/repo","agent":"claude","kind":"console","#,
+            r#""rect":{{"left":10.0,"top":20.0,"width":640.0,"height":480.0}},"#,
+            r#""max":false,"sessionId":7}}}}]}}"#
+        ),
+        seq
     )
 }
 

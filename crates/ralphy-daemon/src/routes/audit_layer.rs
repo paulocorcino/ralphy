@@ -387,7 +387,10 @@ mod tests {
     fn only_the_last_part_of_an_upload_is_a_line() {
         let part = command(
             "file.upload",
-            serde_json::json!({"repo": "ralphy", "path": "docs/r.pdf", "total": 7, "data": "c2VjcmV0"}),
+            serde_json::json!({
+                "repo": "ralphy", "path": "docs/r.pdf", "total": 7,
+                "data": "c2VjcmV0"
+            }),
         );
         assert!(
             command_event(Verb::FileUpload, &part, None, Actor::Device, None).is_none(),
