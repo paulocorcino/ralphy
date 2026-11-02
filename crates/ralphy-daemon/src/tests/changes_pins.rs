@@ -69,11 +69,12 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     );
 
     let viewer = include_str!("../../assets/ui/wb-file-viewer.ts");
+    let code = include_str!("../../assets/ui/wb-file-viewer-code.ts");
     let slot = include_str!("../../assets/ui/wb-file-viewer-slot.ts");
     let read_only = include_str!("../../assets/ui/wb-file-viewer-read-only.ts");
     assert!(
-        viewer.contains("WBMonaco.create"),
-        "wb-file-viewer.ts must mount its editor through WBMonaco"
+        code.contains("WBMonaco.create"),
+        "wb-file-viewer-code.ts must mount its editor through WBMonaco"
     );
     // The mirror pane (ADR-0037 §3c) is a SECOND editor over the pane's
     // model, never a second model: `wb_monaco_308.py` counts models per
@@ -86,6 +87,7 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     let outgoing = concat!("Code", "Mirror(");
     for (name, js) in [
         ("wb-file-viewer.ts", viewer),
+        ("wb-file-viewer-code.ts", code),
         ("wb-file-viewer-slot.ts", slot),
         ("wb-file-viewer-read-only.ts", read_only),
     ] {

@@ -81,10 +81,10 @@ fn the_explorer_opens_a_note_as_a_card() {
         paths.contains(r#"if (ext === "note") return "note";"#),
         "classify must name a `.note` (ADR-0064 §11)"
     );
-    let files = include_str!("../../assets/ui/wb-files.ts");
+    let files = include_str!("../../assets/ui/wb-files-open.ts");
     assert!(
-        files.contains("this.$store.tabs.openNote(path)"),
-        "wb-files.ts must keep the ADR-0064 pin openNote(path)"
+        files.contains("files.$store.tabs.openNote(path)"),
+        "wb-files-open.ts must keep the ADR-0064 pin openNote(path)"
     );
     let app = shell_family();
     assert!(

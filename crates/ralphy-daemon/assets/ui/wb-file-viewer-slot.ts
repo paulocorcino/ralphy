@@ -140,7 +140,8 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
         <span class="viewer-path"></span>
         <span class="viewer-mirror-tag">Mirror</span>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="mirror" title="Close mirror" aria-label="Close mirror"><i class="bi bi-x-lg"></i><span class="vbtn-label">Close mirror</span></button>
+        <button class="vbtn" data-act="mirror" title="Close mirror" aria-label="Close mirror"
+          ><i class="bi bi-x-lg"></i><span class="vbtn-label">Close mirror</span></button>
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
@@ -179,7 +180,8 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     divider = document.createElement("div");
     divider.className = "viewers-divider";
     divider.innerHTML =
-      '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
+      '<button class="slot-close" title="Close the second pane" ' +
+      'aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
     need(divider, ".slot-close").onclick = () => window.Alpine?.store("tabs")?.clearSlot();
     divider.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;

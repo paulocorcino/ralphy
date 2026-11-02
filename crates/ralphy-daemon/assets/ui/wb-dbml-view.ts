@@ -322,7 +322,9 @@ export function renderDbmlGrid(doc: Document, article: Element, text: string): v
   }
   const ctx = newCtx(doc, article, schema);
   const groups = groupTables(schema);
-  let summary = `${plural(schema.tables.length, "table", "tables")} in ${plural(groups.length, "group", "groups")}.`;
+  let summary =
+    `${plural(schema.tables.length, "table", "tables")} in ` +
+    `${plural(groups.length, "group", "groups")}.`;
   if (schema.skipped > 0)
     summary += ` ${plural(schema.skipped, "line was", "lines were")} not understood.`;
   article.append(summaryBar(ctx, summary));

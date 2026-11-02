@@ -5,7 +5,8 @@
    It owns the change set and the branch (sync) of each project, their reads
    and their read state, the remote acts (fetch, pull, push), the rows and
    their acts (stage, unstage, discard), the commit box, the refusal line,
-   the run-completion nudge socket and the slow backstop.
+   the run-completion nudge socket and the slow backstop. The remote acts are
+   in wb-changes-sync.ts.
    The write locks are the Alpine store `connection`'s (wb-connection-store.ts):
    they also read the runs and the page build, and the board and the Runs
    panel ask them too. This view tells the store whether its reads are
@@ -21,6 +22,7 @@
    --------------------------------------------------------------------------- */
 import { component, emptyRecord } from "./wb-alpine.ts";
 import { WBChanges } from "./wb-changes.ts";
+import { syncFetch, syncPull, syncPush } from "./wb-changes-sync.ts";
 import { WBFail } from "./wb-fail.ts";
 import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-types.d.ts";
@@ -189,80 +191,19 @@ export function wbChanges() {
       };
     },
 
-    // Fetch from the upstream — the operator's act, never a timer's. A refusal
-    // is `{status:"error"}` whose message IS the core's prose.
+    // The remote acts (wb-changes-sync.ts).
     async syncFetch(slug: string) {
-      if (this.syncBusy || this.$store.connection.writeLocked()) return;
-      this.syncBusy = "fetch";
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.fetch",
-          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(WBFail.failed(reply, "Could not fetch: the daemon gave no reason."));
-        }
-      } catch {
-        // A transport throw is NOT a refusal: the repo never answered.
-        this._changesRefused("Could not fetch: the daemon did not answer.");
-      } finally {
-        this.syncBusy = null;
-      }
-      void this.loadSync(slug);
+      return syncFetch(this, slug);
     },
-
-    // Fast-forward from the upstream. A successful pull moves the working tree,
-    // so the change set is reloaded beside the counts.
     async syncPull(slug: string) {
-      if (this.syncBusy || this.$store.connection.writeLocked()) return;
-      this.syncBusy = "pull";
-      this.changesError = "";
-      let moved = false;
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.pull",
-          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(WBFail.failed(reply, "Could not pull: the daemon gave no reason."));
-        } else {
-          moved = true;
-        }
-      } catch {
-        this._changesRefused("Could not pull: the daemon did not answer.");
-      } finally {
-        this.syncBusy = null;
-      }
-      void this.loadSync(slug);
-      if (moved) void this.loadChanges(slug);
+      return syncPull(this, slug);
     },
-
-    // Publish the branch (#320). The OPERATOR's click is the whole consent (no
-    // opt-in flag, ADR-0046 amendment); a refusal's message IS the core's
-    // prose. No credential UI, by decision. Push moves no file, so only the
-    // counts reload.
     async syncPush(slug: string) {
-      if (this.syncBusy || this.$store.connection.writeLocked()) return;
-      this.syncBusy = "push";
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.push",
-          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(WBFail.failed(reply, "Could not push: the daemon gave no reason."));
-        }
-      } catch {
-        this._changesRefused("Could not push: the daemon did not answer.");
-      } finally {
-        this.syncBusy = null;
-      }
-      void this.loadSync(slug);
+      return syncPush(this, slug);
     },
 
-    _changesSub: null as Subscription | null, // the run-completion nudge subscription for the open project (#310)
+    // The run-completion nudge subscription for the open project (#310).
+    _changesSub: null as Subscription | null,
     // The run-completion subscription (#310, ADR-0036 amendment). The socket
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {

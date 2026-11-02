@@ -16,128 +16,42 @@
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
    `workbench:action` seam carrying the new content, for a backend to persist.
 
-   This module owns the panes. The split and the mirror are
-   `wb-file-viewer-slot.ts`, and the diff, image and refused panes are
-   `wb-file-viewer-read-only.ts`. The Markdown pane, the find, the encoding
-   menu and the save steps are its siblings `wb-viewer-markdown.ts`,
-   `-find.ts`, `-encoding.ts` and `-save.ts`; it builds them in
-   `createViewer`.
+   This module owns the panes. The records and their guards are
+   `wb-file-viewer-records.ts`, the code pane is `wb-file-viewer-code.ts`, the
+   split and the mirror are `wb-file-viewer-slot.ts`, and the diff, image and
+   refused panes are `wb-file-viewer-read-only.ts`. The Markdown pane, the
+   find, the encoding menu and the save steps are its siblings
+   `wb-viewer-markdown.ts`, `-find.ts`, `-encoding.ts` and `-save.ts`; it
+   builds them in `createViewer`.
 --------------------------------------------------------------------------- */
-import { WBMonaco } from "./wb-monaco.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
-import { need, required } from "./wb-dom-need.ts";
-import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
-import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
+import { need } from "./wb-dom-need.ts";
+import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import { isRendered } from "./wb-viewer-render.ts";
-import {
-  createViewerEncoding,
-  encodingBtnHtml,
-  encodingLabel,
-  refreshEncodingPill,
-} from "./wb-viewer-encoding.ts";
+import { createViewerEncoding, encodingLabel, refreshEncodingPill } from "./wb-viewer-encoding.ts";
 import { createViewerFind } from "./wb-viewer-find.ts";
 import { createViewerMarkdown, linkTarget, remoteImageNotice } from "./wb-viewer-markdown.ts";
 import { createViewerSave } from "./wb-viewer-save.ts";
 import { createViewerSlot } from "./wb-file-viewer-slot.ts";
 import { createViewerReadOnly } from "./wb-file-viewer-read-only.ts";
+import { createViewerCode } from "./wb-file-viewer-code.ts";
 import type { ViewerMarkdown } from "./wb-viewer-markdown.ts";
 import type { ReopenBytes } from "./wb-viewer-save.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
+import type {
+  BytesRecord,
+  OpenSpec,
+  PaneRecord,
+  RefusedRecord,
+  ViewerRecord,
+} from "./wb-file-viewer-records.ts";
 
-/**
- * One open file pane. `open` fills the first group; the rest appear as the
- * pane is used. `ed` is a diff editor on a `diff` pane and a code editor on
- * every other.
- */
-type PaneRecord = {
-  id: string;
-  project: string;
-  label: string;
-  path: string;
-  kind: string;
-  original: string | undefined;
-  uid: number;
-  editing: boolean;
-  visible: boolean;
-  detached: boolean;
-  checkout: string | null;
-  encoding: string;
-  bom: boolean;
-  el?: HTMLElement;
-  ed?: MonacoEditor | MonacoDiffEditor;
-  dirty?: boolean;
-  mounting?: boolean;
-  mountFailed?: boolean;
-  fallbackEl?: HTMLElement;
-  saveBtn?: HTMLElement | null;
-  mirrorBtn?: HTMLElement | null;
-  saveKey?: MonacoDisposable;
-  ro?: ResizeObserver;
-  encMenu?: HTMLElement;
-  /** A find asked for while the editor was not mounted or the pane was off screen. */
-  pendingFind?: string | null;
-  /** The bytes of an external write a dirty pane has not taken yet. */
-  pendingDisk?: string;
-  mermaidPending?: HTMLElement[];
-  hits?: HTMLElement[];
-  hitIdx?: number;
-};
-
-/** A pane over the file's bytes. A record never changes between the two
- * kinds: a refused pane that gets bytes is replaced (`reopenRefused`). */
-export type BytesRecord = PaneRecord & { content: string; refused: null };
-/** A pane that holds the daemon's reason for serving no bytes. */
-export type RefusedRecord = PaneRecord & { refused: string };
-export type ViewerRecord = BytesRecord | RefusedRecord;
-
-/** What `open` takes: the fields of a `FileDescriptor`, or the reason a pane has no bytes. */
-type OpenSpec = {
-  id: string;
-  project: string;
-  label?: string;
-  path: string;
-  ftype: string;
-  /** The diff's HEAD side. */
-  original?: string;
-  detached?: boolean;
-  checkout?: string | null;
-  encoding?: string;
-  bom?: boolean;
-} & ({ content: string; refused?: undefined } | { content?: undefined; refused: string });
-
-/** Whether `v` has the shape `descOf` gives a file: what one window posts to
- * another when a file pane is detached or comes home. */
-export function isFileDescriptor(v: unknown): v is FileDescriptor {
-  return (
-    isRecord(v) &&
-    typeof v.project === "string" &&
-    typeof v.label === "string" &&
-    typeof v.path === "string" &&
-    typeof v.ftype === "string" &&
-    typeof v.content === "string" &&
-    isNullableString(v.checkout) &&
-    isOptionalString(v.encoding) &&
-    typeof v.bom === "boolean"
-  );
-}
-
-/** Whether `v` has the shape of the `workbench:open-request` detail this
- * module sends: the file a rendered link asks to open. */
-export function isOpenRequest(v: unknown): v is OpenRequest {
-  return (
-    isRecord(v) &&
-    isNullableString(v.project) &&
-    typeof v.path === "string" &&
-    isNullableString(v.checkout) &&
-    isOptionalString(v.fragment) &&
-    (v.as === undefined || v.as === "bytes")
-  );
-}
-
+export { isFileDescriptor, isOpenRequest } from "./wb-file-viewer-records.ts";
+export type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer-records.ts";
 /** What the entry module hands the file pane. */
 export type ViewerDeps = {
   /** The page's door for operator messages. */
@@ -169,18 +83,24 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     renderMarkdown: (rec) => markdown.renderMarkdown(rec),
     drawMermaid: (rec) => markdown.drawMermaid(rec),
   });
-  const {
-    save,
-    showSaveError,
-    clearSaveError,
-    descOf,
-    reloadFile,
-    applyFresh,
-    showDiskBadge,
-    hideDiskBadge,
-  } = saver;
+  const { showSaveError, clearSaveError, descOf, reloadFile, applyFresh, showDiskBadge } = saver;
   const viewerEncoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
-  const { wireEncodingMenu } = viewerEncoding;
+  const { buildCode, mountEditor, isNarrow, watchNarrow, bindSave } = createViewerCode({
+    window,
+    document,
+    viewers,
+    messages,
+    alive,
+    findInEditor,
+    mirrors: (id) => mirrors(id),
+    refresh: () => refresh(),
+    setPathLabel,
+    detachBtnHtml,
+    mirrorBtnHtml,
+    detachClick,
+    saver,
+    encoding: viewerEncoding,
+  });
   const markdown: ViewerMarkdown = createViewerMarkdown({
     window,
     document,
@@ -195,7 +115,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     find,
   });
   const { buildMarkdown, drawMermaid, jumpTo } = markdown;
-  // `isNarrow` is built below, so the slot and the read-only panes take it late.
   const { refresh, show, mirrors, mirrored, closeMirror } = createViewerSlot({
     window,
     document,
@@ -206,7 +125,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     drawMermaid,
     setPathLabel,
     setCaption,
-    isNarrow: (el) => isNarrow(el),
+    isNarrow,
     watchNarrow,
     bindSave,
   });
@@ -221,116 +140,9 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     detachBtnHtml,
     detachClick,
     reloadFile,
-    isNarrow: (el) => isNarrow(el),
+    isNarrow,
     watchNarrow,
   });
-
-  function mountEditor(
-    rec: BytesRecord,
-    container: HTMLElement,
-    opts: { path?: string; wordWrap?: string },
-  ) {
-    const path = (opts && opts.path) || rec.path;
-    if (rec.mounting || rec.mountFailed) return Promise.resolve();
-    rec.mounting = true;
-    return WBMonaco.ready()
-      .catch((err: unknown) => {
-        // The AMD loader did not boot — degrade to read-only bytes rather
-        // than leave an empty pane (#308).
-        // Only a BOOT failure lands here; a throw from create()/wiring below
-        // must not masquerade as one.
-        rec.mounting = false;
-        rec.mountFailed = true;
-        if (!alive(rec)) return null;
-        const pre = document.createElement("pre");
-        pre.className = "code-fallback";
-        pre.textContent = rec.content;
-        container.append(pre);
-        rec.fallbackEl = pre;
-        console.warn("[workbench] monaco did not boot; read-only fallback", err);
-        return null;
-      })
-      .then((monaco) => {
-        rec.mounting = false;
-        if (!monaco || !alive(rec)) return;
-        const ed = WBMonaco.create(container, {
-          value: rec.content,
-          path,
-          uid: rec.uid,
-          project: rec.project,
-          wordWrap: opts && opts.wordWrap,
-          narrow: isNarrow(rec.el),
-        });
-        watchNarrow(rec, ed);
-        ed.onDidChangeModelContent(() => {
-          rec.dirty = true;
-          rec.saveBtn?.classList.add("dirty");
-        });
-        rec.saveKey = bindSave(ed, rec);
-        // Assigned LAST: a throw while wiring must not leave a half-live editor
-        // that the rest of the module would treat as ready.
-        rec.ed = ed;
-        if (rec.visible) ed.layout();
-        // A content-search open asked for a term before there was an editor
-        // to ask; now there is one.
-        if (rec.pendingFind) {
-          const term: string = rec.pendingFind;
-          rec.pendingFind = null;
-          findInEditor(rec, term);
-        }
-        // A mirror asked for before there was an editor to mirror (a reload
-        // restores the slot while the bytes are still in flight): paint now.
-        if (mirrors(rec.id)) refresh();
-      })
-      .catch((err: unknown) => {
-        // A create()/wiring failure is NOT a boot failure: the pane would look
-        // editable while nothing is wired, so say so instead of degrading.
-        rec.mounting = false;
-        console.error("[workbench] monaco editor failed to mount", err);
-        messages.flash("Could not open the editor.");
-      });
-  }
-
-  // The pane-width criterion, the SAME number as the stylesheet's
-  // `@container viewer (max-width: 560px)`: the gutter trims exactly when the
-  // captions fold to icons. Monaco takes it as options, not CSS, so it is
-  // measured here and re-measured when the pane's box changes — only a
-  // threshold CROSSING reaches `updateOptions`; a resize on the same side of
-  // it is Monaco's own `automaticLayout` business. The observer is the pane's,
-  // not the editor's: `disposeEditor` ends it with the editor it feeds.
-  const NARROW_PX = 560;
-  const isNarrow = (el: HTMLElement | undefined) =>
-    !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
-  function watchNarrow(
-    rec: { el?: HTMLElement; ro?: ResizeObserver },
-    ed: MonacoEditor | MonacoDiffEditor,
-  ) {
-    if (!rec.el || typeof ResizeObserver !== "function") return;
-    let narrow = isNarrow(rec.el);
-    rec.ro = new ResizeObserver(() => {
-      const now = isNarrow(rec.el);
-      if (now === narrow) return;
-      narrow = now;
-      ed.updateOptions(WBMonaco.gutterOptions(now));
-    });
-    rec.ro.observe(rec.el);
-  }
-
-  // Ctrl+S on ONE editor. `addAction` is scoped to the editor it is added to
-  // (Monaco ANDs `editorId == <this editor>` into the precondition);
-  // `addCommand` is not — it is a page-wide keybinding on the shared standalone
-  // service, so with two editors on screen the last one registered would take
-  // every Ctrl+S. The disposable is kept: Monaco does not tie it to the editor's
-  // own lifetime, and a binding that outlives its editor holds `rec` forever.
-  function bindSave(ed: MonacoEditor, rec: ViewerRecord) {
-    const monaco = window.monaco;
-    return ed.addAction({
-      id: "wb.save",
-      label: "Save",
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => save(rec),
-    });
-  }
 
   function disposeEditor(rec: ViewerRecord) {
     // The mirror sits over THIS pane's model: its editor goes before the model
@@ -359,53 +171,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       (ed as MonacoEditor).getModel()?.dispose();
       ed.dispose();
     }
-  }
-
-  // --- a source-code editor tab ------------------------------------------
-  function buildCode(rec: BytesRecord) {
-    const el = document.createElement("div");
-    el.className = "viewer code-viewer";
-    el.dataset.tabId = rec.id;
-    el.style.display = "none";
-    el.innerHTML = `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <span class="spacer"></span>
-        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
-        ${mirrorBtnHtml(rec)}
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="Changed on disk — reload" aria-label="Changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">Changed on disk — reload</span></button>
-        <span class="viewer-save-err" style="display:none"></span>
-        ${encodingBtnHtml(rec)}
-        <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
-        ${detachBtnHtml(rec)}
-      </div>
-      <div class="viewer-body"></div>`;
-    setPathLabel(el, rec);
-    required(viewers, "the element that holds the panes").append(el);
-    wireEncodingMenu(rec, el);
-
-    const saveBtn = need(el, '[data-act="save"]');
-    need(el, '[data-act="find"]').onclick = () => {
-      (rec.ed as MonacoEditor | undefined)?.focus();
-      (rec.ed as MonacoEditor | undefined)
-        ?.getAction("actions.find")
-        ?.run()
-        .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
-    };
-    const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
-    if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
-    saveBtn.onclick = () => save(rec);
-    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
-    need(el, '[data-act="disk"]').onclick = () => {
-      if (rec.pendingDisk !== undefined) applyFresh(rec, rec.pendingDisk);
-      hideDiskBadge(rec);
-    };
-    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
-    rec.el = el;
-    rec.saveBtn = saveBtn;
-    rec.mirrorBtn = mirrorBtn;
-    void mountEditor(rec, need(el, ".viewer-body"), {});
   }
 
   // A pane that opened refused now has bytes: rebuild it as the pane its
@@ -437,8 +202,12 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // agnostic to windows/tabs.
   function detachBtnHtml(rec: ViewerRecord) {
     return rec.detached
-      ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
-      : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach"><i class="bi bi-box-arrow-up-right"></i><span class="vbtn-label">Detach</span></button>';
+      ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach">' +
+          '<i class="bi bi-box-arrow-in-down-left"></i>' +
+          '<span class="vbtn-label">Re-attach</span></button>'
+      : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach">' +
+          '<i class="bi bi-box-arrow-up-right"></i>' +
+          '<span class="vbtn-label">Detach</span></button>';
   }
 
   // The mirror toggle (ADR-0037 §3c) is the attached canvas's: a detached
@@ -446,7 +215,8 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   function mirrorBtnHtml(rec: ViewerRecord) {
     return rec.detached
       ? ""
-      : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror"><i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
+      : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror">' +
+          '<i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
   }
 
   // What the toolbar says a pane IS: the path only (the tab and the sidebar
@@ -557,7 +327,8 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       rec.saveBtn?.classList.add("dirty");
       const text =
         reason === "unencodable"
-          ? `Could not save: character ${Number(reply?.char_index ?? 0) + 1} cannot be written in ${rec.encoding}.`
+          ? `Could not save: character ${Number(reply?.char_index ?? 0) + 1} ` +
+            `cannot be written in ${rec.encoding}.`
           : WBFail.failed(reply || { reason }, "Could not save: the daemon gave no reason.");
       showSaveError(rec, text);
     },
