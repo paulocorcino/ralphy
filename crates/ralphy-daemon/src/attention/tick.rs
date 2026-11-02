@@ -209,7 +209,14 @@ pub(crate) async fn run(
         tokio::select! {
             _ = shutdown.changed() => break,
             _ = every.tick() => {
-                tick_once(&files, &sessions, (&runs, &dismissed), (&mut seen, &mut telegram), &pushes).await;
+                tick_once(
+                    &files,
+                    &sessions,
+                    (&runs, &dismissed),
+                    (&mut seen, &mut telegram),
+                    &pushes,
+                )
+                .await;
             }
         }
     }

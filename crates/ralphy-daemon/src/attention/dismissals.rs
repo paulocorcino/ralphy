@@ -85,7 +85,9 @@ mod tests {
         let path = dir.path().join(FILE);
         std::fs::write(
             &path,
-            "{\"id\":\"issue:20261028-100000:71\",\"ts\":\"2026-10-28T13:00:00Z\"}\nnot json\n{\"id\":\"issue:20261028-100000:72\",\"ts\":\"2026-10-28T13:00:01Z\"}\n",
+            "{\"id\":\"issue:20261028-100000:71\",\"ts\":\"2026-10-28T13:00:00Z\"}\n\
+             not json\n\
+             {\"id\":\"issue:20261028-100000:72\",\"ts\":\"2026-10-28T13:00:01Z\"}\n",
         )
         .expect("write the file");
         let dismissals = Dismissals::load(path);

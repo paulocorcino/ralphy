@@ -5,6 +5,16 @@
 use super::{agent_flag, BranchMode, Verb};
 use crate::session::Agent;
 
+mod config;
+mod paths;
+
+pub use config::config_argv;
+#[cfg(test)]
+pub(crate) use config::LOCAL_ONLY_KEYS;
+pub use paths::{blob_read_argv, changes_commit_argv, changes_paths_argv};
+#[cfg(test)]
+use paths::{validated_path, MAX_COMMIT_MESSAGE, MAX_PATH_CHARS, MAX_STAGE_PATHS};
+
 /// A run's params failed closed-enum validation (ADR-0036 §1): the named field
 /// was absent or carried an out-of-enum / free-text value. The caller sends one
 /// refusal frame and spawns nothing — no partial argv reaches the CLI.
@@ -175,80 +185,6 @@ pub fn changes_list_argv() -> Vec<String> {
         .collect()
 }
 
-/// Validate a client-supplied repo path BY SHAPE, returning it normalised.
-/// `None` — never a partially-cleaned path — for anything refused.
-///
-/// The shape rules, and what each is for:
-/// - backslashes normalise to `/`, so a Windows-shaped path from the browser is
-///   the SAME path, not a second accepted spelling;
-/// - empty, or a leading `-`: would read as a flag at the next hop;
-/// - a leading `/` or a `<letter>:` drive prefix: escapes the repo root;
-/// - any `..` segment: climbs out of it;
-/// - a leading `:`: git's PATHSPEC MAGIC prefix (`:(glob)`, `:(top)`), which is
-///   a shape rule of the same family as the leading `-`.
-///
-/// Glob METACHARACTERS (`*`, `?`, `[`) are deliberately NOT refused: they are
-/// legal filenames, and common ones — `app/blog/[slug]/page.tsx` is the Next.js
-/// dynamic-route convention and `[Content_Types].xml` sits in every unpacked
-/// OOXML file. Refusing them would make those rows unreadable in the diff tab
-/// and would poison a whole group action, while buying nothing: git is invoked
-/// with `--literal-pathspecs` (so no name is ever expanded at the last hop) and
-/// `ralphy_core::worktree` refuses any path absent from the change set.
-///
-/// PURE by contract: no `std::fs`, no `canonicalize`, no `Path::is_absolute` —
-/// the host's own filesystem must not decide what a remote path means, and a
-/// Windows daemon must refuse a POSIX-absolute path just as a Linux one refuses
-/// `C:\`. Real containment is the CLI's job, standing in the repo.
-///
-/// ONE definition, shared by EVERY path-carrying verb ([`blob_read_argv`],
-/// [`changes_paths_argv`]), so the read surface and the write surface can never
-/// drift apart on what a path is.
-pub(crate) fn validated_path(raw: &str) -> Option<String> {
-    let path = raw.replace('\\', "/");
-    let drive_prefixed = {
-        let b = path.as_bytes();
-        b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
-    };
-    if path.is_empty()
-        || path.starts_with('-')
-        || path.starts_with('/')
-        || path.starts_with(':')
-        || drive_prefixed
-        || path.split('/').any(|seg| seg == "..")
-    {
-        return None;
-    }
-    Some(path)
-}
-
-/// Compose the argv for the blob-read Query verb: `blob read --revision head
-/// --path <p> --format json` (issue #311). Two client inputs, both closed down:
-/// `revision` is a one-value enum (`head`), and `path` goes through the shared
-/// `validated_path` shape gate.
-pub fn blob_read_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let revision = match payload.get("revision").and_then(|v| v.as_str()) {
-        Some("head") => "head",
-        _ => return Err(ArgvError::BadParam("revision")),
-    };
-
-    let path = payload
-        .get("path")
-        .and_then(|v| v.as_str())
-        .and_then(validated_path)
-        .ok_or(ArgvError::BadParam("path"))?;
-
-    Ok(vec![
-        "blob".to_string(),
-        "read".to_string(),
-        "--revision".to_string(),
-        revision.to_string(),
-        "--path".to_string(),
-        path,
-        "--format".to_string(),
-        "json".to_string(),
-    ])
-}
-
 /// The static argv for the sync-status Query verb: `sync status --format json`
 /// (issue #316). Takes no client input; the verb alone fixes the command line,
 /// and the command itself makes no network call.
@@ -331,9 +267,9 @@ pub fn project_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, A
 }
 
 /// Compose the argv for a sync Mutate verb: `sync fetch` / `sync pull` (issue
-/// #316) / `sync push` (issue #320). These verbs take NO client input, so the verb argument is the only
-/// parameter there is to malform — anything else yields [`ArgvError`] and NO
-/// argv, mirroring [`branch_argv`]'s guard.
+/// #316) / `sync push` (issue #320). These verbs take NO client input, so the
+/// verb argument is the only parameter there is to malform — anything else
+/// yields [`ArgvError`] and NO argv, mirroring [`branch_argv`]'s guard.
 pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
     #[expect(
         clippy::wildcard_enum_match_arm,
@@ -346,86 +282,6 @@ pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
         _ => return Err(ArgvError::BadParam("verb")),
     };
     Ok(vec!["sync".to_string(), sub.to_string()])
-}
-
-/// The wire bounds for the working-tree Mutate verbs. They live HERE, at the
-/// wire, and not in `ralphy-core`: the daemon must not depend on core
-/// (ADR-0032), and these bound what a REMOTE may send, not what the operation
-/// can do.
-///
-/// The count bound alone does NOT bound the command line — a path is otherwise
-/// unbounded — so `MAX_PATH_CHARS` is enforced too, and together they cap the
-/// composed argv at roughly 256 KiB: over Windows' 32767-char limit in the
-/// worst case, but a spawn failure there is graceful (`"mutation write
-/// failed"`), while an UNSTATED bound is the kind of comment that rots. The
-/// realistic shape — 256 paths averaging 60 chars — stays far under it.
-const MAX_STAGE_PATHS: usize = 256;
-
-const MAX_PATH_CHARS: usize = 1024;
-
-const MAX_COMMIT_MESSAGE: usize = 4096;
-
-/// Compose the argv for a path-carrying Mutate verb: `changes stage
-/// --path=<p>…` / `changes unstage --path=<p>…` (issue #318) / `changes discard
-/// --path=<p>…` (issue #319). Every element of
-/// `payload.paths` goes through the shared `validated_path` gate; an absent,
-/// empty, over-long, or malformed list yields [`ArgvError`] and NO argv, so a
-/// glob or a pathspec can never cross the wire.
-///
-/// Each path is fused into its own `--path=<p>` token, the dash-safe form
-/// [`label_argv`] already uses: a path passed as a separate token would be
-/// re-read by clap as a flag.
-pub fn changes_paths_argv(
-    verb: Verb,
-    payload: &serde_json::Value,
-) -> Result<Vec<String>, ArgvError> {
-    #[expect(
-        clippy::wildcard_enum_match_arm,
-        reason = "a verb this builder does not serve is refused, which fails closed"
-    )]
-    let sub = match verb {
-        Verb::ChangesStage => "stage",
-        Verb::ChangesUnstage => "unstage",
-        Verb::ChangesDiscard => "discard",
-        _ => return Err(ArgvError::BadParam("verb")),
-    };
-    let paths = payload
-        .get("paths")
-        .and_then(|v| v.as_array())
-        .filter(|list| !list.is_empty() && list.len() <= MAX_STAGE_PATHS)
-        .ok_or(ArgvError::BadParam("paths"))?;
-
-    let mut argv = vec!["changes".to_string(), sub.to_string()];
-    for value in paths {
-        let path = value
-            .as_str()
-            .filter(|p| p.chars().count() <= MAX_PATH_CHARS)
-            .and_then(validated_path)
-            .ok_or(ArgvError::BadParam("paths"))?;
-        argv.push(format!("--path={path}"));
-    }
-    Ok(argv)
-}
-
-/// Compose the argv for the commit Mutate verb: `changes commit
-/// --message=<msg>` (issue #318). The message is the sole client input, read
-/// from `payload.message`; absent, blank, or longer than `MAX_COMMIT_MESSAGE`
-/// chars yields [`ArgvError`] and NO argv.
-///
-/// The message is ONE fused token and the argv is exactly three long — a
-/// message split across two tokens would be refused by clap the moment it began
-/// with `-`, so the fusion is the whole point.
-pub fn changes_commit_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let message = payload
-        .get("message")
-        .and_then(|v| v.as_str())
-        .filter(|m| !m.trim().is_empty() && m.chars().count() <= MAX_COMMIT_MESSAGE)
-        .ok_or(ArgvError::BadParam("message"))?;
-    Ok(vec![
-        "changes".to_string(),
-        "commit".to_string(),
-        format!("--message={message}"),
-    ])
 }
 
 /// The lexical shape of a git ref the workbench may name — a branch to switch
@@ -565,118 +421,6 @@ pub fn label_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError>
         number.to_string(),
         format!("--{op}={label}"),
     ])
-}
-
-/// Whether `key` is a well-shaped config key (`^[a-z0-9_.]+$`): a closed
-/// character class, NOT a value allowlist (that lives in the CLI's
-/// `require_known_key`, ADR-0036 Decision). Argv-safety comes from no-shell
-/// `Command::args()`, not a closed key set; an unknown-but-well-shaped key is
-/// accepted here and rejected by `ralphy config set`, relayed as a Mutate error.
-fn well_shaped_key(key: &str) -> bool {
-    !key.is_empty()
-        && key
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
-}
-
-/// Config keys the workbench may READ but never SET — the operator's own
-/// `ralphy config set` in a terminal on the host is the one way in. Each is
-/// a deliberate local gesture that a browser session (a month-old cookie, a
-/// leaked bearer) must not be able to make (security audit 2026-09-21, F12):
-///
-/// - `verify.command` becomes `argv[0]` of the verification gate's child
-///   (`ralphy_core::verify`): arbitrary deferred code execution, persistent on
-///   disk, fired under a run the operator started, invisible in `git status`
-///   because `.ralphy/` self-ignores. Shape-checking the value cannot fix it —
-///   the gate spawns with `current_dir(repo_root)` and Windows `CreateProcess`
-///   searches the current directory ahead of `PATH`, so even a bare program
-///   name resolves to a file the Write verbs can plant.
-/// - the two `*_i_understand_the_risk` hatches re-arm what an ADR closed on
-///   purpose: Copilot's credentialled builtin MCP server that can open a PR on
-///   its own (ADR-0041 D7), Cursor's upload of the repository to the vendor
-///   (ADR-0042 D6). The long key IS the gesture; a checkbox is not.
-/// - `events.token` is the bearer every CloudEvent carries to the sink: set
-///   remotely, it redirects the run's telemetry credential.
-/// - `queue.trust_all_comments` lets a comment by any GitHub account reach the
-///   agent's prompt: set remotely, it opens the prompt to strangers
-///   (ADR-0072 D5).
-/// - `claude.run_without_guard_proof_i_understand_the_risk` lets a Claude
-///   session whose hooks did not prove they run go on, so the guard may not
-///   run: set remotely, it turns off the one check that the guard is there
-///   (ADR-0072 D6).
-///
-/// `pub(crate)` so the settings-panel gate in `lib.rs` can assert the schema
-/// declares each of these `readonly` — a key denied here but offered as an
-/// editable field is a control that takes an edit and answers "refused".
-pub(crate) const LOCAL_ONLY_KEYS: [&str; 6] = [
-    "verify.command",
-    "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
-    "cursor.allow_codebase_indexing_i_understand_the_risk",
-    "events.token",
-    "queue.trust_all_comments",
-    "claude.run_without_guard_proof_i_understand_the_risk",
-];
-
-/// Whether `key` may be set through the daemon's `config.set`/`config.unset`.
-/// Well-shaped AND not exec-adjacent.
-fn remotely_settable_key(key: &str) -> bool {
-    well_shaped_key(key) && !LOCAL_ONLY_KEYS.contains(&key)
-}
-
-/// Compose the blessed argv for a config Query/Mutate verb (ADR-0036 §2). The
-/// verb picks the static shape; `ConfigSet`/`ConfigUnset` read `key` (must match
-/// `^[a-z0-9_.]+$`) and — for `set` — a non-empty `value` from `payload`, each
-/// passed as a single argv token (never a shell string). Any absent/ill-shaped
-/// value yields [`ArgvError`] and NO argv. Runs in `cwd = <repo path>` with no
-/// `--repo` flag (defaults to `.`).
-#[expect(
-    clippy::wildcard_enum_match_arm,
-    reason = "a verb this builder does not serve is refused, which fails closed"
-)]
-pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    let key = || -> Result<String, ArgvError> {
-        let key = payload
-            .get("key")
-            .and_then(|v| v.as_str())
-            .ok_or(ArgvError::BadParam("key"))?;
-        if remotely_settable_key(key) {
-            Ok(key.to_string())
-        } else {
-            Err(ArgvError::BadParam("key"))
-        }
-    };
-    match verb {
-        Verb::ConfigGet => Ok(owned(&["config", "get", "--json"])),
-        // `--` ends option parsing: without it a value like `--help`/`-V` is
-        // consumed by clap as a flag (help exits 0 → silent false-success), and a
-        // legit dash-leading value can't be stored. The key is `^[a-z0-9_.]+$`, so
-        // it is never a flag; `--` protects the free-text value.
-        Verb::ConfigSet => {
-            let key = key()?;
-            let value = payload
-                .get("value")
-                .and_then(|v| v.as_str())
-                .filter(|v| !v.is_empty())
-                .ok_or(ArgvError::BadParam("value"))?;
-            Ok(vec![
-                "config".to_string(),
-                "set".to_string(),
-                "--".to_string(),
-                key,
-                value.to_string(),
-            ])
-        }
-        Verb::ConfigUnset => Ok(vec![
-            "config".to_string(),
-            "unset".to_string(),
-            "--".to_string(),
-            key()?,
-        ]),
-        // Non-config verbs never route here (`execute_oneshot` picks the branch
-        // by effect class); refuse an argv defensively.
-        _ => Err(ArgvError::BadParam("verb")),
-    }
 }
 
 #[cfg(test)]
