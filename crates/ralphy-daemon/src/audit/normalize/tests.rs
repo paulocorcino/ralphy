@@ -126,7 +126,10 @@ fn the_gpu_model_loses_the_angle_wrapping() {
     );
     assert_eq!(of("android-chrome").gpu.unwrap().model, "Adreno (TM) 610");
     // Headless Chromium's software renderer (Playwright, 2026-10-04).
-    let soft = gpu("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)");
+    let soft = gpu(
+        "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), \
+         SwiftShader driver)",
+    );
     assert_eq!(soft.vendor, GpuVendor::Software);
     assert_eq!(soft.model, "Vulkan 1.3.0 (SwiftShader Device (Subzero))");
 }
@@ -171,7 +174,8 @@ fn from_ua(ua: &str) -> Normalized {
 #[test]
 fn chrome_on_an_iphone_is_chrome_on_webkit() {
     let n = from_ua(
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/148.0.7778.73 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like \
+        Gecko) CriOS/148.0.7778.73 Mobile/15E148 Safari/604.1",
     );
     assert_eq!(value(&n.browser), Some(Browser::Chrome));
     assert_eq!(n.browser_version.as_deref(), Some("148"));
@@ -182,12 +186,14 @@ fn chrome_on_an_iphone_is_chrome_on_webkit() {
 #[test]
 fn an_android_app_view_and_a_frozen_android_version() {
     let n = from_ua(
-        "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/148.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) \
+        Version/4.0 Chrome/148.0.0.0 Mobile Safari/537.36",
     );
     assert_eq!(value(&n.browser), Some(Browser::Webview));
     assert_eq!(value(&n.form), Some(Form::Phone));
     let n = from_ua(
-        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) \
+        Chrome/148.0.0.0 Mobile Safari/537.36",
     );
     assert_eq!(text(&n.os_version), None, "Chrome freezes `Android 10; K`");
     let n = from_ua("Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0");
@@ -202,7 +208,8 @@ fn an_iphone_user_agent_on_chromium_is_a_conflict() {
     // client hints say Windows.
     let (mut client, mut server) = fixture("windows-edge");
     client.ua = serde_json::from_value(serde_json::json!(
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1"
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like \
+        Gecko) Version/26.6 Mobile/15E148 Safari/604.1"
     ))
     .unwrap();
     server.user_agent = None;

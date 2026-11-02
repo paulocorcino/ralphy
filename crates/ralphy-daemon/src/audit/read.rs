@@ -151,16 +151,22 @@ mod tests {
         let path = dir.path().join("daemon-audit.jsonl");
         let lines = [
             format!(
-                r#"{{"at":"2026-10-01T10:00:00Z","event":"device_facts","device":"{A}","actor":"device","normalizer":1,"os":{{"value":"ios","source":"ua"}},"server":{{"real_ip":"203.0.113.1"}}}}"#
+                "{{\"at\":\"2026-10-01T10:00:00Z\",\"event\":\"device_facts\",\"device\":\"{A}\",\
+                \"actor\":\"device\",\"normalizer\":1,\"os\":{{\"value\":\"ios\",\
+                \"source\":\"ua\"}},\"server\":{{\"real_ip\":\"203.0.113.1\"}}}}"
             ),
             format!(
-                r#"{{"at":"2026-10-02T10:00:00Z","event":"action","device":"{B}","actor":"device","ip":"203.0.113.2"}}"#
+                "{{\"at\":\"2026-10-02T10:00:00Z\",\"event\":\"action\",\"device\":\"{B}\",\
+                \"actor\":\"device\",\"ip\":\"203.0.113.2\"}}"
             ),
             format!(
-                r#"{{"at":"2026-10-03T10:00:00Z","event":"device_profile_changed","device":"{A}","actor":"device","normalizer":1,"os":{{"value":"ipados","source":"inferred"}}}}"#
+                "{{\"at\":\"2026-10-03T10:00:00Z\",\"event\":\"device_profile_changed\",\
+                \"device\":\"{A}\",\"actor\":\"device\",\"normalizer\":1,\
+                \"os\":{{\"value\":\"ipados\",\"source\":\"inferred\"}}}}"
             ),
             format!(
-                r#"{{"at":"2026-10-04T10:00:00Z","event":"action","device":"{A}","actor":"device","ip":"203.0.113.3"}}"#
+                "{{\"at\":\"2026-10-04T10:00:00Z\",\"event\":\"action\",\"device\":\"{A}\",\
+                \"actor\":\"device\",\"ip\":\"203.0.113.3\"}}"
             ),
             r#"{"at":"2026-10-04T11:00:00Z","event":"login_failed","actor":"unknown"}"#.to_string(),
         ];
