@@ -11,8 +11,8 @@ fn open_blocker_skips_then_closed_blocker_runs() {
         let repo = init_repo("blocker-open");
         let blocked_body = "## Blocked by\n- #2\n";
         let queue = vec![issue_with_body(5, blocked_body), issue(2)];
-        let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #2 executes
-                                                             // #2 is NOT in closed_issues → is_closed(2) returns false → #5 is skipped.
+        // Only #2 executes: it is NOT in closed_issues, so is_closed(2) is false and #5 is skipped.
+        let agent = ScriptedAgent::new(vec![Outcome::Done]);
         let tracker = RecordingTracker::default();
 
         let report = run_queue(

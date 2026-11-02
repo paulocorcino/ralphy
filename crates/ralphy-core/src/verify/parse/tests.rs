@@ -148,7 +148,8 @@ fn parse_bare_commands_unaffected() {
 /// repair budget), it is rejected at parse time with an actionable message.
 #[test]
 fn parse_nested_escaped_quote_is_invalid() {
-    let md = "## Verify\n\nsh -c \"test \\\"$(git diff-tree --name-only -r HEAD)\\\" = \\\"README.md\\\"\"\n";
+    let md = "## Verify\n\nsh -c \"test \\\"$(git diff-tree --name-only -r HEAD)\\\" = \
+    \\\"README.md\\\"\"\n";
     match parse_verify(md) {
         VerifySpec::Invalid(error) => {
             assert!(

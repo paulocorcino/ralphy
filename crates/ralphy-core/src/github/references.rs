@@ -64,7 +64,10 @@ mod tests {
 
     #[test]
     fn parse_reference_reads_number_state_title_body() {
-        let json = r#"{"number":13,"title":"S2a corpus","state":"OPEN","body":"ground truth corpus","url":"https://github.com/o/r/issues/13"}"#;
+        let json = concat!(
+            r#"{"number":13,"title":"S2a corpus","state":"OPEN","body":"ground truth corpus","#,
+            r#""url":"https://github.com/o/r/issues/13"}"#,
+        );
         let r = parse_reference(json).unwrap();
         assert_eq!(r.number, 13);
         assert_eq!(r.state, "OPEN");

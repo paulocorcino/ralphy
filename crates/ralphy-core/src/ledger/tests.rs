@@ -68,7 +68,8 @@ fn record_line_has_all_fields_and_no_cost_or_usd() {
 fn sum_tokens_adds_four_fields_across_lines() {
     let jsonl = "\
 {\"phase\":\"plan\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5}}
-{\"phase\":\"execute\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7}}
+{\"phase\":\"execute\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\
+\"cache_creation\":7}}
 ";
     let total = sum_tokens(jsonl);
     assert_eq!(total.input, 30);
@@ -81,9 +82,15 @@ fn sum_tokens_adds_four_fields_across_lines() {
 fn read_rows_parses_good_lines_and_skips_malformed() {
     // Two well-formed lines and one malformed (unparseable) middle line.
     let jsonl = "\
-{\"project\":\"owner/repo\",\"actor_email\":\"a@x.io\",\"actor_name\":\"A\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"agent-a\",\"model\":\"model-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5},\"ts\":\"2026-06-15T12:00:00+00:00\"}
+{\"project\":\"owner/repo\",\"actor_email\":\"a@x.io\",\"actor_name\":\"A\",\
+\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"agent-a\",\
+\"model\":\"model-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\
+\"cache_creation\":5},\"ts\":\"2026-06-15T12:00:00+00:00\"}
 { this is not valid json
-{\"project\":\"owner/repo\",\"actor_email\":\"b@x.io\",\"actor_name\":\"B\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"agent-b\",\"model\":\"model-b\",\"outcome\":\"done\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7},\"ts\":\"2026-06-15T12:05:00+00:00\"}
+{\"project\":\"owner/repo\",\"actor_email\":\"b@x.io\",\"actor_name\":\"B\",\
+\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"agent-b\",\
+\"model\":\"model-b\",\"outcome\":\"done\",\"tokens\":{\"input\":20,\"output\":2,\
+\"cache_read\":200,\"cache_creation\":7},\"ts\":\"2026-06-15T12:05:00+00:00\"}
 ";
     let rows = read_rows(jsonl);
     assert_eq!(rows.len(), 2, "malformed middle line is skipped");
@@ -107,8 +114,12 @@ fn read_rows_parses_mixed_session_id() {
     // One OLD line lacking `session_id`, one NEW line carrying it — both must
     // parse into a `UsageRow`, neither skipped (additive, append-only safe).
     let jsonl = "\
-{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\"m\",\"outcome\":\"ok\",\"tokens\":{\"input\":1,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
-{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-b\",\"outcome\":\"done\",\"tokens\":{\"input\":2,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
+{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\"m\",\
+\"outcome\":\"ok\",\"tokens\":{\"input\":1,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\
+\"ts\":\"t\"}
+{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"m\",\
+\"session_id\":\"sess-b\",\"outcome\":\"done\",\"tokens\":{\"input\":2,\"output\":0,\
+\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
 ";
     let rows = read_rows(jsonl);
     assert_eq!(rows.len(), 2);
@@ -224,8 +235,10 @@ fn read_project_rows_projects_only_unknown_session_rows_without_rewriting_jsonl(
     std::env::set_var("RALPHY_USAGE_DIR", dir.path());
     let ledger = dir.path().join("owner-repo.jsonl");
     let bytes = concat!(
-        "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"session_id\":\"rollout-codex\",\"tokens\":{\"input\":1}}\n",
-        "{\"project\":\"owner/repo\",\"model\":\"known\",\"session_id\":\"rollout-codex\",\"tokens\":{\"input\":2}}\n",
+        "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"session_id\":\"rollout-codex\",\
+        \"tokens\":{\"input\":1}}\n",
+        "{\"project\":\"owner/repo\",\"model\":\"known\",\"session_id\":\"rollout-codex\",\
+        \"tokens\":{\"input\":2}}\n",
         "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"tokens\":{\"input\":3}}\n",
     )
     .as_bytes()

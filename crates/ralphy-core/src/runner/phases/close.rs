@@ -58,9 +58,14 @@ pub(crate) fn close_and_record(
     // A failed read is not fatal (the issue is already closed) but must never be
     // silent: it zeroes the review-only count on ALL THREE carriers at once.
     let plan_md = std::fs::read_to_string(cx.ws.plan_path())
-        .inspect_err(
-            |e| warn!(number = issue.number, error = %e, "reading the plan at close failed — no review debt, no evidence, no handoff recorded"),
-        )
+        .inspect_err(|e| {
+            warn!(
+                number = issue.number,
+                error = %e,
+                "reading the plan at close failed — no review debt, no evidence, \
+                 no handoff recorded"
+            )
+        })
         .ok();
     let verdicts = plan_md
         .as_deref()

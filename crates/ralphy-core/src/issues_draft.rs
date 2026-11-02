@@ -68,14 +68,18 @@ mod tests {
     use super::*;
 
     /// A canonical milestone-path draft, pinning the wire format.
-    const SAMPLE_JSON: &str = r###"{
+    const SAMPLE_JSON: &str = concat!(
+        r###"{
         "milestone": { "title": "v1 onboarding", "description": "First runnable state" },
         "prd_path": "docs/prd/0001-onboarding.md",
         "issues": [
-            { "title": "scaffold workspace", "body": "## What to build\n...", "labels": ["ready-for-agent"], "blocked_by": [] },
-            { "title": "wire the queue", "body": "## What to build\n...", "labels": ["ready-for-agent"], "blocked_by": [0] }
+            { "title": "scaffold workspace", "body": "## What to build\n...", "labels": "###,
+        r###"["ready-for-agent"], "blocked_by": [] },
+            { "title": "wire the queue", "body": "## What to build\n...", "labels": "###,
+        r###"["ready-for-agent"], "blocked_by": [0] }
         ]
-    }"###;
+    }"###
+    );
 
     #[test]
     fn deserialize_sample_draft() {

@@ -83,7 +83,11 @@ pub fn save(project_root: &Path, state: &CostState) {
     match serde_json::to_string_pretty(state) {
         Ok(json) => {
             if let Err(e) = std::fs::write(&path, json) {
-                tracing::warn!(error = %e, path = %path.display(), "could not write cmd-costs state");
+                tracing::warn!(
+                    error = %e,
+                    path = %path.display(),
+                    "could not write cmd-costs state"
+                );
             }
         }
         Err(e) => tracing::warn!(error = %e, "could not serialize cmd-costs state"),

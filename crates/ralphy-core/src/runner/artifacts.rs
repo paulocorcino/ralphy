@@ -158,7 +158,12 @@ pub(crate) fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn Issu
             Ok(Some(r)) => entries.push(r),
             Ok(None) => {}
             Err(e) => {
-                warn!(number = issue.number, reference = n, error = %e, "fetching referenced issue failed — skipping")
+                warn!(
+                    number = issue.number,
+                    reference = n,
+                    error = %e,
+                    "fetching referenced issue failed — skipping"
+                )
             }
         }
     }

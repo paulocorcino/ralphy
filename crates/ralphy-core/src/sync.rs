@@ -251,10 +251,13 @@ impl PullOutcome {
                 "cannot pull: HEAD is detached — check out a branch first".to_string()
             }
             PullOutcome::Diverged { ahead, behind } => format!(
-                "cannot fast-forward: the branch and its upstream have diverged ({ahead} ahead, {behind} behind) — merge or rebase in a terminal"
+                "cannot fast-forward: the branch and its upstream have diverged ({ahead} ahead, \
+                {behind} behind) — merge or rebase in a terminal"
             ),
             PullOutcome::WorkingTreeBlocked => {
-                "cannot fast-forward: local changes would be overwritten — commit, stash or discard them first".to_string()
+                "cannot fast-forward: local changes would be overwritten — commit, stash or \
+                discard them first"
+                    .to_string()
             }
         })
     }
@@ -363,10 +366,12 @@ impl PushOutcome {
                 "cannot push: HEAD is detached — check out a branch first".to_string()
             }
             PushOutcome::Rejected { remote } => format!(
-                "cannot push: {remote} has commits this branch does not — pull first, then push again"
+                "cannot push: {remote} has commits this branch does not — pull first, then push \
+                again"
             ),
             PushOutcome::AuthFailed { remote } => format!(
-                "cannot push: {remote} refused the credential — authenticate in a terminal, this will not prompt"
+                "cannot push: {remote} refused the credential — authenticate in a terminal, this \
+                will not prompt"
             ),
         })
     }

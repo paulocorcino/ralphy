@@ -360,7 +360,8 @@ fn recv_and_join(
         Err(_) => {
             tracing::warn!(
                 stream,
-                "verify gate reader still blocked after the tree-kill — this stream's captured output was dropped"
+                "verify gate reader still blocked after the tree-kill — this stream's captured \
+                output was dropped"
             );
             String::new()
         }
