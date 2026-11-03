@@ -152,11 +152,13 @@ ubiquitous language, and each crate is roughly one bounded context.
   `cargo run -q -p xtask -- changelog --check`. `CHANGELOG.md` and
   `changelog.json` belong to the `changelog` xtask: edit only fragments.
 - **Cross-platform, always.** Ralphy ships on **Windows, Linux and macOS**.
-  A pull request is tested on Linux and macOS only; the Windows tests run in
+  A pull request is tested on Linux only; the Windows and macOS tests run in
   the release workflow, before the packages are built. So on Windows the
   local gate is the only check before a merge: a change to Windows code
   (`#[cfg(windows)]`, a path, a spawn) runs the gate on Windows before it is
-  called done. Build paths with `std::path`, spawn a program directly with its
+  called done. A change to macOS code (`cfg(target_os = "macos")`, launchd,
+  file watching) is checked before the tag by a manual run of the release
+  workflow (`gh workflow run release.yml --ref <branch>`). Build paths with `std::path`, spawn a program directly with its
   arguments, and take temporary directories from `tempfile`. Subprocess and
   PTY behavior is tested against a Rust helper binary, never a shell script
   (docs/TESTING.md → *What may be faked*). Measured platform differences are

@@ -174,22 +174,17 @@ jobs:
           ./oxfmt-x86_64-unknown-linux-gnu --check crates/ralphy-daemon/assets/ui/*.ts
 
   test:
-    name: build · test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: build · test (ubuntu-latest)
+    # macOS and Windows are tested in release.yml, before the packages are
+    # built. On a pull request the macOS job made the run 5 minutes longer,
+    # Windows took 15 minutes and its tests hang at times (#441), and the gate
+    # runs locally on Windows.
+    runs-on: ubuntu-latest
     # A wedged test used to consume the whole job budget until the hosted
     # runner died ("lost communication"), which uploads no log at all. The
     # Test steps carry their own, shorter bound (#441): a job cancelled by
     # this one keeps no log either (`BlobNotFound`).
     timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        # macOS joined on 2026-09-16 with the launchd autostart arm (ADR-0032
-        # amendment 2026-09-15); its smoke step below is the one place
-        # `launchctl` runs for real. Windows is tested in release.yml, before
-        # the packages are built: on a pull request it took 15 min and its
-        # tests hang at times (#441), and the gate runs locally on Windows.
-        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -225,7 +220,6 @@ jobs:
       # because a step killed by its `timeout-minutes` skips the later steps:
       # only this step's log carries the samples.
       - name: Test
-        if: runner.os == 'Linux'
         timeout-minutes: 18
         # PTY tests drive sh on Linux (portable-pty).
         run: |
@@ -239,53 +233,19 @@ jobs:
           trap 'kill "$sampler" 2>/dev/null' EXIT
           cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
 
-      - name: Test
-        if: runner.os == 'macOS'
-        timeout-minutes: 18
-        # PTY tests drive sh on macOS, as on Linux (portable-pty).
-        run: cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
-
-      # The only place `launchctl` runs for real (ADR-0032, amendment
-      # 2026-09-15): a hosted macOS runner is a logged-in GUI session, so the
-      # `gui/$UID` domain the agent bootstraps into exists. Proves the
-      # register → probe → unregister round trip and that a second install is
-      # a no-op, which no unit test can. A scratch HOME keeps the runner's own
-      # LaunchAgents untouched and the daemon un-baptized, so nothing serves.
-      - name: Autostart smoke (launchd)
-        if: runner.os == 'macOS'
-        env:
-          HOME: ${{ runner.temp }}/ralphy-home
-        run: |
-          set -euxo pipefail
-          mkdir -p "$HOME"
-          bin=target/ci/ralphy
-          "$bin" daemon status | grep -q 'autostart: not registered'
-          "$bin" daemon install
-          "$bin" daemon install   # a re-install is a no-op, not a bootstrap error
-          "$bin" daemon status | grep -q 'autostart: registered'
-          test -f "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
-          "$bin" daemon uninstall
-          "$bin" daemon uninstall # idempotent
-          "$bin" daemon status | grep -q 'autostart: not registered'
-          test ! -e "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
-
       # Nextest cannot run doctests. The workspace has none today, so this is a
       # cheap backstop that keeps the gate honest the day someone adds one.
       - name: Doctests
         run: cargo test --locked --workspace --profile ci --doc
 
   install-scripts:
-    name: install scripts (${{ matrix.os }})
+    name: install script (ubuntu-latest)
     # The one-line install (ADR-0056 §12) runs against a fake release packed
     # from this commit's binary and served on loopback, so no real release is
     # read. The scripts themselves are what `main` serves to users.
-    # install.ps1 is checked in release.yml, with the Windows tests.
-    runs-on: ${{ matrix.os }}
+    # install.sh on macOS and install.ps1 are checked in release.yml.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -303,68 +263,14 @@ jobs:
         run: cargo build --locked --bin ralphy
 
       - name: Lint install.sh
-        if: runner.os == 'Linux'
-        run: shellcheck assets/install/install.sh
+        run: shellcheck assets/install/install.sh .github/scripts/check-install-sh.sh
 
-      # The server runs in the same step as the script: a background process
-      # does not reliably outlive its step. Each refusal is checked by its
-      # message, so an unrelated failure does not pass for it.
       - name: install.sh
         env:
           RALPHY_RELEASES_URL: http://127.0.0.1:8765/releases
           RALPHY_DOWNLOAD_URL: http://127.0.0.1:8765/download
           RALPHY_INSTALL_DIR: ${{ runner.temp }}/bin
-        run: |
-          set -eux
-          case "$(uname -s)-$(uname -m)" in
-            Linux-x86_64) target=linux-x64 ;;
-            Darwin-arm64) target=macos-arm64 ;;
-            Darwin-x86_64) target=macos-x64 ;;
-          esac
-          python3 .github/scripts/install-fixture.py target/debug/ralphy "$target" "$RUNNER_TEMP/release"
-          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/release" >/dev/null 2>&1 &
-          for _ in $(seq 1 50); do
-            curl -fsS -o /dev/null "$RALPHY_RELEASES_URL" && break
-            sleep 0.2
-          done
-          sh assets/install/install.sh
-          "$RALPHY_INSTALL_DIR/ralphy" --version
-          sh assets/install/install.sh   # a second run repairs the install
-          # The default folder, decided by the binary: a scratch home has no
-          # ~/.cargo/bin, so it is ~/.local/bin. Each ( ) group sets its own HOME
-          # on purpose, so the next one starts from the real one.
-          # shellcheck disable=SC2030,SC2031
-          ( export HOME="$RUNNER_TEMP/home"; mkdir -p "$HOME"; unset RALPHY_INSTALL_DIR
-            sh assets/install/install.sh
-            "$HOME/.local/bin/ralphy" --version )
-          if [ "$(uname -s)" = Darwin ]; then
-            # The daemon at sign-in: a launchd agent in a scratch home.
-            # shellcheck disable=SC2030,SC2031
-            ( export HOME="$RUNNER_TEMP/daemon-home"; mkdir -p "$HOME"
-              RALPHY_DAEMON=1 sh assets/install/install.sh
-              test -f "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
-              "$RALPHY_INSTALL_DIR/ralphy" daemon uninstall )
-          fi
-          if [ "$(uname -s)" = Linux ]; then
-            # As root with no terminal, it stops unless root is allowed.
-            if sudo -E setsid -w sh assets/install/install.sh </dev/null 2>"$RUNNER_TEMP/root.err"; then
-              echo "install.sh ran as root with no terminal and no RALPHY_ALLOW_ROOT"
-              exit 1
-            fi
-            grep -q "no terminal to ask in" "$RUNNER_TEMP/root.err"
-            sudo -E env RALPHY_ALLOW_ROOT=1 RALPHY_INSTALL_DIR="$RUNNER_TEMP/rootbin" \
-              setsid -w sh assets/install/install.sh </dev/null
-            "$RUNNER_TEMP/rootbin/ralphy" --version
-          fi
-          # A wrong checksum installs nothing.
-          sum="$RUNNER_TEMP/release/download/v0.0.0-fixture/ralphy-v0.0.0-fixture-$target.tar.gz.sha256"
-          echo "0000  x" > "$sum"
-          if RALPHY_INSTALL_DIR="$RUNNER_TEMP/badbin" sh assets/install/install.sh 2>"$RUNNER_TEMP/sum.err"; then
-            echo "install.sh accepted a wrong checksum"
-            exit 1
-          fi
-          grep -q "SHA-256 of" "$RUNNER_TEMP/sum.err"
-          test ! -e "$RUNNER_TEMP/badbin/ralphy"
+        run: ./.github/scripts/check-install-sh.sh
 
   changelog:
     name: changelog fragment

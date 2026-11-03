@@ -520,7 +520,8 @@ Decision:
   `cfg(all(unix, not(target_os = "macos")))`. A per-user launch agent, not a
   `/Library/LaunchDaemons` daemon, for the reason §10 gives on Windows: the
   daemon is a per-user loopback resident.
-- **CI builds and tests on macOS.** `macos-latest` joins the matrix; the
+- **CI builds and tests on macOS.** `macos-latest` joins the matrix (since
+  2026-11-03 in `release.yml`, before the packages, not on a pull request); the
   platform sentence in CLAUDE.md names three. The suite is spawn-bound
   (`docs/BUILDING.md`); the job is measured before anything is split.
 - **Windows autostart falls back to `powershell.exe`** when `pwsh` is not on
