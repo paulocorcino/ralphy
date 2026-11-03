@@ -171,8 +171,10 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
 - **`codeql.yml`** — CodeQL static analysis of the Rust code, the workbench
   JavaScript and the workflows, on every push to `main` and once a week. A PR
   is analyzed for JavaScript and the workflows only: the Rust analysis took
-  12 minutes, the longest job of a PR. The results are in the repository's
-  Security tab and in review comments on the PR.
+  12 minutes, the longest job of a PR. On `main` a new merge does not cancel
+  the analysis of the one before, so each merge gets a Rust analysis. The
+  results are in the repository's Security tab and in review comments on the
+  PR.
 - **`capabilities.yml`** — on every PR, lists what the change adds that gives
   the code a new power: network access or a URL host the repository did not
   name before, a subprocess, `unsafe`, a read of a secret, encoded or minified
