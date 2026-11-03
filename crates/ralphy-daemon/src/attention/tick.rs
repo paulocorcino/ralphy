@@ -16,6 +16,7 @@
 //! the tick ([`peer_requests`]), for the peers' console requests and for
 //! whether the operator is at a page of the peer.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -106,6 +107,8 @@ pub(crate) struct PeerRequests {
     pub(crate) present: Vec<bool>,
     /// The peers that did not answer.
     pub(crate) unanswered: Vec<String>,
+    /// The peers whose machine has no bot: this daemon sends their runs.
+    pub(crate) bot_less: HashSet<String>,
 }
 
 /// The own list of each peer in `peers_dir`, read as the route reads it.
@@ -121,6 +124,9 @@ pub(crate) async fn peer_requests(peers_dir: PathBuf) -> PeerRequests {
     };
     for PeerList { daemon_id, list } in lists {
         read.present.push(list.present.unwrap_or(false));
+        if list.own_bot == Some(false) {
+            read.bot_less.insert(daemon_id.clone());
+        }
         read.requests.extend(
             list.requests
                 .into_iter()

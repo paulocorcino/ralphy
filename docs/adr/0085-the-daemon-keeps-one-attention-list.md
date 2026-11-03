@@ -351,4 +351,5 @@ never takes the old file; the operator's store takes it owner-only and keeps
 its own) and `disable_removes_both_configs`; A2 by the reason tests of
 `telegram_state.rs` and `routes/api_telegram`; A3 by the doctor tests and
 `ui-tests/wb-telegram-status.test.mjs`; A4 by
-`attention/telegram/peer_tests.rs`.
+`attention/telegram/peer_run_tests.rs` and
+`silent_consoles_and_runs_send_nothing`.

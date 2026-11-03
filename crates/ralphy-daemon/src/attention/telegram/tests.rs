@@ -197,14 +197,15 @@ fn silent_consoles_and_runs_send_nothing() {
     let requests = [
         request(Kind::ConsoleSilent, "console:7", at(0)),
         request(Kind::RunWaiting, "run:01RUN", at(0)),
+        request(Kind::RunFinished, "final:01RUN:71", at(0)),
     ];
-    let due = due(
-        &requests,
-        &HashSet::new(),
-        false,
-        at(600),
-        &Context::default(),
-    );
+    // A run of this daemon sends its own message, even when this daemon
+    // sends the runs of a peer with no bot.
+    let ctx = Context {
+        runs_of: HashSet::from(["01PEER".to_string()]),
+        ..Context::default()
+    };
+    let due = due(&requests, &HashSet::new(), false, at(600), &ctx);
     assert!(due.is_empty(), "got: {due:?}");
 }
 
@@ -213,6 +214,7 @@ fn the_message_links_to_the_console() {
     let ctx = Context {
         daemon_id: Some("01DAEMON".to_string()),
         origin: Some("https://ralphy.example".to_string()),
+        ..Context::default()
     };
     let requests = [
         waiting(at(0)),

@@ -90,6 +90,12 @@ pub(crate) struct AttentionList {
     pub(crate) requests: Vec<AttentionRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) present: Option<bool>,
+    /// In a daemon's own list (`?local=1`): whether its machine has a bot,
+    /// so its runs can send their own messages. `None` from an older daemon,
+    /// whose runs are taken to send their own (ADR-0085 D14, amendment of
+    /// 2026-11-03, A4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) own_bot: Option<bool>,
 }
 
 /// Who reads a peer's request, which decides its `repo`: the page finds the

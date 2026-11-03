@@ -21,14 +21,14 @@ use crate::protocol;
 use crate::telegram_state::SharedClaim;
 
 const MAIN: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
-const PEER: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+pub(super) const PEER: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
 const TOKEN: &str = "peer-token";
 const BOT: &str = "token = \"123:abc\"\nchat_id = 42\n";
 const ORIGIN: &str = "https://main.example:8443";
 
 /// A transport that keeps the text of each `sendMessage`.
 #[derive(Clone, Default)]
-struct Texts(Arc<Mutex<Vec<String>>>);
+pub(super) struct Texts(Arc<Mutex<Vec<String>>>);
 
 impl Transport for Texts {
     fn get(&self, method: &str) -> Result<Value> {
@@ -44,22 +44,22 @@ impl Transport for Texts {
 }
 
 impl Texts {
-    fn all(&self) -> Vec<String> {
+    pub(super) fn all(&self) -> Vec<String> {
         self.0.lock().expect("the texts lock").clone()
     }
 }
 
 /// The main daemon: its store, its sender and its claimer.
-struct Main {
+pub(super) struct Main {
     store: tempfile::TempDir,
     notifier: Notifier,
     claimer: Claimer,
-    texts: Texts,
+    pub(super) texts: Texts,
 }
 
 /// A main daemon over a temp store, with a bot when `with_bot`. The origin
 /// of its last page is [`ORIGIN`], and that page is hidden.
-fn main_daemon(with_bot: bool) -> Main {
+pub(super) fn main_daemon(with_bot: bool) -> Main {
     let store = tempfile::tempdir().expect("a temp dir");
     let config = store.path().join("telegram.toml");
     if with_bot {
@@ -99,7 +99,7 @@ fn main_daemon(with_bot: bool) -> Main {
 
 impl Main {
     /// Put the peer on `port` in the main's peers folder.
-    fn announce(&self, port: u16) {
+    pub(super) fn announce(&self, port: u16) {
         let descriptor = PeerDescriptor {
             daemon_id: PEER.to_string(),
             name: "peer".to_string(),
@@ -118,7 +118,7 @@ impl Main {
 
     /// One tick of the main with its own `requests`, and the end of the
     /// send it started.
-    async fn tick(&mut self, requests: &[AttentionRequest]) {
+    pub(super) async fn tick(&mut self, requests: &[AttentionRequest]) {
         self.notifier.tick_at(requests, SystemTime::now()).await;
         if let Some(flight) = self.notifier.flight.take() {
             let delivery = flight.await.expect("the send ends");
@@ -160,7 +160,7 @@ async fn serve(app: axum::Router) -> u16 {
 
 /// A fake peer: its own list is `list` (no answer while it is `None`), and
 /// it has a claim route unless `old`.
-async fn fake_peer(list: Arc<Mutex<Option<Value>>>, old: bool) -> u16 {
+pub(super) async fn fake_peer(list: Arc<Mutex<Option<Value>>>, old: bool) -> u16 {
     let read = move || {
         let list = list.lock().expect("the list lock").clone();
         async move {
@@ -184,7 +184,7 @@ use axum::response::IntoResponse as _;
 
 /// A daemon router as a peer: its own store in `home`, a bot when
 /// `with_bot`, the peer token.
-async fn real_peer(home: &std::path::Path, with_bot: bool) -> u16 {
+pub(super) async fn real_peer(home: &std::path::Path, with_bot: bool) -> u16 {
     let config = home.join("telegram.toml");
     if with_bot {
         std::fs::write(&config, BOT).expect("write the config");
@@ -221,7 +221,7 @@ fn peer_of(main: &Main) -> PeerDescriptor {
 }
 
 /// The JSON a peer answers on `path`.
-async fn peer_reply(main: &Main, path: &str) -> Value {
+pub(super) async fn peer_reply(main: &Main, path: &str) -> Value {
     let (status, body) = peer::client::get(&peer_of(main), path)
         .await
         .expect("the peer answers");

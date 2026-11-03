@@ -168,6 +168,7 @@ impl Notifier {
         let ctx = Context {
             daemon_id: self.daemon_id.clone(),
             origin,
+            runs_of: peers.bot_less,
         };
         let all: Vec<AttentionRequest> = requests.iter().cloned().chain(peers.requests).collect();
         let messages = self

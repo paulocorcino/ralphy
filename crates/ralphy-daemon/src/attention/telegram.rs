@@ -34,23 +34,38 @@ pub(crate) struct Message {
     pub(crate) text: String,
 }
 
-/// What a message names besides the request: this daemon's id and the origin
-/// of the operator's last page (the link).
+/// What a message names besides the request: this daemon's id, the origin
+/// of the operator's last page (the link), and the peers whose runs this
+/// daemon sends.
 #[derive(Debug, Default)]
 pub(crate) struct Context {
     pub(crate) daemon_id: Option<String>,
     pub(crate) origin: Option<String>,
+    pub(crate) runs_of: HashSet<String>,
 }
 
-/// What a console request of `kind` says it is, or `None` for a request that
-/// is not sent: a silent console has no state to tell, and a run sends its
-/// own message.
-fn what(kind: Kind) -> Option<&'static str> {
-    match kind {
+/// What a request says it is, or `None` for a request that is not sent: a
+/// silent console has no state to tell, and a run sends its own message
+/// unless it runs on a peer with no bot (ADR-0085 D14, amendment of
+/// 2026-11-03, A4).
+fn what(request: &AttentionRequest, ctx: &Context) -> Option<&'static str> {
+    match request.kind {
         Kind::ConsoleWaiting => Some("is waiting"),
         Kind::ConsoleDone => Some("has finished its turn"),
-        Kind::ConsoleSilent | Kind::RunWaiting | Kind::RunFinished => None,
+        Kind::ConsoleSilent => None,
+        Kind::RunWaiting => sends_runs_of(request, ctx).then_some("is waiting"),
+        Kind::RunFinished => sends_runs_of(request, ctx).then_some("stopped"),
     }
+}
+
+/// Whether this daemon sends the runs of the daemon that holds `request`: a
+/// peer's request id is `<daemon_id>/<id>`, and this daemon's own has no
+/// prefix.
+fn sends_runs_of(request: &AttentionRequest, ctx: &Context) -> bool {
+    request
+        .id
+        .split_once('/')
+        .is_some_and(|(peer, _)| ctx.runs_of.contains(peer))
 }
 
 /// The vendor's name as a person writes it; an unknown one as it came.
@@ -67,14 +82,27 @@ fn vendor_name(vendor: &str) -> &str {
     }
 }
 
-/// The text of the message of `request`: what waits, where, and the link to
-/// the console when the origin of a page and this daemon's id are known.
-fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
-    let console = request.console.as_deref().unwrap_or_default();
-    let mut text = format!("{} console", vendor_name(&request.vendor));
-    if let Some(name) = &request.name {
-        text.push_str(&format!(" \"{name}\""));
+/// What a message calls the source of `request`: a console with its name,
+/// or a run with its issue.
+fn subject_of(request: &AttentionRequest) -> String {
+    let vendor = vendor_name(&request.vendor);
+    match request.kind {
+        Kind::RunWaiting | Kind::RunFinished => match &request.issue {
+            Some(issue) => format!("{vendor} run on issue #{issue}"),
+            None => format!("{vendor} run"),
+        },
+        Kind::ConsoleWaiting | Kind::ConsoleDone | Kind::ConsoleSilent => match &request.name {
+            Some(name) => format!("{vendor} console \"{name}\""),
+            None => format!("{vendor} console"),
+        },
     }
+}
+
+/// The text of the message of `request`: what waits, where, and the link to
+/// the console when the origin of a page and this daemon's id are known. A
+/// run has no console, so no link.
+fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
+    let mut text = subject_of(request);
     if let Some(repo) = &request.repo {
         text.push_str(&format!(" in {repo}"));
     }
@@ -84,7 +112,8 @@ fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
         text.push_str(": ");
         text.push_str(&short(detail));
     }
-    if let Some(link) = link_of(console, ctx) {
+    let console = request.console.as_deref().filter(|c| !c.is_empty());
+    if let Some(link) = console.and_then(|console| link_of(console, ctx)) {
         text.push('\n');
         text.push_str(&link);
     }
@@ -141,7 +170,7 @@ pub(crate) fn due(
         .iter()
         .filter(|request| !sent.contains(&request.id))
         .filter_map(|request| {
-            let what = what(request.kind)?;
+            let what = what(request, ctx)?;
             (age(request, now)? >= DELAY).then(|| Message {
                 id: request.id.clone(),
                 text: text_of(request, what, ctx),
@@ -305,6 +334,8 @@ mod notifier;
 
 pub(crate) use notifier::Notifier;
 
+#[cfg(test)]
+mod peer_run_tests;
 #[cfg(test)]
 mod peer_tests;
 #[cfg(test)]
