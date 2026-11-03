@@ -39,14 +39,27 @@ async fn state(config: &std::path::Path) -> serde_json::Value {
 async fn the_telegram_state_follows_the_config() {
     let dir = tempfile::tempdir().expect("a temp dir");
     let config = dir.path().join("telegram.toml");
-    assert_eq!(state(&config).await, serde_json::json!({ "state": "off" }));
+    assert_eq!(
+        state(&config).await,
+        serde_json::json!({ "state": "off", "why": "not-set-up" })
+    );
 
     std::fs::write(&config, "token = \"123:abc\"\n").expect("write the config");
     assert_eq!(
         state(&config).await,
-        serde_json::json!({ "state": "off" }),
-        "a bot with no chat yet sends nothing"
+        serde_json::json!({ "state": "off", "why": "no-chat" }),
+        "a bot with no chat yet sends nothing, and says so"
     );
+
+    // A broken file says only that it cannot be read: the parser's message
+    // quotes the line, and this line holds the token.
+    std::fs::write(&config, "token = \"SECRET-123\"\nchat_id = \"x\"\n").expect("write");
+    let broken = state(&config).await;
+    assert_eq!(
+        broken,
+        serde_json::json!({ "state": "off", "why": "unreadable" })
+    );
+    assert!(!broken.to_string().contains("SECRET"));
 
     std::fs::write(&config, "token = \"123:abc\"\nchat_id = 42\n").expect("write the config");
     let sends = state(&config).await;

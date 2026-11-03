@@ -430,7 +430,12 @@ if (-not $Worker) {
 
 # ---------------------------------------------------------------- worker
 
-$env:RALPHY_DAEMON_DIR = $Store
+# The daemon this worker restarts inherits its environment. The default
+# store needs no variable, and a daemon should not carry one it does not need.
+$defaultStore = [System.IO.Path]::GetFullPath((Join-Path $HOME '.ralphy')).TrimEnd('\')
+if ([System.IO.Path]::GetFullPath($Store).TrimEnd('\') -ne $defaultStore) {
+    $env:RALPHY_DAEMON_DIR = $Store
+}
 if ($TargetDir) { $env:CARGO_TARGET_DIR = $TargetDir }
 $lock = Join-Path $Store 'update-ralphy.lock'
 $cancelFile = Join-Path $Store 'update-ralphy.cancel'

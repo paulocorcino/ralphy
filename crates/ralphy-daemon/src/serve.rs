@@ -346,12 +346,23 @@ fn usage_stores() -> Result<StorePaths> {
         copilot_db: usage::copilot_db_path()?,
         cursor_dir: usage::cursor_dir_path()?,
         gemini_dir: usage::gemini_dir_path()?,
-        // A machine with no config directory sends no Telegram message; the
-        // daemon still starts.
-        telegram_config: crate::telegram_state::config_path().unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "no Telegram config path; no Telegram message is sent");
-            PathBuf::new()
-        }),
+        telegram_config: telegram_config(),
+    })
+}
+
+/// The Telegram config in the store, after the one-time copy of the old file.
+/// A store whose path cannot be resolved sends no Telegram message; the
+/// daemon still starts.
+fn telegram_config() -> PathBuf {
+    use crate::telegram_state::legacy::{take_legacy_config, Moved};
+    match take_legacy_config() {
+        Ok(Moved::Copied) => tracing::info!("copied the Telegram config into the daemon store"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "the old Telegram config could not be copied"),
+    }
+    crate::telegram_state::config_path().unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "no Telegram config path; no Telegram message is sent");
+        PathBuf::new()
     })
 }
 

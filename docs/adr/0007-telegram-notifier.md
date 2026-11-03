@@ -244,3 +244,30 @@ stalled network can never slow the run.
 Status: accepted — implemented as `crates/ralphy-cli/src/telegram/`
 (`notifier`, `client`, `config`), covering D1–D7 including the D6 `RunState`
 fold and the D5 log-only events.
+
+## Amendment 2026-11-03 — D2: the config lives in the daemon store
+
+Decided by Paulo on 2026-11-03.
+
+The token and `chat_id` now live in the daemon store, `<store>/telegram.toml`
+(`~/.ralphy/telegram.toml`, or the folder in `RALPHY_DAEMON_DIR`), next to
+`events.toml`. It is written owner-only, as before. `ralphy telegram setup`,
+`test`, `status` and `disable`, the notifier of a run, the daemon and
+`ralphy doctor` all read and write this one file.
+
+The global `directories` file of D2 meant that a daemon with a store of its
+own, such as one a test starts, would send with the operator's bot. So the
+daemon read another file when `RALPHY_DAEMON_DIR` was set, and the variable
+had two meanings: "the store is here" and "this is a test". The update script
+sets it to the operator's own store, so that daemon read a file nothing wrote,
+and sent nothing (ADR-0085, amendment of 2026-11-03). With the config in the
+store, the variable has one meaning, and a scratch store has no bot because
+it has no such file.
+
+The old file is copied once into the store, and only into the operator's own
+store: the one at `.ralphy` in the home folder the operating system names,
+not the one in `USERPROFILE` or `HOME`, which a test may change. A store in
+any other folder never reads the old file; `ralphy telegram setup` sets its
+bot. The old file is kept, because an older binary, after a rollback, reads
+only that file. `ralphy telegram disable` and `ralphy uninstall --purge`
+remove both, so a removed bot does not come back from the old copy.

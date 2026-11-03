@@ -46,7 +46,8 @@ pub use session::SessionAuth;
 use throttle::LoginThrottle;
 pub use token::{
     effective_token, effective_token_from, ensure_token_at, env_token, generate_token, load_token,
-    load_token_from, save_token_to, store_dir, token_path, token_path_in, TOKEN_ENV,
+    load_token_from, os_default_store, same_dir, save_token_to, store_dir, token_path,
+    token_path_in, TOKEN_ENV,
 };
 
 /// The bound address the credential-free constructors report. Tests build a

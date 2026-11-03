@@ -15,16 +15,14 @@
 //! (`telegram_state::Claim`) sends nothing: its main sends for it.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use ralphy_telegram::client::{BotClient, Transport};
 
 use super::{AttentionRequest, Kind};
-use crate::presence_board;
 use crate::session::Agent;
-use crate::telegram_state::{self, SharedClaim};
+use crate::telegram_state;
 
 /// How long a console request is open before it is sent.
 pub(crate) const DELAY: Duration = Duration::from_secs(120);
@@ -36,23 +34,38 @@ pub(crate) struct Message {
     pub(crate) text: String,
 }
 
-/// What a message names besides the request: this daemon's id and the origin
-/// of the operator's last page (the link).
+/// What a message names besides the request: this daemon's id, the origin
+/// of the operator's last page (the link), and the peers whose runs this
+/// daemon sends.
 #[derive(Debug, Default)]
 pub(crate) struct Context {
     pub(crate) daemon_id: Option<String>,
     pub(crate) origin: Option<String>,
+    pub(crate) runs_of: HashSet<String>,
 }
 
-/// What a console request of `kind` says it is, or `None` for a request that
-/// is not sent: a silent console has no state to tell, and a run sends its
-/// own message.
-fn what(kind: Kind) -> Option<&'static str> {
-    match kind {
+/// What a request says it is, or `None` for a request that is not sent: a
+/// silent console has no state to tell, and a run sends its own message
+/// unless it runs on a peer with no bot (ADR-0085 D14, amendment of
+/// 2026-11-03, A4).
+fn what(request: &AttentionRequest, ctx: &Context) -> Option<&'static str> {
+    match request.kind {
         Kind::ConsoleWaiting => Some("is waiting"),
         Kind::ConsoleDone => Some("has finished its turn"),
-        Kind::ConsoleSilent | Kind::RunWaiting | Kind::RunFinished => None,
+        Kind::ConsoleSilent => None,
+        Kind::RunWaiting => sends_runs_of(request, ctx).then_some("is waiting"),
+        Kind::RunFinished => sends_runs_of(request, ctx).then_some("stopped"),
     }
+}
+
+/// Whether this daemon sends the runs of the daemon that holds `request`: a
+/// peer's request id is `<daemon_id>/<id>`, and this daemon's own has no
+/// prefix.
+fn sends_runs_of(request: &AttentionRequest, ctx: &Context) -> bool {
+    request
+        .id
+        .split_once('/')
+        .is_some_and(|(peer, _)| ctx.runs_of.contains(peer))
 }
 
 /// The vendor's name as a person writes it; an unknown one as it came.
@@ -69,14 +82,27 @@ fn vendor_name(vendor: &str) -> &str {
     }
 }
 
-/// The text of the message of `request`: what waits, where, and the link to
-/// the console when the origin of a page and this daemon's id are known.
-fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
-    let console = request.console.as_deref().unwrap_or_default();
-    let mut text = format!("{} console", vendor_name(&request.vendor));
-    if let Some(name) = &request.name {
-        text.push_str(&format!(" \"{name}\""));
+/// What a message calls the source of `request`: a console with its name,
+/// or a run with its issue.
+fn subject_of(request: &AttentionRequest) -> String {
+    let vendor = vendor_name(&request.vendor);
+    match request.kind {
+        Kind::RunWaiting | Kind::RunFinished => match &request.issue {
+            Some(issue) => format!("{vendor} run on issue #{issue}"),
+            None => format!("{vendor} run"),
+        },
+        Kind::ConsoleWaiting | Kind::ConsoleDone | Kind::ConsoleSilent => match &request.name {
+            Some(name) => format!("{vendor} console \"{name}\""),
+            None => format!("{vendor} console"),
+        },
     }
+}
+
+/// The text of the message of `request`: what waits, where, and the link to
+/// the console when the origin of a page and this daemon's id are known. A
+/// run has no console, so no link.
+fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
+    let mut text = subject_of(request);
     if let Some(repo) = &request.repo {
         text.push_str(&format!(" in {repo}"));
     }
@@ -86,7 +112,8 @@ fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
         text.push_str(": ");
         text.push_str(&short(detail));
     }
-    if let Some(link) = link_of(console, ctx) {
+    let console = request.console.as_deref().filter(|c| !c.is_empty());
+    if let Some(link) = console.and_then(|console| link_of(console, ctx)) {
         text.push('\n');
         text.push_str(&link);
     }
@@ -143,7 +170,7 @@ pub(crate) fn due(
         .iter()
         .filter(|request| !sent.contains(&request.id))
         .filter_map(|request| {
-            let what = what(request.kind)?;
+            let what = what(request, ctx)?;
             (age(request, now)? >= DELAY).then(|| Message {
                 id: request.id.clone(),
                 text: text_of(request, what, ctx),
@@ -303,164 +330,12 @@ impl Transport for AnyTransport {
     }
 }
 
-/// What builds the transport for a token.
-pub(crate) type Transports = Arc<dyn Fn(String) -> AnyTransport + Send + Sync>;
+mod notifier;
 
-/// The transports of a [`Notifier`]: the Telegram API. In a unit test of
-/// this crate every router and every notifier gets [`NoApi`] instead, so no
-/// test can reach the API, whatever config or token it has.
-#[cfg(not(test))]
-fn api_transports() -> Transports {
-    Arc::new(|token| AnyTransport(Box::new(ralphy_telegram::client::UreqTransport::new(token))))
-}
-
-/// [`api_transports`] in a unit test: [`NoApi`].
-#[cfg(test)]
-fn api_transports() -> Transports {
-    Arc::new(|_token| AnyTransport(Box::new(NoApi)))
-}
-
-/// The transport of a unit test that sets none: every call fails.
-#[cfg(test)]
-pub(crate) struct NoApi;
+pub(crate) use notifier::Notifier;
 
 #[cfg(test)]
-impl Transport for NoApi {
-    fn get(&self, method: &str) -> anyhow::Result<serde_json::Value> {
-        anyhow::bail!("a unit test reaches no Telegram API ({method})")
-    }
-
-    fn post(&self, method: &str, _body: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-        anyhow::bail!("a unit test reaches no Telegram API ({method})")
-    }
-}
-
-/// The sender as the attention tick runs it: the config path, the presence
-/// board, the claim of a main daemon on this one, the peers, this daemon's
-/// id, and the send in flight. A tick starts no send while one is in flight,
-/// so a slow network holds back neither the tick nor a second copy of a
-/// message.
-pub(crate) struct Notifier {
-    config: PathBuf,
-    board: presence_board::Shared,
-    claim: SharedClaim,
-    peers_dir: PathBuf,
-    daemon_id: Option<String>,
-    transport: Transports,
-    sender: Sender,
-    flight: Option<tokio::task::JoinHandle<Delivery>>,
-}
-
-impl Notifier {
-    pub(crate) fn new(
-        config: PathBuf,
-        (board, claim): (presence_board::Shared, SharedClaim),
-        peers_dir: PathBuf,
-        daemon_id: Option<String>,
-    ) -> Self {
-        Notifier {
-            config,
-            board,
-            claim,
-            peers_dir,
-            daemon_id,
-            transport: api_transports(),
-            sender: Sender::default(),
-            flight: None,
-        }
-    }
-
-    /// Whether the operator is present now, at a page of this daemon or of a
-    /// peer (`peers_present`), and the origin of the last page of this
-    /// daemon. A poisoned board is logged and reads as "not present".
-    fn presence(&self, peers_present: &[bool], now: SystemTime) -> (bool, Option<String>) {
-        match self.board.lock() {
-            Ok(board) => (board.present_with(peers_present, now), board.last_origin()),
-            Err(e) => {
-                tracing::warn!(error = %e, "the presence board is poisoned");
-                (false, None)
-            }
-        }
-    }
-
-    /// Keep what the send in flight did, once it ended. `false` while it
-    /// runs.
-    async fn landed(&mut self) -> bool {
-        if self.flight.as_ref().is_some_and(|f| !f.is_finished()) {
-            return false;
-        }
-        if let Some(flight) = self.flight.take() {
-            match flight.await {
-                Ok(delivery) => {
-                    self.sender.finish(delivery);
-                }
-                Err(e) => tracing::warn!(error = %e, "the Telegram send stopped"),
-            }
-        }
-        true
-    }
-
-    /// Whether this daemon sends at `now`: no main daemon's claim holds, and
-    /// its config has a bot. A config with no bot, or one that cannot be
-    /// read, is kept as the sender keeps a send that found it so.
-    async fn sends(&mut self, now: SystemTime) -> bool {
-        if telegram_state::holder_at(&self.claim, now).is_some() {
-            return false;
-        }
-        let config = self.config.clone();
-        let bot = tokio::task::spawn_blocking(move || {
-            telegram_state::bot_at(&config).map(|bot| bot.is_some())
-        })
-        .await;
-        match bot {
-            Ok(Ok(true)) => true,
-            Ok(Ok(false)) => {
-                self.sender.finish(Delivery::Off);
-                false
-            }
-            Ok(Err(e)) => {
-                self.sender.finish(Delivery::NoConfig(e.to_string()));
-                false
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "the Telegram config read stopped");
-                false
-            }
-        }
-    }
-
-    /// One tick: keep what the last send did, then start the send of the
-    /// messages due for `requests` and for the console requests of the
-    /// peers.
-    pub(crate) async fn tick(&mut self, requests: &[AttentionRequest]) {
-        self.tick_at(requests, SystemTime::now()).await;
-    }
-
-    /// [`Notifier::tick`] at `now`.
-    pub(crate) async fn tick_at(&mut self, requests: &[AttentionRequest], now: SystemTime) {
-        if !self.landed().await || !self.sends(now).await {
-            return;
-        }
-        let peers = super::tick::peer_requests(self.peers_dir.clone()).await;
-        let (present, origin) = self.presence(&peers.present, now);
-        let ctx = Context {
-            daemon_id: self.daemon_id.clone(),
-            origin,
-        };
-        let all: Vec<AttentionRequest> = requests.iter().cloned().chain(peers.requests).collect();
-        let messages = self
-            .sender
-            .next_with(&all, &peers.unanswered, present, now, &ctx);
-        if messages.is_empty() {
-            return;
-        }
-        let (config, transport) = (self.config.clone(), self.transport.clone());
-        self.flight = Some(tokio::task::spawn_blocking(move || {
-            deliver(&config, |token| transport(token), messages)
-        }));
-    }
-}
-
+mod peer_run_tests;
 #[cfg(test)]
 mod peer_tests;
 #[cfg(test)]

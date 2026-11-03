@@ -186,6 +186,10 @@ _Avoid_: cluster (no shared workload), farm.
 The **daemons** that the **local daemon** (the one serving the browser) reaches over its own loopback, with no **control plane** in the path. Each of the others is a **peer**, on the same machine through WSL or on another machine through a **peer tunnel** (ADR-0052).
 _Avoid_: remote daemon (a peer on another machine is still a peer), master/slave or primary, mount, share, remote peer.
 
+**Main daemon**:
+The **daemon** of a **local fleet** that sends the Telegram messages for its **peers**: it has a bot, and it claims each peer every minute, so one request is one message (ADR-0085 D14).
+_Avoid_: master, primary, leader, hub.
+
 **Peer descriptor**:
 The file a **daemon** writes into a **peer**'s store to announce itself: who it is, where to reach it, how to authenticate, and which protocol version it speaks. It is a claim, not a proof that the daemon is alive (ADR-0052).
 _Avoid_: enrollment (the control plane's code exchange), service discovery, pairing.

@@ -316,8 +316,21 @@ fn purge(store: &Path, yes: bool) -> Result<()> {
         println!("Kept {}.", store.display());
         return Ok(());
     }
+    remove_old_telegram_config(store)?;
     std::fs::remove_dir_all(store).with_context(|| format!("deleting {}", store.display()))?;
     println!("Deleted {}.", store.display());
+    Ok(())
+}
+
+/// The Telegram config of the operator's store also has an old copy outside
+/// it, which a later start would copy back. It goes with the store.
+fn remove_old_telegram_config(store: &Path) -> Result<()> {
+    let old = ralphy_telegram::config::legacy_path()?;
+    let operator_store = ralphy_daemon::auth::os_default_store();
+    if ralphy_daemon::telegram_state::legacy::remove_legacy(store, &old, operator_store.as_deref())?
+    {
+        println!("Deleted the old Telegram settings {}.", old.display());
+    }
     Ok(())
 }
 

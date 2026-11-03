@@ -7,7 +7,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use ralphy_adapter_support::{find_program, locate_program, run_headless};
 use ralphy_daemon::agent_state::StateSource;
-use ralphy_daemon::telegram_state::{self, TelegramState};
+use ralphy_daemon::telegram_state::{self, FleetTelegram};
 use ralphy_proc_util::hook_form::{self, HookCheck};
 
 use super::{gh_signed_in, source_of, MachineFacts};
@@ -41,7 +41,7 @@ pub(crate) fn probe() -> MachineFacts {
         let telegram = running.join().expect(join).or_else(|| {
             telegram_state::config_path()
                 .ok()
-                .map(|path| telegram_state::state_at(&path))
+                .map(|path| FleetTelegram::alone(telegram_state::state_at(&path)))
         });
         MachineFacts {
             git: git.join().expect(join),
@@ -65,9 +65,16 @@ pub(crate) fn probe() -> MachineFacts {
 /// How long `doctor` waits for the daemon of this machine.
 const DAEMON_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// The Telegram state of the daemon that runs on this machine, from the
-/// daemon (`GET /api/telegram?local=1`); `None` when no daemon answers.
-fn daemon_telegram() -> Option<TelegramState> {
+/// How long `doctor` waits for the Telegram state of the local fleet: the
+/// daemon asks its peers first, each for at most `PEER_TIMEOUT`.
+const FLEET_TIMEOUT: Duration = Duration::from_secs(
+    DAEMON_TIMEOUT.as_secs() + ralphy_daemon::peer::client::PEER_TIMEOUT.as_secs(),
+);
+
+/// The Telegram state of the daemon that runs on this machine and of its
+/// peers, from the daemon (`GET /api/telegram`); `None` when no daemon
+/// answers.
+fn daemon_telegram() -> Option<FleetTelegram> {
     let store = ralphy_daemon::auth::store_dir().ok()?;
     let args = ralphy_daemon::pidfile::read_args_in(&store);
     let port = crate::daemon::describe::port_from_args(&args);
@@ -86,14 +93,14 @@ fn daemon_telegram() -> Option<TelegramState> {
     }
 }
 
-fn read_daemon_telegram(port: u16) -> Result<TelegramState> {
+fn read_daemon_telegram(port: u16) -> Result<FleetTelegram> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(DAEMON_TIMEOUT))
+        .timeout_global(Some(FLEET_TIMEOUT))
         .proxy(None)
         .http_status_as_error(false)
         .build()
         .into();
-    let mut req = agent.get(&format!("http://127.0.0.1:{port}/api/telegram?local=1"));
+    let mut req = agent.get(&format!("http://127.0.0.1:{port}/api/telegram"));
     if let Some(token) = ralphy_daemon::auth::effective_token()?.filter(|t| !t.is_empty()) {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }

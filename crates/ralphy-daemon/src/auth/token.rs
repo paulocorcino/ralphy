@@ -26,6 +26,22 @@ pub fn store_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".ralphy"))
 }
 
+/// The operator's own store: `.ralphy` in the home folder the operating system
+/// names (the known folder on Windows), which `USERPROFILE` and `HOME` do not
+/// move. `None` when the system names no home folder.
+pub fn os_default_store() -> Option<PathBuf> {
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().join(".ralphy"))
+}
+
+/// Whether two folders are the same folder. A folder that cannot be resolved
+/// (it does not exist yet) is the same as no other.
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// The `daemon-token` path inside `dir`. Path-explicit so the security routes and
 /// tests can point it at a temp dir without touching the process-global env.
 pub fn token_path_in(dir: &Path) -> PathBuf {

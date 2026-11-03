@@ -56,15 +56,20 @@ fn local_list(
 pub(crate) async fn attention_route(
     sessions: Arc<session::SessionManager>,
     (runs, dismissed): (Runs, Dismissed),
-    (peers_dir, presence): (PathBuf, presence_board::Shared),
+    (peers_dir, presence, telegram): (PathBuf, presence_board::Shared, PathBuf),
     local_only: bool,
 ) -> Response {
     let mut requests = local_list(&sessions, &runs, &dismissed);
     if local_only {
         let present = presence_board::present_now(&presence);
+        let own_bot = super::blocking_read(move || {
+            matches!(crate::telegram_state::bot_at(&telegram), Ok(Some(_)))
+        })
+        .await;
         return Json(AttentionList {
             requests,
             present: Some(present),
+            own_bot,
         })
         .into_response();
     }
@@ -81,6 +86,7 @@ pub(crate) async fn attention_route(
     let mut response = Json(AttentionList {
         requests,
         present: None,
+        own_bot: None,
     })
     .into_response();
     name_unanswered(&mut response, &unanswered);
@@ -212,6 +218,7 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
     let sessions = s.sessions.clone();
     let peers = s.peers_dir.clone();
     let presence = s.presence.clone();
+    let telegram_config = s.stores.telegram_config.clone();
     let runs = Runs::default();
     let dismissed: Dismissed = Arc::new(Mutex::new(Dismissals::in_store_of(&s.registry_path)));
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
@@ -245,7 +252,7 @@ pub(crate) fn attention_routes(s: &RouterShared) -> Router {
             attention_route(
                 sessions.clone(),
                 (runs.clone(), dismissed.clone()),
-                (peers.clone(), presence.clone()),
+                (peers.clone(), presence.clone(), telegram_config.clone()),
                 query.local == Some(1),
             )
         }

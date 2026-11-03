@@ -272,6 +272,7 @@ test("a page put together from its parts", () => {
       "wbBoard",
       "wbRuns",
       "wbSettingsDialog",
+      "wbTelegramStatus",
       "wbDevices",
       "wbSecurityDialog",
       "wbReleaseDialogs",

@@ -2278,6 +2278,7 @@ dependencies = [
  "axum",
  "chrono",
  "data-encoding",
+ "directories",
  "encoding_rs",
  "flate2",
  "futures-util",

@@ -14,9 +14,9 @@ use super::*;
 #[ignore = "hits the live Telegram Bot API; needs `telegram setup` first"]
 fn live_edit_dedup_against_real_telegram() {
     use crate::telegram::client::UreqTransport;
-    use crate::telegram::config::{effective_token, TelegramConfig};
+    use crate::telegram::config::{effective_token, load};
 
-    let Some(cfg) = TelegramConfig::load().expect("load config") else {
+    let Some(cfg) = load().expect("load config") else {
         eprintln!("SKIP: Telegram not configured — run `ralphy telegram setup`");
         return;
     };

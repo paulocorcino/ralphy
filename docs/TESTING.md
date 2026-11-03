@@ -84,8 +84,10 @@ not own:
 - **The browser and the network**, in a `node --test` test.
 - **The Telegram API:** a test never reaches it and never reads the real
   token. It uses a fake transport (in `ralphy-daemon`, `NoApi` under
-  `cfg(test)`), a temporary config path (an empty store, or
-  `RALPHY_DAEMON_DIR` set to a temporary folder), and fake token values. A
+  `cfg(test)`), a temporary config path, and fake token values. The bot
+  lives in the daemon store (`<store>/telegram.toml`), so a daemon with
+  `RALPHY_DAEMON_DIR` set to a temporary folder has no bot, and only the
+  operator's own store ever copies the old config file. A
   `ralphy` that a CLI test starts comes from `support::ralphy_command`,
   which removes `RALPHY_TELEGRAM_TOKEN` and `RALPHY_EVENTS_TOKEN`.
 
