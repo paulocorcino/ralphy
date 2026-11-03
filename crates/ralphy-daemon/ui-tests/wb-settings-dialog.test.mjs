@@ -81,6 +81,47 @@ test("a client-scoped key never reaches the daemon", async () => {
   });
 });
 
+// The notification switch asks the browser when it turns on, keeps the
+// answer in this browser, and a refusal puts the field back to off.
+test("the notification switch is saved in this browser, and a refusal turns it off", async (t) => {
+  const saved = ["localStorage", "Notification"].map((n) => [n, Object.getOwnPropertyDescriptor(globalThis, n)]);
+  t.after(() => {
+    for (const [n, d] of saved) {
+      if (d) Object.defineProperty(globalThis, n, d);
+      else delete globalThis[n];
+    }
+  });
+  const map = new Map();
+  globalThis.localStorage = { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
+  let answer = "granted";
+  globalThis.Notification = class {
+    static permission = "default";
+    static async requestPermission() {
+      return answer;
+    }
+  };
+  const flashed = [];
+  const { scope: s, window } = loadComponent("wbSettingsDialog", {
+    magics: { $store: { modals: { flash: (m) => flashed.push(m) }, projects: { openSlug: null } } },
+  });
+  const calls = [];
+  window.WBDaemon = { observe: async (verb) => calls.push(verb) };
+  const notify = () => JSON.parse(map.get("wb.view.v1") || "{}").notify;
+
+  await s.saveSetting("notifications.browser", true);
+  assert.equal(notify(), true);
+  assert.equal(s.settings["notifications.browser"], true);
+  await s.saveSetting("notifications.browser", false);
+  assert.equal(notify(), false);
+
+  answer = "denied";
+  await s.saveSetting("notifications.browser", true);
+  assert.equal(notify(), false, "a refusal is not kept as on");
+  assert.equal(s.settings["notifications.browser"], false, "the field goes back to off");
+  assert.deepEqual(flashed, ["The browser did not allow notifications."]);
+  assert.deepEqual(calls, [], "a per-browser choice must not reach the daemon");
+});
+
 // The console text size is the same `font` field the key bar's A−/A+ write, so
 // the setting and the buttons never disagree. `wb-client-view.js` reads a BARE
 // `localStorage`; a Map-backed one stands in for the browser's for this test.

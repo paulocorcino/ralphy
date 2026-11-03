@@ -25,7 +25,8 @@
 //!
 //! The complexity exceptions ratchet counts the lines that let a function
 //! over the complexity limit pass, in Rust and in the workbench. The tool pin
-//! ties the oxlint of CI to the oxlint command of `AGENTS.md`.
+//! ties the oxlint of CI to the oxlint step of `xtask gate`. The gate ratchet
+//! ties the steps of `xtask gate` to the check steps of CI.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -39,7 +40,13 @@ use regex::Regex;
 #[path = "../../src/ui_copy/lex.rs"]
 mod lex;
 
+// The step table of `xtask gate`, which the gate ratchet reads.
+#[expect(dead_code, reason = "the ratchet reads only the CI names of the steps")]
+#[path = "../../src/gate/steps.rs"]
+mod gate_steps;
+
 mod complexity_exceptions;
+mod gate_mirrors_ci;
 mod peer_reply_pin;
 mod rust_coupling;
 mod skipped_tests;

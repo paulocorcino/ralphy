@@ -68,8 +68,8 @@ Two notes for a slow suite, both measured on Windows:
 Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
 - **`ci.yml`** — runs on every push to `main` and every PR. With the test
-  jobs of `release.yml` it is the source of the gate; AGENTS.md lists the
-  same commands in their local form. It builds and tests no product crate:
+  jobs of `release.yml` it is the source of the gate; `cargo run -p xtask --
+  gate` runs the same checks in their local form. It builds and tests no product crate:
   the suite runs in `release.yml` (below), on Linux, macOS and Windows, so
   a pull request waits only for checks of a few minutes. A `lint` job checks
   formatting (`cargo fmt --check`), lints (`cargo clippy --all-targets -D

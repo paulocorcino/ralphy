@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod apply;
 pub mod history;
+mod membership;
 mod store;
 
 pub use store::{is_parse_error, load_from, move_aside, save_to};

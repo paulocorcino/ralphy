@@ -12,7 +12,7 @@ Scenario 1  a claude console, no request: the badge is hidden, the title is `Ral
 Scenario 2  a `PermissionRequest` line for `Bash` -> the badge says `1`, the
             title is `(1) Ralphy`, the panel has a row with `permission: Bash`;
             screenshot HERE
-Scenario 3  "Go to the console" closes the panel and the console stays shown
+Scenario 3  a click on the row closes the panel and the console stays shown
 Scenario 4  a `PostToolUse` line for `Bash` -> the badge is hidden, the title
             is `Ralphy`
 Scenario 5  no page errors
@@ -134,7 +134,7 @@ def main():
             page.screenshot(path=os.path.join(agents.SHOT_DIR, SHOT))
 
             # --- scenario 3: go to the console ----------------------------------
-            page.locator(".attention-panel .attention-go").first.click()
+            page.locator(".attention-panel .attention-main").first.click()
             ok = wait_true(page, f"() => !({PANEL_OPEN})()", timeout=5000)
             check("go to the console closes the panel", ok)
             check("the console is still shown", page.evaluate(f"() => ({agents.WINDOWS})()") == 1)

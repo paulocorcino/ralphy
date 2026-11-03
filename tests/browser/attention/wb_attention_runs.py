@@ -1,5 +1,5 @@
 """A run that waits, in a real browser: a run snapshot whose agent waits is
-one request of the attention list, "Open the run" shows that run in the Runs
+one request of the attention list, a click on its row shows that run in the Runs
 panel, and the run card shows the agent's state and what it asks. A finished
 run's issues are requests with "Dismiss", and a dismissed one stays hidden
 after a reload and on a second device.
@@ -11,8 +11,8 @@ tick reads it, pushes `attention.dirty`, and the page reads the list.
 
 Scenario 1  no run: the badge is hidden
 Scenario 2  a snapshot whose `phase.agent` waits -> the badge says `1`, the
-            panel has one row with the agent's detail and "Open the run"
-Scenario 3  "Open the run" opens the run's project and the Runs panel; the run
+            panel has one row with the agent's detail, which opens the run
+Scenario 3  a click on the row opens the run's project and the Runs panel; the run
             card shows the `waiting` dot and the detail; screenshot HERE
 Scenario 4  the snapshot is removed -> the badge is hidden
 Scenario 5  a final snapshot in a run folder with issues `blocked` and `hitl`
@@ -60,8 +60,9 @@ ROWS = (
     "  .filter(r => r.offsetParent !== null)"
     "  .map(r => ({ detail: (r.querySelector('.attention-detail') || {}).textContent || '',"
     "    kind: (r.querySelector('.attention-kind') || {}).textContent || '',"
-    "    buttons: [...r.querySelectorAll('button')].filter(b => b.offsetParent !== null)"
-    "      .map(b => b.textContent.trim()) }))"
+    "    action: r.querySelector('.attention-main').disabled ? ''"
+    "      : r.querySelector('.attention-main').title,"
+    "    dismiss: (r.querySelector('.attention-dismiss') || {}).offsetParent != null }))"
 )
 PANEL_OPEN = "() => { const p = document.querySelector('.attention-panel'); return !!p && p.offsetParent !== null; }"
 CARD = (
@@ -207,12 +208,13 @@ def main():
                 len(rows) == 1
                 and rows[0]["detail"].strip() == DETAIL
                 and rows[0]["kind"].strip() == "Waits for you"
-                and rows[0]["buttons"] == ["Open the run"]
+                and rows[0]["action"] == "Open the run"
+                and not rows[0]["dismiss"]
             )
             check("run row", ok, f"got={rows!r}")
 
             # --- scenario 3: open the run ---------------------------------------
-            page.locator(".attention-panel .attention-go", has_text="Open the run").click()
+            page.locator(".attention-panel .attention-main", has_text=DETAIL).click()
             check("open the run closes the panel", wait_true(page, f"() => !({PANEL_OPEN})()", timeout=5000))
             ok = wait_true(page, f"() => {{ const c = ({CARD})(); return !!c && c.detail === {json.dumps(DETAIL)}; }}")
             card = page.evaluate(CARD)
@@ -233,7 +235,7 @@ def main():
             ok = (
                 ok
                 and [r["detail"].strip() for r in rows] == ["blocked", "hitl"]
-                and all(r["buttons"] == ["Dismiss"] for r in rows)
+                and all(r["action"] == "" and r["dismiss"] for r in rows)
             )
             check("finished rows", ok, f"got={rows!r}")
 

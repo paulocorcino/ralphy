@@ -8,6 +8,9 @@
 // which is what "pure" bought.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 
 // No global at all: the module exports its namespace. Compare with the loader
@@ -16,6 +19,11 @@ import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 // stated as code.
 function load() {
   return WBGeometry;
+}
+
+function fixture(name) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return JSON.parse(readFileSync(join(here, "fixtures", name + ".json"), "utf8"));
 }
 
 const MARGIN = 200;
@@ -249,6 +257,17 @@ test("fenceOf answers the fence holding the rect's title bar point, and null out
   assert.equal(fenceOf(AB, { left: 300, top: 300, width: 20, height: 20 }), null);
   assert.equal(fenceOf([], { left: 10, top: 10, width: 20, height: 20 }), null);
   assert.equal(fenceOf(undefined, { left: 10, top: 10, width: 20, height: 20 }), null);
+});
+
+// The table is the daemon's too (`desk::membership` tests): one rule in two
+// languages, held by one file.
+test("every shared membership case finds the fence the daemon finds", () => {
+  const { fenceOf } = load();
+  const cases = fixture("api-desk--fence-membership-cases");
+  assert.ok(cases.length >= 8, `the table lost cases: ${cases.length}`);
+  for (const c of cases) {
+    assert.equal(fenceOf(c.fences, c.rect)?.id ?? null, c.fence, c.name);
+  }
 });
 
 test("fenceOf is half-open on the far edge, like fenceMembership: the shared edge is the RIGHT fence's", () => {

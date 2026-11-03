@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use super::{DeskRecord, DeskStore};
+use super::{DeskRecord, DeskRect, DeskStore};
 
 /// How many versions are kept.
 pub const HISTORY_MAX: usize = 50;
@@ -85,38 +85,68 @@ impl From<&Version> for VersionInfo {
     }
 }
 
+/// An edge that moves by less than this many px is an adjustment, not a layout
+/// change: about one title bar (`--row-h`, 33 px).
+pub const MOVE_MIN_PX: f64 = 32.0;
+
 /// The desk with every field that changes without a layout change cleared:
 /// `ts` and `sessionId` (each reconnect rewrites both), the generation and
-/// the `rev`, and the sub-pixel part of each rect.
+/// the `rev`, the view state `max`, the `doneMark` request, which the daemon
+/// clears by itself, and the rects, which [`same_layout`] compares apart.
 fn layout_of(desk: &DeskStore) -> DeskStore {
     let mut d = desk.clone();
     d.generation = 0;
     d.rev = 0;
-    let round = |r: &mut super::DeskRect| {
-        r.left = r.left.round();
-        r.top = r.top.round();
-        r.width = r.width.round();
-        r.height = r.height.round();
-    };
     for w in &mut d.windows {
         w.ts = 0;
         w.session_id = None;
-        round(&mut w.rect);
+        w.max = false;
+        w.done_mark = false;
+        w.rect = DeskRect::default();
     }
     for f in &mut d.fences {
         f.ts = 0;
-        round(&mut f.rect);
+        f.rect = DeskRect::default();
     }
     for n in &mut d.notes {
         n.ts = 0;
-        round(&mut n.rect);
+        n.rect = DeskRect::default();
     }
     d
 }
 
-/// Whether two desks show the same layout.
+fn rects_of(desk: &DeskStore) -> impl Iterator<Item = &DeskRect> {
+    let windows = desk.windows.iter().map(|w| &w.rect);
+    let fences = desk.fences.iter().map(|f| &f.rect);
+    windows
+        .chain(fences)
+        .chain(desk.notes.iter().map(|n| &n.rect))
+}
+
+fn edges_near(a: &DeskRect, b: &DeskRect) -> bool {
+    let near = |p: f64, q: f64| (p - q).abs() < MOVE_MIN_PX;
+    near(a.left, b.left)
+        && near(a.top, b.top)
+        && near(a.left + a.width, b.left + b.width)
+        && near(a.top + a.height, b.top + b.height)
+}
+
+/// The fence that holds each console, then each note card.
+fn fences_held(desk: &DeskStore) -> Vec<Option<&str>> {
+    let windows = desk.windows.iter().map(|w| &w.rect);
+    windows
+        .chain(desk.notes.iter().map(|n| &n.rect))
+        .map(|r| super::membership::fence_of(&desk.fences, r))
+        .collect()
+}
+
+/// Whether two desks show the same layout: the same records, every edge
+/// within [`MOVE_MIN_PX`] of its place, and every console and note card in
+/// the same fence.
 pub fn same_layout(a: &DeskStore, b: &DeskStore) -> bool {
     layout_of(a) == layout_of(b)
+        && rects_of(a).zip(rects_of(b)).all(|(p, q)| edges_near(p, q))
+        && fences_held(a) == fences_held(b)
 }
 
 fn is_empty(desk: &DeskStore) -> bool {
@@ -172,7 +202,8 @@ fn same_session(a: &DeskRecord, b: &DeskRecord) -> bool {
 /// - A window of the version takes its saved place. When a current record is
 ///   the same console (same id, or the same live session), the version's
 ///   layout goes onto that record and the record keeps its id and session, so
-///   a running console is never shown twice.
+///   a running console is never shown twice. The `doneMark` is the current
+///   record's: a version never asks for a notice the operator does not ask for now.
 /// - A current window that is not in the version stays when it has a
 ///   session, and is dropped when it is a placeholder.
 /// - Fences and note cards are the version's. The checkouts are the current
@@ -198,10 +229,15 @@ pub fn restore(current: DeskStore, version: DeskStore, now: i64) -> (DeskStore, 
                 session_id: c.session_id,
                 daemon_id: c.daemon_id,
                 environment: c.environment,
+                done_mark: c.done_mark,
                 ts: now,
                 ..v
             },
-            None => DeskRecord { ts: now, ..v },
+            None => DeskRecord {
+                done_mark: false,
+                ts: now,
+                ..v
+            },
         };
         windows.push(record);
     }
@@ -271,16 +307,28 @@ pub fn is_not_found(e: &anyhow::Error) -> bool {
     })
 }
 
-/// The newest version that can be read. One that cannot is skipped with a
-/// warning: a damaged file must not stop the history.
-fn newest(dir: &Path) -> Result<Option<Version>> {
+/// The two newest versions that can be read, newest first. One that cannot is
+/// skipped with a warning: a damaged file must not stop the history.
+fn newest_two(dir: &Path) -> Result<(Option<Version>, Option<Version>)> {
+    let mut found = Vec::with_capacity(2);
     for id in ids(dir)?.into_iter().rev() {
         match load(dir, id) {
-            Ok(v) => return Ok(Some(v)),
+            Ok(v) => found.push(v),
             Err(e) => tracing::warn!(error = %format!("{e:#}"), "desk version skipped"),
         }
+        if found.len() == 2 {
+            break;
+        }
     }
-    Ok(None)
+    let mut found = found.into_iter();
+    Ok((found.next(), found.next()))
+}
+
+/// Whether a change that goes into `newest` brings the desk back to the
+/// version under it: the change of `newest` was undone, so it is no longer a
+/// version. Only a `change` version: the others mark a restore.
+fn undoes(newest: &Version, previous: Option<&Version>, after: &DeskStore) -> bool {
+    newest.reason == Reason::Change && previous.is_some_and(|p| same_layout(&p.desk, after))
 }
 
 fn write(dir: &Path, version: &Version) -> Result<()> {
@@ -324,12 +372,18 @@ pub fn append(dir: &Path, desk: &DeskStore, reason: Reason, now: i64) -> Result<
 }
 
 /// Record a desk write from `before` to `after` at `now`, by [`capture_step`].
+/// An overwrite that undoes the newest version deletes it instead.
 pub fn capture(dir: &Path, before: &DeskStore, after: &DeskStore, now: i64) -> Result<()> {
-    let newest = newest(dir)?;
+    let (newest, previous) = newest_two(dir)?;
     match capture_step(newest.as_ref(), before, after, now) {
         Step::Nothing => Ok(()),
         Step::Overwrite => {
             let mut v = newest.context("an overwrite needs a newest version")?;
+            if undoes(&v, previous.as_ref(), after) {
+                let path = file_of(dir, v.id);
+                return std::fs::remove_file(&path)
+                    .with_context(|| format!("deleting {}", path.display()));
+            }
             v.desk = after.clone();
             v.desk.generation = 0;
             v.desk.rev = 0;

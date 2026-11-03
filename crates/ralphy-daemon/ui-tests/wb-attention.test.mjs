@@ -1,5 +1,5 @@
 // Unit tests for assets/ui/wb-attention.ts, the attention list on the rail:
-// the count in the tab title, and the row's one action, "Go to the console".
+// the count in the tab title, and the row's one action, done by a click on it.
 // The list itself is the daemon's (`GET /api/attention`); the reply here is
 // the shared one the Rust route test wrote (fixtures/api-attention.json).
 import { test } from "node:test";
@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { bindingNames, partMarkup } from "./harness.mjs";
-import { LINK_BEAT_MS, LINK_TRIES, wbAttention } from "../assets/ui/wb-attention.ts";
+import { LINK_BEAT_MS, LINK_TRIES, WBNotify, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
@@ -21,6 +21,9 @@ const PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
 function fixture(name) {
   return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
 }
+
+// The first request of the shared reply: a console that waits.
+const waitingRow = () => fixture("api-attention").requests[0];
 
 // A peer's copy of a request, as the daemon the page talks to joins it.
 function fromPeer(request) {
@@ -131,10 +134,50 @@ test("a run's row opens the run, and a console's row goes to the console", (t) =
   for (const kind of ["console-waiting", "console-silent"]) {
     assert.equal(data.actionOf({ ...run, kind }), "console", kind);
   }
-  // Each action is one button of the row, shown by the row's action.
+  // The row is one button: its click does the action, its tooltip names it.
   const markup = partMarkup(PART);
-  assert.match(markup, /x-show="actionOf\(r\) === 'console'" @click="goTo\(r\)">Go to the console</);
-  assert.match(markup, /x-show="actionOf\(r\) === 'run'" @click="openRun\(r\)">Open the run</);
+  assert.match(markup, /class="attention-main"[^>]*:disabled="actionOf\(r\) === 'none'"/);
+  assert.match(markup, /class="attention-main"[^>]*:title="actionTitle\(r\)" @click="act\(r\)"/);
+  assert.equal(data.actionTitle(run), "Open the run");
+  assert.equal(data.actionTitle({ ...run, kind: "console-waiting" }), "Go to the console");
+});
+
+test("a click on a row does the action of its kind, and a finished run's does nothing", (t) => {
+  const { data } = page(t);
+  const done = [];
+  data.goTo = (r) => done.push(["console", r.kind]);
+  data.openRun = (r) => done.push(["run", r.kind]);
+  for (const kind of ["console-waiting", "console-silent", "console-done", "run-waiting", "run-finished"]) {
+    data.act({ ...waitingRow(), kind });
+  }
+  assert.deepEqual(done, [
+    ["console", "console-waiting"],
+    ["console", "console-silent"],
+    ["console", "console-done"],
+    ["run", "run-waiting"],
+  ]);
+});
+
+test("the dot of a row says its kind", (t) => {
+  const { data } = page(t);
+  const dot = (kind) => data.dotOf({ ...waitingRow(), kind });
+  assert.equal(dot("console-waiting"), "waiting");
+  assert.equal(dot("run-waiting"), "waiting");
+  assert.equal(dot("console-silent"), "silent");
+  assert.equal(dot("console-done"), "done");
+  assert.equal(dot("run-finished"), "");
+  assert.match(partMarkup(PART), /<span class="dot" :class="dotOf\(r\)"><\/span>/);
+});
+
+test("the age of a request is short", () => {
+  const at = Date.parse("2026-11-03T10:00:00Z");
+  const after = (ms) => ageText("2026-11-03T10:00:00Z", at + ms);
+  assert.equal(after(59_000), "Now");
+  assert.equal(after(5 * 60_000), "5m");
+  assert.equal(after(59 * 60_000), "59m");
+  assert.equal(after(2 * 3_600_000), "2h");
+  assert.equal(after(3 * 86_400_000), "3d");
+  assert.equal(ageText("not a time", at), "");
 });
 
 test("only a finished run can be dismissed", async (t) => {
@@ -151,9 +194,9 @@ test("only a finished run can be dismissed", async (t) => {
   assert.equal(finished[0].kind, "run-finished");
   assert.equal(data.canDismiss(finished[0]), true);
   assert.equal(data.actionOf(finished[0]), "none", "a finished run is no longer in the Runs panel");
-  assert.equal(data.kindOf(finished[0]), "A run stopped on this issue");
+  assert.equal(data.kindOf(finished[0]), "Run stopped on this issue");
   const markup = partMarkup(PART);
-  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)">Dismiss</);
+  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)"\s+title="Dismiss"/);
 
   // "Dismiss" posts the id, then reads the list again.
   const sent = [];
@@ -218,46 +261,39 @@ function notifications(permission, answer = permission) {
   return { shown, asked, stored, view };
 }
 
-const waitingRow = () => fixture("api-attention").requests[0];
-
 test("the notification is off by default", async (t) => {
   const { data } = page(t, { replies: [{ requests: [waitingRow()] }] });
   const { shown, asked, stored, view } = notifications("default", "granted");
   data.init();
   await data.read();
-  assert.equal(data.notifyOn, false, "off until the operator turns it on");
+  assert.equal(WBNotify.isOn(), false, "off until the operator turns it on");
   assert.deepEqual(asked, [], "no permission is asked before the switch");
   assert.equal(stored.size, 0);
   assert.deepEqual(shown, []);
-  assert.match(partMarkup(PART), /Notify me in this browser/);
+  assert.doesNotMatch(partMarkup(PART), /Notify me/, "the switch is in Settings, not in the panel");
 
-  await data.setNotify(true);
+  assert.equal(await WBNotify.turn(true), true);
   assert.equal(asked.length, 1, "turning it on asks once");
-  assert.equal(data.notifyOn, true);
+  assert.equal(WBNotify.isOn(), true);
   assert.equal(view().notify, true, "the choice is kept on this device");
-  await data.setNotify(false);
-  assert.equal(data.notifyOn, false);
+  assert.equal(await WBNotify.turn(false), false);
+  assert.equal(WBNotify.isOn(), false);
   assert.equal(view().notify, false);
 
   // A browser that already allowed notifications does not turn the switch on
   // by itself; the saved choice does.
   const granted = notifications("granted");
-  data.init();
-  assert.equal(data.notifyOn, false, "nothing saved: off");
+  assert.equal(WBNotify.isOn(), false, "nothing saved: off");
   granted.stored.set(WBView.KEY, JSON.stringify({ v: 1, notify: true }));
-  data.init();
-  assert.equal(data.notifyOn, true, "saved on, and allowed: on");
+  assert.equal(WBNotify.isOn(), true, "saved on, and allowed: on");
 });
 
-test("a refused permission leaves the switch off and says so", async (t) => {
-  const { data } = page(t);
+test("a refused permission leaves the switch off", async (t) => {
+  page(t);
   const { view } = notifications("default", "denied");
-  const flashed = [];
-  data.$store.modals = { flash: (m) => flashed.push(m) };
-  await data.setNotify(true);
-  assert.equal(data.notifyOn, false);
+  assert.equal(await WBNotify.turn(true), false);
+  assert.equal(WBNotify.isOn(), false);
   assert.equal(view().notify, false);
-  assert.equal(flashed.length, 1, "the operator is told");
 });
 
 test("the notification fires only when the tab is hidden", async (t) => {
@@ -265,7 +301,7 @@ test("the notification fires only when the tab is hidden", async (t) => {
   const second = { ...first, id: "console:2", console: "2" };
   const { data } = page(t, { projects: [{ slug: first.repo, name: "plain" }] });
   const { shown } = notifications("granted");
-  await data.setNotify(true);
+  await WBNotify.turn(true);
 
   data.show([]);
   document.hidden = false;
@@ -280,7 +316,7 @@ test("the notification fires only when the tab is hidden", async (t) => {
   data.show([first, second]);
   assert.equal(shown.length, 1, "a request the page already knew shows none");
 
-  await data.setNotify(false);
+  await WBNotify.turn(false);
   data.show([first, second, { ...first, id: "console:3" }]);
   assert.equal(shown.length, 1, "the switch off shows none");
 });
@@ -288,7 +324,7 @@ test("the notification fires only when the tab is hidden", async (t) => {
 test("what is on the page at load is not new", async (t) => {
   const { data } = page(t);
   const { shown } = notifications("granted");
-  await data.setNotify(true);
+  await WBNotify.turn(true);
   document.hidden = true;
   data.show([waitingRow()]);
   assert.deepEqual(shown, []);
@@ -299,7 +335,7 @@ test("opening the console of a done request dismisses it", async (t) => {
   const done = { ...waiting, id: "done:1:1", kind: "console-done", detail: undefined, dismissable: true };
   const session = { id: 1, repo: waiting.repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record: "w-local" };
   const { data } = page(t, { sessions: [session], replies: [{ requests: [] }] });
-  assert.equal(data.kindOf(done), "The agent is done");
+  assert.equal(data.kindOf(done), "Done");
   assert.equal(data.actionOf(done), "console");
   assert.equal(data.canDismiss(done), true);
   const sent = [];

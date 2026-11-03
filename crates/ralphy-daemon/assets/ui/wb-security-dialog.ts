@@ -15,7 +15,18 @@
 import { component } from "./wb-alpine.ts";
 import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
-import { wbQr } from "./wb-settings.ts";
+
+// Render an otpauth:// URI to an <img> QR (vendored qrcode-generator, offline).
+export function wbQr(uri: string): string {
+  try {
+    const qr = qrcode(0, "M"); // type 0 = auto-size, error-correction M
+    qr.addData(uri);
+    qr.make();
+    return qr.createImgTag(4, 8); // cellSize 4px, margin 8 modules
+  } catch (e) {
+    return '<div class="qr-fail">could not render QR</div>';
+  }
+}
 
 /** The change of a toggle: the checkbox, which the handler puts back in sync. */
 type CheckboxChange = { target: HTMLInputElement | null };

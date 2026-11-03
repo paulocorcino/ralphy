@@ -10,11 +10,10 @@
    and on `workbench:logged-in`. The page computes no request of its own: the
    list is the daemon's, joined across peers by the daemon the page talks to.
 
-   The count is shown on the rail and in the tab title. A row has one action:
-   a console's row has "Go to the console", which shows the console the way
-   the Go-to picker does (`revealWindow` in wb-consoles-tab-menus.ts); a run's row
-   has "Open the run", which shows the run in the Runs panel
-   (`workbench:run-select`, heard by wb-runs-panel.ts). The store
+   The count is shown on the rail and in the tab title. A click on a row does
+   its one action: a console's row shows the console the way the Go-to picker
+   does (`revealWindow` in wb-consoles-tab-menus.ts); a run's row shows the run
+   in the Runs panel (`workbench:run-select`, heard by wb-runs-panel.ts). The store
    `connection` also sends `workbench:attention-reread` on an
    `attention.dirty` push.
 
@@ -23,17 +22,17 @@
    "Dismiss" button: `POST /api/attention/dismiss` hides it on every device,
    and the daemon of a peer's request stores it. A console's `console-done`
    request also ends when the operator opens that console: the focus moving
-   into its window, or "Go to the console", dismisses it.
+   into its window, or a click on its row, dismisses it.
 
-   "Notify me in this browser" is a switch of this device (the per-client
-   view, `wb-client-view.ts`), off until the operator turns it on,
-   which is when the browser is asked for
+   `WBNotify` is the browser notification switch of this device, shown in
+   Settings and kept in the per-client view (`wb-client-view.ts`). It is off
+   until the operator turns it on, which is when the browser is asked for
    permission. With it on, a request id this page did not know before shows
    one browser notification while the tab is hidden.
 
    A link in a Telegram message opens the page with
    `?console=<daemon_id>/<session id>`: once the session list is read, that
-   console is shown as "Go to the console" shows it, and the parameter is
+   console is shown as a click on its row shows it, and the parameter is
    taken out of the URL.
 
    `main.ts` registers it as `wbAttention`.
@@ -107,11 +106,11 @@ export function kindText(kind: AttentionKind) {
     case "run-waiting":
       return "Waits for you";
     case "console-silent":
-      return "No state from this agent";
+      return "Silent";
     case "console-done":
-      return "The agent is done";
+      return "Done";
     case "run-finished":
-      return "A run stopped on this issue";
+      return "Run stopped on this issue";
     default: {
       const unknown: never = kind;
       return unknown;
@@ -132,6 +131,41 @@ export function actionOf(kind: AttentionKind): AttentionAction {
       return "none";
     default: {
       const unknown: never = kind;
+      return unknown;
+    }
+  }
+}
+
+/** The class of a row's state dot (`.dot` in 02-rail-sidebar.css). */
+export function dotOf(kind: AttentionKind) {
+  switch (kind) {
+    case "console-waiting":
+    case "run-waiting":
+      return "waiting";
+    case "console-silent":
+      return "silent";
+    case "console-done":
+      return "done";
+    case "run-finished":
+      return "";
+    default: {
+      const unknown: never = kind;
+      return unknown;
+    }
+  }
+}
+
+/** The tooltip of a row: what a click on it does. */
+export function actionTitle(action: AttentionAction) {
+  switch (action) {
+    case "console":
+      return "Go to the console";
+    case "run":
+      return "Open the run";
+    case "none":
+      return "";
+    default: {
+      const unknown: never = action;
       return unknown;
     }
   }
@@ -159,6 +193,20 @@ async function askPermission() {
   return Notification.requestPermission();
 }
 
+/** The browser notification switch of this device (Settings, Notifications). */
+export const WBNotify = {
+  /** On: the operator turned it on here, and the browser allows it. */
+  isOn() {
+    return savedNotify() && canNotify() && Notification.permission === "granted";
+  },
+  /** Turn it on or off; on asks the browser first. Returns the state it ends in. */
+  async turn(on: boolean) {
+    const allowed = on && (await askPermission()) === "granted";
+    saveNotify(allowed);
+    return allowed;
+  },
+};
+
 function postDismiss(id: string) {
   return apiFetch("POST /api/attention/dismiss", {
     headers: { "Content-Type": "application/json" },
@@ -171,12 +219,11 @@ export function ageText(since: string, now: number) {
   const at = Date.parse(since);
   if (Number.isNaN(at)) return "";
   const minutes = Math.floor(Math.max(0, now - at) / 60000);
-  if (minutes < 1) return "Less than a minute";
-  const count = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
-  if (minutes < 60) return count(minutes, "minute");
+  if (minutes < 1) return "Now";
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return count(hours, "hour");
-  return count(Math.floor(hours / 24), "day");
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 /** The session a console request names: the number after the last `/` of
@@ -198,9 +245,8 @@ export function wbAttention() {
     // The clock the ages are read at: set at each read, and each minute.
     now: Date.now(),
     _seq: 0,
-    // The switch of this device, and the ids the last list held (`null`
-    // before the first list: what is on the page at load is not new).
-    notifyOn: false,
+    // The ids the last list held (`null` before the first list: what is on
+    // the page at load is not new).
     _known: null as Set<string> | null,
     _dismissing: new Set<string>(),
     // The console the page URL names, until it is shown.
@@ -209,7 +255,6 @@ export function wbAttention() {
     _linkTries: 0,
 
     init() {
-      this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
       void this.read();
       this._link = consoleLinkOf(window.location.search);
       if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
@@ -285,7 +330,7 @@ export function wbAttention() {
       this.requests = requests;
       this.now = Date.now();
       document.title = attentionTitle(this.requests.length);
-      if (known && this.notifyOn && document.hidden) {
+      if (known && document.hidden && WBNotify.isOn()) {
         for (const request of requests) if (!known.has(request.id)) this.announce(request);
       }
     },
@@ -300,23 +345,6 @@ export function wbAttention() {
         tag: request.id,
       });
       note.onclick = () => window.focus();
-    },
-
-    canNotify() {
-      return canNotify();
-    },
-
-    // Turn the switch on or off. On: the browser is asked for permission,
-    // and the switch stays off when the answer is no.
-    async setNotify(on: boolean) {
-      if (!on) {
-        this.notifyOn = false;
-        saveNotify(false);
-        return;
-      }
-      this.notifyOn = (await askPermission()) === "granted";
-      saveNotify(this.notifyOn);
-      if (!this.notifyOn) this.$store.modals.flash("The browser did not allow notifications.");
     },
 
     toggle() {
@@ -345,6 +373,18 @@ export function wbAttention() {
     },
     actionOf(request: AttentionRequest) {
       return actionOf(request.kind);
+    },
+    dotOf(request: AttentionRequest) {
+      return dotOf(request.kind);
+    },
+    actionTitle(request: AttentionRequest) {
+      return actionTitle(actionOf(request.kind));
+    },
+    // A click on the row: its one action.
+    act(request: AttentionRequest) {
+      const action = actionOf(request.kind);
+      if (action === "console") this.goTo(request);
+      if (action === "run") this.openRun(request);
     },
     // Whether the row has "Dismiss": the daemon says which requests may be
     // hidden, and a live one may not.

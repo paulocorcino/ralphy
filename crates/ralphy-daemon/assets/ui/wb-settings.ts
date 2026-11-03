@@ -1,9 +1,7 @@
 /* ---------------------------------------------------------------------------
-   ralphy workbench shell — settings schema + security helpers
+   ralphy workbench shell — the settings schema
 
-   Two things live here, kept out of app.ts so the Alpine component stays small:
-
-   1. WB_SETTINGS — a data-driven description of ralphy's real configuration
+   WB_SETTINGS — a data-driven description of ralphy's real configuration
       surface (mirrors the persisted `ralphy config` keys plus the daemon /
       events / telegram stores). The Settings modal renders itself
       from this array, so adding a knob is a data edit, not markup. Every item
@@ -27,9 +25,6 @@
         • events.* ............ crates/ralphy-cli/src/events/config.rs
         • telegram ............ crates/ralphy-cli/src/telegram/config.rs
         • daemon bind/port .... crates/ralphy-daemon/src/lib.rs
-
-   2. wbQr() — turns a TOTP otpauth:// URI into an <img> QR, using the vendored
-      qrcode-generator (no runtime CDN). Used by the Security panel.
 
    NB: in daemon mode, changes persist and authenticate for real via the
    daemon's `config.set`/`config.unset` and auth verbs; this module only
@@ -111,6 +106,24 @@ export const WB_SETTINGS: Section[] = [
         help:
           "Shows Esc, Tab, Shift, Ctrl, Enter, the arrows and ^C under each console. By default, " +
           "only on touch screens.",
+      },
+    ],
+  },
+  {
+    id: "notifications",
+    title: "Notifications",
+    icon: "bi-bell",
+    scope: "client",
+    blurb: "Notifications for the requests that wait for you. Saved in this browser only.",
+    items: [
+      {
+        key: "notifications.browser",
+        label: "Notify me in this browser",
+        type: "toggle",
+        default: false,
+        help:
+          "Shows a notification when a new request waits for you and this tab is hidden. " +
+          "The browser asks for permission the first time.",
       },
     ],
   },
@@ -466,35 +479,3 @@ export const WB_SETTINGS: Section[] = [
 ];
 
 export const WB_TRISTATE = TRISTATE;
-
-// The keys this BROWSER owns. Derived from the schema rather than listed, so a
-// new client-scoped item cannot be added and then routed to `config.set` by an
-// edit that forgot about it.
-export function wbClientKeys(): Set<string> {
-  const out = new Set<string>();
-  for (const sec of WB_SETTINGS) {
-    if (sec.scope === "client") for (const it of sec.items) out.add(it.key);
-  }
-  return out;
-}
-
-// Seed a flat {key: default} map the Alpine component keeps its live values in.
-export function wbSettingsDefaults(): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const sec of WB_SETTINGS) {
-    for (const it of sec.items) out[it.key] = it.default;
-  }
-  return out;
-}
-
-// Render an otpauth:// URI to an <img> QR (vendored qrcode-generator, offline).
-export function wbQr(uri: string): string {
-  try {
-    const qr = qrcode(0, "M"); // type 0 = auto-size, error-correction M
-    qr.addData(uri);
-    qr.make();
-    return qr.createImgTag(4, 8); // cellSize 4px, margin 8 modules
-  } catch (e) {
-    return '<div class="qr-fail">could not render QR</div>';
-  }
-}

@@ -17,7 +17,39 @@ import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
-import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults } from "./wb-settings.ts";
+import { WBNotify } from "./wb-attention.ts";
+import { WB_SETTINGS, WB_TRISTATE } from "./wb-settings.ts";
+
+// The keys this BROWSER owns. Derived from the schema rather than listed, so a
+// new client-scoped item cannot be added and then routed to `config.set` by an
+// edit that forgot about it.
+export function wbClientKeys(): Set<string> {
+  const out = new Set<string>();
+  for (const sec of WB_SETTINGS) {
+    if (sec.scope === "client") for (const it of sec.items) out.add(it.key);
+  }
+  return out;
+}
+
+// Seed a flat {key: default} map the Alpine component keeps its live values in.
+export function wbSettingsDefaults(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const sec of WB_SETTINGS) {
+    for (const it of sec.items) out[it.key] = it.default;
+  }
+  return out;
+}
+
+// The browser notification switch: turning it on asks the browser, and a
+// refusal puts the field back to off and says so.
+async function saveNotifySetting(
+  dialog: { settings: Record<string, unknown>; $store: AlpineMagics["$store"] },
+  value: unknown,
+) {
+  const on = await WBNotify.turn(value === true);
+  dialog.settings["notifications.browser"] = on;
+  if (value === true && !on) dialog.$store.modals.flash("The browser did not allow notifications.");
+}
 
 /** One row of the Desk history section (`WBDeskHistory.rows`). */
 type DeskRow = ReturnType<typeof WBDeskHistory.rows>[number];
@@ -99,6 +131,7 @@ export function settingsDialog() {
       const view = window.WBView.read();
       this.settings["consoles.relaunch_on_load"] = view?.relaunch === true;
       this.settings["consoles.key_bar"] = view?.keys ?? "unset";
+      this.settings["notifications.browser"] = WBNotify.isOn();
       // The size the consoles show now: the key bar's A−/A+ write the same field.
       this.settings["consoles.font_size"] =
         window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
@@ -239,6 +272,7 @@ export function settingsDialog() {
       if (this.CLIENT_KEYS.has(key)) {
         if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
         saveClientSetting(this.settings, key, value);
+        if (key === "notifications.browser") await saveNotifySetting(this, value);
         window.WB.emit("setting-change", { project: null, key, value });
         return;
       }

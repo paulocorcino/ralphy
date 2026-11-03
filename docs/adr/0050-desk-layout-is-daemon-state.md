@@ -382,8 +382,17 @@ the operator can restore, download as a file, and upload again.
   or `upload`.
 - **When a version is written.** After a `PUT /api/desk` that changed the
   stored desk, under the same lock as the write. A change of `ts` or
-  `sessionId` alone, or a rect that moves by less than 1 px, is not a layout
-  change and writes nothing: a reconnect rewrites both. A change that comes
+  `sessionId` alone is not a layout change and writes nothing: a reconnect
+  rewrites both. *(Amended 2026-11-03: measured that day, 48 of the 49 steps
+  between the 50 saved versions changed no layout, and they pushed the real
+  changes out of the 50.)* `max` (which console is maximized, a view state)
+  and `doneMark` (a request for a notice, which the daemon clears by itself)
+  are not layout either. An edge of a console, fence or note card that moves
+  by less than 32 px (about one title bar) is an adjustment, not a change,
+  unless a console or card enters or leaves a fence. The daemon reads
+  membership with the workbench rule (ADR-0051 §6). The desk is always
+  compared with the newest version, so many short moves still add up to a
+  version. A change that comes
   less than 60 s after the FIRST change of the newest version goes into that
   version; otherwise it starts a new one. A `restore` or `upload` version
   takes such changes too: a page that reloads after a restore gives its
@@ -391,7 +400,10 @@ the operator can restore, download as a file, and upload again.
   `before-restore` version never takes a change: it is the way back. A version therefore holds at most 60 s of changes: one drag is one
   version, and a long arrangement is one version per minute. When the newest
   version does not hold the desk as it was before the change, that desk is
-  written first, so the layout before a change is never lost. Beyond 50
+  written first, so the layout before a change is never lost. A change that
+  goes into the newest `change` version and brings the desk back to the
+  version under it deletes the newest version: the change was undone.
+  Beyond 50
   versions the oldest is deleted. A history write that fails is logged and
   never fails the desk write, which already succeeded.
 - **Restore.** `POST /api/desk/history` with `{ id }` (a saved version) or
@@ -403,7 +415,8 @@ the operator can restore, download as a file, and upload again.
   - a window of the version takes its saved place. When a current record is
     the same console (same id, or the same live session), the version's
     layout goes onto that record and the record keeps its session, so a
-    running console is never shown twice;
+    running console is never shown twice. The `doneMark` is the current
+    record's, so an old version never asks for a notice;
   - a current window that is not in the version stays where it is when it
     has a session, and is dropped when it is a placeholder: a restore never
     ends a running console;
