@@ -277,6 +277,13 @@ could move. Everything else in this section holds: the point is still derived,
 containment is still half-open, and the lock, the drag, tile and the spawn rule
 still read the one membership fold.)*
 
+*(Amended 2026-11-03, desk history: the daemon reads membership too, only to
+decide whether a short move is a layout change (ADR-0050, desk history
+amendment). The workbench's `fenceOf` stays the owner of the rule. The daemon's
+copy is `desk::membership`, and the table of cases
+`ui-tests/fixtures/fence-membership-cases.json` is read by the tests of both,
+so the two cannot drift apart.)*
+
 ### 7. Arrange is per fence, and the fence list is the navigation
 
 The global **Arrange** button is retired: on a plane, "tile everything" has no
