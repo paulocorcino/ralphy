@@ -97,29 +97,57 @@
 }
 .attention-empty {
   margin: 0;
-  padding: 0.4rem 0.5rem;
+  padding: 0.75rem 0.5rem;
   color: var(--text-muted);
   font-size: 0.78rem;
+  text-align: center;
 }
+/* One request: a button that does its one action, and a Dismiss cross that
+   shows on hover and focus (always on a touch screen). */
 .attention-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.45rem 0.5rem;
-  border-bottom: 1px solid var(--border);
+  align-items: center;
+  gap: 0.15rem;
   font-size: 0.78rem;
 }
-.attention-row:last-child {
-  border-bottom: none;
+.attention-main {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 0.55rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius);
+  cursor: pointer;
 }
-.attention-line {
+.attention-main:not(:disabled):hover {
+  background: var(--surface-hi);
+}
+.attention-main:focus-visible,
+.attention-dismiss:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+.attention-main:disabled {
+  cursor: default;
+}
+.attention-row .dot.done {
+  background: var(--live);
+}
+.attention-text {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  flex-direction: column;
+  gap: 0.1rem;
   min-width: 0;
 }
-.attention-vendor {
-  color: var(--text-muted);
+.attention-line,
+.attention-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
 }
 .attention-name {
   flex: 1;
@@ -127,20 +155,58 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
-  font-weight: 600;
+  color: var(--text-strong);
 }
-.attention-age,
-.attention-kind {
+.attention-age {
+  flex-shrink: 0;
   color: var(--text-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
 }
-.attention-detail {
+.attention-sub {
+  gap: 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.attention-sub > span {
+  flex-shrink: 0;
+}
+.attention-sub > span + span::before {
+  content: " · ";
+  white-space: pre;
+}
+.attention-sub > .attention-detail {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attention-dismiss {
+  all: unset;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  cursor: pointer;
+  opacity: 0;
+}
+.attention-row:hover .attention-dismiss,
+.attention-dismiss:focus-visible {
+  opacity: 1;
+}
+.attention-dismiss:hover {
+  background: var(--surface-hi);
   color: var(--text);
-  overflow-wrap: anywhere;
 }
-.attention-go {
-  align-self: flex-start;
-  margin-top: 0.15rem;
+@media (hover: none) {
+  .attention-dismiss {
+    opacity: 1;
+  }
 }
 /* The browser notification switch, under the rows. */
 .attention-notify {
