@@ -66,63 +66,37 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **Run CI's gate before you call a change done.** The source of the gate is
   [.github/workflows/ci.yml](./.github/workflows/ci.yml) and the test jobs of
   [release.yml](./.github/workflows/release.yml); an ADR or doc that lists
-  other commands is out of date. These are the local forms of what CI runs,
-  and all of them must pass. A pull request does not build or test the
+  other commands is out of date. A pull request does not build or test the
   product: the suite runs only before a release, so the local run is the
-  only test before a merge.
+  only test before a merge. The local gate is one command:
 
   ```sh
-  cargo fmt --all --check
-  cargo clippy --workspace --all-targets -- -D warnings
-  cargo nextest run --workspace
-  cargo test --workspace --doc
+  cargo run -q -p xtask -- gate
   ```
 
-  `--all-targets` matters: without it, clippy does not check test code, and CI
-  fails on warnings you never saw. Nextest does not run doctests, so the last
-  command is not optional. Install nextest with
-  `cargo install cargo-nextest --locked`. Why nextest, and why the suite is
-  slow on Windows: [docs/BUILDING.md](./docs/BUILDING.md).
+  It runs the local form of every CI check, in the order of
+  `crates/xtask/src/gate/steps.rs`, to the end, and prints one row per step.
+  The gate passes when every row is `ok` and the exit code is 0. `MISSING`
+  (a tool that is not on `PATH`) fails it, as `FAILED` does. The output of
+  a step is in `target/gate/<step>.log`; its first line is the command that
+  runs the step alone. `--fast` skips the workspace tests and the doctests,
+  for the loop while you work; a change is done after a full run. A new
+  check in CI gets its step in `steps.rs`: the ratchet
+  `the_gate_mirrors_every_ci_step` fails until it has one. When the `oxfmt`
+  step fails, its command without `--check` writes the format.
 
-  **CI also runs four checks that no test makes,** and they must pass:
-
-  ```sh
-  actionlint
-  cargo machete
-  typos
-  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-  ```
-
-  The versions are pinned in the `env` of `ci.yml` (`ACTIONLINT_*`,
-  `MACHETE_*`, `TYPOS_*`). Install machete and typos with
-  `cargo install --locked --version <v> cargo-machete` and
-  `cargo install --locked --version <v> typos-cli`. For `actionlint`, take
-  the release binary of that version from
-  `https://github.com/rhysd/actionlint/releases` and put it on your `PATH`.
-  With `shellcheck` on your `PATH`, it checks the shell in each `run:` step
-  too, as CI does. Every `cargo` command in a workflow has `--locked`: the
-  ratchet `every_cargo_command_in_a_workflow_is_locked` fails when one does
-  not.
-
-  **If you change `crates/ralphy-daemon/assets/ui/` or `ui-tests/`,** these
-  must pass too:
-
-  ```sh
-  node --test crates/ralphy-daemon/ui-tests
-  npx -y -p typescript@7.0.2 tsc --noEmit -p crates/ralphy-daemon/assets/ui
-  npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
-  npx -y -p oxlint@1.85.0 -p oxlint-tsgolint@7.0.2005 oxlint --type-aware --deny-warnings crates/ralphy-daemon/assets/ui
-  npx -y oxfmt@0.75.0 --check 'crates/ralphy-daemon/assets/ui/*.ts'
-  cargo run -q -p xtask -- ui-copy --check
-  ```
-
-  The type-aware run (the rules that read the types) and the format check
-  get a folder or a quoted pattern, never a list of files: on Windows,
-  `npm exec` starts the tool through `cmd.exe`, which cuts a command line
-  at 8191 characters, and the module paths pass that limit. In this form
-  the tool finds the files itself, so the commands work in any shell.
-  When the format check fails, the same command without `--check` writes
-  the format.
+  The tools: cargo-nextest (`cargo install cargo-nextest --locked`), Node
+  22.18 or later, and the three binaries pinned in the `env` of `ci.yml`
+  (`ACTIONLINT_*`, `MACHETE_*`, `TYPOS_*`):
+  `cargo install --locked --version <v> cargo-machete`,
+  `cargo install --locked --version <v> typos-cli`, and
+  `go install github.com/rhysd/actionlint/cmd/actionlint@v<v>` (or the
+  release binary from `https://github.com/rhysd/actionlint/releases`). With
+  `shellcheck` on your `PATH`, actionlint checks the shell in each `run:`
+  step too, as CI does. Why nextest, and why the suite is slow on Windows:
+  [docs/BUILDING.md](./docs/BUILDING.md). Every `cargo` command in a
+  workflow has `--locked`: the ratchet
+  `every_cargo_command_in_a_workflow_is_locked` fails when one does not.
 
   New workbench code is a `.ts` module, never a new `.js` file
   ([ADR-0075](./docs/adr/0075-the-workbench-script-is-written-in-typescript.md)).
@@ -133,13 +107,8 @@ ubiquitous language, and each crate is roughly one bounded context.
   [docs/WORKBENCH-BUILD-GUIDE.md](./docs/WORKBENCH-BUILD-GUIDE.md): vendored
   libraries, touch rules, the clipboard contract.
 
-  **On a pull request, CI also fails on a new duplicated block.** The local
-  form, with the settings in `.jscpd.json`:
-
-  ```sh
-  npx -y jscpd@5.4.0 --baseline-from-ref main --fail-on-new-clones 0 crates
-  ```
-
+  **On a pull request, CI also fails on a new duplicated block:** the
+  `jscpd` step, with the settings in `.jscpd.json`.
   A clone is new when the base branch does not have it, and an edit inside
   an old clone makes it new too. When the two copies are one rule, merge
   them. When they are two rules, put the copy between
