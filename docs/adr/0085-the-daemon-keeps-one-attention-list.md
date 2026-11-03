@@ -322,13 +322,15 @@ and nothing said so.
   runs, `ralphy telegram` and `ralphy doctor`. `RALPHY_DAEMON_DIR` only says
   where the store is. A scratch store has no bot because it has no such file.
 - **A2. `off` carries a reason:** `not-set-up` (no file, or no token),
-  `no-chat`, `unreadable`, `legacy-config` (the old file is there and could
-  not be copied) or `no-store`. The reason is a closed set and never holds
+  `no-chat`, `unreadable` or `no-store`. A copy of the old file that fails
+  is logged when the daemon starts. The reason is a closed set and never holds
   error text, because a TOML error quotes the line it failed on. The JSON is
   `{"state":"off","why":"no-chat"}`; an older daemon ignores `why`, and a
   newer one reads an older `{"state":"off"}` as a reason that is not known.
-  The daemon logs its state and the file it reads when it starts and each
-  time the state changes.
+  The daemon logs its state and the file it reads on its first attention
+  tick and each time the state changes. `ralphy doctor` shows `no-chat` and
+  `unreadable` as a warning with `ralphy telegram setup`; no bot at all is a
+  choice, not a warning.
 - **A3. The operator sees the state of the local fleet:** `ralphy doctor`
   prints this daemon's state with its reason and fix, and one line for each
   peer. Settings shows the same view, read only, with the command that sets

@@ -269,16 +269,22 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
     }
 }
 
-/// The Telegram state is a fact, never a failure: off is a choice.
+/// The Telegram state never fails doctor: no bot at all is a choice. A bot
+/// that cannot send (no chat, a broken file) is a warning with its fix.
 fn telegram_line(state: &TelegramState) -> ToolLine {
+    let fault = match state {
+        TelegramState::Off { why: Some(why) } => why.is_fault(),
+        TelegramState::Off { why: None } | TelegramState::Sends => false,
+        TelegramState::ThroughMain { .. } => false,
+    };
     ToolLine {
         tool: Tool::Telegram,
         name: "telegram".to_string(),
-        ok: true,
+        ok: !fault,
         required: false,
         version: None,
         text: state.text(),
-        fix: None,
+        fix: fault.then(|| "ralphy telegram setup".to_string()),
     }
 }
 

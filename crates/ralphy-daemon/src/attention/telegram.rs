@@ -24,7 +24,7 @@ use ralphy_telegram::client::{BotClient, Transport};
 use super::{AttentionRequest, Kind};
 use crate::presence_board;
 use crate::session::Agent;
-use crate::telegram_state::{self, SharedClaim};
+use crate::telegram_state::{self, OffReason, SharedClaim, TelegramState};
 
 /// How long a console request is open before it is sent.
 pub(crate) const DELAY: Duration = Duration::from_secs(120);
@@ -349,6 +349,7 @@ pub(crate) struct Notifier {
     transport: Transports,
     sender: Sender,
     flight: Option<tokio::task::JoinHandle<Delivery>>,
+    log: telegram_state::StateLog,
 }
 
 impl Notifier {
@@ -367,6 +368,7 @@ impl Notifier {
             transport: api_transports(),
             sender: Sender::default(),
             flight: None,
+            log: telegram_state::StateLog::default(),
         }
     }
 
@@ -402,23 +404,32 @@ impl Notifier {
 
     /// Whether this daemon sends at `now`: no main daemon's claim holds, and
     /// its config has a bot. A config with no bot, or one that cannot be
-    /// read, is kept as the sender keeps a send that found it so.
+    /// read, is kept as the sender keeps a send that found it so. The state
+    /// is logged when it changes.
     async fn sends(&mut self, now: SystemTime) -> bool {
-        if telegram_state::holder_at(&self.claim, now).is_some() {
+        if let Some(main) = telegram_state::holder_at(&self.claim, now) {
+            self.log
+                .note(TelegramState::ThroughMain { main }, &self.config);
             return false;
         }
         let config = self.config.clone();
-        let bot = tokio::task::spawn_blocking(move || {
-            telegram_state::bot_at(&config).map(|bot| bot.is_some())
+        let why_off = tokio::task::spawn_blocking(move || {
+            telegram_state::bot_or_reason(&config).map(Result::err)
         })
         .await;
-        match bot {
-            Ok(Ok(true)) => true,
-            Ok(Ok(false)) => {
+        match why_off {
+            Ok(Ok(None)) => {
+                self.log.note(TelegramState::Sends, &self.config);
+                true
+            }
+            Ok(Ok(Some(why))) => {
+                self.log.note(TelegramState::off(why), &self.config);
                 self.sender.finish(Delivery::Off);
                 false
             }
             Ok(Err(e)) => {
+                self.log
+                    .note(TelegramState::off(OffReason::Unreadable), &self.config);
                 self.sender.finish(Delivery::NoConfig(e.to_string()));
                 false
             }

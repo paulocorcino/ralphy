@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use super::*;
+use ralphy_daemon::telegram_state::OffReason;
 use ralphy_proc_util::hook_form::HookCheck;
 
 fn all_found() -> MachineFacts {
@@ -341,7 +342,11 @@ fn doctor_names_the_opencode_state_source() {
 #[test]
 fn the_telegram_line_says_whether_this_machine_sends() {
     let rows = [
-        (TelegramState::Off, "off"),
+        (TelegramState::Off { why: None }, "off"),
+        (
+            TelegramState::off(OffReason::NotSetUp),
+            "off: no bot is set up",
+        ),
         (TelegramState::Sends, "sends from this machine"),
         (
             TelegramState::ThroughMain {
@@ -361,6 +366,33 @@ fn the_telegram_line_says_whether_this_machine_sends() {
         let line = line(&report, "telegram");
         assert_eq!(line.text, text);
         assert!(line.ok && !line.required, "a fact, never a failure");
+        assert_eq!(line.fix, None);
+        assert_eq!(report.missing_required(), 0);
+    }
+}
+
+/// A bot that cannot send is a warning with the command that fixes it, and
+/// still no failure of doctor.
+#[test]
+fn a_telegram_bot_that_cannot_send_is_a_warning_with_its_fix() {
+    for (why, text) in [
+        (OffReason::NoChat, "off: the bot has no chat yet"),
+        (
+            OffReason::Unreadable,
+            "off: the Telegram settings file cannot be read",
+        ),
+    ] {
+        let report = evaluate(
+            &MachineFacts {
+                telegram: Some(TelegramState::off(why)),
+                ..all_found()
+            },
+            false,
+        );
+        let line = line(&report, "telegram");
+        assert_eq!(line.text, text);
+        assert!(!line.ok && !line.required, "{why:?}");
+        assert_eq!(line.fix.as_deref(), Some("ralphy telegram setup"));
         assert_eq!(report.missing_required(), 0);
     }
 }

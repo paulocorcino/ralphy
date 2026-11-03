@@ -164,10 +164,10 @@ fn a_daemon_with_no_config_sends_nothing() {
         let mut sender = Sender::default();
         let warned = tick(&mut sender, &path, &fake, &[waiting(at(0))], at(600));
         assert!(warned.is_empty(), "no config is no error: {warned:?}");
-        assert_eq!(
+        assert!(matches!(
             telegram_state::state_at(&path),
-            telegram_state::TelegramState::Off
-        );
+            telegram_state::TelegramState::Off { why: Some(_) }
+        ));
     }
     assert_eq!(fake.count(), 0);
 }

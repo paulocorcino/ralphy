@@ -88,7 +88,7 @@ async fn own_state(t: &TelegramShared) -> Option<TelegramState> {
 fn main_name(state: &TelegramState, names: &HashMap<String, String>) -> Option<String> {
     match state {
         TelegramState::ThroughMain { main } => names.get(main).cloned(),
-        TelegramState::Off | TelegramState::Sends => None,
+        TelegramState::Off { .. } | TelegramState::Sends => None,
     }
 }
 
