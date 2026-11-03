@@ -16,10 +16,11 @@ permissions:
   contents: read
 
 jobs:
-  # The Windows checks run here, not on every pull request (ci.yml): the
-  # tests took 15 min on a pull request and hang at times (#441), and the
-  # gate in AGENTS.md runs locally on Windows. The packages are built only
-  # when both pass.
+  # The Windows and macOS checks run here, not on every pull request
+  # (ci.yml): the Windows tests took 15 min on a pull request and hang at
+  # times (#441), and the gate in AGENTS.md runs locally on Windows; the
+  # macOS job made a pull request 5 min longer. The packages are built only
+  # when all four pass.
   windows-test:
     name: build · test (windows-latest)
     runs-on: windows-latest
@@ -128,9 +129,89 @@ jobs:
           # refused install above.
           exit 0
 
+  macos-test:
+    name: build · test (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-nextest
+
+      # The `ci` profile, as in ci.yml: `release` without its link cost.
+      - name: Build
+        run: cargo build --locked --workspace --profile ci --all-targets
+
+      - name: Test
+        timeout-minutes: 18
+        # PTY tests drive sh on macOS, as on Linux (portable-pty).
+        run: cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
+
+      # The only place `launchctl` runs for real (ADR-0032, amendment
+      # 2026-09-15): a hosted macOS runner is a logged-in GUI session, so the
+      # `gui/$UID` domain the agent bootstraps into exists. Proves the
+      # register → probe → unregister round trip and that a second install is
+      # a no-op, which no unit test can. A scratch HOME keeps the runner's own
+      # LaunchAgents untouched and the daemon un-baptized, so nothing serves.
+      - name: Autostart smoke (launchd)
+        env:
+          HOME: ${{ runner.temp }}/ralphy-home
+        run: |
+          set -euxo pipefail
+          mkdir -p "$HOME"
+          bin=target/ci/ralphy
+          "$bin" daemon status | grep -q 'autostart: not registered'
+          "$bin" daemon install
+          "$bin" daemon install   # a re-install is a no-op, not a bootstrap error
+          "$bin" daemon status | grep -q 'autostart: registered'
+          test -f "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
+          "$bin" daemon uninstall
+          "$bin" daemon uninstall # idempotent
+          "$bin" daemon status | grep -q 'autostart: not registered'
+          test ! -e "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
+
+      - name: Doctests
+        run: cargo test --locked --workspace --profile ci --doc
+
+  macos-install:
+    name: install script (macos-latest)
+    # install.sh against a fake release, as ci.yml runs it on Linux, plus the
+    # launchd agent that RALPHY_DAEMON=1 registers.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - name: Build
+        run: cargo build --locked --bin ralphy
+
+      - name: install.sh
+        env:
+          RALPHY_RELEASES_URL: http://127.0.0.1:8765/releases
+          RALPHY_DOWNLOAD_URL: http://127.0.0.1:8765/download
+          RALPHY_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: ./.github/scripts/check-install-sh.sh
+
   build:
     name: Build ${{ matrix.target_name }}
-    needs: [windows-test, windows-install]
+    needs: [windows-test, windows-install, macos-test, macos-install]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

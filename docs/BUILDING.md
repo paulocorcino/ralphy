@@ -74,12 +74,11 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   A `ui-tests` job runs `node --test crates/ralphy-daemon/ui-tests` and oxlint
   once on Linux. A `test` matrix builds and runs the suite (via `cargo nextest
   run`, plus a `cargo test --doc` step for the doctests nextest skips) with the
-  `ci` profile on **`ubuntu-latest` and `macos-latest`**, with
-  `--no-fail-fast`. Windows is not tested on a pull request: its tests run
-  in `release.yml` (below), because on a pull request they took 15 minutes
-  and hang at times (#441), and the local gate runs on Windows. On macOS the job also
-  registers, probes and removes the launchd autostart agent: the one place
-  `launchctl` runs for real. A separate job, `changelog`, runs **on pull
+  `ci` profile on **`ubuntu-latest`** only, with `--no-fail-fast`. Windows
+  and macOS are not tested on a pull request: their tests run in
+  `release.yml` (below). On a pull request the Windows tests took 15 minutes
+  and hang at times (#441), and the local gate runs on Windows; the macOS
+  job made the run 5 minutes longer. A separate job, `changelog`, runs **on pull
   requests only**: it fails when the diff touches the shipped surface
   (`crates/*/src/`, the workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`
@@ -143,8 +142,14 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   `.github/scripts/nextest-windows.ps1`, which bounds the run at 14 minutes
   and kills what a hung test left alive (#441), and runs the doctests.
   `windows-install` checks `install.ps1` against a fake release served on
-  loopback, as `ci.yml` does for `install.sh`. A Windows failure stops the
-  release; fix it on `main` and tag again.
+  loopback, as `ci.yml` does for `install.sh`. Two macOS jobs must pass
+  too. `macos-test` runs the suite and the doctests, and registers, probes
+  and removes the launchd autostart agent: the one place `launchctl` runs
+  for real. `macos-install` runs `.github/scripts/check-install-sh.sh`, the
+  same `install.sh` check that `ci.yml` runs on Linux. A failure stops the
+  release; fix it on `main` and tag again. To check a branch before a tag,
+  run the workflow by hand: `gh workflow run release.yml --ref <branch>`
+  builds the packages as artifacts and publishes nothing.
 
   A tag with a hyphen (`v0.1.0-rc.20`) is published as a GitHub pre-release.
   The release builds without a cargo cache, so a cache written by another run
@@ -162,9 +167,10 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   `cargo deny --locked check` before you add or update a crate: CI passes
   `--locked`, and without it a stale `Cargo.lock` passes locally.
 - **`codeql.yml`** — CodeQL static analysis of the Rust code, the workbench
-  JavaScript and the workflows, on every push to `main`, every PR, and once a
-  week. The results are in the repository's Security tab and in review comments
-  on the PR.
+  JavaScript and the workflows, on every push to `main` and once a week. A PR
+  is analyzed for JavaScript and the workflows only: the Rust analysis took
+  12 minutes, the longest job of a PR. The results are in the repository's
+  Security tab and in review comments on the PR.
 - **`capabilities.yml`** — on every PR, lists what the change adds that gives
   the code a new power: network access or a URL host the repository did not
   name before, a subprocess, `unsafe`, a read of a secret, encoded or minified

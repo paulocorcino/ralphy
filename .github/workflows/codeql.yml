@@ -2,7 +2,8 @@ name: CodeQL
 
 # Static analysis of the Rust code, the workbench JavaScript, and the
 # workflows. Results appear in the repository's Security tab and as review
-# comments on a pull request.
+# comments on a pull request. A pull request skips Rust: it took 12 min, the
+# longest job of a pull request; a push to main and the weekly run analyze it.
 
 on:
   push:
@@ -32,7 +33,7 @@ jobs:
       fail-fast: false
       matrix:
         # `build-mode: none` reads the source without a build, for all three.
-        language: [actions, javascript-typescript, rust]
+        language: ${{ fromJSON(github.event_name == 'pull_request' && '["actions", "javascript-typescript"]' || '["actions", "javascript-typescript", "rust"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
