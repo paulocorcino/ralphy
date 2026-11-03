@@ -134,10 +134,22 @@ function Resolve-InstalledBin($pidInfo) {
     return (Join-Path $HOME '.cargo\bin\ralphy.exe')
 }
 
+# The listen table can miss a live listener: on 2026-11-02 (Windows build 26300)
+# Get-NetTCPConnection and `netstat -a` both left out the daemon's port and the
+# system ports. An empty answer here is not proof that the port is free.
 function Get-PortOwner([int]$port) {
     $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $conn) { return $null }
     return Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" -ErrorAction SilentlyContinue
+}
+
+function Test-PortAnswers([int]$port) {
+    try {
+        Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -TimeoutSec 3 -NoProxy -SkipHttpErrorCheck | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Get-Version([string]$exe) {
@@ -313,7 +325,7 @@ if (-not $Worker) {
             $token = (Get-Content $tokenFile -Raw).Trim()
             if ($token) { $headers['Authorization'] = "Bearer $token" }
         }
-        $listening = [bool](Get-PortOwner $daemonPort)
+        $listening = Test-PortAnswers $daemonPort
         $consoles = $null
         if ($listening) {
             try {
@@ -494,21 +506,24 @@ $beforeWsl = $null
 function Restart-Windows([string]$why) {
     $code = Invoke-Logged "ralphy daemon restart ($why)" { & $Bin daemon restart --yes }
     if ($code -ne 0) { return $false }
-    # The restart said yes; check it: a recorded pid that is alive and is the
-    # one listening on the port. The new daemon writes its pid file after the
-    # restart returns, so the check waits for it.
+    # The restart said yes; check it: a recorded pid that is alive, and the port
+    # answers. The daemon writes its pid file only after it has bound the port,
+    # and after the restart returns, so the check waits for it. The listen table
+    # only vetoes: it can miss the daemon (see Get-PortOwner), but a listener it
+    # names must be the recorded pid.
     $deadline = (Get-Date).AddSeconds(15)
     do {
         $info = Read-PidFile $Store
         $running = if ($info.Pid -gt 0) { Get-Process -Id $info.Pid -ErrorAction SilentlyContinue } else { $null }
-        $owner = if ($running) { Get-PortOwner $Port } else { $null }
-        if ($running -and $owner -and $owner.ProcessId -eq $info.Pid) { break }
+        $answers = $running -and (Test-PortAnswers $Port)
+        if ($answers) { break }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
     if (-not $running) { Write-Log 'ERROR: no daemon is recorded as running after the restart'; return $false }
-    if (-not $owner -or $owner.ProcessId -ne $info.Pid) {
-        $who = if ($owner) { "pid $($owner.ProcessId)" } else { 'nothing' }
-        Write-Log "ERROR: daemon pid $($info.Pid) runs, but port $Port is held by $who"
+    if (-not $answers) { Write-Log "ERROR: daemon pid $($info.Pid) runs, but nothing answers on port $Port"; return $false }
+    $owner = Get-PortOwner $Port
+    if ($owner -and $owner.ProcessId -ne $info.Pid) {
+        Write-Log "ERROR: daemon pid $($info.Pid) runs, but port $Port is held by pid $($owner.ProcessId)"
         return $false
     }
     Write-Log "daemon pid $($info.Pid) runs $($running.Path) and listens on port $Port"

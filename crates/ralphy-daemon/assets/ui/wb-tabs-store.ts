@@ -144,6 +144,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (!tab) return;
       if (!WBColumns.flat(grid).length) return this.closeTab(tabId);
       tab.grid = grid;
+      this.nameConsoleTab(tab);
       this.persistView();
       this.placeConsoleTabs();
     },
@@ -185,13 +186,20 @@ export function tabsStore(deps: TabsStoreDeps) {
         const grid = tab.grid || [];
         const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter(here)));
         if (JSON.stringify(kept) !== JSON.stringify(grid)) this.setTabGrid(tab.id, kept);
-        else if (tab.deskId && WBColumns.flat(grid).includes(tab.deskId))
-          this.renameConsoleTab(tab, rows.get(tab.deskId));
+        else this.nameConsoleTab(tab);
       }
       this.placeConsoleTabs();
     },
-    // The tab follows a rename of the console it opened for, while that
-    // console is in it; no other console names it (ADR-0037 §3d).
+    // The console `deskId` names the tab while it is in the tab; when it
+    // leaves, the first console of the grid takes its place (ADR-0037 §3d).
+    nameConsoleTab(tab: CanvasTab) {
+      const ids = WBColumns.flat(tab.grid || []);
+      if (!tab.deskId || !ids.includes(tab.deskId)) tab.deskId = ids[0];
+      this.renameConsoleTab(
+        tab,
+        window.WBConsole?.list().find((r) => r.id === tab.deskId),
+      );
+    },
     renameConsoleTab(tab: CanvasTab, row: { name: string | null; agent: string } | undefined) {
       if (!row) return;
       const title = window.WBConsoleName.consoleLabel(row.name || "", row.agent);

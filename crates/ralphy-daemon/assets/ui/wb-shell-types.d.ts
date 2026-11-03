@@ -93,8 +93,8 @@ export type SecurityFact = {
 
 /**
  * A tab of the canvas. A file or diff tab names its file and its checkout. A
- * console tab names the console it opened for (`deskId`) and the consoles it
- * holds, as columns of rows (`grid`).
+ * console tab names the console that gives it its name (`deskId`) and the
+ * consoles it holds, as columns of rows (`grid`).
  */
 export type CanvasTab = {
   id: string;

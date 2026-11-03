@@ -110,7 +110,7 @@ test("a console tab stored before the grid comes back under the id it had", () =
   assert.deepEqual(old.tabs.tabOf("w1").grid, [["w1"]]);
 });
 
-test("a console tab takes the new name of the console it opened for, and of no other", () => {
+test("a console tab takes the new name of the console that names it, and of no other", () => {
   const { tabs, page, stored } = tabShell(["w1", "w2"]);
   tabs.openConsoleTab("w1", "codex");
   tabs.setTabGrid("console:w1", [["w1"], ["w2"]]);
@@ -125,9 +125,28 @@ test("a console tab takes the new name of the console it opened for, and of no o
   assert.match(title, /build/);
   assert.equal(stored().consoleTabs[0].title, title);
   tabs.leaveTab("w1");
+  assert.equal(tabs.tabOf("w2").title, "tests (codex)", "the console left in the tab names it");
   page.names.w1 = "later";
   tabs.syncConsoleTabs();
-  assert.equal(tabs.tabOf("w2").title, title, "the name stays once its console left the tab");
+  assert.equal(tabs.tabOf("w2").title, "tests (codex)", "the console that left names it no more");
+  page.names.w2 = "e2e";
+  tabs.syncConsoleTabs();
+  assert.equal(tabs.tabOf("w2").title, "e2e (codex)");
+  assert.equal(stored().consoleTabs[0].deskId, "w2");
+});
+
+test("the first console of the grid names a tab whose naming console left it", () => {
+  const { tabs, page } = tabShell(["w1", "w2", "w3", "w4"]);
+  Object.assign(page.names, { w1: "one", w2: "two", w3: "three", w4: "four" });
+  tabs.openConsoleTab("w2", "two (codex)");
+  tabs.setTabGrid("console:w2", [["w1"], ["w2", "w3"]]);
+  tabs.leaveTab("w2");
+  assert.equal(tabs.tabOf("w1").title, "one (codex)", "Restore: the first console in reading order");
+  tabs.setTabGrid("console:w2", [["w4"], ["w3"]]);
+  assert.equal(tabs.tabOf("w4").title, "four (codex)", "Swap: the console that came in first");
+  page.ids.delete("w4");
+  tabs.syncConsoleTabs();
+  assert.equal(tabs.tabOf("w3").title, "three (codex)", "a console that left the page");
 });
 
 test("a console that relaunches keeps its tab", () => {
@@ -158,7 +177,7 @@ test("a console tab holds a grid: a console that leaves the page leaves the grid
   );
 });
 
-test("Restore in a tab takes the console back to the stage; the tab keeps its id and its name", () => {
+test("Restore in a tab takes the console back to the stage; the tab keeps its id", () => {
   const { tabs, last } = tabShell(["w1", "w2"]);
   tabs.openConsoleTab("w1", "codex");
   tabs.setTabGrid("console:w1", [["w1"], ["w2"]]);
@@ -166,7 +185,6 @@ test("Restore in a tab takes the console back to the stage; the tab keeps its id
   assert.equal(tabs.holds("w1"), false);
   const tab = tabs.tabOf("w2");
   assert.equal(tab.id, "console:w1");
-  assert.equal(tab.title, "codex");
   assert.deepEqual(last(), [["w2"], [["w2"]]]);
   // A new tab for the console that left takes the next free id.
   tabs.openConsoleTab("w1", "codex");

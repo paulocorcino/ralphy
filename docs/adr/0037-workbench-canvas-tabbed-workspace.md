@@ -161,9 +161,12 @@ console fills it.
   with the tab, per device.
 - **A console in a tab is not moved by hand.** No maximize, move or resize:
   these are for the stage. Lock and close are hidden, as in a column.
-- **The tab keeps the name it opened with.** A rename of the console it
-  opened for renames the tab while that console is in it; no other console
-  changes the name.
+- **One console in the tab names it** *(amended 2026-11-03)*. At first it is
+  the console the tab opened for. When that console leaves the tab (Restore,
+  Swap, or it leaves the page), the first console of the grid in reading
+  order names the tab. A rename of the console that names the tab renames
+  the tab; no other console changes the name. The tab's id does not change.
+  Before this amendment the tab kept the name of a console that had left it.
 - **The × only closes the tab.** Every window of the tab goes back to the
   stage, at its rect, maximized when the desk records it as maximized. The
   consoles keep running. A console that leaves the stage leaves its tab's
