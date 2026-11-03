@@ -57,7 +57,7 @@ fn require_token(stored: Option<&str>) -> Result<String> {
 }
 
 fn setup(token_arg: Option<String>) -> Result<()> {
-    let stored = TelegramConfig::load()?;
+    let stored = config::load()?;
     let token = match token_arg {
         Some(t) if !t.trim().is_empty() => t,
         _ => require_token(stored.as_ref().map(|c| c.token.as_str()))?,
@@ -96,8 +96,7 @@ fn setup(token_arg: Option<String>) -> Result<()> {
 }
 
 fn test() -> Result<()> {
-    let cfg = TelegramConfig::load()?
-        .context("Telegram is not configured — run `telegram setup` first")?;
+    let cfg = config::load()?.context("Telegram is not configured — run `telegram setup` first")?;
     let chat_id = cfg
         .chat_id
         .context("no chat configured — run `telegram setup` to capture one")?;
@@ -111,7 +110,8 @@ fn test() -> Result<()> {
 }
 
 fn status() -> Result<()> {
-    match TelegramConfig::load()? {
+    println!("Config file: {}", config::path()?.display());
+    match config::load()? {
         None => {
             println!("Telegram: not configured. Run `telegram setup`.");
         }
@@ -130,7 +130,7 @@ fn status() -> Result<()> {
 }
 
 fn disable() -> Result<()> {
-    if TelegramConfig::load()?.is_none() {
+    if config::load()?.is_none() {
         println!("Telegram was not configured; nothing to remove.");
         return Ok(());
     }

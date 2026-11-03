@@ -166,7 +166,7 @@ pub(super) fn install_observability(
     // and install the notifier Layer alongside the file/presenter layers so it sees
     // the lifecycle from `queue built` onward. The worker is started later, once the
     // queue (and thus the title) is known.
-    let tg_cfg = telegram::config::TelegramConfig::load().ok().flatten();
+    let tg_cfg = telegram::config::load().ok().flatten();
     let tg_token = tg_cfg
         .as_ref()
         .and_then(|c| telegram::config::effective_token(Some(&c.token)));

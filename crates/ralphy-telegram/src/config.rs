@@ -1,11 +1,12 @@
-//! Reading the global Telegram config (ADR-0007 D2).
+//! Reading the Telegram config (ADR-0007 D2, amendment of 2026-11-03).
 //!
-//! A single `config.toml` resolved with the `directories` crate
-//! (`~/.config/ralphy/config.toml`; `%APPDATA%\ralphy\` on Windows) holds the
-//! bot token and the auto-detected `chat_id`. The environment variable
-//! `RALPHY_TELEGRAM_TOKEN` overrides the stored token so a run can carry a token
-//! without persisting it. This crate only reads the file; the CLI writes it
-//! owner-only.
+//! One file holds the bot token and the auto-detected `chat_id`. It lives in
+//! the daemon store, which this crate does not know: the caller gives the path
+//! (`ralphy_daemon::telegram_state::config_path`). [`legacy_path`] is where the
+//! file lived before, kept so it can be copied into the store once. The
+//! environment variable `RALPHY_TELEGRAM_TOKEN` overrides the stored token so a
+//! run can carry a token without persisting it. This crate only reads the file;
+//! the CLI writes it owner-only.
 
 use std::path::{Path, PathBuf};
 
@@ -28,22 +29,17 @@ pub struct TelegramConfig {
     pub chat_id: Option<i64>,
 }
 
+/// Where the config lived before it moved into the daemon store:
+/// `config.toml` in the folder `directories` names (`~/.config/ralphy`;
+/// `%APPDATA%\ralphy\config` on Windows). Only the one-time copy reads it.
+pub fn legacy_path() -> Result<PathBuf> {
+    let dirs = ProjectDirs::from("", "", "ralphy")
+        .context("could not resolve a config directory for ralphy")?;
+    Ok(dirs.config_dir().join("config.toml"))
+}
+
 impl TelegramConfig {
-    /// The on-disk path of `config.toml`, resolved via `directories`.
-    pub fn config_path() -> Result<PathBuf> {
-        let dirs = ProjectDirs::from("", "", "ralphy")
-            .context("could not resolve a config directory for ralphy")?;
-        Ok(dirs.config_dir().join("config.toml"))
-    }
-
-    /// Load the config from disk, or `None` when no config file exists yet.
-    pub fn load() -> Result<Option<TelegramConfig>> {
-        Self::load_from(&Self::config_path()?)
-    }
-
-    /// Load the config at `path`, or `None` when no file is there. The daemon
-    /// reads it through a path it was given, so a test's daemon reads a temp
-    /// file and never the operator's.
+    /// Load the config at `path`, or `None` when no file is there.
     pub fn load_from(path: &Path) -> Result<Option<TelegramConfig>> {
         match std::fs::read_to_string(path) {
             Ok(text) => {

@@ -17,6 +17,8 @@ use std::time::{Duration, SystemTime};
 use anyhow::Result;
 use ralphy_telegram::config::TelegramConfig;
 
+pub mod legacy;
+
 /// What this daemon does with a console request that waits for an operator
 /// who is away. Matched exhaustively.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -43,15 +45,16 @@ impl TelegramState {
     }
 }
 
-/// Where this daemon reads the Telegram config: the file `ralphy telegram
-/// setup` writes, or `telegram.toml` in a scratch store
-/// (`$RALPHY_DAEMON_DIR`), so a daemon a test starts never sends with the
-/// operator's bot.
+/// The Telegram config of the store `store`: one file for the daemon, its runs
+/// and `ralphy telegram` (ADR-0007 D2, amendment of 2026-11-03). A scratch
+/// store has no bot because it has no such file.
+pub fn config_path_in(store: &Path) -> PathBuf {
+    store.join("telegram.toml")
+}
+
+/// The Telegram config of this machine's daemon store (`auth::store_dir`).
 pub fn config_path() -> Result<PathBuf> {
-    match std::env::var_os("RALPHY_DAEMON_DIR") {
-        Some(dir) => Ok(PathBuf::from(dir).join("telegram.toml")),
-        None => TelegramConfig::config_path(),
-    }
+    Ok(config_path_in(&crate::auth::store_dir()?))
 }
 
 /// The bot this daemon sends with. It has no `Debug`: the token never goes
