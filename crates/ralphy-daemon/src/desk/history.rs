@@ -87,7 +87,8 @@ impl From<&Version> for VersionInfo {
 
 /// The desk with every field that changes without a layout change cleared:
 /// `ts` and `sessionId` (each reconnect rewrites both), the generation and
-/// the `rev`, and the sub-pixel part of each rect.
+/// the `rev`, the sub-pixel part of each rect, the view state `max`, and the
+/// `doneMark` request, which the daemon clears by itself.
 fn layout_of(desk: &DeskStore) -> DeskStore {
     let mut d = desk.clone();
     d.generation = 0;
@@ -101,6 +102,8 @@ fn layout_of(desk: &DeskStore) -> DeskStore {
     for w in &mut d.windows {
         w.ts = 0;
         w.session_id = None;
+        w.max = false;
+        w.done_mark = false;
         round(&mut w.rect);
     }
     for f in &mut d.fences {
@@ -172,7 +175,8 @@ fn same_session(a: &DeskRecord, b: &DeskRecord) -> bool {
 /// - A window of the version takes its saved place. When a current record is
 ///   the same console (same id, or the same live session), the version's
 ///   layout goes onto that record and the record keeps its id and session, so
-///   a running console is never shown twice.
+///   a running console is never shown twice. The `doneMark` is the current
+///   record's: a version never asks for a notice the operator does not ask for now.
 /// - A current window that is not in the version stays when it has a
 ///   session, and is dropped when it is a placeholder.
 /// - Fences and note cards are the version's. The checkouts are the current
@@ -198,10 +202,15 @@ pub fn restore(current: DeskStore, version: DeskStore, now: i64) -> (DeskStore, 
                 session_id: c.session_id,
                 daemon_id: c.daemon_id,
                 environment: c.environment,
+                done_mark: c.done_mark,
                 ts: now,
                 ..v
             },
-            None => DeskRecord { ts: now, ..v },
+            None => DeskRecord {
+                done_mark: false,
+                ts: now,
+                ..v
+            },
         };
         windows.push(record);
     }
