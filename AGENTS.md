@@ -4,7 +4,8 @@ Operational guide for agents working **on Ralphy's own codebase**. It holds the
 rules an agent gets wrong without being told, and it points to the documents
 that hold the details. When a rule here and its source document disagree, the
 source document is correct — fix this file in the same change. For the gate,
-the source is `.github/workflows/ci.yml`, and it wins over any ADR or doc.
+the source is `.github/workflows/ci.yml` and the test jobs of
+`.github/workflows/release.yml`, and they win over any ADR or doc.
 
 - **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** — the architecture map:
   the owner of each fact, who may call whom, and where an outside product or
@@ -63,9 +64,12 @@ ubiquitous language, and each crate is roughly one bounded context.
 ## Hard rules (an agent will get these wrong without being told)
 
 - **Run CI's gate before you call a change done.** The source of the gate is
-  [.github/workflows/ci.yml](./.github/workflows/ci.yml); an ADR or doc that
-  lists other commands is out of date. These are the local forms of what CI
-  runs, and all of them must pass:
+  [.github/workflows/ci.yml](./.github/workflows/ci.yml) and the test jobs of
+  [release.yml](./.github/workflows/release.yml); an ADR or doc that lists
+  other commands is out of date. These are the local forms of what CI runs,
+  and all of them must pass. A pull request does not build or test the
+  product: the suite runs only before a release, so the local run is the
+  only test before a merge.
 
   ```sh
   cargo fmt --all --check
@@ -152,13 +156,12 @@ ubiquitous language, and each crate is roughly one bounded context.
   `cargo run -q -p xtask -- changelog --check`. `CHANGELOG.md` and
   `changelog.json` belong to the `changelog` xtask: edit only fragments.
 - **Cross-platform, always.** Ralphy ships on **Windows, Linux and macOS**.
-  A pull request is tested on Linux only; the Windows and macOS tests run in
-  the release workflow, before the packages are built. So on Windows the
-  local gate is the only check before a merge: a change to Windows code
+  The tests of all three run in the release workflow, before the packages
+  are built; a pull request runs none. A change to Windows code
   (`#[cfg(windows)]`, a path, a spawn) runs the gate on Windows before it is
-  called done. A change to macOS code (`cfg(target_os = "macos")`, launchd,
-  file watching) is checked before the tag by a manual run of the release
-  workflow (`gh workflow run release.yml --ref <branch>`). Build paths with `std::path`, spawn a program directly with its
+  called done. A change to Linux or macOS code (`cfg(target_os = …)`,
+  launchd, file watching, a PTY) is checked before the tag by a manual run
+  of the release workflow (`gh workflow run release.yml --ref <branch>`). Build paths with `std::path`, spawn a program directly with its
   arguments, and take temporary directories from `tempfile`. Subprocess and
   PTY behavior is tested against a Rust helper binary, never a shell script
   (docs/TESTING.md → *What may be faked*). Measured platform differences are

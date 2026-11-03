@@ -620,9 +620,9 @@ terminal the operator sees a failed start and can act on it.
 - §11 (the hand-over, the rollback and the fresh factor): not checked by code:
   reviewed in the PR.
 - §12 (the scripts): checked by `.github/scripts/check-install-sh.sh`, run
-  by the `install-scripts` job of `.github/workflows/ci.yml` (Linux) and the
-  `macos-install` job of `release.yml`, and by the `windows-install` job of
-  `release.yml` for `install.ps1`, against a fixture release built from the
+  by the `linux-install` and `macos-install` jobs of
+  `.github/workflows/release.yml`, and by its `windows-install` job for
+  `install.ps1`, against a fixture release built from the
   commit: a first run, a repair run, a wrong checksum, root with no terminal
   and allowed root on Linux, the launchd agent on macOS, the elevated runner
   with `-Daemon` on Windows, and `shellcheck` on Linux.

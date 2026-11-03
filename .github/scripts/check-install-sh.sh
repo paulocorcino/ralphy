@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs assets/install/install.sh against a fake release packed from
-# target/debug/ralphy and served on loopback (ADR-0056 §12). Run by ci.yml on
-# Linux and by release.yml on macOS. The workflow sets RALPHY_RELEASES_URL,
+# target/debug/ralphy and served on loopback (ADR-0056 §12). Run by release.yml
+# on Linux and macOS. The workflow sets RALPHY_RELEASES_URL,
 # RALPHY_DOWNLOAD_URL (port 8765) and RALPHY_INSTALL_DIR. The server runs in
 # the same step as the script: a background process does not reliably outlive
 # its step. Each refusal is checked by its message, so an unrelated failure
