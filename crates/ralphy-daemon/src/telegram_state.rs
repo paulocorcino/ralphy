@@ -76,15 +76,80 @@ impl TelegramState {
 
     /// The state as a short line of text, after "Telegram: ".
     pub fn text(&self) -> String {
+        self.text_naming(None)
+    }
+
+    /// [`TelegramState::text`], with the main daemon named by `main_name`
+    /// when it is known, else by its id.
+    pub fn text_naming(&self, main_name: Option<&str>) -> String {
         match self {
             TelegramState::Off { why: None } => "off".to_string(),
             TelegramState::Off { why: Some(why) } => format!("off: {}", why.text()),
             TelegramState::Sends => "sends from this machine".to_string(),
             TelegramState::ThroughMain { main } => {
-                format!("sends through the main daemon {main}")
+                format!(
+                    "sends through the main daemon {}",
+                    main_name.unwrap_or(main)
+                )
             }
         }
     }
+
+    /// Whether the operator has something to fix.
+    pub fn is_fault(&self) -> bool {
+        match self {
+            TelegramState::Off { why: Some(why) } => why.is_fault(),
+            TelegramState::Off { why: None } => false,
+            TelegramState::Sends | TelegramState::ThroughMain { .. } => false,
+        }
+    }
+}
+
+/// The reply of `GET /api/telegram`: this daemon's state and, in the joined
+/// reply, the state of each peer and the peers that did not answer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FleetTelegram {
+    #[serde(flatten)]
+    pub state: TelegramState,
+    /// The name of the main daemon, when the daemon that answers knows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub peers: Vec<PeerTelegram>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unanswered: Vec<PeerName>,
+}
+
+impl FleetTelegram {
+    /// The state of one daemon, with no peer.
+    pub fn alone(state: TelegramState) -> Self {
+        FleetTelegram {
+            state,
+            main_name: None,
+            peers: Vec::new(),
+            unanswered: Vec::new(),
+        }
+    }
+}
+
+/// One peer's state in the joined reply.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PeerTelegram {
+    #[serde(flatten)]
+    pub peer: PeerName,
+    #[serde(flatten)]
+    pub state: TelegramState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_name: Option<String>,
+}
+
+/// Who a peer is, as its descriptor names it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PeerName {
+    pub daemon_id: String,
+    #[serde(default)]
+    pub name: String,
+    pub environment: String,
 }
 
 /// The Telegram config of the store `store`: one file for the daemon, its runs
@@ -336,6 +401,40 @@ chat_id = 42
         );
         assert!(log.note(TelegramState::Sends, config), "a change");
         assert!(!log.note(TelegramState::Sends, config));
+    }
+
+    /// `ralphy doctor` reads the joined reply the route writes.
+    #[test]
+    fn the_fleet_reply_reads_back() {
+        let peer = |id: &str| PeerName {
+            daemon_id: id.to_string(),
+            name: format!("name-{id}"),
+            environment: "WSL: Ubuntu".to_string(),
+        };
+        let fleet = FleetTelegram {
+            state: TelegramState::Sends,
+            main_name: None,
+            peers: vec![PeerTelegram {
+                peer: peer("a"),
+                state: TelegramState::ThroughMain {
+                    main: "m".to_string(),
+                },
+                main_name: Some("main".to_string()),
+            }],
+            unanswered: vec![peer("b")],
+        };
+        let json = serde_json::to_value(&fleet).expect("JSON");
+        assert_eq!(json["peers"][0]["state"], "through-main", "{json}");
+        assert_eq!(json["peers"][0]["daemon_id"], "a", "{json}");
+        assert_eq!(json["unanswered"][0]["name"], "name-b", "{json}");
+        let back: FleetTelegram = serde_json::from_value(json).expect("read back");
+        assert_eq!(back, fleet);
+        let alone: FleetTelegram =
+            serde_json::from_str(r#"{"state":"off","why":"no-chat"}"#).expect("one daemon");
+        assert_eq!(
+            alone,
+            FleetTelegram::alone(TelegramState::off(OffReason::NoChat))
+        );
     }
 
     /// An older daemon says `{"state":"off"}` and an older main reads the new

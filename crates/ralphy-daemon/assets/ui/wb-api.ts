@@ -26,6 +26,7 @@ import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
 import type { AttentionReply } from "./wb-attention.ts";
+import type { FleetTelegram } from "./wb-telegram-status.ts";
 import type { LoginNoticesReply } from "./wb-login-notice.ts";
 import { reportStall } from "./wb-stall.ts";
 
@@ -116,6 +117,8 @@ interface ApiRoutes {
   "GET /api/attention": { ok: AttentionReply };
   /** `409` for a request that still waits, `404` for an unknown id. */
   "POST /api/attention/dismiss": { ok: { dismissed: true } };
+  /** The names of the peers that did not answer are in `unanswered` too. */
+  "GET /api/telegram": { ok: FleetTelegram };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
     ok: {

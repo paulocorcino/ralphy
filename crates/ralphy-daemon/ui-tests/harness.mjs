@@ -21,6 +21,7 @@ import { wire } from "../assets/ui/wb-wire.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
+import { telegramStatus } from "../assets/ui/wb-telegram-status.ts";
 import { securityDialog } from "../assets/ui/wb-security-dialog.ts";
 import { releaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
@@ -91,6 +92,7 @@ const MODULE_COMPONENTS = {
   wbHostsDialog: hostsDialog,
   wbSettingsDialog: settingsDialog,
   wbDevices: devices,
+  wbTelegramStatus: telegramStatus,
   wbSecurityDialog: securityDialog,
   wbReleaseDialogs: releaseDialogs,
   wbAddProjectDialog: addProjectDialog,

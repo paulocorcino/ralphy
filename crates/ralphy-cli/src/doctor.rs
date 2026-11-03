@@ -11,7 +11,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::Args;
 use ralphy_daemon::agent_state::{state_source, StateSource};
-use ralphy_daemon::telegram_state::TelegramState;
+use ralphy_daemon::telegram_state::{FleetTelegram, TelegramState};
 use ralphy_proc_util::hook_form::HookCheck;
 use serde::{Deserialize, Serialize};
 
@@ -87,9 +87,9 @@ pub(crate) struct MachineFacts {
     pub linger: Option<Option<bool>>,
     /// The hook check of each installed agent whose state comes from hooks.
     pub hooks: Vec<(Agent, HookCheck)>,
-    /// The Telegram state of the daemon on this machine; `None` when its
-    /// config path could not be found.
-    pub telegram: Option<TelegramState>,
+    /// The Telegram state of the daemon on this machine and of its peers;
+    /// `None` when its config path could not be found.
+    pub telegram: Option<FleetTelegram>,
 }
 
 /// The lingering line, shared with the host check so both say the same thing.
@@ -269,21 +269,48 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
     }
 }
 
-/// The Telegram state never fails doctor: no bot at all is a choice. A bot
-/// that cannot send (no chat, a broken file) is a warning with its fix.
-fn telegram_line(state: &TelegramState) -> ToolLine {
-    let fault = match state {
-        TelegramState::Off { why: Some(why) } => why.is_fault(),
-        TelegramState::Off { why: None } | TelegramState::Sends => false,
-        TelegramState::ThroughMain { .. } => false,
-    };
+/// The Telegram lines: this daemon's, then one for each peer. They never
+/// fail doctor: no bot at all is a choice. A bot that cannot send (no chat,
+/// a broken file) is a warning with its fix, which is run on that machine.
+fn telegram_lines(fleet: &FleetTelegram) -> Vec<ToolLine> {
+    let own = state_line("telegram", &fleet.state, fleet.main_name.as_deref());
+    let peers = fleet.peers.iter().map(|p| {
+        let name = format!(
+            "telegram on {}",
+            peer_label(&p.peer.name, &p.peer.environment)
+        );
+        state_line(&name, &p.state, p.main_name.as_deref())
+    });
+    let silent = fleet.unanswered.iter().map(|p| ToolLine {
+        tool: Tool::Telegram,
+        name: format!("telegram on {}", peer_label(&p.name, &p.environment)),
+        ok: true,
+        required: false,
+        version: None,
+        text: "the daemon did not answer".to_string(),
+        fix: None,
+    });
+    std::iter::once(own).chain(peers).chain(silent).collect()
+}
+
+/// A peer as a line names it: its name, or its environment when it has none.
+fn peer_label<'a>(name: &'a str, environment: &'a str) -> &'a str {
+    if name.is_empty() {
+        environment
+    } else {
+        name
+    }
+}
+
+fn state_line(name: &str, state: &TelegramState, main_name: Option<&str>) -> ToolLine {
+    let fault = state.is_fault();
     ToolLine {
         tool: Tool::Telegram,
-        name: "telegram".to_string(),
+        name: name.to_string(),
         ok: !fault,
         required: false,
         version: None,
-        text: state.text(),
+        text: state.text_naming(main_name),
         fix: fault.then(|| "ralphy telegram setup".to_string()),
     }
 }
@@ -301,7 +328,7 @@ pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     if let Some(linger) = facts.linger {
         tools.push(linger_line(linger));
     }
-    tools.extend(facts.telegram.as_ref().map(telegram_line));
+    tools.extend(facts.telegram.iter().flat_map(telegram_lines));
     DoctorReport { tools }
 }
 

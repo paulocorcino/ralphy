@@ -21,7 +21,9 @@ use axum::{Json, Router};
 use super::RouterShared;
 use crate::peer::join::{ask_peers, name_unanswered};
 use crate::peer::telegram_claim;
-use crate::telegram_state::{self, SharedClaim, TelegramState};
+use crate::telegram_state::{
+    self, FleetTelegram, PeerName, PeerTelegram, SharedClaim, TelegramState,
+};
 
 /// The longest daemon id a claim may name. A daemon id is a ULID (26
 /// characters); the rest is room.
@@ -53,30 +55,6 @@ pub(crate) struct TelegramShared {
     pub(crate) name: Option<String>,
 }
 
-/// The reply of `GET /api/telegram`. `main_name` is the name of the main
-/// daemon when the daemon that answers knows it; `peers` is only in the
-/// joined reply.
-#[derive(serde::Serialize)]
-struct TelegramView {
-    #[serde(flatten)]
-    state: TelegramState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    main_name: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    peers: Vec<PeerView>,
-}
-
-/// One peer's state in the joined reply.
-#[derive(serde::Serialize)]
-struct PeerView {
-    daemon_id: String,
-    environment: String,
-    #[serde(flatten)]
-    state: TelegramState,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    main_name: Option<String>,
-}
-
 /// The state of this daemon now, read off the runtime: the config is a file.
 async fn own_state(t: &TelegramShared) -> Option<TelegramState> {
     let (config, claim) = (t.config.clone(), t.claim.clone());
@@ -96,7 +74,9 @@ fn main_name(state: &TelegramState, names: &HashMap<String, String>) -> Option<S
 /// this daemon knows, by id; and the peers that did not answer. A peer that
 /// did not answer, or an older one with no such route, is named, never shown
 /// as "off".
-async fn peer_states(t: &TelegramShared) -> (HashMap<String, String>, Vec<PeerView>, Vec<String>) {
+async fn peer_states(
+    t: &TelegramShared,
+) -> (HashMap<String, String>, Vec<PeerTelegram>, Vec<PeerName>) {
     let mut names: HashMap<String, String> = HashMap::new();
     if let (Some(id), Some(name)) = (&t.daemon_id, &t.name) {
         names.insert(id.clone(), name.clone());
@@ -112,14 +92,18 @@ async fn peer_states(t: &TelegramShared) -> (HashMap<String, String>, Vec<PeerVi
     let mut unanswered = Vec::new();
     let mut peers = Vec::new();
     for (peer, reply) in replies {
+        let name = PeerName {
+            daemon_id: peer.daemon_id,
+            name: peer.name,
+            environment: peer.environment,
+        };
         match parse_state(reply) {
-            Some(state) => peers.push(PeerView {
+            Some(state) => peers.push(PeerTelegram {
                 main_name: main_name(&state, &names),
-                daemon_id: peer.daemon_id,
-                environment: peer.environment,
+                peer: name,
                 state,
             }),
-            None => unanswered.push(peer.daemon_id),
+            None => unanswered.push(name),
         }
     }
     (names, peers, unanswered)
@@ -146,13 +130,15 @@ pub(crate) async fn telegram_route(t: TelegramShared, local_only: bool) -> Respo
         return Json(state).into_response();
     }
     let (names, peers, unanswered) = peer_states(&t).await;
-    let mut response = Json(TelegramView {
+    let ids: Vec<String> = unanswered.iter().map(|p| p.daemon_id.clone()).collect();
+    let mut response = Json(FleetTelegram {
         main_name: main_name(&state, &names),
         state,
         peers,
+        unanswered,
     })
     .into_response();
-    name_unanswered(&mut response, &unanswered);
+    name_unanswered(&mut response, &ids);
     response
 }
 

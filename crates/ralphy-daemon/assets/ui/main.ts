@@ -9,6 +9,7 @@ import Alpine from "./vendor/alpine.esm.js";
 // In the order of the page's old module tags. The two bare imports set the
 // `window` names `app.ts` and browser checks read (D9): not dead code.
 import { devices } from "./wb-devices.ts";
+import { telegramStatus } from "./wb-telegram-status.ts";
 import { settingsDialog } from "./wb-settings-dialog.ts";
 import "./wb-kanban.ts";
 import "./wb-spend.ts";
@@ -120,6 +121,7 @@ Alpine.store("uploads", uploadsStore({ messages }));
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);
 Alpine.data("wbDevices", devices);
+Alpine.data("wbTelegramStatus", telegramStatus);
 Alpine.data("wbSecurityDialog", securityDialog);
 Alpine.data("wbReleaseDialogs", releaseDialogs);
 Alpine.data("wbAddProjectDialog", addProjectDialog);

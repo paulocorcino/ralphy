@@ -63,10 +63,18 @@ pub fn remove_legacy(store: &Path, legacy: &Path, operator_store: Option<&Path>)
 }
 
 /// [`move_legacy`] on this machine: the store of `auth::store_dir`, the old
-/// file `directories` names, and the store the operating system names.
+/// file `directories` names, and the store the operating system names. A
+/// store that is not the operator's never looks for the old file, so a test
+/// that moved the home folder, where `directories` names no folder, still
+/// reads its own store.
 pub fn take_legacy_config() -> Result<Moved> {
+    let store = store_dir()?;
+    let operator_store = os_default_store();
+    if !is_operator_store(&store, operator_store.as_deref()) {
+        return Ok(Moved::NotOperatorStore);
+    }
     let legacy = ralphy_telegram::config::legacy_path()?;
-    move_legacy(&store_dir()?, &legacy, os_default_store().as_deref())
+    move_legacy(&store, &legacy, operator_store.as_deref())
 }
 
 #[cfg(test)]

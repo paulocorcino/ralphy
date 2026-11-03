@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::*;
-use ralphy_daemon::telegram_state::OffReason;
+use ralphy_daemon::telegram_state::{FleetTelegram, OffReason, PeerName, PeerTelegram};
 use ralphy_proc_util::hook_form::HookCheck;
 
 fn all_found() -> MachineFacts {
@@ -358,7 +358,7 @@ fn the_telegram_line_says_whether_this_machine_sends() {
     for (state, text) in rows {
         let report = evaluate(
             &MachineFacts {
-                telegram: Some(state),
+                telegram: Some(FleetTelegram::alone(state)),
                 ..all_found()
             },
             false,
@@ -384,7 +384,7 @@ fn a_telegram_bot_that_cannot_send_is_a_warning_with_its_fix() {
     ] {
         let report = evaluate(
             &MachineFacts {
-                telegram: Some(TelegramState::off(why)),
+                telegram: Some(FleetTelegram::alone(TelegramState::off(why))),
                 ..all_found()
             },
             false,
@@ -395,4 +395,53 @@ fn a_telegram_bot_that_cannot_send_is_a_warning_with_its_fix() {
         assert_eq!(line.fix.as_deref(), Some("ralphy telegram setup"));
         assert_eq!(report.missing_required(), 0);
     }
+}
+
+/// The doctor of a main daemon names each peer: how it sends, by the main's
+/// name, why one cannot, and which did not answer.
+#[test]
+fn the_telegram_lines_name_each_peer() {
+    let peer = |name: &str, environment: &str| PeerName {
+        daemon_id: format!("id-{environment}"),
+        name: name.to_string(),
+        environment: environment.to_string(),
+    };
+    let fleet = FleetTelegram {
+        state: TelegramState::Sends,
+        main_name: None,
+        peers: vec![
+            PeerTelegram {
+                peer: peer("wsl-ubuntu", "WSL: Ubuntu-22.04"),
+                state: TelegramState::ThroughMain {
+                    main: "01MAIN".to_string(),
+                },
+                main_name: Some("ralphy".to_string()),
+            },
+            PeerTelegram {
+                peer: peer("", "macOS 12"),
+                state: TelegramState::off(OffReason::NoChat),
+                main_name: None,
+            },
+        ],
+        unanswered: vec![peer("vps-ralphy1", "Ubuntu 20.04")],
+    };
+    let report = evaluate(
+        &MachineFacts {
+            telegram: Some(fleet),
+            ..all_found()
+        },
+        false,
+    );
+    let mut out = Vec::new();
+    print_report(&report, &mut out).expect("the report");
+    let out = String::from_utf8(out).expect("UTF-8");
+    for want in [
+        "[ok  ] telegram: sends from this machine",
+        "[ok  ] telegram on wsl-ubuntu: sends through the main daemon ralphy",
+        "[warn] telegram on macOS 12: off: the bot has no chat yet",
+        "[ok  ] telegram on vps-ralphy1: the daemon did not answer",
+    ] {
+        assert!(out.contains(want), "{want}\n{out}");
+    }
+    assert_eq!(report.missing_required(), 0);
 }

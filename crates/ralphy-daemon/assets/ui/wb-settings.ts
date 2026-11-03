@@ -188,29 +188,17 @@ export const WB_SETTINGS: Section[] = [
       },
     ],
   },
+  // No items: the section has its own body, read from the daemon
+  // (wb-telegram-status.ts). The bot token never reaches the page.
   {
     id: "telegram",
     title: "Telegram",
     icon: "bi-send",
     scope: "daemon",
-    blurb: "Post run summaries to a Telegram chat. Shared by every project.",
-    items: [
-      {
-        key: "telegram.token",
-        label: "Bot token",
-        type: "password",
-        default: "",
-        help: "The token BotFather gave your bot.",
-      },
-      {
-        key: "telegram.chat_id",
-        label: "Chat id",
-        type: "text",
-        placeholder: "Set by /start",
-        default: "",
-        help: "The chat to post to. If empty, it is set the first time you send /start to the bot.",
-      },
-    ],
+    blurb:
+      "A message to your Telegram chat when an agent waits for you and you are away. " +
+      "Each daemon of this computer and of its peers is listed.",
+    items: [],
   },
   // No items: the section has its own body in index.html, and the list it
   // shows is read from the daemon (wb-desk-history.ts).

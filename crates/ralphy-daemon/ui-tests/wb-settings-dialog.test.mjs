@@ -221,12 +221,11 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { scope } = loadComponent("wbSettingsDialog");
-  // The Devices section is its own component, nested one level deeper: it
-  // reads its own names, not this dialog's.
-  const markup = partMarkup(PART).replace(
-    /<template x-if="sec\.id === 'devices'[\s\S]*?<\/template>\s*<\/section>/,
-    "</section>",
-  );
+  // The Devices and Telegram sections are components of their own, nested
+  // one level deeper: they read their own names, not this dialog's.
+  const markup = partMarkup(PART)
+    .replace(/<template x-if="sec\.id === 'telegram'[\s\S]*?(?=<template x-if="sec\.id === 'devices')/, "")
+    .replace(/<template x-if="sec\.id === 'devices'[\s\S]*?<\/template>\s*<\/section>/, "</section>");
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // `x-for="sec in …"` and `x-for="(e, i) in …"` name the loop's own variables.
   const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));

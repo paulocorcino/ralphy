@@ -21,7 +21,9 @@ pub fn path() -> Result<PathBuf> {
 /// The config, after the one-time copy of the old file into the store, or
 /// `None` when no bot is set up.
 pub fn load() -> Result<Option<TelegramConfig>> {
-    legacy::take_legacy_config()?;
+    if let Err(e) = legacy::take_legacy_config() {
+        eprintln!("warning: the old Telegram settings were not copied: {e}");
+    }
     TelegramConfig::load_from(&path()?)
 }
 

@@ -158,6 +158,30 @@
                     </template>
                   </div>
                 </template>
+                <!-- telegram: its own body, the wbTelegramStatus component
+                     (wb-telegram-status.ts), built only while the section is
+                     open. Read only: the bot is set up in a terminal. -->
+                <template x-if="sec.id === 'telegram' && settingsOpen && settingsSection === 'telegram'">
+                  <div class="telegram-status" x-data="wbTelegramStatus">
+                    <div class="sec-actions">
+                      <button class="btn" @click="load()" title="Read the state again from the daemon">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                      </button>
+                    </div>
+                    <p class="sec-note devices-error" x-show="error" x-text="error"></p>
+                    <template x-for="row in rows" :key="row.key">
+                      <div class="set-row">
+                        <div class="set-main">
+                          <span class="set-label" x-text="row.name"></span>
+                          <span class="telegram-state" :class="{ fault: row.fault }" x-text="row.text"></span>
+                        </div>
+                      </div>
+                    </template>
+                    <p class="sec-note" x-show="needsSetup()">
+                      To set up a bot, run <code>ralphy telegram setup</code> in a terminal on that machine.
+                    </p>
+                  </div>
+                </template>
                 <!-- devices: its own body, the wbDevices component (wb-devices.ts).
                      Built only while the section is open, so it reads the log
                      each time it opens and never on a page load. -->
