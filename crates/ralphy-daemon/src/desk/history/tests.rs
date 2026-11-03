@@ -75,6 +75,45 @@ fn maximizing_another_console_is_not_a_layout_change() {
 }
 
 #[test]
+fn a_move_shorter_than_the_minimum_is_not_a_layout_change() {
+    let held = desk(vec![window("w1", 100.0, Some(1))]);
+    let nudged = desk(vec![window("w1", 100.0 + MOVE_MIN_PX - 0.5, Some(1))]);
+    let moved = desk(vec![window("w1", 100.0 + MOVE_MIN_PX, Some(1))]);
+    assert!(same_layout(&held, &nudged));
+    assert!(!same_layout(&held, &moved));
+}
+
+#[test]
+fn a_resize_shorter_than_the_minimum_is_not_a_layout_change() {
+    let held = desk(vec![window("w1", 100.0, Some(1))]);
+    let mut nudged = held.clone();
+    nudged.windows[0].rect.width += MOVE_MIN_PX - 0.5;
+    let mut grown = held.clone();
+    grown.windows[0].rect.height += MOVE_MIN_PX + 8.0;
+    assert!(same_layout(&held, &nudged));
+    assert!(!same_layout(&held, &grown));
+}
+
+#[test]
+fn a_short_move_out_of_a_fence_is_a_layout_change() {
+    // The title bar middle is at x = left + 320; the fence ends at x = 400.
+    let mut held = desk(vec![window("w1", 70.0, Some(1))]);
+    held.fences.push(DeskFence {
+        id: "f1".into(),
+        rect: DeskRect {
+            left: 0.0,
+            top: 0.0,
+            width: 400.0,
+            height: 600.0,
+        },
+        ..Default::default()
+    });
+    let mut out = held.clone();
+    out.windows[0].rect.left = 90.0;
+    assert!(!same_layout(&held, &out));
+}
+
+#[test]
 fn a_done_mark_is_not_a_layout_change() {
     let held = desk(vec![window("w1", 100.0, Some(1))]);
     let mut after = held.clone();

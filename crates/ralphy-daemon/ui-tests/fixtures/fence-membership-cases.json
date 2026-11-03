@@ -1,0 +1,74 @@
+[
+  {
+    "name": "the title bar inside the first fence",
+    "fences": [
+      { "id": "a", "rect": { "left": 0, "top": 0, "width": 100, "height": 100 } },
+      { "id": "b", "rect": { "left": 100, "top": 0, "width": 100, "height": 100 } }
+    ],
+    "rect": { "left": 10, "top": 10, "width": 20, "height": 20 },
+    "fence": "a"
+  },
+  {
+    "name": "the title bar inside the second fence",
+    "fences": [
+      { "id": "a", "rect": { "left": 0, "top": 0, "width": 100, "height": 100 } },
+      { "id": "b", "rect": { "left": 100, "top": 0, "width": 100, "height": 100 } }
+    ],
+    "rect": { "left": 150, "top": 10, "width": 20, "height": 20 },
+    "fence": "b"
+  },
+  {
+    "name": "outside every fence",
+    "fences": [{ "id": "a", "rect": { "left": 0, "top": 0, "width": 100, "height": 100 } }],
+    "rect": { "left": 300, "top": 300, "width": 20, "height": 20 },
+    "fence": null
+  },
+  {
+    "name": "no fences",
+    "fences": [],
+    "rect": { "left": 10, "top": 10, "width": 20, "height": 20 },
+    "fence": null
+  },
+  {
+    "name": "a point on a shared edge belongs to the right fence",
+    "fences": [
+      { "id": "a", "rect": { "left": 0, "top": 0, "width": 100, "height": 100 } },
+      { "id": "b", "rect": { "left": 100, "top": 0, "width": 100, "height": 100 } }
+    ],
+    "rect": { "left": 90, "top": 10, "width": 20, "height": 20 },
+    "fence": "b"
+  },
+  {
+    "name": "a point on the far edge of the last fence is outside",
+    "fences": [{ "id": "a", "rect": { "left": 0, "top": 0, "width": 100, "height": 100 } }],
+    "rect": { "left": 90, "top": 10, "width": 20, "height": 20 },
+    "fence": null
+  },
+  {
+    "name": "the body inside and the title bar above the fence is free",
+    "fences": [{ "id": "a", "rect": { "left": 0, "top": 100, "width": 600, "height": 600 } }],
+    "rect": { "left": 50, "top": 70, "width": 400, "height": 300 },
+    "fence": null
+  },
+  {
+    "name": "the title bar inside and the centre outside belongs to the fence",
+    "fences": [{ "id": "a", "rect": { "left": 0, "top": 0, "width": 600, "height": 100 } }],
+    "rect": { "left": 50, "top": 60, "width": 400, "height": 300 },
+    "fence": "a"
+  },
+  {
+    "name": "a rect lower than the title bar is read at half its height",
+    "fences": [{ "id": "a", "rect": { "left": 0, "top": 0, "width": 100, "height": 25 } }],
+    "rect": { "left": 10, "top": 10, "width": 20, "height": 20 },
+    "fence": "a"
+  },
+  {
+    "name": "overlapping fences: the first one wins",
+    "fences": [
+      { "id": "a", "rect": { "left": 0, "top": 0, "width": 300, "height": 300 } },
+      { "id": "b", "rect": { "left": 0, "top": 0, "width": 100, "height": 100 } }
+    ],
+    "rect": { "left": 10, "top": 10, "width": 20, "height": 20 },
+    "fence": "a"
+  }
+]

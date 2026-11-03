@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use super::{DeskRecord, DeskStore};
+use super::{DeskRecord, DeskRect, DeskStore};
 
 /// How many versions are kept.
 pub const HISTORY_MAX: usize = 50;
@@ -85,41 +85,68 @@ impl From<&Version> for VersionInfo {
     }
 }
 
+/// An edge that moves by less than this many px is an adjustment, not a layout
+/// change: about one title bar (`--row-h`, 33 px).
+pub const MOVE_MIN_PX: f64 = 32.0;
+
 /// The desk with every field that changes without a layout change cleared:
 /// `ts` and `sessionId` (each reconnect rewrites both), the generation and
-/// the `rev`, the sub-pixel part of each rect, the view state `max`, and the
-/// `doneMark` request, which the daemon clears by itself.
+/// the `rev`, the view state `max`, the `doneMark` request, which the daemon
+/// clears by itself, and the rects, which [`same_layout`] compares apart.
 fn layout_of(desk: &DeskStore) -> DeskStore {
     let mut d = desk.clone();
     d.generation = 0;
     d.rev = 0;
-    let round = |r: &mut super::DeskRect| {
-        r.left = r.left.round();
-        r.top = r.top.round();
-        r.width = r.width.round();
-        r.height = r.height.round();
-    };
     for w in &mut d.windows {
         w.ts = 0;
         w.session_id = None;
         w.max = false;
         w.done_mark = false;
-        round(&mut w.rect);
+        w.rect = DeskRect::default();
     }
     for f in &mut d.fences {
         f.ts = 0;
-        round(&mut f.rect);
+        f.rect = DeskRect::default();
     }
     for n in &mut d.notes {
         n.ts = 0;
-        round(&mut n.rect);
+        n.rect = DeskRect::default();
     }
     d
 }
 
-/// Whether two desks show the same layout.
+fn rects_of(desk: &DeskStore) -> impl Iterator<Item = &DeskRect> {
+    let windows = desk.windows.iter().map(|w| &w.rect);
+    let fences = desk.fences.iter().map(|f| &f.rect);
+    windows
+        .chain(fences)
+        .chain(desk.notes.iter().map(|n| &n.rect))
+}
+
+fn edges_near(a: &DeskRect, b: &DeskRect) -> bool {
+    let near = |p: f64, q: f64| (p - q).abs() < MOVE_MIN_PX;
+    near(a.left, b.left)
+        && near(a.top, b.top)
+        && near(a.left + a.width, b.left + b.width)
+        && near(a.top + a.height, b.top + b.height)
+}
+
+/// The fence that holds each console, then each note card.
+fn fences_held(desk: &DeskStore) -> Vec<Option<&str>> {
+    let windows = desk.windows.iter().map(|w| &w.rect);
+    windows
+        .chain(desk.notes.iter().map(|n| &n.rect))
+        .map(|r| super::membership::fence_of(&desk.fences, r))
+        .collect()
+}
+
+/// Whether two desks show the same layout: the same records, every edge
+/// within [`MOVE_MIN_PX`] of its place, and every console and note card in
+/// the same fence.
 pub fn same_layout(a: &DeskStore, b: &DeskStore) -> bool {
     layout_of(a) == layout_of(b)
+        && rects_of(a).zip(rects_of(b)).all(|(p, q)| edges_near(p, q))
+        && fences_held(a) == fences_held(b)
 }
 
 fn is_empty(desk: &DeskStore) -> bool {
