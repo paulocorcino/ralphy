@@ -16,7 +16,9 @@ use super::*;
 use crate::auth::{AuthPolicy, AuthState};
 use crate::peer::telegram_claim::{claim_once, Claimed, Claimer};
 use crate::peer::{self, PeerDescriptor, PEER_PROTOCOL_VERSION};
+use crate::presence_board;
 use crate::protocol;
+use crate::telegram_state::SharedClaim;
 
 const MAIN: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const PEER: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
