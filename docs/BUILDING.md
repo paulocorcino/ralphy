@@ -353,18 +353,34 @@ cargo check --workspace                  # moves Cargo.lock with them
 Tag candidates as `v0.1.0-rc.N` — with the dot. The comparator normalizes both
 spellings, but the dotted one is what orders correctly without help.
 
-To cut a release: fold the fragments, bump the versions, commit, then push the tag.
+To cut a release: fold the fragments and bump the versions on a branch, test
+it, merge it by a pull request, then tag the merge commit. `main` takes no
+direct push: a ruleset requires a pull request and the checks of `ci.yml`.
 
 ```bash
+git switch -c release/0.1.0-rc.20 origin/main
 cargo run -p xtask -- changelog --release v0.1.0-rc.20
 cargo run -p xtask -- bump 0.1.0-rc.20
 cargo check --workspace
 git add -A                                   # NOT `commit -am`: see below
 git commit -m "chore(release): 0.1.0-rc.20"
-git push
-git tag v0.1.0-rc.20
+git push -u origin release/0.1.0-rc.20
+gh workflow run release.yml --ref release/0.1.0-rc.20   # the tests of all three platforms
+gh pr create --fill
+# after the merge:
+git fetch origin
+git tag v0.1.0-rc.20 "$(gh pr view release/0.1.0-rc.20 --json mergeCommit -q .mergeCommit.oid)"
 git push origin v0.1.0-rc.20
 ```
+
+**Tag the merge commit of the release pull request, not the tip of `main`.**
+A pull request merged after it brings code whose fragment the fold did not
+read, so its change would ship without a line in the release notes.
+
+**Run the release workflow on the branch before the merge.** A pull request
+builds and tests no product crate, so this run is the first time the suite
+runs on Linux, macOS and Windows. It publishes nothing: without a tag it only
+uploads the archives as run artifacts.
 
 **`git add -A`, not `git commit -am`.** `-a` stages modifications and deletions of
 *tracked* files only. The fold deletes the fragments (tracked, so staged) and
