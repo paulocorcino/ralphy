@@ -15,9 +15,12 @@ on:
     - cron: "30 5 * * 2"
   workflow_dispatch:
 
+# A new commit cancels the run of an older one only on a pull request. On
+# main each merge is analyzed to the end: the Rust analysis takes 12 min and
+# runs only there, so merges 8 min apart cancelled it three times in a row.
 concurrency:
   group: codeql-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
