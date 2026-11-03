@@ -307,16 +307,28 @@ pub fn is_not_found(e: &anyhow::Error) -> bool {
     })
 }
 
-/// The newest version that can be read. One that cannot is skipped with a
-/// warning: a damaged file must not stop the history.
-fn newest(dir: &Path) -> Result<Option<Version>> {
+/// The two newest versions that can be read, newest first. One that cannot is
+/// skipped with a warning: a damaged file must not stop the history.
+fn newest_two(dir: &Path) -> Result<(Option<Version>, Option<Version>)> {
+    let mut found = Vec::with_capacity(2);
     for id in ids(dir)?.into_iter().rev() {
         match load(dir, id) {
-            Ok(v) => return Ok(Some(v)),
+            Ok(v) => found.push(v),
             Err(e) => tracing::warn!(error = %format!("{e:#}"), "desk version skipped"),
         }
+        if found.len() == 2 {
+            break;
+        }
     }
-    Ok(None)
+    let mut found = found.into_iter();
+    Ok((found.next(), found.next()))
+}
+
+/// Whether a change that goes into `newest` brings the desk back to the
+/// version under it: the change of `newest` was undone, so it is no longer a
+/// version. Only a `change` version: the others mark a restore.
+fn undoes(newest: &Version, previous: Option<&Version>, after: &DeskStore) -> bool {
+    newest.reason == Reason::Change && previous.is_some_and(|p| same_layout(&p.desk, after))
 }
 
 fn write(dir: &Path, version: &Version) -> Result<()> {
@@ -360,12 +372,18 @@ pub fn append(dir: &Path, desk: &DeskStore, reason: Reason, now: i64) -> Result<
 }
 
 /// Record a desk write from `before` to `after` at `now`, by [`capture_step`].
+/// An overwrite that [`undoes`] the newest version deletes it instead.
 pub fn capture(dir: &Path, before: &DeskStore, after: &DeskStore, now: i64) -> Result<()> {
-    let newest = newest(dir)?;
+    let (newest, previous) = newest_two(dir)?;
     match capture_step(newest.as_ref(), before, after, now) {
         Step::Nothing => Ok(()),
         Step::Overwrite => {
             let mut v = newest.context("an overwrite needs a newest version")?;
+            if undoes(&v, previous.as_ref(), after) {
+                let path = file_of(dir, v.id);
+                return std::fs::remove_file(&path)
+                    .with_context(|| format!("deleting {}", path.display()));
+            }
             v.desk = after.clone();
             v.desk.generation = 0;
             v.desk.rev = 0;

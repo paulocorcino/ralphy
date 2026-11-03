@@ -216,6 +216,31 @@ fn an_overwrite_keeps_the_start_and_moves_the_save_time() {
 }
 
 #[test]
+fn a_change_undone_within_the_minute_leaves_no_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = desk(vec![window("w1", 100.0, Some(1))]);
+    let b = desk(vec![window("w1", 300.0, Some(1))]);
+    append(dir.path(), &a, Reason::Change, NOW).unwrap();
+    capture(dir.path(), &a, &b, NOW + 61_000).unwrap();
+    capture(dir.path(), &b, &a, NOW + 90_000).unwrap();
+    let rows = list(dir.path()).unwrap();
+    assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![NOW]);
+}
+
+#[test]
+fn a_restore_undone_within_the_minute_stays_a_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = desk(vec![window("w1", 100.0, Some(1))]);
+    let b = desk(vec![window("w1", 300.0, Some(1))]);
+    append(dir.path(), &a, Reason::BeforeRestore, NOW).unwrap();
+    append(dir.path(), &b, Reason::Restore, NOW + 1).unwrap();
+    capture(dir.path(), &b, &a, NOW + 30_000).unwrap();
+    let rows = list(dir.path()).unwrap();
+    assert_eq!(rows.len(), 2, "the restore row stays");
+    assert_eq!(rows[0].reason, Reason::Restore);
+}
+
+#[test]
 fn the_history_keeps_the_fifty_newest_versions() {
     let dir = tempfile::tempdir().unwrap();
     for i in 0..(HISTORY_MAX as i64 + 1) {
