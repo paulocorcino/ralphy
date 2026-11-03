@@ -3,7 +3,7 @@
 //! the first fence that holds the middle of its title bar. The workbench owns
 //! this rule (`fenceOf` in `assets/ui/wb-geometry.ts`); this is its second
 //! spelling, for the desk history only, and the shared fixture
-//! `ui-tests/fixtures/fence-membership-cases.json` keeps the two the same.
+//! `ui-tests/fixtures/api-desk--fence-membership-cases.json` keeps the two the same.
 
 use super::{DeskFence, DeskRect};
 
@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn every_shared_case_finds_the_fence_the_workbench_finds() {
         let cases: Vec<Case> = serde_json::from_str(include_str!(
-            "../../ui-tests/fixtures/fence-membership-cases.json"
+            "../../ui-tests/fixtures/api-desk--fence-membership-cases.json"
         ))
         .expect("the shared fixture is valid JSON");
         assert!(cases.len() >= 8, "the table lost cases: {}", cases.len());

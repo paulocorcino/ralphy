@@ -372,7 +372,7 @@ pub fn append(dir: &Path, desk: &DeskStore, reason: Reason, now: i64) -> Result<
 }
 
 /// Record a desk write from `before` to `after` at `now`, by [`capture_step`].
-/// An overwrite that [`undoes`] the newest version deletes it instead.
+/// An overwrite that undoes the newest version deletes it instead.
 pub fn capture(dir: &Path, before: &DeskStore, after: &DeskStore, now: i64) -> Result<()> {
     let (newest, previous) = newest_two(dir)?;
     match capture_step(newest.as_ref(), before, after, now) {

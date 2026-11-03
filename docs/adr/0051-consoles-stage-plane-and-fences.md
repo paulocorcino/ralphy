@@ -281,8 +281,8 @@ still read the one membership fold.)*
 decide whether a short move is a layout change (ADR-0050, desk history
 amendment). The workbench's `fenceOf` stays the owner of the rule. The daemon's
 copy is `desk::membership`, and the table of cases
-`ui-tests/fixtures/fence-membership-cases.json` is read by the tests of both,
-so the two cannot drift apart.)*
+`ui-tests/fixtures/api-desk--fence-membership-cases.json` is read by the
+tests of both, so the two cannot drift apart.)*
 
 ### 7. Arrange is per fence, and the fence list is the navigation
 

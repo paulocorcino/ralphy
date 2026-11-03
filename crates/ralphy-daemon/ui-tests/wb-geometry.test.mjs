@@ -21,6 +21,11 @@ function load() {
   return WBGeometry;
 }
 
+function fixture(name) {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return JSON.parse(readFileSync(join(here, "fixtures", name + ".json"), "utf8"));
+}
+
 const MARGIN = 200;
 const FENCE_VIEW = { width: 1400, height: 900 };
 const ORIGIN = { left: 0, top: 0 };
@@ -258,8 +263,7 @@ test("fenceOf answers the fence holding the rect's title bar point, and null out
 // languages, held by one file.
 test("every shared membership case finds the fence the daemon finds", () => {
   const { fenceOf } = load();
-  const path = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fence-membership-cases.json");
-  const cases = JSON.parse(readFileSync(path, "utf8"));
+  const cases = fixture("api-desk--fence-membership-cases");
   assert.ok(cases.length >= 8, `the table lost cases: ${cases.length}`);
   for (const c of cases) {
     assert.equal(fenceOf(c.fences, c.rect)?.id ?? null, c.fence, c.name);
