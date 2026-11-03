@@ -17,7 +17,27 @@ import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
-import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults } from "./wb-settings.ts";
+import { WB_SETTINGS, WB_TRISTATE } from "./wb-settings.ts";
+
+// The keys this BROWSER owns. Derived from the schema rather than listed, so a
+// new client-scoped item cannot be added and then routed to `config.set` by an
+// edit that forgot about it.
+export function wbClientKeys(): Set<string> {
+  const out = new Set<string>();
+  for (const sec of WB_SETTINGS) {
+    if (sec.scope === "client") for (const it of sec.items) out.add(it.key);
+  }
+  return out;
+}
+
+// Seed a flat {key: default} map the Alpine component keeps its live values in.
+export function wbSettingsDefaults(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const sec of WB_SETTINGS) {
+    for (const it of sec.items) out[it.key] = it.default;
+  }
+  return out;
+}
 
 /** One row of the Desk history section (`WBDeskHistory.rows`). */
 type DeskRow = ReturnType<typeof WBDeskHistory.rows>[number];
