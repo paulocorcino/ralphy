@@ -21,9 +21,9 @@
 // field of the desk.
 //
 // Four writers share the key (the console's offset, the shell's tabs, the
-// settings toggle, the attention list's notification switch), which is why
-// `patch` is read-modify-write: any one of them
-// writing the whole record would clobber the others'.
+// settings toggles, the notification switch of `WBNotify`), which is why
+// `patch` is read-modify-write: any one of them writing the whole record
+// would clobber the others'.
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 
 /** A stored file tab: what `persistView` in `app.ts` writes. */
@@ -134,7 +134,7 @@ export const WBView = (function () {
         // "no slot" — `WBSplit.fromStored` folds the survivor against the tabs.
         split: splitOf(parsed.split),
         columns: columnsOf(parsed.columns),
-        // "Notify me in this browser" (the attention list): a stored `true`
+        // "Notify me in this browser" (Settings, Notifications): a stored `true`
         // only, so a corrupt record never turns notifications on.
         notify: parsed.notify === true,
         columnDir: columnDirOf(parsed.columnDir),

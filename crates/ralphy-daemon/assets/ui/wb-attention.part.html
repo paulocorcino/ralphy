@@ -27,12 +27,5 @@
                       title="Dismiss" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
             </div>
           </template>
-          <div class="attention-notify" x-show="canNotify()">
-            <span>Notify me in this browser</span>
-            <label class="switch">
-              <input type="checkbox" :checked="notifyOn" @change="setNotify($event.target.checked).then(() => ($event.target.checked = notifyOn))" />
-              <span class="switch-track"></span>
-            </label>
-          </div>
         </div>
       </div>

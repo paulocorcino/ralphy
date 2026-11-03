@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { bindingNames, partMarkup } from "./harness.mjs";
-import { LINK_BEAT_MS, LINK_TRIES, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
+import { LINK_BEAT_MS, LINK_TRIES, WBNotify, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
@@ -266,39 +266,34 @@ test("the notification is off by default", async (t) => {
   const { shown, asked, stored, view } = notifications("default", "granted");
   data.init();
   await data.read();
-  assert.equal(data.notifyOn, false, "off until the operator turns it on");
+  assert.equal(WBNotify.isOn(), false, "off until the operator turns it on");
   assert.deepEqual(asked, [], "no permission is asked before the switch");
   assert.equal(stored.size, 0);
   assert.deepEqual(shown, []);
-  assert.match(partMarkup(PART), /Notify me in this browser/);
+  assert.doesNotMatch(partMarkup(PART), /Notify me/, "the switch is in Settings, not in the panel");
 
-  await data.setNotify(true);
+  assert.equal(await WBNotify.turn(true), true);
   assert.equal(asked.length, 1, "turning it on asks once");
-  assert.equal(data.notifyOn, true);
+  assert.equal(WBNotify.isOn(), true);
   assert.equal(view().notify, true, "the choice is kept on this device");
-  await data.setNotify(false);
-  assert.equal(data.notifyOn, false);
+  assert.equal(await WBNotify.turn(false), false);
+  assert.equal(WBNotify.isOn(), false);
   assert.equal(view().notify, false);
 
   // A browser that already allowed notifications does not turn the switch on
   // by itself; the saved choice does.
   const granted = notifications("granted");
-  data.init();
-  assert.equal(data.notifyOn, false, "nothing saved: off");
+  assert.equal(WBNotify.isOn(), false, "nothing saved: off");
   granted.stored.set(WBView.KEY, JSON.stringify({ v: 1, notify: true }));
-  data.init();
-  assert.equal(data.notifyOn, true, "saved on, and allowed: on");
+  assert.equal(WBNotify.isOn(), true, "saved on, and allowed: on");
 });
 
-test("a refused permission leaves the switch off and says so", async (t) => {
-  const { data } = page(t);
+test("a refused permission leaves the switch off", async (t) => {
+  page(t);
   const { view } = notifications("default", "denied");
-  const flashed = [];
-  data.$store.modals = { flash: (m) => flashed.push(m) };
-  await data.setNotify(true);
-  assert.equal(data.notifyOn, false);
+  assert.equal(await WBNotify.turn(true), false);
+  assert.equal(WBNotify.isOn(), false);
   assert.equal(view().notify, false);
-  assert.equal(flashed.length, 1, "the operator is told");
 });
 
 test("the notification fires only when the tab is hidden", async (t) => {
@@ -306,7 +301,7 @@ test("the notification fires only when the tab is hidden", async (t) => {
   const second = { ...first, id: "console:2", console: "2" };
   const { data } = page(t, { projects: [{ slug: first.repo, name: "plain" }] });
   const { shown } = notifications("granted");
-  await data.setNotify(true);
+  await WBNotify.turn(true);
 
   data.show([]);
   document.hidden = false;
@@ -321,7 +316,7 @@ test("the notification fires only when the tab is hidden", async (t) => {
   data.show([first, second]);
   assert.equal(shown.length, 1, "a request the page already knew shows none");
 
-  await data.setNotify(false);
+  await WBNotify.turn(false);
   data.show([first, second, { ...first, id: "console:3" }]);
   assert.equal(shown.length, 1, "the switch off shows none");
 });
@@ -329,7 +324,7 @@ test("the notification fires only when the tab is hidden", async (t) => {
 test("what is on the page at load is not new", async (t) => {
   const { data } = page(t);
   const { shown } = notifications("granted");
-  await data.setNotify(true);
+  await WBNotify.turn(true);
   document.hidden = true;
   data.show([waitingRow()]);
   assert.deepEqual(shown, []);

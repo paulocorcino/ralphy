@@ -208,15 +208,6 @@
     opacity: 1;
   }
 }
-/* The browser notification switch, under the rows. */
-.attention-notify {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.45rem 0.5rem;
-  font-size: 0.78rem;
-}
 
 /* --- sidebar (project accordion) ------------------------------------------ */
 .side {

@@ -24,9 +24,9 @@
    request also ends when the operator opens that console: the focus moving
    into its window, or a click on its row, dismisses it.
 
-   "Notify me in this browser" is a switch of this device (the per-client
-   view, `wb-client-view.ts`), off until the operator turns it on,
-   which is when the browser is asked for
+   `WBNotify` is the browser notification switch of this device, shown in
+   Settings and kept in the per-client view (`wb-client-view.ts`). It is off
+   until the operator turns it on, which is when the browser is asked for
    permission. With it on, a request id this page did not know before shows
    one browser notification while the tab is hidden.
 
@@ -193,6 +193,20 @@ async function askPermission() {
   return Notification.requestPermission();
 }
 
+/** The browser notification switch of this device (Settings, Notifications). */
+export const WBNotify = {
+  /** On: the operator turned it on here, and the browser allows it. */
+  isOn() {
+    return savedNotify() && canNotify() && Notification.permission === "granted";
+  },
+  /** Turn it on or off; on asks the browser first. Returns the state it ends in. */
+  async turn(on: boolean) {
+    const allowed = on && (await askPermission()) === "granted";
+    saveNotify(allowed);
+    return allowed;
+  },
+};
+
 function postDismiss(id: string) {
   return apiFetch("POST /api/attention/dismiss", {
     headers: { "Content-Type": "application/json" },
@@ -231,9 +245,8 @@ export function wbAttention() {
     // The clock the ages are read at: set at each read, and each minute.
     now: Date.now(),
     _seq: 0,
-    // The switch of this device, and the ids the last list held (`null`
-    // before the first list: what is on the page at load is not new).
-    notifyOn: false,
+    // The ids the last list held (`null` before the first list: what is on
+    // the page at load is not new).
     _known: null as Set<string> | null,
     _dismissing: new Set<string>(),
     // The console the page URL names, until it is shown.
@@ -242,7 +255,6 @@ export function wbAttention() {
     _linkTries: 0,
 
     init() {
-      this.notifyOn = savedNotify() && canNotify() && Notification.permission === "granted";
       void this.read();
       this._link = consoleLinkOf(window.location.search);
       if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
@@ -318,7 +330,7 @@ export function wbAttention() {
       this.requests = requests;
       this.now = Date.now();
       document.title = attentionTitle(this.requests.length);
-      if (known && this.notifyOn && document.hidden) {
+      if (known && document.hidden && WBNotify.isOn()) {
         for (const request of requests) if (!known.has(request.id)) this.announce(request);
       }
     },
@@ -333,23 +345,6 @@ export function wbAttention() {
         tag: request.id,
       });
       note.onclick = () => window.focus();
-    },
-
-    canNotify() {
-      return canNotify();
-    },
-
-    // Turn the switch on or off. On: the browser is asked for permission,
-    // and the switch stays off when the answer is no.
-    async setNotify(on: boolean) {
-      if (!on) {
-        this.notifyOn = false;
-        saveNotify(false);
-        return;
-      }
-      this.notifyOn = (await askPermission()) === "granted";
-      saveNotify(this.notifyOn);
-      if (!this.notifyOn) this.$store.modals.flash("The browser did not allow notifications.");
     },
 
     toggle() {

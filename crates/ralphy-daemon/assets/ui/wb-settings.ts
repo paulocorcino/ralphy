@@ -110,6 +110,24 @@ export const WB_SETTINGS: Section[] = [
     ],
   },
   {
+    id: "notifications",
+    title: "Notifications",
+    icon: "bi-bell",
+    scope: "client",
+    blurb: "Notifications for the requests that wait for you. Saved in this browser only.",
+    items: [
+      {
+        key: "notifications.browser",
+        label: "Notify me in this browser",
+        type: "toggle",
+        default: false,
+        help:
+          "Shows a notification when a new request waits for you and this tab is hidden. " +
+          "The browser asks for permission the first time.",
+      },
+    ],
+  },
+  {
     id: "daemon",
     title: "Daemon",
     icon: "bi-hdd-network",
