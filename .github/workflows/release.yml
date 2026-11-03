@@ -16,11 +16,11 @@ permissions:
   contents: read
 
 jobs:
-  # The Windows and macOS checks run here, not on every pull request
-  # (ci.yml): the Windows tests took 15 min on a pull request and hang at
-  # times (#441), and the gate in AGENTS.md runs locally on Windows; the
-  # macOS job made a pull request 5 min longer. The packages are built only
-  # when all four pass.
+  # The product is built and tested here, on Linux, macOS and Windows, not
+  # on a pull request (ci.yml): a pull request runs only the checks that build
+  # no product crate, and the gate in AGENTS.md runs locally. The Windows
+  # tests hang at times (#441). The packages are built only when all six
+  # jobs pass.
   windows-test:
     name: build · test (windows-latest)
     runs-on: windows-latest
@@ -45,7 +45,7 @@ jobs:
         with:
           tool: cargo-nextest
 
-      # The `ci` profile, as in ci.yml: `release` without its link cost.
+      # The `ci` profile, as in linux-test: `release` without its link cost.
       - name: Build
         run: cargo build --locked --workspace --profile ci --all-targets
 
@@ -67,8 +67,8 @@ jobs:
   windows-install:
     name: install script (windows-latest)
     # The one-line install (ADR-0056 §12) against a fake release packed from
-    # this commit's binary and served on loopback; install.sh is checked in
-    # ci.yml.
+    # this commit's binary and served on loopback; install.sh is checked by
+    # linux-install and macos-install.
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -129,6 +129,85 @@ jobs:
           # refused install above.
           exit 0
 
+  linux-test:
+    name: build · test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    # A wedged test used to consume the whole job budget until the hosted
+    # runner died ("lost communication"), which uploads no log at all. The
+    # Test step carries its own, shorter bound (#441).
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-nextest
+
+      # `--profile ci` is `release` without its ship-only link cost (Cargo.toml):
+      # under `lto`/`codegen-units = 1` the workspace's ~50 test binaries took
+      # over 20 minutes to link. `--all-targets` builds the test binaries here,
+      # so the Test step times tests and a compile blowup never reads as a hang.
+      - name: Build
+        run: cargo build --locked --workspace --profile ci --all-targets
+
+      # The Linux hang has the same signature as memory or disk exhaustion, so
+      # sample both alongside the tests. The sampler runs inside the Test step
+      # because a step killed by its `timeout-minutes` skips the later steps:
+      # only this step's log carries the samples.
+      - name: Test
+        timeout-minutes: 18
+        # PTY tests drive sh on Linux (portable-pty).
+        run: |
+          ( while true; do
+              echo "--- resources $(date -u +%H:%M:%S) ---"
+              free -m | head -2
+              df -h / | tail -1
+              sleep 60
+            done ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null' EXIT
+          cargo nextest run --locked --workspace --cargo-profile ci --no-fail-fast
+
+      - name: Doctests
+        run: cargo test --locked --workspace --profile ci --doc
+
+  linux-install:
+    name: install script (ubuntu-latest)
+    # The one-line install (ADR-0056 §12) against a fake release packed from
+    # this commit's binary and served on loopback, so no real release is read.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - name: Build
+        run: cargo build --locked --bin ralphy
+
+      - name: Lint install.sh
+        run: shellcheck assets/install/install.sh .github/scripts/check-install-sh.sh
+
+      - name: install.sh
+        env:
+          RALPHY_RELEASES_URL: http://127.0.0.1:8765/releases
+          RALPHY_DOWNLOAD_URL: http://127.0.0.1:8765/download
+          RALPHY_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: ./.github/scripts/check-install-sh.sh
+
   macos-test:
     name: build · test (macos-latest)
     runs-on: macos-latest
@@ -148,7 +227,7 @@ jobs:
         with:
           tool: cargo-nextest
 
-      # The `ci` profile, as in ci.yml: `release` without its link cost.
+      # The `ci` profile, as in linux-test: `release` without its link cost.
       - name: Build
         run: cargo build --locked --workspace --profile ci --all-targets
 
@@ -185,7 +264,7 @@ jobs:
 
   macos-install:
     name: install script (macos-latest)
-    # install.sh against a fake release, as ci.yml runs it on Linux, plus the
+    # install.sh against a fake release, as linux-install runs it, plus the
     # launchd agent that RALPHY_DAEMON=1 registers.
     runs-on: macos-latest
     timeout-minutes: 30
@@ -211,7 +290,8 @@ jobs:
 
   build:
     name: Build ${{ matrix.target_name }}
-    needs: [windows-test, windows-install, macos-test, macos-install]
+    needs:
+      [linux-test, linux-install, macos-test, macos-install, windows-test, windows-install]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

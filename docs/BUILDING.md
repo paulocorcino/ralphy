@@ -67,18 +67,16 @@ Two notes for a slow suite, both measured on Windows:
 
 Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
-- **`ci.yml`** — runs on every push to `main` and every PR. It is the source of
-  the gate; AGENTS.md lists the same commands in their local form. A `lint` job
-  checks formatting (`cargo fmt --check`), lints (`cargo clippy --all-targets
-  -D warnings`) and the workbench text (`xtask ui-copy --check`) once on Linux.
+- **`ci.yml`** — runs on every push to `main` and every PR. With the test
+  jobs of `release.yml` it is the source of the gate; AGENTS.md lists the
+  same commands in their local form. It builds and tests no product crate:
+  the suite runs in `release.yml` (below), on Linux, macOS and Windows, so
+  a pull request waits only for checks of a few minutes. A `lint` job checks
+  formatting (`cargo fmt --check`), lints (`cargo clippy --all-targets -D
+  warnings`), the workbench text (`xtask ui-copy --check`) and runs the
+  ratchets in `crates/xtask/tests` (`cargo test -p xtask`), once on Linux.
   A `ui-tests` job runs `node --test crates/ralphy-daemon/ui-tests` and oxlint
-  once on Linux. A `test` matrix builds and runs the suite (via `cargo nextest
-  run`, plus a `cargo test --doc` step for the doctests nextest skips) with the
-  `ci` profile on **`ubuntu-latest`** only, with `--no-fail-fast`. Windows
-  and macOS are not tested on a pull request: their tests run in
-  `release.yml` (below). On a pull request the Windows tests took 15 minutes
-  and hang at times (#441), and the local gate runs on Windows; the macOS
-  job made the run 5 minutes longer. A separate job, `changelog`, runs **on pull
+  once on Linux. A separate job, `changelog`, runs **on pull
   requests only**: it fails when the diff touches the shipped surface
   (`crates/*/src/`, the workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`
@@ -137,16 +135,20 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   and this `BUILDING.md`. Because the prompts and skills are embedded in the binary
   on every platform, those archives are everything a user needs.
 
-  Before any package is built, two Windows jobs must pass. `windows-test`
+  Before any package is built, six jobs must pass. `linux-test` builds and
+  runs the suite (via `cargo nextest run`, plus a `cargo test --doc` step for
+  the doctests nextest skips) with the `ci` profile and `--no-fail-fast`.
+  `linux-install` checks `install.sh` with
+  `.github/scripts/check-install-sh.sh` against a fake release served on
+  loopback. `windows-test`
   builds and runs the suite with the `ci` profile, through
   `.github/scripts/nextest-windows.ps1`, which bounds the run at 14 minutes
   and kills what a hung test left alive (#441), and runs the doctests.
   `windows-install` checks `install.ps1` against a fake release served on
-  loopback, as `ci.yml` does for `install.sh`. Two macOS jobs must pass
-  too. `macos-test` runs the suite and the doctests, and registers, probes
-  and removes the launchd autostart agent: the one place `launchctl` runs
-  for real. `macos-install` runs `.github/scripts/check-install-sh.sh`, the
-  same `install.sh` check that `ci.yml` runs on Linux. A failure stops the
+  loopback. `macos-test` runs the suite and the doctests, and registers,
+  probes and removes the launchd autostart agent: the one place `launchctl`
+  runs for real. `macos-install` runs the same `install.sh` check as
+  `linux-install`. A failure stops the
   release; fix it on `main` and tag again. To check a branch before a tag,
   run the workflow by hand: `gh workflow run release.yml --ref <branch>`
   builds the packages as artifacts and publishes nothing.
