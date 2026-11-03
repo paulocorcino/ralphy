@@ -545,3 +545,15 @@ These cases are not measured, and are accepted for now:
   agent or by a `git pull`;
 - folders above the one with `.git`, which Codex also reads when the user
   sets `project_root_markers` to a marker that is higher up.
+
+## Amendment 2026-11-03 — D7: the Telegram token in the daemon store
+
+The Telegram token now lives in the daemon store, `<store>/telegram.toml`
+(ADR-0007 D2, amendment of 2026-11-03), written owner-only like every secret
+there. The one-time copy of the old file is written owner-only too, and only
+into the operator's own store, so a test's store never holds the operator's
+token. The old file is kept until `ralphy telegram disable` or
+`ralphy uninstall --purge` removes it, as a second owner-only copy. The reason
+of an `off` Telegram state and the path the daemon reports never hold the
+token: a reason is a fixed word, never the parser's error text, which quotes
+the line it failed on.

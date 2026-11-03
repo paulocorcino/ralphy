@@ -304,3 +304,49 @@ open for the console's whole life and keep the count at the top of the page
 above zero. Such a run has no agent state, and its log says why. The user's own
 hooks in `~/.codex` still run under the flag: they are the operator's own
 choice (ADR-0072, amendment of 2026-10-29).
+
+## Amendment 2026-11-03 — D14: the store holds the bot, "off" says why, and the main sends a bot-less peer's runs
+
+Decided by Paulo on 2026-11-03, after a daemon restarted by the update script
+sent no message for a day.
+
+The daemon read its bot from `<store>/telegram.toml` whenever
+`RALPHY_DAEMON_DIR` was set, and from the config of `ralphy telegram setup`
+otherwise. The update script sets that variable to the operator's own store,
+so the restarted daemon read a file that nothing writes, and was `off`. Its
+peers were then not claimed, so no daemon of the local fleet sent anything,
+and nothing said so.
+
+- **A1. The bot is read from the daemon store** (ADR-0007 D2, amendment of
+  2026-11-03): `<store>/telegram.toml`, the same file for the daemon, its
+  runs, `ralphy telegram` and `ralphy doctor`. `RALPHY_DAEMON_DIR` only says
+  where the store is. A scratch store has no bot because it has no such file.
+- **A2. `off` carries a reason:** `not-set-up` (no file, or no token),
+  `no-chat`, `unreadable`, `legacy-config` (the old file is there and could
+  not be copied) or `no-store`. The reason is a closed set and never holds
+  error text, because a TOML error quotes the line it failed on. The JSON is
+  `{"state":"off","why":"no-chat"}`; an older daemon ignores `why`, and a
+  newer one reads an older `{"state":"off"}` as a reason that is not known.
+  The daemon logs its state and the file it reads when it starts and each
+  time the state changes.
+- **A3. The operator sees the state of the local fleet:** `ralphy doctor`
+  prints this daemon's state with its reason and fix, and one line for each
+  peer. Settings shows the same view, read only, with the command that sets
+  the bot up. The page never sees a token.
+- **A4. The main sends the run requests of a peer that has no bot.** A run
+  sends its own message with the bot of its own machine, so a run on a peer
+  without one reached no one. The peer's `?local=1` attention list says
+  whether its machine has a bot (`own_bot`). When it says `false`, the main
+  sends that peer's `run-waiting` and `run-finished` requests, under the
+  same rules as a console's (two minutes, the operator not present). A peer
+  with a bot, and an older peer that does not say, keep sending their own
+  runs, so a request is still one message. A run of the main itself is
+  never sent by the daemon: the run sends it at once. The field is added to
+  the reply; the peer protocol version does not change.
+
+Compliance: A1 by the tests of `telegram_state/legacy.rs` (a scratch store
+never takes the old file; the operator's store takes it owner-only and keeps
+its own) and `disable_removes_both_configs`; A2 by the reason tests of
+`telegram_state.rs` and `routes/api_telegram`; A3 by the doctor tests and
+`ui-tests/wb-telegram-status.test.mjs`; A4 by
+`attention/telegram/peer_tests.rs`.
