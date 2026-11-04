@@ -24,11 +24,9 @@
    request also ends when the operator opens that console: the focus moving
    into its window, or a click on its row, dismisses it.
 
-   `WBNotify` is the browser notification switch of this device, shown in
-   Settings and kept in the per-client view (`wb-client-view.ts`). It is off
-   until the operator turns it on, which is when the browser is asked for
-   permission. With it on, a request id this page did not know before shows
-   one browser notification while the tab is hidden.
+   With the notification switch on (`WBNotify`, wb-notify.ts), a request id
+   this page did not know before shows one browser notification while the
+   tab is hidden.
 
    A link in a Telegram message opens the page with
    `?console=<daemon_id>/<session id>`: once the session list is read, that
@@ -40,8 +38,8 @@
 import { component } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { sendWindow } from "./wb-events.ts";
-import { WBView } from "./wb-client-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import { WBNotify, canNotify } from "./wb-notify.ts";
 import { WBProject } from "./wb-project.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
@@ -170,42 +168,6 @@ export function actionTitle(action: AttentionAction) {
     }
   }
 }
-
-/** The saved choice; off when nothing is saved or the store cannot be read. */
-function savedNotify() {
-  return WBView.read()?.notify === true;
-}
-
-/** Keep the choice on this device. A store that cannot be written keeps the
- * switch working until the page is closed. */
-function saveNotify(on: boolean) {
-  WBView.patch({ notify: on });
-}
-
-function canNotify() {
-  return typeof Notification !== "undefined";
-}
-
-/** Ask the browser for permission to notify, unless it already answered. */
-async function askPermission() {
-  if (!canNotify()) return "denied";
-  if (Notification.permission !== "default") return Notification.permission;
-  return Notification.requestPermission();
-}
-
-/** The browser notification switch of this device (Settings, Notifications). */
-export const WBNotify = {
-  /** On: the operator turned it on here, and the browser allows it. */
-  isOn() {
-    return savedNotify() && canNotify() && Notification.permission === "granted";
-  },
-  /** Turn it on or off; on asks the browser first. Returns the state it ends in. */
-  async turn(on: boolean) {
-    const allowed = on && (await askPermission()) === "granted";
-    saveNotify(allowed);
-    return allowed;
-  },
-};
 
 function postDismiss(id: string) {
   return apiFetch("POST /api/attention/dismiss", {

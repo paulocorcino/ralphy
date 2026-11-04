@@ -17,7 +17,7 @@ import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
-import { WBNotify } from "./wb-attention.ts";
+import { WBNotify } from "./wb-notify.ts";
 import { WB_SETTINGS, WB_TRISTATE } from "./wb-settings.ts";
 
 // The keys this BROWSER owns. Derived from the schema rather than listed, so a
