@@ -122,6 +122,54 @@ test("the notification switch is saved in this browser, and a refusal turns it o
   assert.deepEqual(calls, [], "a per-browser choice must not reach the daemon");
 });
 
+// The test button shows one notification whether the switch is on or off,
+// and says why when the browser cannot show it.
+test("the test notification is shown with the switch off, and a block says why", async (t) => {
+  const saved = ["localStorage", "Notification"].map((n) => [n, Object.getOwnPropertyDescriptor(globalThis, n)]);
+  t.after(() => {
+    for (const [n, d] of saved) {
+      if (d) Object.defineProperty(globalThis, n, d);
+      else delete globalThis[n];
+    }
+  });
+  const map = new Map();
+  globalThis.localStorage = { getItem: (k) => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)) };
+  const shown = [];
+  let answer = "granted";
+  globalThis.Notification = class {
+    static permission = "default";
+    static async requestPermission() {
+      return answer;
+    }
+    constructor(title, options) {
+      shown.push({ title, ...options });
+    }
+  };
+  const { scope: s, window } = loadComponent("wbSettingsDialog", {
+    magics: { $store: { modals: { flash: () => {} }, projects: { openSlug: null } } },
+  });
+  window.isSecureContext = true;
+  assert.equal(s.notifyTestNote, "");
+
+  await s.testNotify();
+  assert.deepEqual(
+    shown.map((n) => [n.title, n.tag]),
+    [["Ralphy", "ralphy-test"]],
+  );
+  assert.match(s.notifyTestNote, /took the test notification/);
+  assert.equal(JSON.parse(map.get("wb.view.v1") || "{}").notify, undefined, "the switch is not touched");
+
+  answer = "denied";
+  await s.testNotify();
+  assert.equal(shown.length, 1, "a blocked page shows none");
+  assert.match(s.notifyTestNote, /blocks notifications/);
+
+  delete globalThis.Notification;
+  window.isSecureContext = false;
+  await s.testNotify();
+  assert.match(s.notifyTestNote, /https:\/\/ address or from localhost/);
+});
+
 // The console text size is the same `font` field the key bar's A−/A+ write, so
 // the setting and the buttons never disagree. `wb-client-view.js` reads a BARE
 // `localStorage`; a Map-backed one stands in for the browser's for this test.
