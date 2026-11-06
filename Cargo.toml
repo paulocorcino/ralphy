@@ -65,7 +65,7 @@ console = "0.16"
 ureq = { version = "3", features = ["json"] }
 directories = "6"
 toml = "1.1"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 ulid = "1"
 semver = "1"
 sha2 = "0.10"
