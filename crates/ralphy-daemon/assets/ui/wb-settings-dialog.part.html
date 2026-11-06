@@ -158,6 +158,18 @@
                     </template>
                   </div>
                 </template>
+                <!-- notifications: a test that shows one notification now,
+                     whether the switch is on or not -->
+                <template x-if="sec.id === 'notifications'">
+                  <div class="notify-test">
+                    <div class="sec-actions">
+                      <button class="btn" @click="testNotify()" title="Show one notification now">
+                        <i class="bi bi-bell"></i> Send a test notification
+                      </button>
+                    </div>
+                    <p class="sec-note" x-show="notifyTestNote" x-text="notifyTestNote"></p>
+                  </div>
+                </template>
                 <!-- telegram: its own body, the wbTelegramStatus component
                      (wb-telegram-status.ts), built only while the section is
                      open. Read only: the bot is set up in a terminal. -->

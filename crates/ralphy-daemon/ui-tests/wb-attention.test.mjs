@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { bindingNames, partMarkup } from "./harness.mjs";
-import { LINK_BEAT_MS, LINK_TRIES, WBNotify, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
+import { LINK_BEAT_MS, LINK_TRIES, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
+import { WBNotify } from "../assets/ui/wb-notify.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 

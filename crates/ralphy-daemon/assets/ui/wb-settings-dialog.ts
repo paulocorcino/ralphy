@@ -17,7 +17,7 @@ import type { AlpineMagics } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
-import { WBNotify } from "./wb-attention.ts";
+import { WBNotify, notifyTestText } from "./wb-notify.ts";
 import { WB_SETTINGS, WB_TRISTATE } from "./wb-settings.ts";
 
 // The keys this BROWSER owns. Derived from the schema rather than listed, so a
@@ -163,6 +163,11 @@ export function settingsDialog() {
     settingsError: "",
     closeSettings() {
       this.settingsOpen = false;
+    },
+    // What the last test notification ended in ("" before one).
+    notifyTestNote: "",
+    async testNotify() {
+      this.notifyTestNote = notifyTestText(await WBNotify.test(), window.isSecureContext);
     },
     // The "Desk history" section (ADR-0050 amendment 2026-10-04): read each
     // time it opens. `loaded` is set only by a list the daemon served, so a
