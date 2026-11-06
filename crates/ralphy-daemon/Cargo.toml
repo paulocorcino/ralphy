@@ -160,7 +160,7 @@ tokio = { version = "1", features = ["test-util"] }
 # crate already depends on it, so it adds no crate of its own.
 anyhow.workspace = true
 swc_ts_fast_strip = "59"
-swc_common = "26"
+swc_common = "27"
 swc_ecma_ast = "29"
 swc_ecma_parser = "46"
 
