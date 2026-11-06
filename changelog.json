@@ -1,6 +1,63 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.43",
+      "date": "2026-11-06",
+      "announce": true,
+      "entries": [
+        {
+          "id": "attention-panel-rows",
+          "kind": "feature",
+          "text": "The attention list shows one short row per request, and a click opens it. The notification switch is now in Settings."
+        },
+        {
+          "id": "notify-test",
+          "kind": "feature",
+          "text": "Settings, Notifications has a button that sends a test notification, and says why the browser did not show it."
+        },
+        {
+          "id": "810",
+          "kind": "fix",
+          "text": "The Claude guard now judges commands behind env, time, xargs or a nested shell, and commands run with the PowerShell tool."
+        },
+        {
+          "id": "841",
+          "kind": "fix",
+          "text": "A session that ends well keeps its result, even when its log quotes a login error."
+        },
+        {
+          "id": "842-gpu-hidden-tab",
+          "kind": "fix",
+          "text": "Consoles hidden behind a file tab no longer keep a GPU context."
+        },
+        {
+          "id": "checkout-confined-root",
+          "kind": "fix",
+          "text": "A folder that links out of the project is no longer watched, and a worktree folder that does so is not read."
+        },
+        {
+          "id": "console-tab-name",
+          "kind": "fix",
+          "text": "A console tab now takes the name of a console it holds, after the console it opened for leaves it."
+        },
+        {
+          "id": "desk-history-noise",
+          "kind": "fix",
+          "text": "Desk history saves a version only for a real layout change, not for a small move, a maximize or a done mark."
+        },
+        {
+          "id": "telegram-store-config",
+          "kind": "fix",
+          "text": "Telegram works again after an update; doctor and Settings say why a daemon sends none, and runs on a peer with no bot reach Telegram."
+        },
+        {
+          "id": "worktree-delete-console-list",
+          "kind": "fix",
+          "text": "A worktree being deleted is no longer offered in a console's worktree menu."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.42",
       "date": "2026-11-01",
       "announce": true,
