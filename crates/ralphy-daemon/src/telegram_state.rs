@@ -18,6 +18,7 @@ use anyhow::Result;
 use ralphy_telegram::config::TelegramConfig;
 
 pub mod legacy;
+pub mod store;
 
 /// What this daemon does with a console request that waits for an operator
 /// who is away. Matched exhaustively.
