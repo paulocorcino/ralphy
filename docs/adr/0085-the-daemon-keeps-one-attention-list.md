@@ -353,3 +353,35 @@ its own) and `disable_removes_both_configs`; A2 by the reason tests of
 `ui-tests/wb-telegram-status.test.mjs`; A4 by
 `attention/telegram/peer_run_tests.rs` and
 `silent_consoles_and_runs_send_nothing`.
+
+## Amendment 2026-11-07 — D14: Settings sets up the bot of the main daemon
+
+Decided by Paulo on 2026-11-07. The read-only Settings view of A3 showed
+each peer, and no way to set the bot up. The operator wants to set up the
+bot of the main daemon from the page, and does not need to see the peers:
+they reach the operator through the main.
+
+- **B1. Settings, Telegram sets up the bot of the daemon the page talks
+  to**, in the steps of `ralphy telegram setup`: the operator pastes the
+  token and saves it; the daemon checks it with `getMe` and keeps it in
+  `<store>/telegram.toml`; the operator sends `/start` to the bot and
+  clicks "Find my chat", and the daemon reads the chat from `getUpdates`.
+  "Send a test message" and "Remove the bot" do what `ralphy telegram test`
+  and `ralphy telegram disable` do. The page shows the bot's name, the chat
+  and the state; it never reads the token back (ADR-0072, amendment of
+  2026-11-07).
+- **B2. The routes:** `GET /api/telegram/bot` (the state, the bot's name and
+  the chat), `POST /api/telegram/bot {"token"}`, `DELETE /api/telegram/bot`,
+  `POST /api/telegram/chat` and `POST /api/telegram/test`. They are behind
+  the guard of every route. A token is refused on a request that may have
+  crossed a network in clear text (`request_may_carry_a_secret`). A new
+  token clears the chat; the same token keeps it.
+- **B3. The peers leave Settings.** `ralphy doctor` still prints one line
+  for each peer, and `GET /api/telegram` still serves the joined view. A3
+  holds for `ralphy doctor` only.
+- **B4. One writer.** The CLI and the daemon write and remove the file with
+  the same functions of `telegram_state`, owner-only.
+
+Compliance: B1 and B2 by `routes/api_telegram/bot_tests.rs` and
+`ui-tests/wb-telegram-setup.test.mjs`; B4 by `the_saved_config_is_owner_only`
+and `disable_removes_both_configs`, which move to `telegram_state`.
