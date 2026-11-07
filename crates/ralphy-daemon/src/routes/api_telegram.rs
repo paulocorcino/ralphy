@@ -243,6 +243,11 @@ pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
             s.shutdown.clone(),
         ));
     }
+    let bot = bot::BotShared {
+        config: t.config.clone(),
+        claim: t.claim.clone(),
+        transport: crate::attention::telegram::api_transports(),
+    };
     let read = {
         let t = t.clone();
         move |Query(query): Query<TelegramQuery>| telegram_route(t.clone(), query.local == Some(1))
@@ -264,11 +269,16 @@ pub(crate) fn telegram_routes(s: &RouterShared) -> Router {
             claim_route(t, body).await
         }
     };
-    Router::new().route("/api/telegram", get(read)).route(
-        "/api/telegram/main",
-        post(claim).layer(DefaultBodyLimit::max(CLAIM_MAX_BYTES)),
-    )
+    Router::new()
+        .route("/api/telegram", get(read))
+        .route(
+            "/api/telegram/main",
+            post(claim).layer(DefaultBodyLimit::max(CLAIM_MAX_BYTES)),
+        )
+        .merge(bot::bot_routes(bot))
 }
+
+mod bot;
 
 #[cfg(test)]
 mod tests;

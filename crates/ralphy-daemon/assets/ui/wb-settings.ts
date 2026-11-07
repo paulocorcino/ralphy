@@ -188,8 +188,8 @@ export const WB_SETTINGS: Section[] = [
       },
     ],
   },
-  // No items: the section has its own body, read from the daemon
-  // (wb-telegram-status.ts). The bot token never reaches the page.
+  // No items: the section has its own body (wb-telegram-setup.ts). The page
+  // sends the bot token once and never reads it back.
   {
     id: "telegram",
     title: "Telegram",
@@ -197,7 +197,7 @@ export const WB_SETTINGS: Section[] = [
     scope: "daemon",
     blurb:
       "A message to your Telegram chat when an agent waits for you and you are away. " +
-      "Each daemon of this computer and of its peers is listed.",
+      "This daemon sends the messages of its peers too, so set the bot up here only.",
     items: [],
   },
   // No items: the section has its own body in index.html, and the list it

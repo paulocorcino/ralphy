@@ -26,7 +26,7 @@ import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
 import type { AttentionReply } from "./wb-attention.ts";
-import type { FleetTelegram } from "./wb-telegram-status.ts";
+import type { BotReply } from "./wb-telegram-setup.ts";
 import type { LoginNoticesReply } from "./wb-login-notice.ts";
 import { reportStall } from "./wb-stall.ts";
 
@@ -117,8 +117,15 @@ interface ApiRoutes {
   "GET /api/attention": { ok: AttentionReply };
   /** `409` for a request that still waits, `404` for an unknown id. */
   "POST /api/attention/dismiss": { ok: { dismissed: true } };
-  /** The names of the peers that did not answer are in `unanswered` too. */
-  "GET /api/telegram": { ok: FleetTelegram };
+  /** The bot of this daemon: never its token. A refusal is `{"error"}`. */
+  "GET /api/telegram/bot": { ok: BotReply; failed: ErrorBody };
+  /** `403` for a token on a request that may cross a network in clear text. */
+  "POST /api/telegram/bot": { ok: BotReply; failed: ErrorBody };
+  "DELETE /api/telegram/bot": { ok: BotReply; failed: ErrorBody };
+  /** `409` while the bot has no `/start`. */
+  "POST /api/telegram/chat": { ok: BotReply; failed: ErrorBody };
+  /** `409` while the bot has no chat. */
+  "POST /api/telegram/test": { ok: BotReply; failed: ErrorBody };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
     ok: {
