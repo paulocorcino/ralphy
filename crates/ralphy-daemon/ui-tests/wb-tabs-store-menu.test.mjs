@@ -1,5 +1,5 @@
-// The tab menu of the store `tabs` (wb-tabs-store-menu.ts): "Close the tabs
-// to the right", run on the real store.
+// The tab menu of the store `tabs` (wb-tabs-store-menu.ts): "Close to the
+// right", run on the real store.
 import { afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { loadShell } from "./harness.mjs";
@@ -31,10 +31,10 @@ function tabsWith(ids) {
 const entry = (items, label) => items.find((it) => it.label === label);
 const ids = (tabs) => tabs.tabs.map((t) => t.id);
 
-test("Close the tabs to the right closes every tab after the clicked one", () => {
+test("Close to the right closes every tab after the clicked one", () => {
   const { tabs, menuOf } = tabsWith(["a", "b", "c", "d"]);
   tabs.activate("b");
-  entry(menuOf("b"), "Close the tabs to the right").run();
+  entry(menuOf("b"), "Close to the right").run();
   assert.deepEqual(ids(tabs), ["consoles", "a", "b"]);
   assert.equal(tabs.active, "b");
 });
@@ -47,13 +47,13 @@ test("an active tab to the right gives its place to the clicked tab", () => {
   const shown = [];
   const showTab = tabs.showTab.bind(tabs);
   tabs.showTab = (id) => (shown.push(id), showTab(id));
-  entry(menuOf("a"), "Close the tabs to the right").run();
+  entry(menuOf("a"), "Close to the right").run();
   assert.deepEqual(ids(tabs), ["consoles", "a"]);
   assert.deepEqual(shown, ["a"], "no tab that closes is shown on the way");
 });
 
 test("the last tab has nothing to its right: the entry is off", () => {
   const { menuOf } = tabsWith(["a", "b"]);
-  assert.equal(entry(menuOf("b"), "Close the tabs to the right").disabled, true);
-  assert.equal(entry(menuOf("a"), "Close the tabs to the right").disabled, false);
+  assert.equal(entry(menuOf("b"), "Close to the right").disabled, true);
+  assert.equal(entry(menuOf("a"), "Close to the right").disabled, false);
 });

@@ -78,7 +78,7 @@ export function closeItems(store: MenuTabs, t: CanvasTab): MenuItem[] {
   return [
     { label: "Close", icon: "bi-x-lg", run: () => store.closeTab(t.id) },
     {
-      label: "Close the tabs to the right",
+      label: "Close to the right",
       icon: "bi-arrow-bar-right",
       disabled: !tabsRightOf(store.tabs, t.id).length,
       run: () => closeTabsRightOf(store, t),
