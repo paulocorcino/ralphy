@@ -96,6 +96,7 @@ import "./wb-runs.test.mjs";
 import "./wb-security-dialog.test.mjs";
 import "./wb-session-route.test.mjs";
 import "./wb-tabs-store.test.mjs";
+import "./wb-tabs-store-menu.test.mjs";
 import "./wb-desk-folds.test.mjs";
 import "./wb-desk-history.test.mjs";
 import "./wb-desk-sync.test.mjs";
