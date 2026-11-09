@@ -128,11 +128,11 @@ jobs:
       - name: Rules by shape (ast-grep)
         run: |
           ./.github/scripts/fetch-ast-grep.sh
-          ./ast-grep scan --error=unused-suppression
+          ./sg scan --error=unused-suppression
 
       # Each rule refuses its `invalid` cases and lets its `valid` ones through.
       - name: Rule tests (ast-grep)
-        run: ./ast-grep test --skip-snapshot-tests
+        run: ./sg test --skip-snapshot-tests
 
       # A broken intra-doc link or bad markup in a doc comment is a warning
       # that rustdoc prints and the build does not fail on.

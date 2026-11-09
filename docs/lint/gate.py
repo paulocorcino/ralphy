@@ -73,7 +73,10 @@ def tally_added(fmt: str, output: Path, base: str, ignore: str = "") -> int:
 
 def clippy_draft(out: Path) -> int:
     lints = (DRAFTS / "clippy-lints.txt").read_text(encoding="utf-8").split()
+    # The draft reports its lints as warnings: a `-D warnings` from the
+    # environment (CI sets one) would stop the build at the first site.
     env = {**os.environ, "CLIPPY_CONF_DIR": str(DRAFTS)}
+    env.pop("RUSTFLAGS", None)
     cmd = ["cargo", "clippy", "--locked", "--workspace", "--all-targets"]
     with out.open("w", encoding="utf-8") as f:
         done = run([*cmd, "--message-format=json", "--", *lints], stdout=f, env=env)
