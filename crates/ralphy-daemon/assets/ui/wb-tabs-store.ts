@@ -24,7 +24,7 @@
    --------------------------------------------------------------------------- */
 import { openDiff } from "./wb-tabs-store-diff.ts";
 import { fetchContent, openLink, openTab } from "./wb-tabs-store-open.ts";
-import { renderMenu, showSlotMenu } from "./wb-tabs-store-menu.ts";
+import { closeItems, renderMenu, showSlotMenu } from "./wb-tabs-store-menu.ts";
 import { persistView, restoreView } from "./wb-tabs-store-view.ts";
 import { fileTabId } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
@@ -444,15 +444,13 @@ export function tabsStore(deps: TabsStoreDeps) {
       restoreView(this);
     },
     // --- context menu -----------------------------------------------------
-    // A tab's menu (ADR-0037 §3c): the slot's two entry points and Close.
+    // A tab's menu (ADR-0037 §3c): the slot's two entry points and the Close
+    // entries.
     // Consoles and Spend have no pane to put beside another, so no menu.
     showTabMenu(x: number, y: number, t: CanvasTab) {
       if (!t?.closable) return;
       // A console tab shows the stage, which has no pane to put beside another.
-      if (t.kind === "console")
-        this.renderMenu(x, y, [
-          { label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) },
-        ]);
+      if (t.kind === "console") this.renderMenu(x, y, closeItems(this, t));
       else this.showSlotMenu(x, y, t);
     },
     showSlotMenu(x: number, y: number, t: CanvasTab) {

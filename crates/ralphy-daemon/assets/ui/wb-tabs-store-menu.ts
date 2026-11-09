@@ -1,8 +1,8 @@
 /* ---------------------------------------------------------------------------
    The context menu of a canvas tab, for the Alpine store `tabs`
    (`showSlotMenu` and `renderMenu` of wb-tabs-store.ts): the entries that
-   put a tab beside the active one, and the one `#ctxmenu` element that
-   paints them.
+   put a tab beside the active one, the two Close entries every tab menu
+   has, and the one `#ctxmenu` element that paints them.
 
    Each step takes the store as `store`, and calls only its own methods, so
    the store stays the one writer of its tabs.
@@ -11,6 +11,8 @@ import type { CanvasTab, MenuItem, Slot } from "./wb-shell-types.d.ts";
 
 /** What the tab menu reads or calls on the store `tabs`. */
 type MenuTabs = {
+  tabs: CanvasTab[];
+  active: string;
   slot: Slot;
   splitAvailable(): boolean;
   clearSlot(): void;
@@ -52,9 +54,36 @@ export function showSlotMenu(store: MenuTabs, x: number, y: number, t: CanvasTab
             },
           }),
     { sep: true as const },
-    { label: "Close", icon: "bi-x-lg", run: () => store.closeTab(t.id) },
+    ...closeItems(store, t),
   ].filter(Boolean);
   store.renderMenu(x, y, items);
+}
+
+/** The tabs right of the tab `id` that may close (Consoles never does). */
+export function tabsRightOf(tabs: readonly CanvasTab[], id: string) {
+  const at = tabs.findIndex((t) => t.id === id);
+  return at < 0 ? [] : tabs.slice(at + 1).filter((t) => t.closable);
+}
+
+/** Close each tab right of `t`. When the active tab is one of them, `t`
+ * is shown first, so no tab that closes is shown on the way. */
+export function closeTabsRightOf(store: MenuTabs, t: CanvasTab) {
+  const right = tabsRightOf(store.tabs, t.id);
+  if (right.some((r) => r.id === store.active)) store.activate(t.id);
+  for (const r of right) store.closeTab(r.id);
+}
+
+/** The Close entries of the menu of tab `t`. */
+export function closeItems(store: MenuTabs, t: CanvasTab): MenuItem[] {
+  return [
+    { label: "Close", icon: "bi-x-lg", run: () => store.closeTab(t.id) },
+    {
+      label: "Close to the right",
+      icon: "bi-arrow-bar-right",
+      disabled: !tabsRightOf(store.tabs, t.id).length,
+      run: () => closeTabsRightOf(store, t),
+    },
+  ];
 }
 
 // Paint `items` into the one `#ctxmenu` and keep it on-screen. An item is
