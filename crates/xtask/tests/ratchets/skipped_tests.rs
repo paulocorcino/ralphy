@@ -13,7 +13,7 @@ const IGNORED_TESTS: usize = 12;
 
 /// The `.rs` files under `dir`, `target/`, `node_modules/` and hidden folders
 /// excepted. Unlike `collect_rs`, it reads the test files too.
-fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
+pub(super) fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries =
         std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
     for entry in entries {

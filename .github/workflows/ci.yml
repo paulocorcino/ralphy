@@ -21,8 +21,8 @@ env:
   # The oxlint of the `ui-tests` job. The lint steps of `xtask gate` run
   # the same version through npx locally, and the ratchet
   # `ci_installs_the_pinned_oxlint` fails when the two differ.
-  OXLINT_VERSION: "1.85.0"
-  OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
+  OXLINT_VERSION: "1.93.0"
+  OXLINT_SHA256: 6d0d37cb51d01449714f04e2dff0d87dca66c39a72544f667b29808899d2db39
   # The tools of the `checks` job: release binaries, pinned like oxlint. The
   # local forms, with `cargo install --locked --version`, are in AGENTS.md.
   ACTIONLINT_VERSION: "1.7.12"
@@ -35,14 +35,19 @@ env:
   # of @oxlint-tsgolint/linux-x64. The type-aware step of `xtask gate` runs
   # the same version through npx, and `ci_installs_the_pinned_tsgolint`
   # fails when the two differ.
-  TSGOLINT_VERSION: "7.0.2005"
-  TSGOLINT_SHA256: 3cd257574f2b3f0de69904ead10ca49397184e70cff481c905dd00cc4aa77554
+  TSGOLINT_VERSION: "7.0.2006"
+  TSGOLINT_SHA256: 85cfff1e15e5b209c904d3daef6c4595ee544ecc9a274c8fccb271a92177c155
   # The oxfmt of the format check of the `ui-tests` job. The format step
   # of `xtask gate` runs the same version through npx, and
   # `ci_installs_the_pinned_oxfmt` fails when the two differ. A new version
   # is its own reformat commit.
   OXFMT_VERSION: "0.75.0"
   OXFMT_SHA256: 6a111e38ab6edfe61b87deffbc95e461e3b7326d5d034bdee71ba92cdfd87641
+  # The ast-grep of the `checks` job: the rules that read the shape of the code
+  # (sgconfig.yml). The ast-grep steps of `xtask gate` run the same version
+  # through npx, and `ci_installs_the_pinned_ast_grep` fails when the two differ.
+  ASTGREP_VERSION: "0.51.1"
+  ASTGREP_SHA256: 42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
 
 jobs:
   lint:
@@ -57,7 +62,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.1"
           components: rustfmt, clippy
 
       - name: Cache cargo registry and target
@@ -67,7 +72,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
       # The workbench text follows ADR-0065. The rules are in
       # docs/ui-copy-rules.json; a violation or a stale exemption fails the job.
@@ -95,7 +100,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.1"
 
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -118,6 +123,16 @@ jobs:
         run: |
           ./.github/scripts/fetch-typos.sh
           ./typos
+
+      # The rules in ast-grep/rules; a suppression that hides nothing fails.
+      - name: Rules by shape (ast-grep)
+        run: |
+          ./.github/scripts/fetch-ast-grep.sh
+          ./ast-grep-bin/ast-grep scan --error=unused-suppression
+
+      # Each rule refuses its `invalid` cases and lets its `valid` ones through.
+      - name: Rule tests (ast-grep)
+        run: ./ast-grep-bin/ast-grep test --skip-snapshot-tests
 
       # A broken intra-doc link or bad markup in a doc comment is a warning
       # that rustdoc prints and the build does not fail on.
@@ -288,6 +303,44 @@ jobs:
           tar xzf jscpd.tar.gz jscpd
           ./jscpd --baseline-from-ref "origin/$BASE_REF" --fail-on-new-clones 0 crates
 
+  lint-transition:
+    name: lint debt
+    # The lint transition (docs/lint/lint-transition.md): each debt list only
+    # shrinks, the lines a pull request adds meet the whole target (the drafts
+    # in docs/lint/lint-drafts), and the plan's record matches the plan.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The checks compare with the merge base, which a depth-1 clone lacks.
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.99.1"
+          components: clippy
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Debt lists only shrink
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 docs/lint/gate.py shrink --base "origin/$BASE_REF"
+
+      - name: New lines meet the lint target
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 docs/lint/gate.py added --base "origin/$BASE_REF"
+
+      - name: The lint plan matches its record
+        run: python3 docs/lint/scripts/progress.py check docs/lint/lint-record.json --plan docs/lint/lint-transition.md
+
   oversized:
     name: no file is over its size or width limit
     # Fails when a source file has more than 500 lines, every line counted
@@ -324,7 +377,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.1"
 
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3

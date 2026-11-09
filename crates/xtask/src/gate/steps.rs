@@ -57,6 +57,7 @@ pub const STEPS: &[Step] = &[
             "--locked",
             "--workspace",
             "--all-targets",
+            "--all-features",
             "--",
             "-D",
             "warnings",
@@ -94,6 +95,32 @@ pub const STEPS: &[Step] = &[
         &[],
     ),
     step("typos", &["Spelling (typos)"], "typos", &[]),
+    step(
+        "ast-grep",
+        &["Rules by shape (ast-grep)"],
+        "npx",
+        &[
+            "-y",
+            "-p",
+            "@ast-grep/cli@0.51.1",
+            "ast-grep",
+            "scan",
+            "--error=unused-suppression",
+        ],
+    ),
+    step(
+        "ast-grep-test",
+        &["Rule tests (ast-grep)"],
+        "npx",
+        &[
+            "-y",
+            "-p",
+            "@ast-grep/cli@0.51.1",
+            "ast-grep",
+            "test",
+            "--skip-snapshot-tests",
+        ],
+    ),
     Step {
         env: &[("RUSTDOCFLAGS", "-D warnings")],
         ..step(
@@ -129,7 +156,7 @@ pub const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "oxlint@1.85.0",
+            "oxlint@1.93.0",
             "--deny-warnings",
             "crates/ralphy-daemon/assets/ui",
             "crates/ralphy-daemon/ui-tests",
@@ -144,9 +171,9 @@ pub const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "oxlint@1.85.0",
+            "oxlint@1.93.0",
             "-p",
-            "oxlint-tsgolint@7.0.2005",
+            "oxlint-tsgolint@7.0.2006",
             "oxlint",
             "--type-aware",
             "--deny-warnings",
@@ -177,6 +204,30 @@ pub const STEPS: &[Step] = &[
             "--fail-on-new-clones",
             "0",
             "crates",
+        ],
+    ),
+    step(
+        "lint-shrink",
+        &["Debt lists only shrink"],
+        "python",
+        &["docs/lint/gate.py", "shrink", "--base", "main"],
+    ),
+    step(
+        "lint-added",
+        &["New lines meet the lint target"],
+        "python",
+        &["docs/lint/gate.py", "added", "--base", "main"],
+    ),
+    step(
+        "lint-plan",
+        &["The lint plan matches its record"],
+        "python",
+        &[
+            "docs/lint/scripts/progress.py",
+            "check",
+            "docs/lint/lint-record.json",
+            "--plan",
+            "docs/lint/lint-transition.md",
         ],
     ),
     Step {

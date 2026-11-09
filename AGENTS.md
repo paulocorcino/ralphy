@@ -257,6 +257,36 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **Commit on the current branch.** Create a branch, push, or open a PR only
   when someone asks you to. A human reviews and merges.
 
+## Lint gate
+
+The lint rules, their debt and the plan that turns the rest on are in
+[docs/lint/lint-transition.md](./docs/lint/lint-transition.md).
+
+- Before you call a change done, run the gate (Hard rules above). While you
+  edit, run `cargo run -q -p xtask -- gate --fast` and fix what it reports
+  before you go on.
+- When a rule fails, fix the cause:
+  - an error, a `Result` or a Promise that nobody reads goes to its caller or
+    to the log;
+  - `any`, a cast, `!` or `unwrap` becomes a value narrowed once, where it
+    enters: `apiFetch` and `socketFrame` in `wb-api.ts` for the workbench;
+  - `exit` becomes a return from `main`; the environment is not written while
+    threads run;
+  - a function that is too complex is a god function, and a file that is too
+    long a god file: split each by the responsibilities it already carries,
+    or rewrite the function with guard clauses or a table of cases;
+  - a duplicated block that is one rule becomes one function named for the
+    rule; two rules that only look alike stay two, with the ignore marker and
+    its reason.
+- An exception is the last resort, with a reason that says why the rule is
+  wrong at that line: `#[expect(<lint>, reason = "...")]` in Rust,
+  `// oxlint-disable-next-line <rule> -- <reason>` in TypeScript,
+  `// ast-grep-ignore: <rule-id> -- <reason>` for an ast-grep rule.
+- Linter configs, debt lists, drafts and ratchet constants change only when
+  the task is about them, and a count only goes down.
+- The lines you add meet every rule of the target, the rules still on a debt
+  list too: the gate fails on a debt rule's site on a new line.
+
 ## Rust baseline (applies to every Rust change)
 
 The full `/rust-skills` set (179 rules) is for reviewing non-trivial code or a
@@ -298,6 +328,12 @@ already denies a `std::sync` lock guard held across an `.await`.
   right after. No `as unknown as`
   and no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`
   (`no_escape_hatch_in_the_workbench`).
+
+## Tools
+
+- Before reading a whole source file, to find code by its shape (a call with a
+  given argument, an empty block, an implementation), or to rewrite one shape
+  at many sites, use ast-grep: [docs/ast-grep.md](./docs/ast-grep.md).
 
 ## Where things live
 

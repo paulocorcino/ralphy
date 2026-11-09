@@ -1,0 +1,16 @@
+allow-unwrap-in-tests = true
+allow-dbg-in-tests = true
+# The default is 7. A function with more than 6 arguments groups them in a
+# struct, or carries `#[expect(clippy::too_many_arguments, reason = "...")]`.
+too-many-arguments-threshold = 5
+disallowed-methods = [
+  { path = "std::process::exit", reason = "exit skips every Drop: temporary files, flushes and locks stay as they are. Return from main" },
+  { path = "std::env::set_var", reason = "changing the environment while another thread reads it is undefined behavior" },
+  { path = "std::env::remove_var", reason = "changing the environment while another thread reads it is undefined behavior" },
+]
+# --- target additions (draft) ---
+
+allow-expect-in-tests = true
+allow-print-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

@@ -1,0 +1,192 @@
+{
+  "plugins": [
+    "eslint",
+    "import",
+    "oxc",
+    "promise",
+    "typescript",
+    "unicorn"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "ignorePatterns": [],
+  "rules": {
+    "unicorn/no-useless-spread": "off",
+    "no-control-regex": "off",
+    "no-unused-vars": [
+      "error",
+      {
+        "args": "none",
+        "caughtErrors": "none",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
+    "no-empty": [
+      "error",
+      {
+        "allowEmptyCatch": true
+      }
+    ],
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-this-alias": "off",
+    "complexity": [
+      "error",
+      {
+        "max": 10,
+        "variant": "modified"
+      }
+    ],
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/await-thenable": "error",
+    "typescript/return-await": [
+      "error",
+      "in-try-catch"
+    ],
+    "typescript/require-await": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/require-array-sort-compare": "error",
+    "typescript/no-deprecated": "error",
+    "typescript/unbound-method": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/consistent-type-exports": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-self-import": "error",
+    "import/first": "error",
+    "import/extensions": [
+      "error",
+      "always"
+    ],
+    "no-shadow": "error",
+    "max-depth": [
+      "error",
+      {
+        "max": 3
+      }
+    ],
+    "no-nested-ternary": "error",
+    "no-else-return": [
+      "error",
+      {
+        "allowElseIf": false
+      }
+    ],
+    "prefer-arrow-callback": "error",
+    "no-param-reassign": "error",
+    "prefer-const": "error",
+    "no-var": "error",
+    "no-implicit-coercion": "error",
+    "curly": [
+      "error",
+      "all"
+    ],
+    "default-case-last": "error",
+    "radix": "error",
+    "max-params": [
+      "error",
+      {
+        "max": 4
+      }
+    ],
+    "import/no-default-export": "error",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-script-url": "error",
+    "no-restricted-properties": [
+      "error",
+      {
+        "property": "innerHTML",
+        "message": "Build the nodes, or go through the module that sanitizes HTML"
+      },
+      {
+        "property": "outerHTML",
+        "message": "Build the nodes, or go through the module that sanitizes HTML"
+      },
+      {
+        "property": "insertAdjacentHTML",
+        "message": "Build the nodes, or go through the module that sanitizes HTML"
+      },
+      {
+        "object": "document",
+        "property": "write",
+        "message": "Build the nodes instead"
+      }
+    ],
+    "no-warning-comments": "error",
+    "typescript/ban-ts-comment": [
+      "error",
+      {
+        "ts-expect-error": "allow-with-description",
+        "ts-ignore": true,
+        "ts-nocheck": true
+      }
+    ],
+    "unicorn/throw-new-error": "error",
+    "unicorn/error-message": "error",
+    "unicorn/no-array-sort": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/no-useless-undefined": "error",
+    "no-console": "error",
+    "oxc/no-accumulating-spread": "error",
+    "typescript/strict-boolean-expressions": "error",
+    "typescript/prefer-nullish-coalescing": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unsafe-type-assertion": "error",
+    "typescript/no-unsafe-enum-assignment": "error",
+    "typescript/no-generated-empty-object-type": "error",
+    "typescript/no-confusing-void-expression": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/prefer-readonly-parameter-types": "off",
+    "max-lines-per-function": "off",
+    "max-lines": "off",
+    "no-underscore-dangle": "off",
+    "import/no-unassigned-import": "off",
+    "no-inline-comments": "off",
+    "import/max-dependencies": "off",
+    "sort-vars": "off",
+    "no-negated-condition": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/ui-tests/**"
+      ],
+      "env": {
+        "node": true
+      },
+      "rules": {
+        "complexity": "off"
+      }
+    }
+  ]
+}

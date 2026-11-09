@@ -45,8 +45,10 @@ mod lex;
 #[path = "../../src/gate/steps.rs"]
 mod gate_steps;
 
+mod ast_grep_ignores;
 mod complexity_exceptions;
 mod gate_mirrors_ci;
+mod leftovers;
 mod peer_reply_pin;
 mod rust_coupling;
 mod skipped_tests;
