@@ -97,3 +97,12 @@ fn ci_uses_the_pinned_rust_toolchain() {
         "a workflow must install Rust {pinned}: {wrong:?}"
     );
 }
+
+/// The ast-grep of the `checks` job of `ci.yml`, fetched by version and
+/// checksum, and of the ast-grep steps of the gate, run by `npx`.
+const ASTGREP_VERSION: &str = "0.51.1";
+
+#[test]
+fn ci_installs_the_pinned_ast_grep() {
+    assert_pinned("ASTGREP_VERSION", "@ast-grep/cli", ASTGREP_VERSION);
+}

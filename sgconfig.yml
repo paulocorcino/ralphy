@@ -1,0 +1,6 @@
+# The rules of the lint gate that read the shape of the code. The guide for
+# agents is docs/ast-grep.md.
+ruleDirs:
+  - ast-grep/rules
+testConfigs:
+  - testDir: ast-grep/tests

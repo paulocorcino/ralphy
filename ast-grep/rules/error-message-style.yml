@@ -1,0 +1,18 @@
+# AGENTS.md, Rust baseline: error messages start lowercase and have no final
+# punctuation, because they are chained (`err-lowercase-msg`).
+id: error-message-style
+language: rust
+severity: error
+message: 'Write the error message in lowercase, with no final period or "!": the chain reads "what failed: why".'
+rule:
+  kind: string_literal
+  regex: '^"([A-Z][a-z]|.*[.!]"$)'
+  inside:
+    stopBy: end
+    any:
+      - kind: macro_invocation
+        regex: '^(anyhow::)?(bail|anyhow|ensure)!'
+      - kind: arguments
+        inside:
+          kind: call_expression
+          regex: '\.(context|with_context)\('

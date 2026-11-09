@@ -96,7 +96,7 @@ fn setup(token_arg: Option<String>) -> Result<()> {
 }
 
 fn test() -> Result<()> {
-    let cfg = config::load()?.context("Telegram is not configured — run `telegram setup` first")?;
+    let cfg = config::load()?.context("telegram is not configured — run `telegram setup` first")?;
     let chat_id = cfg
         .chat_id
         .context("no chat configured — run `telegram setup` to capture one")?;

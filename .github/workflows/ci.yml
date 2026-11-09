@@ -43,6 +43,11 @@ env:
   # is its own reformat commit.
   OXFMT_VERSION: "0.75.0"
   OXFMT_SHA256: 6a111e38ab6edfe61b87deffbc95e461e3b7326d5d034bdee71ba92cdfd87641
+  # The ast-grep of the `checks` job: the rules that read the shape of the code
+  # (sgconfig.yml). The ast-grep steps of `xtask gate` run the same version
+  # through npx, and `ci_installs_the_pinned_ast_grep` fails when the two differ.
+  ASTGREP_VERSION: "0.51.1"
+  ASTGREP_SHA256: 42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
 
 jobs:
   lint:
@@ -118,6 +123,16 @@ jobs:
         run: |
           ./.github/scripts/fetch-typos.sh
           ./typos
+
+      # The rules in ast-grep/rules; a suppression that hides nothing fails.
+      - name: Rules by shape (ast-grep)
+        run: |
+          ./.github/scripts/fetch-ast-grep.sh
+          ./ast-grep scan --error=unused-suppression
+
+      # Each rule refuses its `invalid` cases and lets its `valid` ones through.
+      - name: Rule tests (ast-grep)
+        run: ./ast-grep test --skip-snapshot-tests
 
       # A broken intra-doc link or bad markup in a doc comment is a warning
       # that rustdoc prints and the build does not fail on.

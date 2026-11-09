@@ -94,6 +94,32 @@ pub const STEPS: &[Step] = &[
         &[],
     ),
     step("typos", &["Spelling (typos)"], "typos", &[]),
+    step(
+        "ast-grep",
+        &["Rules by shape (ast-grep)"],
+        "npx",
+        &[
+            "-y",
+            "-p",
+            "@ast-grep/cli@0.51.1",
+            "ast-grep",
+            "scan",
+            "--error=unused-suppression",
+        ],
+    ),
+    step(
+        "ast-grep-test",
+        &["Rule tests (ast-grep)"],
+        "npx",
+        &[
+            "-y",
+            "-p",
+            "@ast-grep/cli@0.51.1",
+            "ast-grep",
+            "test",
+            "--skip-snapshot-tests",
+        ],
+    ),
     Step {
         env: &[("RUSTDOCFLAGS", "-D warnings")],
         ..step(

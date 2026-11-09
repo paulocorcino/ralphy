@@ -299,6 +299,12 @@ already denies a `std::sync` lock guard held across an `.await`.
   and no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`
   (`no_escape_hatch_in_the_workbench`).
 
+## Tools
+
+- Before reading a whole source file, to find code by its shape (a call with a
+  given argument, an empty block, an implementation), or to rewrite one shape
+  at many sites, use ast-grep: [docs/ast-grep.md](./docs/ast-grep.md).
+
 ## Where things live
 
 - `assets/prompts` — the plan and execute charters. They run in **every

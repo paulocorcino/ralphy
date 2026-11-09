@@ -1,0 +1,13 @@
+id: error-message-style
+valid:
+  - 'fn f() -> anyhow::Result<()> { anyhow::bail!("no bot is set up") }'
+  - 'fn f() { let _x = x.context("reading the config"); }'
+  - 'fn f() { let _x = x.with_context(|| format!("reading {}", p.display())); }'
+  - 'fn f() { println!("Done."); }'
+  - 'fn f() { let _e = anyhow!("PTY {n} closed"); }'
+invalid:
+  - 'fn f() -> anyhow::Result<()> { anyhow::bail!("No bot is set up") }'
+  - 'fn f() -> anyhow::Result<()> { bail!("no bot is set up.") }'
+  - 'fn f() { let _x = x.context("reading the config."); }'
+  - 'fn f() { let _x = x.with_context(|| format!("Reading {}", p.display())); }'
+  - 'fn f() { let _e = anyhow!("the file is gone!"); }'
