@@ -57,6 +57,7 @@ pub const STEPS: &[Step] = &[
             "--locked",
             "--workspace",
             "--all-targets",
+            "--all-features",
             "--",
             "-D",
             "warnings",
@@ -203,6 +204,30 @@ pub const STEPS: &[Step] = &[
             "--fail-on-new-clones",
             "0",
             "crates",
+        ],
+    ),
+    step(
+        "lint-shrink",
+        &["Debt lists only shrink"],
+        "python",
+        &["docs/lint/gate.py", "shrink", "--base", "main"],
+    ),
+    step(
+        "lint-added",
+        &["New lines meet the lint target"],
+        "python",
+        &["docs/lint/gate.py", "added", "--base", "main"],
+    ),
+    step(
+        "lint-plan",
+        &["The lint plan matches its record"],
+        "python",
+        &[
+            "docs/lint/scripts/progress.py",
+            "check",
+            "docs/lint/lint-record.json",
+            "--plan",
+            "docs/lint/lint-transition.md",
         ],
     ),
     Step {

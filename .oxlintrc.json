@@ -1,7 +1,7 @@
 {
   // Lints the workbench JS: crates/ralphy-daemon/assets/ui and ui-tests.
-  "plugins": ["eslint", "unicorn", "oxc", "typescript", "import"],
-  "categories": { "correctness": "error" },
+  "plugins": ["eslint", "import", "oxc", "promise", "typescript", "unicorn"],
+  "categories": {"correctness": "error", "pedantic": "error", "suspicious": "error"},
   "env": { "browser": true, "es2024": true },
   "ignorePatterns": ["**/vendor/**"],
   "rules": {
@@ -71,7 +71,159 @@
     "max-depth": ["error", { "max": 3 }],
     "no-nested-ternary": "error",
     "no-else-return": ["error", { "allowElseIf": false }],
-    "prefer-arrow-callback": "error"
+    "prefer-arrow-callback": "error",
+    // The lint gate. A rule `off` below is one of two kinds. `debt`: it has
+    // sites today and docs/lint/lint-transition.md turns it on; this list only shrinks.
+    // `noise`: off for good, with the reason.
+    "default-case-last": "error",
+    "import/no-default-export": "error",
+    "unicorn/error-message": "error",
+    "unicorn/prefer-node-protocol": "error",
+    "unicorn/throw-new-error": "error",
+    // debt: 2537 sites
+    "curly": "off",
+    // debt: 1089 sites
+    "typescript/strict-boolean-expressions": "off",
+    // debt: 648 sites
+    "typescript/prefer-nullish-coalescing": "off",
+    // debt: 461 sites
+    "require-unicode-regexp": "off",
+    // debt: 429 sites
+    "typescript/no-unnecessary-condition": "off",
+    // debt: 242 sites
+    "typescript/no-confusing-void-expression": "off",
+    // debt: 191 sites
+    "no-implicit-coercion": "off",
+    // debt: 179 sites
+    "require-await": "off",
+    // debt: 133 sites
+    "unicorn/consistent-function-scoping": "off",
+    // debt: 117 sites
+    "typescript/no-unnecessary-type-conversion": "off",
+    // debt: 102 sites
+    "typescript/no-unsafe-type-assertion": "off",
+    // debt: 75 sites
+    "unicorn/explicit-length-check": "off",
+    // debt: 65 sites
+    "no-promise-executor-return": "off",
+    // debt: 65 sites
+    "unicorn/no-useless-undefined": "off",
+    // debt: 64 sites
+    "unicorn/no-hex-escape": "off",
+    // debt: 63 sites
+    "unicorn/escape-case": "off",
+    // debt: 46 sites
+    "no-restricted-properties": "off",
+    // debt: 45 sites
+    "unicorn/prefer-add-event-listener": "off",
+    // debt: 44 sites
+    "unicorn/no-array-sort": "off",
+    // debt: 42 sites
+    "unicorn/prefer-string-replace-all": "off",
+    // debt: 41 sites
+    "typescript/consistent-type-imports": "off",
+    // debt: 38 sites
+    "no-console": "off",
+    // debt: 38 sites
+    "promise/always-return": "off",
+    // debt: 23 sites
+    "unicorn/prefer-query-selector": "off",
+    // debt: 20 sites
+    "typescript/strict-void-return": "off",
+    // debt: 20 sites
+    "unicorn/prefer-import-meta-properties": "off",
+    // debt: 16 sites
+    "unicorn/no-array-callback-reference": "off",
+    // debt: 15 sites
+    "unicorn/prefer-number-coercion": "off",
+    // debt: 14 sites
+    "max-params": "off",
+    // debt: 13 sites
+    "unicorn/no-negated-condition": "off",
+    // debt: 13 sites
+    "unicorn/prefer-at": "off",
+    // debt: 12 sites
+    "no-var": "off",
+    // debt: 10 sites
+    "no-param-reassign": "off",
+    // debt: 10 sites
+    "typescript/consistent-return": "off",
+    // debt: 10 sites
+    "typescript/no-unnecessary-boolean-literal-compare": "off",
+    // debt: 6 sites
+    "max-classes-per-file": "off",
+    // debt: 6 sites
+    "no-new-func": "off",
+    // debt: 5 sites
+    "prefer-const": "off",
+    // debt: 5 sites
+    "unicorn/prefer-code-point": "off",
+    // debt: 5 sites
+    "unicorn/prefer-dom-node-dataset": "off",
+    // debt: 4 sites
+    "no-script-url": "off",
+    // debt: 4 sites
+    "typescript/no-extraneous-class": "off",
+    // debt: 3 sites
+    "typescript/no-unnecessary-type-parameters": "off",
+    // debt: 3 sites
+    "unicorn/no-object-as-default-parameter": "off",
+    // debt: 3 sites
+    "unicorn/no-this-assignment": "off",
+    // debt: 2 sites
+    "typescript/no-unnecessary-template-expression": "off",
+    // debt: 2 sites
+    "unicorn/no-useless-switch-case": "off",
+    // debt: 1 site
+    "accessor-pairs": "off",
+    // debt: 1 site
+    "no-redeclare": "off",
+    // debt: 1 site
+    "no-unmodified-loop-condition": "off",
+    // debt: 1 site
+    "no-useless-concat": "off",
+    // debt: 1 site
+    "no-useless-return": "off",
+    // debt: 1 site
+    "import/no-named-as-default": "off",
+    // debt: 1 site
+    "oxc/no-accumulating-spread": "off",
+    // debt: 1 site
+    "promise/no-callback-in-promise": "off",
+    // debt: 1 site
+    "unicorn/new-for-builtins": "off",
+    // debt: 1 site
+    "unicorn/no-array-reverse": "off",
+    // debt: 1 site
+    "unicorn/no-immediate-mutation": "off",
+    // debt: 1 site
+    "unicorn/no-static-only-class": "off",
+    // debt: 1 site
+    "unicorn/prefer-dom-node-append": "off",
+    // debt: 1 site
+    "unicorn/prefer-single-call": "off",
+    // debt: 1 site
+    "unicorn/prefer-type-error": "off",
+    // debt: 1 site
+    "unicorn/require-post-message-target-origin": "off",
+    // noise: file size is xtask oversized, one tool per property (D4)
+    "max-lines": "off",
+    // noise: function complexity is the limit; length alone flags long flat code (D4)
+    "max-lines-per-function": "off",
+    // noise: a short comment at the end of a line is the repo's style (D4)
+    "no-inline-comments": "off",
+    // noise: the same check as unicorn/no-negated-condition, one tool per property (D4)
+    "no-negated-condition": "off",
+    // noise: a leading underscore marks a private field of an Alpine component (D4)
+    "no-underscore-dangle": "off",
+    // noise: declaration order is a style choice (D4)
+    "sort-vars": "off",
+    // noise: a module's size is held by complexity and file size (D4)
+    "import/max-dependencies": "off",
+    // noise: ui-tests/index.mjs imports each test file for its side effect (D4)
+    "import/no-unassigned-import": "off",
+    // noise: a readonly type on every parameter; the Alpine components and stores change their own state (D4)
+    "typescript/prefer-readonly-parameter-types": "off"
   },
   "overrides": [
     // Test code is not measured for complexity (ADR-0081 D3).

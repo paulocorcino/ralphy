@@ -1,0 +1,4 @@
+{"answer": "out of the gate: the browser checks in tests/browser are run by hand", "date": "2026-11-09", "id": "D1", "kind": "decision"}
+{"answer": "arguments Rust 5 and TS 4; clones 75 tokens and 5 lines; ast-grep for navigation and the error-message rule", "date": "2026-11-09", "id": "D2", "kind": "decision"}
+{"answer": "default taken: the noise list of the plan", "date": "2026-11-09", "id": "D3", "kind": "decision"}
+{"answer": "default taken: the noise list of the plan", "date": "2026-11-09", "id": "D4", "kind": "decision"}

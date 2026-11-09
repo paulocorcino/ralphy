@@ -1,0 +1,551 @@
+{
+ "date": "2026-11-09",
+ "drafts": {
+  "docs/lint/lint-drafts/clippy-lints.txt": "638107f2a6d13eec",
+  "docs/lint/lint-drafts/clippy.toml": "9bdd3f272bc051e3",
+  "docs/lint/lint-drafts/oxlintrc.json": "4992bef8ac8dfc70"
+ },
+ "layout": {
+  "decisions": {
+   "D1": {
+    "holds": []
+   },
+   "D10": {
+    "holds": []
+   },
+   "D11": {
+    "holds": []
+   },
+   "D12": {
+    "holds": []
+   },
+   "D13": {
+    "holds": []
+   },
+   "D14": {
+    "holds": []
+   },
+   "D2": {
+    "holds": []
+   },
+   "D3": {
+    "holds": []
+   },
+   "D4": {
+    "holds": []
+   },
+   "D5": {
+    "holds": [
+     "7"
+    ]
+   },
+   "D6": {
+    "holds": [
+     "13"
+    ]
+   },
+   "D7": {
+    "holds": [
+     "3"
+    ]
+   },
+   "D8": {
+    "holds": [
+     "11"
+    ]
+   },
+   "D9": {
+    "holds": [
+     "15"
+    ]
+   }
+  },
+  "phases": {
+   "0": {
+    "lane": "gate",
+    "waits": []
+   },
+   "1": {
+    "lane": "rust",
+    "waits": [
+     "0"
+    ]
+   },
+   "10": {
+    "lane": "ts",
+    "waits": [
+     "9"
+    ]
+   },
+   "11": {
+    "lane": "ts",
+    "waits": [
+     "10"
+    ]
+   },
+   "12": {
+    "lane": "ts",
+    "waits": [
+     "11"
+    ]
+   },
+   "13": {
+    "lane": "ts",
+    "waits": [
+     "12"
+    ]
+   },
+   "14": {
+    "lane": "clones",
+    "waits": [
+     "0"
+    ]
+   },
+   "15": {
+    "lane": "text",
+    "waits": [
+     "0"
+    ]
+   },
+   "2": {
+    "lane": "rust",
+    "waits": [
+     "1"
+    ]
+   },
+   "3": {
+    "lane": "rust",
+    "waits": [
+     "2"
+    ]
+   },
+   "4": {
+    "lane": "rust",
+    "waits": [
+     "3"
+    ]
+   },
+   "5": {
+    "lane": "rust",
+    "waits": [
+     "4"
+    ]
+   },
+   "6": {
+    "lane": "rust",
+    "waits": [
+     "5"
+    ]
+   },
+   "7": {
+    "lane": "rust",
+    "waits": [
+     "6"
+    ]
+   },
+   "8": {
+    "lane": "ts",
+    "waits": [
+     "0"
+    ]
+   },
+   "9": {
+    "lane": "ts",
+    "waits": [
+     "8"
+    ]
+   }
+  }
+ },
+ "phases": {
+  "TS2322": "11",
+  "TS2345": "11",
+  "TS2375": "11",
+  "TS2379": "11",
+  "TS2412": "11",
+  "TS4111": "11",
+  "clippy::as_conversions": "3",
+  "clippy::assert_is_empty": "1",
+  "clippy::assigning_clones": "4",
+  "clippy::borrow_as_ptr": "1",
+  "clippy::case_sensitive_file_extension_comparisons": "5",
+  "clippy::cast_lossless": "1",
+  "clippy::cast_possible_truncation": "3",
+  "clippy::cast_possible_wrap": "3",
+  "clippy::cast_precision_loss": "3",
+  "clippy::cast_sign_loss": "3",
+  "clippy::clone_on_ref_ptr": "5",
+  "clippy::default_trait_access": "5",
+  "clippy::doc_markdown": "1",
+  "clippy::duration_suboptimal_units": "1",
+  "clippy::enum_glob_use": "1",
+  "clippy::exit": "7",
+  "clippy::explicit_iter_loop": "1",
+  "clippy::filter_map_next": "1",
+  "clippy::fn_params_excessive_bools": "4",
+  "clippy::format_collect": "4",
+  "clippy::format_push_string": "4",
+  "clippy::if_not_else": "1",
+  "clippy::ignored_unit_patterns": "1",
+  "clippy::implicit_clone": "1",
+  "clippy::implicit_hasher": "4",
+  "clippy::inconsistent_struct_constructor": "1",
+  "clippy::indexing_slicing": "3",
+  "clippy::items_after_statements": "4",
+  "clippy::let_underscore_untyped": "2",
+  "clippy::manual_assert": "1",
+  "clippy::manual_assert_eq": "1",
+  "clippy::manual_is_variant_and": "1",
+  "clippy::manual_let_else": "4",
+  "clippy::manual_midpoint": "1",
+  "clippy::manual_string_new": "1",
+  "clippy::many_single_char_names": "5",
+  "clippy::map_unwrap_or": "1",
+  "clippy::match_same_arms": "4",
+  "clippy::match_wildcard_for_single_variants": "4",
+  "clippy::mem_forget": "2",
+  "clippy::missing_panics_doc": "5",
+  "clippy::mod_module_files": "4",
+  "clippy::needless_continue": "4",
+  "clippy::needless_for_each": "4",
+  "clippy::needless_pass_by_value": "4",
+  "clippy::needless_raw_string_hashes": "1",
+  "clippy::nonminimal_bool": "4",
+  "clippy::option_as_ref_cloned": "1",
+  "clippy::option_option": "4",
+  "clippy::panic": "3",
+  "clippy::print_stderr": "7",
+  "clippy::print_stdout": "7",
+  "clippy::ptr_as_ptr": "1",
+  "clippy::range_plus_one": "1",
+  "clippy::redundant_closure_for_method_calls": "1",
+  "clippy::ref_option": "4",
+  "clippy::return_self_not_must_use": "5",
+  "clippy::semicolon_if_nothing_returned": "1",
+  "clippy::similar_names": "5",
+  "clippy::single_match_else": "1",
+  "clippy::stable_sort_primitive": "1",
+  "clippy::str_to_string": "1",
+  "clippy::string_slice": "3",
+  "clippy::struct_excessive_bools": "4",
+  "clippy::struct_field_names": "5",
+  "clippy::tests_outside_test_module": "6",
+  "clippy::too_many_arguments": "4",
+  "clippy::too_many_lines": "4",
+  "clippy::trivially_copy_pass_by_ref": "4",
+  "clippy::unchecked_time_subtraction": "1",
+  "clippy::undocumented_unsafe_blocks": "3",
+  "clippy::uninlined_format_args": "1",
+  "clippy::unnecessary_debug_formatting": "5",
+  "clippy::unnecessary_join": "1",
+  "clippy::unnecessary_semicolon": "1",
+  "clippy::unnecessary_wraps": "4",
+  "clippy::unnested_or_patterns": "1",
+  "clippy::unreadable_literal": "5",
+  "clippy::unused_async": "4",
+  "clippy::unused_self": "4",
+  "clippy::used_underscore_binding": "5",
+  "clippy::wildcard_imports": "1",
+  "elided_lifetimes_in_paths": "5",
+  "eslint(accessor-pairs)": "12",
+  "eslint(curly)": "8",
+  "eslint(max-classes-per-file)": "12",
+  "eslint(max-params)": "12",
+  "eslint(no-console)": "13",
+  "eslint(no-implicit-coercion)": "9",
+  "eslint(no-new-func)": "12",
+  "eslint(no-param-reassign)": "12",
+  "eslint(no-promise-executor-return)": "10",
+  "eslint(no-redeclare)": "12",
+  "eslint(no-restricted-properties)": "13",
+  "eslint(no-script-url)": "12",
+  "eslint(no-unmodified-loop-condition)": "12",
+  "eslint(no-useless-concat)": "8",
+  "eslint(no-useless-return)": "8",
+  "eslint(no-var)": "8",
+  "eslint(prefer-const)": "8",
+  "eslint(require-await)": "10",
+  "eslint(require-unicode-regexp)": "12",
+  "import(no-named-as-default)": "12",
+  "jscpd:rust": "14",
+  "jscpd:typescript": "14",
+  "let_underscore_drop": "2",
+  "missing_debug_implementations": "5",
+  "oxc(no-accumulating-spread)": "12",
+  "promise(always-return)": "10",
+  "promise(no-callback-in-promise)": "10",
+  "typescript(consistent-return)": "10",
+  "typescript(consistent-type-imports)": "11",
+  "typescript(no-confusing-void-expression)": "10",
+  "typescript(no-extraneous-class)": "12",
+  "typescript(no-unnecessary-boolean-literal-compare)": "9",
+  "typescript(no-unnecessary-condition)": "9",
+  "typescript(no-unnecessary-template-expression)": "8",
+  "typescript(no-unnecessary-type-conversion)": "9",
+  "typescript(no-unnecessary-type-parameters)": "11",
+  "typescript(no-unsafe-type-assertion)": "11",
+  "typescript(prefer-nullish-coalescing)": "9",
+  "typescript(strict-boolean-expressions)": "9",
+  "typescript(strict-void-return)": "10",
+  "unicorn(consistent-function-scoping)": "12",
+  "unicorn(escape-case)": "8",
+  "unicorn(explicit-length-check)": "9",
+  "unicorn(new-for-builtins)": "8",
+  "unicorn(no-array-callback-reference)": "12",
+  "unicorn(no-array-reverse)": "12",
+  "unicorn(no-array-sort)": "12",
+  "unicorn(no-hex-escape)": "8",
+  "unicorn(no-immediate-mutation)": "12",
+  "unicorn(no-negated-condition)": "12",
+  "unicorn(no-object-as-default-parameter)": "12",
+  "unicorn(no-static-only-class)": "12",
+  "unicorn(no-this-assignment)": "12",
+  "unicorn(no-useless-switch-case)": "8",
+  "unicorn(no-useless-undefined)": "8",
+  "unicorn(prefer-add-event-listener)": "12",
+  "unicorn(prefer-at)": "8",
+  "unicorn(prefer-code-point)": "8",
+  "unicorn(prefer-dom-node-append)": "8",
+  "unicorn(prefer-dom-node-dataset)": "12",
+  "unicorn(prefer-import-meta-properties)": "8",
+  "unicorn(prefer-number-coercion)": "9",
+  "unicorn(prefer-query-selector)": "12",
+  "unicorn(prefer-single-call)": "8",
+  "unicorn(prefer-string-replace-all)": "8",
+  "unicorn(prefer-type-error)": "12",
+  "unicorn(require-post-message-target-origin)": "13",
+  "unreachable_pub": "1",
+  "unused_qualifications": "1"
+ },
+ "runs": {
+  "clippy": {
+   "command": "CLIPPY_CONF_DIR=docs/lint/lint-drafts cargo clippy --locked --workspace --all-targets --message-format=json -- $(cat docs/lint/lint-drafts/clippy-lints.txt) > $SC/clippy.out && python docs/lint/scripts/tally.py clippy $SC/clippy.out --json $SC/clippy.json --scope-depth 2",
+   "counts": {
+    "clippy::as_conversions": 195,
+    "clippy::assert_is_empty": 157,
+    "clippy::assigning_clones": 12,
+    "clippy::borrow_as_ptr": 29,
+    "clippy::case_sensitive_file_extension_comparisons": 45,
+    "clippy::cast_lossless": 21,
+    "clippy::cast_possible_truncation": 38,
+    "clippy::cast_possible_wrap": 9,
+    "clippy::cast_precision_loss": 22,
+    "clippy::cast_sign_loss": 21,
+    "clippy::clone_on_ref_ptr": 202,
+    "clippy::default_trait_access": 23,
+    "clippy::doc_markdown": 208,
+    "clippy::duration_suboptimal_units": 21,
+    "clippy::enum_glob_use": 1,
+    "clippy::exit": 9,
+    "clippy::explicit_iter_loop": 1,
+    "clippy::filter_map_next": 1,
+    "clippy::fn_params_excessive_bools": 1,
+    "clippy::format_collect": 7,
+    "clippy::format_push_string": 103,
+    "clippy::if_not_else": 5,
+    "clippy::ignored_unit_patterns": 5,
+    "clippy::implicit_clone": 2,
+    "clippy::implicit_hasher": 1,
+    "clippy::inconsistent_struct_constructor": 1,
+    "clippy::indexing_slicing": 430,
+    "clippy::items_after_statements": 22,
+    "clippy::let_underscore_untyped": 237,
+    "clippy::manual_assert": 3,
+    "clippy::manual_assert_eq": 3,
+    "clippy::manual_is_variant_and": 3,
+    "clippy::manual_let_else": 5,
+    "clippy::manual_midpoint": 1,
+    "clippy::manual_string_new": 1,
+    "clippy::many_single_char_names": 2,
+    "clippy::map_unwrap_or": 78,
+    "clippy::match_same_arms": 17,
+    "clippy::match_wildcard_for_single_variants": 3,
+    "clippy::mem_forget": 38,
+    "clippy::missing_panics_doc": 91,
+    "clippy::mod_module_files": 1,
+    "clippy::needless_continue": 16,
+    "clippy::needless_for_each": 2,
+    "clippy::needless_pass_by_value": 68,
+    "clippy::needless_raw_string_hashes": 18,
+    "clippy::nonminimal_bool": 1,
+    "clippy::option_as_ref_cloned": 1,
+    "clippy::option_option": 12,
+    "clippy::panic": 146,
+    "clippy::print_stderr": 37,
+    "clippy::print_stdout": 275,
+    "clippy::ptr_as_ptr": 3,
+    "clippy::range_plus_one": 3,
+    "clippy::redundant_closure_for_method_calls": 146,
+    "clippy::ref_option": 12,
+    "clippy::return_self_not_must_use": 54,
+    "clippy::semicolon_if_nothing_returned": 39,
+    "clippy::similar_names": 13,
+    "clippy::single_match_else": 22,
+    "clippy::stable_sort_primitive": 1,
+    "clippy::str_to_string": 2352,
+    "clippy::string_slice": 216,
+    "clippy::struct_excessive_bools": 8,
+    "clippy::struct_field_names": 4,
+    "clippy::tests_outside_test_module": 500,
+    "clippy::too_many_arguments": 77,
+    "clippy::too_many_lines": 35,
+    "clippy::trivially_copy_pass_by_ref": 13,
+    "clippy::unchecked_time_subtraction": 3,
+    "clippy::undocumented_unsafe_blocks": 5,
+    "clippy::uninlined_format_args": 11,
+    "clippy::unnecessary_debug_formatting": 6,
+    "clippy::unnecessary_join": 1,
+    "clippy::unnecessary_semicolon": 1,
+    "clippy::unnecessary_wraps": 14,
+    "clippy::unnested_or_patterns": 7,
+    "clippy::unreadable_literal": 33,
+    "clippy::unused_async": 15,
+    "clippy::unused_self": 4,
+    "clippy::used_underscore_binding": 11,
+    "clippy::wildcard_imports": 2,
+    "elided_lifetimes_in_paths": 101,
+    "let_underscore_drop": 179,
+    "missing_debug_implementations": 80,
+    "unreachable_pub": 508,
+    "unused_qualifications": 205
+   }
+  },
+  "jscpd": {
+   "command": "npx -y jscpd@5.4.0 --min-tokens 75 --min-lines 5 --reporters json --output $SC/jscpd crates && python docs/lint/scripts/tally.py jscpd $SC/jscpd/jscpd-report.json --json $SC/jscpd.json",
+   "counts": {
+    "jscpd:rust": 37,
+    "jscpd:typescript": 4
+   }
+  },
+  "oxlint": {
+   "command": "npx -y -p oxlint@1.93.0 -p oxlint-tsgolint@7.0.2006 oxlint -c docs/lint/lint-drafts/oxlintrc.json --ignore-pattern '**/vendor/**' --format json crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests > $SC/oxlint.out; python docs/lint/scripts/tally.py oxlint $SC/oxlint.out --json $SC/oxlint.json --scope-depth 3",
+   "counts": {
+    "eslint(accessor-pairs)": 1,
+    "eslint(curly)": 2537,
+    "eslint(max-classes-per-file)": 6,
+    "eslint(max-params)": 14,
+    "eslint(no-console)": 38,
+    "eslint(no-implicit-coercion)": 191,
+    "eslint(no-new-func)": 6,
+    "eslint(no-param-reassign)": 10,
+    "eslint(no-promise-executor-return)": 65,
+    "eslint(no-redeclare)": 1,
+    "eslint(no-restricted-properties)": 46,
+    "eslint(no-script-url)": 4,
+    "eslint(no-unmodified-loop-condition)": 1,
+    "eslint(no-useless-concat)": 1,
+    "eslint(no-useless-return)": 1,
+    "eslint(no-var)": 12,
+    "eslint(prefer-const)": 5,
+    "eslint(require-await)": 179,
+    "eslint(require-unicode-regexp)": 461,
+    "import(no-named-as-default)": 1,
+    "oxc(no-accumulating-spread)": 1,
+    "promise(always-return)": 38,
+    "promise(no-callback-in-promise)": 1,
+    "typescript(consistent-type-imports)": 41,
+    "typescript(no-extraneous-class)": 4,
+    "unicorn(consistent-function-scoping)": 133,
+    "unicorn(escape-case)": 63,
+    "unicorn(explicit-length-check)": 75,
+    "unicorn(new-for-builtins)": 1,
+    "unicorn(no-array-callback-reference)": 16,
+    "unicorn(no-array-reverse)": 1,
+    "unicorn(no-array-sort)": 44,
+    "unicorn(no-hex-escape)": 64,
+    "unicorn(no-immediate-mutation)": 1,
+    "unicorn(no-negated-condition)": 13,
+    "unicorn(no-object-as-default-parameter)": 3,
+    "unicorn(no-static-only-class)": 1,
+    "unicorn(no-this-assignment)": 3,
+    "unicorn(no-useless-switch-case)": 2,
+    "unicorn(no-useless-undefined)": 65,
+    "unicorn(prefer-add-event-listener)": 45,
+    "unicorn(prefer-at)": 13,
+    "unicorn(prefer-code-point)": 5,
+    "unicorn(prefer-dom-node-append)": 1,
+    "unicorn(prefer-dom-node-dataset)": 5,
+    "unicorn(prefer-import-meta-properties)": 20,
+    "unicorn(prefer-number-coercion)": 15,
+    "unicorn(prefer-query-selector)": 23,
+    "unicorn(prefer-single-call)": 1,
+    "unicorn(prefer-string-replace-all)": 42,
+    "unicorn(prefer-type-error)": 1,
+    "unicorn(require-post-message-target-origin)": 1
+   }
+  },
+  "oxlint-tsgolint": {
+   "command": "npx -y -p oxlint@1.93.0 -p oxlint-tsgolint@7.0.2006 oxlint -c docs/lint/lint-drafts/oxlintrc.json --ignore-pattern '**/vendor/**' --type-aware --format json crates/ralphy-daemon/assets/ui > $SC/oxlint-typed.out; python docs/lint/scripts/tally.py oxlint $SC/oxlint-typed.out --json $SC/oxlint-typed.json --scope-depth 3",
+   "counts": {
+    "eslint(curly)": 2218,
+    "eslint(max-params)": 14,
+    "eslint(no-console)": 24,
+    "eslint(no-implicit-coercion)": 183,
+    "eslint(no-param-reassign)": 9,
+    "eslint(no-promise-executor-return)": 3,
+    "eslint(no-redeclare)": 1,
+    "eslint(no-restricted-properties)": 40,
+    "eslint(no-useless-concat)": 1,
+    "eslint(no-useless-return)": 1,
+    "eslint(no-var)": 12,
+    "eslint(prefer-const)": 2,
+    "eslint(require-await)": 12,
+    "eslint(require-unicode-regexp)": 167,
+    "import(no-named-as-default)": 1,
+    "promise(always-return)": 38,
+    "promise(no-callback-in-promise)": 1,
+    "typescript(consistent-return)": 10,
+    "typescript(consistent-type-imports)": 41,
+    "typescript(no-confusing-void-expression)": 242,
+    "typescript(no-unnecessary-boolean-literal-compare)": 10,
+    "typescript(no-unnecessary-condition)": 429,
+    "typescript(no-unnecessary-template-expression)": 2,
+    "typescript(no-unnecessary-type-conversion)": 117,
+    "typescript(no-unnecessary-type-parameters)": 3,
+    "typescript(no-unsafe-type-assertion)": 102,
+    "typescript(prefer-nullish-coalescing)": 648,
+    "typescript(strict-boolean-expressions)": 1089,
+    "typescript(strict-void-return)": 20,
+    "unicorn(consistent-function-scoping)": 50,
+    "unicorn(escape-case)": 11,
+    "unicorn(explicit-length-check)": 74,
+    "unicorn(no-array-callback-reference)": 11,
+    "unicorn(no-array-sort)": 22,
+    "unicorn(no-hex-escape)": 9,
+    "unicorn(no-negated-condition)": 13,
+    "unicorn(no-this-assignment)": 1,
+    "unicorn(no-useless-switch-case)": 2,
+    "unicorn(no-useless-undefined)": 11,
+    "unicorn(prefer-add-event-listener)": 43,
+    "unicorn(prefer-at)": 5,
+    "unicorn(prefer-code-point)": 5,
+    "unicorn(prefer-dom-node-append)": 1,
+    "unicorn(prefer-dom-node-dataset)": 5,
+    "unicorn(prefer-number-coercion)": 10,
+    "unicorn(prefer-query-selector)": 23,
+    "unicorn(prefer-single-call)": 1,
+    "unicorn(prefer-string-replace-all)": 31,
+    "unicorn(require-post-message-target-origin)": 1
+   }
+  },
+  "typescript": {
+   "command": "npx -y -p typescript@7.0.2 tsc --noEmit --pretty false -p crates/ralphy-daemon/assets/ui --exactOptionalPropertyTypes --noPropertyAccessFromIndexSignature > $SC/tsc.out; python docs/lint/scripts/tally.py tsc $SC/tsc.out --json $SC/tsc.json --scope-depth 3",
+   "counts": {
+    "TS2322": 3,
+    "TS2345": 14,
+    "TS2375": 7,
+    "TS2379": 36,
+    "TS2412": 6,
+    "TS4111": 213
+   }
+  }
+ },
+ "sha": "13045ccb05b98b892a76a4a323a498e4eaea985f",
+ "tools": {
+  "clippy": "1.99.1",
+  "jscpd": "5.4.0",
+  "oxlint": "1.93.0",
+  "oxlint-tsgolint": "7.0.2006",
+  "typescript": "7.0.2"
+ }
+}
