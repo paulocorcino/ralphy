@@ -21,13 +21,13 @@ pub(crate) type Transports = Arc<dyn Fn(String) -> AnyTransport + Send + Sync>;
 /// this crate every router and every notifier gets [`NoApi`] instead, so no
 /// test can reach the API, whatever config or token it has.
 #[cfg(not(test))]
-fn api_transports() -> Transports {
+pub(crate) fn api_transports() -> Transports {
     Arc::new(|token| AnyTransport(Box::new(ralphy_telegram::client::UreqTransport::new(token))))
 }
 
 /// [`api_transports`] in a unit test: [`NoApi`].
 #[cfg(test)]
-fn api_transports() -> Transports {
+pub(crate) fn api_transports() -> Transports {
     Arc::new(|_token| AnyTransport(Box::new(NoApi)))
 }
 

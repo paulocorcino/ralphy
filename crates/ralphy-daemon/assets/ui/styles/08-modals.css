@@ -701,7 +701,7 @@
   flex-wrap: wrap;
 }
 /* Settings → Devices (wb-devices.js). */
-/* Settings → Telegram: what each daemon does with the messages. */
+/* Settings → Telegram: the bot, its chat and its state (wb-telegram-setup.ts). */
 .telegram-state {
   margin-left: auto;
   color: var(--text-muted);

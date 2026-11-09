@@ -401,8 +401,8 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-tabs-store.ts"),
     ),
     (
-        "wb-telegram-status.ts",
-        include_str!("../../assets/ui/wb-telegram-status.ts"),
+        "wb-telegram-setup.ts",
+        include_str!("../../assets/ui/wb-telegram-setup.ts"),
     ),
     (
         "wb-uploads-store.ts",

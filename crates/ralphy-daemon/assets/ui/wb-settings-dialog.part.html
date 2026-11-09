@@ -170,28 +170,47 @@
                     <p class="sec-note" x-show="notifyTestNote" x-text="notifyTestNote"></p>
                   </div>
                 </template>
-                <!-- telegram: its own body, the wbTelegramStatus component
-                     (wb-telegram-status.ts), built only while the section is
-                     open. Read only: the bot is set up in a terminal. -->
+                <!-- telegram: its own body, the wbTelegramSetup component
+                     (wb-telegram-setup.ts), built only while the section is
+                     open, so the password field never sits in a closed
+                     modal. The token is sent once and never shown again. -->
                 <template x-if="sec.id === 'telegram' && settingsOpen && settingsSection === 'telegram'">
-                  <div class="telegram-status" x-data="wbTelegramStatus">
-                    <div class="sec-actions">
-                      <button class="btn" @click="load()" title="Read the state again from the daemon">
-                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                  <div class="telegram-setup" x-data="wbTelegramSetup">
+                    <p class="sec-note devices-error" x-show="error" x-text="error"></p>
+                    <div class="set-row">
+                      <div class="set-main">
+                        <label class="set-label" for="telegram-token">Bot token</label>
+                        <input id="telegram-token" class="set-input" type="password" autocomplete="off"
+                               placeholder="The token that BotFather gave you" x-model="token"
+                               @keydown.enter="saveToken()" />
+                        <button class="btn" :disabled="busy || !token.trim()" @click="saveToken()">Save</button>
+                      </div>
+                      <p class="set-help">Kept by this daemon only. The page does not show it again.</p>
+                    </div>
+                    <div class="set-row" x-show="loaded">
+                      <div class="set-main">
+                        <span class="set-label">Bot</span>
+                        <span class="telegram-state" :class="{ fault: fault() }" x-text="botLine()"></span>
+                      </div>
+                      <p class="set-help" x-text="stateLine()"></p>
+                    </div>
+                    <div class="set-row" x-show="hasBot()">
+                      <div class="set-main">
+                        <span class="set-label">Chat</span>
+                        <span class="telegram-state" x-text="chatLine()"></span>
+                        <button class="btn" :disabled="busy" @click="findChat()">Find my chat</button>
+                      </div>
+                      <p class="set-help">Send /start to the bot in Telegram, then click the button.</p>
+                    </div>
+                    <div class="sec-actions" x-show="hasBot()">
+                      <button class="btn" :disabled="busy || !canTest()" @click="sendTest()">
+                        <i class="bi bi-send"></i> Send a test message
+                      </button>
+                      <button class="btn" :disabled="busy" @click="removeBot()">
+                        <i class="bi bi-trash"></i> Remove the bot
                       </button>
                     </div>
-                    <p class="sec-note devices-error" x-show="error" x-text="error"></p>
-                    <template x-for="row in rows" :key="row.key">
-                      <div class="set-row">
-                        <div class="set-main">
-                          <span class="set-label" x-text="row.name"></span>
-                          <span class="telegram-state" :class="{ fault: row.fault }" x-text="row.text"></span>
-                        </div>
-                      </div>
-                    </template>
-                    <p class="sec-note" x-show="needsSetup()">
-                      To set up a bot, run <code>ralphy telegram setup</code> in a terminal on that machine.
-                    </p>
+                    <p class="sec-note" x-show="note" x-text="note"></p>
                   </div>
                 </template>
                 <!-- devices: its own body, the wbDevices component (wb-devices.ts).

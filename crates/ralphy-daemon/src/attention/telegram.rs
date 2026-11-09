@@ -332,7 +332,7 @@ impl Transport for AnyTransport {
 
 mod notifier;
 
-pub(crate) use notifier::Notifier;
+pub(crate) use notifier::{api_transports, Notifier, Transports};
 
 #[cfg(test)]
 mod peer_run_tests;

@@ -62,8 +62,7 @@ fn a_moved_home_folder_takes_no_bot() {
     );
 }
 
-/// `GET /api/telegram` of a daemon with no bot, written as the shared reply
-/// the workbench tests read.
+/// `GET /api/telegram` of a daemon with no bot.
 #[tokio::test]
 async fn the_reply_of_a_daemon_with_no_bot_says_why() {
     let store = tempfile::tempdir().expect("a temporary store");
@@ -94,5 +93,59 @@ async fn the_reply_of_a_daemon_with_no_bot_says_why() {
         reply,
         serde_json::json!({ "state": "off", "why": "not-set-up" })
     );
-    golden::check("api-telegram", reply, &[]);
+}
+
+/// `request` on a router over the store `store`, which has no bot: the status
+/// and the JSON reply.
+async fn reply_in(store: &std::path::Path, request: Request<Body>) -> (u16, serde_json::Value) {
+    let (_tx, shutdown) = tokio::sync::watch::channel(false);
+    let app = router(
+        None,
+        PathBuf::from("does-not-exist"),
+        store.join("peers"),
+        StorePaths {
+            telegram_config: telegram_state::config_path_in(store),
+            ..Default::default()
+        },
+        std::time::Instant::now(),
+        shutdown,
+        auth::AuthState::localhost(),
+    );
+    let response = app.oneshot(request).await.expect("the router answers");
+    let status = response.status().as_u16();
+    let body = axum::body::to_bytes(response.into_body(), 1 << 16)
+        .await
+        .expect("the body");
+    (status, serde_json::from_slice(&body).expect("JSON"))
+}
+
+fn post(uri: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("host", "127.0.0.1")
+        .body(Body::empty())
+        .expect("a request")
+}
+
+/// The setup routes of Settings over a daemon with no bot, written as the
+/// shared replies the workbench tests read. None of them calls Telegram.
+#[tokio::test]
+async fn the_setup_routes_of_a_daemon_with_no_bot() {
+    let store = tempfile::tempdir().expect("a temporary store");
+    let get = Request::builder()
+        .uri("/api/telegram/bot")
+        .body(Body::empty())
+        .expect("a request");
+    let (status, reply) = reply_in(store.path(), get).await;
+    assert_eq!(status, 200);
+    golden::check("api-telegram-bot", reply, &[]);
+
+    let (status, reply) = reply_in(store.path(), post("/api/telegram/chat")).await;
+    assert_eq!(status, 409);
+    golden::check("api-telegram-chat--no-bot", reply, &[]);
+
+    let (status, reply) = reply_in(store.path(), post("/api/telegram/test")).await;
+    assert_eq!(status, 409);
+    golden::check("api-telegram-test--no-chat", reply, &[]);
 }

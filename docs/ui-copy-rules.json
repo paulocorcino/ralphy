@@ -160,12 +160,6 @@
   ],
   "exemptions": [
     {
-      "file": "wb-settings-dialog.part.html",
-      "text": "ralphy telegram setup",
-      "rule": "banned:ralphy",
-      "reason": "A command the operator types at a terminal to set up the bot. Code keeps its case."
-    },
-    {
       "file": "wb-add-project.ts",
       "text": "Already in Projects",
       "rule": "casing:title",

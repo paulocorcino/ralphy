@@ -102,7 +102,7 @@ import "./wb-desk-sync.test.mjs";
 import "./wb-device.test.mjs";
 import "./wb-viewport.test.mjs";
 import "./wb-devices.test.mjs";
-import "./wb-telegram-status.test.mjs";
+import "./wb-telegram-setup.test.mjs";
 import "./wb-settings-dialog.test.mjs";
 import "./wb-settings.test.mjs";
 import "./wb-spend.test.mjs";

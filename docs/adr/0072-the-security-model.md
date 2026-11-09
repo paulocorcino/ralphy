@@ -12,6 +12,8 @@ Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a cons
 
 Amended by ADR-0083 (proposed: D13, an undocumented OS call to suspend a console's processes, and the daemon acts only on processes in its custody record).
 
+Amended 2026-11-07: D7, the page may send the Telegram token, write-only.
+
 ## Context
 
 Ralphy runs AI agents with shell access on the operator's machine, serves a
@@ -557,3 +559,16 @@ token. The old file is kept until `ralphy telegram disable` or
 of an `off` Telegram state and the path the daemon reports never hold the
 token: a reason is a fixed word, never the parser's error text, which quotes
 the line it failed on.
+
+## Amendment 2026-11-07 — D7: the page may send the Telegram token
+
+Settings, Telegram sets up the bot of the daemon (ADR-0085, amendment of
+2026-11-07). The page sends the token once, in the body of
+`POST /api/telegram/bot`. The daemon refuses it on a request that may have
+crossed a network in clear text, as it refuses the password of a host
+(`request_may_carry_a_secret`). It writes the token owner-only, and no route
+returns it: the page shows the bot's name, which `getMe` gives. An error
+from the Bot API is redacted before it is logged or returned, because the
+request URL holds the token. The routes are behind the guard of every route,
+so only a logged-in page, a bearer, or the local machine under the
+`localhost` policy may set or remove the bot.
