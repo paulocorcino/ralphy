@@ -60,3 +60,40 @@ const OXFMT_VERSION: &str = "0.75.0";
 fn ci_installs_the_pinned_oxfmt() {
     assert_pinned("OXFMT_VERSION", "oxfmt", OXFMT_VERSION);
 }
+
+/// The `channel` of `rust-toolchain.toml`.
+fn pinned_rust_toolchain() -> String {
+    let file = read(&workspace_root().join("rust-toolchain.toml"));
+    file.lines()
+        .find_map(|line| line.trim().strip_prefix("channel = "))
+        .map(|v| v.trim_matches('"').to_owned())
+        .expect("rust-toolchain.toml has a `channel = \"<version>\"` line")
+}
+
+/// Every `toolchain:` of every workflow is the version of
+/// `rust-toolchain.toml`, so CI builds with the compiler the gate ran.
+#[test]
+fn ci_uses_the_pinned_rust_toolchain() {
+    let pinned = pinned_rust_toolchain();
+    assert!(
+        pinned.split('.').count() == 3,
+        "rust-toolchain.toml pins an exact version, found {pinned:?}"
+    );
+    let dir = workspace_root().join(".github/workflows");
+    let mut wrong = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("reading the workflows folder") {
+        let path = entry.expect("a workflow entry").path();
+        for (n, line) in read(&path).lines().enumerate() {
+            let Some(value) = line.trim().strip_prefix("toolchain: ") else {
+                continue;
+            };
+            if value.trim_matches('"') != pinned {
+                wrong.push(format!("{}:{}: {value}", path.display(), n + 1));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "a workflow must install Rust {pinned}: {wrong:?}"
+    );
+}
