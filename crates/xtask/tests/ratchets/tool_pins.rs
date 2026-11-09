@@ -35,7 +35,7 @@ fn assert_pinned(env_key: &str, tool: &str, version: &str) {
 
 /// The oxlint of the `ui-tests` job of `ci.yml`, fetched by version and
 /// checksum, and of the lint steps of the gate, run by `npx`.
-const OXLINT_VERSION: &str = "1.85.0";
+const OXLINT_VERSION: &str = "1.93.0";
 
 #[test]
 fn ci_installs_the_pinned_oxlint() {
@@ -44,7 +44,7 @@ fn ci_installs_the_pinned_oxlint() {
 
 /// The tsgolint of the type-aware run of the `ui-tests` job of `ci.yml`,
 /// fetched by version and checksum, and of the type-aware step of the gate.
-const TSGOLINT_VERSION: &str = "7.0.2005";
+const TSGOLINT_VERSION: &str = "7.0.2006";
 
 #[test]
 fn ci_installs_the_pinned_tsgolint() {

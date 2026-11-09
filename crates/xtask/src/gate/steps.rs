@@ -129,7 +129,7 @@ pub const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "oxlint@1.85.0",
+            "oxlint@1.93.0",
             "--deny-warnings",
             "crates/ralphy-daemon/assets/ui",
             "crates/ralphy-daemon/ui-tests",
@@ -144,9 +144,9 @@ pub const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "oxlint@1.85.0",
+            "oxlint@1.93.0",
             "-p",
-            "oxlint-tsgolint@7.0.2005",
+            "oxlint-tsgolint@7.0.2006",
             "oxlint",
             "--type-aware",
             "--deny-warnings",

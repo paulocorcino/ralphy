@@ -21,8 +21,8 @@ env:
   # The oxlint of the `ui-tests` job. The lint steps of `xtask gate` run
   # the same version through npx locally, and the ratchet
   # `ci_installs_the_pinned_oxlint` fails when the two differ.
-  OXLINT_VERSION: "1.85.0"
-  OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
+  OXLINT_VERSION: "1.93.0"
+  OXLINT_SHA256: 6d0d37cb51d01449714f04e2dff0d87dca66c39a72544f667b29808899d2db39
   # The tools of the `checks` job: release binaries, pinned like oxlint. The
   # local forms, with `cargo install --locked --version`, are in AGENTS.md.
   ACTIONLINT_VERSION: "1.7.12"
@@ -35,8 +35,8 @@ env:
   # of @oxlint-tsgolint/linux-x64. The type-aware step of `xtask gate` runs
   # the same version through npx, and `ci_installs_the_pinned_tsgolint`
   # fails when the two differ.
-  TSGOLINT_VERSION: "7.0.2005"
-  TSGOLINT_SHA256: 3cd257574f2b3f0de69904ead10ca49397184e70cff481c905dd00cc4aa77554
+  TSGOLINT_VERSION: "7.0.2006"
+  TSGOLINT_SHA256: 85cfff1e15e5b209c904d3daef6c4595ee544ecc9a274c8fccb271a92177c155
   # The oxfmt of the format check of the `ui-tests` job. The format step
   # of `xtask gate` runs the same version through npx, and
   # `ci_installs_the_pinned_oxfmt` fails when the two differ. A new version
