@@ -197,8 +197,6 @@
     // debt: 1 site
     "unicorn/prefer-dom-node-append": "off",
     // debt: 1 site
-    "unicorn/prefer-single-call": "off",
-    // debt: 1 site
     "unicorn/prefer-type-error": "off",
     // debt: 1 site
     "unicorn/require-post-message-target-origin": "off",

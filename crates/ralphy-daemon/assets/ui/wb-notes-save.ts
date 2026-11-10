@@ -163,11 +163,10 @@ export function createNoteSave(deps: NoteSaveDeps) {
             paintState(el, WBFail.failed(reply, "Could not save: the daemon gave no reason."));
             return;
           }
-          el.classList.remove("danger");
           // The file exists NOW — including the case where it had gone and
           // this write is what brought it back, which is why the missing state
           // is cleared here and not only by a read.
-          el.classList.remove("missing");
+          el.classList.remove("danger", "missing");
           // The record may carry its path: this is the moment a claim becomes
           // a name (see `namePath`).
           if (!record.path) {
