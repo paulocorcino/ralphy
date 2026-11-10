@@ -331,7 +331,7 @@ fn median(costs: &[f64]) -> Option<f64> {
     match costs.len() {
         0 => None,
         n if n % 2 == 1 => Some(costs[n / 2]),
-        n => Some((costs[n / 2 - 1] + costs[n / 2]) / 2.0),
+        n => Some(f64::midpoint(*costs.get(n / 2 - 1)?, *costs.get(n / 2)?)),
     }
 }
 
