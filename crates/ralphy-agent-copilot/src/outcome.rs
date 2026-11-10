@@ -84,12 +84,12 @@ pub(crate) fn classify_copilot_outcome(
     final_text: &str,
     log: &str,
 ) -> Outcome {
-    let limit = if !exited_cleanly {
+    let limit = if exited_cleanly {
+        None
+    } else {
         // No reset hint: Copilot's limit surface is unobserved (D11), so the
         // ADR-0030 synthetic cadence handles the wait.
         ralphy_adapter_support::detect_limit(log, crate::auth::is_copilot_limit_text, |_| None)
-    } else {
-        None
     };
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(final_text),

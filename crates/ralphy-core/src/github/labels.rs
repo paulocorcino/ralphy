@@ -172,14 +172,14 @@ pub fn plan_label_actions(
                 Some((_, existing_color)) => {
                     let norm_existing = normalize_color(existing_color);
                     let norm_desired = normalize_color(&spec.color);
-                    if norm_existing != norm_desired {
+                    if norm_existing == norm_desired {
+                        LabelAction::Skip(spec.name.clone())
+                    } else {
                         LabelAction::UpdateColor {
                             name: spec.name.clone(),
                             from: norm_existing,
                             to: norm_desired,
                         }
-                    } else {
-                        LabelAction::Skip(spec.name.clone())
                     }
                 }
             }

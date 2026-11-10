@@ -177,10 +177,10 @@ pub(crate) fn build_run_queue(
 /// The issues whose `stop-before` is ignored: `--issues` verbatim, else the
 /// single `--only-issue`, else none.
 fn forced_issue_set(args: &RunArgs) -> Vec<u64> {
-    if !args.issues.is_empty() {
-        args.issues.clone()
-    } else {
+    if args.issues.is_empty() {
         args.only_issue.into_iter().collect()
+    } else {
+        args.issues.clone()
     }
 }
 
