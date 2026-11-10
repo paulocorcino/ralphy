@@ -57,8 +57,7 @@ fn record_text(obj: &Value) -> String {
                     .map(str::to_string)
                     .or_else(|| p.get("text").and_then(Value::as_str).map(str::to_string))
             })
-            .collect::<Vec<_>>()
-            .join(""),
+            .collect::<String>(),
         _ => String::new(),
     }
 }
