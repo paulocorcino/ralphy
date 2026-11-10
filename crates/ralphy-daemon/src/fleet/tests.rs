@@ -131,7 +131,7 @@ fn same_slug_from_two_daemons_yields_two_entries() {
     let by_key = |k: &str| {
         rows.iter()
             .find(|r| r.key == k)
-            .unwrap_or_else(|| panic!("missing key {k}; got {:?}", rows))
+            .unwrap_or_else(|| panic!("missing key {k}; got {rows:?}"))
     };
     assert_eq!(by_key("01ABC/owner/repo").path, "C:/Dev/repo");
     assert_eq!(by_key("01XYZ/owner/repo").path, "/home/p/repo");

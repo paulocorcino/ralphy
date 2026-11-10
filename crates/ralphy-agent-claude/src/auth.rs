@@ -198,7 +198,7 @@ pub(crate) fn parse_reset_hhmm(text: &str) -> Option<String> {
         "am" => hour % 12,
         _ => (hour % 12) + 12,
     };
-    let hhmm = format!("{:02}:{:02}", hour24, min);
+    let hhmm = format!("{hour24:02}:{min:02}");
     match caps.get(1) {
         Some(wd) => Some(format!("{} {}", title_case_weekday(wd.as_str()), hhmm)),
         None => Some(hhmm),

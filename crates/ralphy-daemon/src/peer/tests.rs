@@ -273,8 +273,7 @@ fn diagnosis_always_names_the_environment() {
         let d = status.diagnosis(env);
         assert!(
             d.contains(env),
-            "{:?} diagnosis lost the environment: {d}",
-            status
+            "{status:?} diagnosis lost the environment: {d}"
         );
     }
 }

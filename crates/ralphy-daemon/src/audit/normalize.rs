@@ -183,15 +183,15 @@ pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
     let screen = shown_screen(client, form.as_ref(), screen_size);
 
     let profile = profile(&[
-        &format!("{:?}", os_value),
-        &format!("{:?}", browser_value),
+        &format!("{os_value:?}"),
+        &format!("{browser_value:?}"),
         &format!("{:?}", engine.as_ref().map(|f| f.value)),
         &format!("{:?}", form.as_ref().map(|f| f.value)),
         screen.as_deref().unwrap_or(""),
         &format!("{:?}", client.cores),
         &format!("{:?}", client.memory_gb),
         &format!("{:?}", client.touch_points),
-        &format!("{:?}", gpu),
+        &format!("{gpu:?}"),
         time_zone.as_deref().unwrap_or(""),
         &client
             .languages

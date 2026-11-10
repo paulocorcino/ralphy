@@ -88,7 +88,7 @@ impl ClaudeAgent {
         // rather than being killed on the wall timeout") is `!timed_out` — NOT the
         // runner's `exited_cleanly` (a *successful* exit); the D10 auth bail stays
         // inline here.
-        let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
+        let log_path = self.run_dir.join(format!("exec-{call_index}.out"));
         let prompt = user_message(PROMPT_EXECUTE);
         let r = HeadlessCall::new(cmd, &prompt, timeout, &log_path)
             .hold_prompt(gate)

@@ -1,6 +1,7 @@
 //! Repo-label vocabulary: the canonical Ralphy label set, planning/applying
 //! label actions against a repository, and the queue/human-return label sets.
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -236,6 +237,9 @@ pub fn list_repo_labels(repo_root: &Path) -> Result<Vec<(String, String)>> {
 
 /// Render a human-readable plan of label actions: one tagged line per action
 /// plus a summary.
+// Writing to a String cannot fail, so a failed write is a broken invariant.
+const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
 pub fn format_label_plan(actions: &[LabelAction]) -> String {
     let mut out = String::new();
     let mut n_create = 0usize;
@@ -245,22 +249,23 @@ pub fn format_label_plan(actions: &[LabelAction]) -> String {
         match action {
             LabelAction::Create(spec) => {
                 n_create += 1;
-                out.push_str(&format!("  create  {}\n", spec.name));
+                writeln!(out, "  create  {}", spec.name).expect(WRITE_TO_STRING);
             }
             LabelAction::UpdateColor { name, from, to } => {
                 n_update += 1;
-                out.push_str(&format!("  update  {} ({} → {})\n", name, from, to));
+                writeln!(out, "  update  {name} ({from} → {to})").expect(WRITE_TO_STRING);
             }
             LabelAction::Skip(name) => {
                 n_skip += 1;
-                out.push_str(&format!("  skip    {}\n", name));
+                writeln!(out, "  skip    {name}").expect(WRITE_TO_STRING);
             }
         }
     }
-    out.push_str(&format!(
-        "labels: {} to create, {} to update, {} unchanged\n",
-        n_create, n_update, n_skip
-    ));
+    writeln!(
+        out,
+        "labels: {n_create} to create, {n_update} to update, {n_skip} unchanged"
+    )
+    .expect(WRITE_TO_STRING);
     out
 }
 
@@ -281,7 +286,7 @@ pub fn apply_label_actions(actions: &[LabelAction], repo_root: &Path) -> Result<
             LabelAction::UpdateColor { name, to, .. } => {
                 let argv = label_edit_argv(name, to);
                 let args: Vec<&str> = argv.iter().map(String::as_str).collect();
-                gh_output(&format!("gh label edit {}", name), || {
+                gh_output(&format!("gh label edit {name}"), || {
                     let mut cmd = gh(repo_root);
                     cmd.args(&args);
                     cmd
