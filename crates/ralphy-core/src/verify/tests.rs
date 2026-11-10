@@ -137,7 +137,7 @@ fn run_spawn_failure_after_a_pass_is_still_a_spawn_failure() {
     assert!(report.spawn_failed());
     assert_eq!(
         report.first_failure().map(|c| c.argv.as_slice()),
-        Some(["definitely-not-a-real-binary-xyz".to_string()].as_slice())
+        Some(["definitely-not-a-real-binary-xyz".to_owned()].as_slice())
     );
 }
 

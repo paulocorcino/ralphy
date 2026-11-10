@@ -123,7 +123,7 @@ fn scanned_files(root: &Path) -> Vec<(String, PathBuf)> {
         collect(root, &root.join(dir), &mut out);
     }
     for name in ROOT_FILES {
-        out.push(((*name).to_string(), root.join(name)));
+        out.push(((*name).to_owned(), root.join(name)));
     }
     // This file cites routes in its own tests.
     out.retain(|(rel, _)| rel != "crates/xtask/tests/ui_contract/cited_routes.rs");
@@ -193,7 +193,7 @@ fn cited_paths() -> Regex {
 fn citations(cited: &Regex, line: &str) -> Vec<String> {
     cited
         .captures_iter(line)
-        .map(|c| c[1].trim_end_matches(['.', ':', ',']).to_string())
+        .map(|c| c[1].trim_end_matches(['.', ':', ',']).to_owned())
         .filter(|c| c != "/api" && c != "/ws" && c != "/api/" && c != "/ws/")
         .collect()
 }

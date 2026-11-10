@@ -65,30 +65,30 @@ fn envelope(
 ) -> Value {
     let mut data = data;
     if let Value::Object(ref mut map) = data {
-        map.insert("emitter".to_string(), ctx.emitter.clone());
-        map.insert("git".to_string(), ctx.git.clone());
+        map.insert("emitter".to_owned(), ctx.emitter.clone());
+        map.insert("git".to_owned(), ctx.git.clone());
         if type_ != "dev.ralphy.run.finished" {
-            map.insert("agent".to_string(), agent_block(state));
+            map.insert("agent".to_owned(), agent_block(state));
         }
         if let Some(number) = subject.and_then(issue_number_from_subject) {
-            map.insert("issue".to_string(), issue_block(state, number));
+            map.insert("issue".to_owned(), issue_block(state, number));
         }
     }
     let mut ev = serde_json::Map::new();
-    ev.insert("specversion".to_string(), json!("1.0"));
-    ev.insert("type".to_string(), json!(type_));
-    ev.insert("source".to_string(), json!(ctx.source));
+    ev.insert("specversion".to_owned(), json!("1.0"));
+    ev.insert("type".to_owned(), json!(type_));
+    ev.insert("source".to_owned(), json!(ctx.source));
     if let Some(subject) = subject {
-        ev.insert("subject".to_string(), json!(subject));
+        ev.insert("subject".to_owned(), json!(subject));
     }
-    ev.insert("id".to_string(), json!(super::emitter::new_id()));
+    ev.insert("id".to_owned(), json!(super::emitter::new_id()));
     ev.insert(
-        "time".to_string(),
+        "time".to_owned(),
         json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
     );
-    ev.insert("runid".to_string(), json!(ctx.runid));
-    ev.insert("datacontenttype".to_string(), json!("application/json"));
-    ev.insert("data".to_string(), data);
+    ev.insert("runid".to_owned(), json!(ctx.runid));
+    ev.insert("datacontenttype".to_owned(), json!("application/json"));
+    ev.insert("data".to_owned(), data);
     Value::Object(ev)
 }
 

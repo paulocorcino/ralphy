@@ -12,7 +12,7 @@ async fn api_agents_serves_the_roster() {
     assert_eq!(rows.len(), session::Agent::ALL.len());
     let served: std::collections::BTreeSet<String> = rows
         .iter()
-        .map(|r| r["id"].as_str().unwrap().to_string())
+        .map(|r| r["id"].as_str().unwrap().to_owned())
         .collect();
     let expected: std::collections::BTreeSet<String> = session::Agent::ALL
         .iter()
@@ -37,8 +37,8 @@ async fn api_agents_uses_the_owning_daemons_locator() {
     let peer_store = tempfile::tempdir().unwrap();
     let peer_identity = identity::Identity {
         id: PEER_ID.parse().unwrap(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let peer_port = listener.local_addr().unwrap().port();
@@ -52,7 +52,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
         peer_rx,
         RouterDependencies {
             auth: auth::AuthState::fixed(
-                auth::AuthPolicy::Bearer("peer-token".to_string()),
+                auth::AuthPolicy::Bearer("peer-token".to_owned()),
                 epoch::SessionEpoch::in_memory_detached(),
             ),
             roster_locator: Arc::new(|_| Some(PathBuf::from("/usr/local/bin/vendor"))),
@@ -68,14 +68,14 @@ async fn api_agents_uses_the_owning_daemons_locator() {
     peer::write_descriptor(
         local_store.path(),
         &peer::PeerDescriptor {
-            daemon_id: PEER_ID.to_string(),
-            name: "peer".to_string(),
-            avatar: "🐙".to_string(),
-            address: "127.0.0.1".to_string(),
+            daemon_id: PEER_ID.to_owned(),
+            name: "peer".to_owned(),
+            avatar: "🐙".to_owned(),
+            address: "127.0.0.1".to_owned(),
             port: peer_port,
-            environment: "WSL: Ubuntu-22.04".to_string(),
+            environment: "WSL: Ubuntu-22.04".to_owned(),
             os: String::new(),
-            token: "peer-token".to_string(),
+            token: "peer-token".to_owned(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
             nudge: None,
@@ -85,8 +85,8 @@ async fn api_agents_uses_the_owning_daemons_locator() {
     let local_router = router_with_roster(
         Some(identity::Identity {
             id: LOCAL_ID.parse().unwrap(),
-            name: "local".to_string(),
-            avatar: "🐙".to_string(),
+            name: "local".to_owned(),
+            avatar: "🐙".to_owned(),
         }),
         local_store.path().join("repos.toml"),
         PathBuf::from("does-not-exist"),

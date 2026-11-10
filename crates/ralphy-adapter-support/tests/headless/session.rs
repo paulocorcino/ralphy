@@ -96,7 +96,7 @@ fn run_init_session_clears_a_stale_artifact_before_the_run() {
             missing_msg: "NO ARTIFACT",
         },
         |_log| false,
-        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+        |raw| Ok::<String, anyhow::Error>(raw.to_owned()),
     )
     .expect_err("the stale artifact was cleared, so the read must fail with missing_msg");
 
@@ -174,7 +174,7 @@ fn a_clean_json_session_with_auth_text_returns_its_artifact() {
             missing_msg: "NO ARTIFACT",
         },
         has_auth_text,
-        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+        |raw| Ok::<String, anyhow::Error>(raw.to_owned()),
     )
     .expect("a session that wrote its artifact and exited 0 keeps it");
     assert_eq!(artifact, ARTIFACT_TEXT);
@@ -362,7 +362,7 @@ fn a_held_session_returns_the_gate_error() {
         },
         refuse(),
         |_log| false,
-        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+        |raw| Ok::<String, anyhow::Error>(raw.to_owned()),
     )
     .expect_err("a refusing gate fails the json session");
     let chain = format!("{err:#}");

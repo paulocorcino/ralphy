@@ -180,7 +180,7 @@ fn retry_after_header(msg: &str, lower: &str) -> Option<String> {
         .next()
         .unwrap_or("")
         .trim_end_matches(',');
-    (!hint.is_empty()).then(|| hint.to_string())
+    (!hint.is_empty()).then(|| hint.to_owned())
 }
 
 /// The text after "try again at " or "try again in ", up to the first `.` or
@@ -193,7 +193,7 @@ fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
                 .chars()
                 .take_while(|c| *c != '.' && *c != '\n')
                 .collect();
-            let hint = hint.trim().to_string();
+            let hint = hint.trim().to_owned();
             if !hint.is_empty() {
                 return Some(hint);
             }
@@ -289,7 +289,7 @@ fn parse_reset_hint_from_text(line: &str) -> Option<String> {
     .expect("valid reset-hint regex");
     re.captures(line)
         .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().trim().to_string())
+        .map(|m| m.as_str().trim().to_owned())
         .filter(|hint| !hint.is_empty())
 }
 

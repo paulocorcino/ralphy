@@ -63,7 +63,7 @@ fn open_frame(kind: &str, fields: serde_json::Value) -> Message {
     }
     bare(&Frame::Command(Command {
         id: 0,
-        verb: "channel.open".to_string(),
+        verb: "channel.open".to_owned(),
         payload,
     }))
 }
@@ -193,7 +193,7 @@ impl Channel {
         let payload = serde_json::json!({ "channel": CHANNEL });
         let close = bare(&Frame::Command(Command {
             id: 0,
-            verb: "channel.close".to_string(),
+            verb: "channel.close".to_owned(),
             payload,
         }));
         self.ws.send(close).await
@@ -233,7 +233,7 @@ fn closed_reason_of(command: &Command) -> Option<String> {
     if !ours {
         return None;
     }
-    Some(command.payload["reason"].as_str()?.to_string())
+    Some(command.payload.get("reason")?.as_str()?.to_owned())
 }
 
 /// A `console` channel with the open `fields` (the console to launch,

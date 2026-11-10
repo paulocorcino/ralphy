@@ -31,7 +31,7 @@ fn ctx() -> Ctx {
         host: SessionHost {
             peers_dir: store.join("peers"),
             identity: None,
-            environment: "test".to_string(),
+            environment: "test".to_owned(),
             bound_port: 0,
             sessions: Arc::new(crate::session::SessionManager::new()),
             registry_path: store.join("repos.toml"),
@@ -144,7 +144,7 @@ async fn read_both(ws: &mut Ws) -> (Option<String>, Option<Vec<u8>>) {
         match protocol::decode(&bytes) {
             Ok(Frame::Command(c)) if c.verb == "channel.closed" => {
                 assert_eq!(c.payload["channel"], STUCK, "only the stuck channel ends");
-                closed = c.payload["reason"].as_str().map(str::to_string);
+                closed = c.payload["reason"].as_str().map(str::to_owned);
             }
             Ok(Frame::Channel { channel, piece, .. }) if channel == ECHO => echoed = Some(piece),
             Ok(_) | Err(_) => {}

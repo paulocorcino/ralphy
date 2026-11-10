@@ -228,9 +228,9 @@ fn refolding_a_version_is_refused_because_its_fragments_are_gone() {
     write_fragment(&root, "1", "feature", "A real feature.");
     let release = |root: &Path| {
         vec![
-            "--release".to_string(),
-            "v9.9.9".to_string(),
-            "--root".to_string(),
+            "--release".to_owned(),
+            "v9.9.9".to_owned(),
+            "--root".to_owned(),
             root.display().to_string(),
         ]
     };
@@ -249,7 +249,7 @@ fn refolding_a_version_is_refused_because_its_fragments_are_gone() {
 
     // --force is the deliberate override, and it does replace.
     let mut forced = release(&root);
-    forced.push("--force".to_string());
+    forced.push("--force".to_owned());
     changelog_cmd(&forced).expect("--force is allowed to replace");
     let history = load_history(&root.join("changelog.json")).expect("history");
     assert_eq!(history.releases[0].entries, Vec::<Entry>::new());

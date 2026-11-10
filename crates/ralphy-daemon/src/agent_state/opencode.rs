@@ -38,7 +38,7 @@ pub(crate) fn opencode_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: request,
             detail: match line.tool_name.as_deref() {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "question.asked" => Signal::Wait {
@@ -46,7 +46,7 @@ pub(crate) fn opencode_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: request,
             detail: match line.question.as_deref().map(str::trim) {
                 Some(q) if !q.is_empty() => format!("{QUESTION_TOOL}: {q}"),
-                _ => QUESTION_TOOL.to_string(),
+                _ => QUESTION_TOOL.to_owned(),
             },
         },
         "permission.replied" | "question.replied" | "question.rejected" => Signal::WaitEnd {

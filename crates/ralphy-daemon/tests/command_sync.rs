@@ -31,7 +31,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),

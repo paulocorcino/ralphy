@@ -96,7 +96,7 @@ fn render_write_keys_windows_admin() {
 #[test]
 fn render_set_name_quotes_inside_the_login_shell() {
     let op = HostOp::SetName {
-        name: "my box".to_string(),
+        name: "my box".to_owned(),
         avatar: 3,
     };
     assert_eq!(
@@ -228,7 +228,7 @@ fn render_the_installed_binary_never_falls_back_to_path() {
 fn append(admin: bool) -> HostOp {
     HostOp::AppendKey {
         admin,
-        body: "AAAAC3Nza+/=".to_string(),
+        body: "AAAAC3Nza+/=".to_owned(),
     }
 }
 
@@ -272,7 +272,7 @@ fn render_append_key_refuses_a_body_that_is_not_base64() {
     for body in ["", "AAAA' ; rm -rf ~", "AAAA$(id)"] {
         let op = HostOp::AppendKey {
             admin: false,
-            body: body.to_string(),
+            body: body.to_owned(),
         };
         assert!(render(Some(HostOs::Linux), &op).is_err(), "{body:?}");
     }
@@ -311,7 +311,7 @@ fn render_append_key_on_windows_refuses_a_body_that_is_not_base64() {
         for body in ["", "AAAA' ; rm -rf ~", "AAAA$(id)"] {
             let op = HostOp::AppendKey {
                 admin,
-                body: body.to_string(),
+                body: body.to_owned(),
             };
             assert!(
                 render(Some(HostOs::Windows), &op).is_err(),

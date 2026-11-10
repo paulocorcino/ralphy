@@ -117,7 +117,7 @@ fn typed_event_names(globals: &str, map: &str) -> std::collections::BTreeSet<Str
     let body = &body[..body.find("\n}").expect("the interface closes")];
     body.lines()
         .filter_map(|line| line.trim().strip_prefix("\"workbench:"))
-        .filter_map(|rest| rest.split_once("\":").map(|(name, _)| name.to_string()))
+        .filter_map(|rest| rest.split_once("\":").map(|(name, _)| name.to_owned()))
         .collect()
 }
 
@@ -274,7 +274,7 @@ fn each_page_starts_from_one_entry_module() {
     ] {
         assert_eq!(
             module_tags(html),
-            vec![entry.to_string()],
+            vec![entry.to_owned()],
             "{page} loads one entry module"
         );
         assert!(

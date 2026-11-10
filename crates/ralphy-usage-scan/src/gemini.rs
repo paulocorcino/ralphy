@@ -102,7 +102,7 @@ fn records_of(
     fold.by_model
         .into_iter()
         .map(|(model, tokens)| InteractiveRecord {
-            agent: "gemini".to_string(),
+            agent: "gemini".to_owned(),
             model,
             session_id: fold.session_id.clone(),
             project: slug.clone(),
@@ -186,7 +186,7 @@ impl OpenFold {
     /// and an assistant turn's tokens.
     fn add_record(&mut self, value: &serde_json::Value) {
         if let Some(id) = value.get("sessionId").and_then(|v| v.as_str()) {
-            self.session_id.get_or_insert_with(|| id.to_string());
+            self.session_id.get_or_insert_with(|| id.to_owned());
         }
         if let Some(start) = value.get("startTime").and_then(|v| v.as_str()) {
             widen_first(&mut self.first_ts, start);
@@ -228,14 +228,14 @@ impl OpenFold {
 /// Move `first_ts` back to `start` when `start` is the earliest seen.
 fn widen_first(first_ts: &mut String, start: &str) {
     if first_ts.is_empty() || earlier(start, first_ts) {
-        *first_ts = start.to_string();
+        start.clone_into(first_ts);
     }
 }
 
 /// Move `last_ts` forward to `updated` when `updated` is the latest seen.
 fn widen_last(last_ts: &mut String, updated: &str) {
     if last_ts.is_empty() || earlier(last_ts, updated) {
-        *last_ts = updated.to_string();
+        updated.clone_into(last_ts);
     }
 }
 
@@ -254,7 +254,7 @@ fn add_turn(by_model: &mut BTreeMap<String, Tokens>, tokens: &serde_json::Value,
         Some(t) => t,
         None => input + n("output") + n("thoughts"),
     };
-    let agg = by_model.entry(model.to_string()).or_default();
+    let agg = by_model.entry(model.to_owned()).or_default();
     // `input` INCLUDES `cached` in this store (live: 14134 = 8133 cached +
     // 6001 fresh, and 14134 + 37 output + 218 thoughts = 14389 total), but
     // `Tokens`' four buckets are DISJOINT — a consumer sums them. Subtract the

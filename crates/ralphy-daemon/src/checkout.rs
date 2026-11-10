@@ -140,7 +140,7 @@ pub fn lexical(name: &str) -> Option<Checkout> {
         return None;
     }
     Some(Checkout {
-        name: name.to_string(),
+        name: name.to_owned(),
     })
 }
 

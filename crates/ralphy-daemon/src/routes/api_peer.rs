@@ -187,7 +187,7 @@ pub(crate) async fn peer_tree_poll_route(
             );
         }
         if !poll.paths.iter().any(|path| path == watch::RUNSTATE_REL) {
-            poll.paths.push(watch::RUNSTATE_REL.to_string());
+            poll.paths.push(watch::RUNSTATE_REL.to_owned());
         }
     }
     if let Err(e) = subscribe_off_reactor(&subs, &poll, root).await {

@@ -14,7 +14,7 @@ fn seen(js: &str) -> Vec<(&'static str, String)> {
 }
 
 fn row(kind: &'static str, text: &str) -> (&'static str, String) {
-    (kind, text.to_string())
+    (kind, text.to_owned())
 }
 
 /// The sinks are calls: the same name used as a plain value, or declared, shows

@@ -57,11 +57,11 @@ pub(crate) fn claim_candidates<'a>(
             return None;
         }
         claimed
-            .insert((slug.to_string(), remote.to_string()))
+            .insert((slug.to_owned(), remote.to_owned()))
             .then(|| Candidate {
-                slug: slug.to_string(),
-                path: path.to_string(),
-                remote: remote.to_string(),
+                slug: slug.to_owned(),
+                path: path.to_owned(),
+                remote: remote.to_owned(),
             })
     })
     .collect()
@@ -268,7 +268,7 @@ mod tests {
             notes: vec![ralphy_note("n1", "path-abc"), ralphy_note("n2", "o/other")],
             ..DeskStore::default()
         };
-        let aliases: BTreeMap<String, String> = [("path-abc".to_string(), "o/r".to_string())]
+        let aliases: BTreeMap<String, String> = [("path-abc".to_owned(), "o/r".to_owned())]
             .into_iter()
             .collect();
         let out = rekey_desk(store, &aliases);
@@ -299,8 +299,8 @@ mod tests {
             .checkouts
             .insert("path-solo".into(), "solo-tree".into());
         let aliases: BTreeMap<String, String> = [
-            ("path-abc".to_string(), "o/r".to_string()),
-            ("path-solo".to_string(), "o/solo".to_string()),
+            ("path-abc".to_owned(), "o/r".to_owned()),
+            ("path-solo".to_owned(), "o/solo".to_owned()),
         ]
         .into_iter()
         .collect();

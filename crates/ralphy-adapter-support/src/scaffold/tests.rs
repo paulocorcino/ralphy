@@ -6,7 +6,7 @@ use crate::scratch::remove_scratch_dir;
 fn fake_run(log: &str) -> HeadlessRun {
     HeadlessRun {
         stdout: String::new(),
-        log: log.to_string(),
+        log: log.to_owned(),
         exited_cleanly: true,
         timed_out: false,
         idle_killed: false,
@@ -30,7 +30,7 @@ fn fake_run_failed(log: &str) -> HeadlessRun {
 fn fake_run_killed(log: &str) -> HeadlessRun {
     HeadlessRun {
         stdout: String::new(),
-        log: log.to_string(),
+        log: log.to_owned(),
         exited_cleanly: false,
         timed_out: true,
         idle_killed: false,

@@ -173,7 +173,7 @@ mod tests {
         );
         assert_eq!(spec.task_name, "ralphy-run-myrepo");
         assert!(spec.cron_tag.starts_with("# ralphy-schedule:run:"));
-        assert_eq!(spec.args, vec!["run".to_string(), "--if-idle".to_string()]);
+        assert_eq!(spec.args, vec!["run".to_owned(), "--if-idle".to_owned()]);
         assert_eq!(spec.working_dir, Path::new("/home/me/myrepo"));
         assert!(spec.log_path.ends_with("schedule.log"));
     }
@@ -192,9 +192,9 @@ mod tests {
         assert_eq!(
             spec.args,
             vec![
-                "triage".to_string(),
-                "--if-idle".to_string(),
-                "--yes".to_string()
+                "triage".to_owned(),
+                "--if-idle".to_owned(),
+                "--yes".to_owned()
             ]
         );
         assert!(spec.cron_tag.starts_with("# ralphy-schedule:triage:"));
@@ -206,7 +206,7 @@ mod tests {
     fn triage_prelude_is_triage_yes_without_if_idle() {
         assert_eq!(
             triage_prelude(),
-            vec!["triage".to_string(), "--yes".to_string()]
+            vec!["triage".to_owned(), "--yes".to_owned()]
         );
     }
 }

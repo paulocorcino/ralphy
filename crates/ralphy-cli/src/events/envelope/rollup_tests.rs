@@ -2,8 +2,8 @@ use super::*;
 
 fn ctx() -> EventCtx {
     EventCtx {
-        source: "ralphy/o/r".to_string(),
-        runid: "01RUNIDRUNIDRUNIDRUNID".to_string(),
+        source: "ralphy/o/r".to_owned(),
+        runid: "01RUNIDRUNIDRUNIDRUNID".to_owned(),
         emitter: json!({}),
         git: json!({}),
     }

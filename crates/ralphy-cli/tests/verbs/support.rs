@@ -23,7 +23,7 @@ pub(crate) fn git_output(root: &Path, args: &[&str]) -> String {
         .output()
         .expect("spawning git");
     assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 pub(crate) fn commit(root: &Path, file: &str, body: &str, msg: &str) {

@@ -309,7 +309,7 @@ fn an_inherited_vertexai_flag_is_scrubbed() {
     assert!(!removed.contains(&"SystemRoot"), "{removed:?}");
     assert_eq!(
         env_of(&cmd, "GEMINI_CLI_HOME"),
-        Some(Some("/owned".to_string()))
+        Some(Some("/owned".to_owned()))
     );
 }
 

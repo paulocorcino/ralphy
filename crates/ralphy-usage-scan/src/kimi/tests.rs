@@ -169,7 +169,7 @@ fn excludes_run_owned_sessions() {
         &status_update(1770983420.0, 20, 2, 0, "m-int"),
     );
     let mut runs = HashSet::new();
-    runs.insert("RUN".to_string());
+    runs.insert("RUN".to_owned());
     let records = scan_kimi(&KimiScan {
         kimi_dir: tmp.path(),
         kimi_code_dir: Path::new("does-not-exist-kimi-code"),

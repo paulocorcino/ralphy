@@ -237,7 +237,7 @@ impl Scan<'_> {
                     let s = if strip_html {
                         strip_tags(s)
                     } else {
-                        s.to_string()
+                        s.to_owned()
                     };
                     text.push_str(&s);
                     fragments.push(s);
@@ -369,7 +369,7 @@ fn template_parts(pieces: &[Piece]) -> Vec<Part<'_>> {
 /// The newlines it spans follow it, so the lines after it keep their numbers.
 fn markup_hole(e: &str) -> String {
     let shown = if e.contains(['<', '>']) {
-        "markup".to_string()
+        "markup".to_owned()
     } else {
         squeeze(e)
     };

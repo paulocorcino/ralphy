@@ -163,7 +163,7 @@ pub(crate) fn remove_from_user_path(dir: &Path) -> Result<Vec<String>> {
     };
     Ok(
         if super::registry::change(|current| path_without(current, dir))? {
-            vec!["your user Path (HKEY_CURRENT_USER\\Environment)".to_string()]
+            vec!["your user Path (HKEY_CURRENT_USER\\Environment)".to_owned()]
         } else {
             Vec::new()
         },

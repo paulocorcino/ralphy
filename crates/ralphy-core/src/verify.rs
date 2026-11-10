@@ -366,7 +366,7 @@ fn recv_and_join(
 fn tail(s: &str) -> String {
     let trimmed = s.trim_end();
     if trimmed.len() <= TAIL_BYTES {
-        return trimmed.to_string();
+        return trimmed.to_owned();
     }
     let mut start = trimmed.len() - TAIL_BYTES;
     // The byte offset may land inside a multi-byte char (e.g. box-drawing '└' in
@@ -378,7 +378,7 @@ fn tail(s: &str) -> String {
     let slice = &trimmed[start..];
     match slice.find('\n') {
         Some(nl) => slice[nl + 1..].to_string(),
-        None => slice.to_string(),
+        None => slice.to_owned(),
     }
 }
 

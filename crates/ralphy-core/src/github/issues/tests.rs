@@ -17,10 +17,7 @@ fn label_bootstrap_spec_reads_the_canonical_roster() {
     }
     assert_eq!(
         label_bootstrap_spec("not-a-ralphy-label"),
-        (
-            "ededed".to_string(),
-            "Ralphy: not-a-ralphy-label".to_string()
-        )
+        ("ededed".to_owned(), "Ralphy: not-a-ralphy-label".to_owned())
     );
 }
 
@@ -72,7 +69,7 @@ fn parse_issue_labels_reads_names_and_tolerates_empty() {
     let json = r#"{"labels": [{"name": "ready-for-human"}, {"name": "needs-triage"}]}"#;
     assert_eq!(
         parse_issue_labels(json).unwrap(),
-        vec!["ready-for-human".to_string(), "needs-triage".to_string()]
+        vec!["ready-for-human".to_owned(), "needs-triage".to_owned()]
     );
     // No labels → empty, not an error.
     assert_eq!(

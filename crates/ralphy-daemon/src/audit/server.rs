@@ -41,7 +41,7 @@ impl ServerFacts {
                 let hint = hint.strip_prefix('-').unwrap_or(hint);
                 let value = clip(value.to_str().ok()?);
                 Some((
-                    if hint.is_empty() { "brands" } else { hint }.to_string(),
+                    if hint.is_empty() { "brands" } else { hint }.to_owned(),
                     value,
                 ))
             })

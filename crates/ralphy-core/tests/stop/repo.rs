@@ -19,7 +19,7 @@ pub(crate) fn current_branch(repo: &Path) -> String {
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .expect("spawn git");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 /// Scratch directories under `prefix` that are more than an hour old. A test

@@ -48,7 +48,7 @@ pub fn blocked_reason(text: &str) -> Option<String> {
     let line = text.lines().find(|l| l.contains("RALPHY_BLOCKED_EXIT"))?;
     Some(
         line.split_once("RALPHY_BLOCKED_EXIT")
-            .map(|(_, rest)| rest.trim().to_string())
+            .map(|(_, rest)| rest.trim().to_owned())
             .unwrap_or_default(),
     )
 }

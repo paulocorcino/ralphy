@@ -48,7 +48,7 @@ pub(crate) fn normalize_remote_url(raw: &str) -> String {
         // `host:owner/repo` → `host/owner/repo` (only the first colon is the sep).
         return format!("https://{}", rest.replacen(':', "/", 1));
     }
-    s.to_string()
+    s.to_owned()
 }
 
 /// Render the start-up info line shown under the branding header: the project name,
@@ -65,7 +65,7 @@ pub(crate) fn render_info_line(
         if opts.emoji {
             format!("{emoji} {value}")
         } else {
-            value.to_string()
+            value.to_owned()
         }
     };
     let mut parts: Vec<String> = vec![seg("📦", project)];

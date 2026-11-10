@@ -55,8 +55,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
                         .as_str()
                         .and_then(Agent::from_query)
                         .ok_or(ArgvError::BadParam("planAgent"))?;
-                    argv.push("--plan-agent".to_string());
-                    argv.push(agent_flag(plan).to_string());
+                    argv.push("--plan-agent".to_owned());
+                    argv.push(agent_flag(plan).to_owned());
                 }
             }
             let mode = payload
@@ -64,8 +64,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
                 .and_then(|v| v.as_str())
                 .and_then(BranchMode::from_query)
                 .ok_or(ArgvError::BadParam("branchMode"))?;
-            argv.push("--branch-mode".to_string());
-            argv.push(mode.as_flag().to_string());
+            argv.push("--branch-mode".to_owned());
+            argv.push(mode.as_flag().to_owned());
             Ok(argv)
         }
         // Non-Spawn verbs never reach the spawn path (`answer_one` answers the
@@ -146,11 +146,11 @@ pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvE
         .filter(|&n| n > 0)
         .ok_or(ArgvError::BadParam("number"))?;
     Ok(vec![
-        "issues".to_string(),
-        "show".to_string(),
+        "issues".to_owned(),
+        "show".to_owned(),
         n.to_string(),
-        "--format".to_string(),
-        "json".to_string(),
+        "--format".to_owned(),
+        "json".to_owned(),
     ])
 }
 
@@ -224,7 +224,7 @@ pub fn run_stop_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvErr
                 && r.chars().all(|c| c.is_ascii_alphanumeric())
         })
         .ok_or(ArgvError::BadParam("runid"))?;
-    Ok(vec!["stop".to_string(), format!("--runid={runid}")])
+    Ok(vec!["stop".to_owned(), format!("--runid={runid}")])
 }
 
 /// The longest registry slug the wire accepts. GitHub's own owner+name ceiling is
@@ -260,9 +260,9 @@ pub fn project_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, A
         })
         .ok_or(ArgvError::BadParam("slug"))?;
     Ok(vec![
-        "daemon".to_string(),
-        "remove".to_string(),
-        slug.to_string(),
+        "daemon".to_owned(),
+        "remove".to_owned(),
+        slug.to_owned(),
     ])
 }
 
@@ -281,7 +281,7 @@ pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
         Verb::SyncPush => "push",
         _ => return Err(ArgvError::BadParam("verb")),
     };
-    Ok(vec!["sync".to_string(), sub.to_string()])
+    Ok(vec!["sync".to_owned(), sub.to_owned()])
 }
 
 /// The lexical shape of a git ref the workbench may name — a branch to switch
@@ -333,10 +333,10 @@ pub fn branch_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
         .filter(|n| well_shaped_ref(n))
         .ok_or(ArgvError::BadParam("name"))?;
     Ok(vec![
-        "branch".to_string(),
-        sub.to_string(),
-        "--".to_string(),
-        name.to_string(),
+        "branch".to_owned(),
+        sub.to_owned(),
+        "--".to_owned(),
+        name.to_owned(),
     ])
 }
 
@@ -364,12 +364,12 @@ pub fn worktree_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, Arg
                 .ok_or(ArgvError::BadParam("base"))?,
         ),
     };
-    let mut argv = vec!["worktree".to_string(), "add".to_string()];
+    let mut argv = vec!["worktree".to_owned(), "add".to_owned()];
     if let Some(base) = base {
         argv.push(format!("--base={base}"));
     }
-    argv.push("--".to_string());
-    argv.push(name.to_string());
+    argv.push("--".to_owned());
+    argv.push(name.to_owned());
     Ok(argv)
 }
 
@@ -386,10 +386,10 @@ pub fn worktree_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, 
         .filter(|n| !n.is_empty())
         .ok_or(ArgvError::BadParam("name"))?;
     Ok(vec![
-        "worktree".to_string(),
-        "remove".to_string(),
-        "--".to_string(),
-        name.to_string(),
+        "worktree".to_owned(),
+        "remove".to_owned(),
+        "--".to_owned(),
+        name.to_owned(),
     ])
 }
 
@@ -416,8 +416,8 @@ pub fn label_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError>
         _ => return Err(ArgvError::BadParam("op")),
     };
     Ok(vec![
-        "label".to_string(),
-        "set".to_string(),
+        "label".to_owned(),
+        "set".to_owned(),
         number.to_string(),
         format!("--{op}={label}"),
     ])

@@ -275,7 +275,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         if input.run_session_ids.contains(&session_id) {
             continue;
         }
-        let model = model.unwrap_or_else(|| "unknown".to_string());
+        let model = model.unwrap_or_else(|| "unknown".to_owned());
 
         attribution.entry(session_id.clone()).or_insert_with(|| {
             let matched = cwd
@@ -307,7 +307,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
                 .cloned()
                 .unwrap_or((None, None));
             InteractiveRecord {
-                agent: "copilot".to_string(),
+                agent: "copilot".to_owned(),
                 model,
                 session_id,
                 project,

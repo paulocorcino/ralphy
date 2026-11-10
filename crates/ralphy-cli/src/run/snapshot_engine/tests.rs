@@ -21,7 +21,7 @@ fn doc_in(state: &str, active: Option<u64>, since: Option<&str>) -> RunSnapshot 
     };
     doc.phase.state = state.into();
     doc.phase.active = active;
-    doc.phase.since = since.map(str::to_string);
+    doc.phase.since = since.map(str::to_owned);
     doc
 }
 
@@ -221,7 +221,7 @@ fn plan_written(number: u64, md: &str) -> RunEvent {
         usage: UsageLite::default(),
         steps: plan_progress::parse_steps(md)
             .into_iter()
-            .map(|s| (s.text, s.status.wire().to_string()))
+            .map(|s| (s.text, s.status.wire().to_owned()))
             .collect(),
     }
 }

@@ -97,8 +97,8 @@ fn hello_through(child: &mut Child, port: u16, token: Option<&str>) -> Result<St
         .map_err(|e| format!("the daemon's answer is not JSON: {e}"))?;
     body["daemon_id"]
         .as_str()
-        .map(str::to_string)
-        .ok_or_else(|| "the daemon's answer has no daemon_id".to_string())
+        .map(str::to_owned)
+        .ok_or_else(|| "the daemon's answer has no daemon_id".to_owned())
 }
 
 /// End the probe's `ssh` and return the last line it wrote.
@@ -118,5 +118,5 @@ fn end(mut child: Child) -> Option<String> {
     text.lines()
         .map(str::trim)
         .rfind(|l| !l.is_empty())
-        .map(str::to_string)
+        .map(str::to_owned)
 }

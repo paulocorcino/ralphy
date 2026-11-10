@@ -13,7 +13,7 @@ async fn a_peer_request_is_dismissed_on_its_peer() {
         &peer_home,
         Some(identity(PEER_ID, "peer")),
         AuthState::fixed(
-            AuthPolicy::Bearer(TOKEN.to_string()),
+            AuthPolicy::Bearer(TOKEN.to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )

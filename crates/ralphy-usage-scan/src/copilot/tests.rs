@@ -271,7 +271,7 @@ fn copilot_excludes_run_owned_sessions() {
     );
     drop(conn);
     let mut runs = HashSet::new();
-    runs.insert("ses_run".to_string());
+    runs.insert("ses_run".to_owned());
     let records = scan_copilot(&CopilotScan {
         db_path: &db,
         run_session_ids: &runs,
@@ -395,7 +395,7 @@ fn session_reasoning_effort_reads_the_recorded_level() {
     drop(conn);
     assert_eq!(
         session_reasoning_effort(&path, "ses_e"),
-        Some("high".to_string()),
+        Some("high".to_owned()),
         "the chronologically last NON-NULL row wins"
     );
     assert_eq!(session_reasoning_effort(&path, "ses_nobody"), None);

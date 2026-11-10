@@ -48,13 +48,13 @@ async fn evict_token_carries_its_reason_before_waking() {
 fn session_info_serialises_checkout_only_when_present() {
     let info = |checkout: Option<&str>| SessionInfo {
         id: 1,
-        repo: "owner/ralphy".to_string(),
-        agent: "claude".to_string(),
-        kind: "agent".to_string(),
+        repo: "owner/ralphy".to_owned(),
+        agent: "claude".to_owned(),
+        kind: "agent".to_owned(),
         started_at: 1,
         environment: None,
         name: None,
-        checkout: checkout.map(str::to_string),
+        checkout: checkout.map(str::to_owned),
         record: None,
         agent_state: None,
     };

@@ -213,7 +213,7 @@ impl ClaudeAgent {
             return m.clone();
         }
         if let Some(m) = &plan.recommended_model {
-            return model_of_judgment(m).to_string();
+            return model_of_judgment(m).to_owned();
         }
         self.exec.default_exec_model.clone()
     }
@@ -228,7 +228,7 @@ impl ClaudeAgent {
             return Some(effort.clone());
         }
         if plan.recommended_model.as_deref() == Some("opus-high") {
-            return Some("high".to_string());
+            return Some("high".to_owned());
         }
         None
     }
@@ -280,7 +280,7 @@ impl SettingsFile {
         let unproven = hooks
             .into_iter()
             .find(|h| h.form() == HookForm::Shell)
-            .map(|h| h.reason().to_string());
+            .map(|h| h.reason().to_owned());
         Self { path, unproven }
     }
 }

@@ -227,7 +227,7 @@ fn probe(
     };
     Some(match parse_version(&text) {
         Some(v) => format!("{} {v}", tool.name),
-        None => tool.name.to_string(),
+        None => tool.name.to_owned(),
     })
 }
 
@@ -238,7 +238,7 @@ fn parse_version(text: &str) -> Option<String> {
     // A run of at least two dot-separated number groups — enough to skip stray
     // single integers in a banner while matching real versions.
     let re = Regex::new(r"\d+(?:\.\d+)+").ok()?;
-    re.find(text).map(|m| m.as_str().to_string())
+    re.find(text).map(|m| m.as_str().to_owned())
 }
 
 /// The WSL flavor of the host, or `None` when not under WSL (native Linux,

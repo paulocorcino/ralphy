@@ -182,12 +182,12 @@ async fn note_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Va
         .get("path")
         .and_then(|v| v.as_str())
         .unwrap_or("")
-        .to_string();
+        .to_owned();
     // `checkout_of` confined the worktree folder against the REGISTERED root:
     // a `.ralphy/worktrees/<name>` that is a symlink out of the repo is
     // `unknown checkout`, never a root a write confines against.
     let root = checkout.map_or_else(|| repo_path.to_path_buf(), |c| c.root().to_path_buf());
-    let markdown = markdown.to_string();
+    let markdown = markdown.to_owned();
     match blocking_read(move || note::write(&root, &rel, &markdown)).await {
         Some(Ok(())) => serde_json::json!({ "status": "ok" }),
         Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),

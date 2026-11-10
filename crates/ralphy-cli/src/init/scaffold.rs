@@ -78,7 +78,7 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
     let block = block.trim_end();
     let Some(start) = find_heading(doc, AGENT_SKILLS_HEADING) else {
         // Append, separated by a blank line from any existing content.
-        let mut out = doc.trim_end().to_string();
+        let mut out = doc.trim_end().to_owned();
         if out.is_empty() {
             return format!("{block}\n");
         }

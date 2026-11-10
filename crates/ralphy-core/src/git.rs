@@ -39,7 +39,7 @@ pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
 /// Resolve any path inside a repo to its git toplevel.
@@ -52,7 +52,7 @@ pub fn resolve_toplevel(path: &Path) -> Result<PathBuf> {
         );
     }
     Ok(PathBuf::from(
-        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
     ))
 }
 
@@ -107,7 +107,7 @@ pub fn fetch_origin(repo: &Path) -> Result<()> {
 pub fn current_branch(repo: &Path) -> Result<String> {
     Ok(match ralphy_git_read::head(repo)? {
         ralphy_git_read::Head::Branch { name } => name,
-        ralphy_git_read::Head::Detached { .. } => "HEAD".to_string(),
+        ralphy_git_read::Head::Detached { .. } => "HEAD".to_owned(),
     })
 }
 
@@ -149,8 +149,8 @@ pub fn local_branches_held(repo: &Path) -> Result<Vec<LocalBranch>> {
             }
             let path = path.trim();
             Some(LocalBranch {
-                name: name.to_string(),
-                worktree: (!path.is_empty()).then(|| path.to_string()),
+                name: name.to_owned(),
+                worktree: (!path.is_empty()).then(|| path.to_owned()),
             })
         })
         .collect())

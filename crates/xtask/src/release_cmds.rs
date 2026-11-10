@@ -212,7 +212,7 @@ fn report_fragments(entries: &[Entry]) {
 
 fn pending_report(entries: &[Entry]) -> String {
     if entries.is_empty() {
-        return "no fragments pending\n".to_string();
+        return "no fragments pending\n".to_owned();
     }
     let mut history = crate::changelog::History::default();
     fold(&mut history, "(pending)", "(unreleased)", entries.to_vec());
@@ -283,14 +283,14 @@ pub(crate) fn bump_cmd(args: &[String]) -> Result<()> {
         match arg.as_str() {
             "--root" => root = PathBuf::from(crate::next_value(&mut it, "--root")?),
             other if other.starts_with("--") => bail!("unknown flag {other}"),
-            other => version = Some(other.to_string()),
+            other => version = Some(other.to_owned()),
         }
     }
     let version = version.context("usage: bump <version>, e.g. bump 0.1.0-rc.20")?;
     // A tag is `v0.1.0-rc.20`; a manifest version is not. Writing the tag
     // spelling verbatim into sixteen manifests produces a workspace Cargo
     // cannot parse, and the `v` is the spelling ADR-0056 uses everywhere.
-    let version = version.trim().trim_start_matches('v').to_string();
+    let version = version.trim().trim_start_matches('v').to_owned();
     semver::Version::parse(&version)
         .with_context(|| format!("`{version}` is not a version Cargo will accept"))?;
 
@@ -336,7 +336,7 @@ fn stage_bumps(root: &Path, version: &str) -> Result<Vec<(String, PathBuf, Strin
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?")
-                .to_string();
+                .to_owned();
             staged.push((name, manifest, replaced));
         }
     }
@@ -364,7 +364,7 @@ fn bumped_manifest(manifest: &Path, version: &str) -> Option<String> {
 /// never at the start of a line, so it cannot be hit by accident.
 fn replace_package_version(text: &str, version: &str) -> Option<String> {
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let idx = lines.iter().position(|l| l.starts_with("version = \""))?;
     lines[idx] = format!("version = \"{version}\"");
     let mut out = lines.join(newline);

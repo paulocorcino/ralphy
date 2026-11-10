@@ -150,7 +150,7 @@ async fn over_socket(
     let mut ws = page::Channel::spawn_on(page::connect_request(request).await);
     let frame = Frame::Command(Command {
         id: 1,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
@@ -322,7 +322,7 @@ async fn a_host_password_over_plain_http_is_refused_over_http_too() {
     let bound: std::net::SocketAddr = "192.168.0.10:7257".parse().unwrap();
     let auth = AuthState::boot(
         bound,
-        Some(TOKEN.to_string()),
+        Some(TOKEN.to_owned()),
         SessionEpoch::in_memory_detached(),
         &[],
     )

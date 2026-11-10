@@ -31,7 +31,7 @@ fn usage_from_opencode_message(data: &serde_json::Value) -> Option<Usage> {
         model: data
             .get("modelID")
             .and_then(|v| v.as_str())
-            .map(str::to_string),
+            .map(str::to_owned),
     })
 }
 
@@ -52,7 +52,7 @@ pub(crate) fn session_id_from_stream(stdout: &str) -> Option<String> {
         };
         if let Some(sid) = val.get("sessionID").and_then(|v| v.as_str()) {
             if !sid.is_empty() {
-                return Some(sid.to_string());
+                return Some(sid.to_owned());
             }
         }
     }

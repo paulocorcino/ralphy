@@ -36,7 +36,7 @@ fn fixture_names(root: &Path) -> BTreeSet<String> {
                 .to_string_lossy()
                 .into_owned()
         })
-        .filter_map(|name| name.strip_suffix(".json").map(str::to_string))
+        .filter_map(|name| name.strip_suffix(".json").map(str::to_owned))
         .collect()
 }
 

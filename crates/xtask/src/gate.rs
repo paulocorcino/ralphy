@@ -30,11 +30,11 @@ enum Outcome {
 impl Outcome {
     fn label(self) -> String {
         match self {
-            Outcome::Passed => "ok".to_string(),
+            Outcome::Passed => "ok".to_owned(),
             Outcome::Failed(Some(code)) => format!("FAILED ({code})"),
-            Outcome::Failed(None) => "FAILED (signal)".to_string(),
-            Outcome::Missing => "MISSING".to_string(),
-            Outcome::Skipped => "skipped".to_string(),
+            Outcome::Failed(None) => "FAILED (signal)".to_owned(),
+            Outcome::Missing => "MISSING".to_owned(),
+            Outcome::Skipped => "skipped".to_owned(),
         }
     }
 

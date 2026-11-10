@@ -156,9 +156,9 @@ mod tests {
     fn report(what: &str) -> StallReport {
         StallReport {
             kind: StallKind::ReadDeadline,
-            what: what.to_string(),
+            what: what.to_owned(),
             waited_ms: 20000,
-            holder: Some("tab1".to_string()),
+            holder: Some("tab1".to_owned()),
         }
     }
 
@@ -166,7 +166,7 @@ mod tests {
     fn a_stall_report_is_answered_no_content() {
         // The body the page sends, shared with `wb-stall.test.mjs`.
         let body = include_str!("../../ui-tests/fixtures/api-device-stall--report.json");
-        let (status, line) = post_body(body.to_string());
+        let (status, line) = post_body(body.to_owned());
         assert_eq!(status, StatusCode::NO_CONTENT);
         assert!(line.contains("GET /api/repos"), "{line}");
     }
@@ -177,10 +177,10 @@ mod tests {
         let line = logged(|| log_stall(&report("GET /api/repos"), Some(&device)));
         for part in [
             format!("device={device}"),
-            "holder=\"tab1\"".to_string(),
-            "kind=\"read-deadline\"".to_string(),
-            "what=\"GET /api/repos\"".to_string(),
-            "waited_ms=20000".to_string(),
+            "holder=\"tab1\"".to_owned(),
+            "kind=\"read-deadline\"".to_owned(),
+            "what=\"GET /api/repos\"".to_owned(),
+            "waited_ms=20000".to_owned(),
         ] {
             assert!(line.contains(&part), "{part} missing in {line}");
         }
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn a_stall_report_of_an_unknown_kind_is_refused() {
         let body = r#"{"kind":"nap","what":"x","waited_ms":1,"holder":null}"#;
-        let (status, line) = post_body(body.to_string());
+        let (status, line) = post_body(body.to_owned());
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
         assert!(line.is_empty(), "{line}");
     }

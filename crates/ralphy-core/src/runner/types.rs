@@ -264,7 +264,7 @@ impl RunLedger<'_> {
             phase: phase.into(),
             agent: self.agent.into(),
             model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
-            session_id: session_id.map(str::to_string),
+            session_id: session_id.map(str::to_owned),
             outcome: outcome.into(),
             tokens: usage.clone(),
             ts: chrono::Utc::now().to_rfc3339(),

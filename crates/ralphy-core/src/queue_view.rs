@@ -173,7 +173,7 @@ mod tests {
         Issue {
             number,
             title: format!("issue {number}"),
-            body: body.to_string(),
+            body: body.to_owned(),
             labels: labels.iter().map(ToString::to_string).collect(),
             comments: Vec::new(),
         }

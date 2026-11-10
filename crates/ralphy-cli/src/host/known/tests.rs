@@ -54,10 +54,10 @@ fn known_name_brackets_a_port_that_is_not_22() {
 fn append_separates_a_file_with_no_final_newline() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(".ssh").join("known_hosts");
-    append(&file, &["a k1".to_string()]).unwrap();
+    append(&file, &["a k1".to_owned()]).unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "a k1\n");
     std::fs::write(&file, "old").unwrap();
-    append(&file, &["b k2".to_string()]).unwrap();
+    append(&file, &["b k2".to_owned()]).unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "old\nb k2\n");
 }
 

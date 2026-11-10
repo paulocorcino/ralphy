@@ -17,7 +17,7 @@ pub(crate) fn port_from_args(args: &[String]) -> u16 {
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let value = match arg.strip_prefix("--port=") {
-            Some(v) => Some(v.to_string()),
+            Some(v) => Some(v.to_owned()),
             None if arg == "--port" => it.next().cloned(),
             None => None,
         };
@@ -136,7 +136,7 @@ pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Re
         name: id.as_ref().map(|i| i.name.clone()),
         avatar: id.as_ref().map(|i| i.avatar.clone()),
         environment: peer::detect_environment(),
-        os: std::env::consts::OS.to_string(),
+        os: std::env::consts::OS.to_owned(),
         port,
         protocol_version: PEER_PROTOCOL_VERSION,
         require_token: auth::require_token_enabled_in(dir)?,

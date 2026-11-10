@@ -64,13 +64,13 @@ impl Dismissals {
             return Ok(false);
         }
         let line = Line {
-            id: id.to_string(),
+            id: id.to_owned(),
             ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         };
         let mut bytes = serde_json::to_vec(&line).context("encoding a dismissal")?;
         bytes.push(b'\n');
         owner_only::append_owner_only(&self.path, &bytes)?;
-        self.ids.insert(id.to_string());
+        self.ids.insert(id.to_owned());
         Ok(true)
     }
 }

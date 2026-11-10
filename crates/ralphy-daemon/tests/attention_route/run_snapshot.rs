@@ -11,17 +11,17 @@ async fn a_run_snapshot_in_a_registered_repo_is_listed() {
 
     // The run is this test: the reader keeps a document whose pid lives.
     let mut snapshot = ralphy_run_snapshot::RunSnapshot {
-        runid: "01RUNWAITS".to_string(),
+        runid: "01RUNWAITS".to_owned(),
         pid: std::process::id(),
-        exec_agent: "codex".to_string(),
+        exec_agent: "codex".to_owned(),
         ..ralphy_run_snapshot::RunSnapshot::default()
     };
-    snapshot.phase.state = "executing".to_string();
+    snapshot.phase.state = "executing".to_owned();
     snapshot.phase.active = Some(71);
     snapshot.phase.agent = Some(ralphy_run_snapshot::AgentBlock {
-        state: "waiting".to_string(),
-        since: "2026-10-28T11:00:00-03:00".to_string(),
-        detail: Some("permission: Bash".to_string()),
+        state: "waiting".to_owned(),
+        since: "2026-10-28T11:00:00-03:00".to_owned(),
+        detail: Some("permission: Bash".to_owned()),
     });
     ralphy_run_snapshot::write_atomic(&home, &snapshot).expect("write the run snapshot");
     let pushed = next_push(&mut presence, "attention.dirty").await;

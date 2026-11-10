@@ -39,7 +39,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -78,7 +78,7 @@ fn relayed(reply: &serde_json::Value) -> String {
     reply["message"]
         .as_str()
         .unwrap_or_else(|| panic!("an error message string; got {reply}"))
-        .to_string()
+        .to_owned()
 }
 
 #[tokio::test]

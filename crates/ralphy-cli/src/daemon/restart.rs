@@ -112,7 +112,7 @@ fn current_exe() -> Result<PathBuf> {
 /// every path this command reports.
 fn readable(path: &Path) -> String {
     match path.display().to_string().strip_prefix(r"\\?\") {
-        Some(plain) => plain.to_string(),
+        Some(plain) => plain.to_owned(),
         None => path.display().to_string(),
     }
 }
@@ -121,7 +121,7 @@ fn readable(path: &Path) -> String {
 /// what autostart runs, and what an older pid file implies.
 pub(crate) fn effective(args: &[String]) -> Vec<String> {
     if args.is_empty() {
-        vec!["daemon".to_string()]
+        vec!["daemon".to_owned()]
     } else {
         args.to_vec()
     }
@@ -253,7 +253,7 @@ pub(crate) fn unparked(name: &str) -> String {
         }
         break;
     }
-    base.to_string()
+    base.to_owned()
 }
 
 /// The file a restarted daemon logs to: `daemon.log` in the store, the same

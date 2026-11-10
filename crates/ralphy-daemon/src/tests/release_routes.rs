@@ -92,7 +92,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
             .next()
             .unwrap_or_default()
             .trim()
-            .to_string();
+            .to_owned();
         if !css.contains(&format!("{name}:")) {
             missing.push(name);
         }

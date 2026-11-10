@@ -71,7 +71,7 @@ pub(crate) fn prepare_branch(
             let branch = format!("afk/run-{stamp}");
             repo.checkout_new_branch(&branch, base_branch)?;
             info!(%branch, base = %base_branch, was = %orig, "run branch created");
-            (orig, branch, base_branch.to_string())
+            (orig, branch, base_branch.to_owned())
         }
     };
 

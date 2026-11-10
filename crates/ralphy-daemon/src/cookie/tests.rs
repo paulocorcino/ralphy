@@ -287,7 +287,7 @@ fn clear_cookie_expires_immediately() {
 fn from_cookie_header_extracts_value() {
     assert_eq!(
         from_cookie_header(Some("a=1; ralphy_session=xyz; b=2")),
-        Some("xyz".to_string())
+        Some("xyz".to_owned())
     );
     assert_eq!(
         from_cookie_header(Some("ralphy_session=lone")),

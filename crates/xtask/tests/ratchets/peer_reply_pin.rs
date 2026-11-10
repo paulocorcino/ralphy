@@ -89,7 +89,7 @@ fn peer_reply_types_are_pinned_to_the_protocol_version() {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
-            .to_string();
+            .to_owned();
         sources.insert(name, read(&path));
     }
     let (hash, mut errors) = peer_reply_hash(&sources, PEER_REPLY_TYPES, NOT_PEER_REPLIES);
@@ -113,7 +113,7 @@ fn peer_reply_types_are_pinned_to_the_protocol_version() {
 #[test]
 fn peer_reply_hash_skips_layout_and_sees_a_field() {
     let pin = |src: &str| {
-        let sources = BTreeMap::from([("a.ts".to_string(), src.to_string())]);
+        let sources = BTreeMap::from([("a.ts".to_owned(), src.to_owned())]);
         peer_reply_hash(&sources, &[("a.ts", "R")], &[])
     };
     let (base, errors) = pin("export type R = { a: string; b?: number; };\n");
@@ -233,17 +233,17 @@ fn named_types(
             ) {
                 if dot.is(".") {
                     let module = path.trim_start_matches("./");
-                    found.insert((module.to_string(), member.to_string()));
+                    found.insert((module.to_owned(), member.to_owned()));
                 }
             }
             continue;
         }
         if declares(file, name) {
-            found.insert((file.to_string(), name.to_string()));
+            found.insert((file.to_owned(), name.to_owned()));
         } else if let Some((module, original)) = imports.get(name) {
             found.insert((module.clone(), original.clone()));
         } else if declares("globals.d.ts", name) {
-            found.insert(("globals.d.ts".to_string(), name.to_string()));
+            found.insert(("globals.d.ts".to_owned(), name.to_owned()));
         }
     }
     found
@@ -277,10 +277,7 @@ fn type_imports(toks: &[lex::Token]) -> BTreeMap<String, (String, String)> {
             } else {
                 (names[i], names[i])
             };
-            out.insert(
-                local.to_string(),
-                (module.to_string(), original.to_string()),
-            );
+            out.insert(local.to_owned(), (module.to_owned(), original.to_owned()));
             i += if names.get(i + 1) == Some(&"as") {
                 3
             } else {

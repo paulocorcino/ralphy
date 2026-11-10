@@ -156,7 +156,7 @@ fn head_branch_reads_ref() {
     committed_repo(dir.path(), "feat/x");
     assert_eq!(
         entry_at(dir.path()).head_branch(),
-        Some("feat/x".to_string())
+        Some("feat/x".to_owned())
     );
 }
 
@@ -201,7 +201,7 @@ fn head_branch_of_a_linked_worktree() {
             &wt.to_string_lossy(),
         ],
     );
-    assert_eq!(entry_at(&wt).head_branch(), Some("wt-branch".to_string()));
+    assert_eq!(entry_at(&wt).head_branch(), Some("wt-branch".to_owned()));
 }
 
 fn git_init(dir: &Path) {
@@ -262,7 +262,7 @@ fn remote_some_with_origin_none_without() {
     };
     assert_eq!(
         with_entry.remote(),
-        Some("https://github.com/o/r.git".to_string())
+        Some("https://github.com/o/r.git".to_owned())
     );
 
     let without = tempfile::tempdir().unwrap();
@@ -303,7 +303,7 @@ fn slugs_for_path_matches_canonical_and_string_forms() {
     store.upsert("owner/other", "/elsewhere");
     assert_eq!(
         store.slugs_for_path(dir.path()),
-        vec!["owner/repo".to_string(), "path-abc".to_string()],
+        vec!["owner/repo".to_owned(), "path-abc".to_owned()],
         "both keys name the same live directory, in key order"
     );
 
@@ -312,7 +312,7 @@ fn slugs_for_path_matches_canonical_and_string_forms() {
     gone.upsert("path-gone", "C:/no/such/dir/");
     assert_eq!(
         gone.slugs_for_path(Path::new(r"C:\no\such\dir")),
-        vec!["path-gone".to_string()]
+        vec!["path-gone".to_owned()]
     );
     assert_eq!(
         gone.slugs_for_path(Path::new("/no/such/other")),
@@ -328,7 +328,7 @@ fn rekey_moves_entry_and_records_former_slug() {
     assert!(store.entry("path-abc").is_none(), "the old key is gone");
     let entry = store.entry("owner/repo").expect("moved under the new key");
     assert_eq!(entry.path, "/repo");
-    assert_eq!(entry.former_slugs, vec!["path-abc".to_string()]);
+    assert_eq!(entry.former_slugs, vec!["path-abc".to_owned()]);
     assert_eq!(
         store.former_slug_map().get("path-abc").map(String::as_str),
         Some("owner/repo")
@@ -364,7 +364,7 @@ fn rekey_into_an_existing_slug_merges_and_never_lists_itself() {
     );
     assert_eq!(
         entry.former_slugs,
-        vec!["path-older".to_string(), "path-abc".to_string()],
+        vec!["path-older".to_owned(), "path-abc".to_owned()],
         "history is absorbed, oldest first"
     );
 
@@ -373,8 +373,8 @@ fn rekey_into_an_existing_slug_merges_and_never_lists_itself() {
     renamed.upsert("old/name", "/repo");
     renamed.rekey("old/name", "new/name");
     let entry = renamed.entry("new/name").unwrap();
-    assert!(!entry.former_slugs.contains(&"new/name".to_string()));
-    assert_eq!(entry.former_slugs, vec!["old/name".to_string()]);
+    assert!(!entry.former_slugs.contains(&"new/name".to_owned()));
+    assert_eq!(entry.former_slugs, vec!["old/name".to_owned()]);
 }
 
 #[test]
@@ -387,7 +387,7 @@ fn upsert_preserves_former_slugs() {
     store.upsert("owner/repo", "/repo");
     assert_eq!(
         store.entry("owner/repo").unwrap().former_slugs,
-        vec!["path-abc".to_string()]
+        vec!["path-abc".to_owned()]
     );
 }
 

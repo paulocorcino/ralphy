@@ -75,7 +75,7 @@ impl Usage {
             .filter(|u| u.model.is_some())
             .max_by_key(|u| u.total())
             .and_then(|u| u.model.clone())
-            .or_else(|| fallback.map(str::to_string));
+            .or_else(|| fallback.map(str::to_owned));
         folded
     }
 }

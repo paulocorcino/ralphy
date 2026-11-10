@@ -26,7 +26,7 @@ pub(crate) fn table() -> PriceTable {
         cache_creation: 18.75,
     };
     PriceTable::from_layers(
-        BTreeMap::from([(OPUS.to_string(), price()), (SECOND.to_string(), price())]),
+        BTreeMap::from([(OPUS.to_owned(), price()), (SECOND.to_owned(), price())]),
         BTreeMap::new(),
         BTreeMap::new(),
         BTreeMap::new(),
@@ -86,7 +86,7 @@ impl LedgerRow<'_> {
             "ts": self.ts,
         });
         if let Some(session) = self.session {
-            object["session_id"] = serde_json::Value::String(session.to_string());
+            object["session_id"] = serde_json::Value::String(session.to_owned());
         }
         object
     }

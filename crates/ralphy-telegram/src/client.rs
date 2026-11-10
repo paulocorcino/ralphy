@@ -240,12 +240,12 @@ mod tests {
         fn get(&self, method: &str) -> Result<Value> {
             self.calls
                 .borrow_mut()
-                .push((method.to_string(), Value::Null));
+                .push((method.to_owned(), Value::Null));
             Ok(self.get_response.clone())
         }
 
         fn post(&self, method: &str, body: Value) -> Result<Value> {
-            self.calls.borrow_mut().push((method.to_string(), body));
+            self.calls.borrow_mut().push((method.to_owned(), body));
             Ok(self.post_response.clone())
         }
     }

@@ -59,7 +59,7 @@ fn reasons(rows: &serde_json::Value) -> Vec<String> {
     rows.as_array()
         .unwrap()
         .iter()
-        .map(|r| r["reason"].as_str().unwrap().to_string())
+        .map(|r| r["reason"].as_str().unwrap().to_owned())
         .collect()
 }
 

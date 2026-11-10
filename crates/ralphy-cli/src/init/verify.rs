@@ -46,7 +46,7 @@ pub(crate) fn smoke_test_decision(answer: &str) -> bool {
 pub(crate) fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
     let mut missing = Vec::new();
     if !r.ralphy_present {
-        missing.push(".ralphy/".to_string());
+        missing.push(".ralphy/".to_owned());
     }
 
     for (path, present) in &r.docs {
@@ -137,14 +137,14 @@ fn print_final_report(r: &VerifyReport) {
 /// path), pure and subprocess-free so it can be asserted directly.
 fn smoke_test_args(repo: &Path, n: u64, agent: Agent) -> Vec<String> {
     vec![
-        "run".to_string(),
-        "--repo".to_string(),
+        "run".to_owned(),
+        "--repo".to_owned(),
         repo.display().to_string(),
-        "--only-issue".to_string(),
+        "--only-issue".to_owned(),
         n.to_string(),
-        "--dry-run".to_string(),
-        "--agent".to_string(),
-        agent.cli_name().to_string(),
+        "--dry-run".to_owned(),
+        "--agent".to_owned(),
+        agent.cli_name().to_owned(),
     ]
 }
 
@@ -215,7 +215,7 @@ pub(crate) fn finalize(
     queue.sort_unstable();
 
     let branch = git::current_branch(repo)?;
-    let logged_in_names: Vec<String> = logged_in.iter().map(|a| a.cli_name().to_string()).collect();
+    let logged_in_names: Vec<String> = logged_in.iter().map(|a| a.cli_name().to_owned()).collect();
 
     let r = VerifyReport {
         ralphy_present,
@@ -328,7 +328,7 @@ mod tests {
 
         assert_eq!(
             required_artifacts_missing(&r),
-            vec!["docs/agents/domain.md".to_string()]
+            vec!["docs/agents/domain.md".to_owned()]
         );
     }
     #[test]
@@ -336,11 +336,11 @@ mod tests {
         let args = smoke_test_args(Path::new("/tmp/x"), 7, Agent::Codex);
         assert!(
             args.windows(2)
-                .any(|w| w == ["--agent".to_string(), "codex".to_string()]),
+                .any(|w| w == ["--agent".to_owned(), "codex".to_owned()]),
             "expected --agent codex in {args:?}"
         );
-        assert!(args.contains(&"--dry-run".to_string()));
-        assert!(args.contains(&"--only-issue".to_string()));
+        assert!(args.contains(&"--dry-run".to_owned()));
+        assert!(args.contains(&"--only-issue".to_owned()));
     }
 
     #[test]

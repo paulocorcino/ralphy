@@ -147,7 +147,7 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
     let Ok(md) = fs::read_to_string(plan_path) else {
         return;
     };
-    let mut out = md.trim_end().to_string();
+    let mut out = md.trim_end().to_owned();
     out.push_str("\n\n");
     out.push_str(&crate::resume::plan_trailer(issue_number));
     out.push('\n');

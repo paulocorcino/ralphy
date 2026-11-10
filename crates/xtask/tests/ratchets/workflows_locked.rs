@@ -91,7 +91,7 @@ fn unlocked(commands: &[(usize, String)]) -> Vec<(usize, String)> {
             let command = command_at(text, m.start());
             let cargo_flags = command.split(" -- ").next().unwrap_or(command);
             if !cargo_flags.split_whitespace().any(|t| t == "--locked") {
-                found.push((*line, command.to_string()));
+                found.push((*line, command.to_owned()));
             }
         }
     }
@@ -158,7 +158,7 @@ steps:
 
 #[test]
 fn a_chained_command_is_read_one_command_at_a_time() {
-    let line = |text: &str| vec![(1, text.to_string())];
+    let line = |text: &str| vec![(1, text.to_owned())];
     let missing =
         |text: &str| -> Vec<String> { unlocked(&line(text)).into_iter().map(|(_, c)| c).collect() };
     assert_eq!(

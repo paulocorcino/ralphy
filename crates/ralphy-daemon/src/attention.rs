@@ -250,7 +250,7 @@ fn finished_requests(runs: &RunsRead) -> impl Iterator<Item = AttentionRequest> 
 /// `non_green` and the other statuses ask nothing.
 fn finished_detail(issue: &IssueBlock) -> Option<String> {
     if issue.idle_reaped {
-        return Some(IDLE_REAPED_DETAIL.to_string());
+        return Some(IDLE_REAPED_DETAIL.to_owned());
     }
     matches!(issue.status.as_str(), "blocked" | "hitl" | "needs_split")
         .then(|| issue.status.clone())

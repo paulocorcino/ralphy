@@ -114,7 +114,7 @@ fn main() -> Result<ExitCode> {
 }
 
 fn refresh_seed_cmd(args: &[String]) -> Result<()> {
-    let mut url = MODELS_DEV_URL.to_string();
+    let mut url = MODELS_DEV_URL.to_owned();
     let mut seed_path: Option<PathBuf> = None;
     let mut live_file: Option<PathBuf> = None;
 

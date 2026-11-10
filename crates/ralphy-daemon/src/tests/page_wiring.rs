@@ -322,7 +322,7 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
             .split_once("</div>")
             .unwrap_or_else(|| panic!("the `{open}` block must close"))
             .0
-            .to_string()
+            .to_owned()
     };
 
     let row = slice(r#"class="project-head""#);

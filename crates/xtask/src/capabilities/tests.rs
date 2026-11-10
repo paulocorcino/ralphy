@@ -14,7 +14,7 @@ fn caps(path: &str, text: &str) -> Vec<Capability> {
 
 fn file(path: &str) -> FileDiff {
     FileDiff {
-        path: path.to_string(),
+        path: path.to_owned(),
         ..FileDiff::default()
     }
 }
@@ -41,9 +41,9 @@ Binary files a/icon.png and b/icon.png differ
     assert_eq!(
         files[0].added,
         vec![
-            (4, "let a = 1;".to_string()),
-            (5, "let b = 2;".to_string()),
-            (12, "new".to_string())
+            (4, "let a = 1;".to_owned()),
+            (5, "let b = 2;".to_owned()),
+            (12, "new".to_owned())
         ]
     );
     assert_eq!(files[0].removed, ["old"]);
@@ -64,7 +64,7 @@ diff --git a/a.md b/a.md
     let files = parse_diff(diff);
     assert_eq!(
         files[0].added,
-        [(1, "++ counter".to_string()), (2, "--- rule".to_string())]
+        [(1, "++ counter".to_owned()), (2, "--- rule".to_owned())]
     );
 }
 
@@ -163,12 +163,12 @@ fn several_findings_on_one_rust_line_come_in_rule_order() {
     assert_eq!(
         details("a.rs", &line),
         [
-            "uses `ureq`".to_string(),
-            "uses `Command::new`".to_string(),
-            "adds an `unsafe` block or item".to_string(),
-            "reads a secret from the environment".to_string(),
-            "names `.ssh/`".to_string(),
-            "a long encoded string".to_string(),
+            "uses `ureq`".to_owned(),
+            "uses `Command::new`".to_owned(),
+            "adds an `unsafe` block or item".to_owned(),
+            "reads a secret from the environment".to_owned(),
+            "names `.ssh/`".to_owned(),
+            "a long encoded string".to_owned(),
             format!("a line of {chars} characters with few spaces"),
         ]
     );

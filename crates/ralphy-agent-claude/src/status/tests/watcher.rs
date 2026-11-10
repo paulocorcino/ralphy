@@ -104,7 +104,7 @@ fn watcher_emits_one_agent_state_per_transition_including_the_last_line() {
 
     let line = |event: &str, tool: &str, extra: &str, ts: &str| {
         let tool = if tool.is_empty() {
-            "null".to_string()
+            "null".to_owned()
         } else {
             format!("\"{tool}\"")
         };

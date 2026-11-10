@@ -35,7 +35,7 @@ fn mode_args() -> Vec<String> {
         std::path::PathBuf::from(name)
     });
     match sidecar.and_then(|f| std::fs::read_to_string(f).ok()) {
-        Some(text) => text.lines().map(str::to_string).collect(),
+        Some(text) => text.lines().map(str::to_owned).collect(),
         None => std::env::args().skip(1).collect(),
     }
 }

@@ -198,13 +198,13 @@ pub(super) fn render_final_push(state: &RunState) -> String {
         let head = state
             .final_summary
             .clone()
-            .unwrap_or_else(|| "stopped before any issue was processed".to_string());
+            .unwrap_or_else(|| "stopped before any issue was processed".to_owned());
         return truncate_chars(format!("🛑 {} — {head}", state.title), TELEGRAM_LIMIT);
     }
     let head = state
         .final_summary
         .clone()
-        .unwrap_or_else(|| "run finished".to_string());
+        .unwrap_or_else(|| "run finished".to_owned());
     // A bundle verdict parks the queue on a human split — the footer must say
     // so, or a run that ends "green" hides the pending human step.
     let split_part = if c.needs_split > 0 {
@@ -311,11 +311,11 @@ pub(crate) fn derive_title(
 ) -> String {
     if let Some(t) = title_override {
         if !t.trim().is_empty() {
-            return t.to_string();
+            return t.to_owned();
         }
     }
     if let Some(t) = only_issue_title {
-        return t.to_string();
+        return t.to_owned();
     }
     let label_part = if labels.is_empty() {
         String::new()

@@ -105,12 +105,12 @@ impl EventsStore {
 
     /// Set the endpoint URL for `slug`, creating the entry if absent.
     pub(crate) fn set_url(&mut self, slug: &str, url: &str) {
-        self.repos.entry(slug.to_string()).or_default().url = Some(url.to_string());
+        self.repos.entry(slug.to_owned()).or_default().url = Some(url.to_owned());
     }
 
     /// Set the bearer token for `slug`, creating the entry if absent.
     pub(crate) fn set_token(&mut self, slug: &str, token: &str) {
-        self.repos.entry(slug.to_string()).or_default().token = Some(token.to_string());
+        self.repos.entry(slug.to_owned()).or_default().token = Some(token.to_owned());
     }
 
     /// Clear one field (`"url"` or `"token"`) of `slug`'s entry, dropping the entry
@@ -140,7 +140,7 @@ impl EventsStore {
         let Some(entry) = self.repos.remove(from) else {
             return false;
         };
-        self.repos.entry(to.to_string()).or_insert(entry);
+        self.repos.entry(to.to_owned()).or_insert(entry);
         true
     }
 }

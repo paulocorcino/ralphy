@@ -197,7 +197,7 @@ fn notes(f: &EnvFindings) -> String {
 /// The last line of the report: all checks passed, or how many blockers.
 fn result_line(fails: &[HardFail]) -> String {
     match fails.len() {
-        0 => "result: all checks passed\n".to_string(),
+        0 => "result: all checks passed\n".to_owned(),
         blockers => format!("result: {blockers} blocker(s)\n"),
     }
 }

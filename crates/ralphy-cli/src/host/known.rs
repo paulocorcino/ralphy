@@ -44,10 +44,10 @@ pub(crate) fn parse_scan(text: &str) -> Vec<ScanLine> {
         .filter_map(|l| {
             let mut fields = l.split_whitespace();
             Some(ScanLine {
-                host_field: fields.next()?.to_string(),
-                kind: fields.next()?.to_string(),
-                blob: fields.next()?.to_string(),
-                raw: l.to_string(),
+                host_field: fields.next()?.to_owned(),
+                kind: fields.next()?.to_owned(),
+                blob: fields.next()?.to_owned(),
+                raw: l.to_owned(),
             })
         })
         .collect()
@@ -71,7 +71,7 @@ pub(crate) fn lines_matching(scan: &[ScanLine], fp: &str, dest: &str) -> Result<
 /// `[host]:port`.
 pub(crate) fn known_name(hostname: &str, port: u16) -> String {
     if port == 22 {
-        hostname.to_string()
+        hostname.to_owned()
     } else {
         format!("[{hostname}]:{port}")
     }

@@ -279,7 +279,7 @@ impl Audit {
         };
         let Some((kind, changed)) = kind else { return };
         let mut event = Event::new(kind, Some(device), Actor::Device);
-        event.holder = client.holder.as_ref().map(|h| h.as_str().to_string());
+        event.holder = client.holder.as_ref().map(|h| h.as_str().to_owned());
         event.changed = changed;
         event.normalized = Some(normalized);
         event.ip = server.address();
@@ -347,7 +347,7 @@ impl Audit {
                 return Ok(());
             }
             let mut event = Event::new(EventKind::LoginNoticeDismissed, None, actor);
-            event.device = device.map(str::to_string);
+            event.device = device.map(str::to_owned);
             event.login = Some(login);
             owner_only::create_owner_only_dir(dir)?;
             writer.append(&path, &event)?;
@@ -412,8 +412,8 @@ impl Writer {
         }
         let mut notice = Event::new(EventKind::LoginOtherDevice, None, event.actor);
         notice.device = event.device.clone();
-        notice.login = Some(login.to_string());
-        notice.did = Some(did.to_string());
+        notice.login = Some(login.to_owned());
+        notice.did = Some(did.to_owned());
         notice.ip = event.ip.clone();
         notice.holder = event.holder.clone();
         if let Err(e) = self.append(path, &notice) {

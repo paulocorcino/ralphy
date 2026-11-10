@@ -405,7 +405,7 @@ pub(crate) fn operating_branch(
 ) -> String {
     match mode {
         BranchMode::New => format!("afk/run-{stamp}"),
-        BranchMode::Current => start_branch.unwrap_or_default().to_string(),
+        BranchMode::Current => start_branch.unwrap_or_default().to_owned(),
     }
 }
 

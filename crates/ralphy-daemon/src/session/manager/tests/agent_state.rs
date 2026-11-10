@@ -44,9 +44,9 @@ fn hooked_console(
     spec.status = Some(files);
     let (id, att) = manager
         .spawn_attached(
-            "owner/r".to_string(),
-            "claude".to_string(),
-            "agent".to_string(),
+            "owner/r".to_owned(),
+            "claude".to_owned(),
+            "agent".to_owned(),
             None,
             None,
             None,
@@ -178,9 +178,9 @@ fn waiting_for_a_permission(
     spec.status = Some(files);
     let (id, att) = manager
         .spawn_attached(
-            "owner/r".to_string(),
+            "owner/r".to_owned(),
             format!("{agent:?}").to_lowercase(),
-            "agent".to_string(),
+            "agent".to_owned(),
             None,
             None,
             None,
@@ -243,12 +243,12 @@ async fn operator_input_does_not_end_a_claude_permission_wait() {
 async fn a_console_launched_with_an_unreported_reason_shows_it_at_once() {
     let manager = Arc::new(SessionManager::new());
     let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
-    spec.unreported_reason = Some("no hooks here".to_string());
+    spec.unreported_reason = Some("no hooks here".to_owned());
     let (id, _att) = manager
         .spawn_attached(
-            "owner/r".to_string(),
-            "codex".to_string(),
-            "agent".to_string(),
+            "owner/r".to_owned(),
+            "codex".to_owned(),
+            "agent".to_owned(),
             None,
             None,
             None,
@@ -334,9 +334,9 @@ async fn a_failed_start_check_silences_only_a_vendor_that_runs_ralphy() {
         spec.status = Some(files);
         let (id, _att) = manager
             .spawn_attached(
-                "owner/r".to_string(),
+                "owner/r".to_owned(),
                 format!("{agent:?}").to_lowercase(),
-                "agent".to_string(),
+                "agent".to_owned(),
                 None,
                 None,
                 None,

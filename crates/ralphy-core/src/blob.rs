@@ -65,7 +65,7 @@ pub fn read(repo: &Path, rev: Revision, path: &str) -> Result<Blob> {
             String::from_utf8_lossy(&out.stderr).trim()
         ),
     }
-    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_owned();
 
     // A directory resolves to a TREE, which clears the size gate and then fails
     // `cat-file blob` with git's raw `fatal: … not a blob` — host paths and all,
@@ -145,7 +145,7 @@ mod tests {
 
         assert_eq!(
             read(&dir, Revision::Head, "README.md").unwrap(),
-            Blob::Text("hello\nworld\n".to_string())
+            Blob::Text("hello\nworld\n".to_owned())
         );
 
         remove_scratch(&dir);

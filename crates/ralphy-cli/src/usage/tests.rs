@@ -161,7 +161,7 @@ fn render_table_balance_carries_tokens_and_usd() {
         ),
     ];
     let lines = render_table(&rows, None, &PriceTable::defaults());
-    assert_eq!(lines, vec!["balance: 2.1M tok · ~$25.50".to_string()]);
+    assert_eq!(lines, vec!["balance: 2.1M tok · ~$25.50".to_owned()]);
 }
 
 #[test]

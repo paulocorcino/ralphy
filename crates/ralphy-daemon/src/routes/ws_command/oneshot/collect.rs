@@ -94,10 +94,10 @@ fn query_reply(collected: dispatch::Collected, field: &str) -> serde_json::Value
         dispatch::Collected::Done(Some(0), bytes) => {
             let text = String::from_utf8_lossy(&bytes);
             let parsed: serde_json::Value = serde_json::from_str(text.trim())
-                .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_string()));
+                .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_owned()));
             let mut obj = serde_json::Map::new();
-            obj.insert("status".to_string(), serde_json::json!("ok"));
-            obj.insert(field.to_string(), parsed);
+            obj.insert("status".to_owned(), serde_json::json!("ok"));
+            obj.insert(field.to_owned(), parsed);
             serde_json::Value::Object(obj)
         }
         dispatch::Collected::Done(_, bytes) => serde_json::json!({

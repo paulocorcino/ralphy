@@ -156,24 +156,24 @@ mod tests {
             "program: {program:?}"
         );
         let args = argv(&cmd);
-        assert!(args.contains(&"run".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"run".to_owned()), "argv: {args:?}");
         // No -m flag is passed; OpenCode resolves its own model (ADR-0005 D4).
-        assert!(!args.contains(&"-m".to_string()), "argv: {args:?}");
+        assert!(!args.contains(&"-m".to_owned()), "argv: {args:?}");
         // --variant is absent unless the operator set one (D3).
-        assert!(!args.contains(&"--variant".to_string()), "argv: {args:?}");
+        assert!(!args.contains(&"--variant".to_owned()), "argv: {args:?}");
         // Always-on flags.
         assert!(
-            args.contains(&"--dangerously-skip-permissions".to_string()),
+            args.contains(&"--dangerously-skip-permissions".to_owned()),
             "argv: {args:?}"
         );
-        assert!(args.contains(&"--format".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"json".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--format".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"json".to_owned()), "argv: {args:?}");
         // `--print-logs`/`--log-level ERROR` route opencode's own logs to stderr so
         // a provider quota block that never reaches the JSON stream is still visible
         // to the limit detector (D9 — silent-quota fix, FinCal #71).
-        assert!(args.contains(&"--print-logs".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"--log-level".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"ERROR".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--print-logs".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"--log-level".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"ERROR".to_owned()), "argv: {args:?}");
     }
 
     #[test]
@@ -185,9 +185,9 @@ mod tests {
             None,
         );
         let args = argv(&cmd);
-        assert!(args.contains(&"-m".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"-m".to_owned()), "argv: {args:?}");
         assert!(
-            args.contains(&"anthropic/claude-sonnet-4-6".to_string()),
+            args.contains(&"anthropic/claude-sonnet-4-6".to_owned()),
             "argv: {args:?}"
         );
     }
@@ -195,12 +195,12 @@ mod tests {
     #[test]
     fn build_command_includes_variant_only_when_some() {
         let without = build_opencode_command(None, None, Path::new("/repo"), None);
-        assert!(!argv(&without).contains(&"--variant".to_string()));
+        assert!(!argv(&without).contains(&"--variant".to_owned()));
 
         let with = build_opencode_command(None, Some("high"), Path::new("/repo"), None);
         let args = argv(&with);
-        assert!(args.contains(&"--variant".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"high".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--variant".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"high".to_owned()), "argv: {args:?}");
     }
 
     #[test]

@@ -79,7 +79,7 @@ async fn csp(state: &Arc<AuthState>) -> String {
     resp.headers()[header::CONTENT_SECURITY_POLICY]
         .to_str()
         .expect("read the CSP header as text")
-        .to_string()
+        .to_owned()
 }
 
 /// The current RFC 6238 code for `SEED`, computed here because `Seed::code_at`

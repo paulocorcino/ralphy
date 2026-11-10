@@ -299,7 +299,7 @@ fn apply_ledger_leaves_already_ticked_lines_untouched() {
     // The already-ticked one is unmatched because `- [ ] Parser…` was not found.
     assert!(result
         .unmatched
-        .contains(&"Parser returns typed verdicts".to_string()));
+        .contains(&"Parser returns typed verdicts".to_owned()));
     // The second one is ticked.
     assert!(result.new_body.contains("- [x] Empty ledger is a no-op"));
 }
@@ -367,7 +367,7 @@ fn evidence_comment_flags_review_only_and_unmatched() {
             evidence: "test passes".into(),
         },
     ];
-    let unmatched = vec!["Verified but missing".to_string()];
+    let unmatched = vec!["Verified but missing".to_owned()];
     let comment = evidence_comment(&verdicts, &unmatched);
 
     // The exact tag format must appear for verified entries.

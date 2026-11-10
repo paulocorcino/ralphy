@@ -76,7 +76,7 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
         .iter()
         .map(|r| (r.file.as_str(), r.text.as_str(), r.pinned_by.as_slice()))
         .collect();
-    let pinned = vec!["crates/ralphy-daemon/src/tests.rs:4".to_string()];
+    let pinned = vec!["crates/ralphy-daemon/src/tests.rs:4".to_owned()];
     assert_eq!(
         got,
         vec![
@@ -102,11 +102,11 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
 #[test]
 fn the_markdown_has_a_section_per_file_and_a_table_per_area() {
     let row = |file: &str, area: &str, text: &str, concatenated: bool| Row {
-        text: text.to_string(),
-        file: file.to_string(),
+        text: text.to_owned(),
+        file: file.to_owned(),
         line: 7,
         kind: Kind::Text,
-        area: area.to_string(),
+        area: area.to_owned(),
         concatenated,
         pinned_by: Vec::new(),
         continues: false,

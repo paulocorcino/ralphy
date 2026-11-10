@@ -25,8 +25,8 @@ fn resolve_opencode_model_precedence() {
     ];
     for (case, flag, persisted, want) in rows {
         assert_eq!(
-            resolve_opencode_model(flag.map(str::to_string), persisted.map(str::to_string)),
-            want.map(str::to_string),
+            resolve_opencode_model(flag.map(str::to_owned), persisted.map(str::to_owned)),
+            want.map(str::to_owned),
             "{case}"
         );
     }
@@ -80,8 +80,8 @@ fn resolve_str_precedence() {
     for (case, flag, persisted, default, want) in rows {
         assert_eq!(
             resolve_str(
-                flag.map(str::to_string),
-                persisted.map(str::to_string),
+                flag.map(str::to_owned),
+                persisted.map(str::to_owned),
                 default
             ),
             want,
@@ -125,14 +125,14 @@ fn resolve_assignee_precedence() {
     // --assignee X wins over config.
     assert_eq!(
         resolve_assignee(Some("X"), false, Some("cfg")),
-        Some("X".to_string())
+        Some("X".to_owned())
     );
     // --no-assignee forces None even over a set config.
     assert_eq!(resolve_assignee(None, true, Some("cfg")), None);
     // Neither flag: persisted config is used.
     assert_eq!(
         resolve_assignee(None, false, Some("cfg")),
-        Some("cfg".to_string())
+        Some("cfg".to_owned())
     );
     // Nothing anywhere: no filter.
     assert_eq!(resolve_assignee(None, false, None), None);
@@ -140,7 +140,7 @@ fn resolve_assignee_precedence() {
     // persisted value, and an empty persisted value falls through to None.
     assert_eq!(
         resolve_assignee(Some(""), false, Some("cfg")),
-        Some("cfg".to_string())
+        Some("cfg".to_owned())
     );
     assert_eq!(resolve_assignee(None, false, Some("")), None);
 }

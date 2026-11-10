@@ -356,7 +356,7 @@ fn denied_spans(text: &str) -> Vec<String> {
                 continue;
             }
             if matches!(eval("Bash", &bash(span)), GuardDecision::Deny(_)) {
-                denied.push(span.to_string());
+                denied.push(span.to_owned());
             }
         }
     }
@@ -381,7 +381,7 @@ fn charters_never_tell_the_agent_to_run_a_denied_command() {
     // The scan finds an instruction and skips a prohibition.
     assert_eq!(
         denied_spans("Then run `gh pr create --fill`."),
-        vec!["gh pr create --fill".to_string()]
+        vec!["gh pr create --fill".to_owned()]
     );
     assert_eq!(denied_spans("NEVER run `git push`."), Vec::<String>::new());
     assert_eq!(

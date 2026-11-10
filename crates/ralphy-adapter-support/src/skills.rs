@@ -127,9 +127,9 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
 /// once the lines exist.
 pub fn ensure_gitignore_entries(path: &Path, names: &[std::ffi::OsString]) -> Result<()> {
     let existing = fs::read_to_string(path).unwrap_or_default();
-    let mut lines: Vec<String> = existing.lines().map(str::to_string).collect();
+    let mut lines: Vec<String> = existing.lines().map(str::to_owned).collect();
     let mut changed = false;
-    let entries = std::iter::once("/.gitignore".to_string())
+    let entries = std::iter::once("/.gitignore".to_owned())
         .chain(names.iter().map(|n| format!("/{}", n.to_string_lossy())));
     for entry in entries {
         if !lines.iter().any(|l| l.trim() == entry) {

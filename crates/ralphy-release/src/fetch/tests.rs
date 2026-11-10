@@ -33,7 +33,7 @@ fn fixture_body() -> String {
   {"tag_name":"v0.1.0-rc19","name":"v0.1.0-rc19","published_at":"2026-09-07T10:00:00Z",
    "html_url":"https://example.invalid/19","prerelease":true,"draft":false,"body":"notes"}
 ]"#
-    .to_string()
+    .to_owned()
 }
 
 fn http_response(status: u16, body: &str) -> Vec<u8> {

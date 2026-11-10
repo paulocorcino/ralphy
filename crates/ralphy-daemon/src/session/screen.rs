@@ -164,12 +164,12 @@ impl Screen {
             let row = &grid[Line(l)];
             push_cells(&mut line, row, last);
             if !row[Column(last)].flags.contains(Flags::WRAPLINE) {
-                lines.push(line.trim_end().to_string());
+                lines.push(line.trim_end().to_owned());
                 line.clear();
             }
         }
         if !line.is_empty() {
-            lines.push(line.trim_end().to_string());
+            lines.push(line.trim_end().to_owned());
         }
         lines.join("\n")
     }

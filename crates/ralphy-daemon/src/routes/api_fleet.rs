@@ -147,7 +147,7 @@ async fn probe_all(
     // one after another would make the page cost the sum of the down ones.
     let mut set = tokio::task::JoinSet::new();
     for (index, d) in descriptors.iter().cloned().enumerate() {
-        let probe_id = probe_id.to_string();
+        let probe_id = probe_id.to_owned();
         set.spawn(async move { (index, probe_one(d, probe_id, bound_port).await) });
     }
     collect_probes(set, descriptors.len()).await
@@ -281,7 +281,7 @@ impl PeerMemory {
 /// The state of a peer whose probe task itself failed.
 fn probe_did_not_complete() -> peer::client::PeerStatus {
     peer::client::PeerStatus::Unreachable {
-        why: "the probe did not complete".to_string(),
+        why: "the probe did not complete".to_owned(),
     }
 }
 
@@ -322,7 +322,7 @@ fn peer_view(d: &peer::PeerDescriptor, status: &peer::client::PeerStatus) -> Pee
         avatar: d.avatar.clone(),
         environment: d.environment.clone(),
         os: d.os.clone(),
-        state: status.state().to_string(),
+        state: status.state().to_owned(),
         diagnosis: status.diagnosis(&d.environment),
         nudgeable: d.nudge.is_some(),
         tunnel: d.tunnel.is_some(),
@@ -338,11 +338,11 @@ fn reject_view(reject: &peer::PeerReject) -> PeerView {
         // `daemon_id`, so a shared empty string would collapse two bad
         // descriptors into one row and lose the first one's diagnosis.
         daemon_id: format!("malformed:{}", reject.file()),
-        name: reject.file().to_string(),
-        avatar: "❔".to_string(),
-        environment: "unknown".to_string(),
+        name: reject.file().to_owned(),
+        avatar: "❔".to_owned(),
+        environment: "unknown".to_owned(),
         os: String::new(),
-        state: "malformed".to_string(),
+        state: "malformed".to_owned(),
         diagnosis: reject.why(),
         nudgeable: false,
         tunnel: false,
@@ -371,7 +371,7 @@ async fn local_rows(
     let local_name = identity.map(|i| i.name.clone()).unwrap_or_default();
     // A local row reads its branch through git, so the local rows are built on
     // the blocking pool; the peer rows need no git.
-    let environment = environment.to_string();
+    let environment = environment.to_owned();
     let local_rows = tokio::task::spawn_blocking(move || {
         fleet::aggregate((&local_id, &local_name, &environment, &local_store), &[])
     })

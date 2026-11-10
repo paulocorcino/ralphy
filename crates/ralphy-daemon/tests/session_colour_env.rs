@@ -69,7 +69,7 @@ async fn child_env(
     let out = read_until(session, rx, &format!("ENV:{name}=")).await;
     let marker = format!("ENV:{name}=");
     let tail = out.rsplit(&marker).next().unwrap_or_default();
-    tail.lines().next().unwrap_or_default().trim().to_string()
+    tail.lines().next().unwrap_or_default().trim().to_owned()
 }
 
 fn spec_at(cwd: PathBuf, env: Vec<(std::ffi::OsString, std::ffi::OsString)>) -> SessionSpec {

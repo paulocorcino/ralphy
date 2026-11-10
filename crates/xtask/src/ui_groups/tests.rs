@@ -227,7 +227,7 @@ fn accesses_of_x(code: &str) -> Vec<(String, bool)> {
 fn a_hole_inside_a_hole_is_one_read() {
     assert_eq!(
         accesses_of_x("show(`a ${ `b ${this.x}` }`);"),
-        [("x".to_string(), false)]
+        [("x".to_owned(), false)]
     );
 }
 
@@ -238,8 +238,8 @@ fn this_followed_by_a_bracket_is_no_access() {
 
 #[test]
 fn an_indexed_member_is_a_read_and_a_step_on_it_is_a_write() {
-    assert_eq!(accesses_of_x("this.x[k];"), [("x".to_string(), false)]);
-    assert_eq!(accesses_of_x("this.x[k]++;"), [("x".to_string(), true)]);
+    assert_eq!(accesses_of_x("this.x[k];"), [("x".to_owned(), false)]);
+    assert_eq!(accesses_of_x("this.x[k]++;"), [("x".to_owned(), true)]);
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn binding_lines(html: &str) -> Vec<(usize, Vec<String>)> {
 #[test]
 fn a_doctype_ends_at_its_own_closing_bracket() {
     let html = "<!DOCTYPE html>\n<body x-data=\"shell\" :class=\"openSlug\"></body>";
-    assert_eq!(binding_lines(html), [(2, vec!["openSlug".to_string()])]);
+    assert_eq!(binding_lines(html), [(2, vec!["openSlug".to_owned()])]);
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn a_self_closing_tag_holds_no_scope() {
 #[test]
 fn an_unquoted_value_ends_at_white_space() {
     let html = "<body x-data=shell :title=tabs></body>";
-    assert_eq!(binding_lines(html), [(1, vec!["tabs".to_string()])]);
+    assert_eq!(binding_lines(html), [(1, vec!["tabs".to_owned()])]);
 }
 
 /// The names the one `x-text` expression `expr` reads, out of `known`.

@@ -101,10 +101,10 @@ fn build_command_argv_and_env() {
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    assert!(args.contains(&"exec".to_string()), "argv: {args:?}");
-    assert!(args.contains(&"-C".to_string()), "argv: {args:?}");
-    assert!(args.contains(&"-m".to_string()), "argv: {args:?}");
-    assert!(args.contains(&"-o".to_string()), "argv: {args:?}");
+    assert!(args.contains(&"exec".to_owned()), "argv: {args:?}");
+    assert!(args.contains(&"-C".to_owned()), "argv: {args:?}");
+    assert!(args.contains(&"-m".to_owned()), "argv: {args:?}");
+    assert!(args.contains(&"-o".to_owned()), "argv: {args:?}");
     // The effort word reaches the child as given, for each word.
     for effort in ["high", "low"] {
         let args: Vec<String> = build_codex_command(
@@ -127,8 +127,8 @@ fn build_command_argv_and_env() {
     // Sandbox posture and the trailing stdin marker. `codex exec` defaults to
     // approval=never, so no explicit `-a` flag is passed (it is rejected by
     // codex-cli ≥0.138).
-    assert!(args.contains(&"danger-full-access".to_string()));
-    assert!(args.contains(&"-".to_string()));
+    assert!(args.contains(&"danger-full-access".to_owned()));
+    assert!(args.contains(&"-".to_owned()));
 
     // OPENAI_API_KEY is removed on the child so an inherited key can't switch
     // the run to API billing.

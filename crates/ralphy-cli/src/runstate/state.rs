@@ -232,7 +232,7 @@ impl RunState {
             // story: without a summary the card falls back to "stopped before any
             // issue was processed", which reads as an unexplained abort.
             RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
-                self.final_summary = Some("no open issues to process".to_string());
+                self.final_summary = Some("no open issues to process".to_owned());
             }
             RunEvent::RunFinished { .. } => {}
             // The raw plan snapshots carry no per-issue status change (the sink
@@ -265,7 +265,7 @@ impl RunState {
                         .get("title")
                         .and_then(|t| t.as_str())
                         .unwrap_or_default()
-                        .to_string();
+                        .to_owned();
                     Some(QueueRef { number, title })
                 })
                 .collect();

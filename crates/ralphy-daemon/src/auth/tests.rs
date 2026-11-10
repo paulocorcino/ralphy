@@ -4,7 +4,7 @@ use super::*;
 /// cross-site gate can be tested on the NETWORK-bind path §4 designs — which
 /// `localhost()`/`fixed()` cannot express, both being pinned to loopback.
 fn state_for(bind: IpAddr, port: u16, declared: &[&str]) -> AuthState {
-    let declared: Vec<String> = declared.iter().map(|h| (*h).to_string()).collect();
+    let declared: Vec<String> = declared.iter().map(|h| (*h).to_owned()).collect();
     AuthState {
         policy: RwLock::new(AuthPolicy::Localhost),
         bind_ip: bind,
@@ -175,7 +175,7 @@ pub(super) fn test_epoch() -> epoch::SessionEpoch {
 
 pub(super) fn session_over(token: &str) -> AuthPolicy {
     AuthPolicy::Session(Arc::new(SessionAuth {
-        token: token.to_string(),
+        token: token.to_owned(),
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: test_epoch(),

@@ -20,14 +20,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn descriptor(port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: "01TESTPEERPOOLTESTPEERPO".to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: "01TESTPEERPOOLTESTPEERPO".to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: "WSL: Ubuntu".to_string(),
+        environment: "WSL: Ubuntu".to_owned(),
         os: String::new(),
-        token: "peer-tok".to_string(),
+        token: "peer-tok".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,

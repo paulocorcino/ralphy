@@ -105,27 +105,27 @@ impl IssueTracker for RecordingTracker {
         Ok(true)
     }
     fn add_label(&self, number: u64, label: &str) -> Result<()> {
-        self.added.borrow_mut().push((number, label.to_string()));
+        self.added.borrow_mut().push((number, label.to_owned()));
         Ok(())
     }
     fn remove_label(&self, number: u64, label: &str) -> Result<()> {
-        self.removed.borrow_mut().push((number, label.to_string()));
+        self.removed.borrow_mut().push((number, label.to_owned()));
         Ok(())
     }
     fn comment(&self, number: u64, body: &str) -> Result<()> {
-        self.comments.borrow_mut().push((number, body.to_string()));
+        self.comments.borrow_mut().push((number, body.to_owned()));
         Ok(())
     }
     fn upsert_marked_comment(&self, number: u64, marker: &str, body: &str) -> Result<()> {
         self.upserts
             .borrow_mut()
-            .push((number, marker.to_string(), body.to_string()));
+            .push((number, marker.to_owned(), body.to_owned()));
         Ok(())
     }
     fn create_issue(&self, title: &str, body: &str, _labels: &[String]) -> Result<u64> {
         self.created
             .borrow_mut()
-            .push((title.to_string(), body.to_string()));
+            .push((title.to_owned(), body.to_owned()));
         Ok(0)
     }
 }
@@ -162,8 +162,8 @@ fn promote_upserts_evidence_stamp_then_swaps_labels() {
     assert_eq!(upserts[0].0, 12);
     assert_eq!(upserts[0].1, PROMOTE_EVIDENCE_MARKER);
     assert!(upserts[0].2.contains("Evidence (AFK)"));
-    assert_eq!(*t.removed.borrow(), vec![(12, "triage-agent".to_string())]);
-    assert_eq!(*t.added.borrow(), vec![(12, "ready-for-agent".to_string())]);
+    assert_eq!(*t.removed.borrow(), vec![(12, "triage-agent".to_owned())]);
+    assert_eq!(*t.added.borrow(), vec![(12, "ready-for-agent".to_owned())]);
     assert!(t.comments.borrow().is_empty(), "promote uses upsert");
 }
 
@@ -187,8 +187,8 @@ fn consolidate_upserts_marked_comment_then_swaps_labels() {
     assert_eq!(upserts[0].1, CONSOLIDATED_SPEC_MARKER);
     assert!(upserts[0].2.contains("Consolidated spec"));
     // Label swap happened; no plain comment (the upsert is the comment).
-    assert_eq!(*t.removed.borrow(), vec![(15, "triage-agent".to_string())]);
-    assert_eq!(*t.added.borrow(), vec![(15, "ready-for-agent".to_string())]);
+    assert_eq!(*t.removed.borrow(), vec![(15, "triage-agent".to_owned())]);
+    assert_eq!(*t.added.borrow(), vec![(15, "ready-for-agent".to_owned())]);
     assert!(t.comments.borrow().is_empty(), "consolidate uses upsert");
 }
 
@@ -208,10 +208,10 @@ fn bounce_never_asks_and_swaps_to_needs_info() {
     apply_triage(&draft, &t, &labels(), |_| panic!("bounce must not ask")).unwrap();
     assert_eq!(
         *t.comments.borrow(),
-        vec![(18, "Missing acceptance criteria.".to_string())]
+        vec![(18, "Missing acceptance criteria.".to_owned())]
     );
-    assert_eq!(*t.removed.borrow(), vec![(18, "triage-agent".to_string())]);
-    assert_eq!(*t.added.borrow(), vec![(18, "needs-info".to_string())]);
+    assert_eq!(*t.removed.borrow(), vec![(18, "triage-agent".to_owned())]);
+    assert_eq!(*t.added.borrow(), vec![(18, "needs-info".to_owned())]);
 }
 /// An escalate verdict posts its comment and swaps `triage-agent` for
 /// `ready-for-human`, without asking for confirmation, and never creates an
@@ -235,7 +235,7 @@ fn escalate_posts_comment_and_swaps_to_ready_for_human() {
             items: vec![TriageItem {
                 number: 22,
                 verdict: TriageVerdict::Escalate,
-                comment: Some(body.to_string()),
+                comment: Some(body.to_owned()),
                 draft_issue,
                 drew_on: vec![],
             }],
@@ -246,15 +246,15 @@ fn escalate_posts_comment_and_swaps_to_ready_for_human() {
             panic!("{case}: escalate must not ask")
         })
         .unwrap();
-        assert_eq!(*t.comments.borrow(), vec![(22, body.to_string())], "{case}");
+        assert_eq!(*t.comments.borrow(), vec![(22, body.to_owned())], "{case}");
         assert_eq!(
             *t.removed.borrow(),
-            vec![(22, "triage-agent".to_string())],
+            vec![(22, "triage-agent".to_owned())],
             "{case}"
         );
         assert_eq!(
             *t.added.borrow(),
-            vec![(22, "ready-for-human".to_string())],
+            vec![(22, "ready-for-human".to_owned())],
             "{case}"
         );
         assert!(t.created.borrow().is_empty(), "{case}: no issue is created");
@@ -355,7 +355,7 @@ fn yes_holds_a_consolidation_that_drew_on_an_outsider() {
         assert!(t.upserts.borrow().is_empty(), "{case}: spec published");
         assert_eq!(
             *t.added.borrow(),
-            vec![(30, "ready-for-human".to_string())],
+            vec![(30, "ready-for-human".to_owned())],
             "{case}"
         );
         let comments = t.comments.borrow();
@@ -383,7 +383,7 @@ fn yes_publishes_a_consolidation_that_drew_on_collaborators() {
         let t = RecordingTracker::default();
         apply_triage(&draft, &t, &labels(), |_| true).unwrap();
         assert_eq!(t.upserts.borrow().len(), 1, "{drew_on:?}");
-        assert_eq!(*t.added.borrow(), vec![(31, "ready-for-agent".to_string())]);
+        assert_eq!(*t.added.borrow(), vec![(31, "ready-for-agent".to_owned())]);
     }
 }
 
@@ -428,14 +428,14 @@ fn a_yes_creates_the_drafted_follow_up_of_an_escalate() {
     let t = RecordingTracker::default();
     let mut asked = Vec::new();
     offer_follow_up_issues(&draft_of(TriageVerdict::Escalate), &t, |prompt| {
-        asked.push(prompt.to_string());
+        asked.push(prompt.to_owned());
         Ok(true)
     })
     .unwrap();
     assert_eq!(asked, ["  > Create this follow-up issue? [y/N] "]);
     assert_eq!(
         *t.created.borrow(),
-        vec![("Restricted follow-up".to_string(), "Closes #22".to_string())]
+        vec![("Restricted follow-up".to_owned(), "Closes #22".to_owned())]
     );
 }
 

@@ -145,7 +145,7 @@ fn a_function_named_in_copy_helpers_returns_copy() {
   }
   function other() { return "not a helper"; }
 "#;
-    let helpers = vec!["note".to_string()];
+    let helpers = vec!["note".to_owned()];
     let fns = CopyFns {
         helpers: &helpers,
         calls: &[],

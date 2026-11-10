@@ -221,9 +221,9 @@ mod tests {
 
     fn release(tag: &str, published: &str) -> Release {
         Release {
-            tag_name: tag.to_string(),
+            tag_name: tag.to_owned(),
             name: None,
-            published_at: Some(published.to_string()),
+            published_at: Some(published.to_owned()),
             html_url: format!("https://example.invalid/{tag}"),
             prerelease: true,
             draft: false,
@@ -234,7 +234,7 @@ mod tests {
 
     fn asset(name: &str) -> ralphy_release::Asset {
         ralphy_release::Asset {
-            name: name.to_string(),
+            name: name.to_owned(),
             browser_download_url: format!("https://example.invalid/{name}"),
             size: 0,
         }

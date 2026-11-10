@@ -41,7 +41,7 @@ impl FlagWrite {
     /// The exact bytes written to `$RALPHY_FLAG_FILE` (matches the ps1 oracle).
     pub(crate) fn contents(&self) -> String {
         match self {
-            FlagWrite::Done => "DONE".to_string(),
+            FlagWrite::Done => "DONE".to_owned(),
             FlagWrite::Blocked(reason) => format!("BLOCKED {reason}"),
         }
     }
@@ -63,7 +63,7 @@ pub(crate) fn classify_stop(
         .get("last_assistant_message")
         .and_then(Value::as_str)
         .unwrap_or("")
-        .to_string();
+        .to_owned();
 
     if msg.trim().is_empty() {
         if let Some(path) = value.get("transcript_path").and_then(Value::as_str) {
@@ -82,7 +82,7 @@ fn classify_message(msg: &str) -> Option<FlagWrite> {
     }
     if let Some(caps) = BLOCKED_EXIT_RE.captures(msg) {
         let reason = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return Some(FlagWrite::Blocked(reason.to_string()));
+        return Some(FlagWrite::Blocked(reason.to_owned()));
     }
     None
 }
@@ -102,7 +102,7 @@ pub(crate) fn read_transcript_last_assistant(path: &str) -> Option<String> {
             continue;
         };
         if let Some(t) = content.as_array().and_then(|blocks| last_text(blocks)) {
-            text = Some(t.to_string());
+            text = Some(t.to_owned());
         }
     }
     text

@@ -114,7 +114,7 @@ pub fn verify_lines(plan_md: &str) -> Vec<String> {
         if trimmed.eq_ignore_ascii_case("none") {
             continue;
         }
-        lines.push(trimmed.to_string());
+        lines.push(trimmed.to_owned());
     }
     lines
 }
@@ -319,7 +319,7 @@ pnpm run test:harness
 
     #[test]
     fn match_prefers_longest_contained_line_and_ignores_short_ones() {
-        let lines = vec!["cargo".to_string(), "cargo test -p ralphy-core".to_string()];
+        let lines = vec!["cargo".to_owned(), "cargo test -p ralphy-core".to_owned()];
         // The wrapped invocation matches the long line, not the 5-char one.
         let got = match_verify_line("cd /x && cargo test -p ralphy-core 2>&1 | tail -5", &lines);
         assert_eq!(got, Some("cargo test -p ralphy-core"));
@@ -427,9 +427,9 @@ pnpm run test:harness
         let dir = std::env::temp_dir().join(format!("ralphy-gatecost-{}", std::process::id()));
         std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
         let argv = vec![
-            "pnpm".to_string(),
-            "run".to_string(),
-            "test:harness".to_string(),
+            "pnpm".to_owned(),
+            "run".to_owned(),
+            "test:harness".to_owned(),
         ];
 
         record_gate_costs(&dir, &[(argv.clone(), 167.4)]);

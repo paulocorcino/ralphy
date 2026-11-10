@@ -38,7 +38,7 @@ async fn a_claim_needs_the_bearer_of_a_daemon() {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split(';').next())
         .expect("a session cookie")
-        .to_string();
+        .to_owned();
 
     let page = app
         .clone()

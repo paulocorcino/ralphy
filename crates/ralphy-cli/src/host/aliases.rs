@@ -16,7 +16,7 @@ pub(crate) fn parse_config_hosts(text: &str) -> Vec<String> {
     for rest in text.lines().filter_map(host_line_rest) {
         for word in concrete_names(rest) {
             if !hosts.iter().any(|h| h == word) {
-                hosts.push(word.to_string());
+                hosts.push(word.to_owned());
             }
         }
     }
@@ -62,7 +62,7 @@ pub(crate) fn expand_home(path: &str, home: Option<&Path>) -> String {
             let rest = rest.trim_start_matches(['/', '\\']);
             home.join(rest).display().to_string()
         }
-        _ => path.to_string(),
+        _ => path.to_owned(),
     }
 }
 
@@ -94,7 +94,7 @@ pub(crate) fn split_known_hosts(value: &str) -> Vec<String> {
                 last.push(' ');
                 last.push_str(word);
             }
-            _ => paths.push(word.to_string()),
+            _ => paths.push(word.to_owned()),
         }
     }
     paths
@@ -113,8 +113,8 @@ pub(crate) fn parse_ssh_g(text: &str, home: Option<&Path>) -> Result<Resolved> {
         };
         let value = value.trim();
         match key.to_ascii_lowercase().as_str() {
-            "hostname" => hostname = Some(value.to_string()),
-            "user" => user = Some(value.to_string()),
+            "hostname" => hostname = Some(value.to_owned()),
+            "user" => user = Some(value.to_owned()),
             "port" => port = value.parse::<u16>().ok(),
             "userknownhostsfile" => known_hosts.extend(
                 split_known_hosts(value)

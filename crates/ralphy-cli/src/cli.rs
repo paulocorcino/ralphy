@@ -182,7 +182,7 @@ pub(crate) fn command() -> clap::Command {
         .filter(|sub| sub.is_hide_set())
         .map(|sub| {
             let about = sub.get_about().map(ToString::to_string).unwrap_or_default();
-            (sub.get_name().to_string(), about)
+            (sub.get_name().to_owned(), about)
         })
         .collect();
     let width = hidden.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
@@ -195,7 +195,7 @@ pub(crate) fn command() -> clap::Command {
     for (name, about) in &hidden {
         text.push_str(&format!("  {name:width$}  {about}\n"));
     }
-    cmd.after_help(text.trim_end().to_string())
+    cmd.after_help(text.trim_end().to_owned())
 }
 
 #[derive(Subcommand)]

@@ -106,20 +106,20 @@ pub fn list_open_issues(repo_root: &Path) -> Result<Vec<Issue>> {
 /// mirroring the `parse_issue_list` seam.
 pub fn queue_list_args(label: &str, assignee: Option<&str>) -> Vec<String> {
     let mut args = vec![
-        "issue".to_string(),
-        "list".to_string(),
-        "--label".to_string(),
-        label.to_string(),
-        "--state".to_string(),
-        "open".to_string(),
-        "--json".to_string(),
-        "number,title,body,labels".to_string(),
-        "--limit".to_string(),
-        "100".to_string(),
+        "issue".to_owned(),
+        "list".to_owned(),
+        "--label".to_owned(),
+        label.to_owned(),
+        "--state".to_owned(),
+        "open".to_owned(),
+        "--json".to_owned(),
+        "number,title,body,labels".to_owned(),
+        "--limit".to_owned(),
+        "100".to_owned(),
     ];
     if let Some(a) = assignee {
-        args.push("--assignee".to_string());
-        args.push(a.to_string());
+        args.push("--assignee".to_owned());
+        args.push(a.to_owned());
     }
     args
 }
@@ -157,14 +157,14 @@ pub fn list_queue(
 /// `.login`).
 pub fn resolve_login(assignee: &str, repo_root: &Path) -> Result<String> {
     if assignee != "@me" {
-        return Ok(assignee.to_string());
+        return Ok(assignee.to_owned());
     }
     let out = gh_output("gh api user", || {
         let mut cmd = gh(repo_root);
         cmd.args(["api", "user", "--jq", ".login"]);
         cmd
     })?;
-    let login = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let login = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     if login.is_empty() {
         bail!("`gh api user --jq .login` returned an empty login for @me");
     }
@@ -246,7 +246,7 @@ pub fn create_issue(
             }
             if let Some(ms) = milestone {
                 args.push("--milestone".into());
-                args.push(ms.to_string());
+                args.push(ms.to_owned());
             }
             let mut c = gh(repo_root);
             c.args(&args);

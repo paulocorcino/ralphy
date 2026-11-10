@@ -50,7 +50,7 @@ fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
                 sources(&path, out);
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
                 let body = std::fs::read_to_string(&path).expect("read source");
-                let production = crate::tests::production_text(&body).to_string();
+                let production = crate::tests::production_text(&body).to_owned();
                 out.push((path.display().to_string(), production));
             }
         }

@@ -126,7 +126,7 @@ fn text_of(request: &AttentionRequest, what: &str, ctx: &Context) -> String {
 fn link_of(console: &str, ctx: &Context) -> Option<String> {
     let origin = ctx.origin.as_ref()?;
     let target = if console.contains('/') {
-        console.to_string()
+        console.to_owned()
     } else {
         format!("{}/{console}", ctx.daemon_id.as_ref()?)
     };
@@ -141,7 +141,7 @@ const MAX_DETAIL_CHARS: usize = 300;
 fn short(detail: &str) -> String {
     match detail.char_indices().nth(MAX_DETAIL_CHARS) {
         Some((at, _)) => format!("{}...", &detail[..at]),
-        None => detail.to_string(),
+        None => detail.to_owned(),
     }
 }
 

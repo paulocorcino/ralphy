@@ -226,7 +226,7 @@ pub(crate) fn write_knowledge(ws: &Workspace, issue: &Issue, stamp: &str, note: 
 pub(crate) fn record_citations(ws: &Workspace, issue: &Issue, stamp: &str, citations: Vec<String>) {
     let entry = knowledge::CitationEntry {
         issue: issue.number,
-        stamp: stamp.to_string(),
+        stamp: stamp.to_owned(),
         date: chrono::Local::now().format("%Y-%m-%d").to_string(),
         citations,
     };

@@ -95,7 +95,7 @@ pub(super) fn fmt_meter(m: &Meter, emoji: bool) -> String {
 /// hide spend (ADR-0008 D8).
 pub(crate) fn fmt_usd_compact(usd: Option<f64>, partial: bool) -> String {
     match usd {
-        None => "$?".to_string(),
+        None => "$?".to_owned(),
         Some(v) => format!("${v:.2}{}", if partial { "+?" } else { "" }),
     }
 }

@@ -51,7 +51,7 @@ pub(super) fn what_runs(tokens: &[String]) -> Runs<'_> {
 pub(super) fn command_name(word: &str) -> String {
     let lower = word.to_lowercase();
     let name = lower.rsplit(['/', '\\']).next().unwrap_or(&lower);
-    name.strip_suffix(".exe").unwrap_or(name).to_string()
+    name.strip_suffix(".exe").unwrap_or(name).to_owned()
 }
 
 /// `tokens` without the wrapper words in front of the command, each with

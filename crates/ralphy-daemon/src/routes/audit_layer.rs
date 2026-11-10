@@ -237,7 +237,7 @@ pub(crate) async fn audit_layer(
     mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    let path = req.uri().path().to_string();
+    let path = req.uri().path().to_owned();
     if !path.starts_with("/api/") && !path.starts_with("/ws") {
         return next.run(req).await;
     }
@@ -340,7 +340,7 @@ fn event_for(
         _ => {
             let mut e = Event::new(EventKind::Action, device, actor);
             e.method = Some(method.to_string());
-            e.path = Some(path.to_string());
+            e.path = Some(path.to_owned());
             e.status = Some(status.as_u16());
             e.ip = server.address();
             Some(e)
@@ -355,7 +355,7 @@ mod tests {
     fn command(verb: &str, payload: serde_json::Value) -> Command {
         Command {
             id: 1,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }
     }

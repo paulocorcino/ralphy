@@ -179,7 +179,7 @@ async fn post_dismiss(
         )
             .into_response();
     }
-    let device = device.map(str::to_string);
+    let device = device.map(str::to_owned);
     let actor = caller.map_or(Actor::Unknown, |c| c.actor);
     let written =
         tokio::task::spawn_blocking(move || audit.dismiss_notice(&login, device.as_deref(), actor))

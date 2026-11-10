@@ -9,7 +9,7 @@ async fn fleet_reports_the_two_tunnel_states() {
     let store = tempfile::tempdir().unwrap();
     let port = closed_port();
     let mut tunnel = descriptor(TUNNEL_ID, port, Some(spec(port)));
-    tunnel.name = "svrapp".to_string();
+    tunnel.name = "svrapp".to_owned();
     peer::write_descriptor(store.path(), &tunnel).unwrap();
     let own = ralphy_daemon::DEFAULT_PORT;
     peer::write_descriptor(
@@ -81,7 +81,7 @@ async fn serve_peer(id: &str) -> (u16, tokio::task::JoinHandle<()>, tempfile::Te
         id,
         peer_store.path(),
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-token".to_string()),
+            AuthPolicy::Bearer("peer-token".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     );
@@ -183,7 +183,7 @@ async fn a_relayed_command_names_a_silent_tunnel_as_the_fleet_does() {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: "tree.list".to_string(),
+            verb: "tree.list".to_owned(),
             payload: serde_json::json!({ "repo": format!("{SILENT_ID}/owner/repo"), "path": "" }),
         }))
         .into(),

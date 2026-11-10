@@ -43,7 +43,7 @@ fn resize(rows: u16, cols: u16) -> Message {
     Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 0,
-            verb: "resize".to_string(),
+            verb: "resize".to_owned(),
             payload: serde_json::json!({ "rows": rows, "cols": cols }),
         }))
         .into(),
@@ -66,7 +66,7 @@ async fn drain_capturing_announcement(ws: &mut Ws, secs: u64) -> (bool, Option<S
                                 .payload
                                 .get("reason")
                                 .and_then(|v| v.as_str())
-                                .map(str::to_string);
+                                .map(str::to_owned);
                         }
                     }
                 }
@@ -189,7 +189,7 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
         .unwrap_or(0);
     let body = text
         .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
+        .map(|(_, b)| b.to_owned())
         .unwrap_or_default();
     (status, body)
 }

@@ -85,7 +85,7 @@ fn session_router_at(registry_path: PathBuf, token: &str) -> Router {
     // the wrapping `AuthState` bumps the SAME counter on logout/invalidate.
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
     let policy = auth::AuthPolicy::Session(Arc::new(auth::SessionAuth {
-        token: token.to_string(),
+        token: token.to_owned(),
         totp: rfc_seed(),
         password: None,
         epoch: session_epoch.clone(),
@@ -128,7 +128,7 @@ async fn login_set_cookie(extra_form: &str) -> String {
         .get(header::SET_COOKIE)
         .and_then(|v| v.to_str().ok())
         .expect("a Set-Cookie header")
-        .to_string()
+        .to_owned()
 }
 
 /// Read the body of a response as a lossy UTF-8 string.
@@ -256,7 +256,7 @@ fn with_module_imports(refs: Vec<String>) -> Vec<String> {
                 panic!("{path} imports {import}: a module imports its siblings by `./`")
             };
             if !out.iter().any(|p| p == name) {
-                out.push(name.to_string());
+                out.push(name.to_owned());
             }
         }
     }

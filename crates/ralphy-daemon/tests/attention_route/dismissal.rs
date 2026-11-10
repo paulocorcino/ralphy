@@ -67,19 +67,19 @@ async fn a_live_request_cannot_be_dismissed() {
     }
     append(&status_file, PERMISSION);
     let mut snapshot = ralphy_run_snapshot::RunSnapshot {
-        runid: "01RUNWAITS".to_string(),
+        runid: "01RUNWAITS".to_owned(),
         pid: std::process::id(),
-        exec_agent: "codex".to_string(),
+        exec_agent: "codex".to_owned(),
         ..ralphy_run_snapshot::RunSnapshot::default()
     };
-    snapshot.phase.state = "executing".to_string();
+    snapshot.phase.state = "executing".to_owned();
     snapshot.phase.agent = Some(ralphy_run_snapshot::AgentBlock {
-        state: "waiting".to_string(),
-        since: "2026-10-28T11:00:00-03:00".to_string(),
+        state: "waiting".to_owned(),
+        since: "2026-10-28T11:00:00-03:00".to_owned(),
         detail: None,
     });
     ralphy_run_snapshot::write_atomic(&home, &snapshot).expect("write the run snapshot");
-    let both = ["console:1".to_string(), "run:01RUNWAITS".to_string()];
+    let both = ["console:1".to_owned(), "run:01RUNWAITS".to_owned()];
     wait_for(port, "/api/attention", |r| ids(r) == both).await;
 
     for id in &both {

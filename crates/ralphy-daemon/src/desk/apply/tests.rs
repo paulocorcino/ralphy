@@ -126,7 +126,7 @@ fn a_window_create_past_the_cap_and_its_slack_is_refused() {
 
 #[test]
 fn a_change_names_its_project_by_the_canonical_key() {
-    let aliases = BTreeMap::from([("path-abc".to_string(), "owner/repo".to_string())]);
+    let aliases = BTreeMap::from([("path-abc".to_owned(), "owner/repo".to_owned())]);
     let mut stale = window("w-1");
     stale["repo"] = json!("path-abc");
     let mut desk = DeskStore::default();
@@ -154,7 +154,7 @@ fn a_change_names_its_project_by_the_canonical_key() {
     assert_eq!(out.desk.windows[0].repo, "owner/repo");
     assert_eq!(
         out.desk.checkouts,
-        BTreeMap::from([("owner/repo".to_string(), "wt-b".to_string())]),
+        BTreeMap::from([("owner/repo".to_owned(), "wt-b".to_owned())]),
         "the clear matched the canonical key, then the new pick landed there"
     );
     assert_eq!(out.desk.notes[0].repo, "owner/repo");

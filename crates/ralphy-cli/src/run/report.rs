@@ -348,12 +348,12 @@ mod tests {
     #[test]
     fn empty_queue_scope_names_the_filter() {
         // Active filter on a label queue names the assignee.
-        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_string()], Some("@me"));
+        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_owned()], Some("@me"));
         assert!(scope.contains("@me"), "scope must name the filter: {scope}");
         assert!(scope.contains("assigned to"), "got: {scope}");
 
         // No filter omits the "assigned to" phrase.
-        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_string()], None);
+        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_owned()], None);
         assert!(
             !scope.contains("assigned to"),
             "unfiltered scope must not mention an assignee: {scope}"
@@ -362,7 +362,7 @@ mod tests {
         // Explicit selections never carry the filter phrase.
         let scope = empty_queue_scope(&[5, 3], None, &[], None);
         assert_eq!(scope, "issues [#5, #3]");
-        let scope = empty_queue_scope(&[], Some(7), &["ready-for-agent".to_string()], None);
+        let scope = empty_queue_scope(&[], Some(7), &["ready-for-agent".to_owned()], None);
         assert_eq!(scope, "issue #7");
     }
 }

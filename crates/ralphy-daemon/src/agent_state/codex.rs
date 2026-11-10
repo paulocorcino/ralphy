@@ -32,7 +32,7 @@ pub(super) fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signa
             tool_use_id: line.tool_use_id.clone(),
             detail: match line.question.as_deref().map(str::trim) {
                 Some(q) if !q.is_empty() => format!("{QUESTION_TOOL}: {q}"),
-                _ => QUESTION_TOOL.to_string(),
+                _ => QUESTION_TOOL.to_owned(),
             },
         },
         "PreToolUse" => Signal::Work,
@@ -42,7 +42,7 @@ pub(super) fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signa
             tool_use_id: line.tool_use_id.clone(),
             detail: match tool {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "PostToolUse" => Signal::WaitEnd {

@@ -15,11 +15,11 @@ fn device_set_cookie(res: &Response) -> Option<String> {
         .iter()
         .filter_map(|v| v.to_str().ok())
         .find(|v| v.starts_with("ralphy_device="))
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 fn pair(set_cookie: &str) -> String {
-    set_cookie.split(';').next().unwrap().to_string()
+    set_cookie.split(';').next().unwrap().to_owned()
 }
 
 async fn send(app: Router, req: Request<Body>) -> Response {

@@ -178,7 +178,7 @@ fn shrink_bar(filled: &str, empty: &str, counter: &str, width: usize) -> String 
             return candidate;
         }
     }
-    counter.to_string() // Even the bare counter overflows: return it, never empty.
+    counter.to_owned() // Even the bare counter overflows: return it, never empty.
 }
 
 #[cfg(test)]

@@ -338,7 +338,7 @@ fn median(costs: &[f64]) -> Option<f64> {
 /// A percentage tile, or `—` when its denominator is empty — a share of nothing
 /// is not `0.0%`.
 fn fmt_pct(share: Option<f64>) -> String {
-    share.map_or_else(|| "—".to_string(), fmt_share)
+    share.map_or_else(|| "—".to_owned(), fmt_share)
 }
 
 #[cfg(test)]

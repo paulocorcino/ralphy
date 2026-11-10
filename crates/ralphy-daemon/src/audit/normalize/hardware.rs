@@ -55,7 +55,7 @@ pub(super) fn screen_size(client: &ClientFacts) -> Option<(u32, u32, f64)> {
 
 pub(super) fn ratio(dpr: f64) -> String {
     let text = format!("{dpr:.2}");
-    text.trim_end_matches('0').trim_end_matches('.').to_string()
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 /// The iPhones that share one screen size and pixel ratio. Apple gives a page

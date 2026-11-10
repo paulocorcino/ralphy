@@ -126,7 +126,7 @@ fn remove_applies_the_gates_in_order() {
 
 #[test]
 fn core_errors_keep_their_text_remove_error() {
-    let n = || "wt-a".to_string();
+    let n = || "wt-a".to_owned();
     let cases = [
         (
             RemoveError::NotFound { name: n() },

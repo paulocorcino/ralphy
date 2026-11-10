@@ -87,8 +87,8 @@ fn chat_record(
     let matched = cwd.and_then(|c| crate::attribution::find_repo(input.repos, c));
     let (project, actor_email) = attribute(email_cache, matched);
     Some(InteractiveRecord {
-        agent: "cursor".to_string(),
-        model: "unknown".to_string(),
+        agent: "cursor".to_owned(),
+        model: "unknown".to_owned(),
         session_id,
         project,
         actor_email,
@@ -151,8 +151,8 @@ fn scan_project_transcripts(
         out.insert(
             session_id.clone(),
             InteractiveRecord {
-                agent: "cursor".to_string(),
-                model: "unknown".to_string(),
+                agent: "cursor".to_owned(),
+                model: "unknown".to_owned(),
                 session_id,
                 project: project.clone(),
                 actor_email: actor_email.clone(),

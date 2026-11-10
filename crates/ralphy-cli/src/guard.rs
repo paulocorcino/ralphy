@@ -196,7 +196,7 @@ fn denied_by_rules(text: &str) -> Option<String> {
     BASH_DENY_RULES
         .iter()
         .find(|(re, _)| re.is_match(text))
-        .map(|(_, why)| (*why).to_string())
+        .map(|(_, why)| (*why).to_owned())
 }
 
 /// Judge one segment by what it runs once its wrapper words are skipped.

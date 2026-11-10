@@ -244,7 +244,7 @@ fn no_selector_sets_one_property_twice() {
                             let Some((prop, value)) = decl.split_once(':') else {
                                 continue;
                             };
-                            let prop = prop.trim().to_string();
+                            let prop = prop.trim().to_owned();
                             let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
                             if prop.is_empty() || prop.starts_with("--") {
                                 continue;

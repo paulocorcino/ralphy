@@ -77,7 +77,7 @@ pub(crate) fn parse_plan_usage(stdout: &str) -> Usage {
                 usage
                     .get("model")
                     .and_then(|v| v.as_str())
-                    .map(str::to_string)
+                    .map(str::to_owned)
             });
         found = Some(u); // keep the LAST result object
     }
@@ -101,7 +101,7 @@ pub(crate) fn parse_plan_session_id(stdout: &str) -> Option<String> {
             continue;
         }
         if let Some(id) = value.get("session_id").and_then(|v| v.as_str()) {
-            found = Some(id.to_string()); // keep the LAST result object
+            found = Some(id.to_owned()); // keep the LAST result object
         }
     }
     found
@@ -115,7 +115,7 @@ pub(crate) fn session_id_from_files(appeared: &[PathBuf]) -> Option<String> {
         .first()
         .and_then(|p| p.file_stem())
         .and_then(|s| s.to_str())
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// The subagent transcripts belonging to the session transcripts in `appeared`
@@ -251,7 +251,7 @@ pub(crate) fn parse_transcript_usage(jsonl: &str) -> Usage {
         // Attribute this line's tokens to its assistant `message.model` so the
         // dominant model can be picked once the whole transcript is summed.
         if let Some(m) = message.get("model").and_then(|v| v.as_str()) {
-            *by_model.entry(m.to_string()).or_insert(0) += tokens.total();
+            *by_model.entry(m.to_owned()).or_insert(0) += tokens.total();
         }
     }
     total.model = dominant_model(by_model);
@@ -273,7 +273,7 @@ fn line_message(line: &str) -> Option<serde_json::Value> {
 /// has nothing to dedup on, so it always counts.
 fn first_sight(message: &serde_json::Value, seen: &mut std::collections::HashSet<String>) -> bool {
     match message.get("id").and_then(|v| v.as_str()) {
-        Some(id) => seen.insert(id.to_string()),
+        Some(id) => seen.insert(id.to_owned()),
         None => true,
     }
 }

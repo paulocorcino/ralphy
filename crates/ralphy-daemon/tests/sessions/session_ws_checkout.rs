@@ -50,7 +50,7 @@ async fn http_get(port: u16, path: &str) -> String {
         .await
         .expect("read the response");
     raw.split_once("\r\n\r\n")
-        .map(|(_, body)| body.to_string())
+        .map(|(_, body)| body.to_owned())
         .unwrap_or(raw)
 }
 
@@ -121,7 +121,7 @@ fn cwd_line(text: &str) -> String {
     let (path, _) = rest
         .split_once("READY")
         .unwrap_or_else(|| panic!("READY after the CWD: line; got {text:?}"));
-    path.to_string()
+    path.to_owned()
 }
 
 fn no_opt_out_anywhere(root: &Path, wt: &Path) -> bool {
@@ -237,7 +237,7 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     let canonical = |path: &Path| {
         flatten(&path.canonicalize().unwrap().to_string_lossy())
             .trim_start_matches("//?/")
-            .to_string()
+            .to_owned()
     };
     assert_eq!(
         canonical(Path::new(&cwd)),

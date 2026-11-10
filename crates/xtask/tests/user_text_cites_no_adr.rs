@@ -62,9 +62,9 @@ fn f<'a>(x: &'a str) -> char {
     assert_eq!(
         literals,
         vec![
-            r#"one \" ADR-0004"#.to_string(),
-            r#"raw "ADR-0005""#.to_string(),
-            "bytes".to_string()
+            r#"one \" ADR-0004"#.to_owned(),
+            r#"raw "ADR-0005""#.to_owned(),
+            "bytes".to_owned()
         ]
     );
     assert_eq!(string_literals(src)[0].0, 5);

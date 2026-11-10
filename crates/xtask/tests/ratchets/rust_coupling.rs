@@ -39,7 +39,7 @@ fn spawn_sites_match_the_baseline() {
     for path in &files {
         let text = read(path);
         for (program, sites) in spawn_sites(&text) {
-            actual.insert((rel_path(&root, path), program.to_string()), sites);
+            actual.insert((rel_path(&root, path), program.to_owned()), sites);
         }
     }
     let errors = spawn_errors(&actual, SPAWN_BASELINE);
@@ -77,7 +77,7 @@ fn spawn_counting_cuts_at_the_test_module() {
 #[test]
 fn a_new_file_or_a_changed_count_fails_the_ratchet() {
     let baseline = [("a.rs", "git", 1)];
-    let key = |file: &str, program: &str| (file.to_string(), program.to_string());
+    let key = |file: &str, program: &str| (file.to_owned(), program.to_owned());
 
     let grown = BTreeMap::from([
         (key("a.rs", "git"), 2),
@@ -161,11 +161,11 @@ fn forge_items_count_brace_groups_and_skip_tests() {
     let items = forge_items(src);
     assert_eq!(
         items,
-        BTreeSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+        BTreeSet::from(["a".to_owned(), "b".to_owned(), "c".to_owned()])
     );
     assert_eq!(
         forge_items("use ralphy_core::github::*;\n"),
-        BTreeSet::from(["*".to_string()])
+        BTreeSet::from(["*".to_owned()])
     );
 }
 
@@ -195,7 +195,7 @@ fn forge_items(text: &str) -> BTreeSet<String> {
         }
     }
     if code.contains("github::*") {
-        items.insert("*".to_string());
+        items.insert("*".to_owned());
     }
     items
 }

@@ -83,7 +83,7 @@ fn visit(repo_root: &Path, path: &Path, is_alive: &impl Fn(u32) -> bool, listing
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or_default()
-        .to_string();
+        .to_owned();
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         // Listed, then gone: another reader's orphan sweep (the attention

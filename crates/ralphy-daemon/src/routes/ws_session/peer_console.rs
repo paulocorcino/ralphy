@@ -192,9 +192,9 @@ impl PeerConsole<'_> {
         }
         match sessions
             .spawn_attached(
-                repo_ref.to_string(),
+                repo_ref.to_owned(),
                 agent_label,
-                "console".to_string(),
+                "console".to_owned(),
                 Some(peer.environment.clone()),
                 None,
                 record.clone(),
@@ -206,7 +206,7 @@ impl PeerConsole<'_> {
                 who.console(&launch_record(
                     id,
                     "console",
-                    Some(slug.to_string()),
+                    Some(slug.to_owned()),
                     Some(peer.daemon_id.clone()),
                     &tab,
                 ));

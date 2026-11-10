@@ -27,7 +27,7 @@ pub(crate) fn embedded_version() -> String {
         }
     }
 
-    git_describe().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
+    git_describe().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned())
 }
 
 /// `git describe --tags --match 'v*' --always`, with `-dirty` added when
@@ -52,7 +52,7 @@ fn git_describe() -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let s = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    let s = String::from_utf8(out.stdout).ok()?.trim().to_owned();
     if s.is_empty() {
         return None;
     }

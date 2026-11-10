@@ -64,8 +64,8 @@ impl Window {
     /// caller derived from the clock.
     pub fn render(self, since: Option<String>) -> Period {
         Period {
-            key: self.key().to_string(),
-            label: self.label().to_string(),
+            key: self.key().to_owned(),
+            label: self.label().to_owned(),
             since,
         }
     }

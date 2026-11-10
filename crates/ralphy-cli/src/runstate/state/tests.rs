@@ -119,7 +119,7 @@ fn skipped_event_sets_skipped_status() {
         (
             "human return",
             SkipKind::HumanReturn,
-            Some("wontfix".to_string()),
+            Some("wontfix".to_owned()),
             vec![],
         ),
     ];

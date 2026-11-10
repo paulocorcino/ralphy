@@ -59,7 +59,7 @@ pub(crate) fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) 
         issues: trail(state),
         phase: PhaseBlock {
             active: state.active,
-            state: state.run_phase().to_string(),
+            state: state.run_phase().to_owned(),
             // Always `None` here, and that is the module's purity holding: the
             // phase clock's anchor is a wall-clock instant, and this function has
             // no clock. `run::snapshot_engine` stamps it, because only something
@@ -97,7 +97,7 @@ fn plan_block(plan: &PlanProgress, state: &RunState) -> PlanBlock {
             .iter()
             .map(|s| PlanStepBlock {
                 text: s.text.clone(),
-                status: s.status.wire().to_string(),
+                status: s.status.wire().to_owned(),
             })
             .collect(),
     }
@@ -136,8 +136,8 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
             } else {
                 e.title.clone()
             },
-            status: status_wire(&e.status).to_string(),
-            kind: e.kind.map(|k| k.skip_wire().to_string()),
+            status: status_wire(&e.status).to_owned(),
+            kind: e.kind.map(|k| k.skip_wire().to_owned()),
             blocked_by: e.blocked_by.clone(),
             model: e.model.clone(),
             effort: e.effort.clone(),
@@ -147,7 +147,7 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
         None => IssueBlock {
             number,
             title: queue_title.unwrap_or_default(),
-            status: "pending".to_string(),
+            status: "pending".to_owned(),
             ..IssueBlock::default()
         },
     }

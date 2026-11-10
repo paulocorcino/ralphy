@@ -73,7 +73,7 @@ fn restore_source(
             if v.kind != history::VERSION_KIND {
                 return Err(Box::new(failed(
                     StatusCode::BAD_REQUEST,
-                    "the file is not a desk version".to_string(),
+                    "the file is not a desk version".to_owned(),
                 )));
             }
             let d = &v.desk;
@@ -84,7 +84,7 @@ fn restore_source(
         }
         _ => Err(Box::new(failed(
             StatusCode::BAD_REQUEST,
-            "send either `id` or `version`".to_string(),
+            "send either `id` or `version`".to_owned(),
         ))),
     }
 }

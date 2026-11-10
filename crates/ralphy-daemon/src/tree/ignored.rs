@@ -95,7 +95,7 @@ pub(crate) fn components_below(base: &Path, dir: &Path) -> Vec<String> {
 /// `base` and `name` joined with `/`, `base` empty for the root.
 pub(crate) fn join(base: &str, name: &str) -> String {
     if base.is_empty() {
-        name.to_string()
+        name.to_owned()
     } else {
         format!("{base}/{name}")
     }
@@ -141,7 +141,7 @@ fn push_file(layers: &mut Vec<Arc<Layer>>, dir: &Path, base: &str, file: &Path) 
     }
     match builder.build() {
         Ok(rules) => layers.push(Arc::new(Layer {
-            base: base.to_string(),
+            base: base.to_owned(),
             rules,
         })),
         Err(e) => {

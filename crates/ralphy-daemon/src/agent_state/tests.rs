@@ -200,8 +200,8 @@ fn console_settings_match_the_shared_event_list() {
         .iter()
         .map(|e| {
             (
-                e["event"].as_str().unwrap().to_string(),
-                e["matcher"].as_str().unwrap().to_string(),
+                e["event"].as_str().unwrap().to_owned(),
+                e["matcher"].as_str().unwrap().to_owned(),
             )
         })
         .collect();
@@ -219,7 +219,7 @@ fn console_settings_match_the_shared_event_list() {
             assert_eq!(list[0]["hooks"][0], hook.entry(), "{event}");
             (
                 event.clone(),
-                list[0]["matcher"].as_str().unwrap().to_string(),
+                list[0]["matcher"].as_str().unwrap().to_owned(),
             )
         })
         .collect();

@@ -2,8 +2,8 @@ use super::*;
 
 fn score(path: &str, name: &str, value: u32) -> Score {
     Score {
-        path: path.to_string(),
-        name: name.to_string(),
+        path: path.to_owned(),
+        name: name.to_owned(),
         value,
         marked: false,
     }
@@ -77,7 +77,7 @@ fn the_near_list_holds_seven_to_ten_in_the_changed_files() {
         score("a.rs", "eleven", 11),
         score("b.rs", "eight", 8),
     ];
-    let files = BTreeSet::from(["a.rs".to_string()]);
+    let files = BTreeSet::from(["a.rs".to_owned()]);
     let names: Vec<&str> = near_limit(&scores, &files)
         .iter()
         .map(|s| s.name.as_str())

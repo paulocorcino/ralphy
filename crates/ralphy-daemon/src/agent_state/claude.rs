@@ -33,7 +33,7 @@ pub(super) fn claude_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: line.tool_use_id.clone(),
             detail: match tool {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "Elicitation" => Signal::Wait {
@@ -51,7 +51,7 @@ pub(super) fn claude_signal(line: &StatusLine) -> Option<Signal> {
 fn named(name: &str, question: Option<&str>) -> String {
     match question.map(str::trim).filter(|q| !q.is_empty()) {
         Some(q) => format!("{name}: {q}"),
-        None => name.to_string(),
+        None => name.to_owned(),
     }
 }
 // jscpd:ignore-end

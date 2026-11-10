@@ -446,7 +446,7 @@ fn show_view(
         .next()
         .expect("one issue in, one issue out");
     let bodies: Vec<String> = comments.iter().map(|c| c.body.clone()).collect();
-    let consolidated_spec = blocked::find_consolidated_spec(&bodies).map(str::to_string);
+    let consolidated_spec = blocked::find_consolidated_spec(&bodies).map(str::to_owned);
     let history = history
         .iter()
         .map(|r| HistoryRow {
@@ -486,7 +486,7 @@ fn parse_fields(raw: Option<&str>) -> Option<Vec<String>> {
         s.split(',')
             .map(str::trim)
             .filter(|t| !t.is_empty())
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect()
     })
 }

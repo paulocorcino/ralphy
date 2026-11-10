@@ -32,7 +32,7 @@ pub(crate) fn parse_plan_steps(md: &str) -> Vec<(String, &'static str)> {
                 let r = t.strip_prefix("- [!]")?;
                 ("noticed", r)
             };
-            Some((rest.trim().to_string(), status))
+            Some((rest.trim().to_owned(), status))
         })
         .collect()
 }

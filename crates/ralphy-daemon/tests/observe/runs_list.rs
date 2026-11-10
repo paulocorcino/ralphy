@@ -81,7 +81,7 @@ async fn serve_repo() -> (u16, String) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string())
+    (port, slug.to_owned())
 }
 
 /// Send one `Command` on a `spawn` channel and collect every reply frame on
@@ -96,7 +96,7 @@ async fn round_trip(
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),

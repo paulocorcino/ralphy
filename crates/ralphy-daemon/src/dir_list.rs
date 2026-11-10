@@ -137,10 +137,10 @@ pub fn list(
 /// returned unchanged.
 fn expand_home(text: &str, home: Option<&Path>) -> String {
     let Some(home) = home else {
-        return text.to_string();
+        return text.to_owned();
     };
     let Some(rest) = text.strip_prefix('~') else {
-        return text.to_string();
+        return text.to_owned();
     };
     if rest.is_empty() {
         return home.to_string_lossy().into_owned();
@@ -151,7 +151,7 @@ fn expand_home(text: &str, home: Option<&Path>) -> String {
             home.to_string_lossy().trim_end_matches(is_separator)
         );
     }
-    text.to_string()
+    text.to_owned()
 }
 
 fn is_separator(c: char) -> bool {
@@ -172,12 +172,12 @@ fn drive_root(folder: &str) -> String {
     if cfg!(windows) && bytes.len() == 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
         return format!("{folder}\\");
     }
-    folder.to_string()
+    folder.to_owned()
 }
 
 fn with_separator(folder: &str) -> String {
     if folder.ends_with(is_separator) {
-        folder.to_string()
+        folder.to_owned()
     } else {
         format!("{folder}{}", std::path::MAIN_SEPARATOR)
     }
@@ -265,7 +265,7 @@ fn entry(path: PathBuf, name: String, registered: &HashSet<PathBuf>) -> Entry {
             name,
             repo: false,
             added: false,
-            error: Some(Refusal::Unreadable.message().to_string()),
+            error: Some(Refusal::Unreadable.message().to_owned()),
         };
     }
     Entry {
@@ -316,7 +316,7 @@ fn plain(canon: &Path) -> String {
     let s = canon.to_string_lossy();
     match s.strip_prefix(r"\\?\UNC\") {
         Some(rest) => format!(r"\\{rest}"),
-        None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_string(),
+        None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_owned(),
     }
 }
 

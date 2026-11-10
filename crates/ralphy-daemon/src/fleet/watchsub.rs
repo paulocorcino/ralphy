@@ -106,9 +106,9 @@ impl WatchSubs {
         let mut rx = None;
         arm(&self.watchers, repo, root, normalized, &mut held, &mut rx);
         subs.insert(
-            sub_id.to_string(),
+            sub_id.to_owned(),
             Sub {
-                repo: repo.to_string(),
+                repo: repo.to_owned(),
                 paths: held,
                 rx,
                 last_poll: Instant::now(),

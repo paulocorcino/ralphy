@@ -84,7 +84,7 @@ async fn an_open_after_a_logout_is_refused_and_ends_the_socket() {
         closed,
         Some(Closed {
             channel: 1,
-            reason: "refused".to_string()
+            reason: "refused".to_owned()
         })
     );
     assert!(ends_within(&mut ws, WITHIN).await, "the socket ends");
@@ -103,7 +103,7 @@ async fn an_open_with_the_same_login_is_served() {
         closed,
         Some(Closed {
             channel: 1,
-            reason: "done".to_string()
+            reason: "done".to_owned()
         })
     );
     assert!(!ends_within(&mut ws, Duration::from_secs(1)).await);
@@ -180,7 +180,7 @@ async fn sign_in(port: u16) -> String {
         .split(';')
         .next()
         .expect("a cookie pair")
-        .to_string()
+        .to_owned()
 }
 
 /// A revoke of the login a page socket was let in under reaches its next
@@ -191,7 +191,7 @@ async fn an_open_after_a_revoke_of_its_login_is_refused_and_ends_the_socket() {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     let epoch = ralphy_daemon::epoch::SessionEpoch::in_memory_detached();
     let session = Arc::new(SessionAuth {
-        token: "tok".to_string(),
+        token: "tok".to_owned(),
         totp: ralphy_daemon::totp::Seed::from_bytes(SEED.to_vec()),
         password: None,
         epoch: epoch.clone(),
@@ -235,7 +235,7 @@ async fn an_open_after_a_revoke_of_its_login_is_refused_and_ends_the_socket() {
         closed,
         Some(Closed {
             channel: 1,
-            reason: "refused".to_string()
+            reason: "refused".to_owned()
         })
     );
     assert!(ends_within(&mut ws, WITHIN).await, "the socket ends");

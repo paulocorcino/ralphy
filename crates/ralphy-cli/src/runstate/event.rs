@@ -225,7 +225,7 @@ pub(crate) fn event_to_runevent(
     if fields.level == Level::WARN || fields.level == Level::ERROR {
         return Some(RunEvent::Notice {
             level: fields.level,
-            message: message.to_string(),
+            message: message.to_owned(),
         });
     }
     let number = fields.number.unwrap_or(0);
@@ -418,7 +418,7 @@ fn split_labels(raw: Option<&str>) -> Vec<String> {
             .split(',')
             .map(str::trim)
             .filter(|t| !t.is_empty())
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect(),
     }
 }
@@ -445,8 +445,8 @@ fn parse_steps_json(raw: Option<&str>) -> Vec<(String, String)> {
     };
     arr.iter()
         .filter_map(|e| {
-            let text = e.get("text")?.as_str()?.to_string();
-            let status = e.get("status")?.as_str()?.to_string();
+            let text = e.get("text")?.as_str()?.to_owned();
+            let status = e.get("status")?.as_str()?.to_owned();
             Some((text, status))
         })
         .collect()

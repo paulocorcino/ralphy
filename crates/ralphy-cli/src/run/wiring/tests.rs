@@ -246,8 +246,7 @@ fn resolve_copilot_models_per_phase() {
         ),
     ];
     for (case, plan, exec, settings, want_plan, want_exec) in rows {
-        let resolved =
-            resolve_copilot(plan.map(str::to_string), exec.map(str::to_string), settings);
+        let resolved = resolve_copilot(plan.map(str::to_owned), exec.map(str::to_owned), settings);
         assert_eq!(resolved.plan_model.as_deref(), want_plan, "{case}: plan");
         assert_eq!(resolved.exec_model.as_deref(), want_exec, "{case}: exec");
     }
@@ -303,8 +302,8 @@ fn resolve_cursor_takes_its_models_from_the_flags_only() {
     ];
     for (case, plan, exec) in rows {
         let resolved = resolve_cursor(
-            plan.map(str::to_string),
-            exec.map(str::to_string),
+            plan.map(str::to_owned),
+            exec.map(str::to_owned),
             &ralphy_agent_cursor::CursorSettings::default(),
         );
         assert_eq!(resolved.plan_model.as_deref(), plan, "{case}: plan");

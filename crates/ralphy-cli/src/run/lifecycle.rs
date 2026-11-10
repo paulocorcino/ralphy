@@ -87,7 +87,7 @@ pub(super) fn start_delivery(
         // The token captured before the env scrub: reading the env again here
         // would miss a token given only as `RALPHY_TELEGRAM_TOKEN`.
         if let (Some(chat_id), Some(token)) = (cfg.chat_id, obs.tg_token.clone()) {
-            let state = runstate::RunState::new(title.to_string(), queue_len);
+            let state = runstate::RunState::new(title.to_owned(), queue_len);
             let client =
                 telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
             notifier =
@@ -100,7 +100,7 @@ pub(super) fn start_delivery(
     if let (Some(queue), Some(url)) = (obs.event_sink_queue.as_ref(), obs.events_url.as_ref()) {
         let ctx = events::envelope::EventCtx {
             source: events::emitter::source(&obs.events_slug),
-            runid: runid.to_string(),
+            runid: runid.to_owned(),
             emitter: serde_json::to_value(events::emitter::detect(repo_root)).unwrap_or_default(),
             git: serde_json::json!({
                 "repository": obs.events_slug,
@@ -118,7 +118,7 @@ pub(super) fn start_delivery(
     let snapshot_handle = snapshot_ctx.and_then(|ctx| {
         snapshot_engine::try_start_snapshot(
             ctx,
-            runstate::RunState::new(title.to_string(), queue_len),
+            runstate::RunState::new(title.to_owned(), queue_len),
             repo_root.to_path_buf(),
             obs.snapshot_queue.clone(),
             ws.plan_path(),

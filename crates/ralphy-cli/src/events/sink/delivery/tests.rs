@@ -8,8 +8,8 @@ use std::net::TcpListener;
 /// A test [`EventCtx`] with a stub emitter carrying a known `pid`.
 fn test_ctx() -> EventCtx {
     EventCtx {
-        source: "ralphy/o/r".to_string(),
-        runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
+        source: "ralphy/o/r".to_owned(),
+        runid: "01TESTRUNIDTESTRUNIDTE".to_owned(),
         emitter: json!({ "version": "0.0.0", "pid": 4242 }),
         git: json!({ "repository": "o/r", "branch": "afk/run-t" }),
     }
@@ -230,7 +230,7 @@ fn spine_pushed_event_arrives_as_cloudevents_post() {
 
     let transport = crate::events::client::UreqEventTransport::new(
         format!("http://127.0.0.1:{port}/"),
-        Some("tok".to_string()),
+        Some("tok".to_owned()),
     );
     let queue = new_queue();
     queue.push(RunEvent::IssueClosed {
@@ -333,7 +333,7 @@ fn deliver_from_pre_start_ring(events: Vec<RunEvent>) -> Vec<Value> {
 fn envelope_types(envelopes: &[Value]) -> Vec<String> {
     envelopes
         .iter()
-        .map(|e| e["type"].as_str().unwrap_or_default().to_string())
+        .map(|e| e["type"].as_str().unwrap_or_default().to_owned())
         .collect()
 }
 

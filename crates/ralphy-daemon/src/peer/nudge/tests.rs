@@ -33,10 +33,10 @@ fn nudge_never_waits() {
     // redirected stdin — `spawn_detached` gives the child `Stdio::null()`, and a
     // child that exits instantly would let a `.wait()` implementation pass.
     let argv = vec![
-        "ping".to_string(),
-        "-n".to_string(),
-        "8".to_string(),
-        "127.0.0.1".to_string(),
+        "ping".to_owned(),
+        "-n".to_owned(),
+        "8".to_owned(),
+        "127.0.0.1".to_owned(),
     ];
     let t0 = std::time::Instant::now();
     spawn_detached(&argv).expect("ping is present on every Windows host");

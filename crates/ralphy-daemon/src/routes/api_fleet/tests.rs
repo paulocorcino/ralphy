@@ -97,7 +97,7 @@ fn peer_slugs(body: &serde_json::Value) -> Vec<String> {
         .unwrap()
         .iter()
         .filter(|r| r["local"] == false)
-        .map(|r| r["slug"].as_str().unwrap().to_string())
+        .map(|r| r["slug"].as_str().unwrap().to_owned())
         .collect()
 }
 

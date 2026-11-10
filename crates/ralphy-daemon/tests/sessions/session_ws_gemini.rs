@@ -55,7 +55,7 @@ async fn http_get(port: u16, path: &str) -> String {
         .await
         .expect("read the response");
     raw.split_once("\r\n\r\n")
-        .map(|(_, body)| body.to_string())
+        .map(|(_, body)| body.to_owned())
         .unwrap_or(raw)
 }
 

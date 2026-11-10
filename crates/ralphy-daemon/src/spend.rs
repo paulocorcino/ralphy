@@ -152,13 +152,13 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
     let usd = any_priced.then_some(usd);
     let deliveries = deliveries::fold(&classified);
     SpendSummary {
-        project: input.project.to_string(),
+        project: input.project.to_owned(),
         total: fmt_total(usd, floor),
         usd,
         floor,
         tokens: meter.render(),
         unpriced: unpriced.render(meter.total),
-        period: input.window.render(input.since.map(str::to_string)),
+        period: input.window.render(input.since.map(str::to_owned)),
         deliveries: deliveries.rows,
         deliveries_truncated: deliveries.truncated,
         overhead: deliveries.overhead,

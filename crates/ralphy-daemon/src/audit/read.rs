@@ -52,7 +52,7 @@ fn lines(path: &Path) -> Result<Vec<Value>> {
 fn text(v: &Value, pointer: &str) -> Option<String> {
     v.pointer(pointer)
         .and_then(Value::as_str)
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// Every device the log names, the latest seen first.
@@ -114,7 +114,7 @@ pub(crate) fn name_repos(events: &mut [Value], store: &RegistryStore) {
         };
         let name = registry::project_name(slug, &entry.path);
         if let Some(line) = event.as_object_mut() {
-            line.insert("repo_name".to_string(), Value::String(name));
+            line.insert("repo_name".to_owned(), Value::String(name));
         }
     }
 }
@@ -168,7 +168,7 @@ mod tests {
                 "{{\"at\":\"2026-10-04T10:00:00Z\",\"event\":\"action\",\"device\":\"{A}\",\
                 \"actor\":\"device\",\"ip\":\"203.0.113.3\"}}"
             ),
-            r#"{"at":"2026-10-04T11:00:00Z","event":"login_failed","actor":"unknown"}"#.to_string(),
+            r#"{"at":"2026-10-04T11:00:00Z","event":"login_failed","actor":"unknown"}"#.to_owned(),
         ];
         std::fs::write(&path, lines.join("\n") + "\n").unwrap();
         let list = devices(&path, None).unwrap();

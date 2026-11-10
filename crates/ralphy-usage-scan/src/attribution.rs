@@ -12,7 +12,7 @@ use crate::RegisteredRepo;
 /// Normalize a filesystem path for a case-insensitive compare: `\` → `/`,
 /// trailing `/` trimmed.
 pub(crate) fn normalize_path(p: &str) -> String {
-    p.replace('\\', "/").trim_end_matches('/').to_string()
+    p.replace('\\', "/").trim_end_matches('/').to_owned()
 }
 
 /// True when two paths name the same directory: normalized and compared with
@@ -69,7 +69,7 @@ pub(crate) fn linked_worktree_primary(cwd: &str) -> Option<String> {
         return None;
     }
     let primary = rest.strip_suffix("/.git/worktrees")?;
-    (!primary.is_empty()).then(|| primary.to_string())
+    (!primary.is_empty()).then(|| primary.to_owned())
 }
 
 /// Find the registered repo a session's cwd attributes to: a direct match
@@ -232,7 +232,7 @@ mod tests {
             .into_iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
             .collect();
-        assert_eq!(names, vec!["x".to_string()]);
+        assert_eq!(names, vec!["x".to_owned()]);
 
         assert_eq!(
             checkout_dirs(&tmp.path().join("nowhere").to_string_lossy()),

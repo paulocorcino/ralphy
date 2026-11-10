@@ -74,21 +74,21 @@ struct Fleet {
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("the test id parses"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
 fn descriptor(id: &str, port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: ENVIRONMENT.to_string(),
+        environment: ENVIRONMENT.to_owned(),
         os: String::new(),
-        token: TOKEN.to_string(),
+        token: TOKEN.to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -142,7 +142,7 @@ async fn fleet() -> Fleet {
         identity(PEER_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer(TOKEN.to_string()),
+            AuthPolicy::Bearer(TOKEN.to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -386,7 +386,7 @@ impl Page {
                         return command.payload["reason"]
                             .as_str()
                             .unwrap_or_default()
-                            .to_string();
+                            .to_owned();
                     }
                     Frame::Channel { .. }
                     | Frame::Command(_)

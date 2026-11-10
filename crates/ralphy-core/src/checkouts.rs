@@ -85,12 +85,12 @@ pub(crate) fn parse_porcelain(text: &str) -> Vec<Entry> {
 /// this module does not use is ignored.
 fn read_attribute(entry: &mut Entry, line: &str) {
     if let Some(path) = line.strip_prefix("worktree ") {
-        entry.path = path.to_string();
+        path.clone_into(&mut entry.path);
     } else if let Some(branch) = line.strip_prefix("branch ") {
         entry.branch = branch
             .strip_prefix("refs/heads/")
             .unwrap_or(branch)
-            .to_string();
+            .to_owned();
     } else if line == "detached" {
         entry.detached = true;
     } else if line == "prunable" || line.starts_with("prunable ") {
@@ -113,7 +113,7 @@ pub(crate) fn select_workbench<'a>(
         .filter(|entry| !entry.prunable)
         .filter_map(|entry| {
             let name = entry.path.strip_prefix(&prefix)?;
-            (!name.is_empty() && !name.contains('/')).then(|| (name.to_string(), entry))
+            (!name.is_empty() && !name.contains('/')).then(|| (name.to_owned(), entry))
         })
         .collect()
 }
@@ -203,9 +203,9 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
     let base = resolve_base(primary, base)?;
     create_and_record(primary, name, &rel, &base)?;
     Ok(Checkout {
-        name: name.to_string(),
+        name: name.to_owned(),
         path: format!("{primary_path}/{WORKTREES_DIR}/{name}"),
-        branch: name.to_string(),
+        branch: name.to_owned(),
         base,
         dirty: false,
     })
@@ -251,7 +251,7 @@ fn resolve_base(primary: &Path, base: Option<&str>) -> Result<String> {
         Some(b) => {
             crate::git::validate_commitish(primary, b)
                 .with_context(|| format!("invalid base '{b}'"))?;
-            Ok(b.to_string())
+            Ok(b.to_owned())
         }
         None => {
             let current = crate::git::current_branch(primary)?;
@@ -319,7 +319,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     let primary_path = entries[0].path.clone();
     let primary = Path::new(&primary_path);
     let not_found = || RemoveError::NotFound {
-        name: name.to_string(),
+        name: name.to_owned(),
     };
     let Some((_, entry)) = select_workbench(&entries, &primary_path)
         .into_iter()
@@ -329,7 +329,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     };
     if entry.locked {
         return Err(RemoveError::Locked {
-            name: name.to_string(),
+            name: name.to_owned(),
         }
         .into());
     }
@@ -339,7 +339,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     }
     if !crate::git::is_clean_ignoring_ralphy(path)? {
         return Err(RemoveError::Dirty {
-            name: name.to_string(),
+            name: name.to_owned(),
         }
         .into());
     }
@@ -352,7 +352,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     let stuck = unlink_shares(path);
     if let Some(first) = stuck.first() {
         return Err(RemoveError::RemoveFailed {
-            name: name.to_string(),
+            name: name.to_owned(),
             detail: format!("could not unlink a shared directory first: {first}"),
         }
         .into());
@@ -360,7 +360,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     let out = raw(primary, &["worktree", "remove", &rel])?;
     if !out.status.success() {
         return Err(RemoveError::RemoveFailed {
-            name: name.to_string(),
+            name: name.to_owned(),
             detail: one_line(&out.stderr),
         }
         .into());
@@ -375,7 +375,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
         return Ok(());
     }
     Err(RemoveError::BranchKept {
-        name: name.to_string(),
+        name: name.to_owned(),
         why: branch_kept_why(primary, name, &base, &one_line(&out.stderr))?,
     }
     .into())
@@ -456,7 +456,7 @@ fn base_of(primary: &Path, name: &str) -> Result<String> {
     let key = format!("branch.{name}.base");
     let out = raw(primary, &["config", "--get", &key])?;
     if out.status.success() {
-        return Ok(String::from_utf8_lossy(&out.stdout).trim().to_string());
+        return Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned());
     }
     if out.status.code() == Some(1) {
         return Ok(String::new());

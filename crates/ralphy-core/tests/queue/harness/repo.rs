@@ -37,7 +37,7 @@ pub(crate) fn current_branch(repo: &Path) -> String {
     String::from_utf8(out.stdout)
         .expect("git output was not UTF-8")
         .trim()
-        .to_string()
+        .to_owned()
 }
 
 pub(crate) fn branch_exists(repo: &Path, branch: &str) -> bool {
@@ -68,7 +68,7 @@ pub(crate) fn rev_parse(repo: &Path, refname: &str) -> Option<String> {
         String::from_utf8(out.stdout)
             .expect("git output was not UTF-8")
             .trim()
-            .to_string()
+            .to_owned()
     })
 }
 
@@ -83,7 +83,7 @@ pub(crate) fn git_ls(repo: &Path, refname: &str) -> Vec<String> {
     String::from_utf8(out.stdout)
         .expect("git output was not UTF-8")
         .lines()
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 

@@ -94,7 +94,7 @@ async fn device_cookie(port: u16) -> String {
         .split(';')
         .next()
         .expect("the reply sets a device cookie")
-        .to_string()
+        .to_owned()
 }
 
 /// Open a `console` channel with `fields` on a page socket that carries
@@ -175,7 +175,7 @@ async fn a_launch_and_a_takeover_are_recorded_and_a_reattach_is_not() {
     let dir = tempfile::tempdir().unwrap();
     let (port, _shutdown) = serve(dir.path()).await;
     let cookie = device_cookie(port).await;
-    let device = cookie.split('.').nth(1).unwrap().to_string();
+    let device = cookie.split('.').nth(1).unwrap().to_owned();
 
     let launch = json!({ "repo": "owner/workbench", "agent": "claude", "holder": "tab-a" });
     let ws = open(port, launch, &cookie).await.expect("the launch opens");

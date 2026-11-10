@@ -321,7 +321,7 @@ fn a_restore_never_ends_a_running_console_and_never_shows_one_twice() {
     assert_eq!(new.rect.left, 900.0);
     assert_eq!(new.session_id, Some(3));
     assert!(out.windows.iter().take(2).all(|w| w.ts == NOW));
-    assert_eq!(running, HashSet::from(["r".to_string()]));
+    assert_eq!(running, HashSet::from(["r".to_owned()]));
     assert_eq!(out.fences.len(), 1);
     assert_eq!(out.fences[0].ts, NOW);
     assert_eq!(out.notes.len(), 1);

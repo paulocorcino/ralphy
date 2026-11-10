@@ -88,7 +88,7 @@ fn shell_flash_reach_matches_the_baseline() {
         }
         let n = name_uses(&read(&path), "_flashAction");
         if n > 0 {
-            actual.insert(name.to_string(), n);
+            actual.insert(name.to_owned(), n);
         }
     }
     let errors = flash_errors(&actual, SHELL_FLASH_REACH);
@@ -111,13 +111,13 @@ fn the_column_paint_has_one_owner() {
         let text = read(&path);
         for function in COLUMN_PAINT {
             if declared_functions(&text, function) > 0 {
-                owners.entry(function).or_default().push(name.to_string());
+                owners.entry(function).or_default().push(name.to_owned());
             }
         }
     }
     let mut errors = column_owner_errors(&owners, &COLUMN_PAINT);
     for (function, modules) in &owners {
-        if modules != &["wb-stage-columns.ts".to_string()] {
+        if modules != &["wb-stage-columns.ts".to_owned()] {
             errors.push(format!(
                 "{function}: owner is {modules:?}, not wb-stage-columns.ts"
             ));
@@ -142,7 +142,7 @@ fn coupling_counts_read_code_and_are_exact() {
     assert_eq!(name_uses(src, "_flashAction"), 1);
 
     let baseline = [("a.ts", 2)];
-    let one = |file: &str, n| BTreeMap::from([(file.to_string(), n)]);
+    let one = |file: &str, n| BTreeMap::from([(file.to_owned(), n)]);
     assert_eq!(
         flash_errors(&one("a.ts", 2), &baseline),
         Vec::<String>::new()
@@ -161,8 +161,8 @@ fn coupling_counts_read_code_and_are_exact() {
 
     let names = ["a", "b", "c"];
     let owners = BTreeMap::from([
-        ("a", vec!["x.ts".to_string()]),
-        ("b", vec!["x.ts".to_string(), "y.ts".to_string()]),
+        ("a", vec!["x.ts".to_owned()]),
+        ("b", vec!["x.ts".to_owned(), "y.ts".to_owned()]),
     ]);
     let errors = column_owner_errors(&owners, &names);
     assert_eq!(errors.len(), 2, "{errors:?}");

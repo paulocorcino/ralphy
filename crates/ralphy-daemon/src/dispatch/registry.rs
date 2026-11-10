@@ -46,15 +46,15 @@ pub fn project_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, Argv
     if create && !init {
         return Err(ArgvError::BadParam("create"));
     }
-    let mut argv = vec!["daemon".to_string(), "add".to_string()];
+    let mut argv = vec!["daemon".to_owned(), "add".to_owned()];
     if init {
-        argv.push("--init".to_string());
+        argv.push("--init".to_owned());
     }
     if create {
-        argv.push("--create".to_string());
+        argv.push("--create".to_owned());
     }
-    argv.push("--".to_string());
-    argv.push(path.to_string());
+    argv.push("--".to_owned());
+    argv.push(path.to_owned());
     Ok(argv)
 }
 

@@ -241,7 +241,7 @@ mod tests {
             .iter()
             .map(|body| {
                 let doc: toml::Table = body.parse().expect("an imported rule parses");
-                doc["rule"][0]["toolName"].as_str().unwrap().to_string()
+                doc["rule"][0]["toolName"].as_str().unwrap().to_owned()
             })
             .collect();
         assert_eq!(tools, ["a1", "a2", "b1"]);

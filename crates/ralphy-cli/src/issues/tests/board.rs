@@ -14,13 +14,13 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
             BoardIssue {
                 number,
                 title: format!("issue {number}"),
-                state: state.to_string(),
-                reason: reason.map(str::to_string),
-                labels: vec!["ready-for-agent".to_string()],
+                state: state.to_owned(),
+                reason: reason.map(str::to_owned),
+                labels: vec!["ready-for-agent".to_owned()],
                 assignees: assignees.iter().map(ToString::to_string).collect(),
                 blocked_by: blocked_by.to_vec(),
-                created: "2026-07-01T00:00:00Z".to_string(),
-                updated: "2026-07-02T00:00:00Z".to_string(),
+                created: "2026-07-01T00:00:00Z".to_owned(),
+                updated: "2026-07-02T00:00:00Z".to_owned(),
             }
         };
 
@@ -52,7 +52,7 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
         bi(32, "open", &["octo"], &[], None),
     ];
     let closed = vec![bi(99, "closed", &[], &[], Some("not_planned"))];
-    let repo_labels = vec![("ready-for-agent".to_string(), "0e8a16".to_string())];
+    let repo_labels = vec![("ready-for-agent".to_owned(), "0e8a16".to_owned())];
 
     let nums = |val: &Value| -> Vec<u64> {
         val["issues"]

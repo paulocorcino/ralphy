@@ -184,7 +184,7 @@ fn version_of(program: &Path) -> String {
                 .lines()
                 .map(str::trim)
                 .find(|l| !l.is_empty())
-                .map(str::to_string)
+                .map(str::to_owned)
         })
         .unwrap_or_default()
 }

@@ -40,7 +40,7 @@ async fn command_reply(
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -147,7 +147,7 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
         .unwrap_or(0);
     let body = text
         .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
+        .map(|(_, b)| b.to_owned())
         .unwrap_or_default();
     (status, body)
 }
@@ -161,7 +161,7 @@ fn message(reply: &serde_json::Value) -> String {
     reply["message"]
         .as_str()
         .unwrap_or_else(|| panic!("an error message string; got {reply}"))
-        .to_string()
+        .to_owned()
 }
 
 #[tokio::test]

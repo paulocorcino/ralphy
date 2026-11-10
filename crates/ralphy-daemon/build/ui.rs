@@ -103,7 +103,7 @@ fn strip(name: &str, code: String) -> Result<String> {
     let handler = Handler::with_emitter_writer(Box::new(std::io::stderr()), Some(cm.clone()));
     let options = Options {
         module: Some(true),
-        filename: Some(name.to_string()),
+        filename: Some(name.to_owned()),
         mode: Mode::StripOnly,
         ..Default::default()
     };
@@ -119,7 +119,7 @@ fn strip(name: &str, code: String) -> Result<String> {
 /// source and the browser loads the `.js` output.
 fn rewrite_imports(name: &str, code: String) -> Result<String> {
     let cm: Lrc<SourceMap> = Default::default();
-    let fm = cm.new_source_file(Lrc::new(FileName::Custom(name.to_string())), code.clone());
+    let fm = cm.new_source_file(Lrc::new(FileName::Custom(name.to_owned())), code.clone());
     let mut recovered = Vec::new();
     let module = parse_file_as_module(
         &fm,

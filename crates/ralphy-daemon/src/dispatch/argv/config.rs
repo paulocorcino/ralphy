@@ -76,7 +76,7 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
             .and_then(|v| v.as_str())
             .ok_or(ArgvError::BadParam("key"))?;
         if remotely_settable_key(key) {
-            Ok(key.to_string())
+            Ok(key.to_owned())
         } else {
             Err(ArgvError::BadParam("key"))
         }
@@ -95,17 +95,17 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
                 .filter(|v| !v.is_empty())
                 .ok_or(ArgvError::BadParam("value"))?;
             Ok(vec![
-                "config".to_string(),
-                "set".to_string(),
-                "--".to_string(),
+                "config".to_owned(),
+                "set".to_owned(),
+                "--".to_owned(),
                 key,
-                value.to_string(),
+                value.to_owned(),
             ])
         }
         Verb::ConfigUnset => Ok(vec![
-            "config".to_string(),
-            "unset".to_string(),
-            "--".to_string(),
+            "config".to_owned(),
+            "unset".to_owned(),
+            "--".to_owned(),
             key()?,
         ]),
         // Non-config verbs never route here (`execute_oneshot` picks the branch

@@ -47,7 +47,7 @@ pub fn scan_kimi(input: &KimiScan) -> Vec<InteractiveRecord> {
     let mut records: Vec<InteractiveRecord> = out
         .into_iter()
         .map(|((session_id, model), agg)| InteractiveRecord {
-            agent: "kimi".to_string(),
+            agent: "kimi".to_owned(),
             model,
             session_id,
             project: agg.project,
@@ -173,7 +173,7 @@ fn read_status_update(line: &str) -> Option<(Option<String>, Snap)> {
         .get("message_id")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .map(str::to_string);
+        .map(str::to_owned);
     Some((
         key,
         Snap {
@@ -310,9 +310,9 @@ fn read_config_model(kimi_dir: &Path) -> String {
     let model = fs::read_to_string(&path)
         .ok()
         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-        .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(str::to_string))
+        .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(str::to_owned))
         .filter(|m| !m.is_empty());
-    model.unwrap_or_else(|| DEFAULT_MODEL.to_string())
+    model.unwrap_or_else(|| DEFAULT_MODEL.to_owned())
 }
 
 /// The session id a `wire.jsonl` belongs to (below `sessions_root`): the segment
@@ -329,15 +329,15 @@ fn session_id_from_path(path: &Path, sessions_root: &Path) -> String {
         .iter()
         .position(|&c| c == "subagents" || c == "agents")
     {
-        if idx > 0 {
-            return comps[idx - 1].to_string();
+        if let Some(parent) = idx.checked_sub(1).and_then(|i| comps.get(i).copied()) {
+            return parent.to_owned();
         }
     }
     path.parent()
         .and_then(|p| p.file_name())
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
-        .to_string()
+        .to_owned()
 }
 
 /// Resolve (project, `actor_email`) from the WORKSPACE segment (`sessions/<WORKSPACE>/…`)

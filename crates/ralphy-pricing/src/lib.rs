@@ -290,11 +290,11 @@ fn bare_candidates(model: &str) -> Vec<String> {
     let stripped = strip_release_date(model);
     let mut out = Vec::with_capacity(5);
     for c in [
-        model.to_string(),
-        stripped.to_string(),
+        model.to_owned(),
+        stripped.to_owned(),
         dots_to_dashes(model),
         dots_to_dashes(stripped),
-        strip_provider_prefix(model).to_string(),
+        strip_provider_prefix(model).to_owned(),
     ] {
         if !out.iter().any(|e| e == &c) {
             out.push(c);
@@ -377,7 +377,7 @@ fn warn_unknown(model: &str) {
     let mut seen = WARNED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if seen.insert(model.to_string()) {
+    if seen.insert(model.to_owned()) {
         if model == UNKNOWN_MODEL {
             warn!(
                 model,

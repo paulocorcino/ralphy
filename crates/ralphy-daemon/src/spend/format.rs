@@ -24,7 +24,7 @@ pub(crate) fn fmt_share(share: f64) -> String {
 /// the figure omits volume it could not price.
 pub(crate) fn fmt_total(usd: Option<f64>, floor: bool) -> String {
     match usd {
-        None => "~$?".to_string(),
+        None => "~$?".to_owned(),
         Some(value) => format!(
             "${}{}",
             group_thousands(value),

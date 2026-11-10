@@ -46,7 +46,7 @@ pub(crate) fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signa
             tool_use_id: line.tool_use_id.clone(),
             detail: match line.question.as_deref().map(str::trim) {
                 Some(q) if !q.is_empty() => format!("{QUESTION_TOOL}: {q}"),
-                _ => QUESTION_TOOL.to_string(),
+                _ => QUESTION_TOOL.to_owned(),
             },
         },
         "PreToolUse" => Signal::Work,
@@ -56,7 +56,7 @@ pub(crate) fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signa
             tool_use_id: line.tool_use_id.clone(),
             detail: match tool {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "PostToolUse" => Signal::WaitEnd {
@@ -243,9 +243,6 @@ mod tests {
         };
         ralphy_core::Agent::execute(&agent, &plan, &ws).expect("the execute ends");
         let got = sink.lock().expect("sink").clone();
-        assert_eq!(
-            got,
-            [("waiting".to_string(), "permission: Bash".to_string())]
-        );
+        assert_eq!(got, [("waiting".to_owned(), "permission: Bash".to_owned())]);
     }
 }

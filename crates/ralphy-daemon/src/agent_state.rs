@@ -148,7 +148,7 @@ pub fn silence(
         ));
     }
     let waited = now.duration_since(first_input?).ok()?;
-    (waited > SILENT_AFTER).then(|| CLOCK_REASON.to_string())
+    (waited > SILENT_AFTER).then(|| CLOCK_REASON.to_owned())
 }
 
 /// The final bytes a terminal reply ends with: the cursor position (`R`),
@@ -190,7 +190,7 @@ pub fn render(obs: &Observed, now: SystemTime) -> AgentState {
             .duration_since(obs.seen)
             .is_ok_and(|age| age > STALE_AFTER);
     AgentState {
-        state: Some(if stale { "unknown" } else { obs.state }.to_string()),
+        state: Some(if stale { "unknown" } else { obs.state }.to_owned()),
         since: obs.since.clone(),
         detail: obs.detail.clone(),
         source: None,

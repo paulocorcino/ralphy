@@ -31,9 +31,9 @@ fn exited_session(
     let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
     let (id, mut attach) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -230,7 +230,7 @@ async fn read_until_end(
 fn resize_command(payload: serde_json::Value) -> Command {
     Command {
         id: 0,
-        verb: "resize".to_string(),
+        verb: "resize".to_owned(),
         payload,
     }
 }

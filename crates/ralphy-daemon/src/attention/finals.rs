@@ -60,7 +60,7 @@ impl Finals {
         let Some(written) = written else {
             let snapshot = read(dir)?;
             return Some(FinishedRun {
-                repo: slug.to_string(),
+                repo: slug.to_owned(),
                 stamp,
                 ended: snapshot.started_at.clone(),
                 snapshot,
@@ -68,11 +68,11 @@ impl Finals {
         };
         let run = match self.kept.remove(dir) {
             Some((at, mut run)) if at == written => {
-                run.repo = slug.to_string();
+                slug.clone_into(&mut run.repo);
                 run
             }
             _ => FinishedRun {
-                repo: slug.to_string(),
+                repo: slug.to_owned(),
                 stamp,
                 ended: chrono::DateTime::<chrono::Utc>::from(written)
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -143,7 +143,7 @@ mod tests {
         // A final snapshot whose file time changed is read again.
         let path = ralphy_run_snapshot::final_snapshot_path(&second);
         let rewritten = RunSnapshot {
-            runid: "01REWRITTEN".to_string(),
+            runid: "01REWRITTEN".to_owned(),
             ..RunSnapshot::default()
         };
         std::fs::write(

@@ -6,8 +6,8 @@ mod run_finished;
 /// A test context with a stub emitter object.
 fn ctx() -> EventCtx {
     EventCtx {
-        source: "ralphy/o/r".to_string(),
-        runid: "01RUNIDRUNIDRUNIDRUNID".to_string(),
+        source: "ralphy/o/r".to_owned(),
+        runid: "01RUNIDRUNIDRUNIDRUNID".to_owned(),
         emitter: json!({ "version": "0.0.0", "pid": 4242 }),
         git: json!({ "repository": "o/r", "branch": "afk/run-t" }),
     }
@@ -301,7 +301,7 @@ fn only_extension_attribute_is_runid_git_issue_agent_live_in_data() {
         .collect();
     assert_eq!(
         extensions,
-        vec!["runid".to_string()],
+        vec!["runid".to_owned()],
         "the only extension attribute must be runid: {extensions:?}"
     );
 }

@@ -347,7 +347,7 @@ fn on_path(path: &std::ffi::OsStr, dir: &Path) -> bool {
         if cfg!(windows) {
             s.to_lowercase()
         } else {
-            s.to_string()
+            s.to_owned()
         }
     };
     let want = norm(dir);

@@ -155,7 +155,7 @@ fn ensure_excluded(dest: &Path, rel: &Path) -> Result<(), String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let exclude = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let exclude = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     let exclude = dest.join(exclude);
     let pattern = format!(
         "/{}",

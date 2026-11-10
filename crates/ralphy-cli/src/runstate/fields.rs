@@ -213,25 +213,25 @@ impl Visit for EventFields {
 
     fn record_str(&mut self, field: &Field, value: &str) {
         match field.name() {
-            "message" => self.message = value.to_string(),
-            "title" => self.title = Some(value.to_string()),
-            "order" => self.order = Some(value.to_string()),
-            "issues_json" => self.issues_json = Some(value.to_string()),
-            "outcome" => self.outcome = Some(value.to_string()),
-            "reset" => self.reset = Some(value.to_string()),
+            "message" => value.clone_into(&mut self.message),
+            "title" => self.title = Some(value.to_owned()),
+            "order" => self.order = Some(value.to_owned()),
+            "issues_json" => self.issues_json = Some(value.to_owned()),
+            "outcome" => self.outcome = Some(value.to_owned()),
+            "reset" => self.reset = Some(value.to_owned()),
             "model" => self.model = clean_opt(value),
             "effort" => self.effort = clean_opt(value),
             "variant" => self.variant = clean_opt(value),
             "cmd" => self.cmd = clean_opt(value),
             "label" => self.label = clean_opt(value),
-            "repo" => self.repo = Some(value.to_string()),
-            "queue_labels" => self.queue_labels = Some(value.to_string()),
-            "agent" => self.agent = Some(value.to_string()),
-            "plan_agent" => self.plan_agent = Some(value.to_string()),
-            "branch_mode" => self.branch_mode = Some(value.to_string()),
-            "base" => self.base = Some(value.to_string()),
-            "steps_json" => self.steps_json = Some(value.to_string()),
-            "plan_md" => self.plan_md = Some(value.to_string()),
+            "repo" => self.repo = Some(value.to_owned()),
+            "queue_labels" => self.queue_labels = Some(value.to_owned()),
+            "agent" => self.agent = Some(value.to_owned()),
+            "plan_agent" => self.plan_agent = Some(value.to_owned()),
+            "branch_mode" => self.branch_mode = Some(value.to_owned()),
+            "base" => self.base = Some(value.to_owned()),
+            "steps_json" => self.steps_json = Some(value.to_owned()),
+            "plan_md" => self.plan_md = Some(value.to_owned()),
             // The resolved queue assignee scope (ADR-0021 §5); empty → None.
             "assignee_filter" => self.assignee_filter = clean_opt(value),
             // The run-border fields (#222): the deferral sentence and the LOG-ONLY
@@ -240,8 +240,8 @@ impl Visit for EventFields {
             "cause" => self.cause = clean_opt(value),
             "scope" => self.scope = clean_opt(value),
             // The agent-state trio (ADR-0059); an empty `detail` is absent.
-            "state" => self.state = Some(value.to_string()),
-            "since" => self.since = Some(value.to_string()),
+            "state" => self.state = Some(value.to_owned()),
+            "since" => self.since = Some(value.to_owned()),
             "detail" => self.detail = clean_opt(value),
             _ => {}
         }
@@ -312,7 +312,7 @@ fn clean_opt(raw: &str) -> Option<String> {
         s = inner.trim();
     }
     let s = s.trim_matches('"').trim();
-    (!s.is_empty()).then(|| s.to_string())
+    (!s.is_empty()).then(|| s.to_owned())
 }
 
 /// Lift the four breakdown fields + pricing model off an event into a [`UsageLite`].

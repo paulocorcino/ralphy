@@ -102,20 +102,20 @@ pub(crate) fn linger_text(linger: Option<bool>) -> &'static str {
 }
 
 fn version_text(version: &str) -> Option<String> {
-    (!version.is_empty()).then(|| version.to_string())
+    (!version.is_empty()).then(|| version.to_owned())
 }
 
 fn present(tool: Tool, name: &str, version: &str) -> ToolLine {
     ToolLine {
         tool,
-        name: name.to_string(),
+        name: name.to_owned(),
         ok: true,
         required: true,
         version: version_text(version),
         text: if version.is_empty() {
-            "found".to_string()
+            "found".to_owned()
         } else {
-            version.to_string()
+            version.to_owned()
         },
         fix: None,
     }
@@ -124,12 +124,12 @@ fn present(tool: Tool, name: &str, version: &str) -> ToolLine {
 fn missing(tool: Tool, name: &str, text: &str, fix: Option<&str>) -> ToolLine {
     ToolLine {
         tool,
-        name: name.to_string(),
+        name: name.to_owned(),
         ok: false,
         required: true,
         version: None,
-        text: text.to_string(),
-        fix: fix.map(str::to_string),
+        text: text.to_owned(),
+        fix: fix.map(str::to_owned),
     }
 }
 
@@ -206,12 +206,12 @@ fn agent_lines(facts: &MachineFacts) -> Vec<ToolLine> {
 fn linger_line(linger: Option<bool>) -> ToolLine {
     ToolLine {
         tool: Tool::Linger,
-        name: "lingering".to_string(),
+        name: "lingering".to_owned(),
         ok: linger == Some(true),
         required: false,
         version: None,
-        text: linger_text(linger).to_string(),
-        fix: (linger == Some(false)).then(|| "loginctl enable-linger".to_string()),
+        text: linger_text(linger).to_owned(),
+        fix: (linger == Some(false)).then(|| "loginctl enable-linger".to_owned()),
     }
 }
 
@@ -243,20 +243,20 @@ fn hook_line(facts: &MachineFacts, agent: Agent) -> ToolLine {
     let (ok, text) = match source_of(agent) {
         StateSource::Hooks if checked_by_first_line(agent) => (
             true,
-            "a plugin; checked by its first line in each console".to_string(),
+            "a plugin; checked by its first line in each console".to_owned(),
         ),
         StateSource::Hooks => match facts.hooks.iter().find(|(a, _)| *a == agent) {
             Some((_, HookCheck::Ok)) => (
                 true,
-                "the hook command ran and wrote a status line".to_string(),
+                "the hook command ran and wrote a status line".to_owned(),
             ),
             Some((_, HookCheck::Failed { cause })) => (false, cause.clone()),
             Some((_, HookCheck::NotChecked { reason })) => {
                 (false, format!("not checked: {reason}"))
             }
-            None => (false, "not checked: the check gave no result".to_string()),
+            None => (false, "not checked: the check gave no result".to_owned()),
         },
-        StateSource::None => (true, "no state source".to_string()),
+        StateSource::None => (true, "no state source".to_owned()),
     };
     ToolLine {
         tool: Tool::Hooks,
@@ -287,7 +287,7 @@ fn telegram_lines(fleet: &FleetTelegram) -> Vec<ToolLine> {
         ok: true,
         required: false,
         version: None,
-        text: "the daemon did not answer".to_string(),
+        text: "the daemon did not answer".to_owned(),
         fix: None,
     });
     std::iter::once(own).chain(peers).chain(silent).collect()
@@ -306,12 +306,12 @@ fn state_line(name: &str, state: &TelegramState, main_name: Option<&str>) -> Too
     let fault = state.is_fault();
     ToolLine {
         tool: Tool::Telegram,
-        name: name.to_string(),
+        name: name.to_owned(),
         ok: !fault,
         required: false,
         version: None,
         text: state.text_naming(main_name),
-        fix: fault.then(|| "ralphy telegram setup".to_string()),
+        fix: fault.then(|| "ralphy telegram setup".to_owned()),
     }
 }
 

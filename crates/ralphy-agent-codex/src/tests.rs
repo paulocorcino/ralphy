@@ -42,7 +42,7 @@ fn serialized_ledger_model(usage: &ralphy_core::Usage) -> String {
     };
     let value: serde_json::Value =
         serde_json::from_str(&ralphy_core::ledger::record_line(&record).unwrap()).unwrap();
-    value["model"].as_str().unwrap().to_string()
+    value["model"].as_str().unwrap().to_owned()
 }
 
 #[test]

@@ -55,7 +55,7 @@ fn toolless_assistant_text(line: &str) -> Option<String> {
     }
     data.get("content")
         .and_then(Value::as_str)
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// Extract Copilot's [`CompletionSignals`] from a call's raw end state and delegate

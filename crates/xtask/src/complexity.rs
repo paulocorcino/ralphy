@@ -111,7 +111,7 @@ fn file_check(path: &str, text: &str) -> Result<Vec<Score>> {
     Ok(found
         .into_iter()
         .map(|f| Score {
-            path: path.to_string(),
+            path: path.to_owned(),
             name: f.name,
             value: f.value,
             marked: f.marked,

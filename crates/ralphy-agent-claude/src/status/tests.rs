@@ -64,7 +64,7 @@ fn tail_reports_transitions_and_handles_partial_lines() {
         format!(
             r#"{{"event":"{event}","tool_name":{},"ts":"t"}}"#,
             if tool.is_empty() {
-                "null".to_string()
+                "null".to_owned()
             } else {
                 format!("\"{tool}\"")
             }

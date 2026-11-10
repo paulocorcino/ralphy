@@ -72,13 +72,13 @@ mod tests {
         // `model` is `None`, so keying the output off `u.model` would be wrong.
         let by_model = BTreeMap::from([
             (
-                "unknown".to_string(),
+                "unknown".to_owned(),
                 Usage {
                     model: None,
                     ..u.clone()
                 },
             ),
-            ("the-bucket-key".to_string(), u),
+            ("the-bucket-key".to_owned(), u),
         ]);
         let out = counts_by_model(&by_model);
         assert_eq!(

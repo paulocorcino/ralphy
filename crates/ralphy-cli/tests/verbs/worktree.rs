@@ -258,9 +258,9 @@ fn lock_row(verb: &'static str, repo: TempDir, flag: &str) -> LockRow {
     let root = repo.path().to_path_buf();
     let mut args: Vec<String> = verb.split(' ').map(String::from).collect();
     args.extend([
-        "--repo".to_string(),
+        "--repo".to_owned(),
         root.to_string_lossy().to_string(),
-        flag.to_string(),
+        flag.to_owned(),
     ]);
     let state_root = root.clone();
     LockRow {

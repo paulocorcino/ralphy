@@ -5,11 +5,11 @@ fn extract_keeps_only_user_attachments_deduped_body_first() {
     let body = "See [diagnose.log](https://github.com/user-attachments/files/1/diagnose.log) \
                 and https://evil.example/x.log for details.";
     let comments =
-        vec!["re-pasting https://github.com/user-attachments/files/1/diagnose.log".to_string()];
+        vec!["re-pasting https://github.com/user-attachments/files/1/diagnose.log".to_owned()];
     let links = extract_user_attachment_links(body, &comments);
     assert_eq!(
         links,
-        vec!["https://github.com/user-attachments/files/1/diagnose.log".to_string()],
+        vec!["https://github.com/user-attachments/files/1/diagnose.log".to_owned()],
         "evil excluded, deduped, body-first"
     );
 }
@@ -94,21 +94,21 @@ fn truncate_free_text_passthrough_under_cap() {
 fn render_manifest_emits_heading_and_each_outcome() {
     let entries = vec![
         (
-            "diagnose.log".to_string(),
+            "diagnose.log".to_owned(),
             AttachmentOutcome::Fetched {
                 path: PathBuf::from("/tmp/t/133/diagnose.log"),
             },
         ),
         (
-            "report.exe".to_string(),
+            "report.exe".to_owned(),
             AttachmentOutcome::NotFetched {
-                reason: "denied format".to_string(),
+                reason: "denied format".to_owned(),
             },
         ),
         (
-            "big.json".to_string(),
+            "big.json".to_owned(),
             AttachmentOutcome::NotFetched {
-                reason: "too large".to_string(),
+                reason: "too large".to_owned(),
             },
         ),
     ];
@@ -160,7 +160,7 @@ fn gated_image_outcome_blocks_only_no_vision_images() {
     assert_eq!(
         gated_image_outcome(FormatClass::Image, &no_vision),
         Some(AttachmentOutcome::NotFetched {
-            reason: "opencode has no image input".to_string(),
+            reason: "opencode has no image input".to_owned(),
         })
     );
     let vision = ImageCapability {
@@ -231,7 +231,7 @@ fn login_html_guard_catches_bom_prefixed_page() {
 
 #[test]
 fn the_written_name_replaces_the_url_name_and_collects_an_image() {
-    let mut name = "0a1b2c".to_string();
+    let mut name = "0a1b2c".to_owned();
     let mut images = Vec::new();
     let outcome = AttachmentOutcome::Fetched {
         path: PathBuf::from("run").join("1").join("0a1b2c.png"),
@@ -246,7 +246,7 @@ fn the_written_name_replaces_the_url_name_and_collects_an_image() {
 
 #[test]
 fn a_fetched_text_file_takes_the_written_name_and_is_not_an_image() {
-    let mut name = "log".to_string();
+    let mut name = "log".to_owned();
     let mut images = Vec::new();
     let outcome = AttachmentOutcome::Fetched {
         path: PathBuf::from("run").join("diagnose.log"),

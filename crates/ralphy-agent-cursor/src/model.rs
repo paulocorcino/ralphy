@@ -34,7 +34,7 @@ pub fn model_family(id: &str) -> String {
         match DECORATIONS.iter().find_map(|d| s.strip_suffix(*d)) {
             // A decoration that consumed the whole id was the family's own name.
             Some(shorter) if !shorter.is_empty() => s = shorter,
-            _ => return s.to_string(),
+            _ => return s.to_owned(),
         }
     }
 }

@@ -135,7 +135,7 @@ impl KimiAgent {
     fn resolve_model(&self) -> String {
         self.model
             .clone()
-            .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_string())
+            .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_owned())
     }
 }
 

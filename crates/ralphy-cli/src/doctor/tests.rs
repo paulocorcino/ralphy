@@ -6,11 +6,11 @@ use ralphy_proc_util::hook_form::HookCheck;
 
 fn all_found() -> MachineFacts {
     MachineFacts {
-        git: Some("git version 2.47.1".to_string()),
-        gh: Some("gh version 2.89.0 (2026-03-01)".to_string()),
+        git: Some("git version 2.47.1".to_owned()),
+        gh: Some("gh version 2.89.0 (2026-03-01)".to_owned()),
         gh_signed_in: true,
-        python: Some("Python 3.12.4".to_string()),
-        agents: vec![(Agent::Claude, "2.1.0 (Claude Code)".to_string())],
+        python: Some("Python 3.12.4".to_owned()),
+        agents: vec![(Agent::Claude, "2.1.0 (Claude Code)".to_owned())],
         linger: None,
         hooks: vec![(Agent::Claude, HookCheck::Ok)],
         telegram: None,
@@ -174,8 +174,8 @@ fn the_json_shape_is_pinned() {
 fn two_agents(hooks: Vec<(Agent, HookCheck)>) -> MachineFacts {
     MachineFacts {
         agents: vec![
-            (Agent::Claude, "2.1.0 (Claude Code)".to_string()),
-            (Agent::Codex, "codex-cli 0.9".to_string()),
+            (Agent::Claude, "2.1.0 (Claude Code)".to_owned()),
+            (Agent::Codex, "codex-cli 0.9".to_owned()),
         ],
         hooks,
         ..all_found()
@@ -216,13 +216,13 @@ fn a_hook_line_warns_and_never_fails() {
         (HookCheck::Ok, "[ok  ] claude hooks: the hook command ran"),
         (
             HookCheck::Failed {
-                cause: "ralphy.exe did not start".to_string(),
+                cause: "ralphy.exe did not start".to_owned(),
             },
             "[warn] claude hooks: ralphy.exe did not start",
         ),
         (
             HookCheck::NotChecked {
-                reason: "Claude Code 2.1.100 runs a hook through a shell".to_string(),
+                reason: "Claude Code 2.1.100 runs a hook through a shell".to_owned(),
             },
             "[warn] claude hooks: not checked: Claude Code 2.1.100 runs a hook through a shell",
         ),
@@ -231,7 +231,7 @@ fn a_hook_line_warns_and_never_fails() {
         let mut facts = two_agents(vec![(Agent::Claude, check)]);
         facts
             .agents
-            .push((Agent::Copilot, "GitHub Copilot CLI 1.0".to_string()));
+            .push((Agent::Copilot, "GitHub Copilot CLI 1.0".to_owned()));
         let report = evaluate(&facts, false);
         assert_eq!(report.missing_required(), 0, "{want}");
         let mut out = Vec::new();
@@ -295,7 +295,7 @@ fn doctor_names_the_codex_state_source() {
         ),
         (
             HookCheck::Failed {
-                cause: "ralphy.exe exited with code 1".to_string(),
+                cause: "ralphy.exe exited with code 1".to_owned(),
             },
             "[warn] codex hooks: ralphy.exe exited with code 1",
         ),
@@ -323,7 +323,7 @@ fn doctor_names_the_codex_state_source() {
 #[test]
 fn doctor_names_the_opencode_state_source() {
     let facts = MachineFacts {
-        agents: vec![(Agent::Opencode, "1.19.0".to_string())],
+        agents: vec![(Agent::Opencode, "1.19.0".to_owned())],
         hooks: Vec::new(),
         ..all_found()
     };
@@ -350,7 +350,7 @@ fn the_telegram_line_says_whether_this_machine_sends() {
         (TelegramState::Sends, "sends from this machine"),
         (
             TelegramState::ThroughMain {
-                main: "m".to_string(),
+                main: "m".to_owned(),
             },
             "sends through the main daemon m",
         ),
@@ -403,8 +403,8 @@ fn a_telegram_bot_that_cannot_send_is_a_warning_with_its_fix() {
 fn the_telegram_lines_name_each_peer() {
     let peer = |name: &str, environment: &str| PeerName {
         daemon_id: format!("id-{environment}"),
-        name: name.to_string(),
-        environment: environment.to_string(),
+        name: name.to_owned(),
+        environment: environment.to_owned(),
     };
     let fleet = FleetTelegram {
         state: TelegramState::Sends,
@@ -413,9 +413,9 @@ fn the_telegram_lines_name_each_peer() {
             PeerTelegram {
                 peer: peer("wsl-ubuntu", "WSL: Ubuntu-22.04"),
                 state: TelegramState::ThroughMain {
-                    main: "01MAIN".to_string(),
+                    main: "01MAIN".to_owned(),
                 },
-                main_name: Some("ralphy".to_string()),
+                main_name: Some("ralphy".to_owned()),
             },
             PeerTelegram {
                 peer: peer("", "macOS 12"),

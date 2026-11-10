@@ -52,13 +52,13 @@ pub(crate) struct Emitter {
 /// best-effort and falls back to a safe default rather than failing.
 pub(crate) fn detect(repo_root: &Path) -> Emitter {
     Emitter {
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
         user: ralphy_core::git::user_email(repo_root).unwrap_or_default(),
         host: hostname::get()
             .ok()
             .and_then(|h| h.into_string().ok())
             .unwrap_or_default(),
-        os: std::env::consts::OS.to_string(),
+        os: std::env::consts::OS.to_owned(),
         pid: std::process::id(),
         // Best-effort public egress IP (#96); falls back to the primary local IP,
         // then `0.0.0.0` when every probe fails (offline/firewalled host).
@@ -137,7 +137,7 @@ fn probe_ip(agent: &ureq::Agent, url: &str, parse: fn(&str) -> Option<String>) -
 /// is a valid IP address (so a captive-portal HTML page or empty body yields `None`).
 fn parse_raw_ip(body: &str) -> Option<String> {
     let s = body.trim();
-    s.parse::<std::net::IpAddr>().ok().map(|_| s.to_string())
+    s.parse::<std::net::IpAddr>().ok().map(|_| s.to_owned())
 }
 
 /// Extract the IP from a Cloudflare `cdn-cgi/trace` body: find the `ip=<addr>` line
@@ -158,7 +158,7 @@ fn local_ip() -> String {
             sock.connect("8.8.8.8:80")?;
             Ok(sock.local_addr()?.ip().to_string())
         })
-        .unwrap_or_else(|_| "0.0.0.0".to_string())
+        .unwrap_or_else(|_| "0.0.0.0".to_owned())
 }
 
 std::thread_local! {
@@ -223,11 +223,11 @@ mod tests {
         // A bare IP with surrounding whitespace/newline is trimmed and accepted.
         assert_eq!(
             parse_raw_ip("203.0.113.7\n"),
-            Some("203.0.113.7".to_string())
+            Some("203.0.113.7".to_owned())
         );
         assert_eq!(
             parse_raw_ip("  2001:db8::1  "),
-            Some("2001:db8::1".to_string())
+            Some("2001:db8::1".to_owned())
         );
         // Non-IP bodies (a captive-portal page, an empty body) yield None so the
         // caller falls through to the next probe / the local-IP fallback.
@@ -240,7 +240,7 @@ mod tests {
         let body = "fl=1\nh=www.cloudflare.com\nip=198.51.100.42\nts=1700000000\n";
         assert_eq!(
             parse_cloudflare_trace(body),
-            Some("198.51.100.42".to_string())
+            Some("198.51.100.42".to_owned())
         );
         // No `ip=` line → None (fall back to local IP).
         assert_eq!(parse_cloudflare_trace("fl=1\nh=x\n"), None);
@@ -309,7 +309,7 @@ mod tests {
         std::env::set_var(DAEMON_ID_ENV, "01DAEMONID0000000000000000");
         assert_eq!(
             detect(Path::new(".")).daemon_id,
-            Some("01DAEMONID0000000000000000".to_string())
+            Some("01DAEMONID0000000000000000".to_owned())
         );
         std::env::remove_var(DAEMON_ID_ENV);
         assert_eq!(detect(Path::new(".")).daemon_id, None);

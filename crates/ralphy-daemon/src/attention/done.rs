@@ -104,7 +104,7 @@ pub(crate) async fn fire(
             continue;
         };
         marks.fire(end);
-        cleared.push(record.to_string());
+        cleared.push(record.to_owned());
     }
     if !cleared.is_empty() {
         clear(&cleared, stored.generation, files, pushes).await;

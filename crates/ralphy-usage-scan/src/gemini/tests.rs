@@ -305,10 +305,10 @@ fn a_session_is_attributed_through_its_project_root_sibling() {
         gemini_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "acme/fincal".to_string(),
+            slug: "acme/fincal".to_owned(),
             // `.project_root` holds the lowercased Windows form: the match
             // must cross both the separator and the case difference.
-            path: "C:/Dev/FinCal/".to_string(),
+            path: "C:/Dev/FinCal/".to_owned(),
         }],
         since: None,
     });
@@ -342,7 +342,7 @@ fn a_project_root_in_a_linked_worktree_is_attributed_to_its_repo() {
         gemini_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "o/repo".to_string(),
+            slug: "o/repo".to_owned(),
             path: repo.to_string_lossy().to_string(),
         }],
         since: None,
@@ -361,9 +361,7 @@ fn a_run_owned_session_id_is_excluded() {
         "session-x.jsonl",
         &format!("{HEADER}\n{TURN}\n"),
     );
-    let owned: HashSet<String> = ["ralphy-probe-p1p2p3p4p6".to_string()]
-        .into_iter()
-        .collect();
+    let owned: HashSet<String> = ["ralphy-probe-p1p2p3p4p6".to_owned()].into_iter().collect();
 
     let records = scan_gemini(&GeminiScan {
         gemini_dir: tmp.path(),

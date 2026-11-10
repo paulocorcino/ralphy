@@ -180,7 +180,7 @@ fn execute_is_plan_agnostic_and_bounds_the_commit() {
     let param = code
         .split_once("fnexecute(&self,")
         .and_then(|(_, rest)| rest.split_once(":&Plan"))
-        .map(|(name, _)| name.to_string())
+        .map(|(name, _)| name.to_owned())
         .expect("execute takes the plan as its first argument");
     assert!(
         !body.contains(&format!("{param}.")) && !body.contains(&format!("({param}")),

@@ -436,7 +436,7 @@ fn pathext_list(pathext: Option<std::ffi::OsString>) -> Vec<String> {
         .and_then(|p| p.into_string().ok())
         .unwrap_or_else(|| ".EXE".into())
         .split(';')
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
         .collect()
 }

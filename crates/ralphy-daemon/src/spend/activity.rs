@@ -57,7 +57,7 @@ pub(crate) fn fold(
         if row.date.is_empty() {
             continue;
         }
-        let day = days.entry(row.date.to_string()).or_default();
+        let day = days.entry(row.date.to_owned()).or_default();
         if let Some(cost) = row.usd {
             day.usd += cost;
             day.priced = true;

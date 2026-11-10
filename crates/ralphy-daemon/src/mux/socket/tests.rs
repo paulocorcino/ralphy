@@ -31,7 +31,7 @@ fn page(
             host: SessionHost {
                 peers_dir: store.join("peers"),
                 identity: None,
-                environment: "test".to_string(),
+                environment: "test".to_owned(),
                 bound_port: 0,
                 sessions: Arc::new(crate::session::SessionManager::new()),
                 registry_path: store.join("repos.toml"),
@@ -137,7 +137,7 @@ fn count(commands: &[Command], verb: &str) -> usize {
 async fn a_lagged_push_receiver_sends_every_push_once() {
     let (_sessions_tx, sessions) = broadcast::channel(4);
     let (pushes_tx, pushes) = broadcast::channel(1);
-    let tab = Some("t1".to_string());
+    let tab = Some("t1".to_owned());
     // Two pushes on a bus that holds one: the receiver lags by one.
     for _ in 0..2 {
         pushes_tx.send(Push::Desk { tab: tab.clone() }).unwrap();
@@ -203,7 +203,7 @@ async fn open_unknown_kind(ws: &mut Ws, channel: u32) {
     use tokio_tungstenite::tungstenite::Message as Wire;
     let frame = Frame::Command(Command {
         id: 0,
-        verb: "channel.open".to_string(),
+        verb: "channel.open".to_owned(),
         payload: serde_json::json!({ "channel": channel, "kind": "no-such-kind" }),
     });
     ws.send(Wire::Binary(protocol::encode(&frame).into()))
@@ -218,7 +218,7 @@ fn closed(commands: &[Command]) -> Vec<(u64, String)> {
         .filter(|c| c.verb == "channel.closed")
         .map(|c| {
             let channel = c.payload["channel"].as_u64().unwrap();
-            (channel, c.payload["reason"].as_str().unwrap().to_string())
+            (channel, c.payload["reason"].as_str().unwrap().to_owned())
         })
         .collect()
 }
@@ -250,14 +250,14 @@ async fn a_revoked_login_opens_no_channel() {
 
     open_unknown_kind(&mut ws, 1).await;
     let (commands, _, ended) = read_for(&mut ws, Duration::from_millis(500)).await;
-    assert_eq!(closed(&commands), [(1, "refused".to_string())]);
+    assert_eq!(closed(&commands), [(1, "refused".to_owned())]);
     assert!(!ended, "before the revoke the socket stays open");
 
     auth.revoke_login(login, crate::routes::now_unix())
         .expect("revoke the login");
     open_unknown_kind(&mut ws, 2).await;
     let (commands, _, ended) = read_for(&mut ws, Duration::from_secs(5)).await;
-    assert_eq!(closed(&commands), [(2, "refused".to_string())]);
+    assert_eq!(closed(&commands), [(2, "refused".to_owned())]);
     assert!(ended, "after the revoke the open ends the socket");
 }
 
@@ -288,7 +288,7 @@ async fn a_page_report_on_the_presence_socket_sets_presence() {
         Wire::Binary(
             protocol::encode(&Frame::Command(Command {
                 id: 0,
-                verb: "presence.report".to_string(),
+                verb: "presence.report".to_owned(),
                 payload,
             }))
             .into(),

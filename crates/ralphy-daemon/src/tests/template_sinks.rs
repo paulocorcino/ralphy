@@ -11,7 +11,7 @@ fn template_html_sinks(src: &str) -> Vec<String> {
     template
         .find_iter(src)
         .chain(variable.find_iter(src))
-        .map(|m| m.as_str().to_string())
+        .map(|m| m.as_str().to_owned())
         .collect()
 }
 

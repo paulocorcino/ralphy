@@ -146,7 +146,7 @@ pub(crate) fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
             .context("fragment front matter must carry `kind:`")?,
     )?;
 
-    let text = prose.trim().to_string();
+    let text = prose.trim().to_owned();
     if text.is_empty() {
         bail!("fragment has no prose: a kind alone says nothing to a reader");
     }
@@ -172,7 +172,7 @@ pub(crate) fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
     }
 
     Ok(Entry {
-        id: id.to_string(),
+        id: id.to_owned(),
         kind,
         text,
         topic: optional("topic"),
@@ -198,7 +198,7 @@ pub(crate) fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or_default()
-            .to_string();
+            .to_owned();
         (stem.parse::<u64>().unwrap_or(u64::MAX), stem)
     });
 
@@ -209,7 +209,7 @@ pub(crate) fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or_default()
-                .to_string();
+                .to_owned();
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("reading {}", path.display()))?;
             parse_fragment(&stem, &text).with_context(|| format!("in {}", path.display()))
@@ -237,8 +237,8 @@ pub(crate) fn fold(history: &mut History, version: &str, date: &str, entries: Ve
 
     let announce = kept.iter().any(|e| e.kind.announceable());
     let record = ReleaseRecord {
-        version: version.to_string(),
-        date: date.to_string(),
+        version: version.to_owned(),
+        date: date.to_owned(),
         announce,
         entries: kept,
     };
@@ -267,7 +267,7 @@ pub(crate) fn render_changelog(history: &History) -> String {
 /// fixes left to the record (ADR-0056 §10).
 pub(crate) fn render_notes(record: &ReleaseRecord) -> String {
     if record.entries.is_empty() {
-        return "No user-visible changes in this release.\n".to_string();
+        return "No user-visible changes in this release.\n".to_owned();
     }
     let launched = launched_topics(&record.entries);
 
@@ -330,7 +330,7 @@ fn topic_source<'a>(rest: &'a [Entry], entry: &'a Entry) -> &'a Entry {
 /// The page line of an entry: its headline, else the first sentence of its prose.
 fn notes_line(source: &Entry) -> String {
     match source.headline.as_deref() {
-        Some(headline) => headline.to_string(),
+        Some(headline) => headline.to_owned(),
         None => first_sentence(&source.text),
     }
 }
@@ -365,7 +365,7 @@ fn first_sentence(text: &str) -> String {
     let text = text.replace('\n', " ");
     match text.split_once(". ") {
         Some((head, _)) => format!("{}.", head.trim()),
-        None => text.trim().to_string(),
+        None => text.trim().to_owned(),
     }
 }
 

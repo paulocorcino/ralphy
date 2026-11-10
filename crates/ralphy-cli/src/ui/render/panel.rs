@@ -183,7 +183,7 @@ fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
         PanelStop::Deadline => {
             "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed \
              past it)."
-                .to_string()
+                .to_owned()
         }
         PanelStop::NonGreen { number, outcome } => {
             format!("Stopped: #{number} finished non-green ({outcome}). Branch handed back.")
@@ -221,7 +221,7 @@ fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
             )
         }
         PanelStop::Stopped { number: None } => {
-            "Stopped: you stopped the run between issues. Branch handed back.".to_string()
+            "Stopped: you stopped the run between issues. Branch handed back.".to_owned()
         }
     };
     paint(stop_raw, Style::new().yellow(), opts.color)

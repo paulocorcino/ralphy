@@ -84,7 +84,7 @@ fn a_ui_literal_no_rust_code_produces_is_reported() {
 
     let pairs: Vec<(String, String)> = found
         .iter()
-        .map(|lit| (lit.clone(), "t.js".to_string()))
+        .map(|lit| (lit.clone(), "t.js".to_owned()))
         .collect();
     let corpus = r#"bail!("lost"); "bare" "no such" "not found" "refused" "unknown""#;
     assert_eq!(missing_literals(&pairs, corpus), ["gone away (t.js)"]);
@@ -124,7 +124,7 @@ fn ui_literals(js: &str) -> BTreeSet<String> {
         for line in body.lines() {
             if let Some(c) = key.captures(line) {
                 let k = c.get(1).or_else(|| c.get(2)).expect("one group matched");
-                out.insert(k.as_str().to_string());
+                out.insert(k.as_str().to_owned());
             }
         }
     }
@@ -187,7 +187,7 @@ fn rust_corpus(root: &Path) -> String {
             production(&read(f))
                 .lines()
                 .filter(|l| !l.trim_start().starts_with("//"))
-                .map(str::to_string)
+                .map(str::to_owned)
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>()

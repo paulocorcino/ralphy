@@ -77,7 +77,7 @@ pub(crate) fn repo_name_from_path(path: &Path) -> String {
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("repo")
-        .to_string()
+        .to_owned()
 }
 
 /// The label-creation decision: empty / `y` / `yes` → proceed (the default is
@@ -100,7 +100,7 @@ pub(super) fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Res
             "ralphy init: --agent {} is not logged in (logged in: {})",
             a.cli_name(),
             if logged_in.is_empty() {
-                "none".to_string()
+                "none".to_owned()
             } else {
                 logged_in
                     .iter()

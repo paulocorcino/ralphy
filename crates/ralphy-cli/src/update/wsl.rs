@@ -39,21 +39,21 @@ fn exec_start_argv(spec: &NudgeSpec) -> Vec<String> {
 fn exec_start_path(text: &str) -> Option<String> {
     let rest = text.split("path=").nth(1)?;
     let path = rest.split(" ;").next()?.trim();
-    (path.starts_with('/')).then(|| path.to_string())
+    (path.starts_with('/')).then(|| path.to_owned())
 }
 
 /// The `wsl.exe` argv that updates the peer. `--force` reads the releases
 /// again: the peer's cache may predate the release this host just took.
 fn update_argv(spec: &NudgeSpec, program: &str, channel: Channel) -> Vec<String> {
     vec![
-        "-d".to_string(),
+        "-d".to_owned(),
         spec.distro.clone(),
-        "-e".to_string(),
-        program.to_string(),
-        "update".to_string(),
-        "--channel".to_string(),
+        "-e".to_owned(),
+        program.to_owned(),
+        "update".to_owned(),
+        "--channel".to_owned(),
         channel.to_string(),
-        "--force".to_string(),
+        "--force".to_owned(),
     ]
 }
 

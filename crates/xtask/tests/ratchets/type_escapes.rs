@@ -68,7 +68,7 @@ fn no_escape_hatch_in_the_workbench() {
         }
         let n = chained_casts(&text);
         if n > 0 {
-            chained.insert(name.to_string(), n);
+            chained.insert(name.to_owned(), n);
         }
     }
     errors.extend(chained_cast_errors(&chained, CHAINED_CAST_BASELINE));
@@ -115,7 +115,7 @@ fn chained_casts_count_a_cast_over_a_cast() {
         2
     );
     let baseline = [("a.ts", 1)];
-    let one = |file: &str, n| BTreeMap::from([(file.to_string(), n)]);
+    let one = |file: &str, n| BTreeMap::from([(file.to_owned(), n)]);
     assert_eq!(
         chained_cast_errors(&one("a.ts", 1), &baseline),
         Vec::<String>::new()
@@ -172,7 +172,7 @@ fn any_counts(ui: &Path) -> BTreeMap<String, usize> {
         let n = explicit_any(&read(&path));
         if n > 0 {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            counts.insert(name.to_string(), n);
+            counts.insert(name.to_owned(), n);
         }
     }
     counts

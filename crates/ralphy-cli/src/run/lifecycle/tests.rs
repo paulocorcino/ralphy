@@ -25,8 +25,8 @@ fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) ->
     let handle = events::sink::try_start_sink(
         RecordingSink(Arc::clone(&recorded)),
         events::envelope::EventCtx {
-            source: "ralphy/o/r".to_string(),
-            runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
+            source: "ralphy/o/r".to_owned(),
+            runid: "01TESTRUNIDTESTRUNIDTE".to_owned(),
             emitter: serde_json::json!({ "version": "0.0.0", "pid": 4242 }),
             git: serde_json::json!({ "repository": "o/r", "branch": "main" }),
         },
@@ -41,7 +41,7 @@ fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) ->
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
     out.iter()
-        .map(|e| e["type"].as_str().unwrap_or_default().to_string())
+        .map(|e| e["type"].as_str().unwrap_or_default().to_owned())
         .collect()
 }
 

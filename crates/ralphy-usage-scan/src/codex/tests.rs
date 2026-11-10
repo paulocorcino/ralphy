@@ -287,7 +287,7 @@ fn excludes_run_owned_by_rollout_stem() {
         ),
     );
     let mut runs = HashSet::new();
-    runs.insert("rollout-run".to_string()); // the file STEM, not the meta id
+    runs.insert("rollout-run".to_owned()); // the file STEM, not the meta id
 
     let records = scan_codex(&CodexScan {
         codex_dir: root,
@@ -409,7 +409,7 @@ fn excludes_run_owned_by_session_meta_id() {
         ),
     );
     let mut runs = HashSet::new();
-    runs.insert("run-meta".to_string()); // the meta id, not the file stem
+    runs.insert("run-meta".to_owned()); // the meta id, not the file stem
 
     let records = scan_codex(&CodexScan {
         codex_dir: root,

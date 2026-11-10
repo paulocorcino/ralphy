@@ -35,7 +35,7 @@ impl StageOutcome {
     pub fn reason(&self) -> Option<String> {
         Some(match self {
             StageOutcome::Staged { .. } => return None,
-            StageOutcome::NoPaths => "cannot stage: no paths were given".to_string(),
+            StageOutcome::NoPaths => "cannot stage: no paths were given".to_owned(),
             // "already staged" covers a rename's original path: renames are
             // only detected in the index, so its deletion half is staged.
             StageOutcome::NotInChangeSet { path } => format!(
@@ -59,7 +59,7 @@ impl UnstageOutcome {
     pub fn reason(&self) -> Option<String> {
         Some(match self {
             UnstageOutcome::Unstaged { .. } => return None,
-            UnstageOutcome::NoPaths => "cannot unstage: no paths were given".to_string(),
+            UnstageOutcome::NoPaths => "cannot unstage: no paths were given".to_owned(),
             UnstageOutcome::NotInChangeSet { path } => {
                 format!(
                     "cannot unstage: {path} has no change — it may be committed or reverted \
@@ -100,7 +100,7 @@ impl DiscardOutcome {
     pub fn reason(&self) -> Option<String> {
         Some(match self {
             DiscardOutcome::Discarded { .. } => return None,
-            DiscardOutcome::NoPaths => "cannot discard: no paths were given".to_string(),
+            DiscardOutcome::NoPaths => "cannot discard: no paths were given".to_owned(),
             DiscardOutcome::NotInChangeSet { path } => {
                 format!(
                     "cannot discard: {path} has no change — it may be committed or reverted \
@@ -133,9 +133,9 @@ impl CommitOutcome {
         Some(match self {
             CommitOutcome::Committed { .. } => return None,
             CommitOutcome::NothingStaged => {
-                "cannot commit: nothing is staged — stage a file first".to_string()
+                "cannot commit: nothing is staged — stage a file first".to_owned()
             }
-            CommitOutcome::EmptyMessage => "cannot commit: the message is empty".to_string(),
+            CommitOutcome::EmptyMessage => "cannot commit: the message is empty".to_owned(),
         })
     }
 }

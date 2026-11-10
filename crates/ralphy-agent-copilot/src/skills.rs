@@ -148,7 +148,7 @@ mod tests {
             "reviewer/SKILL.md must resolve under .agents/skills"
         );
         assert!(
-            names.contains(&"staged-plan".to_string()),
+            names.contains(&"staged-plan".to_owned()),
             "the returned required set must name staged-plan: {names:?}"
         );
 
@@ -286,7 +286,7 @@ mod tests {
                 .find_map(|l| l.strip_prefix("name:"))
                 .unwrap_or_else(|| panic!("{dir_name}/SKILL.md frontmatter has no `name:`"))
                 .trim()
-                .to_string();
+                .to_owned();
             assert_eq!(
                 front, dir_name,
                 "skill directory `{dir_name}` declares frontmatter name `{front}`; the D9 \
@@ -304,7 +304,7 @@ mod tests {
     fn a_similarly_named_skill_does_not_satisfy_the_requirement() {
         let stream =
             r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"staged-plan-legacy"}]}}"#;
-        let req = vec!["staged-plan".to_string()];
+        let req = vec!["staged-plan".to_owned()];
         let msg = skills_load_violation(stream, &req)
             .expect("a near-miss name must not satisfy the requirement");
         assert!(msg.contains("staged-plan"), "{msg}");

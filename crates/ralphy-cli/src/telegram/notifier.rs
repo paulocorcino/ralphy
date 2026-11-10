@@ -372,13 +372,13 @@ fn short_reason(e: &anyhow::Error) -> String {
     let full = format!("{e:#}");
     let low = full.to_lowercase();
     if low.contains("dns failed") || low.contains("resolve dns") {
-        return "network unreachable (DNS)".to_string();
+        return "network unreachable (DNS)".to_owned();
     }
     if low.contains("os error 10060") || low.contains("timed out") || low.contains("timeout") {
-        return "network unreachable (timeout)".to_string();
+        return "network unreachable (timeout)".to_owned();
     }
     if low.contains("network error") || low.contains("connection") || low.contains("connect") {
-        return "network unreachable".to_string();
+        return "network unreachable".to_owned();
     }
     // Not a recognised network drop: keep just the first line so a genuine API
     // rejection (bad token, chat gone) is still legible without the chain dump.
@@ -386,7 +386,7 @@ fn short_reason(e: &anyhow::Error) -> String {
         .next()
         .unwrap_or("send failed")
         .trim()
-        .to_string()
+        .to_owned()
 }
 
 /// The worker's edit gate, factored out so the ~60s cadence is testable without

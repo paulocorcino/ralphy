@@ -132,7 +132,7 @@ pub fn classify_unreachable(
 ) -> PeerStatus {
     match (distro, running) {
         (Some(distro), Some(false)) => PeerStatus::Asleep {
-            distro: distro.to_string(),
+            distro: distro.to_owned(),
         },
         (Some(distro), Some(true)) => PeerStatus::Unreachable {
             why: format!("the distro {distro} is running, but its daemon is not: {why}"),
@@ -152,7 +152,7 @@ pub fn classify_tunnel(
     why: String,
     said: Option<String>,
 ) -> PeerStatus {
-    let host = host.to_string();
+    let host = host.to_owned();
     match ensured {
         Ok(Ensured::Started) => PeerStatus::TunnelClosed {
             host,

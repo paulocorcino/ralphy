@@ -284,7 +284,7 @@ use super::tunnel::Ensured::Started;
 fn tunnel_diagnoses_name_the_host_and_never_wsl() {
     use super::client::classify_tunnel;
     let closed = classify_tunnel("svrapp", Ok(Started), String::new(), None);
-    let failed = "no ssh program found: install OpenSSH".to_string();
+    let failed = "no ssh program found: install OpenSSH".to_owned();
     let failed = classify_tunnel("svrapp", Err(failed), String::new(), None);
     let silent = PeerStatus::TunnelSilent {
         host: "svrapp".into(),
@@ -340,25 +340,25 @@ fn classify_tunnel_maps_the_ensure_answer() {
 #[test]
 fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
     let mut d = DaemonDescription {
-        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string()),
-        name: Some("svrapp".to_string()),
+        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_owned()),
+        name: Some("svrapp".to_owned()),
         avatar: None,
-        environment: "Linux".to_string(),
-        os: "linux".to_string(),
+        environment: "Linux".to_owned(),
+        os: "linux".to_owned(),
         port: 7257,
         protocol_version: PEER_PROTOCOL_VERSION,
         require_token: true,
         autostart: true,
         running: true,
         socket: None,
-        token: Some("tok".to_string()),
+        token: Some("tok".to_owned()),
     };
     let paired = paired_descriptor(&d, "svrapp", 7401, None).unwrap();
     assert_eq!(
         paired.os, "linux",
         "the host's OS family is kept for the icon"
     );
-    d.daemon_id = Some("../../evil".to_string());
+    d.daemon_id = Some("../../evil".to_owned());
     let err = paired_descriptor(&d, "svrapp", 7401, None).unwrap_err();
     assert!(err.to_string().contains("not a valid id"), "{err}");
 }

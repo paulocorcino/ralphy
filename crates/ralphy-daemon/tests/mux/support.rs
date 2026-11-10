@@ -75,7 +75,7 @@ pub(crate) async fn send_bare(ws: &mut Ws, frame: &Frame) {
 pub(crate) async fn send_control(ws: &mut Ws, verb: &str, payload: serde_json::Value) {
     let command = Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     };
     send_bare(ws, &Frame::Command(command)).await;
@@ -159,8 +159,8 @@ pub(crate) async fn next_closed(ws: &mut Ws, within: Duration) -> Option<Closed>
         };
         if command.verb == "channel.closed" {
             return Some(Closed {
-                channel: command.payload["channel"].as_u64()?,
-                reason: command.payload["reason"].as_str()?.to_string(),
+                channel: command.payload.get("channel")?.as_u64()?,
+                reason: command.payload.get("reason")?.as_str()?.to_owned(),
             });
         }
     }

@@ -14,9 +14,9 @@ async fn a_child_that_outlives_its_manager_still_ends_its_writer() {
     let spec = console_spec(std::env::temp_dir(), 24, 80, Some("exit 0"));
     let (_id, mut writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,

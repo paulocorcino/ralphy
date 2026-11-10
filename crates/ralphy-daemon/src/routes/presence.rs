@@ -186,7 +186,7 @@ pub(crate) fn build_presence(identity: Option<&identity::Identity>, uptime: Dura
         name: identity.map(|i| i.name.clone()),
         avatar: identity.map(|i| i.avatar.clone()),
         uptime_secs: uptime.as_secs(),
-        build: Some(crate::assets::build_id().to_string()),
+        build: Some(crate::assets::build_id().to_owned()),
     })
 }
 

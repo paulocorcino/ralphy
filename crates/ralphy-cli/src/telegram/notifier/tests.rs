@@ -60,12 +60,12 @@ impl Transport for RecordingTransport {
         self.calls
             .lock()
             .unwrap()
-            .push((method.to_string(), Value::Null));
+            .push((method.to_owned(), Value::Null));
         Ok(json!({ "ok": true, "result": { "username": "ralphy_bot" } }))
     }
 
     fn post(&self, method: &str, body: Value) -> Result<Value> {
-        self.calls.lock().unwrap().push((method.to_string(), body));
+        self.calls.lock().unwrap().push((method.to_owned(), body));
         match method {
             "sendMessage" => {
                 let id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -181,7 +181,7 @@ fn send_texts(calls: &[(String, Value)]) -> Vec<String> {
     calls
         .iter()
         .filter(|(m, _)| m == "sendMessage")
-        .map(|(_, b)| b["text"].as_str().unwrap_or("").to_string())
+        .map(|(_, b)| b["text"].as_str().unwrap_or("").to_owned())
         .collect()
 }
 

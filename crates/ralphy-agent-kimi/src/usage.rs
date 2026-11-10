@@ -107,7 +107,7 @@ pub(crate) fn resume_hint_session_id(stdout: &str) -> Option<String> {
         (v.get("type").and_then(|t| t.as_str()) == Some("session.resume_hint"))
             .then(|| v.get("session_id").and_then(|s| s.as_str()))
             .flatten()
-            .map(str::to_string)
+            .map(str::to_owned)
     })
 }
 

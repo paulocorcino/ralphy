@@ -168,7 +168,7 @@ fn declared_names(toks: &[Token]) -> BTreeSet<String> {
             declared.extend(arrow_params(toks, i));
         }
         if matches!(t.ident(), Some("let" | "const" | "var")) {
-            declared.extend(toks.get(i + 1).and_then(Token::ident).map(str::to_string));
+            declared.extend(toks.get(i + 1).and_then(Token::ident).map(str::to_owned));
         }
     }
     declared
@@ -178,14 +178,14 @@ fn declared_names(toks: &[Token]) -> BTreeSet<String> {
 /// identifiers between the parentheses before it.
 fn arrow_params(toks: &[Token], i: usize) -> Vec<String> {
     if let Some(p) = i.checked_sub(1).and_then(|p| toks[p].ident()) {
-        return vec![p.to_string()];
+        return vec![p.to_owned()];
     }
     if i > 0 && tok_is(toks, i - 1, ")") {
         let open = (0..i - 1).rev().find(|&k| close_of(toks, k) == i - 1);
         return open
             .map_or(&toks[0..0], |o| &toks[o..i])
             .iter()
-            .filter_map(|p| p.ident().map(str::to_string))
+            .filter_map(|p| p.ident().map(str::to_owned))
             .collect();
     }
     Vec::new()
@@ -199,7 +199,7 @@ fn free_names(toks: &[Token], declared: &BTreeSet<String>) -> Vec<String> {
         names.extend(scrim_flag(toks, i));
         if let Some(id) = t.ident() {
             if is_free_read(toks, i, declared) {
-                names.push(id.to_string());
+                names.push(id.to_owned());
             }
         }
     }
@@ -213,7 +213,7 @@ fn scrim_flag(toks: &[Token], i: usize) -> Option<String> {
         return None;
     }
     match toks.get(i + 2).map(|t| &t.tok) {
-        Some(Tok::Str(flag)) => Some(flag.split('.').next().unwrap_or("").to_string()),
+        Some(Tok::Str(flag)) => Some(flag.split('.').next().unwrap_or("").to_owned()),
         _ => None,
     }
 }
@@ -240,7 +240,7 @@ fn for_vars(value: &str) -> Vec<String> {
         .trim_start_matches('(')
         .trim_end_matches(')')
         .split(',')
-        .map(|v| v.trim().to_string())
+        .map(|v| v.trim().to_owned())
         .filter(|v| !v.is_empty())
         .collect()
 }

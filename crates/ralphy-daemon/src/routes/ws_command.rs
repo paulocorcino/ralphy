@@ -128,7 +128,12 @@ fn repo_ref(cmd: &Command) -> &str {
 /// `cmd` as the peer sees it: its repo is the peer's own slug.
 fn for_peer(cmd: &Command, slug: &str) -> Command {
     let mut proxied = cmd.clone();
-    proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
+    if let Some(fields) = proxied.payload.as_object_mut() {
+        fields.insert(
+            "repo".to_owned(),
+            serde_json::Value::String(slug.to_owned()),
+        );
+    }
     proxied
 }
 
@@ -162,7 +167,7 @@ pub(crate) async fn serve_command(
     }
     let (descriptors, _) = read_peer_store(ctx.peers_dir.clone()).await;
     let slug = match fleet::route(repo_ref(&cmd), daemon_id.unwrap_or(""), &descriptors) {
-        fleet::Route::Local { slug } => slug.to_string(),
+        fleet::Route::Local { slug } => slug.to_owned(),
         fleet::Route::UnknownDaemon { daemon_id } => {
             wire.reply(cmd.id, &cmd.verb, unknown_daemon(daemon_id))
                 .await;

@@ -156,7 +156,7 @@ fn routes_production_text(root: &Path) -> String {
     files.sort();
     files
         .iter()
-        .map(|f| production(&read(f)).to_string())
+        .map(|f| production(&read(f)).to_owned())
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -166,7 +166,7 @@ fn covered(root: &Path) -> BTreeSet<String> {
     fixture_names(root)
         .into_iter()
         .map(|name| match name.split_once("--") {
-            Some((kind, _variant)) => kind.to_string(),
+            Some((kind, _variant)) => kind.to_owned(),
             None => name,
         })
         .collect()

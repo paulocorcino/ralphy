@@ -255,7 +255,7 @@ fn with_spawn_context(e: anyhow::Error, spawn_err: &str) -> anyhow::Error {
     if e.downcast_ref::<PromptHeld>().is_some() {
         e
     } else {
-        e.context(spawn_err.to_string())
+        e.context(spawn_err.to_owned())
     }
 }
 

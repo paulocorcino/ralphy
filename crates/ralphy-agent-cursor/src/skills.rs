@@ -67,8 +67,8 @@ mod tests {
             !fs::read_to_string(&reviewer_md).unwrap().is_empty(),
             "reviewer/SKILL.md must be non-empty"
         );
-        assert!(names.contains(&"reviewer".to_string()), "{names:?}");
-        assert!(names.contains(&"staged-plan".to_string()), "{names:?}");
+        assert!(names.contains(&"reviewer".to_owned()), "{names:?}");
+        assert!(names.contains(&"staged-plan".to_owned()), "{names:?}");
     }
 
     #[test]

@@ -34,8 +34,8 @@ fn rules() -> Rules {
 
 fn row(kind: Kind, text: &str) -> Row {
     Row {
-        text: text.to_string(),
-        file: "index.html".to_string(),
+        text: text.to_owned(),
+        file: "index.html".to_owned(),
         line: 7,
         kind,
         area: String::new(),
@@ -148,7 +148,7 @@ fn an_exemption_hides_exactly_its_rule_and_text_and_a_stale_one_is_reported() {
 fn an_exemption_hides_its_text_only_in_its_own_file() {
     let rules = rules();
     let mut elsewhere = row(Kind::Text, "ralphy update");
-    elsewhere.file = "detached.html".to_string();
+    elsewhere.file = "detached.html".to_owned();
     let got: Vec<String> = check(&[elsewhere], &rules)
         .violations
         .into_iter()
@@ -283,6 +283,6 @@ fn the_repo_rules_ban_an_adr_citation() {
             .map(|v| v.rule)
             .collect()
     };
-    assert!(rules_of("Held awake for its peer (ADR-0052 §4).").contains(&"banned:ADR".to_string()));
+    assert!(rules_of("Held awake for its peer (ADR-0052 §4).").contains(&"banned:ADR".to_owned()));
     assert_eq!(rules_of("Held awake for its peer."), Vec::<String>::new());
 }

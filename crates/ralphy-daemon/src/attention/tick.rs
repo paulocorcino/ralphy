@@ -235,16 +235,16 @@ mod tests {
 
     fn snapshot(detail: &str) -> RunSnapshot {
         let mut snap = RunSnapshot {
-            runid: "01TICK".to_string(),
+            runid: "01TICK".to_owned(),
             pid: std::process::id(),
-            exec_agent: "claude".to_string(),
+            exec_agent: "claude".to_owned(),
             ..RunSnapshot::default()
         };
-        snap.phase.state = "executing".to_string();
+        snap.phase.state = "executing".to_owned();
         snap.phase.agent = Some(AgentBlock {
-            state: "waiting".to_string(),
-            since: "2026-10-28T11:00:00-03:00".to_string(),
-            detail: Some(detail.to_string()),
+            state: "waiting".to_owned(),
+            since: "2026-10-28T11:00:00-03:00".to_owned(),
+            detail: Some(detail.to_owned()),
         });
         snap
     }
@@ -343,7 +343,7 @@ mod tests {
         done.phase.agent = None;
         done.issues = vec![ralphy_run_snapshot::IssueBlock {
             number: 71,
-            status: "blocked".to_string(),
+            status: "blocked".to_owned(),
             ..ralphy_run_snapshot::IssueBlock::default()
         }];
         std::fs::write(

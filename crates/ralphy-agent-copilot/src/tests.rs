@@ -161,7 +161,7 @@ fn the_receipt_guard_is_wired_into_both_phases() {
 /// suppress a missing skill.
 #[test]
 fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
-    let required = vec!["reviewer".to_string(), "staged-plan".to_string()];
+    let required = vec!["reviewer".to_owned(), "staged-plan".to_owned()];
     let missing = concat!(
         r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]},"#,
         r#""ephemeral":true}"#,

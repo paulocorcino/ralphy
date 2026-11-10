@@ -94,7 +94,7 @@ impl CloseReason {
 pub(crate) fn closed_frame(channel: u32, reason: CloseReason) -> Vec<u8> {
     protocol::encode(&Frame::Command(Command {
         id: 0,
-        verb: "channel.closed".to_string(),
+        verb: "channel.closed".to_owned(),
         payload: serde_json::json!({ "channel": channel, "reason": reason.as_wire() }),
     }))
 }

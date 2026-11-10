@@ -50,7 +50,7 @@ pub(super) fn add_to_user_path(dir: &Path) -> Result<Added> {
     };
     let mut places = Vec::new();
     if registry::add(dir)? {
-        places.push("your user Path (HKEY_CURRENT_USER\\Environment)".to_string());
+        places.push("your user Path (HKEY_CURRENT_USER\\Environment)".to_owned());
     }
     Ok(Added {
         places,
@@ -241,7 +241,7 @@ fn path_with(current: &str, dir: &str) -> Option<String> {
     }
     let rest = current.trim().trim_matches(';');
     Some(if rest.is_empty() {
-        dir.to_string()
+        dir.to_owned()
     } else {
         format!("{dir};{rest}")
     })

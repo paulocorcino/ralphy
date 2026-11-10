@@ -71,7 +71,7 @@ fn queue_snapshot_data_matches_queue_built_data() {
                 order: vec![1],
                 stop_before: None,
                 issues: issues.clone(),
-                assignee_filter: filter.map(str::to_string),
+                assignee_filter: filter.map(str::to_owned),
                 scope: None,
             },
             &RunState::new("t", 1),

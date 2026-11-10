@@ -210,7 +210,7 @@ fn rows_of(name: &str, src: &str, pins: &[Pin], fns: CopyFns) -> Vec<Row> {
         .map(|f| Row {
             pinned_by: pinned_by(name, &f, pins),
             text: f.text,
-            file: name.to_string(),
+            file: name.to_owned(),
             line: f.line,
             kind: f.kind,
             area: f.area.unwrap_or_default(),
@@ -455,7 +455,7 @@ fn to_json(rows: &[Row]) -> Result<String> {
     let counts = |table: BTreeMap<&str, Tally>| -> BTreeMap<String, usize> {
         table
             .into_iter()
-            .map(|(k, t)| (k.to_string(), t.rows))
+            .map(|(k, t)| (k.to_owned(), t.rows))
             .collect()
     };
     let doc = serde_json::json!({

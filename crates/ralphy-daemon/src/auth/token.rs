@@ -58,7 +58,7 @@ pub fn token_path() -> Result<PathBuf> {
 /// still compares equal.
 pub fn load_token_from(path: &Path) -> Result<Option<String>> {
     match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text.trim_end_matches(['\r', '\n']).to_string())),
+        Ok(text) => Ok(Some(text.trim_end_matches(['\r', '\n']).to_owned())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
     }

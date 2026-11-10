@@ -139,12 +139,8 @@ fn record(dir: &Path, pid: u32) {
 
 #[test]
 fn an_unrecorded_invocation_falls_back_to_a_bare_daemon() {
-    assert_eq!(effective(&[]), vec!["daemon".to_string()]);
-    let recorded = vec![
-        "daemon".to_string(),
-        "--port".to_string(),
-        "8080".to_string(),
-    ];
+    assert_eq!(effective(&[]), vec!["daemon".to_owned()]);
+    let recorded = vec!["daemon".to_owned(), "--port".to_owned(), "8080".to_owned()];
     assert_eq!(
         effective(&recorded),
         recorded,

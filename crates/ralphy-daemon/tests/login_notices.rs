@@ -114,7 +114,7 @@ fn dismiss_from(body: &str, cookie: Option<&str>) -> Request<Body> {
     if let Some(cookie) = cookie {
         req = req.header(header::COOKIE, cookie);
     }
-    req.body(Body::from(body.to_string()))
+    req.body(Body::from(body.to_owned()))
         .expect("build the request")
 }
 
@@ -136,12 +136,12 @@ async fn new_device(auth: &Arc<AuthState>, dir: &Path) -> (String, String) {
         .split(';')
         .next()
         .expect("a cookie pair")
-        .to_string();
+        .to_owned();
     let device = cookie
         .split('.')
         .nth(1)
         .expect("a signed device ID")
-        .to_string();
+        .to_owned();
     (cookie, device)
 }
 

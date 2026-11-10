@@ -335,7 +335,7 @@ pub(crate) fn encode_query_value(value: &str) -> String {
 fn command_bytes(id: u64, verb: &str, payload: serde_json::Value) -> Vec<u8> {
     protocol::encode(&Frame::Command(Command {
         id,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     }))
 }

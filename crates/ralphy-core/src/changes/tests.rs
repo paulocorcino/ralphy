@@ -44,8 +44,8 @@ fn modified_added_deleted_renamed_untracked() {
     assert_eq!(
         *find(&list, "new.txt"),
         Change {
-            path: "new.txt".to_string(),
-            original_path: Some("old.txt".to_string()),
+            path: "new.txt".to_owned(),
+            original_path: Some("old.txt".to_owned()),
             status: ChangeStatus::Renamed,
             index_status: Some(ChangeStatus::Renamed),
             worktree_status: None,
@@ -363,7 +363,7 @@ fn a_merge_conflict_reads_as_conflicted() {
     assert_eq!(
         list,
         vec![Change {
-            path: "README.md".to_string(),
+            path: "README.md".to_owned(),
             original_path: None,
             status: ChangeStatus::Conflicted,
             index_status: None,

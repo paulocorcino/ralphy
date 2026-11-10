@@ -29,7 +29,7 @@ pub fn parse_triage_mapping(doc: &str, canonical: &str) -> Option<String> {
         // second data columns. Skip separator rows (|---|---|).
         let is_separator = |s: &str| s.trim_matches(['-', ':', ' ']).is_empty() && !s.is_empty();
         if cells.len() >= 4 && cells[1] == canonical && !is_separator(cells[2]) {
-            let mapped = cells[2].to_string();
+            let mapped = cells.get(2).copied().unwrap_or_default().to_owned();
             if !mapped.is_empty() {
                 return Some(mapped);
             }
@@ -66,7 +66,7 @@ fn normalize_color(c: &str) -> String {
 pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
     let doc = triage_doc.unwrap_or("");
     let resolve = |canonical: &str| -> String {
-        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_string())
+        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_owned())
     };
 
     // Colour is a signal, not decoration: labels in the same family share a hue,
@@ -206,9 +206,9 @@ fn label_edit_argv(name: &str, color: &str) -> Vec<String> {
     vec![
         "label".into(),
         "edit".into(),
-        name.to_string(),
+        name.to_owned(),
         "--color".into(),
-        color.to_string(),
+        color.to_owned(),
     ]
 }
 
@@ -330,15 +330,15 @@ pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String
 pub fn human_return_labels(triage_doc: Option<&str>) -> Vec<String> {
     let doc = triage_doc.unwrap_or("");
     let resolve = |canonical: &str| -> String {
-        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_string())
+        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_owned())
     };
     let mut labels = vec![
         resolve("ready-for-human"),
-        "HITL".to_string(),
+        "HITL".to_owned(),
         resolve("needs-info"),
         resolve("needs-triage"),
         resolve("wontfix"),
-        TRIAGE_AGENT_LABEL.to_string(),
+        TRIAGE_AGENT_LABEL.to_owned(),
     ];
     let mut seen = std::collections::HashSet::new();
     labels.retain(|l| seen.insert(l.clone()));

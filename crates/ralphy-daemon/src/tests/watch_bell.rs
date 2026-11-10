@@ -18,7 +18,7 @@ async fn a_watch_added_after_the_first_poll_rings_the_bell() {
         .await
         .expect("adding a watched dir must wake the poll in flight")
         .unwrap();
-    assert!(set.snapshot().contains(&"docs/agents".to_string()));
+    assert!(set.snapshot().contains(&"docs/agents".to_owned()));
     assert!(!set.runs());
 }
 

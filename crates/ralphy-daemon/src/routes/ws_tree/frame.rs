@@ -91,13 +91,13 @@ fn checkout_arg(payload: &Value, runs: bool) -> CheckoutArg {
 /// repos.
 pub(super) fn parse_request(cmd: &Command) -> Option<Request> {
     let verb = Verb::parse(&cmd.verb)?;
-    let repo_ref = payload_str(&cmd.payload, "repo").to_string();
+    let repo_ref = payload_str(&cmd.payload, "repo").to_owned();
     let rel = watch::norm_rel(payload_str(&cmd.payload, "path"));
     let (rel, alias, checkout) = place(rel, verb.head(), checkout_arg(&cmd.payload, verb.runs()))?;
     // The runs subscription ignores the payload path: its dir is fixed
     // (ADR-0047 §9), so a client cannot aim it elsewhere.
     let rel = if verb.runs() {
-        watch::RUNSTATE_REL.to_string()
+        watch::RUNSTATE_REL.to_owned()
     } else {
         rel
     };
@@ -142,10 +142,10 @@ fn place(rel: String, head: bool, arg: CheckoutArg) -> Option<Placed> {
         CheckoutArg::Primary => Some((rel, None, None)),
         // `head.watch` ignores the payload path: `checkout` names WHICH gitdir.
         CheckoutArg::Named(c) if head => {
-            Some((rel, Some((String::new(), c.name().to_string())), Some(c)))
+            Some((rel, Some((String::new(), c.name().to_owned())), Some(c)))
         }
         CheckoutArg::Named(c) => {
-            let shown = (rel.clone(), c.name().to_string());
+            let shown = (rel.clone(), c.name().to_owned());
             Some((c.prefix(&rel), Some(shown), Some(c)))
         }
         CheckoutArg::Malformed => None,
@@ -209,13 +209,13 @@ mod tests {
     fn cmd(verb: &str, payload: Value) -> Command {
         Command {
             id: 0,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }
     }
 
     fn alias(shown: &str, name: &str) -> Alias {
-        (shown.to_string(), name.to_string())
+        (shown.to_owned(), name.to_owned())
     }
 
     #[test]

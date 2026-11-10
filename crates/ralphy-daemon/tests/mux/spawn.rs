@@ -60,7 +60,7 @@ async fn next_status(ws: &mut Ws, channel: u32) -> Option<(String, serde_json::V
         return None;
     };
     assert_eq!(command.id, 5, "every frame answers the command that opened");
-    let status = command.payload["status"].as_str()?.to_string();
+    let status = command.payload.get("status")?.as_str()?.to_owned();
     Some((status, command.payload))
 }
 
@@ -134,7 +134,7 @@ async fn device_cookie(port: u16) -> String {
         .split(';')
         .next()
         .expect("the reply sets a device cookie")
-        .to_string()
+        .to_owned()
 }
 
 #[tokio::test]
@@ -146,7 +146,7 @@ async fn a_spawn_on_a_channel_is_recorded_with_its_device() {
         .split('.')
         .nth(1)
         .expect("the cookie names a device")
-        .to_string();
+        .to_owned();
     let mut request = format!("ws://127.0.0.1:{}/ws", daemon.port)
         .into_client_request()
         .expect("a /ws request");

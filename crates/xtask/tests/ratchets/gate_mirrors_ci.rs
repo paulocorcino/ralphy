@@ -32,7 +32,7 @@ fn run_steps(workflow: &str) -> Vec<(String, String)> {
     let mut current: Option<(String, bool)> = None;
     let mut flush = |current: &mut Option<(String, bool)>, job: &str| {
         if let Some((name, true)) = current.take() {
-            found.push((job.to_string(), name));
+            found.push((job.to_owned(), name));
         }
     };
     for line in workflow.lines() {
@@ -44,7 +44,7 @@ fn run_steps(workflow: &str) -> Vec<(String, String)> {
         if indent <= 2 {
             flush(&mut current, &job);
             keys_at = None;
-            job = trimmed.trim_end_matches(':').to_string();
+            trimmed.trim_end_matches(':').clone_into(&mut job);
             continue;
         }
         if trimmed == "steps:" {
@@ -65,7 +65,7 @@ fn run_steps(workflow: &str) -> Vec<(String, String)> {
             continue;
         };
         if let Some(value) = key.strip_prefix("name:") {
-            *name = value.trim().trim_matches('"').to_string();
+            value.trim().trim_matches('"').clone_into(name);
         } else if key.starts_with("run:") {
             *has_run = true;
         }

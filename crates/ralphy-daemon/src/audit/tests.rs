@@ -14,7 +14,7 @@ fn prune_removes_the_lines_older_than_the_retention() {
     let now = 2_000_000_000;
     let text = [
         line_at(now - RETENTION_SECS - 1, "old"),
-        "not json".to_string(),
+        "not json".to_owned(),
         line_at(now - RETENTION_SECS, "edge"),
         line_at(now, "new"),
     ]
@@ -57,8 +57,8 @@ fn server_facts_read_the_front_and_the_client_hints() {
     assert_eq!(
         facts.client_hints,
         [
-            ("brands".to_string(), "\"Chromium\";v=\"148\"".to_string()),
-            ("model".to_string(), "\"moto g(30)\"".to_string()),
+            ("brands".to_owned(), "\"Chromium\";v=\"148\"".to_owned()),
+            ("model".to_owned(), "\"moto g(30)\"".to_owned()),
         ]
     );
     assert_eq!(facts.user_agent.unwrap().len(), MAX_HEADER_CHARS);
@@ -140,7 +140,7 @@ mod logins {
             device,
             login: Some(login),
             actor: Actor::Device,
-            ip: Some("203.0.113.9".to_string()),
+            ip: Some("203.0.113.9".to_owned()),
         }
     }
 
@@ -148,17 +148,17 @@ mod logins {
         ConsoleRecord {
             kind: ConsoleKind::Launch,
             session: Some(7),
-            agent: Some("console".to_string()),
-            repo: Some("ralphy".to_string()),
+            agent: Some("console".to_owned()),
+            repo: Some("ralphy".to_owned()),
             peer: None,
-            holder: Some("tab-1".to_string()),
+            holder: Some("tab-1".to_owned()),
         }
     }
 
     fn switch() -> Command {
         Command {
             id: 1,
-            verb: "branch.switch".to_string(),
+            verb: "branch.switch".to_owned(),
             payload: serde_json::json!({"repo": "ralphy", "name": "b"}),
         }
     }

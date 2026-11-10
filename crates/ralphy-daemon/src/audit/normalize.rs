@@ -173,7 +173,7 @@ pub(crate) fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalize
         .intl
         .as_ref()
         .and_then(|i| i.time_zone.as_ref())
-        .map(|t| t.as_str().to_string());
+        .map(|t| t.as_str().to_owned());
     let standalone = client
         .media
         .display_mode
@@ -267,7 +267,7 @@ fn model_hint(
                 .then_some(())
                 .and(screen_size)
                 .and_then(iphone_family)
-                .and_then(|m| field(m.to_string(), Source::Inferred))
+                .and_then(|m| field(m.to_owned(), Source::Inferred))
         })
 }
 

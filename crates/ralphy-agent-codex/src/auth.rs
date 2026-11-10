@@ -51,7 +51,7 @@ pub(crate) fn parse_codex_reset_hint(text: &str) -> Option<String> {
                 .trim_end_matches('.')
                 .trim();
             if !rest.is_empty() {
-                return Some(rest.to_string());
+                return Some(rest.to_owned());
             }
         }
     }
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(
             reset,
             Some(ResetAt {
-                text: "soon-ish".to_string(),
+                text: "soon-ish".to_owned(),
                 at: None
             })
         );

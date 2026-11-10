@@ -55,7 +55,7 @@ impl Open {
     fn requested_agent(&self) -> Option<(String, session::Agent)> {
         let agent_str = self.query.agent.as_deref()?;
         let agent = session::Agent::from_query(agent_str)?;
-        Some((agent_str.to_string(), agent))
+        Some((agent_str.to_owned(), agent))
     }
 
     /// The selected checkout and the directory the child runs in, once the
@@ -86,7 +86,7 @@ impl Open {
         let Some(name) = self.query.checkout.as_deref() else {
             return Ok(None);
         };
-        let (name, primary) = (name.to_string(), root.to_path_buf());
+        let (name, primary) = (name.to_owned(), root.to_path_buf());
         let resolved = blocking_read(move || {
             let c = checkout::resolve(&name, |n| checkout::is_linked(&primary, n))?;
             Ok::<_, Box<dyn std::error::Error + Send + Sync>>(c.confine(&primary)?)
@@ -161,7 +161,7 @@ impl Open {
         // slug is a `path-<hash>` key, and the operator reads this name.
         let project = registry::project_name(&repo, &path);
         let root = PathBuf::from(&path);
-        let console = self.query.name().map(str::to_string);
+        let console = self.query.name().map(str::to_owned);
         // Off the worker: a Claude spec waits on `claude --version`, up to the
         // read limit, and a tokio worker must not wait on a child process.
         let built = tokio::task::spawn_blocking(move || {
@@ -192,7 +192,7 @@ impl Open {
         // format a second time.
         let labels = SessionLabels {
             name: spec.name.clone(),
-            checkout: checkout.as_ref().map(|c| c.name().to_string()),
+            checkout: checkout.as_ref().map(|c| c.name().to_owned()),
             watching: false,
         };
         let spawned = self
@@ -201,7 +201,7 @@ impl Open {
                 id,
                 repo.clone(),
                 agent_str.clone(),
-                "agent".to_string(),
+                "agent".to_owned(),
                 None,
                 labels.checkout.clone(),
                 self.record.clone(),

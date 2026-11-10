@@ -225,7 +225,7 @@ pub fn parse(v: &serde_json::Value) -> Result<Change, String> {
     let op = v
         .get("op")
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "a change needs an `op`".to_string())?;
+        .ok_or_else(|| "a change needs an `op`".to_owned())?;
     match op {
         "create" => {
             let c: Create = rest(v)?;

@@ -70,7 +70,7 @@ fn parse_overlay(overlay: &str) -> BTreeMap<String, String> {
             if let Some(prev) = current.take() {
                 slots.insert(prev, std::mem::take(&mut buf));
             }
-            current = Some(name.trim().to_string());
+            current = Some(name.trim().to_owned());
         } else if current.is_some() {
             buf.push_str(line);
         } else {
@@ -86,7 +86,7 @@ fn parse_overlay(overlay: &str) -> BTreeMap<String, String> {
 /// Substitute each `{{slot}}` placeholder line (the placeholder plus its own
 /// line ending) with the overlay's verbatim content for that slot.
 fn assemble(template: &str, slots: &BTreeMap<String, String>) -> String {
-    let mut out = template.to_string();
+    let mut out = template.to_owned();
     for name in SLOTS {
         let content = slots
             .get(name)

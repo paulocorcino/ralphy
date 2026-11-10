@@ -55,8 +55,8 @@ const LINUX_NO_LINGER: &str = "--- host\nsvr.example.com\n--- uid\n1000\n--- use
 pub(super) fn local(store: &Path) -> Local<'_> {
     Local {
         store,
-        daemon_id: Some(LOCAL_ID.to_string()),
-        name: Some("anvil".to_string()),
+        daemon_id: Some(LOCAL_ID.to_owned()),
+        name: Some("anvil".to_owned()),
         port: 7401,
         build: Build::parse("v0.1.0-rc.30"),
         target: Some("linux-x64"),
@@ -82,7 +82,7 @@ pub(super) fn no_keygen(_: &Path) -> Result<()> {
 /// describe carries the token.
 pub(super) fn linux_host(probe: &str, first: &DaemonDescription) -> FakeHost {
     let mut second = description("linux");
-    second.token = Some("host-tok".to_string());
+    second.token = Some("host-tok".to_owned());
     FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, probe, ""))
@@ -95,7 +95,7 @@ pub(super) fn linux_host(probe: &str, first: &DaemonDescription) -> FakeHost {
 
 /// The probe of a host whose tunnel reaches its own daemon.
 fn as_the_host(_: &TunnelSpec, _: Option<&str>) -> std::result::Result<String, String> {
-    Ok(HOST_ID.to_string())
+    Ok(HOST_ID.to_owned())
 }
 
 fn peers_dir(store: &Path) -> PathBuf {

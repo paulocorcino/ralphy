@@ -62,18 +62,18 @@ fn each_forbidden_edge_is_reported() {
             format!("ralphy-core -> ralphy-adapter-support: {core}"),
             format!("ralphy-core -> ralphy-agent-claude: {core}"),
             "ralphy-agent-codex -> ralphy-agent-claude: no adapter depends on another adapter"
-                .to_string(),
+                .to_owned(),
             format!("ralphy-release -> ralphy-proc-util: {leaf}"),
             format!("ralphy-pricing -> ralphy-core: {leaf}"),
-            "ralphy-git-read -> ralphy-proc-util: ralphy-git-read is a leaf crate".to_string(),
-            "ralphy-telegram -> ralphy-core: ralphy-telegram is a leaf crate".to_string(),
+            "ralphy-git-read -> ralphy-proc-util: ralphy-git-read is a leaf crate".to_owned(),
+            "ralphy-telegram -> ralphy-core: ralphy-telegram is a leaf crate".to_owned(),
         ]
     );
 }
 
 fn node(name: &str, deps: &[&str]) -> (String, Vec<String>) {
     (
-        name.to_string(),
+        name.to_owned(),
         deps.iter().map(ToString::to_string).collect(),
     )
 }
@@ -137,9 +137,9 @@ fn workspace_graph() -> Vec<(String, Vec<String>)> {
                 .flatten()
                 .filter_map(|d| d["name"].as_str())
                 .filter(|d| names.contains(d))
-                .map(str::to_string)
+                .map(str::to_owned)
                 .collect();
-            Some((name.to_string(), deps))
+            Some((name.to_owned(), deps))
         })
         .collect()
 }

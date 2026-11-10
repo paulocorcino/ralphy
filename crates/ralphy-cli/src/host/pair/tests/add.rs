@@ -142,16 +142,16 @@ fn add_names_an_unnamed_host_by_itself_in_one_run() {
 fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
     let store = tempfile::tempdir().unwrap();
     let mut other = description("linux");
-    other.daemon_id = Some("01ARZ3NDEKTSV4RRFFQ69G5FE0".to_string());
-    other.name = Some("box-2".to_string());
-    other.token = Some("t".to_string());
+    other.daemon_id = Some("01ARZ3NDEKTSV4RRFFQ69G5FE0".to_owned());
+    other.name = Some("box-2".to_owned());
+    other.token = Some("t".to_owned());
     peer::write_descriptor(
         store.path(),
         &peer::paired_descriptor(&other, "other", 7402, None).unwrap(),
     )
     .unwrap();
     let mut ready = description("linux");
-    ready.socket = Some("/home/paulo/.ralphy/daemon.sock".to_string());
+    ready.socket = Some("/home/paulo/.ralphy/daemon.sock".to_owned());
     let mut fake = linux_host(LINUX_PROBE, &ready);
     let d = add(
         &mut fake,
@@ -321,7 +321,7 @@ fn add_linger_needs_sudo_is_not_fatal() {
 fn add_refuses_this_computers_own_daemon() {
     let store = tempfile::tempdir().unwrap();
     let mut own = description("linux");
-    own.daemon_id = Some(LOCAL_ID.to_string());
+    own.daemon_id = Some(LOCAL_ID.to_owned());
     let mut fake = linux_host(LINUX_PROBE, &own);
     let err = add(
         &mut fake,

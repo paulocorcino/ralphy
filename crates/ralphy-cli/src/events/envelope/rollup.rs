@@ -29,24 +29,24 @@ pub(super) fn finished_issues(rollup: &Value, state: &RunState) -> Vec<Value> {
 fn rollup_entry(e: &Value, state: &RunState) -> Value {
     let number = e.get("number").cloned().unwrap_or(Value::Null);
     let mut obj = serde_json::Map::new();
-    obj.insert("number".to_string(), number.clone());
+    obj.insert("number".to_owned(), number.clone());
     obj.insert(
-        "title".to_string(),
+        "title".to_owned(),
         json!(issue_title(state, number.as_u64().unwrap_or(0))),
     );
     if let Some(status) = e.get("status") {
-        obj.insert("status".to_string(), status.clone());
+        obj.insert("status".to_owned(), status.clone());
     }
     if let Some(kind) = e.get("kind") {
-        obj.insert("kind".to_string(), kind.clone());
+        obj.insert("kind".to_owned(), kind.clone());
     }
     if let Some(blocked_by) = e.get("blocked_by") {
-        obj.insert("blocked_by".to_string(), blocked_by.clone());
+        obj.insert("blocked_by".to_owned(), blocked_by.clone());
     }
     // Only the run's own rollup can supply this: `RunState` never learns the
     // ledger verdicts, so the fold fallback carries no `review_only` (#313).
     if let Some(review_only) = e.get("review_only") {
-        obj.insert("review_only".to_string(), review_only.clone());
+        obj.insert("review_only".to_owned(), review_only.clone());
     }
     Value::Object(obj)
 }
@@ -55,14 +55,14 @@ fn rollup_entry(e: &Value, state: &RunState) -> Value {
 fn fold_entry(e: &IssueEntry, state: &RunState) -> Option<Value> {
     let status = e.status.status_wire()?;
     let mut obj = serde_json::Map::new();
-    obj.insert("number".to_string(), json!(e.number));
-    obj.insert("title".to_string(), json!(issue_title(state, e.number)));
-    obj.insert("status".to_string(), json!(status));
+    obj.insert("number".to_owned(), json!(e.number));
+    obj.insert("title".to_owned(), json!(issue_title(state, e.number)));
+    obj.insert("status".to_owned(), json!(status));
     if status == "skipped" {
         if let Some(kind) = e.kind {
-            obj.insert("kind".to_string(), json!(skip_kind_name(kind)));
+            obj.insert("kind".to_owned(), json!(skip_kind_name(kind)));
         }
-        obj.insert("blocked_by".to_string(), json!(e.blocked_by));
+        obj.insert("blocked_by".to_owned(), json!(e.blocked_by));
     }
     Some(Value::Object(obj))
 }

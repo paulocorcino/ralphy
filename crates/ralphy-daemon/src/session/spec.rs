@@ -257,7 +257,7 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
     // The trust flag would also run the project's own hooks with no trust
     // prompt (ADR-0085 amendment of 2026-10-29).
     if ralphy_proc_util::hook_form::codex_project_has_hooks(&spec.cwd) {
-        spec.unreported_reason = Some(crate::agent_state::CODEX_OWN_HOOKS_REASON.to_string());
+        spec.unreported_reason = Some(crate::agent_state::CODEX_OWN_HOOKS_REASON.to_owned());
         return;
     }
     if let Err(e) = files.create_status() {

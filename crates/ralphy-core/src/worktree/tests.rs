@@ -62,7 +62,7 @@ fn commit_count(dir: &Path) -> String {
 }
 
 fn p(s: &str) -> Vec<String> {
-    vec![s.to_string()]
+    vec![s.to_owned()]
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn stage_refuses_a_path_outside_the_change_set() {
     assert_eq!(
         refused,
         StageOutcome::NotInChangeSet {
-            path: "never-touched.txt".to_string()
+            path: "never-touched.txt".to_owned()
         }
     );
     assert_eq!(
@@ -187,7 +187,7 @@ fn unstage_refuses_a_path_outside_the_change_set() {
     assert_eq!(
         refused,
         UnstageOutcome::NotInChangeSet {
-            path: "never-touched.txt".to_string()
+            path: "never-touched.txt".to_owned()
         }
     );
     assert_eq!(
@@ -212,7 +212,7 @@ fn a_rename_is_unstageable_by_its_original_path_too() {
     git(&dir, &["mv", "old.txt", "new.txt"]).unwrap();
 
     assert_eq!(
-        unstage(&dir, &["new.txt".to_string(), "old.txt".to_string()]).unwrap(),
+        unstage(&dir, &["new.txt".to_owned(), "old.txt".to_owned()]).unwrap(),
         UnstageOutcome::Unstaged { paths: 2 }
     );
     assert_eq!(
@@ -328,16 +328,16 @@ fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
     let refused = stage(
         &dir,
         &[
-            "renamed.txt".to_string(),
-            "old.txt".to_string(),
-            "other.txt".to_string(),
+            "renamed.txt".to_owned(),
+            "old.txt".to_owned(),
+            "other.txt".to_owned(),
         ],
     )
     .unwrap();
     assert_eq!(
         refused,
         StageOutcome::NotInChangeSet {
-            path: "old.txt".to_string()
+            path: "old.txt".to_owned()
         },
         "the rename's original path is not stageable"
     );
@@ -358,13 +358,13 @@ fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
     // The positive control: without the old path the same request succeeds, so
     // the refusal above is about that path and not about the fixture.
     assert_eq!(
-        stage(&dir, &["renamed.txt".to_string(), "other.txt".to_string()]).unwrap(),
+        stage(&dir, &["renamed.txt".to_owned(), "other.txt".to_owned()]).unwrap(),
         StageOutcome::Staged { paths: 2 }
     );
     // …and `unstage` still accepts the original path, which is the direction
     // that genuinely needs it.
     assert_eq!(
-        unstage(&dir, &["renamed.txt".to_string(), "old.txt".to_string()]).unwrap(),
+        unstage(&dir, &["renamed.txt".to_owned(), "old.txt".to_owned()]).unwrap(),
         UnstageOutcome::Unstaged { paths: 2 }
     );
 

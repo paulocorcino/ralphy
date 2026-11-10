@@ -144,8 +144,5 @@ fn an_opencode_run_emits_the_agent_state_of_its_plugin() {
     };
     ralphy_core::Agent::execute(&agent, &plan, &ws).expect("the execute ends");
     let got = sink.lock().expect("sink").clone();
-    assert_eq!(
-        got,
-        [("waiting".to_string(), "permission: bash".to_string())]
-    );
+    assert_eq!(got, [("waiting".to_owned(), "permission: bash".to_owned())]);
 }

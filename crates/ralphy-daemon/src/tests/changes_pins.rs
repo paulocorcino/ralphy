@@ -319,7 +319,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // ref in exactly the two windows nobody tests by hand.
     for page in [DETACHED_HTML, DETACHED_FENCE_HTML] {
         assert!(
-            with_module_imports(tag_references(page)).contains(&"wb-fleet.js".to_string()),
+            with_module_imports(tag_references(page)).contains(&"wb-fleet.js".to_owned()),
             "a detached popup must load the fold it calls"
         );
     }

@@ -59,7 +59,7 @@ impl RepoEntry {
         let s = canon.to_string_lossy().into_owned();
         Some(match s.strip_prefix(r"\\?\UNC\") {
             Some(rest) => format!(r"\\{rest}"),
-            None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_string(),
+            None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_owned(),
         })
     }
 
@@ -140,10 +140,10 @@ pub fn project_name(slug: &str, path: &str) -> String {
             .next()
             .unwrap_or_default();
         if !folder.is_empty() && !folder.ends_with(':') {
-            return folder.to_string();
+            return folder.to_owned();
         }
     }
-    slug.to_string()
+    slug.to_owned()
 }
 
 /// The string form [`RepoEntry::same_root`] falls back to: one separator, no
@@ -154,7 +154,7 @@ fn normalize_path(s: &str) -> String {
     if cfg!(windows) {
         trimmed.to_ascii_lowercase()
     } else {
-        trimmed.to_string()
+        trimmed.to_owned()
     }
 }
 
@@ -209,12 +209,12 @@ impl RegistryStore {
         let Some(old) = self.repos.remove(from) else {
             return false;
         };
-        let target = self.repos.entry(to.to_string()).or_insert(RepoEntry {
+        let target = self.repos.entry(to.to_owned()).or_insert(RepoEntry {
             path: old.path.clone(),
             former_slugs: Vec::new(),
             console_worktree: None,
         });
-        for slug in old.former_slugs.into_iter().chain([from.to_string()]) {
+        for slug in old.former_slugs.into_iter().chain([from.to_owned()]) {
             if slug != to && !target.former_slugs.contains(&slug) {
                 target.former_slugs.push(slug);
             }

@@ -110,7 +110,7 @@ fn sort_by_ts(records: &mut [serde_json::Value]) {
             v.get("ts")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
-                .to_string()
+                .to_owned()
         };
         ts(a).cmp(&ts(b))
     });
@@ -288,7 +288,7 @@ pub fn interactive_records(
     let run_session_ids: HashSet<String> = run_records
         .iter()
         .filter_map(|r| r.get("session_id").and_then(|v| v.as_str()))
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect();
     let repos: Vec<RegisteredRepo> = registry
         .repos

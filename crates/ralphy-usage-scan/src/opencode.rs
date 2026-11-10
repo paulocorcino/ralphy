@@ -119,7 +119,7 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
                 .cloned()
                 .unwrap_or((None, None));
             InteractiveRecord {
-                agent: "opencode".to_string(),
+                agent: "opencode".to_owned(),
                 model,
                 session_id,
                 project,
@@ -163,7 +163,7 @@ fn assistant_row(data: &str) -> Option<AssistantRow> {
             .get("modelID")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
-            .to_string(),
+            .to_owned(),
         // reasoning NOT added — `output` already includes it (module doc / ADR-0008 D5).
         tokens: Tokens {
             input: field(tokens, "input"),
@@ -334,7 +334,7 @@ mod tests {
         let data = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5}}"#;
         let db = seed_db(tmp.path(), &[("ses_run", data), ("ses_int", data)], &[]);
         let mut runs = HashSet::new();
-        runs.insert("ses_run".to_string());
+        runs.insert("ses_run".to_owned());
         let records = scan_opencode(&OpenCodeScan {
             db_path: &db,
             run_session_ids: &runs,

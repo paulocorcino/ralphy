@@ -140,8 +140,8 @@ async fn collect_reply(
             match serde_json::from_str::<serde_json::Value>(last.trim()) {
                 Ok(parsed) => {
                     let mut obj = serde_json::Map::new();
-                    obj.insert("status".to_string(), serde_json::json!("ok"));
-                    obj.insert(field.to_string(), parsed);
+                    obj.insert("status".to_owned(), serde_json::json!("ok"));
+                    obj.insert(field.to_owned(), parsed);
                     serde_json::Value::Object(obj)
                 }
                 Err(e) => {

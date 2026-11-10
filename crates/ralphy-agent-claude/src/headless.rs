@@ -228,7 +228,7 @@ pub(crate) fn classify_outcome(
         if f == "DONE" {
             done = true;
         } else if let Some(reason) = f.strip_prefix("BLOCKED") {
-            blocked = Some(reason.trim().to_string());
+            blocked = Some(reason.trim().to_owned());
         }
     }
     classify(CompletionSignals {

@@ -88,7 +88,7 @@ pub fn hook_for_version(version: Option<&str>, program: &Path, args: &[&str]) ->
     let (form, reason) = decide(version);
     HookCommand {
         program: crate::exe::plain_path(program.to_path_buf()),
-        args: args.iter().map(|a| (*a).to_string()).collect(),
+        args: args.iter().map(|a| (*a).to_owned()).collect(),
         form,
         reason,
     }
@@ -154,7 +154,7 @@ fn first_warning(bin: &Path, reason: &str) -> bool {
     let mut warned = WARNED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    warned.insert((bin, reason.to_string()))
+    warned.insert((bin, reason.to_owned()))
 }
 
 type CacheKey = (PathBuf, SystemTime);
@@ -218,7 +218,7 @@ fn spawn_version(bin: &Path, limit: Duration) -> Option<String> {
     };
     let succeeded = child.wait().is_ok_and(|s| s.success());
     let line = text.lines().next()?.trim();
-    (succeeded && !line.is_empty()).then(|| line.to_string())
+    (succeeded && !line.is_empty()).then(|| line.to_owned())
 }
 
 /// How long the start check lets the hook program run.
@@ -379,7 +379,7 @@ fn shell_quote(text: &str) -> String {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "-_./:=@%+,".contains(c));
     if plain {
-        return text.to_string();
+        return text.to_owned();
     }
     format!("'{}'", text.replace('\'', r"'\''"))
 }
@@ -412,9 +412,9 @@ pub const CODEX_HOOK_TRUST_FLAG: &str = "--dangerously-bypass-hook-trust";
 /// when another one follows it.
 pub fn codex_hook_args(exe: &Path, status_events: &[&str]) -> Vec<String> {
     let command = toml_basic_string(&codex_hook_command(exe));
-    let mut args = vec![CODEX_HOOK_TRUST_FLAG.to_string()];
+    let mut args = vec![CODEX_HOOK_TRUST_FLAG.to_owned()];
     for event in status_events {
-        args.push("-c".to_string());
+        args.push("-c".to_owned());
         args.push(format!(
             "hooks.{event}=[{{hooks=[{{type=\"command\",command={command}}}]}}]"
         ));
@@ -485,7 +485,7 @@ pub fn codex_check_hook(exe: &Path) -> HookCommand {
         args: ["hook", "status", "codex"].map(String::from).to_vec(),
         form: HookForm::Exec,
         reason: "the check runs the program and the arguments of the Codex hook without a shell"
-            .to_string(),
+            .to_owned(),
     }
 }
 

@@ -130,10 +130,10 @@ fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (Option<f64>, bool) {
 /// `~$0.00` for an empty/zero-token set (nothing to price and nothing unpriced).
 fn fmt_usd(usd: Option<f64>, partial: bool) -> String {
     match (usd, partial) {
-        (None, true) => "~$?".to_string(),
+        (None, true) => "~$?".to_owned(),
         (Some(usd), true) => format!("~${usd:.2}+?"),
         (Some(usd), false) => format!("~${usd:.2}"),
-        (None, false) => "~$0.00".to_string(),
+        (None, false) => "~$0.00".to_owned(),
     }
 }
 
@@ -199,7 +199,7 @@ fn csv_field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_string()
+        s.to_owned()
     }
 }
 
@@ -285,7 +285,7 @@ fn resolve_slug(project: Option<&str>, repo: &Path) -> Result<String> {
             let root = git::resolve_toplevel(Path::new(p))?;
             Ok(git::project_slug(&root))
         }
-        Some(p) => Ok(p.to_string()),
+        Some(p) => Ok(p.to_owned()),
         None => {
             let root = git::resolve_toplevel(repo)?;
             Ok(git::project_slug(&root))

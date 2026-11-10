@@ -221,11 +221,11 @@ mod tests {
         let cmds = sparse_fetch_commands(git_ref, subtree);
         let fetch_argv: Vec<String> = vec!["fetch", "--depth", "1", "origin", git_ref]
             .into_iter()
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect();
         let sc_set_argv: Vec<String> = vec!["sparse-checkout", "set", subtree]
             .into_iter()
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect();
         assert!(cmds.contains(&fetch_argv), "missing fetch argv in {cmds:?}");
         assert!(

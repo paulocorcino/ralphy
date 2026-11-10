@@ -20,7 +20,7 @@ pub(crate) fn display_width(s: &str) -> usize {
 /// Never panics, never splits a `char`, never indexes by byte.
 pub(crate) fn truncate_to_width(s: &str, max: usize) -> String {
     if display_width(s) <= max {
-        return s.to_string();
+        return s.to_owned();
     }
     if max < 2 {
         let mut out = String::new();

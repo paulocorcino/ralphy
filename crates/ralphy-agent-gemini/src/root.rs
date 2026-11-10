@@ -73,7 +73,7 @@ pub(crate) fn operator_auth_type(root: Option<&Path>) -> Option<String> {
         .get("auth")?
         .get("selectedType")?
         .as_str()
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// The minimal settings document Ralphy writes into its own root.
@@ -217,9 +217,7 @@ fn add_to_group(
     mtime: std::time::SystemTime,
     path: &Path,
 ) {
-    let group = groups
-        .entry(stem.to_string())
-        .or_insert((mtime, Vec::new()));
+    let group = groups.entry(stem.to_owned()).or_insert((mtime, Vec::new()));
     group.0 = group.0.max(mtime);
     group.1.push(path.to_path_buf());
 }

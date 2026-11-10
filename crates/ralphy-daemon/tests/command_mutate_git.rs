@@ -32,7 +32,7 @@ async fn mutate_message(port: u16, id: u64, verb: &str, payload: serde_json::Val
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -65,7 +65,7 @@ async fn mutate_message(port: u16, id: u64, verb: &str, payload: serde_json::Val
     reply["message"]
         .as_str()
         .expect("an error message string")
-        .to_string()
+        .to_owned()
 }
 
 #[tokio::test]

@@ -41,7 +41,7 @@ impl Source {
 
     pub(crate) fn describe(&self) -> String {
         match self {
-            Source::ThisComputer => "this computer".to_string(),
+            Source::ThisComputer => "this computer".to_owned(),
             Source::Release(tag) => format!("the {tag} release"),
         }
     }
@@ -75,7 +75,7 @@ pub(crate) fn target_of(os: HostOs, arch: Option<&str>) -> Result<&'static str, 
     };
     target_for(os_name, arch).ok_or_else(|| {
         if printed.is_empty() {
-            "the host did not say what processor it has".to_string()
+            "the host did not say what processor it has".to_owned()
         } else {
             format!(
                 "there is no Ralphy build for {} on {printed}, so build it on the host with cargo",

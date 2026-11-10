@@ -187,7 +187,7 @@ fn field(line: &str, prefix: &str) -> Option<String> {
     line.strip_prefix(prefix)
         .map(str::trim)
         .filter(|v| !v.is_empty())
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 #[cfg(test)]

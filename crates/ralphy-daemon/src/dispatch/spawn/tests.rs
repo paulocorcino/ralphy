@@ -105,7 +105,7 @@ fn daemon_id_is_forwarded_to_the_spawner() {
     assert_eq!(calls[0].1, argv, "the composed argv must reach the spawner");
     assert_eq!(
         calls[0].3,
-        Some("01FWD00000000000000000000".to_string()),
+        Some("01FWD00000000000000000000".to_owned()),
         "the daemon_id must reach the spawner"
     );
     // The program is a resolved exe, never a shell.

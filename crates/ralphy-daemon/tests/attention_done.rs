@@ -47,7 +47,7 @@ async fn exchange(port: u16, request: &str) -> (u16, String) {
         .and_then(|s| s.parse().ok())
         .unwrap_or_default();
     let body = raw.split_once("\r\n\r\n").map_or("", |(_, body)| body);
-    (status, body.to_string())
+    (status, body.to_owned())
 }
 
 async fn get(port: u16, path: &str) -> (u16, serde_json::Value) {
@@ -129,10 +129,10 @@ async fn marked_console(dir: &Path) -> (u16, PathBuf, PathBuf, page::Channel) {
     let desk_path = home.join("desk.toml");
     let marked = DeskStore {
         windows: vec![DeskRecord {
-            id: RECORD.to_string(),
-            repo: SLUG.to_string(),
-            agent: "claude".to_string(),
-            kind: "agent".to_string(),
+            id: RECORD.to_owned(),
+            repo: SLUG.to_owned(),
+            agent: "claude".to_owned(),
+            kind: "agent".to_owned(),
             rect: DeskRect {
                 left: 10.0,
                 top: 10.0,

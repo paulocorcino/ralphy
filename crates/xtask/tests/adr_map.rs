@@ -134,17 +134,13 @@ fn the_architecture_map_cites_real_adrs_and_every_structural_one() {
 #[test]
 fn map_errors_catch_a_missing_and_an_uncited_adr() {
     let adrs = vec![
-        (1, "0001-a.md".to_string(), "Kind: structural\n".to_string()),
-        (
-            70,
-            "0070-b.md".to_string(),
-            "Kind: structural\n".to_string(),
-        ),
-        (71, "0071-c.md".to_string(), "Kind: feature\n".to_string()),
+        (1, "0001-a.md".to_owned(), "Kind: structural\n".to_owned()),
+        (70, "0070-b.md".to_owned(), "Kind: structural\n".to_owned()),
+        (71, "0071-c.md".to_owned(), "Kind: feature\n".to_owned()),
         (
             72,
-            "0072-d-validation.md".to_string(),
-            "Kind: structural\n".to_string(),
+            "0072-d-validation.md".to_owned(),
+            "Kind: structural\n".to_owned(),
         ),
     ];
     let errors = map_errors("see ADR-0001 and ADR-0999", &adrs);
@@ -281,7 +277,7 @@ fn adr_files(dir: &Path) -> Vec<(u32, String, String)> {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
-            .to_string();
+            .to_owned();
         if let Some(c) = numbered.captures(&name) {
             let number = c[1]
                 .parse()

@@ -320,12 +320,12 @@ mod tests {
 
         let reg = register_or_migrate(&registry_path, &top).unwrap();
         assert_eq!(reg.slug, "new/name");
-        assert_eq!(reg.migrated_from, vec!["old/name".to_string()]);
+        assert_eq!(reg.migrated_from, vec!["old/name".to_owned()]);
         let store = registry::load_from(&registry_path).unwrap();
         assert_eq!(store.repos.len(), 1);
         assert_eq!(
             store.entry("new/name").unwrap().former_slugs,
-            vec!["old/name".to_string()]
+            vec!["old/name".to_owned()]
         );
     }
 
