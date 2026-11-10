@@ -298,7 +298,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
         case "end":
           s.announced = event.reason;
           s.refusal = event.message;
-          return;
+          break;
         case "other":
           return;
         default: {
