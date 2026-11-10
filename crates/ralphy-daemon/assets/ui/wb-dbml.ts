@@ -39,7 +39,7 @@ export { parseDbml } from "./wb-dbml-read.ts";
 
 /** The key of one column in the sets that `matchSchema` and `sameColumns` return. */
 export function colKey(table: string, column: string) {
-  return `${table}\u001f${column}`;
+  return `${table}\u001F${column}`;
 }
 
 /**

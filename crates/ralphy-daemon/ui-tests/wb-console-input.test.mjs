@@ -721,6 +721,6 @@ test("scrubClipboard drops the C1 controls, such as the one-character CSI U+009B
 
 test("scrubClipboard keeps tabs, inner newlines and non-ASCII text", () => {
   assert.equal(scrubClipboard("a\tb\r\nc"), "a\tb\nc");
-  assert.equal(scrubClipboard("café \u{1f600}"), "café \u{1f600}");
+  assert.equal(scrubClipboard("café \u{1F600}"), "café \u{1F600}");
   assert.equal(scrubClipboard(""), "");
 });

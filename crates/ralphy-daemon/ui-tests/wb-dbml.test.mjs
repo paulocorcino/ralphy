@@ -104,7 +104,7 @@ test("parseDbml reads refs and never throws", () => {
     "Table t {\n  id int\n",
     "}\n}\n",
     "",
-    "\u0000\u0001\u0002 �� binary-like \u007f}{][)(",
+    "\u0000\u0001\u0002 �� binary-like \u007F}{][)(",
     `Table ${"x".repeat(1000)} {\n  ${"c".repeat(1000)} ${"t".repeat(1000)} [${"n".repeat(1000)}\n}\n`,
     "// only a comment\n/* and another */\n",
   ];

@@ -201,9 +201,9 @@ function worktreeNameProblem(listing: Pick<Listing, "worktrees"> | null | undefi
 // Which characters of `name` the daemon would refuse.
 function charProblem(name: string) {
   if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
-  const bad = name.match(/[\u0000-\u001f\u007f/\\~^:?*[]/);
+  const bad = name.match(/[\u0000-\u001F\u007F/\\~^:?*[]/u);
   if (!bad) return "";
-  return /[\u0000-\u001f\u007f]/.test(bad[0])
+  return /[\u0000-\u001F\u007F]/u.test(bad[0])
     ? "The name cannot contain control characters."
     : `The name cannot contain “${bad[0]}”.`;
 }
