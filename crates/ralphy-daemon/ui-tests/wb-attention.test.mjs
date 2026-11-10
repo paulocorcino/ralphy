@@ -41,7 +41,7 @@ function fromPeer(request) {
 // test files share one process, so `t.after` puts the globals back.
 const GLOBALS = ["window", "document", "WBConsole", "fetch", "Notification", "localStorage"];
 
-function page(t, { replies = [], sessions = [], projects = [], tabOf = () => undefined } = {}) {
+function page(t, { replies = [], sessions = [], projects = [], tabOf = () => {} } = {}) {
   const saved = GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
   t.after(() => {
     for (const [name, d] of saved) {

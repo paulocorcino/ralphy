@@ -502,7 +502,7 @@ test("fromRects: a staircase is compared with each column's first window only", 
 test("fromRects: no window, one window", () => {
   const C = load();
   assert.deepEqual(C.fromRects([]), []);
-  assert.deepEqual(C.fromRects(undefined), []);
+  assert.deepEqual(C.fromRects(), []);
   assert.deepEqual(C.fromRects([win("a", 10, 10)]), [["a"]]);
 });
 

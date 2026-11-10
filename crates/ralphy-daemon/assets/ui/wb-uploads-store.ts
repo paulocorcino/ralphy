@@ -187,7 +187,9 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     // Send a failed item again, from the offset the daemon confirmed.
     retry(key: number) {
       const item = this.items.find((i) => i.key === key);
-      if (!item || item.state !== "failed") return undefined;
+      if (!item || item.state !== "failed") {
+        return;
+      }
       item.state = "waiting";
       item.error = "";
       return this.pump();
@@ -263,16 +265,15 @@ export function uploadsStore(deps: UploadsStoreDeps) {
         return this.finished(item, reply.path);
       if (reply?.status === "ok" && typeof reply.received === "number") {
         item.sent = reply.received;
-        return undefined;
+        return;
       }
       const expected = resendFrom(reply, seen);
       if (expected !== null) {
         item.sent = expected;
-        return undefined;
+        return;
       }
       item.state = "failed";
       item.error = refusalText(reply);
-      return undefined;
     },
 
     finished(item: UploadItem, path: string) {

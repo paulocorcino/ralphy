@@ -220,7 +220,7 @@ test("applyCtrlLatch keeps the latch armed for input it cannot fold", () => {
   assert.deepEqual(applyCtrlLatch(true, "1"), { out: "1", latched: true });
   assert.deepEqual(applyCtrlLatch(true, "\x03"), { out: "\x03", latched: true });
   // Non-strings never reach the child, and must not throw on the way.
-  assert.deepEqual(applyCtrlLatch(true, undefined), { out: undefined, latched: true });
+  assert.deepEqual(applyCtrlLatch(true), { out: undefined, latched: true });
 });
 
 // --- terminalInputMode: the keyboard opens only from the key bar -----------
@@ -296,7 +296,7 @@ test("keyBarVisible defaults to whether the machine has a touch surface", () => 
 
 test("pasteOffered needs a clipboard that can READ", () => {
   // An insecure LAN origin has no `navigator.clipboard` at all.
-  assert.equal(pasteOffered(undefined), false);
+  assert.equal(pasteOffered(), false);
   assert.equal(pasteOffered(null), false);
   // A write-only shim (the clipboard test recorder, or an old engine) is not
   // enough: there is no `execCommand` fallback for a read.
@@ -338,7 +338,7 @@ test("forceSelectionKeys is Option on macOS and Shift elsewhere", () => {
   // Alt outside macOS asks xterm for a column selection.
   assert.deepEqual(forceSelectionKeys("Win32"), { shiftKey: true });
   assert.deepEqual(forceSelectionKeys("Linux x86_64"), { shiftKey: true });
-  assert.deepEqual(forceSelectionKeys(undefined), { shiftKey: true });
+  assert.deepEqual(forceSelectionKeys(), { shiftKey: true });
 });
 
 test("holdMoveReport holds only button-less moves over a selection under a TUI", () => {
@@ -427,7 +427,7 @@ test("phoneBleed is maximize AND a phone-width viewport", () => {
   assert.equal(phoneBleed(false, 390), false);
   // A viewport that has never laid out reports NaN — no bleed, no throw.
   assert.equal(phoneBleed(true, NaN), false);
-  assert.equal(phoneBleed(true, undefined), false);
+  assert.equal(phoneBleed(true), false);
 });
 
 // --- selectionRow: the buffer line under a finger --------------------------
@@ -456,7 +456,7 @@ test("selectionRow never answers NaN", () => {
   assert.equal(selectionRow(140, 100, 0, 24, 50), 50);
   assert.equal(selectionRow(140, 100, NaN, 24, 50), 50);
   assert.equal(selectionRow(NaN, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(140, 100, 20, 24, undefined), 2);
+  assert.equal(selectionRow(140, 100, 20, 24), 2);
   assert.equal(selectionRow(140, undefined, 20, 24, 0), 7);
 });
 
@@ -505,7 +505,7 @@ test("touchCentroid is the point between the fingers", () => {
   assert.deepEqual(touchCentroid([{ clientX: 10, clientY: 20 }, { clientX: 30, clientY: 60 }]), { x: 20, y: 40 });
   assert.deepEqual(touchCentroid([{ clientX: 5, clientY: 5 }]), { x: 5, y: 5 });
   assert.deepEqual(touchCentroid([]), { x: 0, y: 0 });
-  assert.deepEqual(touchCentroid(undefined), { x: 0, y: 0 });
+  assert.deepEqual(touchCentroid(), { x: 0, y: 0 });
 });
 
 // --- dragThreshold / dragBegins: a tap is not a drag ------------------------
@@ -513,7 +513,7 @@ test("dragThreshold is 4px for a mouse and 10px for a finger, a pen or an unknow
   assert.equal(dragThreshold("mouse"), 4);
   assert.equal(dragThreshold("touch"), 10);
   assert.equal(dragThreshold("pen"), 10);
-  assert.equal(dragThreshold(undefined), 10);
+  assert.equal(dragThreshold(), 10);
   assert.equal(dragThreshold(""), 10);
 });
 
@@ -657,7 +657,7 @@ test("isWebKit is the one engine question both decisions ask", () => {
   assert.equal(isWebKit("Apple Computer, Inc."), true);
   assert.equal(isWebKit("Google Inc."), false);
   assert.equal(isWebKit(""), false);
-  assert.equal(isWebKit(undefined), false);
+  assert.equal(isWebKit(), false);
 });
 
 // --- prefersDomRenderer: which engines must not get the GPU renderer ------

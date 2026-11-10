@@ -253,7 +253,7 @@ test("the pane state names the period from the control, then the document, then 
   assert.equal(label({ key: "30d", label: "ignored" }), "Last 30 days");
   assert.equal(label({ key: "14d", label: "Last 14 days" }), "Last 14 days", "a key the control lacks");
   assert.equal(label({ key: "14d" }), "All time");
-  assert.equal(label(undefined), "All time");
+  assert.equal(label(), "All time");
   assert.equal(WB.state({ project: "a/b", doc: {} }).periods.key, "all");
 });
 

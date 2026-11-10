@@ -364,7 +364,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     const check = () => {
       if (!checking) {
         checking = liveSessionFor(deps, win, record)
-          .catch(() => undefined)
+          .catch(() => null)
           .finally(() => {
             checking = null;
           });

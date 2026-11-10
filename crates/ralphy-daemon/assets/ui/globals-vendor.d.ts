@@ -142,7 +142,8 @@ interface WunderbaumRenderEvent extends WunderbaumEvent {
 }
 /** `expand` and `beforeExpand`: the new expanded state. */
 /** A key pressed in the tree. `node` is the row that has the focus, if any. */
-interface WunderbaumKeyEvent extends WunderbaumEvent {
+interface WunderbaumKeyEvent extends Omit<WunderbaumEvent, "node"> {
+  node: WunderbaumNode | null | undefined;
   event: KeyboardEvent;
 }
 

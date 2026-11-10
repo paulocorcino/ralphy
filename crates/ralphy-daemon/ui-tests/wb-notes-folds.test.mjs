@@ -57,7 +57,7 @@ test("the filename comes from the title, and says when it cannot", () => {
 test("a tone outside the closed set is sand", () => {
   for (const tone of TONES) assert.equal(toneOf(tone), tone);
   assert.equal(toneOf("chartreuse"), "sand");
-  assert.equal(toneOf(undefined), "sand");
+  assert.equal(toneOf(), "sand");
   assert.equal(DEFAULT_TONE, "sand");
   assert.ok(TONES.includes(DEFAULT_TONE), "the fallback is a tone the palette draws");
 });

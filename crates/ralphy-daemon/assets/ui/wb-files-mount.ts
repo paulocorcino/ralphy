@@ -115,7 +115,9 @@ export function mountTree(files: MountFiles) {
     // read before opens from memory. A restore of the expanded folders
     // stops here too.
     beforeExpand: (e: WunderbaumExpandEvent) => {
-      if (!e.flag || !files.openPeerDown() || e.node.children) return undefined;
+      if (!e.flag || files.openPeerDown() == null || e.node.children) {
+        return;
+      }
       return mem.cache.has(files.treeKey(files.relPath(e.node))) ? undefined : false;
     },
     // A level (re)loaded while a search is on carries no match marks, and

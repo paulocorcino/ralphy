@@ -132,7 +132,9 @@ test("the plugin never throws and never prints", async () => {
     for (const event of events) {
       await assert.doesNotReject(async () => hooks.event({ event }), JSON.stringify(event));
     }
-    await assert.doesNotReject(async () => hooks.event(undefined), "no argument");
+    await assert.doesNotReject(async () => {
+      await hooks.event();
+    }, "no argument");
     assert.equal(existsSync(file), false, "the folder does not exist, so no file");
   } finally {
     process.stdout.write = keep.out;

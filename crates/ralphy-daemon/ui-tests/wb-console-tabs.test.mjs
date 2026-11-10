@@ -589,7 +589,7 @@ test("Slice in a tab opens and swaps in the tab's grid, and never paints the sta
     tabs.openConsoleTab("w1", "codex");
     tabs.openConsoleTab("w4", "codex");
     tabs.activate("console:w1");
-    state.toggleColumnMenu("w1", undefined);
+    state.toggleColumnMenu("w1");
     const rows = Object.fromEntries(state.columnGroups.flatMap((g) => g.rows).map((r) => [r.id, r]));
     assert.equal(rows.w2.enabled, true);
     assert.equal(rows.w4.enabled, false, "a console of another tab is not opened here");

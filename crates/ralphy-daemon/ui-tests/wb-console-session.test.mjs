@@ -399,14 +399,14 @@ test("peerHost names the machine, else the recorded environment, else a plain ph
   assert.equal(peerHost(peerGroup("asleep", { name: "" }), "WSL: Ubuntu"), "macOS 15");
   assert.equal(peerHost(null, "WSL: Ubuntu"), "WSL: Ubuntu");
   assert.equal(peerHost(null, ""), "The other computer");
-  assert.equal(peerHost(undefined, undefined), "The other computer");
+  assert.equal(peerHost(), "The other computer");
 });
 
 test("unheardRef is true only for a peer ref whose daemon the list did not hear from", () => {
   const ref = `${PEER}/owner/repo`;
   assert.equal(unheardRef(ref, new Set([PEER])), true);
   assert.equal(unheardRef(ref, new Set(["OTHER"])), false);
-  assert.equal(unheardRef(ref, undefined), false, "no list of unheard peers");
+  assert.equal(unheardRef(ref), false, "no list of unheard peers");
   assert.equal(unheardRef("owner/repo", new Set([PEER])), false, "a local ref has no peer");
   assert.equal(unheardRef("~", new Set([PEER])), false);
   assert.equal(unheardRef("owner/repo", new Set([""])), false, "no daemon id is never an unheard peer");
@@ -416,7 +416,7 @@ test("consoleCommand is the label of a startup-command console, and nothing for 
   assert.equal(consoleCommand("htop"), "htop");
   assert.equal(consoleCommand("console"), undefined);
   assert.equal(consoleCommand(""), undefined);
-  assert.equal(consoleCommand(undefined), undefined);
+  assert.equal(consoleCommand(), undefined);
 });
 
 test("agentStateTitle words an agent state, its question, and a stale observation", () => {

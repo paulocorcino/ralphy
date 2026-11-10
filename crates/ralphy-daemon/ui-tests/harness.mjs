@@ -317,7 +317,9 @@ export function loadComponent(alpineName, opts = {}) {
     {},
     {
       get(_, k, receiver) {
-        if (typeof k === "symbol") return undefined;
+        if (typeof k === "symbol") {
+          return;
+        }
         if (own(k)) return Reflect.get(data, k, receiver);
         if (k in magics) return magics[k];
         if (uses.has(k)) {

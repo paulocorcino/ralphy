@@ -878,7 +878,7 @@ test("a birth writes only what it changed; an adopted console waits for the oper
     const adopted = deskWin("w-adopted");
     wb.recordBirth(adopted, { unrecorded: true });
     // A new console: its record is created.
-    wb.recordBirth(deskWin("w-new"), undefined);
+    wb.recordBirth(deskWin("w-new"));
     await settle();
     assert.deepEqual(changesOf(sent), [
       { op: "set", type: "window", id: "w-1", fields: { checkout: null } },

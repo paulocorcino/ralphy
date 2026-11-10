@@ -34,7 +34,7 @@ test("isUnknownCheckout is true only for the error reply that says unknown check
   assert.equal(isUnknownCheckout({ status: "error", message: "no such path" }), false);
   assert.equal(isUnknownCheckout({ status: "ok", message: "unknown checkout" }), false);
   assert.equal(isUnknownCheckout(null), false);
-  assert.equal(isUnknownCheckout(undefined), false);
+  assert.equal(isUnknownCheckout(), false);
 });
 
 test("reconcileDesk keeps same-slug sessions distinct by composite repo ref", () => {
@@ -450,7 +450,7 @@ test("detachFold: an unknown event is inert, so a stray message cannot detach", 
 // the plane's map. Numbering from the names already present cannot collide.
 test("nextFenceName counts from the names on the plane, not from how many there are", () => {
   assert.equal(nextFenceName([]), "Fence 1");
-  assert.equal(nextFenceName(undefined), "Fence 1");
+  assert.equal(nextFenceName(), "Fence 1");
   assert.equal(
     nextFenceName([{ name: "Fence 1" }, { name: "Fence 2" }, { name: "Fence 3" }]),
     "Fence 4",

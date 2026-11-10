@@ -221,7 +221,7 @@ export type ConsoleWinFields = {
   /** Wires a new terminal into the chrome (the key bar). */
   _rewire: ((t: ConsoleTerm) => void) | null;
   /** Restarts the console, in `checkout` when it is not `undefined`. */
-  _relaunchIn: ((checkout: string | null | undefined) => void) | null;
+  _relaunchIn: ((checkout?: string | null) => void) | null;
   _termWiring: TermWiring | null;
   /** `null` while the window is a placeholder or asleep. */
   _term: ConsoleTerm | null;

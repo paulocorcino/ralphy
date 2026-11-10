@@ -208,7 +208,7 @@ test("the order peers arrive in does not change the grouping", () => {
 
 test("a missing repos or peers list is not a crash", () => {
   const fleet = load();
-  assert.deepEqual(fleet.fleetGroups(undefined, undefined), []);
+  assert.deepEqual(fleet.fleetGroups(), []);
   assert.equal(fleet.fleetGroups(null, [PEER]).length, 1);
 });
 
@@ -256,7 +256,7 @@ test("refSlug strips a ULID routing head and nothing else", () => {
   assert.equal(wb.refSlug("01ARZ3NDEKTSV4RRFFQ69G5FA/owner/repo"), "01ARZ3NDEKTSV4RRFFQ69G5FA/owner/repo");
   // Absent input yields the empty string, never "null" or "undefined".
   assert.equal(wb.refSlug(null), "");
-  assert.equal(wb.refSlug(undefined), "");
+  assert.equal(wb.refSlug(), "");
   assert.equal(wb.refSlug(""), "");
 });
 
