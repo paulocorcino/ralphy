@@ -185,8 +185,8 @@ async fn api_usage_carries_each_vendor_stores_interactive_records() {
         StorePaths {
             codex_dir,
             opencode_db,
-            copilot_db,
             kimi_dir,
+            copilot_db,
             ..Default::default()
         },
         Instant::now(),
