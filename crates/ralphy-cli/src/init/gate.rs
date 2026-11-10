@@ -301,7 +301,7 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         Agent::Opencode => {
             cmd.args(["run", hello]);
         }
-    };
+    }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
