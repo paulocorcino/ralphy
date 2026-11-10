@@ -130,7 +130,7 @@ async fn an_unmatched_nudge_does_not_end_the_wait() {
     );
     assert_eq!(outcome, WaitOutcome::Timeout);
     assert!(
-        started.elapsed() >= deadline - Duration::from_millis(50),
+        started.elapsed() >= deadline.checked_sub(Duration::from_millis(50)).unwrap(),
         "the wait must hold its deadline, not answer on another sub's nudge (held {:?})",
         started.elapsed()
     );
@@ -180,7 +180,7 @@ async fn a_wait_on_an_unknown_sub_still_holds_its_deadline() {
     assert!(dirty.is_empty());
     assert_eq!(outcome, WaitOutcome::NoSub);
     assert!(
-        started.elapsed() >= deadline - Duration::from_millis(50),
+        started.elapsed() >= deadline.checked_sub(Duration::from_millis(50)).unwrap(),
         "an unknown sub must not answer fast (held {:?})",
         started.elapsed()
     );

@@ -308,7 +308,8 @@ fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
 
     // Age the ping past its TTL; the next tick deletes it and clears the slot.
     let (id, _) = engine.ping.expect("ping still pending");
-    engine.ping = Some((id, Instant::now() - PING_TTL - Duration::from_millis(1)));
+    let aged = Instant::now().checked_sub(PING_TTL + Duration::from_millis(1));
+    engine.ping = Some((id, aged.unwrap()));
     engine.on_tick(false);
     assert!(engine.ping.is_none(), "expired ping cleared");
     assert_eq!(
