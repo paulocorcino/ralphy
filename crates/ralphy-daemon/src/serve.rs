@@ -73,7 +73,7 @@ pub(crate) async fn serve(
     // The release watch (ADR-0056 §6). A daemon-lifetime concern, so it lives
     // here and not in `router`: a router is also built by tests, and this task
     // reaches the network and writes a cache.
-    if let Some(dir) = store.as_ref().cloned() {
+    if let Some(dir) = store.clone() {
         tokio::spawn(poll_releases_until_stop(dir, shutdown_rx.clone()));
     }
 
