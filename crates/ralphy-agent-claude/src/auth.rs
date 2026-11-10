@@ -37,7 +37,7 @@ pub(crate) fn is_claude_auth_error(text: &str) -> bool {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
                 if matches!(
                     v.get("type").and_then(|t| t.as_str()),
-                    Some("user") | Some("assistant")
+                    Some("user" | "assistant")
                 ) {
                     return false;
                 }

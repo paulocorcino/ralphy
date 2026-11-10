@@ -121,7 +121,7 @@ async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) 
                     panic!("an unexpected frame: {other:?}")
                 }
             },
-            None | Some(Ok(Wire::Close(_))) | Some(Err(_)) => return (commands, beats, true),
+            None | Some(Ok(Wire::Close(_)) | Err(_)) => return (commands, beats, true),
             Some(Ok(_)) => {}
         }
     }

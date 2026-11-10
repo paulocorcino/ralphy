@@ -46,7 +46,7 @@ fn skip_csi(raw: &[u8], mut i: usize, out: &mut Vec<u8>) -> usize {
     while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
         i += 1;
     }
-    if matches!(raw.get(i), Some(b'C') | Some(b'H') | Some(b'f')) {
+    if matches!(raw.get(i), Some(b'C' | b'H' | b'f')) {
         out.push(b' ');
     }
     i + 1

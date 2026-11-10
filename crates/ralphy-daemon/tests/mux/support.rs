@@ -172,7 +172,7 @@ pub async fn ends_within(ws: &mut Ws, within: Duration) -> bool {
     let ended = tokio::time::timeout(within, async {
         loop {
             match ws.next().await {
-                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return,
+                None | Some(Err(_) | Ok(Message::Close(_))) => return,
                 Some(Ok(_)) => {}
             }
         }

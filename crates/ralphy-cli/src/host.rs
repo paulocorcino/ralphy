@@ -374,7 +374,7 @@ fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()>
     }
     let mut resp = match req.send_empty() {
         Ok(resp) => resp,
-        Err(ureq::Error::Io(_)) | Err(ureq::Error::ConnectionFailed) => {
+        Err(ureq::Error::Io(_) | ureq::Error::ConnectionFailed) => {
             out.note(
                 "The daemon on this computer is not running. The tunnel opens when it starts.",
             )?;

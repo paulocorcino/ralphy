@@ -204,7 +204,7 @@ fn session_stem(path: &Path) -> Option<&str> {
     }
     let is_session_file = matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("json") | Some("jsonl")
+        Some("json" | "jsonl")
     );
     if !is_session_file {
         return None;
