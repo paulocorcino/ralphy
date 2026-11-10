@@ -155,8 +155,6 @@
     "no-new-func": "off",
     "prefer-const": "error",
     // debt: 5 sites
-    "unicorn/prefer-code-point": "off",
-    // debt: 5 sites
     "unicorn/prefer-dom-node-dataset": "off",
     // debt: 4 sites
     "no-script-url": "off",

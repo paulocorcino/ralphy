@@ -186,9 +186,10 @@ export function barKey(name: string, appCursor: boolean, latched: boolean) {
 // would corrupt it. Anything else passes through WITH the latch still set.
 export function applyCtrlLatch(latched: boolean, d: string) {
   if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
-  const code = d.toUpperCase().charCodeAt(0);
+  // `d` has one UTF-16 unit, so its uppercase form is never empty: the `?? 0` is not reached.
+  const code = d.toUpperCase().codePointAt(0) ?? 0;
   if (code < 0x40 || code > 0x5f) return { out: d, latched };
-  return { out: String.fromCharCode(code & 0x1f), latched: false };
+  return { out: String.fromCodePoint(code & 0x1f), latched: false };
 }
 
 // Whether `d` is one of the answers xterm writes back for a terminal

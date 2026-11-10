@@ -79,11 +79,11 @@ export function uploadId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Base64 of `bytes`, in slices small enough for `String.fromCharCode`. */
+/** Base64 of `bytes`, in slices small enough for `String.fromCodePoint`. */
 export function toBase64(bytes: Uint8Array): string {
   let text = "";
   for (let i = 0; i < bytes.length; i += 0x8000) {
-    text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    text += String.fromCodePoint(...bytes.subarray(i, i + 0x8000));
   }
   return btoa(text);
 }
