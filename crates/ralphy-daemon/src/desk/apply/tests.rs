@@ -115,7 +115,7 @@ fn a_change_stamps_the_server_time_and_a_no_op_does_not() {
 
 #[test]
 fn a_window_create_past_the_cap_and_its_slack_is_refused() {
-    let windows: Vec<serde_json::Value> = (0..DESK_MAX + DESK_CREATE_SLACK + 1)
+    let windows: Vec<serde_json::Value> = (0..=(DESK_MAX + DESK_CREATE_SLACK))
         .map(|n| create("window", window(&format!("w-{n}"))))
         .collect();
     let out = apply(DeskStore::default(), &windows, &BTreeMap::new(), NOW);

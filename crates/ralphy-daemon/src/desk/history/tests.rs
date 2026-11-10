@@ -243,7 +243,7 @@ fn a_restore_undone_within_the_minute_stays_a_version() {
 #[test]
 fn the_history_keeps_the_fifty_newest_versions() {
     let dir = tempfile::tempdir().unwrap();
-    for i in 0..(HISTORY_MAX as i64 + 1) {
+    for i in 0..=i64::try_from(HISTORY_MAX).unwrap() {
         let d = desk(vec![window("w1", i as f64, None)]);
         append(dir.path(), &d, Reason::Change, NOW + i).unwrap();
     }
