@@ -276,7 +276,7 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
     // valid out pointer for the call.
     let result = unsafe {
         LockFileEx(
-            file.as_raw_handle() as _,
+            file.as_raw_handle().cast(),
             LOCKFILE_EXCLUSIVE_LOCK,
             0,
             u32::MAX,
@@ -310,7 +310,7 @@ fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
     // valid out pointer for the call.
     let result = unsafe {
         LockFileEx(
-            file.as_raw_handle() as _,
+            file.as_raw_handle().cast(),
             LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
             0,
             u32::MAX,
@@ -346,7 +346,7 @@ fn unlock(file: &File) -> std::io::Result<()> {
     // valid out pointer for the call.
     let result = unsafe {
         UnlockFileEx(
-            file.as_raw_handle() as _,
+            file.as_raw_handle().cast(),
             0,
             u32::MAX,
             u32::MAX,
