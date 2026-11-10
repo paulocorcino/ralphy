@@ -130,8 +130,6 @@
     "unicorn/prefer-query-selector": "off",
     // debt: 20 sites
     "typescript/strict-void-return": "off",
-    // debt: 20 sites
-    "unicorn/prefer-import-meta-properties": "off",
     // debt: 16 sites
     "unicorn/no-array-callback-reference": "off",
     // debt: 15 sites

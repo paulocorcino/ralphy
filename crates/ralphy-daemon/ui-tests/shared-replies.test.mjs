@@ -5,8 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { loadComponent, loadShell } from "./harness.mjs";
 import * as WBHosts from "../assets/ui/wb-hosts.ts";
 import { WBChanges } from "../assets/ui/wb-changes.ts";
@@ -14,7 +13,7 @@ import { WBFail } from "../assets/ui/wb-fail.ts";
 import { WBAddProject } from "../assets/ui/wb-add-project.ts";
 import { uploadsStore } from "../assets/ui/wb-uploads-store.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 function fixture(name) {
   return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));

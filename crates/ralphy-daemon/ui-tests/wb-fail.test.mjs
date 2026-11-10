@@ -5,8 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBFail } from "../assets/ui/wb-fail.ts";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 // The module keeps no state, so one import serves every test.
 function load() {
@@ -105,7 +104,7 @@ test("message() stays raw, so a compare site still sees the code", () => {
 // The lint does not read a keyed map (ui-copy MISSES), so every CAUSE value
 // is checked here against the same rules file (ADR-0065 §6, §10).
 const RULES = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../docs/ui-copy-rules.json"), "utf8"),
+  readFileSync(join(import.meta.dirname, "../../../docs/ui-copy-rules.json"), "utf8"),
 );
 
 function hasTerm(text, term, wholeWord, caseSensitive) {

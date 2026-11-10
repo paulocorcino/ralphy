@@ -7,13 +7,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { bindingNames, partMarkup } from "./harness.mjs";
 import { wbLoginNotice } from "../assets/ui/wb-login-notice.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 // The part that holds the notices.
 const PART = "wb-login-notice.part.html";

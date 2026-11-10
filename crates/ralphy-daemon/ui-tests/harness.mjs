@@ -14,8 +14,7 @@
 // them to route through a shared stub factory would trade that for a shared
 // object nobody reads. See ADR-0022's "smallest change that fits the seam".
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { shell } from "../assets/ui/app.ts";
 import { wire } from "../assets/ui/wb-wire.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
@@ -112,7 +111,7 @@ const MODULE_COMPONENTS = {
   wbLogin,
 };
 
-export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
+export const UI = join(import.meta.dirname, "../assets/ui");
 
 // A document's text with its `<!-- … -->` comments cut out, so a pin on markup
 // does not match the tags that comment prose quotes. Our own asset, not a

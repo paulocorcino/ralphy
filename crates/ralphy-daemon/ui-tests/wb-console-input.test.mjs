@@ -4,8 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   DOUBLE_TAP_MS,
   FONT_DEFAULT,
@@ -44,7 +43,7 @@ import {
   touchScrollTarget,
 } from "../assets/ui/wb-console-input.ts";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
+const UI = join(import.meta.dirname, "../assets/ui");
 
 // --- pasteDecision: the image-paste rule (ADR-0055 §5) ----------------------
 

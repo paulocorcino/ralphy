@@ -9,8 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 
 // No global at all: the module exports its namespace. Compare with the loader
@@ -22,7 +21,7 @@ function load() {
 }
 
 function fixture(name) {
-  const here = dirname(fileURLToPath(import.meta.url));
+  const here = import.meta.dirname;
   return JSON.parse(readFileSync(join(here, "fixtures", name + ".json"), "utf8"));
 }
 
