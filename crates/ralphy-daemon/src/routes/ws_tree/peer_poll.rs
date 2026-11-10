@@ -292,7 +292,7 @@ async fn poll_until_set_moves(
     tokio::pin!(request);
     tokio::select! {
         answer = &mut request => Some(answer),
-        _ = set.changed.notified() => None,
+        () = set.changed.notified() => None,
     }
 }
 

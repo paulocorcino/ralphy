@@ -362,7 +362,7 @@ impl Agent for CopilotAgent {
         // `run`: the closure's error would pre-empt the auth and plan-limit
         // handlers the wrapper applies to `r.log`, turning a logged-out run into
         // "MCP receipt missing".
-        if let Some((r, _)) = session.as_ref() {
+        if let Some((r, ())) = session.as_ref() {
             self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
                 .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
             // Cross-path invariant: the SAFETY receipt (D7) keeps precedence over

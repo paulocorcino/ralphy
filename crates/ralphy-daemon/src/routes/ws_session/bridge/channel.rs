@@ -190,7 +190,7 @@ impl Attached {
                 _ = shutdown.changed() => {
                     ControlFlow::Break(Some(session::EndReason::DaemonShutdown))
                 }
-                _ = &mut notified => ControlFlow::Break(Some(
+                () = &mut notified => ControlFlow::Break(Some(
                     evict.reason().unwrap_or(session::EndReason::ChildExited),
                 )),
                 changed = self.attach.size.changed(), if sizes => {

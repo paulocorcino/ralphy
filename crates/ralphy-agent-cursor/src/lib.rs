@@ -260,10 +260,10 @@ impl Agent for CursorAgent {
         // zero-token attributed value, never a stale one.
         let plan_usage = session
             .as_ref()
-            .map(|(r, _)| parse_cursor_usage(&r.stdout, model))
+            .map(|(r, ())| parse_cursor_usage(&r.stdout, model))
             .unwrap_or_else(|| requested_model_usage(model));
 
-        if let Some((r, _)) = session.as_ref() {
+        if let Some((r, ())) = session.as_ref() {
             let fold = fold_cursor_stream(&r.stdout);
             Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
             note_degraded(&fold);
