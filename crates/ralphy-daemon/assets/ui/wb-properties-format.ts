@@ -84,7 +84,6 @@ export function folderSize(reply: SizeReply) {
 /** What a folder holds: `3 files, 1 folder`. */
 export function folderContents(reply: SizeReply) {
   return (
-    `${plural(reply.files ?? 0, "file", "files")}, ` +
-    `${plural(reply.dirs ?? 0, "folder", "folders")}`
+    `${plural(reply.files ?? 0, "file", "files")}, ` + plural(reply.dirs ?? 0, "folder", "folders")
   );
 }

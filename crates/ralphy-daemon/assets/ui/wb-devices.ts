@@ -158,7 +158,7 @@ export function eventLine(e: AuditEvent) {
     case "device_profile_changed":
       return (
         `Its device facts changed: ` +
-        `${(e.changed || []).map((c: string) => CHANGED_NAMES[c] || c).join(", ")}`
+        (e.changed ?? []).map((c: string) => CHANGED_NAMES[c] ?? c).join(", ")
       );
     case "action":
       return actionLine(e as ActionEvent);
