@@ -152,7 +152,7 @@ fn parse(raw: &str) -> Result<RunSnapshot, &'static str> {
     // refused as such rather than misreported as malformed.
     let value: serde_json::Value = serde_json::from_str(raw).or(Err("malformed"))?;
     match value.get("v").and_then(|v| v.as_u64()) {
-        Some(v) if v > SNAPSHOT_VERSION as u64 => return Err("unsupported version"),
+        Some(v) if v > u64::from(SNAPSHOT_VERSION) => return Err("unsupported version"),
         Some(_) => {}
         None => return Err("malformed"),
     }

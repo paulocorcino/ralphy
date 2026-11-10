@@ -141,7 +141,7 @@ fn the_operator_auth_type_fails_soft() {
 /// after the Unix epoch so mtime order is deterministic across the pair
 /// and across the whole synthetic set.
 fn write_session_pair(chats: &Path, i: u32) {
-    let mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(i as u64);
+    let mtime = std::time::UNIX_EPOCH + std::time::Duration::from_secs(u64::from(i));
     for ext in ["json", "jsonl"] {
         let path = chats.join(format!("session-{i:02}-{i:02}.{ext}"));
         let file = std::fs::File::create(&path).unwrap();

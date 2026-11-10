@@ -173,7 +173,7 @@ fn the_grid_is_capped_but_no_figure_loses_the_rows_it_omits() {
         "the cheapest row is the one omitted"
     );
     // 100k … 6.1M input at $15/1M = $15 * (0.1 + … + 6.1) = $15 * 189.1.
-    let expected = 15.0 * (1..=61).map(|i| i as f64 * 0.1).sum::<f64>();
+    let expected = 15.0 * (1..=61).map(|i| f64::from(i) * 0.1).sum::<f64>();
     assert!(
         (summary.overhead.deliveries_usd.unwrap() - expected).abs() < 1e-9,
         "the omitted row's cost is still in the column: {:?} vs {expected}",

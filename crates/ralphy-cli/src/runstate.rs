@@ -54,7 +54,7 @@ pub const HEADER_FACES: &[&str] = &[
 pub fn header_face(seed: &str) -> &'static str {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in seed.bytes() {
-        h ^= b as u64;
+        h ^= u64::from(b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
     HEADER_FACES[(h as usize) % HEADER_FACES.len()]
