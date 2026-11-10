@@ -351,10 +351,7 @@ fn workspace_attribution(
     email_cache: &mut HashMap<String, Option<String>>,
 ) -> (Option<String>, Option<String>) {
     let rel = file.strip_prefix(sessions_root).unwrap_or(file);
-    let workspace = rel
-        .components()
-        .filter_map(|c| c.as_os_str().to_str())
-        .next();
+    let workspace = rel.components().find_map(|c| c.as_os_str().to_str());
     let matched = workspace.and_then(|w| crate::attribution::find_repo(repos, w));
     let project = matched.map(|r| r.slug.clone());
     let actor_email = matched.and_then(|r| {
