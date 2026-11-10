@@ -274,7 +274,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         ),
       );
     }
-    if (refused)
+    if (refused) {
       show(
         peerOfflineView(
           null,
@@ -282,6 +282,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
           peerHost(peerGroups.get(daemon), record.environment),
         ),
       );
+    }
     let unheard = !!(daemon && held?.unheard);
     // The box says why it waits: the list did not hear from the peer. "Try
     // again" asks the list again, and launches only when the list heard from
@@ -310,12 +311,13 @@ export function createPlaceholders(deps: PlaceholderDeps) {
         unheard = false;
         if (turn === "attach" && session) attach(session);
         else if (turn === "relaunch") btn.click();
-        else
+        else {
           show({
             text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`,
             detail: "",
             action: "relaunch",
           });
+        }
       } finally {
         asking = false;
       }

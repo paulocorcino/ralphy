@@ -32,8 +32,9 @@ export function paintTabShadow(win: ConsoleWin) {
   if (!sh) return;
   for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = win.style[side];
   const name = sh.querySelector(".console-shadow-name");
-  if (name)
+  if (name) {
     name.textContent = WBConsoleName.consoleLabel(win._deskConsoleName || "", win._deskAgent);
+  }
 }
 
 function buildShadow(document: Document, win: ConsoleWin) {

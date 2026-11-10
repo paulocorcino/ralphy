@@ -76,8 +76,9 @@ export function releaseDialogs() {
     closeWhatsNew() {
       this.whatsNewOpen = false;
       // A running update goes on without the panel; a question does not.
-      if (this.relUpdate.phase === "confirm" || this.relUpdate.phase === "error")
+      if (this.relUpdate.phase === "confirm" || this.relUpdate.phase === "error") {
         this.cancelUpdate();
+      }
     },
     async beginUpdate() {
       let needCode = false;
@@ -165,8 +166,9 @@ export function releaseDialogs() {
       retryAfter?: string | null;
       message?: string;
     }) {
-      if (result.status === 401)
+      if (result.status === 401) {
         return "Code rejected. Enter the current code from your authenticator app.";
+      }
       if (result.status === 429) {
         return `Too many attempts. Wait ${result.retryAfter || "a few"} seconds and try again.`;
       }

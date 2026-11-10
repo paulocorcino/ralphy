@@ -79,8 +79,9 @@ function storedConsoleTab(v: unknown): StoredConsoleTab | null {
     typeof v.deskId !== "string" ||
     v.deskId === "" ||
     typeof v.title !== "string"
-  )
+  ) {
     return null;
+  }
   const id = typeof v.id === "string" && v.id !== "" ? v.id : null;
   if (v.grid === undefined) return { id, deskId: v.deskId, title: v.title, grid: [[v.deskId]] };
   return isIdGrid(v.grid) ? { id, deskId: v.deskId, title: v.title, grid: v.grid } : null;

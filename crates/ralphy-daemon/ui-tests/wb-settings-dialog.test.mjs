@@ -278,8 +278,10 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
   // `x-for="sec in …"` and `x-for="(e, i) in …"` name the loop's own variables.
   const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));
   // The parameters of an arrow function in a binding are its own too.
-  for (const m of attrs) for (const a of m[2].matchAll(/(?:\(([\w\s,]*)\)|(\w+))\s*=>/g)) {
-    for (const name of (a[1] ?? a[2]).split(",")) loop.add(name.trim());
+  for (const m of attrs) {
+    for (const a of m[2].matchAll(/(?:\(([\w\s,]*)\)|(\w+))\s*=>/gu)) {
+      for (const name of (a[1] ?? a[2]).split(",")) loop.add(name.trim());
+    }
   }
   let read = 0;
   for (const [attr, value] of attrs.map((m) => [m[1], m[2]])) {

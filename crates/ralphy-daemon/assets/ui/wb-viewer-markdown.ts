@@ -71,8 +71,9 @@ function repoRelative(dir: string, src: string) {
 export function linkTarget(dir: string, href: string | null) {
   if (!href) return null;
   if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/"))
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(href) || href.startsWith("/")) {
     return { kind: "external" as const };
+  }
   const path = repoRelative(dir, href);
   if (!path) return null;
   const hash = href.indexOf("#");

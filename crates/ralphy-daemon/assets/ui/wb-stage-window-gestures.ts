@@ -103,8 +103,9 @@ export function createWindowGestures(deps: WindowGestureDeps) {
         win.classList.contains("column") ||
         inTab(win) ||
         isFull(win)
-      )
+      ) {
         return;
+      }
       // Locked in place — by its own record or by the fence holding it.
       if (heldFast()) return;
       gestures.begin(win);
@@ -296,8 +297,9 @@ export function createWindowGestures(deps: WindowGestureDeps) {
         win.classList.contains("column") ||
         inTab(win) ||
         isFull(win)
-      )
+      ) {
         return;
+      }
       if (heldFast()) return; // the JS guard is the truth; the CSS only hides the bands
       gestures.begin(win);
       const rect = {
@@ -320,8 +322,9 @@ export function createWindowGestures(deps: WindowGestureDeps) {
         // A second finger opens its own stream and is not this gesture.
         if (ev.pointerId !== pointerId) return;
         if (!armed) {
-          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold))
+          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold)) {
             return;
+          }
           armed = true;
         }
         const out = resizeRect(

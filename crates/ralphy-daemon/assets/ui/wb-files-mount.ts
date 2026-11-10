@@ -104,8 +104,9 @@ export function mountTree(files: MountFiles) {
       WBReadRetry.patiently(() => files.loadTreeLevel(files.relPath(e.node))).catch(
         (err: unknown) => {
           files.treeWentStale(err);
-          if (WBFleet.refDaemon(files.$store.projects.openSlug || ""))
+          if (WBFleet.refDaemon(files.$store.projects.openSlug ?? "")) {
             void files.$store.projects.readFleetNow();
+          }
           setTimeout(() => e.node.setExpanded(false));
           return false;
         },

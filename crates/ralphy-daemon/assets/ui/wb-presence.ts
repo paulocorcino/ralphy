@@ -62,8 +62,9 @@ export function startPresence(window: Window, document: Document, deps: Presence
     if (quiet) report();
   };
 
-  for (const name of INPUTS)
+  for (const name of INPUTS) {
     document.addEventListener(name, input, { capture: true, passive: true });
+  }
   document.addEventListener("visibilitychange", report);
   deps.onOpen(report);
   window.setInterval(() => {

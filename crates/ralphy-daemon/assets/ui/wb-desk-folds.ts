@@ -319,8 +319,9 @@ export function detachFold(
       // Already detached: one popup per fence, so this is a request to SEE
       // the window that already exists, not to open a second one.
       if (held) return { registry: reg.slice(), effects: [{ type: "focus", fenceId: id }] };
-      if (reg.length >= DETACH_MAX)
+      if (reg.length >= DETACH_MAX) {
         return { registry: reg.slice(), effects: [{ type: "refuse", fenceId: id, reason: "cap" }] };
+      }
       return { registry: reg.concat([id]), effects: [{ type: "open", fenceId: id }] };
     case "reattach":
       // Idempotent on purpose: BOTH the popup's `beforeunload` and the

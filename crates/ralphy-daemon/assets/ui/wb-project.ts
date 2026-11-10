@@ -314,8 +314,9 @@ function agentDotOf(block: AgentStateBlock | null | undefined): {
   detail?: string;
 } {
   if (!block) return { state: null };
-  if (block.source === "silent" || block.source === "none")
+  if (block.source === "silent" || block.source === "none") {
     return { state: "silent", detail: block.reason };
+  }
   return { state: block.state ?? null, detail: block.detail };
 }
 

@@ -204,8 +204,9 @@ export const WBDeskSync = (function () {
   // name it saw go.
   function applyCheckout(desk: DeskView, change: CheckoutChange) {
     const held = desk.checkouts[change.repo];
-    if (change.op === "checkout" ? held === change.name : held !== change.ifName)
+    if (change.op === "checkout" ? held === change.name : held !== change.ifName) {
       return { desk, changed: false };
+    }
     const checkouts = { ...desk.checkouts };
     if (change.op === "checkout") checkouts[change.repo] = change.name;
     else delete checkouts[change.repo];

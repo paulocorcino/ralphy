@@ -52,8 +52,9 @@ export function matchSchema(
   term: string,
 ): { tables: Set<string>; columns: Set<string> } {
   const needle = term.toLowerCase();
-  if (needle === "")
+  if (needle === "") {
     return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
+  }
   const tables = new Set<string>();
   const columns = new Set<string>();
   for (const table of schema.tables) {
@@ -92,8 +93,9 @@ export function sameColumns(schema: DbmlSchema, table: string, column: string): 
   const bare = clicked && !clicked.pk ? withoutPrefix(column) : null;
   const same = new Set<string>();
   for (const t of schema.tables) {
-    for (const c of t.columns.filter((x) => sameName(x, column, bare)))
+    for (const c of t.columns.filter((x) => sameName(x, column, bare))) {
       same.add(colKey(t.name, c.name));
+    }
   }
   same.delete(self);
   return same;
@@ -170,8 +172,9 @@ export function toMermaidEr(schema: DbmlSchema, names: string[]): string {
   for (const ref of schema.refs) {
     const from = ids.get(ref.from.table);
     const to = ids.get(ref.to.table);
-    if (from && to)
+    if (from !== undefined && to !== undefined) {
       lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
+    }
   }
   return lines.join("\n");
 }

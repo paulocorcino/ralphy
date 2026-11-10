@@ -193,8 +193,11 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     placeMenu(menu, anchor, host);
     host.append(menu);
     const away = (e: PointerEvent) => {
-      if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node))
+      const { target } = e;
+      const inside = target instanceof Node && (menu.contains(target) || anchor.contains(target));
+      if (!inside) {
         closeCheckoutMenu();
+      }
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeCheckoutMenu();

@@ -114,8 +114,9 @@ export function wirePaste(deps: PasteDeps) {
         items.map((i) => i.type),
         file,
       )
-    )
+    ) {
       e.preventDefault();
+    }
   });
 
   // OSC 52 — "put this on the clipboard". xterm's core does not implement

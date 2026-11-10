@@ -41,7 +41,7 @@ The target configs as they will be when the last phase closes:
 
 - `Cargo.toml` `[workspace.lints]`: the lints of `docs/lint/lint-drafts/clippy-lints.txt` at `deny` (each `-W` there), the groups `rust_2018_idioms`, `clippy::all` and `clippy::pedantic` at `deny` with `priority = -1`, `must_use_candidate` and `missing_errors_doc` at `allow` (D3), and no `debt:` entry left. Every crate keeps `[lints] workspace = true`.
 - `clippy.toml`: `docs/lint/lint-drafts/clippy.toml` (the repo's settings, plus the `allow-*-in-tests` settings and `too-many-arguments-threshold = 5`). `cognitive_complexity` and `cognitive-complexity-threshold` stay out: `xtask complexity` is the repo's scorer, and one tool holds one property (ADR-0081); clippy scored 135 functions over 10 where it finds none. `disallowed-types` stays empty: no type is wrong everywhere in this code.
-- `.oxlintrc.json`: `docs/lint/lint-drafts/oxlintrc.json` with the repo's `ignorePatterns`: the categories `correctness`, `suspicious` and `pedantic` at `error`, the plugins `eslint`, `import`, `oxc`, `promise`, `typescript`, `unicorn`, the rules of D4 `off` with their reasons, and no `debt:` entry left. `no-restricted-properties` keeps its options (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`) and `max-params` its `max: 4`.
+- `.oxlintrc.json`: `docs/lint/lint-drafts/oxlintrc.json` with the repo's `ignorePatterns`: the categories `correctness`, `suspicious` and `pedantic` at `error`, the plugins `eslint`, `import`, `oxc`, `promise`, `typescript`, `unicorn`, the rules of D4 `off` with their reasons, `curly` at `multi-line` (user, 2026-11-10), and no `debt:` entry left. `no-restricted-properties` keeps its options (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`) and `max-params` its `max: 4`.
 - `crates/ralphy-daemon/assets/ui/tsconfig.json`: today's flags plus `exactOptionalPropertyTypes` and `noPropertyAccessFromIndexSignature`.
 - `.jscpd.json`: `minTokens: 75`, `minLines: 5`.
 - The oxlint steps of the gate run with `--report-unused-disable-directives-severity=error`.
@@ -325,7 +325,7 @@ In every phase:
 | **17 rules** | **2312** | **523** | |
 
 - **Slices**: one commit per rule: turn the rule on in `.oxlintrc.json` (with its options), run `npx -y oxlint@1.93.0 --fix crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`, then the oxfmt step of the gate without `--check`. The whole config stays on: the fix only narrows what it touches.
-- **How a site is fixed**: Surface: the tool's own command. `curly` adds braces to every one-line `if`: a mass change, landed when no long branch is open.
+- **How a site is fixed**: Surface: the tool's own command. `curly` adds braces to every one-line `if`: a mass change, landed when no long branch is open. By the user's decision of 2026-11-10, the end state of `curly` is `multi-line` (braces only where the body spans more than one line), because `all` would push 17 modules past 500 lines.
 - **Ratchet**: none.
 - **Agent docs**: none.
 - **Done when**: the rules are errors.

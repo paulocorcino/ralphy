@@ -91,8 +91,9 @@ export function toBase64(bytes: Uint8Array): string {
 /** The sentence for a part the daemon refused. */
 export function refusalText(reply: PartReply | null): string {
   if (!reply) return "The upload stopped: the daemon did not answer. Try again.";
-  if (reply.message === "unknown verb")
+  if (reply.message === "unknown verb") {
     return "This host runs an older daemon. Update Ralphy on it to upload files.";
+  }
   switch (reply.reason ?? "") {
     case "too large":
       return "The file is larger than the upload limit of this project.";
@@ -137,8 +138,9 @@ function resendFrom(reply: PartReply | null, seen: { expected: number }): number
     reply?.reason !== "offset" ||
     typeof reply.expected !== "number" ||
     reply.expected === seen.expected
-  )
+  ) {
     return null;
+  }
   seen.expected = reply.expected;
   return reply.expected;
 }
@@ -261,8 +263,9 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     // Move an item on by the reply to its part: done, the next offset, or
     // stopped with a reason.
     applyReply(item: UploadItem, reply: PartReply | null, seen: { expected: number }) {
-      if (reply?.status === "ok" && typeof reply.path === "string")
+      if (reply?.status === "ok" && typeof reply.path === "string") {
         return this.finished(item, reply.path);
+      }
       if (reply?.status === "ok" && typeof reply.received === "number") {
         item.sent = reply.received;
         return;

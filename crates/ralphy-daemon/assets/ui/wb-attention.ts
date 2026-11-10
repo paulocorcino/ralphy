@@ -373,8 +373,9 @@ export function wbAttention() {
       if (!win?._deskId) return;
       for (const request of this.requests) {
         const session = sessionOf(request, this.$store.projects.liveSessions);
-        if (request.kind === "console-done" && session?.record === win._deskId)
+        if (request.kind === "console-done" && session?.record === win._deskId) {
           void this.finish(request);
+        }
       }
     },
     // Dismiss `request` with nothing said when the daemon refuses: the row

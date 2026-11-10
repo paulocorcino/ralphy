@@ -334,9 +334,9 @@ function openTopBlock(st: State, header: string): Block {
 function openBlock(st: State, header: string) {
   const top = st.stack.at(-1);
   if (!top) st.stack.push(openTopBlock(st, header));
-  else if (top.kind === "table" && /^note$/i.test(header))
+  else if (top.kind === "table" && /^note$/iu.test(header)) {
     st.stack.push({ kind: "tablenote", table: top.table });
-  else st.stack.push(SKIP);
+  } else st.stack.push(SKIP);
 }
 
 function addInlineRef(st: State, table: DbmlTable, column: DbmlColumn, text: string) {

@@ -174,9 +174,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
       WBDaemon.write(verb, payload)
         .then((reply) => {
-          if (WBFail.isError(reply))
+          if (WBFail.isError(reply)) {
             flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-          else if (okMsg) flash(okMsg);
+          } else if (okMsg !== undefined) flash(okMsg);
         })
         .catch(() => flash("Could not rename: the daemon did not answer."));
     };
@@ -288,16 +288,18 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         () => null,
       );
       if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-      if (WBFail.isError(reply))
+      if (WBFail.isError(reply)) {
         return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
+      }
       flash(`${name} created.`);
-      if (!folder && c)
+      if (!folder && c) {
         window.Alpine.store("tabs").openTab({
           project: repo,
           path,
           title: name,
           ftype: classify(name),
         });
+      }
       // The files re-list the level, then reveal the new entry (wb-files.ts).
       sendWindow(window, "workbench:tree-dirty", { rel: d.path || "", reveal: path });
     }

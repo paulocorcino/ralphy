@@ -98,8 +98,7 @@ export async function applySearch(
   files.fileSearch.note = WBFileSearch.note({ hits, truncated });
   const tree = files.rawTree();
   if (!tree) return;
-  if (files.fileSearch.expandedBefore === null)
-    files.fileSearch.expandedBefore = files.expandedRels();
+  files.fileSearch.expandedBefore ??= files.expandedRels();
   // ONE paint, at the end: every lazy level repaints on its own, and one
   // landing between the old marks cleared and the new ones set left a
   // blank tree that nothing repainted (MEASURED 2026-09-15).

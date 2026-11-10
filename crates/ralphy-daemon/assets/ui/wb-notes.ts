@@ -325,8 +325,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
   function cardNodes(st: HTMLElement): CardNodes {
     const nodes: CardNodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card"))
+    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
       nodes.set(el.dataset.noteId as string, el);
+    }
     return nodes;
   }
 

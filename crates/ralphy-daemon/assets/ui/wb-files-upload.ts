@@ -104,8 +104,9 @@ export function wbUploadDialog() {
         WBDaemon.observe("config.get", { repo: ask.repo }).catch(() => null),
         WBDaemon.observe("tree.list", { repo: ask.repo, path: ask.folder }).catch(() => null),
       ]);
-      if (!this.upload.open || this.upload.repo !== ask.repo || this.upload.folder !== ask.folder)
+      if (!this.upload.open || this.upload.repo !== ask.repo || this.upload.folder !== ask.folder) {
         return;
+      }
       this.upload.busy = false;
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
         this.upload.error = WBFail.failed(

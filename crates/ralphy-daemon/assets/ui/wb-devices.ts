@@ -118,8 +118,10 @@ function withVersion(name: string, version: string | null) {
 export function deviceName(d: Device) {
   const parts = [];
   if (d.os) parts.push(withVersion(OS_NAMES[d.os] || "Other system", d.os_version));
-  if (d.browser)
-    parts.push(withVersion(BROWSER_NAMES[d.browser] || "Other browser", d.browser_version));
+  const browser = d.browser ?? "";
+  if (browser !== "") {
+    parts.push(withVersion(BROWSER_NAMES[browser] ?? "Other browser", d.browser_version));
+  }
   if (d.form) parts.push(FORM_NAMES[d.form] || d.form);
   return parts.length ? parts.join(" · ") : "A device that sent no facts yet";
 }

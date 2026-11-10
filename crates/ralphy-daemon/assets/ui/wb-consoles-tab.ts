@@ -446,8 +446,9 @@ export function wbColumns() {
         if (!move) return;
         if (
           this.$store.modals.consoleShortcutsBlocked(WBColumns.flat(this.arrowGrid()).length >= 2)
-        )
+        ) {
           return;
+        }
         if (!this.arrowStep(move[0], move[1])) return;
         e.preventDefault();
       });

@@ -80,8 +80,7 @@
     "unicorn/error-message": "error",
     "unicorn/prefer-node-protocol": "error",
     "unicorn/throw-new-error": "error",
-    // debt: 2537 sites
-    "curly": "off",
+    "curly": ["error", "multi-line"],
     // debt: 1089 sites
     "typescript/strict-boolean-expressions": "off",
     // debt: 648 sites

@@ -196,8 +196,9 @@ export function wbConsoleMenus() {
       return this.noteItems.length >= 32;
     },
     noteCapReason() {
-      if (!this.$store.projects.openSlug)
+      if (this.$store.projects.openSlug === null) {
         return "Open a project first. A note is saved in its checkout.";
+      }
       if (this.noteAtCap()) return "Maximum of 32 notes. Close one to add another.";
       return "Write a note on the stage";
     },
