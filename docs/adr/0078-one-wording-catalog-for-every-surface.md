@@ -20,7 +20,7 @@ own text for them. Facts read on 2026-10-11:
   (`crates/ralphy-daemon/src/routes/ws_command/oneshot.rs:444`): a code of
   the daemon (`exists`, `unknown repo`) or the whole output of a failed
   `ralphy` child. `wb-fail.ts` maps the codes to text in its `CAUSE` table
-  and reads the CLI output as text: it removes `Error: `, folds
+  and reads the CLI output as text: it removes `Error:`, folds
   `Caused by:`, and splits on ` — `. A change of wording in a `bail!` breaks
   the workbench, and no Rust test sees it.
 - Some replies send the whole anyhow chain as text
@@ -111,7 +111,7 @@ that git, gh or a vendor CLI printed goes in `cause`, unchanged (ADR-0065
 ```
 
 `cause` is lowercase with no final period, so that it fits after
-`Could not <act>: ` in the workbench and after `error: ` in the terminal.
+`Could not <act>:` in the workbench and after `error:` in the terminal.
 `remedy` is a whole sentence. The act belongs to the surface: a failure does
 not know which button was pressed. `note` is context for the writer, because
 JSON has no comments.

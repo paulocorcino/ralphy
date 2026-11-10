@@ -83,7 +83,7 @@ reach a paid child (D11 is asserted to stop *before* any spawn).
 1. **Logged out.** With the operator logged out, a clean run stops with the
    `is_copilot_auth_error` string (`Copilot is not authenticated (no
    authentication information found) — run \`copilot login\`…`), **exit 1, no child
-   work committed**. Confirm no stale `.ralphy/plan.md` masks it (the #271 lesson —
+   work committed**. Confirm no stale`.ralphy/plan.md` masks it (the #271 lesson —
    already confirmed absent in the baseline). → `docs/live/copilot-272-loggedout.log`
 2. **Wrong-identity scrub (D8).** With `GH_TOKEN` exported, a run must still
    authenticate as the `copilot login` identity. **Verify the spawned child's
@@ -299,4 +299,5 @@ ADR-0041 accepted; host clean.
 - Screenshots are for browser-driven verification only, never terminal/CLI output
   ([[evidence-discipline]]).
 </content>
+
 </invoke>

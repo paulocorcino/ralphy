@@ -49,7 +49,7 @@ and log lines behind each phase are in
    change` = 0, no child spawned.
 2. **Logged out** ✅ (with a nuance, [#271](https://github.com/paulocorcino/ralphy/issues/271)).
    With the operator logged out (`status --format json` → `isAuthenticated:false`, exit 0),
-   a clean run stops with `Cursor is not authenticated — run `agent login`…` (exit 1). The
+   a clean run stops with `Cursor is not authenticated — run`agent login`…` (exit 1). The
    stop is driven by the **in-flight stderr matcher** (`is_cursor_auth_error`), NOT the
    `status --format json` preflight the plan named — `probe_cursor_login` is wired only
    into `ralphy init`, not `ralphy run`. And a leftover `.ralphy/plan.md` **masks** the

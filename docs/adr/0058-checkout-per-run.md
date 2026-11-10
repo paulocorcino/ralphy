@@ -81,7 +81,7 @@ unchanged; the two-root `Workspace` is observable only in `worktree` mode.
 
 The core module that owns the linked checkout is `ralphy_core::checkout`.
 It is not named `worktree` because `ralphy_core::worktree` already means
-stage/unstage/commit/discard (`CONTEXT.md` → *Working-tree operations*), and a
+stage/unstage/commit/discard (`CONTEXT.md` → _Working-tree operations_), and a
 second module of the same name would make prose ambiguous.
 
 ### 2. `worktree` is a third branch mode; the default does not move
@@ -147,7 +147,7 @@ is skipped, never fails the run:
   is skipped with a warning, and the run proceeds without it.
 
 No setup script. The plan phase already prices the environment
-(`assets/prompts/plan/template.md` → *price the environment*) and `## Verify`
+(`assets/prompts/plan/template.md` → _price the environment_) and `## Verify`
 runs whatever build the plan names; a hook that runs arbitrary commands
 before the agent starts is a second execution surface with no verdict.
 
@@ -184,7 +184,7 @@ one file per live run with the same `LockInfo` shape. `inspect` classifies
 the set: `Free` when empty after stale/corrupt cleanup, `HeldAlive` when any
 entry names a live pid.
 
-`--if-idle` keeps its meaning — *skip when any run is live in this repo* —
+`--if-idle` keeps its meaning — _skip when any run is live in this repo_ —
 because its caller is a scheduler, and a scheduler must not pile a run onto
 a live one whichever checkout it would use. An explicit `ralphy run
 --branch-mode worktree` without `--if-idle` proceeds alongside a live run;
@@ -335,7 +335,7 @@ Re-read against the product's premise the same day it was written. A run is
 an **AFK** run: the branch is `afk/run-<stamp>`, the timer passes
 `--if-idle`, the run lock exists so the tree is the run's while the operator
 is away. A checkout per run solves the case where the operator wants the
-primary tree back *during* a run — a case the premise already answers with
+primary tree back _during_ a run — a case the premise already answers with
 "schedule it for when you are not there".
 
 Against that, the cost is not opt-in. §1's two-root `Workspace` makes every
@@ -350,4 +350,4 @@ one repo, or a review that must not wait for the run). The git mechanics of
 §2 and §5 — `worktree add --no-track -b … <base>`, `branch.<b>.base`, the
 ordered removal gates — are sound on their own and are taken over by
 [ADR-0063](./0063-a-worktree-is-a-console-workspace.md), which gives a
-*console* its own worktree without touching the run path.
+_console_ its own worktree without touching the run path.

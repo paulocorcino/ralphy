@@ -64,7 +64,7 @@ that is `working` or `waiting`; a run in `sleeping` has no agent at all.
 | ~~`blocked`~~ | removed by ADR-0085 D1: a blocked issue is read from the run's outcome, not from the agent | none |
 
 `waiting` carries a `detail`: the tool name and, for a question, the
-question text (from the hook's `tool_input`), so the surface can show *what*
+question text (from the hook's `tool_input`), so the surface can show _what_
 the agent is asking, not only that it is asking. ~~A `Stop` that the vendor
 marks as an interrupt (`stop_hook_active` / `is_interrupt` in the payload)
 is `done` with `interrupted: true`.~~ — struck 2026-09-16: no hook observes
@@ -310,9 +310,9 @@ the vendor's own hooks reference (`code.claude.com/docs/en/hooks`, read
 
 **§4 — `PostToolUse` on every tool.** The rejection above rested on
 "`PostToolUse` adds no state `PreToolUse` did not already set". It adds the
-one state `PreToolUse` cannot: the *end* of a `waiting`. Without it the
+one state `PreToolUse` cannot: the _end_ of a `waiting`. Without it the
 sequence is `PreToolUse(AskUserQuestion) → waiting`, the operator answers,
-and the dot stays yellow until the agent's *next* `PreToolUse` or `Stop` —
+and the dot stays yellow until the agent's _next_ `PreToolUse` or `Stop` —
 seconds of thinking for a question, and for a granted permission the whole
 run time of the tool that was waiting (`PermissionRequest(Bash) → waiting`,
 grant, `cargo test` for three minutes, still yellow). The yellow dot is the
@@ -328,9 +328,9 @@ tool call, which the vendor runs in parallel with the tool's result — the
 and not the permission.
 
 **§1 — there is no `done{interrupted}`.** The vendor's reference says of
-`Stop`: *"Does not run if the stoppage occurred due to a user interrupt."*
-And `stop_hook_active` means *"Claude Code is already continuing as a
-result of a stop hook"* — which is exactly what Ralphy's own sentinel
+`Stop`: _"Does not run if the stoppage occurred due to a user interrupt."_
+And `stop_hook_active` means _"Claude Code is already continuing as a
+result of a stop hook"_ — which is exactly what Ralphy's own sentinel
 `hook stop` causes on every turn it sends back for a missing trailer. As
 built on 2026-09-15 the fold read `stop_hook_active` as an interrupt, so
 every sentinel-retried turn reported `done{interrupted}` into the snapshot
@@ -350,8 +350,8 @@ loses the interrupt row; both folds are pinned by it as before.
 
 **Review questions closed the same day, by measurement.**
 
-- *Does the `Stop` status line reach the file before the sentinel's flag
-  makes the run kill the tree?* Both hooks run in parallel on the same
+- _Does the `Stop` status line reach the file before the sentinel's flag
+  makes the run kill the tree?_ Both hooks run in parallel on the same
   event; the sentinel reads the transcript file before it writes the flag,
   the status hook is one append. Measured with claude 2.1.273, `-p`, the
   execute hook set verbatim: 8 of 8 runs had the `Stop` line on disk when
@@ -359,19 +359,18 @@ loses the interrupt row; both folds are pinned by it as before.
   clears the state milliseconds later either way. The same runs are the
   first live proof that `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
   `PostToolUse` and `Stop` all fire from the settings file as written.
-- *Can a child from a daemon's previous life keep writing to `sessions/1.*`
-  after a restart reuses the id?* Not on Windows: a `taskkill /F` of the
+- _Can a child from a daemon's previous life keep writing to `sessions/1.*`
+  after a restart reuses the id?_ Not on Windows: a `taskkill /F` of the
   daemon (no `Drop`, no shutdown watch) closed the pseudoconsole and the
   test child was gone within 2 s. The files it left are inert and
   `StatusFiles::write` truncates them on the next launch. On Linux the PTY
   master closing delivers `SIGHUP`, the same outcome for a child that does
   not ignore it.
-- *Does the switcher's pre-flight reach a peer's tree?* `tree.list` with a
+- _Does the switcher's pre-flight reach a peer's tree?_ `tree.list` with a
   `checkout` is proxied to the owning daemon with the name intact (only
   `repo` is rewritten), and its `unknown checkout` comes back verbatim —
   pinned in `tests/fleet_command/`. A live WSL peer adds nothing the pin
   does not say.
-
 
 ## Amendment (2026-10-28): a silent state source is shown, and every hook command is checked
 

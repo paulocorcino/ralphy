@@ -181,8 +181,8 @@ of text, and the UI turns both into this shape in one place, `wb-fail.js`:
   `Error: cannot commit: nothing is staged — stage a file first`. The core and
   CLI text keep the Rust convention (lowercase, no final period, chained), so
   the terminal does not change. `WBFail.failed(reply, fallback)` removes the
-  `Error: ` prefix, folds the `Caused by:` lines, drops a leading
-  `cannot <x>: ` or `refusing to <verb>: `, and makes the text after ` — ` a
+  `Error:` prefix, folds the `Caused by:` lines, drops a leading
+  `cannot <x>:` or `refusing to <verb>:`, and makes the text after ` — ` a
   second sentence. The act comes from `fallback`, a whole sentence of the same
   shape that the lint reads (`copy_calls`):
   `Could not commit: nothing is staged. Stage a file first.`
@@ -414,7 +414,7 @@ It changes this ADR in four places.
 - **§6, text from the daemon.** A daemon reply carries a **failure** in its
   own `failure` field, with a **failure code** and the text already filled
   in. The `CAUSE` table of `wb-fail.ts` and its parsing of CLI output
-  (`Error: `, `Caused by:`, ` — `) are replaced by it, one text domain at a
+  (`Error:`, `Caused by:`, ` — `) are replaced by it, one text domain at a
   time, under the ratchets that ADR-0078 lists. The shape of this section
   does not change: the act still comes from the workbench, and the failure
   wording gives the cause (lowercase, no final period) and the remedy (a
@@ -425,4 +425,3 @@ It changes this ADR in four places.
   never cites an ADR apply to every text in the wording catalog, on every
   surface. The arrangement of the CLI and the Telegram notifier (order,
   separators, width) stays outside this ADR.
-

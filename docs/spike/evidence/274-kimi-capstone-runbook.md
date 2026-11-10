@@ -111,7 +111,7 @@ Actually reproduce the logged-out state — `kimi logout` in a disposable sessio
 re-login after. Confirm a clean run stops on `is_kimi_auth_error` (the real 0.28
 signal `auth.login_required`, surfaced as `Kimi is not authenticated
 (auth.login_required) — run \`kimi login\`…`), **exit 1, no child work
-committed**, *not* a loop. Confirm no stale `.ralphy/plan.md` masks the stop
+committed**, *not* a loop. Confirm no stale`.ralphy/plan.md` masks the stop
 (the resume-trailer lesson). Then confirm auth-OK returns on re-login.
 → `docs/live/kimi-274-loggedout.log`
 

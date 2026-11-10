@@ -473,7 +473,7 @@ field) or `git check-ignore`. No `ralphy` subcommand exposes ignored status.
 | Capability | Places |
 |---|---|
 | Dirty and branch readers | `daemon/registry.rs` vs `core/changes.rs`, `core/sync.rs` |
-| `.git` pointer parser inside the daemon | `tree/ignored.rs:149` (needs `gitdir: ` with one space) vs `checkout.rs:127` (trims) |
+| `.git` pointer parser inside the daemon | `tree/ignored.rs:149` (needs `gitdir:` with one space) vs `checkout.rs:127` (trims) |
 | `CREATE_NO_WINDOW` | 4 copies beside `proc_util::no_window` |
 | Token and USD formatting | `cli/ui/render/meter.rs`, `cli/usage.rs`, `daemon/spend/format.rs`; three USD spellings |
 | Home-dir resolvers | proc-util, cli host, daemon autostart, agent-claude |

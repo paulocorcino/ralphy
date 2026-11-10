@@ -9,7 +9,7 @@ Protects: integrity of change, consistency of the workbench
 The workbench reads and changes a repo's working tree: the Changes panel, the
 sync row, stage, unstage, commit, discard, fetch, pull and push, and the
 selected checkout. These rules were decided in the source-control PRDs (#297,
-#314) and the checkout follow-ups (#407, #408), and were recorded only in
+# 314) and the checkout follow-ups (#407, #408), and were recorded only in
 CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the
 rules move here without change. This ADR records decisions already made and
 built; it decides nothing new.

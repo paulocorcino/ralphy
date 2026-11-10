@@ -138,7 +138,7 @@ Use the first kind that can see the behavior:
 A pin follows these rules:
 
 - **Production text only.** Cut the file at the `#[cfg(test)]` line that is
-  followed by `mod `. An item-level `#[cfg(test)] fn` can come before real code.
+  followed by `mod`. An item-level `#[cfg(test)] fn` can come before real code.
   Use the crate's existing cut helper.
 - **The call, inside the caller.** Slice the body of the function that must make
   the call, then match the call expression. A match on a definition stays green

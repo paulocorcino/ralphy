@@ -469,6 +469,7 @@ Observed for exit 53:
 So: **fatal errors are well-typed but arrive on the wrong stream; mid-run errors
 arrive on the right stream but are untyped.** Neither channel alone is
 sufficient. `outcome.rs` must capture both, and prefer the exit code over either.
+
 - **Hook mechanism: the best of any vendor.** 📖 `AfterAgent` *"fires once per
   turn after the model generates its final response"* and receives
   `prompt_response` (the final text) plus `session_id` and `transcript_path` on
@@ -547,6 +548,7 @@ positive, and the mirror of the workspace-policy tier being dead, §9); and
 **Ralphy must install its hook at user scope** — mutating a file the operator
 owns and shares with Antigravity. That is an ADR decision, and `GEMINI_CLI_HOME`
 (§5) is the obvious alternative to weigh against it.
+
 - `CompletionSignals` fill: pending the stream shape. Ordering still delegates
   to `classify` (ADR-0023).
 
@@ -1295,7 +1297,7 @@ and quantified**. From `bundle\policies\yolo.toml` and `plan.toml` 🔬:
 - Admin policies (`C:\ProgramData\gemini-cli\policies`,
   `/etc/gemini-cli/policies`) cannot be outranked at all.
 
-### 🔬 P10 — `--policy` outranks `--yolo`. Autonomy is argv-recoverable.
+### 🔬 P10 — `--policy` outranks `--yolo`. Autonomy is argv-recoverable
 
 A one-rule file passed on argv vetoed a tool while yolo was active:
 
@@ -1446,6 +1448,7 @@ finding in this spike that is a business risk rather than an engineering one.
   entries under `/mnt/c/`, and add an nvm-aware probe.
 
 [WSL vendor-CLI precedent]: ./kimi-cli-adapter-spike.md
+
 - 🔬 **Encoding: clean (P22).** A UTF-8 payload piped through `cmd` redirection
   and returned via `stream-json` round-tripped **byte-exact** — Portuguese
   accents, CJK, and 4-byte astral-plane emoji alike:
@@ -1516,7 +1519,7 @@ Recorded because the false positive is easy to reproduce.)*
 
 - 🔬 **`@` is live syntax in the prompt — but it fails safe (P25).** Since issue
   bodies routinely contain `@mentions`, this was worth pinning. A prompt reading
-  *"Thanks @paulocorcino and @octocat … see @nonexistent-file.md … foo@bar.com"*
+  *"Thanks @paulocorcino and @octocat … see @nonexistent-file.md … <foo@bar.com>"*
   passed through **completely unchanged** and the run succeeded: the CLI
   resolves `@` only when the path **exists**, and silently leaves the rest as
   literal text. Email addresses are unaffected.
@@ -1720,7 +1723,7 @@ and `.ralphy/knowledge`. **24 files.**
   [`gate.rs:25`](../../crates/ralphy-cli/src/init/gate.rs#L25):
   `pub const ALL: [Agent; 5]`. Gemini makes it `6`.
 - Tier 2 (`assets/prompts/plan/overlay.<vendor>.md`), Tier 4's usage-scan module
-  + `pub mod`/`pub use`, the daemon quartet, and the `app.js` trio all check out.
+  - `pub mod`/`pub use`, the daemon quartet, and the `app.js` trio all check out.
 
 ### Drifted ⚠
 

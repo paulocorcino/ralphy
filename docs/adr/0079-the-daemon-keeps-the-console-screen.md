@@ -13,7 +13,7 @@ The operator drives two or more agent consoles from an iPad through dev
 tunnels. After a switch to another console and back, the text the agent wrote
 in the meantime is narrow, and a later wide redraw paints over it (#689). The
 text in the agent is correct. Only the screen is wrong. The causes, checked in
-#689:
+# 689:
 
 - A covered console still set the size of its PTY (F1). Fixed in the page on
   2026-10-12: a covered console without the focus sends no size.
@@ -95,6 +95,7 @@ timeout that never pends, so a synchronized update (mode 2026) is never
 buffered. The screen therefore always holds every byte the ring holds.
 
 **D3. Output is untrusted data, and the emulator is capped (ADR-0072 D11).**
+
 - An OSC, DCS, APC, PM or SOS string longer than 64 KiB is ended with CAN, and
   the rest of that string is dropped before it reaches the parser.
 - Every session size is clamped to 2..=300 rows and 2..=500 columns. The
@@ -113,6 +114,7 @@ about 0.2 MiB resident).
 snapshot is escape sequences in ONE `Frame::Terminal` replay frame. The page
 calls `term.reset()` and writes it, as it does today; it needs no new parser.
 In order, the snapshot writes:
+
 1. The primary screen's scrollback and visible rows, from the oldest line
    down, with their colors and attributes. A wrapped row is joined to the
    next, so xterm wraps it at its own width. Every other row ends with CR LF.
@@ -199,7 +201,7 @@ console waits 120 s, less than 750 ms (or no socket yet) is 15 s.
 
 **D11. #581 item 5 is decided by the size of the compressed snapshot on
 wake.** If the compressed snapshot on wake, measured by the closing stage of
-#689, is at most 64 KiB, item 5 is dropped: a dormant console keeps no bytes
+# 689, is at most 64 KiB, item 5 is dropped: a dormant console keeps no bytes
 and wakes with the snapshot. 64 KiB fits in the first three round trips of TCP
 slow start (initial window of 10 segments: about 14 + 28 + 57 KiB), which is
 under 1 s at the p90 round trip of remote sockets (256 ms). If it is larger,

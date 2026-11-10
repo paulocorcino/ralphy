@@ -2,3 +2,8 @@
 {"answer": "arguments Rust 5 and TS 4; clones 75 tokens and 5 lines; ast-grep for navigation and the error-message rule", "date": "2026-11-09", "id": "D2", "kind": "decision"}
 {"answer": "default taken: the noise list of the plan", "date": "2026-11-09", "id": "D3", "kind": "decision"}
 {"answer": "default taken: the noise list of the plan", "date": "2026-11-09", "id": "D4", "kind": "decision"}
+{"answer": "(b) each binary crate allows print_stdout and print_stderr at its root with a reason, library crates keep them denied; then (a) an output module for ralphy-cli", "date": "2026-11-09", "id": "D5", "kind": "decision"}
+{"answer": "(a) one module that sanitizes HTML owns innerHTML; one module owns the console", "date": "2026-11-09", "id": "D6", "kind": "decision"}
+{"answer": "(a) only the crates that parse outside data", "date": "2026-11-09", "id": "D7", "kind": "decision"}
+{"answer": "(a) the rule turns on and the file carries one exception with its reason", "date": "2026-11-09", "id": "D8", "kind": "decision"}
+{"answer": "(a) markdownlint with MD013 (line length) off and the other rules on", "date": "2026-11-09", "id": "D9", "kind": "decision"}

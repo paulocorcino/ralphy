@@ -13,6 +13,7 @@ Lab repo: `C:\Dev\FinCal` (`paulocorcino/FinCal`), base `master`;
 Binary: `./target/release/ralphy.exe` from `feat/copilot`. Date: 2026-07-22.
 
 Standard invocation:
+
 ```bash
 ./target/release/ralphy.exe run --repo C:/Dev/FinCal --issues <n> --agent cursor \
   --base-branch master [--dry-run] --verbose
@@ -23,7 +24,7 @@ Standard invocation:
 - **§1 missing opt-out** — `.cursorindexingignore` removed → ADR-0013 stop names the
   file, `*` content, opt-in key; `Applying change` = 0, no child spawned.
 - **§2 logged out** — `cursor-agent status --format json` → `isAuthenticated:false`,
-  **exit 0**. A clean run stops: `Error: Cursor is not authenticated — run `agent
+  **exit 0**. A clean run stops: `Error: Cursor is not authenticated — run`agent
   login` (or `cursor-agent login`) and retry` (exit 1); cursor.log carries
   `Error: Authentication required. Please run 'agent login' first, …`. Driven by the
   in-flight stderr matcher `is_cursor_auth_error`, NOT a `status` preflight
@@ -119,6 +120,6 @@ feasibility read, not a platform divergence. `permissionMode` is `default` on bo
 
 ## Follow-ups filed
 
-#268 verify-gate nested-quote tokenizer (fixed `ce54f92`) · #269 per-issue under-count
+# 268 verify-gate nested-quote tokenizer (fixed `ce54f92`) · #269 per-issue under-count
 (consolidate pass dropped) · #270 harvest-aware budget (ADR-0038) · #271 logged-out
 stale-plan masks the auth stop.

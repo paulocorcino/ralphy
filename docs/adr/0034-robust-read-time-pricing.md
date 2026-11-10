@@ -201,7 +201,7 @@ source, either way.
 ## Consequences
 
 - `ralphy-core`'s `Usage` is re-expressed as a shared `Tokens` counter + `model`
-  + `provider`; the ADR-0008 D6 ledger record and the ADR-0033 `InteractiveRecord`
+  - `provider`; the ADR-0008 D6 ledger record and the ADR-0033 `InteractiveRecord`
   both gain `provider` (additive, append-only-safe).
 - A new crate `ralphy-pricing` (the read-time engine + curated alias map +
   models.dev fetch + cache); `ralphy-cli/src/pricing.rs` moves into it. A new
@@ -395,4 +395,3 @@ unified into `Tokens`; the `(provider, model)` key never enters the domain; ther
 is no curated alias map, no `ralphy-pricing` crate, no long-context tiers (D5), no
 `build.rs`, and no daemon change. Each remains specified by the body above and
 lands with slice B.
-

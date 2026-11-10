@@ -25,7 +25,7 @@ Ralphy's own loop already reads what a reviewer writes, in two places: the
 issue's comments arrive in `issue.json` before planning (`types.rs:17-24`),
 and a closed blocker's `## Handoff` comment is folded into `handoffs.md`
 (`runner/artifacts.rs:107-136`). What is missing is a way to write a note
-*at the line* and have it land where those readers look, without leaving
+_at the line_ and have it land where those readers look, without leaving
 the diff.
 
 The daemon may not write the repo or the forge itself: ADR-0036 §2 makes
@@ -83,10 +83,10 @@ The body travels as a file the daemon writes under its own directory and
 names in argv (the `image.write` / `--file` pattern), never as shell text.
 
 The **plan charter** (`assets/prompts/plan/template.md`) gains one
-sentence in the artifact-reading section: *"A comment marked
+sentence in the artifact-reading section: _"A comment marked
 `ralphy:review-notes` is the operator's line-by-line review of the previous
 attempt; each note is a fact about the code it names, to be addressed or
-explicitly declined in `## Decisions`."* No adapter changes: every planner
+explicitly declined in `## Decisions`."_ No adapter changes: every planner
 already receives the issue's comments.
 
 ### 3. Target B — withdrawn
@@ -117,7 +117,7 @@ last commit".
 - The daemon runs no `gh`; the forge write is a `ralphy` subcommand.
 - `handoffs.md` semantics: review notes are not handoffs. A handoff is what
   the executor tells the next issue; a review note is what the operator
-  tells the next attempt at *this* issue. They reach the planner by
+  tells the next attempt at _this_ issue. They reach the planner by
   different paths (the issue's own comments vs. `handoffs.md`) and the
   charter names them separately.
 
@@ -170,4 +170,3 @@ state gate, a withheld-second-frame UI — to save the operator a copy and a
 paste into a console that is already on the same screen. Withdrawn: the
 diff's "Notes" toolbar gets a **Copy** action next to **Send to issue**, and
 the operator pastes where they like. This ADR no longer depends on ADR-0059.
-

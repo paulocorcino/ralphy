@@ -21,7 +21,7 @@ satisfaction rule to the single-branch operating model.
 ## Considered Options
 
 - **Merged to base** — only treat a blocker as satisfied once its code is on the
-  base the dependent is cut from. Rejected: Ralphy closes on green *before* merge
+  base the dependent is cut from. Rejected: Ralphy closes on green _before_ merge
   (ADR-0001), so this would stall every dependent chain until a human merges,
   defeating an unattended overnight run.
 - **Closed AND commits reachable from the run-branch HEAD** — the mode-agnostic rule.
@@ -30,7 +30,7 @@ satisfaction rule to the single-branch operating model.
 
 ## Consequences
 
-- A forward dependency (a blocker with a *higher* issue number than its dependent)
+- A forward dependency (a blocker with a _higher_ issue number than its dependent)
   costs one run of latency: ascending order reaches the dependent first, skips it
   while the blocker is open, runs the blocker, and the dependent is picked up next
   run. Correct, just not optimal — no topological reorder is done.

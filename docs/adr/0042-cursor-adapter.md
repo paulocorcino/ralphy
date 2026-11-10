@@ -144,6 +144,7 @@ exit 1, zero records, prose on stderr. `model_refusal_stop`
 sentence, so the operator sees the flag to change instead of a bare `Stuck`.
 
 Two traps that fix carries, both load-bearing:
+
 - The adapter's `log` is stdout and stderr **merged**, and a working run's
   transcript can quote the sentence (this repository commits the refusal
   fixtures). The match is therefore anchored to the START of a line — stdout is

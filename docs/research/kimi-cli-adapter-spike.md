@@ -112,6 +112,7 @@ kimi --work-dir C:\Dev\FinCal --print --output-format stream-json --prompt hello
 ```
 
 Result:
+
 - **Exit code: `1`**
 - **stdout:** `LLM not set`  ← plain text, **NOT** JSON, even though
   `--output-format stream-json` was requested. The failure happens *before* the
@@ -147,16 +148,19 @@ Every run writes a session tree:
   `C:\Dev\FinCal` — a hash of the work-dir path (per-workspace bucketing).
 - `<session-id>` is a UUID, e.g. `718e658e-8597-4c1e-842b-b41f1296dd34`.
 - **`wire.jsonl` (logged-out run) contained:**
+
   ```json
   {"type": "metadata", "protocol_version": "1.10"}
   {"timestamp": ..., "message": {"type": "TurnBegin", "payload": {"user_input": "hello"}}}
   {"timestamp": ..., "message": {"type": "TurnEnd", "payload": {}}}
   ```
+
   Logged out there are no usage fields (loop never ran). **A logged-in run should
   carry token usage in `TurnEnd`/assistant events — this is the token-capture
   target (⚠️ confirm shape).**
 
 **Two viable capture strategies (decide after the logged-in run):**
+
 1. **Parse `--output-format stream-json` on stdout** (like OpenCode's
    `events.rs`) — preferred if usage rides the stream. No filesystem coupling.
 2. **Snapshot-diff `wire.jsonl`** in the session dir (like Codex's rollout-file /
@@ -208,6 +212,7 @@ Other state files in `~/.kimi/`: `kimi.json` (work-dir registry +
 `last_session_id`), `device_id` (32 chars), `logs/kimi.log`, `telemetry/`.
 
 Adapter notes:
+
 - The adapter can pass config inline via `--config '<toml>'` (no need to mutate
   the user's global file) — mirrors OpenCode's injected-config pattern.
 - After login, `[providers]`/`[models]`/`default_model` get populated; **capture
@@ -300,8 +305,10 @@ kimi --work-dir <ws> --print --input-format text --output-format stream-json -y 
 ```
 
 ### 11.1 stdout stream-json = coarse OpenAI-role JSONL
+
 One JSON object per line, discriminated by top-level **`role`** (there is **no**
 top-level `type`):
+
 - `{"role":"assistant","content":[{"type":"think","think":…},{"type":"text","text":…}], "tool_calls":[{"type":"function","id":"tool_…","function":{"name":"WriteFile","arguments":"{…}"}}]}`
 - `{"role":"tool","content":…,"tool_call_id":"tool_…"}`
 - **Final assistant text** = the last `role:"assistant"` line whose `content[]`
@@ -310,6 +317,7 @@ top-level `type`):
   envelope on stdout.**
 
 ### 11.2 Token usage — lives ONLY in `wire.jsonl`, per-step 🎯
+
 Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
 
 ```json
@@ -336,10 +344,11 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
 **stderr** (`To resume this session: kimi -r <id>`) and from
 `~/.kimi/kimi.json` → `work_dirs[].last_session_id`. Session dir:
 `~/.kimi/sessions/<workdir-hash>/<session-id>/` (`wire.jsonl` + `context.jsonl`
-+ `state.json`). Stdout stream-json is used only for the **final text / sentinel
+- `state.json`). Stdout stream-json is used only for the **final text / sentinel
 / tool-call** view, not tokens.
 
 ### 11.3 Auth on disk (refines §4/§6) ✅
+
 - Auth is **not** in `config.toml` (`api_key=""`). It's OAuth, file-stored:
   `[providers."managed:kimi-code".oauth]` → `storage="file"`, `key="oauth/kimi-code"`.
 - Token file: **`~/.kimi/credentials/kimi-code.json`** (`access_token`,
@@ -353,6 +362,7 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
   the other adapters do it.
 
 ### 11.4 Completion / sentinel — Codex-style works ✅
+
 - Real task (`--print -y`, "create KIMI_SPIKE.txt with `done`"): **exit 0**,
   file created & verified. Tool `WriteFile` (`{"path":…,"content":…}`); tool
   result wrapped in `<system>…</system>`.
@@ -363,6 +373,7 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
   `DONE_SENTINEL`/`blocked_reason`) and scrape the final assistant text.
 
 ### 11.5 Exit-code table ✅
+
 | Case | Exit | Signal |
 |------|------|--------|
 | success | **0** | normal JSONL; resume hint on stderr |
@@ -375,11 +386,13 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
 **0 → Done or Blocked** decided by sentinel + HEAD-diff, **2 → usage error**.
 
 ### 11.6 Model flag ✅
+
 - `-m kimi-code/kimi-for-coding` (full `provider-key/model`) → **accepted**.
 - `-m kimi-for-coding` (short) → **rejected** (exit 1, `LLM not set`).
 - Use the **full config-key form** `kimi-code/kimi-for-coding` as the default.
 
 ### 11.7 `--plan` mode — don't use it ✅
+
 - `--plan` is `--print`-compatible (exit 0) but **explores heavily and is slow
   (>120s)**, and signals completion via an `ExitPlanMode` tool call, writing to
   `~/.kimi/plans/` + `state.json` (`plan_mode`, `plan_session_id`, `plan_slug`).
@@ -389,15 +402,18 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
   (same contract as Claude/Codex). Needs a `prompt.plan.kimi.md` (no tier line).
 
 ### 11.9 Rate-limit / 429 — RESOLVED from source ✅ (the last ❓)
+
 Read straight from the installed source (v1.48.0) instead of guessing:
 
 - **`--print` mode has dedicated exit codes** (`kimi_cli/cli/__init__.py:53-56`):
+
   ```python
   class ExitCode:
       SUCCESS   = 0
       FAILURE   = 1
       RETRYABLE = 75   # EX_TEMPFAIL from sysexits.h
   ```
+
 - **429 (rate limit) and 5xx/timeout → exit 75** (`ui/print/__init__.py:438-449`,
   `_classify_provider_error`): `_RETRYABLE_STATUS_CODES = {429,500,502,503,504}`
   → `ExitCode.RETRYABLE`; connection/timeout/empty-response → `RETRYABLE` too;
@@ -422,6 +438,7 @@ present, upgrade to `Outcome::Limit(Some(reset))` — same shape as PR #145, but
 bail (auth `LLM not set`, invalid config, max steps).
 
 ### 11.8 Windows gotchas (must bake into the adapter) ⚠️→✅
+
 - **Always** drive with `--output-format stream-json`. The default rich/TUI
   renderer writes box-drawing/emoji and **crashes on a cp1252-redirected stdout**
   (`'charmap' codec can't encode…`, exit 1).

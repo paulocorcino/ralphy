@@ -67,7 +67,6 @@ The Four-Layer Stack
 |scope grows||**Harness engineering**<br>_arm a single run: tools, actions, “done”_<br>**Context engineering**<br>_what goes in the window right now_|up|
 |||**Prompt engineering**<br>_the words you write for the model_||
 
-
 **Fig. 1.** The four-layer stack. Each layer minds something larger than the one below; loop engineering automates the “waiting for you” that the harness leaves behind.
 
 tick must come from the human. In the new world, one designs something that ticks on its own—it runs on a timer, spawns helpers to do the work, and feeds its own results back to itself. As Osmani puts it, loop engineering sits one floor above the harness: the harness below arms a single agent run; the loop above makes it run itself over and over. The change is one of identity, from the person who operates the agent to the person who schedules it. Value moves from “knowing how to direct” to “knowing how to build loops, and how to put a check inside the loop that can say no”—the last part being the hardest, as later sections explain.
@@ -113,7 +112,6 @@ This is the single most important intuition in loop engineering: the cost of a m
 **----- Start of picture text -----**<br>
 Dis-<br>covery<br>Sched- Hand-<br>uling off<br>one<br>turn<br>Persis- Verifi-<br>tence cation<br>the “say no”<br>**----- End of picture text -----**<br>
 
-
 **Fig. 2.** The five moves of one turn. Scheduling closes the cycle—it feeds an unfinished turn into the next day’s run. Verification is the move that can say “no.”
 
 ## III. The Five Moves of One Loop
@@ -148,7 +146,6 @@ The Five Moves, Mapped to the Triage Loop
 ||the conversation|fle|
 |Scheduling|Make it turn round|Morning<br>automa-|
 ||after round|tion runs on its own|
-
 
 least affordable to skip. After the first sub-agent drafts the fix, a second sub-agent reviews it—different instructions, sometimes a different model. The agent that wrote the code grades its own homework too softly; a dedicated hole-picker catches what the first talked itself into letting through. This is the “thing that can say no.” A loop without a real check is just an agent nodding at itself.
 
@@ -192,7 +189,6 @@ Six Parts Mapped to Five Moves
 |Memory|Persistent state on|Persistence|
 ||disk||
 
-
 **Connectors** (built on MCP, the Model Context Protocol) hook the loop to the outside world—the issue tracker, the database, a staging API, Slack. A loop that can only see the filesystem is a tiny loop. Connectors decide the loop’s radius of vision, and a connector written for one tool can often be dropped onto another and used as is.
 
 **Sub-agents** split the one that writes from the one that judges. When one agent is both player and referee, the referee plays favorites. Counterintuitively, tuning an independent judge to be picky is far easier than getting the generator to be hard on its own work—which is why a loop keeps an extra agent rather than letting one agent audit itself.
@@ -213,7 +209,6 @@ Ask an agent to grade what it just produced and it tends to praise it confidentl
 
 **----- Start of picture text -----**<br>
 draft<br>maker–checker<br>Evaluator<br>Generator<br>different model;<br>writes the code<br>assumes broken<br>acts via MCP: click, screenshot, run tests<br>reject + reasons<br>**----- End of picture text -----**<br>
-
 
 **Fig. 3.** Generator and evaluator as separate agents. The evaluator carries none of the generator’s self-persuasion, defaults to doubt, and judges behavior by acting rather than just reading.
 
@@ -297,7 +292,6 @@ The loop discovers good work, does it, and then forgets it happened, because the
 **----- Start of picture text -----**<br>
 skip<br>Discovery Blind loop<br>skip<br>Handoff Tangled loop<br>skip<br>Verification Nodding loop<br>skip<br>Persistence Amnesiac loop<br>skip<br>Scheduling Manual loop<br>**----- End of picture text -----**<br>
 
-
 **Fig. 4.** Each anti-pattern is one move skipped. The five failures map one-to-one onto the five moves of a single turn.
 
 ## _C. The Manual Loop (scheduling skipped)_
@@ -333,7 +327,6 @@ Osmani’s triage loop, broken down in Section III, runs automatically every mor
 **----- Start of picture text -----**<br>
 Human trigger  — @bot in Slack / emoji reaction<br>Deterministic orchestrator  — scan links, pull Jira,<br>Sourcegraph + MCP assemble context ( not the LLM)<br>LLM agent  — writes code with materials in hand<br>Hard-coded gate  — linter runs; agent cannot skip<br>LLM agent  — fixes the lint<br>Hard-coded step  — git commit<br>Human review  — 1,300 PRs / week<br>**----- End of picture text -----**<br>
 
-
 **Fig. 5.** Stripe’s Minions pipeline. Deterministic gates (blue) and LLM steps (green) interlock; anything rule-bound is kept out of the probabilistic model. Reliability comes from the constraints, not model size.
 
 glued into a schedule that nobody will ever update. This is what a loop one person can run looks like—one person, one machine, the grunt work done each morning.
@@ -357,7 +350,6 @@ TABLE IV Scheduling Options Compared
 |Session open?|no|no|yes|
 |Min. interval|1 h|1 min|1 min|
 |See local fles?|no|yes|yes|
-
 
 the machine on. Want it to run untethered from local state? Go to the cloud, at the cost of a one-hour minimum interval and a clean clone each time. No single scheduler does it all.
 
@@ -395,7 +387,6 @@ The Same Capability Across Two Toolchains
 |Explicit skill|`SKILL.md`|`$skill-name`|
 |Machine-ofrun|Cloud Routines|cloud (planned)|
 
-
 sub-agents, external connection, and explicit skill invocation. Whichever toolchain a team uses, the question to ask is whether all six are present, not which brand of command provides them.
 
 ## VIII. The Costs: Four Tabs That Don’t Clear Themselves
@@ -416,7 +407,6 @@ The four share one trait: silence while the loop runs. The most fascinating thin
 
 **----- Start of picture text -----**<br>
 Verification Comprehension<br>debt rot<br>each feeds<br>the next<br>Token Cognitive<br>blowout surrender<br>**----- End of picture text -----**<br>
-
 
 **Fig. 6.** The four costs reinforce one another. Unverified output erodes understanding, which invites surrender, which lets the loop run longer and spend more, which produces more unverified output.
 
@@ -528,7 +518,6 @@ TABLE VI
 ||rather than auto-ing all the way|
 ||through?|
 
-
 the loop can run; the last four decide whether it gets into trouble once it does. Beginners most often ship with only the first two built, and the result is a loop nobody watches and nobody can stop, nodding at itself. The closing advice is simple: a first loop is better small, but with the “no”-saying check and the human review point fully installed.
 
 ## `READ:`
@@ -557,7 +546,6 @@ _Step three: add a state file._ Do not leave results in the chat window. Write e
 |`| auth test flaky| CI #4821 | fixing`|`|`|
 |`| null deref`<br>`| issue 92 | PR open`|`|`|
 |`| stale dep`<br>`| commit a3| inbox`|`|`|
-
 
 _Step four: add an evaluator._ The most critical step and the easiest to skip. Claude Code’s `/goal` (after v2.1.139) runs until a condition is met, with a different model judging whether it holds.
 
@@ -644,7 +632,6 @@ Terms Used in This Note
 ||project, paid ofby a skill.|
 |Verifcation|Unverifed output accumulating between|
 |debt|“runs” and “right.”|
-
 
 ## XIV. Appendix B: Glossary
 

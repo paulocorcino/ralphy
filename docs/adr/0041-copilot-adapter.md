@@ -33,7 +33,7 @@ Implementation status: D5/D5a shipped in #233 (`ralphy-agent-copilot`'s
 `effort.rs`, the persisted `copilot.plan_effort`/`copilot.exec_effort` keys, and
 the post-hoc check against the vendor's `assistant_usage_events.reasoning_effort`).
 D7's in-band receipt guard and D11's `continueOnAutoMode` preflight shipped in
-#234 (`guards.rs`, plus the `copilot.allow_builtin_mcp_servers_i_understand_the_risk`
+# 234 (`guards.rs`, plus the `copilot.allow_builtin_mcp_servers_i_understand_the_risk`
 escape hatch) — see the `**Enforced**` notes on those two decisions.
 
 ## D1 — Selection is per run, via `--agent copilot`; the core is untouched
@@ -387,7 +387,6 @@ array, so the guard checks each required name is PRESENT, never set equality.
 `require_receipt` follows D7's split: an absent receipt fails closed only for a run
 that exited cleanly, so a `Limit`/`Timeout` is never overwritten with
 "skills receipt missing".
-
 
 ### Amendment (2026-10-01) — the proof moves to `copilot skill list` before the session
 

@@ -571,7 +571,7 @@ names of each domain, before any code moves. It was measured on `823cc84c`:
 The order of the work: the renames, the cards' typed deps, the message door,
 the window states, the z stack and the gestures, the column paint, the desk
 records, the card folds, then the cuts of `wb-notes.ts`. The `app.ts` cuts of
-#621, other than the message door, are not part of this work.
+# 621, other than the message door, are not part of this work.
 
 ## Amendment (2026-10-11): the console keeps its factory glue; no workbench module over 700 lines
 

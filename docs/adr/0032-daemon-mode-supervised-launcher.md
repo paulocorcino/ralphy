@@ -485,7 +485,7 @@ what a workbench session already concedes.
 
 ## Amendment (2026-09-15): macOS is a daemon host; autostart is a launchd agent there
 
-_Implemented 2026-09-16 (`crates/ralphy-daemon/src/autostart.rs`,
+*Implemented 2026-09-16 (`crates/ralphy-daemon/src/autostart.rs`,
 `Platform::Launchd`). CI's macOS job registers, probes and removes the agent
 for real, which settles two of the open questions: `bootstrap` on an already
 loaded label is answered by a tolerated `bootout` first (so a re-install is
@@ -494,7 +494,7 @@ status probe. Still open, for an operator's Mac: whether Gatekeeper lets a
 binary fetched by `ralphy update` (quarantine attribute) be launched by
 launchd rather than from a terminal; and the pre-existing supervisor-versus-
 `daemon restart` race, which macOS inherits unchanged from the systemd arm
-(`KeepAlive.SuccessfulExit = false` mirrors `Restart=on-failure` exactly)._
+(`KeepAlive.SuccessfulExit = false` mirrors `Restart=on-failure` exactly).*
 
 §10 names two autostart registrations — an HKCU `Run` value on Windows, a
 systemd `--user` unit on Linux — and CLAUDE.md's "cross-platform, always"
@@ -729,6 +729,7 @@ now, not on the client's spelling (F1: `.git.`, `GIT~1`, an in-root symlink).
   | ngrok | `https://…ngrok.app` | `https` (documented) | `Secure` | TLS at ngrok's edge; needs `--allowed-host` (preserves `Host`/`Origin`) |
   | tailnet, plain | `http://<tailnet ip or MagicDNS>:7257` | absent | plain | WireGuard; a non-loopback bind (token required, `--allowed-host` for the name) that trips the boot warning — the tailnet is the answer to it |
   | `tailscale serve` | `https://<node>.<tailnet>.ts.net` | `https` (serve injects it) | `Secure` | Let's Encrypt via the tailnet; needs `--allowed-host` (preserves `Host`) |
+
 - **F7 — SHA-1 primitives.** PBKDF2-HMAC-SHA1 at 1.3 M iterations and
   HMAC-SHA1 MACs over 256-bit CSPRNG keys with constant-time compare: not a
   forgery weakness. The `scheme$iter$salt$hash` header already versions the

@@ -7,7 +7,7 @@ seam is unchanged._
 
 Every adapter maps a session's raw end state onto the core `Outcome`. ADR-0004 D2
 deliberately kept that per-adapter and rejected a shared runner that produces an
-`Outcome` from raw output. That was right about the *extraction*, but the mapping
+`Outcome` from raw output. That was right about the _extraction_, but the mapping
 grew a second half — a fixed precedence over already-extracted signals — that was
 never vendor-specific, and copying it three times (four, counting Claude's
 interactive and headless classifiers) let it drift where the compiler could not
@@ -18,10 +18,10 @@ shares only the half that was never vendor-essential.
 ## D1 — Two layers: signal extraction (vendor) vs precedence (shared)
 
 - **Camada 1 — extraction (per-adapter, unchanged seam).** Each adapter reduces
-  its raw end state to a `CompletionSignals` value. What counts as a *trustworthy*
-  `limit` and what counts as a *trustworthy* exit (`exited_ok`) are vendor
+  its raw end state to a `CompletionSignals` value. What counts as a _trustworthy_
+  `limit` and what counts as a _trustworthy_ exit (`exited_ok`) are vendor
   decisions and stay in extraction: Codex sets `limit` only on a non-clean exit
-  (a real limit fails the process, so a clean exit *is* the "not a limit" proof);
+  (a real limit fails the process, so a clean exit _is_ the "not a limit" proof);
   Claude sets it from a structural 429 line in the transcript regardless of exit;
   Codex/OpenCode normalize `exited_ok` to a zero exit, Claude headless to
   `!timed_out`. This is the vendor-essential core ADR-0004 D2 protects — untouched.
@@ -64,7 +64,7 @@ anti-false-green protection rests on the runner's **verify gate** — it re-runs
 plan's `## Verify` commands over the committed state and refuses to close on a
 failure — not on a per-session commit check.
 
-This *corrects* ADR-0004 D2: its "no new commit across the streak → Stuck" was
+This _corrects_ ADR-0004 D2: its "no new commit across the streak → Stuck" was
 hardened by the Codex adapter into a per-call `Done` conjunct
 (`exited_cleanly && committed && done_sentinel`), stricter than the ADR intended
 and incompatible with the hand-back flows above.
@@ -85,7 +85,7 @@ change and the refactor stops.
   run that also saw a `limit` event now resumes (`Limit`) instead of closing
   (`Done`).
 
-Both moves are *toward* the Claude-validated rule. No deliberate existing
+Both moves are _toward_ the Claude-validated rule. No deliberate existing
 Codex/OpenCode test asserts the behavior being changed.
 
 ## D5 — What stays per-adapter (the ADR-0004/0005 boundary holds)
@@ -99,7 +99,7 @@ Codex/OpenCode test asserts the behavior being changed.
 `ralphy-adapter-support` gains the pure `classify` function and the
 `CompletionSignals` type. It still performs **no** raw-output detection of its own,
 so ADR-0002's ban on a shared raw-output completion runner is intact — this shares
-the *ordering*, not the *detection*.
+the _ordering_, not the _detection_.
 
 ## Consequences
 
@@ -139,5 +139,5 @@ reported as a login failure because its log quoted the vendor's login banner.
   revocation) lets that stop fall through to its own ladder.
 
 ADR-0002 still holds: the function takes facts and a detector, and runs no
-child. It shares the *ordering* of the stop checks, as D5 shares the ordering
+child. It shares the _ordering_ of the stop checks, as D5 shares the ordering
 of the signals.

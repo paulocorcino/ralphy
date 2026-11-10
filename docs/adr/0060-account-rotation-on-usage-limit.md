@@ -133,7 +133,7 @@ the event leaves the machine (ADR-0019).
 `LedgerRecord`, `Plan` and `Execution` gain `account: Option<String>` with
 `skip_serializing_if`, the same additive shape ADR-0033 §5 used for
 `session_id`. ADR-0008 D7's actor is unchanged — the human is still
-`git config user.email`; the account is *which subscription paid*, a
+`git config user.email`; the account is _which subscription paid_, a
 different axis. `ralphy usage --by account` groups on it. The label is the
 same one §4 emits.
 
@@ -199,7 +199,7 @@ vendor's terms, as every other capability Ralphy exposes opt-in
   vendor-aware `RunClock`.** Teaches the core that accounts exist and that
   a vendor has a home directory — an ADR-0002 leak for no gain over doing it
   where the spawn already is.
-- **Poll the vendor's quota endpoint to rotate *before* a limit.** A second
+- **Poll the vendor's quota endpoint to rotate _before_ a limit.** A second
   network dependency, a token handled by Ralphy, and an endpoint that
   rate-limits its own pollers. Ralphy reacts to the limit the vendor reports
   in-band; proactive quota awareness is a different feature.
@@ -213,7 +213,7 @@ vendor's terms, as every other capability Ralphy exposes opt-in
 
 - A run with two Claude accounts that hits a five-hour window continues on
   the second within one respawn instead of sleeping until the window turns;
-  the ADR-0003 wait becomes the *last* resort, not the first.
+  the ADR-0003 wait becomes the _last_ resort, not the first.
 - `Outcome::Limit` and every match on it are untouched; adapters that never
   configure accounts behave byte-for-byte as before.
 - Ledger lines and the Spend view can show which subscription paid for a
