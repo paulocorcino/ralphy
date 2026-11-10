@@ -182,7 +182,7 @@ pub fn list_issue_meta(
             "issue".to_string(),
             "list".to_string(),
             "--label".to_string(),
-            label.to_string(),
+            label.clone(),
             "--state".to_string(),
             "open".to_string(),
             "--json".to_string(),

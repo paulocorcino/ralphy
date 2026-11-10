@@ -199,7 +199,7 @@ impl Open {
             .sessions
             .spawn_attached_as(
                 id,
-                repo.to_string(),
+                repo.clone(),
                 agent_str.clone(),
                 "agent".to_string(),
                 None,
