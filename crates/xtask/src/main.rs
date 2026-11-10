@@ -163,7 +163,7 @@ fn refresh(seed_json: &str, live: &Value) -> Result<String> {
             continue;
         };
         let live_models = live.get(provider).and_then(|p| p.get("models"));
-        for (id, model) in prov.models.iter_mut() {
+        for (id, model) in &mut prov.models {
             if let Some(cost) = live_models
                 .and_then(|m| m.get(id))
                 .and_then(|m| m.get("cost"))
