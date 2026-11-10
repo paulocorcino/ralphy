@@ -290,11 +290,11 @@ test("Tab stays inside the buttons of the view", () => {
   const doc = makeDocument();
   const { overlay } = opened(doc);
   const buttons = overlay.querySelectorAll("button");
-  buttons[buttons.length - 1].focus();
+  buttons.at(-1).focus();
   assert.ok(overlay.fire("keydown", { key: "Tab", shiftKey: false }).defaultPrevented);
   assert.equal(doc.activeElement, buttons[0]);
   assert.ok(overlay.fire("keydown", { key: "Tab", shiftKey: true }).defaultPrevented);
-  assert.equal(doc.activeElement, buttons[buttons.length - 1]);
+  assert.equal(doc.activeElement, buttons.at(-1));
 });
 
 test("a picture with no size opens nothing", () => {

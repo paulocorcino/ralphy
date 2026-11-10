@@ -32,7 +32,7 @@ test("roster order is preserved and the console row comes last on digit 0", () =
     rows.map((r) => r.digit),
     ["1", "2", "7", "0"],
   );
-  const last = rows[rows.length - 1];
+  const last = rows.at(-1);
   assert.equal(last.plain, true);
   assert.equal(last.label, "console");
 });

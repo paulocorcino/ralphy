@@ -764,7 +764,7 @@ test("a reopened tree channel the daemon closes again waits for the next socket"
   closeChannel(page, ws, channelsOf(ws, "tree")[0], "refused");
   runRetries();
   const opens = channelsOf(ws, "tree");
-  closeChannel(page, ws, opens[opens.length - 1], "overflow");
+  closeChannel(page, ws, opens.at(-1), "overflow");
   runRetries();
   assert.deepEqual(channelsOf(ws, "tree"), opens, "no open after the second close");
   drop(ws);
@@ -907,7 +907,7 @@ test("a command whose page socket misses the handshake deadline runs nothing", (
     for (const t of timers) if (t.ms === 8000) t.fn();
   });
   runRetries();
-  open(sockets[sockets.length - 1]);
+  open(sockets.at(-1));
   const spawnOpens = sockets.flatMap((s) =>
     s.sent.filter((f) => f.verb === "channel.open" && f.payload.kind === "spawn"),
   );

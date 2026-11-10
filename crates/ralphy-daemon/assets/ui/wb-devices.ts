@@ -183,7 +183,7 @@ export function eventRows(reply: { events?: AuditEvent[] }, formatAt: (at: strin
   for (const e of reply.events || []) {
     const text = eventLine(e);
     const ip = e.ip || (e.server && e.server.real_ip) || "";
-    const last = out[out.length - 1];
+    const last = out.at(-1);
     if (last && last.line === text && last.ip === ip) {
       last.count += 1;
       last.text = `${text} · ${last.count} times`;

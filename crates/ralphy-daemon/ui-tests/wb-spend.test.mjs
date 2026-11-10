@@ -119,7 +119,7 @@ test("the cap keeps the MOST RECENT rows, not the first ones written", () => {
   assert.equal(view.rows.length, WB.LEDGER_CAP);
   assert.equal(view.truncated, 3);
   assert.equal(view.rows[0].issue, "#3", "the three oldest rows are the ones dropped");
-  assert.equal(view.rows[view.rows.length - 1].issue, `#${WB.LEDGER_CAP + 2}`);
+  assert.equal(view.rows.at(-1).issue, `#${WB.LEDGER_CAP + 2}`);
   // An interactive record is appended after the run records, so head-slicing
   // would make a capped project show none at all.
   const withSession = ledger({

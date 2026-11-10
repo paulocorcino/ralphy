@@ -262,7 +262,7 @@ export const WBColumns = (function () {
   // that is not painted.
   function focusAfter(ids: readonly (string | null)[], focusedId: string | null): string | null {
     if (ids.includes(focusedId)) return focusedId;
-    return ids[ids.length - 1] ?? null;
+    return ids.at(-1) ?? null;
   }
 
   // Alt+Shift+arrows among the painted consoles (ADR-0051 §5). "x" walks the

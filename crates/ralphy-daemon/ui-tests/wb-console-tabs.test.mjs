@@ -33,7 +33,7 @@ function tabShell(ids, seed = null) {
     isRelaunching: (id) => page.relaunching.has(id),
     refitAll() {},
   };
-  return { tabs: state.$store.tabs, places, page, stored: () => stored, last: () => places[places.length - 1] };
+  return { tabs: state.$store.tabs, places, page, stored: () => stored, last: () => places.at(-1) };
 }
 
 test("a console opens in one tab with its own pane; a second pick only activates it", () => {

@@ -330,7 +330,7 @@ function openTopBlock(st: State, header: string): Block {
 }
 
 function openBlock(st: State, header: string) {
-  const top = st.stack[st.stack.length - 1];
+  const top = st.stack.at(-1);
   if (!top) st.stack.push(openTopBlock(st, header));
   else if (top.kind === "table" && /^note$/i.test(header))
     st.stack.push({ kind: "tablenote", table: top.table });
@@ -436,7 +436,7 @@ function readLine(st: State, line: string) {
     openBlock(st, line.slice(0, -1).trim());
     return;
   }
-  const top = st.stack[st.stack.length - 1];
+  const top = st.stack.at(-1);
   if (top) readBlockLine(st, top, line);
   else readTopLine(st, line);
 }
