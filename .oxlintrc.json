@@ -177,8 +177,6 @@
     // debt: 1 site
     "no-unmodified-loop-condition": "off",
     // debt: 1 site
-    "no-useless-concat": "off",
-    // debt: 1 site
     "import/no-named-as-default": "off",
     // debt: 1 site
     "oxc/no-accumulating-spread": "off",

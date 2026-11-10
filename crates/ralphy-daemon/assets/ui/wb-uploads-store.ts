@@ -100,10 +100,11 @@ export function refusalText(reply: PartReply | null): string {
       return "A file with this name exists now.";
     case "refused":
       return "Ralphy cannot write a file there.";
-    default:
-      return (
-        `The daemon refused the upload: ` + `${reply.reason || reply.message || "no reason given"}.`
-      );
+    default: {
+      const reason = reply.reason ?? "";
+      const message = reply.message ?? "";
+      return `The daemon refused the upload: ${reason || message || "no reason given"}.`;
+    }
   }
 }
 
