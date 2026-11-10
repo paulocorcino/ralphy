@@ -477,7 +477,7 @@ fn sleep_label_replaces_queue_context_with_limit_message() {
 #[test]
 fn fmt_clock_formats_mm_ss() {
     assert_eq!(fmt_clock(Duration::from_secs(12 * 60 + 43)), "12:43");
-    assert_eq!(fmt_clock(Duration::from_secs(45 * 60)), "45:00");
+    assert_eq!(fmt_clock(Duration::from_mins(45)), "45:00");
     assert_eq!(fmt_clock(Duration::from_secs(5)), "0:05");
     assert_eq!(fmt_clock(Duration::from_secs(72 * 60 + 5)), "72:05");
 }

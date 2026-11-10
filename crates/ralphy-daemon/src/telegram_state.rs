@@ -269,7 +269,7 @@ impl StateLog {
 
 /// How long the claim of a main daemon holds. The main claims every minute,
 /// so a peer whose main stopped sends by itself again after three minutes.
-pub(crate) const CLAIM_HOLDS: Duration = Duration::from_secs(3 * 60);
+pub(crate) const CLAIM_HOLDS: Duration = Duration::from_mins(3);
 
 /// The last claim of a main daemon on this daemon, in memory only: after a
 /// restart the main's next claim comes within a minute.

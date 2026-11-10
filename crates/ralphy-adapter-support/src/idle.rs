@@ -122,7 +122,7 @@ mod tests {
         let t0 = Instant::now();
         let beat = ProgressBeat::new(t0);
         // Even an absurd silence never expires a disabled watchdog.
-        assert!(!w.expired(&beat, t0 + Duration::from_secs(10 * 3600)));
+        assert!(!w.expired(&beat, t0 + Duration::from_hours(10)));
     }
 
     #[test]
@@ -130,7 +130,7 @@ mod tests {
         let w = IdleWatch::from_minutes(20);
         let t0 = Instant::now();
         let beat = ProgressBeat::new(t0);
-        assert!(!w.expired(&beat, t0 + Duration::from_secs(19 * 60)));
+        assert!(!w.expired(&beat, t0 + Duration::from_mins(19)));
     }
 
     #[test]
@@ -138,8 +138,8 @@ mod tests {
         let w = IdleWatch::from_minutes(20);
         let t0 = Instant::now();
         let beat = ProgressBeat::new(t0);
-        assert!(w.expired(&beat, t0 + Duration::from_secs(20 * 60)));
-        assert!(w.expired(&beat, t0 + Duration::from_secs(21 * 60)));
+        assert!(w.expired(&beat, t0 + Duration::from_mins(20)));
+        assert!(w.expired(&beat, t0 + Duration::from_mins(21)));
     }
 
     #[test]
@@ -150,14 +150,14 @@ mod tests {
         let t0 = Instant::now();
         let beat = ProgressBeat::new(t0);
 
-        beat.beat(t0 + Duration::from_secs(19 * 60));
-        assert!(!w.expired(&beat, t0 + Duration::from_secs(38 * 60)));
+        beat.beat(t0 + Duration::from_mins(19));
+        assert!(!w.expired(&beat, t0 + Duration::from_mins(38)));
 
-        beat.beat(t0 + Duration::from_secs(38 * 60));
-        assert!(!w.expired(&beat, t0 + Duration::from_secs(57 * 60)));
+        beat.beat(t0 + Duration::from_mins(38));
+        assert!(!w.expired(&beat, t0 + Duration::from_mins(57)));
 
         // A child that has run for an hour but went quiet 20 min ago is idle.
-        assert!(w.expired(&beat, t0 + Duration::from_secs(58 * 60)));
+        assert!(w.expired(&beat, t0 + Duration::from_mins(58)));
     }
 
     #[test]

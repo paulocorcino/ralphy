@@ -16,7 +16,7 @@ use super::ModelPrice;
 pub const DEFAULT_MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 /// Cache freshness window (ADR-0034 A6): refetch at most once per day.
-pub const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const CACHE_TTL: Duration = Duration::from_hours(24);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const READ_TIMEOUT: Duration = Duration::from_secs(1);

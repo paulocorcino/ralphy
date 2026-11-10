@@ -15,7 +15,7 @@ use serde::Deserialize as _;
 
 /// How recent the last input of a visible page must be for the operator to
 /// be present.
-pub(crate) const WINDOW: Duration = Duration::from_secs(5 * 60);
+pub(crate) const WINDOW: Duration = Duration::from_mins(5);
 
 /// The longest origin a report may carry. A browser origin is a scheme, a
 /// host and a port: a DNS name has at most 253 bytes.

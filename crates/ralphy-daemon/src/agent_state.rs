@@ -42,7 +42,7 @@ use fold::{Fold, MapFn, StatusLine};
 /// (`DEFAULT_INTERACTIVE_IDLE_MINUTES`), restated here because the daemon
 /// does not import core. A console has no reaper; this is only how long a
 /// green dot is believed.
-pub const STALE_AFTER: Duration = Duration::from_secs(45 * 60);
+pub const STALE_AFTER: Duration = Duration::from_mins(45);
 
 /// The environment variable the hook reads the status path from.
 pub const STATUS_ENV: &str = "RALPHY_STATUS_FILE";
