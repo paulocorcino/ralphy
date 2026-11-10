@@ -1,0 +1,67 @@
+name: Pin drift
+
+# Reads docs/lint/pins.txt, the tools that CI and `xtask gate` pin, and asks
+# each registry for the latest release. One issue stays open while a pin has a
+# newer release: the next run edits it, and it never opens a second one.
+# `drift.py age` exits 1 when a pin has a newer major (a newer minor for a
+# 0.x tool) or a registry did not answer, and 0 otherwise.
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: pin-drift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: pins against the registries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare the pins with the latest releases
+        id: drift
+        run: |
+          status=0
+          python3 docs/lint/scripts/drift.py age --days 36500 docs/lint/pins.txt \
+            > "$RUNNER_TEMP/drift.txt" || status=$?
+          cat "$RUNNER_TEMP/drift.txt"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -gt 1 ]; then
+            echo "drift.py failed with exit code $status" >&2
+            exit "$status"
+          fi
+
+      - name: Keep one open issue for the drift
+        if: steps.drift.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: "Lint gate: a pinned tool has a newer release"
+        run: |
+          {
+            echo "The weekly check of docs/lint/pins.txt found a pin with a newer release."
+            echo "Raise the pin in every place that names it, then update pins.txt."
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/drift.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+          number=$(gh issue list --state open --limit 100 --json number,title \
+            --jq ".[] | select(.title == env.TITLE) | .number" | head -n 1)
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+          fi
