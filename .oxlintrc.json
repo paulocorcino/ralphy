@@ -106,8 +106,6 @@
     "unicorn/explicit-length-check": "off",
     // debt: 65 sites
     "no-promise-executor-return": "off",
-    // debt: 64 sites
-    "unicorn/no-hex-escape": "off",
     // debt: 63 sites
     "unicorn/escape-case": "off",
     // debt: 46 sites
