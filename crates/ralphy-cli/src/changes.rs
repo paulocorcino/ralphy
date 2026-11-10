@@ -181,7 +181,7 @@ fn changes_discard(args: ChangesPathArgs) -> anyhow::Result<()> {
 }
 
 fn status_word(status: ralphy_core::ChangeStatus) -> &'static str {
-    use ralphy_core::ChangeStatus::*;
+    use ralphy_core::ChangeStatus::{Added, Conflicted, Deleted, Modified, Renamed, Untracked};
     match status {
         Modified => "modified",
         Added => "added",
