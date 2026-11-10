@@ -142,8 +142,7 @@
     "unicorn/no-negated-condition": "off",
     // debt: 13 sites
     "unicorn/prefer-at": "off",
-    // debt: 12 sites
-    "no-var": "off",
+    "no-var": "error",
     // debt: 10 sites
     "no-param-reassign": "off",
     // debt: 10 sites

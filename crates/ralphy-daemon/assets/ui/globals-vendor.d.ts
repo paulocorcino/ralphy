@@ -204,8 +204,10 @@ interface WunderbaumDndEvent extends WunderbaumEvent {
 }
 
 /** The vendored marked (`vendor/marked.min.js`). */
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var marked: { parse(markdown: string): string };
 /** The vendored DOMPurify (`vendor/dompurify.min.js`). */
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var DOMPurify: {
   sanitize(
     dirty: string,
@@ -213,15 +215,21 @@ declare var DOMPurify: {
   ): string;
 };
 /** The vendored xterm.js and its addons (`vendor/xterm*.js`). */
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var Terminal: new (options: {
   convertEol: boolean;
   theme: { [color: string]: string };
 }) => XtermTerminal;
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var FitAddon: { FitAddon: new () => XtermFitAddon };
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var WebglAddon: { WebglAddon: new () => XtermWebglAddon };
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var WebLinksAddon: { WebLinksAddon: new () => XtermAddon };
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var Unicode11Addon: { Unicode11Addon: new () => XtermAddon };
 /** The vendored Wunderbaum (`vendor/wunderbaum`). */
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
 declare var mar10: {
   Wunderbaum: {
     new (options: WunderbaumOptions): WunderbaumTree;
