@@ -173,11 +173,11 @@ export function noteSlug(title: string | null | undefined) {
   return String(title || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[̀-ͯ]/gu, "")
+    .replaceAll(/[^a-z0-9]+/gu, "-")
+    .replaceAll(/^-+|-+$/gu, "")
     .slice(0, 48)
-    .replace(/-+$/g, "");
+    .replaceAll(/-+$/gu, "");
 }
 
 // `note-<UTC yyyymmdd-hhmmss>` — the name a note with no heading yet takes.

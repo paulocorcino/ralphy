@@ -225,7 +225,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
     const dirField = el.querySelector<HTMLInputElement>(".note-dir");
     const dir = String(dirField?.value || DEFAULT_DIR)
       .trim()
-      .replace(/^\/+|\/+$/g, "");
+      .replaceAll(/^\/+|\/+$/gu, "");
     const base = noteSlug(titleOf(markdown, "")) || stampName();
     el._noteNaming = firstFreeName(record, dir, base)
       .then((path) => {

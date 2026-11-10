@@ -118,8 +118,6 @@
     "unicorn/prefer-add-event-listener": "off",
     // debt: 44 sites
     "unicorn/no-array-sort": "off",
-    // debt: 42 sites
-    "unicorn/prefer-string-replace-all": "off",
     // debt: 41 sites
     "typescript/consistent-type-imports": "off",
     // debt: 38 sites

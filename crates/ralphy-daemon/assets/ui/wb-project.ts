@@ -182,10 +182,10 @@ function worktreeCreateRow(
 // taken name) stays with `worktreeNameProblem`, checked on submit.
 function maskWorktreeName(raw: string) {
   return String(raw || "")
-    .replace(/[\s\u0000-\u001f\u007f/\\~^:?*[]/g, "")
+    .replaceAll(/[\s\u0000-\u001F\u007F/\\~^:?*[]/gu, "")
     .replace(/^[-.]+/, "")
-    .replace(/\.{2,}/g, ".")
-    .replace(/@\{+/g, "@");
+    .replaceAll(/\.{2,}/gu, ".")
+    .replaceAll(/@\{+/gu, "@");
 }
 
 // Why the daemon would refuse `name` as a new worktree, or "" when it would

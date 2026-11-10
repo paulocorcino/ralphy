@@ -98,7 +98,7 @@ export function wbLogin() {
     },
 
     _otpFill(text: string, el: HTMLElement) {
-      const chars = text.replace(/\D/g, "").slice(0, 6).split("");
+      const chars = text.replaceAll(/\D/gu, "").slice(0, 6).split("");
       for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] || "";
       this._otpSync();
       const boxes = this._otpBoxes(el);
@@ -107,7 +107,7 @@ export function wbLogin() {
     },
 
     otpInput(i: number, e: Event & { target: HTMLInputElement }) {
-      const v = e.target.value.replace(/\D/g, "");
+      const v = e.target.value.replaceAll(/\D/gu, "");
       if (v.length > 1) {
         this._otpFill(v, e.target);
         return;

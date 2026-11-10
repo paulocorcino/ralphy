@@ -133,12 +133,15 @@ export const DRAW_LIMIT = 12;
 // A word of the `erDiagram` grammar: space is removed, any character outside
 // `A-Za-z0-9_()[]-` becomes `_`, and the word starts with a letter or `_`.
 function mermaidWord(raw: string) {
-  const word = raw.replace(/\s+/g, "").replace(/[^A-Za-z0-9_()[\]-]/g, "_");
+  const word = raw
+    .replaceAll(/\s+/gu, "")
+    // One `_` per UTF-16 unit, as the pattern had no `u` flag.
+    .replaceAll(/[^A-Za-z0-9_()[\]-]/gu, (c) => "_".repeat(c.length));
   return /^[A-Za-z_]/.test(word) ? word : `_${word}`;
 }
 
 function entityLines(id: string, table: DbmlTable) {
-  const label = table.name.replace(/"/g, "'");
+  const label = table.name.replaceAll('"', "'");
   if (table.columns.length === 0) return [`  ${id}["${label}"]`];
   const rows = table.columns.map(
     (c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`,

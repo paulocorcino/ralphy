@@ -455,10 +455,10 @@ function partLine(line, skip) {
 export function bindingNames(expr) {
   const code = expr
     // `&amp;` last, so `&amp;lt;` stays the text `&lt;`.
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, "''");
+    .replaceAll('&lt;', "<")
+    .replaceAll('&gt;', ">")
+    .replaceAll('&amp;', "&")
+    .replaceAll(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/gu, "''");
   const names = new Set();
   for (const m of code.matchAll(/[A-Za-z_$][\w$]*/g)) {
     const before = code.slice(0, m.index);

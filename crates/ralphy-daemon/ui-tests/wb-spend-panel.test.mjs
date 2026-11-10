@@ -10,6 +10,12 @@ import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, with
 // The part that holds the Spend tab's markup.
 const PART = "wb-spend-panel.part.html";
 
+// A template literal's text is not code: only its `${…}` parts are read.
+const code = (value) =>
+  value.replaceAll(/`([^`]*)`/gu, (_, t) =>
+    Array.from(t.matchAll(/\$\{([^}]*)\}/gu), (m) => m[1]).join(", "),
+  );
+
 // One page with the shell and the Spend tab, and a window that delivers the
 // events it is sent, as the browser does. `init()` adds the listeners, as
 // Alpine does when it builds the component.
@@ -46,8 +52,6 @@ test("every name the markup of wbSpend reads is its own or in its uses list", ()
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variables of the two panes.
   const loopVars = new Set(["p", "t", "d", "o", "m", "r", "c", "i", "peer", "cause", "col", "row"]);
-  // A template literal's text is not code: only its `${…}` parts are read.
-  const code = (value) => value.replace(/`([^`]*)`/g, (_, t) => Array.from(t.matchAll(/\$\{([^}]*)\}/g), (m) => m[1]).join(", "));
   let read = 0;
   for (const [, attr, value] of attrs) {
     // `x-data` names the component.

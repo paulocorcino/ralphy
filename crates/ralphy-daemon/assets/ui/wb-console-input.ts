@@ -390,7 +390,7 @@ export function pasteDecision({ types, size, watching }: PasteInput) {
 // so the source carries no control-character escapes of its own.
 export function scrubClipboard(text: string) {
   let out = "";
-  for (const ch of text.replace(/\r\n/g, "\n")) {
+  for (const ch of text.replaceAll("\r\n", "\n")) {
     // A `for…of` over a string yields non-empty code points.
     const c = ch.codePointAt(0) ?? 0;
     // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.

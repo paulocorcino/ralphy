@@ -63,10 +63,10 @@ function toLines(text: string): string[] {
     const cEnd = commentEnd(text, i);
     const sEnd = cEnd < 0 ? stringEnd(text, i) : -1;
     if (cEnd >= 0) {
-      out += text.slice(i, cEnd).replace(/[^\n]/g, "");
+      out += text.slice(i, cEnd).replaceAll(/[^\n]/gu, "");
       i = cEnd;
     } else if (sEnd >= 0) {
-      out += text.slice(i, sEnd).replace(/\s*\n\s*/g, " ");
+      out += text.slice(i, sEnd).replaceAll(/\s*\n\s*/gu, " ");
       i = sEnd;
     } else {
       out += braceBreak(text.charAt(i));
@@ -123,11 +123,13 @@ function readDotted(s: string, from: number): Dotted {
 function unquote(raw: string) {
   const s = raw.trim();
   const triple = s.length >= 6 && s.startsWith("'''") && s.endsWith("'''");
-  if (triple) return s.slice(3, -3).trim().replace(/\s+/g, " ");
+  if (triple) {
+    return s.slice(3, -3).trim().replaceAll(/\s+/gu, " ");
+  }
   const q = s[0];
   const quoted = s.length >= 2 && (q === "'" || q === '"' || q === "`") && s.endsWith(q);
   if (!quoted) return s;
-  return s.slice(1, -1).replace(/\\(['"`])/g, "$1");
+  return s.slice(1, -1).replaceAll(/\\(['"`])/gu, "$1");
 }
 
 // The end of a column type: `varchar(255)`, `DECIMAL(10, 2)`, `int[]`, or a

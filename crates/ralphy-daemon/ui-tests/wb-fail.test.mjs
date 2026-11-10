@@ -124,7 +124,7 @@ test("every CAUSE value fits after `Could not <act>: ` and follows the rules fil
   for (const [code, cause] of causes) {
     assert.match(cause, /^[a-z]/, `${code}: a cause starts lowercase`);
     assert.doesNotMatch(cause, /[.!?:;…]$/, `${code}: the sentence adds the final period`);
-    const plain = cause.replace(/’/g, "'");
+    const plain = cause.replaceAll('’', "'");
     for (const c of RULES.contractions.banned) {
       assert.ok(!plain.toLowerCase().includes(c), `${code}: contraction ${c}`);
     }
