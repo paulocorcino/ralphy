@@ -118,7 +118,7 @@ export const WBDevice = (function () {
       "position:fixed;visibility:hidden;" +
       "padding:env(safe-area-inset-top) env(safe-area-inset-right) " +
       "env(safe-area-inset-bottom) env(safe-area-inset-left)";
-    doc.body.appendChild(el);
+    doc.body.append(el);
     const cs = win.getComputedStyle(el);
     const out = {
       top: parseFloat(cs.paddingTop) || 0,
