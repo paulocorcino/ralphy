@@ -121,7 +121,7 @@ pub(crate) struct Row {
     continues: bool,
 }
 
-pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn ui_copy_cmd(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut json = false;
     let mut lint = false;

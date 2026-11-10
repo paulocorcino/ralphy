@@ -293,7 +293,7 @@ fn install_skills(skills_dst: &Path) -> Result<()> {
     };
     let outcome = with_spinner("Installing skills…", || {
         install_skills_step(skills_dst, fetch)
-    })?;
+    });
     match outcome {
         Outcome::Installed(n) => print_ok(&format!("Installed {n} skill(s).")),
         Outcome::Skipped => print_ok("Skills already up to date."),

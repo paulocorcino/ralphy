@@ -18,10 +18,10 @@ use crate::confine;
 use crate::fswrite::{self, ensure_dir, failed, map_confine, WriteError};
 
 /// The landing directory of the parts.
-pub const DIR: &str = ".ralphy/uploads";
+pub(crate) const DIR: &str = ".ralphy/uploads";
 
 /// The largest part, in bytes. Its base64 fits under `MAX_COMMAND_BYTES`.
-pub const PART_MAX: usize = 1 << 20;
+pub(crate) const PART_MAX: usize = 1 << 20;
 
 /// `files.upload_max_mb` when the settings name none.
 const DEFAULT_MAX_MB: u64 = 25;
@@ -37,7 +37,7 @@ const MAX_COPY: u32 = 1000;
 
 /// What the last part does when the target already exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OnConflict {
+pub(crate) enum OnConflict {
     Fail,
     Replace,
     KeepBoth,
@@ -45,7 +45,7 @@ pub enum OnConflict {
 
 impl OnConflict {
     /// The wire value; absent is `fail`, an unknown value is `None`.
-    pub fn from_wire(value: Option<&str>) -> Option<OnConflict> {
+    pub(crate) fn from_wire(value: Option<&str>) -> Option<OnConflict> {
         match value {
             None | Some("fail") => Some(OnConflict::Fail),
             Some("replace") => Some(OnConflict::Replace),
@@ -57,7 +57,7 @@ impl OnConflict {
 
 /// One part as the page sent it, already decoded.
 #[derive(Debug, Clone)]
-pub struct Part {
+pub(crate) struct Part {
     pub id: String,
     pub path: String,
     pub offset: u64,
@@ -68,14 +68,14 @@ pub struct Part {
 
 /// What the last part did to the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Placed {
+pub(crate) enum Placed {
     Created,
     Replaced,
 }
 
 impl Placed {
     /// The word the reply and the audit record carry.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Placed::Created => "created",
             Placed::Replaced => "replaced",
@@ -85,7 +85,7 @@ impl Placed {
 
 /// The result of one accepted part.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Step {
+pub(crate) enum Step {
     /// The file is not complete; this many bytes are confirmed.
     Received(u64),
     /// The file is complete and now lives at `path`.
@@ -94,7 +94,7 @@ pub enum Step {
 
 /// A refused part. The page resends from `expected` after `Offset`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UploadError {
+pub(crate) enum UploadError {
     Offset { expected: u64 },
     TooLarge,
     Conflict,
@@ -104,7 +104,7 @@ pub enum UploadError {
 
 impl UploadError {
     /// The error reply on the wire.
-    pub fn reply(self) -> serde_json::Value {
+    pub(crate) fn reply(self) -> serde_json::Value {
         let reason = match self {
             UploadError::Offset { expected } => {
                 return serde_json::json!({
@@ -124,7 +124,7 @@ impl UploadError {
 
 /// Read one part out of a command payload. The encoded length is bounded
 /// before the decode, so an oversized part never allocates its bytes.
-pub fn parse(payload: &serde_json::Value) -> Result<Part, UploadError> {
+pub(crate) fn parse(payload: &serde_json::Value) -> Result<Part, UploadError> {
     let text = |key: &str| payload.get(key).and_then(|v| v.as_str());
     let number = |key: &str| payload.get(key).and_then(serde_json::Value::as_u64);
     let id = text("id")
@@ -162,7 +162,7 @@ fn is_id(id: &str) -> bool {
 }
 
 /// The largest file `repo_root` accepts, in bytes, from `files.upload_max_mb`.
-pub fn limit_bytes(repo_root: &Path) -> u64 {
+pub(crate) fn limit_bytes(repo_root: &Path) -> u64 {
     let path = repo_root.join(".ralphy").join("settings.json");
     let named = std::fs::read_to_string(path)
         .ok()
@@ -193,7 +193,12 @@ fn limit_from(named: Option<u64>) -> u64 {
 ///
 /// The page sends the parts of one id one after another, so two requests never
 /// append to one `.part` file at the same time.
-pub fn accept(root: &Path, part: &Part, now: SystemTime, limit: u64) -> Result<Step, UploadError> {
+pub(crate) fn accept(
+    root: &Path,
+    part: &Part,
+    now: SystemTime,
+    limit: u64,
+) -> Result<Step, UploadError> {
     if part.total > limit {
         return Err(UploadError::TooLarge);
     }

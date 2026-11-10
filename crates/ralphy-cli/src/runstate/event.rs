@@ -26,7 +26,7 @@ use super::{SkipKind, UsageLite};
 /// `f64` has no total equality. `PartialEq` is all any consumer needs (`assert_eq!`
 /// in the fold/decoder tests, no `HashSet`/`BTreeSet` of events).
 #[derive(Debug, Clone, PartialEq)]
-pub enum RunEvent {
+pub(crate) enum RunEvent {
     /// The queue was built: its size, the issue numbers in order, the first
     /// issue carrying `stop-before` (where the run will halt), if any, and the
     /// enriched per-issue snapshot (ADR-0020) — a `serde_json::Value` array of
@@ -215,7 +215,11 @@ pub enum RunEvent {
 ///
 /// `target` is currently informational — the message + fields uniquely identify
 /// every consumed event — but kept in the signature for future disambiguation.
-pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> Option<RunEvent> {
+pub(crate) fn event_to_runevent(
+    target: &str,
+    message: &str,
+    fields: &EventFields,
+) -> Option<RunEvent> {
     let _ = target;
     // Level wins: WARN and ERROR always surface as Notice.
     if fields.level == Level::WARN || fields.level == Level::ERROR {
@@ -324,6 +328,13 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             label: None,
             blockers: Vec::new(),
         }),
+        _ => run_level_runevent(message, number, fields),
+    }
+}
+
+/// The run-level half of [`event_to_runevent`]: deadline, stop, sleep, agent and run bounds.
+fn run_level_runevent(message: &str, number: u64, fields: &EventFields) -> Option<RunEvent> {
+    match message {
         ralphy_core::emit::DEADLINE_PASSED_MSG => Some(RunEvent::DeadlinePassed { number }),
         // The operator's stop. `number` is already `unwrap_or(0)`, which is the
         // between-issues case verbatim: the emitter omits the field there.

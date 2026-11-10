@@ -85,7 +85,7 @@ pub(crate) struct FileDiff {
     pub(crate) removed: Vec<String>,
 }
 
-pub fn capabilities_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn capabilities_cmd(args: &[String]) -> Result<()> {
     let mut repo: Option<PathBuf> = None;
     let mut base: Option<String> = None;
     let mut head = "HEAD".to_string();

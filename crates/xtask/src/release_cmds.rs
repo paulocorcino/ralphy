@@ -14,14 +14,14 @@ use crate::changelog::{fold, load_history, read_fragments, render_changelog, ren
 
 /// `<workspace root>`, located from this crate's compile-time manifest dir
 /// (`<root>/crates/xtask`).
-pub fn workspace_root() -> &'static Path {
+pub(crate) fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("xtask crate lives at <root>/crates/xtask")
 }
 
-pub fn changelog_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn changelog_cmd(args: &[String]) -> Result<()> {
     let mut check = false;
     let mut force = false;
     let mut pending = false;
@@ -274,7 +274,7 @@ fn today() -> String {
 ///
 /// Fifteen manifests carry a literal version today and no script moved them; at
 /// a release every few days that is a recurring drift risk (ADR-0056 §2).
-pub fn bump_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn bump_cmd(args: &[String]) -> Result<()> {
     let mut version: Option<String> = None;
     let mut root = workspace_root().to_path_buf();
 

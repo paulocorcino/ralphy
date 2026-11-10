@@ -17,7 +17,7 @@ use crate::plan_progress::PlanProgress;
 /// The run facts the fold does not carry: identity, where it runs, and when it
 /// started. Constant for the life of a run.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SnapshotCtx {
+pub(crate) struct SnapshotCtx {
     pub runid: String,
     pub pid: u32,
     /// The repo slug (`owner/name`), matching the events `git.repository`.
@@ -39,7 +39,7 @@ pub struct SnapshotCtx {
 ///
 /// `plan` arrives as an argument rather than out of [`RunState`]: it is polled
 /// from the filesystem, and the fold is built from `tracing` events only (#330).
-pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunSnapshot {
+pub(crate) fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunSnapshot {
     RunSnapshot {
         v: ralphy_run_snapshot::SNAPSHOT_VERSION,
         runid: ctx.runid.clone(),

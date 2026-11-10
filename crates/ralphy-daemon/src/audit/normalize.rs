@@ -21,11 +21,11 @@ use software::{browser, engine, os_from_hint, os_from_ua, os_version, same_os, H
 
 /// The version of these rules. A line keeps it, so an old line can be
 /// normalized again when the rules change.
-pub const NORMALIZER: u32 = 2;
+pub(crate) const NORMALIZER: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Os {
+pub(crate) enum Os {
     Windows,
     Macos,
     Ios,
@@ -38,7 +38,7 @@ pub enum Os {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Engine {
+pub(crate) enum Engine {
     Webkit,
     Blink,
     Gecko,
@@ -46,7 +46,7 @@ pub enum Engine {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Browser {
+pub(crate) enum Browser {
     Safari,
     Chrome,
     Chromium,
@@ -63,7 +63,7 @@ pub enum Browser {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Form {
+pub(crate) enum Form {
     Phone,
     Tablet,
     Desktop,
@@ -71,7 +71,7 @@ pub enum Form {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum GpuVendor {
+pub(crate) enum GpuVendor {
     Nvidia,
     Amd,
     Intel,
@@ -85,7 +85,7 @@ pub enum GpuVendor {
 /// Where a normalized value came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Source {
+pub(crate) enum Source {
     /// A client hint header, or the page's `userAgentData`.
     Hint,
     /// The user agent string.
@@ -97,7 +97,7 @@ pub enum Source {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Field<T> {
+pub(crate) struct Field<T> {
     pub value: T,
     pub source: Source,
 }
@@ -107,14 +107,14 @@ fn field<T>(value: T, source: Source) -> Option<Field<T>> {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Gpu {
+pub(crate) struct Gpu {
     pub vendor: GpuVendor,
     pub model: String,
 }
 
 /// What a line records about a device, in Ralphy's words.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Normalized {
+pub(crate) struct Normalized {
     pub normalizer: u32,
     pub os: Option<Field<Os>>,
     pub os_version: Option<Field<String>>,
@@ -136,7 +136,7 @@ pub struct Normalized {
     pub profile: String,
 }
 
-pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
+pub(crate) fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
     let hints = Hints::read(client, server);
     let ua = client
         .ua
@@ -292,7 +292,7 @@ fn shown_screen(
 /// The fields of `next` that differ from `prev`, among those the profile
 /// reads. `other` when only a fact outside these fields changed (cores,
 /// memory, touch points, languages).
-pub fn changed_fields(prev: &Normalized, next: &Normalized) -> Vec<&'static str> {
+pub(crate) fn changed_fields(prev: &Normalized, next: &Normalized) -> Vec<&'static str> {
     fn same<T: PartialEq>(a: &Option<Field<T>>, b: &Option<Field<T>>) -> bool {
         a.as_ref().map(|f| &f.value) == b.as_ref().map(|f| &f.value)
     }

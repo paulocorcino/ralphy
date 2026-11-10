@@ -104,7 +104,7 @@ static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| 
 
 /// The decision returned by [`evaluate_guard`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GuardDecision {
+pub(crate) enum GuardDecision {
     Allow,
     Deny(String),
 }
@@ -112,7 +112,7 @@ pub enum GuardDecision {
 /// The environment [`evaluate_guard`] judges against. All paths are
 /// pre-normalised via [`normalise_path`] (lowercase, `/`-separated, no
 /// trailing slash) so the pure evaluation logic never touches the filesystem.
-pub struct GuardContext {
+pub(crate) struct GuardContext {
     /// The Ralphy binary's parent directory (writes here are blocked).
     pub tool_dir: String,
     /// The hook invocation's working directory — the agent's worktree.
@@ -126,7 +126,11 @@ pub struct GuardContext {
 ///
 /// `tool_name` is the `tool_name` field from the hook payload.
 /// `tool_input` is the `tool_input` object.
-pub fn evaluate_guard(tool_name: &str, tool_input: &Value, ctx: &GuardContext) -> GuardDecision {
+pub(crate) fn evaluate_guard(
+    tool_name: &str,
+    tool_input: &Value,
+    ctx: &GuardContext,
+) -> GuardDecision {
     match tool_name {
         // On Windows a session also runs commands with its `PowerShell` tool,
         // whose input is a `command` like Bash's (measured on Claude Code
@@ -334,7 +338,7 @@ fn normalise_path(dir: &std::path::Path) -> String {
 /// `fallback_cwd` stands in for a payload without `cwd`; `tool_dir` and
 /// `temp_dir` are already in the [`GuardContext`] form.
 // ADR-0072 D6.
-pub fn decide_hook_input(
+pub(crate) fn decide_hook_input(
     raw: &str,
     fallback_cwd: Option<&std::path::Path>,
     tool_dir: String,
@@ -413,7 +417,7 @@ fn tool_call(payload: &Value) -> (&str, &Value) {
     clippy::disallowed_methods,
     reason = "the hook guard reports its decision by its exit code, so it must exit"
 )]
-pub fn run_guard_hook(cost_gate: bool) -> ! {
+pub(crate) fn run_guard_hook(cost_gate: bool) -> ! {
     use std::io::Read;
 
     let mut raw = String::new();

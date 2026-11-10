@@ -4,7 +4,7 @@ use super::{Counts, IssueEntry, IssueStatus, RunState};
 
 impl RunState {
     /// Tally the issues by status for the counter line.
-    pub fn counts(&self) -> Counts {
+    pub(crate) fn counts(&self) -> Counts {
         let mut c = Counts::default();
         for e in &self.issues {
             match e.status {
@@ -24,13 +24,13 @@ impl RunState {
     }
 
     /// The active issue entry, if any.
-    pub fn active_issue(&self) -> Option<&IssueEntry> {
+    pub(crate) fn active_issue(&self) -> Option<&IssueEntry> {
         let n = self.active?;
         self.issues.iter().find(|e| e.number == n)
     }
 
     /// The most-recently-seen issue in a terminal status (for the collapsed card).
-    pub fn most_recent_finished(&self) -> Option<&IssueEntry> {
+    pub(crate) fn most_recent_finished(&self) -> Option<&IssueEntry> {
         self.issues.iter().rev().find(|e| e.status.is_terminal())
     }
 
@@ -42,7 +42,7 @@ impl RunState {
     ///
     /// One vocabulary, read by the `run.heartbeat` envelope (ADR-0019) and by
     /// the run snapshot's phase block (ADR-0047 §5).
-    pub fn run_phase(&self) -> &'static str {
+    pub(crate) fn run_phase(&self) -> &'static str {
         if self.sleep.is_some() {
             return "sleeping";
         }

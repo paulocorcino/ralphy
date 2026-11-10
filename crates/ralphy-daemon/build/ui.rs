@@ -40,7 +40,7 @@ fn is_left_out(name: &str, top: bool) -> bool {
 /// Build `out` from `src`: an exact copy, except that a `.ts` file becomes a
 /// `.js` file and a page has its parts put in (ADR-0080 D1). `out` is emptied
 /// first, so a deleted source leaves no file.
-pub fn build(src: &Path, out: &Path) -> Result<()> {
+pub(crate) fn build(src: &Path, out: &Path) -> Result<()> {
     if out.exists() {
         fs::remove_dir_all(out).with_context(|| format!("empty {}", out.display()))?;
     }

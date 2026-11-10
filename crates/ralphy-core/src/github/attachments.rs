@@ -70,7 +70,7 @@ pub fn classify_format(filename: &str) -> FormatClass {
 /// content sniffing — never an acceptance on its own: the bytes still have to
 /// prove they are an allowlisted image ([`sniff_image_ext`]) or the attachment is
 /// denied exactly as before (ADR-0025 §3.2 amendment).
-pub fn is_extensionless_asset(url: &str) -> bool {
+pub(crate) fn is_extensionless_asset(url: &str) -> bool {
     // Scheme-agnostic on purpose: the extractor's regex admits `http` too, and a
     // candidate that slips past here would be silently denied, not silently let in.
     url.contains(ASSET_PATH_SEGMENT) && !filename_from_url(url).contains('.')
@@ -81,7 +81,7 @@ pub fn is_extensionless_asset(url: &str) -> bool {
 /// yields a class, so an extensionless asset that is anything else (HTML, a zip,
 /// a video) stays `denied format`. Stricter than the name-based path — a `.png`
 /// name is believed, these bytes must prove it.
-pub fn sniff_image_ext(bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn sniff_image_ext(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Some("png");
     }

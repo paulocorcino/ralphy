@@ -36,7 +36,7 @@ struct Score {
     marked: bool,
 }
 
-pub fn complexity_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn complexity_cmd(args: &[String]) -> Result<()> {
     let mut check = false;
     let mut base = None;
     let mut it = args.iter();

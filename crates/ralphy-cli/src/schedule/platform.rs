@@ -25,7 +25,7 @@ use super::spec::{Schedule, TimerSpec};
 /// outputs are testable from either host; only the executor in `schedule.rs`
 /// binds this to the running platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Platform {
+pub(super) enum Platform {
     Windows,
     Cron,
 }
@@ -36,10 +36,10 @@ pub enum Platform {
 /// install and remove — it is the only handle we have on a user-global crontab
 /// we must not otherwise disturb. Per-target (not per-repo alone) so `run` and
 /// `triage` timers on the same repo never strip each other's line.
-pub const CRON_TAG_PREFIX: &str = "# ralphy-schedule:";
+pub(super) const CRON_TAG_PREFIX: &str = "# ralphy-schedule:";
 
 /// The full crontab tag for `slug` (`"run"`/`"triage"`) anchored at `wd`.
-pub fn cron_tag(slug: &str, wd: &Path) -> String {
+pub(super) fn cron_tag(slug: &str, wd: &Path) -> String {
     format!("{CRON_TAG_PREFIX}{slug}:{}", wd.display())
 }
 
@@ -54,7 +54,7 @@ pub fn cron_tag(slug: &str, wd: &Path) -> String {
 ///   (mirrors `autostart`'s Run-key launcher).
 /// - Cron: a single-element vec holding the crontab line, `cd`-anchored, output
 ///   `>> … 2>&1`-redirected, and tagged for removal.
-pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
+pub(super) fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
     let args = spec.args.join(" ");
     let wd = spec.working_dir.display();
     let exe = spec.program.display();
@@ -116,7 +116,7 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
 /// Render the removal command. Windows: the `schtasks /Delete /TN <task> /F`
 /// argv. Cron: removal is a crontab read-modify-write via [`strip_cron_line`],
 /// so there is no argv to render — an empty vec.
-pub fn render_remove(p: Platform, task_name: &str) -> Vec<String> {
+pub(super) fn render_remove(p: Platform, task_name: &str) -> Vec<String> {
     match p {
         Platform::Windows => vec![
             "schtasks".into(),
@@ -134,7 +134,7 @@ pub fn render_remove(p: Platform, task_name: &str) -> Vec<String> {
 /// same repo — and the input's trailing-newline shape. This is the
 /// read-modify half of cron install/remove; the write half pipes the result
 /// back through `crontab -`.
-pub fn strip_cron_line(existing: &str, tag: &str) -> String {
+pub(super) fn strip_cron_line(existing: &str, tag: &str) -> String {
     let kept: Vec<&str> = existing
         .lines()
         .filter(|line| !line.trim_end().ends_with(tag))
@@ -149,7 +149,7 @@ pub fn strip_cron_line(existing: &str, tag: &str) -> String {
 /// What a `schtasks /Query /TN <task> /FO LIST /V` inspection found. Cron has no
 /// equivalent (see the module docs), so its status path never builds one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TimerStatus {
+pub(super) struct TimerStatus {
     pub registered: bool,
     pub last_run: Option<String>,
     pub last_result: Option<String>,
@@ -159,7 +159,7 @@ pub struct TimerStatus {
 /// Parse the `schtasks … /FO LIST /V` LIST format. A non-empty `TaskName:` field
 /// means the task exists; the three history fields are extracted when present.
 /// Empty/error output (task absent) yields `registered == false`.
-pub fn parse_status(list_output: &str) -> TimerStatus {
+pub(super) fn parse_status(list_output: &str) -> TimerStatus {
     let mut status = TimerStatus {
         registered: false,
         last_run: None,

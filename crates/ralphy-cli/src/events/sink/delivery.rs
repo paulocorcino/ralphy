@@ -133,14 +133,13 @@ impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
         // Fold first so the adapter events that carry issue `0` resolve to the
         // active issue when mapped.
         self.state.apply(event.clone());
-        if let Some(cloudevent) = runevent_to_cloudevent(&event, &self.ctx, &self.state) {
-            deliver(
-                &self.transport,
-                &cloudevent,
-                &self.warned,
-                RETRY_BASE_BACKOFF,
-            );
-        }
+        let cloudevent = runevent_to_cloudevent(&event, &self.ctx, &self.state);
+        deliver(
+            &self.transport,
+            &cloudevent,
+            &self.warned,
+            RETRY_BASE_BACKOFF,
+        );
     }
 
     fn on_tick(&mut self, _changed: bool) {
@@ -243,7 +242,7 @@ fn detach_warn() {
 /// shutdown signal and the worker's join handle; a spawn failure leaves the
 /// installed Layer inert (the ring just fills and drops) rather than aborting the
 /// run.
-pub fn try_start_sink<T: EventSink + Send + 'static>(
+pub(crate) fn try_start_sink<T: EventSink + Send + 'static>(
     transport: T,
     ctx: EventCtx,
     queue: Arc<EventQueue>,

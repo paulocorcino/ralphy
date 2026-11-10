@@ -12,7 +12,7 @@ use super::fold::{Signal, StatusLine, WaitKind};
 /// (`SubagentStop`: a subagent never owns the state; `Notification`, which
 /// stays out by ADR-0085 D4; an event outside the table). Claude sends no
 /// event on an interrupt (D7.6), so no line maps to `Interrupt`.
-pub fn claude_signal(line: &StatusLine) -> Option<Signal> {
+pub(super) fn claude_signal(line: &StatusLine) -> Option<Signal> {
     let tool = line.tool_name.as_deref();
     let signal = match line.event.as_str() {
         "SessionStart" => Signal::SessionBoundary,

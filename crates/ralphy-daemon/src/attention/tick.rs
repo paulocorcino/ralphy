@@ -34,7 +34,7 @@ use crate::routes::{push, Push};
 use crate::session::{SessionInfo, SessionManager};
 
 /// How often the tick reads the runs.
-pub const EVERY: Duration = Duration::from_secs(3);
+pub(crate) const EVERY: Duration = Duration::from_secs(3);
 
 /// The run snapshots of the last tick, shared with the route.
 pub(crate) type Runs = Arc<Mutex<RunsRead>>;

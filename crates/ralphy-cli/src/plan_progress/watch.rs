@@ -10,7 +10,7 @@ use std::time::SystemTime;
 /// The last-seen mtime of a plan file. Best-effort throughout — a stat or read
 /// failure is a silent `None` (the plan may not exist yet between issues).
 #[derive(Default)]
-pub struct PlanFileWatch {
+pub(crate) struct PlanFileWatch {
     last_mtime: Option<SystemTime>,
 }
 
@@ -21,7 +21,7 @@ impl PlanFileWatch {
     /// open the file, so on Windows it answers happily while the read loses to a
     /// sharing violation (an editor holding `plan.md`). Recording first would
     /// retire that revision unread and freeze the step list until the next write.
-    pub fn changed_text(&mut self, path: &Path) -> Option<String> {
+    pub(crate) fn changed_text(&mut self, path: &Path) -> Option<String> {
         let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
         if self.last_mtime == Some(mtime) {
             return None; // unchanged since the last poll

@@ -55,7 +55,7 @@ impl LiveState {
 /// The console presenter: a `tracing` Layer that renders the run's lifecycle. Its
 /// `on_event` only decodes and forwards; the drawing runs on a separate [`Renderer`]
 /// thread, so a wedged console write never blocks the run.
-pub struct Presenter {
+pub(crate) struct Presenter {
     /// Hands each decoded event to the render thread. The `Mutex` exists only so the
     /// `Layer` stays `Sync`; it is held for a single non-blocking `send`, never across
     /// terminal I/O — that is the freeze fix.
@@ -88,7 +88,7 @@ struct Renderer {
 impl Presenter {
     /// Build a presenter, auto-detecting the terminal: styled (colour + emoji)
     /// on an attended TTY without `NO_COLOR`, else a plain clean-line renderer.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let is_tty = console::Term::stderr().is_term();
         let no_color = std::env::var_os("NO_COLOR").is_some();
         let styled = is_tty && !no_color;
@@ -122,7 +122,7 @@ impl Presenter {
     /// A teardown handle over the shared live region. `init_tracing` hands this to
     /// `run_cmd` so the queue bar is flushed to `N/N` and the live region cleared
     /// before the summary prints (ADR-0006: the presenter owns teardown).
-    pub fn handle(&self) -> PresenterHandle {
+    pub(crate) fn handle(&self) -> PresenterHandle {
         PresenterHandle {
             multi: self.multi.clone(),
             state: Arc::clone(&self.state),
@@ -456,7 +456,7 @@ impl Default for Presenter {
 }
 
 mod handle;
-pub use handle::PresenterHandle;
+pub(crate) use handle::PresenterHandle;
 
 impl<S: Subscriber> Layer<S> for Presenter {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {

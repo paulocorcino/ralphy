@@ -13,12 +13,12 @@ use crate::device::DeviceId;
 use crate::registry::{self, RegistryStore};
 
 /// The most lines one read returns.
-pub const MAX_EVENTS: usize = 200;
+pub(crate) const MAX_EVENTS: usize = 200;
 
 /// One device as the log knows it. The description fields come from its
 /// latest `device_facts` or `device_profile_changed` line.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
-pub struct DeviceSummary {
+pub(crate) struct DeviceSummary {
     pub device: String,
     /// The device that asked.
     pub this: bool,
@@ -56,7 +56,7 @@ fn text(v: &Value, pointer: &str) -> Option<String> {
 }
 
 /// Every device the log names, the latest seen first.
-pub fn devices(path: &Path, this: Option<DeviceId>) -> Result<Vec<DeviceSummary>> {
+pub(crate) fn devices(path: &Path, this: Option<DeviceId>) -> Result<Vec<DeviceSummary>> {
     let this = this.map(|d| d.to_string());
     let mut by_id: HashMap<String, DeviceSummary> = HashMap::new();
     for line in lines(path)? {
@@ -90,7 +90,7 @@ pub fn devices(path: &Path, this: Option<DeviceId>) -> Result<Vec<DeviceSummary>
 }
 
 /// The latest `limit` lines that name `device`, newest first.
-pub fn events(path: &Path, device: &str, limit: usize) -> Result<Vec<Value>> {
+pub(crate) fn events(path: &Path, device: &str, limit: usize) -> Result<Vec<Value>> {
     let mut out: Vec<Value> = lines(path)?
         .into_iter()
         .filter(|l| l.get("device").and_then(Value::as_str) == Some(device))
@@ -104,7 +104,7 @@ pub fn events(path: &Path, device: &str, limit: usize) -> Result<Vec<Value>> {
 /// to each line whose `repo` is a registered project. A line keeps `repo` as it
 /// was recorded; a project this daemon does not register (a peer's, or one
 /// removed since) gets no name.
-pub fn name_repos(events: &mut [Value], store: &RegistryStore) {
+pub(crate) fn name_repos(events: &mut [Value], store: &RegistryStore) {
     for event in events {
         let Some(slug) = event.get("repo").and_then(Value::as_str) else {
             continue;

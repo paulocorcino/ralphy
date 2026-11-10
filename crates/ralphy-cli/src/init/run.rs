@@ -14,13 +14,13 @@ use crate::doctor::gh_signed_in;
 mod decisions;
 mod stages;
 
-pub use decisions::{
+pub(crate) use decisions::{
     create_repo_decision, labels_decision, private_visibility_decision, repo_name_from_path,
 };
 use decisions::{init_model_for, select_agent};
 
 #[derive(Args)]
-pub struct InitArgs {
+pub(crate) struct InitArgs {
     /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
@@ -167,7 +167,7 @@ fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
     git::resolve_toplevel(&abs)
 }
 
-pub fn run(args: &InitArgs) -> Result<()> {
+pub(crate) fn run(args: &InitArgs) -> Result<()> {
     let repo = resolve_or_bootstrap_repo(&args.repo)?;
     crate::daemon::register_repo(&repo);
 

@@ -20,14 +20,14 @@ use serde::{Deserialize, Serialize};
 
 /// The lock's payload: who holds it and since when (RFC 3339, local offset).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LockInfo {
+pub(crate) struct LockInfo {
     pub pid: u32,
     pub started_at: String,
 }
 
 /// What a lockfile inspection found.
 #[derive(Debug)]
-pub enum LockState {
+pub(crate) enum LockState {
     /// No lockfile.
     Free,
     /// Lockfile present and its PID is a living process (not our own).
@@ -40,7 +40,7 @@ pub enum LockState {
 
 /// Read and classify the lockfile. Liveness is injected so tests never need a
 /// real second process (same pattern as `check_agents_present` in main.rs).
-pub fn inspect(path: &Path, is_alive: impl Fn(u32) -> bool) -> LockState {
+pub(crate) fn inspect(path: &Path, is_alive: impl Fn(u32) -> bool) -> LockState {
     let raw = match fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(_) => return LockState::Free,
@@ -60,7 +60,7 @@ pub fn inspect(path: &Path, is_alive: impl Fn(u32) -> bool) -> LockState {
 
 /// Write the lock (over anything stale or corrupt) and return the guard that
 /// removes it on drop.
-pub fn acquire(path: &Path) -> Result<RunLockGuard> {
+pub(crate) fn acquire(path: &Path) -> Result<RunLockGuard> {
     let info = LockInfo {
         pid: std::process::id(),
         started_at: chrono::Local::now().to_rfc3339(),
@@ -75,7 +75,7 @@ pub fn acquire(path: &Path) -> Result<RunLockGuard> {
 
 /// Removes the lockfile when dropped. Failures only warn — never panic in
 /// Drop, and a leftover file is recovered by stale takeover anyway.
-pub struct RunLockGuard {
+pub(crate) struct RunLockGuard {
     path: PathBuf,
 }
 
@@ -96,7 +96,7 @@ impl Drop for RunLockGuard {
 /// Production liveness predicate for [`inspect`]. Lives in `ralphy-proc-util`
 /// so the run-snapshot reader classifies a stale pid with the same one
 /// (ADR-0047 §10); re-exported here, where every caller already names it.
-pub use ralphy_proc_util::pid_is_alive;
+pub(crate) use ralphy_proc_util::pid_is_alive;
 
 /// Refuses `verb` when a run currently holds `ws`'s lock; every other state
 /// (free, stale, corrupt) is safe to proceed — a dead PID or an unreadable lock

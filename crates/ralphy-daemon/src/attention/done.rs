@@ -20,7 +20,7 @@ use crate::session::{SessionId, SessionInfo, TurnEnd};
 
 /// A finished turn of a console that had the mark: one open request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DoneFired {
+pub(crate) struct DoneFired {
     pub session: SessionId,
     /// The console's count of finished turns at that turn. It makes the id
     /// of the request, so a console asked for twice has two requests, and a
@@ -144,7 +144,7 @@ async fn clear(
 
 /// One `console-done` request per open [`DoneFired`] whose console still
 /// runs: the vendor and the project come from the console.
-pub fn requests<'a>(
+pub(crate) fn requests<'a>(
     sessions: &'a [SessionInfo],
     open: &'a [DoneFired],
 ) -> impl Iterator<Item = AttentionRequest> + 'a {

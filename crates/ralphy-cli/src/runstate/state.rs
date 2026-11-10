@@ -2,15 +2,15 @@
 //! the semantic [`RunEvent`] stream (ADR-0007 D6).
 
 use super::event::RunEvent;
-use super::UsageLite;
+use super::{SkipKind, UsageLite};
 
 mod queries;
 mod types;
-pub use types::{AgentState, Counts, IssueEntry, IssueStatus, QueueRef, SleepState};
+pub(crate) use types::{AgentState, Counts, IssueEntry, IssueStatus, QueueRef, SleepState};
 
 /// The transport-agnostic state of a run, folded from its event stream.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RunState {
+pub(crate) struct RunState {
     /// The card title (set by the caller, not from events).
     pub title: String,
     /// The queue size from `queue built`.
@@ -69,7 +69,7 @@ pub struct RunState {
 impl RunState {
     /// A fresh state with a known title and queue size (the worker seeds these
     /// since the card is sent before the first folded event).
-    pub fn new(title: impl Into<String>, total: usize) -> Self {
+    pub(crate) fn new(title: impl Into<String>, total: usize) -> Self {
         RunState {
             title: title.into(),
             total,
@@ -121,7 +121,7 @@ impl RunState {
     }
 
     /// Fold one event into the state. Pure over `(self, event)`.
-    pub fn apply(&mut self, event: RunEvent) {
+    pub(crate) fn apply(&mut self, event: RunEvent) {
         match event {
             RunEvent::QueueBuilt {
                 count,
@@ -159,25 +159,14 @@ impl RunState {
                 kind,
                 blockers,
                 ..
-            } => {
-                let e = self.entry_mut(number);
-                e.status = IssueStatus::Skipped;
-                e.kind = Some(kind);
-                e.blocked_by = blockers;
-            }
+            } => self.apply_skipped(number, kind, blockers),
             RunEvent::HumanBlocked { number, .. } => {
                 // Its own status so the card and counts surface "waiting on human"
                 // apart from a generic dependency skip (ADR-0014).
                 self.entry_mut(number).status = IssueStatus::Hitl;
                 self.agent = None;
             }
-            RunEvent::NeedsSplit { number } => {
-                let Some(n) = self.resolve(number) else {
-                    return;
-                };
-                self.entry_mut(n).status = IssueStatus::NeedsSplit;
-                self.agent = None;
-            }
+            RunEvent::NeedsSplit { number } => self.apply_needs_split(number),
             RunEvent::Notice { .. } => {}
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
@@ -186,13 +175,7 @@ impl RunState {
             // The operator's stop IS the card's terminal state. No issue changes
             // status: the one in flight keeps whatever the run last reported for
             // it, which is the truth — it was worked, it was not delivered.
-            RunEvent::RunStopped { number } => {
-                self.final_summary = Some(match number {
-                    0 => "stopped by the operator".to_string(),
-                    n => format!("stopped by the operator during #{n}"),
-                });
-                self.agent = None;
-            }
+            RunEvent::RunStopped { number } => self.apply_run_stopped(number),
             // The run declined to start (#222): the deferral sentence IS the card's
             // terminal state — no issue ever changed status.
             RunEvent::RunSkipped { reason } => {
@@ -201,14 +184,7 @@ impl RunState {
             RunEvent::SleepStarted {
                 reset,
                 target_epoch,
-            } => {
-                self.sleep = Some(SleepState {
-                    reset,
-                    target_epoch,
-                });
-                // A run in `sleeping` has no agent at all (ADR-0059 §1).
-                self.agent = None;
-            }
+            } => self.apply_sleep_started(reset, target_epoch),
             RunEvent::SleepEnded => {
                 self.sleep = None;
             }
@@ -233,13 +209,7 @@ impl RunState {
                 state,
                 since,
                 detail,
-            } => {
-                self.agent = Some(AgentState {
-                    state,
-                    since,
-                    detail,
-                });
-            }
+            } => self.apply_agent_state(state, since, detail),
             RunEvent::KnowledgeConsolidating { notes } => {
                 self.consolidating = Some(notes);
             }
@@ -397,6 +367,46 @@ impl RunState {
         self.agent = None;
     }
 
+    fn apply_skipped(&mut self, number: u64, kind: SkipKind, blockers: Vec<u64>) {
+        let e = self.entry_mut(number);
+        e.status = IssueStatus::Skipped;
+        e.kind = Some(kind);
+        e.blocked_by = blockers;
+    }
+
+    fn apply_needs_split(&mut self, number: u64) {
+        let Some(n) = self.resolve(number) else {
+            return;
+        };
+        self.entry_mut(n).status = IssueStatus::NeedsSplit;
+        self.agent = None;
+    }
+
+    fn apply_run_stopped(&mut self, number: u64) {
+        self.final_summary = Some(match number {
+            0 => "stopped by the operator".to_owned(),
+            n => format!("stopped by the operator during #{n}"),
+        });
+        self.agent = None;
+    }
+
+    fn apply_sleep_started(&mut self, reset: String, target_epoch: i64) {
+        self.sleep = Some(SleepState {
+            reset,
+            target_epoch,
+        });
+        // A run in `sleeping` has no agent at all (ADR-0059 §1).
+        self.agent = None;
+    }
+
+    fn apply_agent_state(&mut self, state: String, since: String, detail: Option<String>) {
+        self.agent = Some(AgentState {
+            state,
+            since,
+            detail,
+        });
+    }
+
     fn apply_non_green(&mut self, number: u64, outcome: &str) {
         let Some(n) = self.resolve(number) else {
             return;
@@ -426,7 +436,7 @@ impl RunState {
         reason = "the binary applies events one at a time; tests use the fold"
     )
 )]
-pub fn fold(
+pub(crate) fn fold(
     title: impl Into<String>,
     total: usize,
     events: impl IntoIterator<Item = RunEvent>,

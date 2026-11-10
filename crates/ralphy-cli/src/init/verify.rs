@@ -12,7 +12,7 @@ use super::wizard::InitConfig;
 /// A gathered snapshot of what `ralphy init` produced: which artifacts exist,
 /// how many labels and skills were installed, what issues are queued, and who is
 /// logged in.
-pub struct VerifyReport {
+pub(crate) struct VerifyReport {
     pub ralphy_present: bool,
     pub docs: Vec<(&'static str, bool)>,
     pub ralphy_label_count: usize,
@@ -25,7 +25,7 @@ pub struct VerifyReport {
 /// The lowest-numbered queue issue is the suggested next run target (the queue
 /// from `github::build_queue` is ascending by number). Returns `None` when the
 /// queue is empty.
-pub fn suggested_issue(queue: &[u64]) -> Option<u64> {
+pub(crate) fn suggested_issue(queue: &[u64]) -> Option<u64> {
     queue.first().copied()
 }
 
@@ -37,13 +37,13 @@ fn next_step_command(n: u64) -> String {
 /// Returns `true` only for an explicit `y`/`yes` (case-insensitive, trimmed).
 /// Any other answer — including silence — declines, making the smoke test
 /// opt-in rather than automatic.
-pub fn smoke_test_decision(answer: &str) -> bool {
+pub(crate) fn smoke_test_decision(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 /// Returns the relative paths of required artifacts that are missing from the
 /// report. The order is stable: `.ralphy/` first, then the doc files in order.
-pub fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
+pub(crate) fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
     let mut missing = Vec::new();
     if !r.ralphy_present {
         missing.push(".ralphy/".to_string());
@@ -62,7 +62,7 @@ pub fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
 /// the queue is empty the literal `warning: no queue-labeled issue` is emitted
 /// and no next-step line is included; otherwise the `next step:` line names the
 /// lowest queue number.
-pub fn format_final_report(r: &VerifyReport) -> String {
+pub(crate) fn format_final_report(r: &VerifyReport) -> String {
     let mut out = String::new();
     out.push_str(&format!("agents logged in: {}\n", r.logged_in.join(", ")));
     out.push_str(&format!("branch: {}\n", r.branch));

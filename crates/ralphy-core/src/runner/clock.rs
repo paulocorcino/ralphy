@@ -15,7 +15,7 @@ use crate::types::ResetAt;
 /// cuts it, the operator stops the run (`ralphy stop`, docs/adr/0054), or a human
 /// interrupts (Ctrl-C) — which is the point: the operator, not a parseable reset,
 /// decides when to give up (ADR-0030).
-pub fn synthetic_reset() -> String {
+pub(crate) fn synthetic_reset() -> String {
     synthetic_instant(Local::now()).to_rfc3339()
 }
 

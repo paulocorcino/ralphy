@@ -182,7 +182,7 @@ fn run_all(root: &Path, steps: &[Step], options: &Options, xtask: &Path) -> Resu
     Ok(outcomes)
 }
 
-pub fn gate_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn gate_cmd(args: &[String]) -> Result<()> {
     let options = parse_args(args)?;
     let root = workspace_root();
     let dir = log_dir(&root);

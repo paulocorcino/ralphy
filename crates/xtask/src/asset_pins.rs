@@ -134,7 +134,7 @@ pub(crate) struct Pin {
     pub(crate) needles: Vec<String>,
 }
 
-pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn asset_pins_cmd(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut verbose = false;
     let mut it = args.iter();

@@ -69,7 +69,7 @@ impl Default for LedgerRow<'_> {
 }
 
 impl LedgerRow<'_> {
-    pub fn json(&self) -> serde_json::Value {
+    pub(crate) fn json(&self) -> serde_json::Value {
         let mut object = serde_json::json!({
             "project": self.project,
             "issue": self.issue,
@@ -121,7 +121,7 @@ impl Default for InteractiveRow<'_> {
 }
 
 impl InteractiveRow<'_> {
-    pub fn json(&self) -> serde_json::Value {
+    pub(crate) fn json(&self) -> serde_json::Value {
         let tokens = match self.tokens {
             None => serde_json::Value::Null,
             Some((input, output)) => serde_json::json!({

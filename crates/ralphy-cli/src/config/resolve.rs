@@ -7,7 +7,10 @@ use ralphy_core::{BranchMode, Effort};
 /// Resolve a vendor-neutral optional model knob (ADR-0010). Precedence: `flag`,
 /// then the persisted `settings.json` value, then `None` (the adapter resolves
 /// its own default). Empty strings on either source are treated as unset.
-pub fn resolve_optional_model(flag: Option<String>, persisted: Option<String>) -> Option<String> {
+pub(crate) fn resolve_optional_model(
+    flag: Option<String>,
+    persisted: Option<String>,
+) -> Option<String> {
     flag.filter(|s| !s.is_empty())
         .or_else(|| persisted.filter(|s| !s.is_empty()))
 }
@@ -16,7 +19,7 @@ pub fn resolve_optional_model(flag: Option<String>, persisted: Option<String>) -
 /// persisted setting (ADR-0010). Precedence: `exec_model` flag > persisted
 /// `opencode.model` > `None` (`OpenCode` resolves its own default). Empty
 /// strings are treated as unset.
-pub fn resolve_opencode_model(
+pub(crate) fn resolve_opencode_model(
     exec_model: Option<String>,
     persisted: Option<String>,
 ) -> Option<String> {
@@ -26,7 +29,11 @@ pub fn resolve_opencode_model(
 /// Resolve a string-valued run knob (ADR-0010). Precedence: per-run `flag` >
 /// persisted `settings.json` value > hardcoded `default`. Empty strings on
 /// either source are treated as unset so they fall through to the next slot.
-pub fn resolve_str(flag: Option<String>, persisted: Option<String>, default: &str) -> String {
+pub(crate) fn resolve_str(
+    flag: Option<String>,
+    persisted: Option<String>,
+    default: &str,
+) -> String {
     flag.filter(|s| !s.is_empty())
         .or_else(|| persisted.filter(|s| !s.is_empty()))
         .unwrap_or_else(|| default.to_owned())
@@ -34,7 +41,7 @@ pub fn resolve_str(flag: Option<String>, persisted: Option<String>, default: &st
 
 /// Resolve one phase's neutral effort. Persisted strings are parsed even when
 /// supplied outside `config set`, so hand-edited settings fail before adapter construction.
-pub fn resolve_effort(
+pub(crate) fn resolve_effort(
     flag: Option<Effort>,
     persisted: Option<String>,
     default: Option<Effort>,
@@ -55,7 +62,7 @@ pub fn resolve_effort(
 /// `--assignee X` (non-empty) > `--no-assignee` (forces `None`) >
 /// persisted `queue.assignee` (non-empty) > `None` (no filter). Empty strings on
 /// either source are treated as unset, matching [`resolve_str`].
-pub fn resolve_assignee(
+pub(crate) fn resolve_assignee(
     flag: Option<&str>,
     no_assignee: bool,
     persisted: Option<&str>,
@@ -71,14 +78,14 @@ pub fn resolve_assignee(
 
 /// Resolve a `u64`-valued run knob (ADR-0010). Precedence: per-run `flag` >
 /// persisted `settings.json` value > hardcoded `default`.
-pub fn resolve_u64(flag: Option<u64>, persisted: Option<u64>, default: u64) -> u64 {
+pub(crate) fn resolve_u64(flag: Option<u64>, persisted: Option<u64>, default: u64) -> u64 {
     flag.or(persisted).unwrap_or(default)
 }
 
 /// Resolve the effective Remote Control switch (#148). Precedence:
 /// `--remote-control` > `--no-remote-control` > persisted `remote_control` >
 /// `false` (OFF by default).
-pub fn resolve_remote_control(
+pub(crate) fn resolve_remote_control(
     remote_control: bool,
     no_remote_control: bool,
     persisted: Option<bool>,
@@ -97,7 +104,7 @@ pub fn resolve_remote_control(
 /// is a hard error so an invalid setting fails loud rather than silently
 /// resolving to a default. The single validation path shared by `config set`
 /// and run-time resolution keeps `ralphy-core`'s [`BranchMode`] serde-free.
-pub fn parse_branch_mode(value: &str) -> Result<BranchMode> {
+pub(crate) fn parse_branch_mode(value: &str) -> Result<BranchMode> {
     match value {
         "new" => Ok(BranchMode::New),
         "current" => Ok(BranchMode::Current),

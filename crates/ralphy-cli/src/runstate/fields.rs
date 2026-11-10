@@ -10,7 +10,7 @@ use super::UsageLite;
 /// impl and consumed by `event_to_runevent`. The union of all fields across every
 /// consumed event shape; unused fields remain at their `Default` values.
 #[derive(Debug)]
-pub struct EventFields {
+pub(crate) struct EventFields {
     pub level: Level,
     pub message: String,
     pub number: Option<u64>,

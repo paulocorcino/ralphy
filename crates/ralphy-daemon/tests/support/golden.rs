@@ -15,7 +15,7 @@ fn fixtures_dir() -> PathBuf {
 
 /// Compare `reply` with the shared file `<name>.json`, after each JSON pointer
 /// in `volatile` is replaced by the marker `"<last segment>"`.
-pub fn check(name: &str, reply: Value, volatile: &[&str]) {
+pub(crate) fn check(name: &str, reply: Value, volatile: &[&str]) {
     check_in(&fixtures_dir(), name, reply, volatile);
 }
 

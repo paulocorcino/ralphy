@@ -11,8 +11,8 @@
 //! [`crate::runstate::RunEvent`] to a `CloudEvent` and delivers it with a short retry.
 //! The contract a consumer programs against is `docs/events.md`.
 
-pub mod client;
-pub mod config;
-pub mod emitter;
-pub mod envelope;
-pub mod sink;
+pub(crate) mod client;
+pub(crate) mod config;
+pub(crate) mod emitter;
+pub(crate) mod envelope;
+pub(crate) mod sink;

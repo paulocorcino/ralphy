@@ -13,7 +13,7 @@ use ralphy_core::Workspace;
 /// their native cadence: minutes → `/SC MINUTE` / `*/N * * * *`, hours →
 /// `/SC HOURLY` / `0 */N * * *`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Schedule {
+pub(super) enum Schedule {
     Minutes(u32),
     Hours(u32),
 }
@@ -21,7 +21,7 @@ pub enum Schedule {
 /// Parse `--every` (`<N>m` or `<N>h`) into a [`Schedule`]. Rejects an empty
 /// string, a zero interval, a missing numeric head, and any unit other than
 /// `m`/`h` with a clear message.
-pub fn parse_interval(s: &str) -> Result<Schedule> {
+pub(super) fn parse_interval(s: &str) -> Result<Schedule> {
     let s = s.trim();
     let unit = match s.chars().last() {
         Some(c) => c,
@@ -52,7 +52,7 @@ pub fn parse_interval(s: &str) -> Result<Schedule> {
 /// run it, where to capture its output, and how often. Platform-neutral; the
 /// `platform` renderers turn it into a `schtasks` argv or a crontab line.
 #[derive(Debug, Clone)]
-pub struct TimerSpec {
+pub(super) struct TimerSpec {
     pub task_name: String,
     pub program: PathBuf,
     pub args: Vec<String>,
@@ -70,13 +70,13 @@ pub struct TimerSpec {
 /// re-invokes. `slug` keys the task name and the cron tag so `run` and
 /// `triage` timers never collide or strip each other's crontab line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Target {
+pub(super) enum Target {
     Run,
     Triage,
 }
 
 impl Target {
-    pub fn slug(self) -> &'static str {
+    pub(super) fn slug(self) -> &'static str {
         match self {
             Target::Run => "run",
             Target::Triage => "triage",
@@ -96,7 +96,7 @@ impl Target {
 /// The task name and cron tag are keyed by the repo directory AND the target's
 /// slug so two repos, or `run` vs `triage` on the same repo, never collide on a
 /// machine-global Task Scheduler name or a user-global crontab line.
-pub fn timer_spec(
+pub(super) fn timer_spec(
     ws: &Workspace,
     exe: &Path,
     target: Target,
@@ -122,7 +122,7 @@ pub fn timer_spec(
 
 /// The chained `triage --yes` invocation for `install run --with-triage`
 /// (ADR-0026 §3) — sequential in one window, so no `--if-idle` of its own.
-pub fn triage_prelude() -> Vec<String> {
+pub(super) fn triage_prelude() -> Vec<String> {
     vec!["triage".into(), "--yes".into()]
 }
 

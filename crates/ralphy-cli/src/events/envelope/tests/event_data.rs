@@ -387,7 +387,7 @@ fn run_started_maps_cli_params_without_subject() {
         scope: None,
     });
     state.apply(ev.clone());
-    let v = runevent_to_cloudevent(&ev, &ctx(), &state).expect("mapped");
+    let v = runevent_to_cloudevent(&ev, &ctx(), &state);
     assert_eq!(v["type"], "dev.ralphy.run.started");
     assert!(
         v.get("subject").is_none(),

@@ -7,7 +7,7 @@ use super::MAX_HEADER_CHARS;
 
 /// The request facts the daemon read itself (source `server`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
-pub struct ServerFacts {
+pub(crate) struct ServerFacts {
     /// The client's public address, as the front reported it in `X-Real-IP`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub real_ip: Option<String>,
@@ -32,7 +32,7 @@ pub struct ServerFacts {
 }
 
 impl ServerFacts {
-    pub fn from_headers(headers: &HeaderMap) -> ServerFacts {
+    pub(crate) fn from_headers(headers: &HeaderMap) -> ServerFacts {
         let read = |name: &str| header_text(headers, name);
         let mut client_hints: Vec<(String, String)> = headers
             .iter()
@@ -60,7 +60,7 @@ impl ServerFacts {
     }
 
     /// The client's address: the front's `X-Real-IP`, else the TCP peer.
-    pub fn address(&self) -> Option<String> {
+    pub(crate) fn address(&self) -> Option<String> {
         self.real_ip.clone().or_else(|| self.peer.clone())
     }
 }

@@ -42,7 +42,7 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 /// the worker (consumer). On overflow it drops the **oldest** element, not the
 /// newest, so a stalled network never slows the logging thread while the card
 /// still converges on the most-current state.
-pub struct EventQueue {
+pub(crate) struct EventQueue {
     inner: Mutex<VecDeque<RunEvent>>,
     cv: Condvar,
     cap: usize,
@@ -50,12 +50,12 @@ pub struct EventQueue {
 
 impl EventQueue {
     /// A queue with the default capacity.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::with_capacity(QUEUE_CAPACITY)
     }
 
     /// A queue with an explicit capacity (the sink's ~1000 bound and tests).
-    pub fn with_capacity(cap: usize) -> Self {
+    pub(crate) fn with_capacity(cap: usize) -> Self {
         EventQueue {
             inner: Mutex::new(VecDeque::with_capacity(cap)),
             cv: Condvar::new(),
@@ -64,7 +64,7 @@ impl EventQueue {
     }
 
     /// Enqueue an event, dropping the oldest if at capacity. Never blocks.
-    pub fn push(&self, event: RunEvent) {
+    pub(crate) fn push(&self, event: RunEvent) {
         let mut q = self.inner.lock().expect("event queue poisoned");
         if q.len() >= self.cap {
             q.pop_front();
@@ -75,7 +75,7 @@ impl EventQueue {
 
     /// Wait up to `timeout` for at least one event, then drain everything pending.
     /// Returns an empty vec on timeout.
-    pub fn drain_blocking(&self, timeout: Duration) -> Vec<RunEvent> {
+    pub(crate) fn drain_blocking(&self, timeout: Duration) -> Vec<RunEvent> {
         let mut q = self.inner.lock().expect("event queue poisoned");
         if q.is_empty() {
             let (guard, _) = self
@@ -88,7 +88,7 @@ impl EventQueue {
     }
 
     /// Wake any waiter (used at shutdown so the worker re-checks its flag).
-    pub fn wake(&self) {
+    pub(crate) fn wake(&self) {
         self.cv.notify_all();
     }
 }
@@ -109,7 +109,7 @@ impl Default for EventQueue {
 /// `tracing` target (`"telegram::notifier"` / `"events::sink"`), so a runtime
 /// `warn!` from that sink's worker never feeds back into the Layer and loops
 /// (ADR-0007 / ADR-0019 self-target loop guard).
-pub struct DeliveryLayer {
+pub(crate) struct DeliveryLayer {
     queue: Arc<EventQueue>,
     self_target: &'static str,
 }
@@ -117,7 +117,7 @@ pub struct DeliveryLayer {
 impl DeliveryLayer {
     /// Wrap the shared event queue the worker drains, tagged with the sink's own
     /// `tracing` target substring for the loop guard.
-    pub fn new(queue: Arc<EventQueue>, self_target: &'static str) -> Self {
+    pub(crate) fn new(queue: Arc<EventQueue>, self_target: &'static str) -> Self {
         DeliveryLayer { queue, self_target }
     }
 }
@@ -151,7 +151,7 @@ impl<S: Subscriber> Layer<S> for DeliveryLayer {
 /// time-driven work (Telegram's throttled card refresh, `CloudEvents`' heartbeat +
 /// plan-step poll). The engine owns its vendor transport and all sink-specific
 /// policy; the worker owns only the poll/drain/shutdown lifecycle.
-pub trait DeliveryEngine {
+pub(crate) trait DeliveryEngine {
     /// Called once before the drain loop (e.g. send the initial card).
     fn on_start(&mut self);
     /// Fold one drained event, in ring order.
@@ -167,7 +167,7 @@ pub trait DeliveryEngine {
 /// poll/drain/fold/tick loop (draining without blocking once stopping so a final
 /// batch is still folded), then `on_finish` on the way out — so a sink's terminal
 /// work runs on every exit path.
-pub fn run_delivery_worker<E: DeliveryEngine>(
+pub(crate) fn run_delivery_worker<E: DeliveryEngine>(
     mut engine: E,
     queue: Arc<EventQueue>,
     shutdown: Arc<AtomicBool>,
@@ -207,7 +207,7 @@ pub fn run_delivery_worker<E: DeliveryEngine>(
 /// `warn!` under the sink's OWN `tracing` target (a compile-time literal, which the
 /// macro requires) so [`DeliveryLayer`]'s self-target filter drops it — a WARN
 /// otherwise folds into a `RunEvent::Notice` and would loop back into the ring.
-pub struct WorkerHandle {
+pub(crate) struct WorkerHandle {
     queue: Arc<EventQueue>,
     shutdown: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
@@ -217,13 +217,13 @@ pub struct WorkerHandle {
 impl WorkerHandle {
     /// Signal shutdown, wake the worker, and join it under the default bounded
     /// timeout so a wedged network never holds the process open.
-    pub fn shutdown(self) {
+    pub(crate) fn shutdown(self) {
         self.shutdown_within(SHUTDOWN_TIMEOUT);
     }
 
     /// Like [`shutdown`](Self::shutdown) but with an explicit timeout (tests use a
     /// short one). If the worker does not finish in time it is detached.
-    pub fn shutdown_within(mut self, timeout: Duration) {
+    pub(crate) fn shutdown_within(mut self, timeout: Duration) {
         self.shutdown.store(true, Ordering::SeqCst);
         // Wake the worker if it is parked waiting for events, so it observes the
         // shutdown flag at once rather than after the next poll.
@@ -257,7 +257,7 @@ impl WorkerHandle {
 /// failure returns `None`, leaving the installed Layer inert (the ring just fills
 /// and drops) rather than aborting the run. `detach_warn` is the sink's detach-warn
 /// hook (see [`WorkerHandle`]).
-pub fn spawn_worker<E: DeliveryEngine + Send + 'static>(
+pub(crate) fn spawn_worker<E: DeliveryEngine + Send + 'static>(
     name: &str,
     engine: E,
     queue: Arc<EventQueue>,

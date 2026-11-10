@@ -9,7 +9,7 @@ use std::process::Command;
 /// version: the `git describe` answer, or the Cargo version when git is
 /// unavailable (e.g. a source tarball with no `.git`). Paths are relative to
 /// the package folder, which is the build script's working directory.
-pub fn embedded_version() -> String {
+pub(crate) fn embedded_version() -> String {
     // Re-run when HEAD or the tag set moves so the embedded version stays current.
     // HEAD alone is not enough: a commit moves `refs/heads/<branch>`, not the
     // HEAD file, so the embedded version stayed at the previous commit until a

@@ -24,12 +24,12 @@ use chrono::Local;
 
 use super::client::{BotClient, Transport};
 use crate::delivery::{spawn_worker, DeliveryEngine, DeliveryLayer, WorkerHandle};
-pub use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
+pub(crate) use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
 use crate::runstate::{RunEvent, RunState};
 
 mod render;
 
-pub use render::{
+pub(crate) use render::{
     derive_title, render_card, render_degraded_push, render_idle_reaped_push, render_recover_push,
     render_sleep_push, render_waiting_push,
 };
@@ -52,7 +52,7 @@ const SELF_TARGET_MARKER: &str = "telegram::notifier";
 
 /// The notifier's `tracing` Layer: a [`DeliveryLayer`] over the shared ring, tagged
 /// with the notifier's own target so a runtime `warn!` never feeds back into the ring.
-pub fn new_notifier_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
+pub(crate) fn new_notifier_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
     DeliveryLayer::new(queue, SELF_TARGET_MARKER)
 }
 
@@ -402,7 +402,7 @@ fn should_edit(changed: bool, since_last_edit: Duration, interval: Duration) -> 
 
 /// Whether a run should notify: only when configured AND not `--no-telegram` AND
 /// not `--dry-run` (ADR-0007 D1/D7).
-pub fn should_notify(configured: bool, no_telegram: bool, dry_run: bool) -> bool {
+pub(crate) fn should_notify(configured: bool, no_telegram: bool, dry_run: bool) -> bool {
     configured && !no_telegram && !dry_run
 }
 
@@ -419,7 +419,7 @@ fn detach_warn() {
 /// a single `warn!` and return `None` (the run proceeds without notifications —
 /// ADR-0007 D7). The returned [`WorkerHandle`] holds the shutdown signal and the
 /// worker's join handle.
-pub fn try_start_notifier<T: Transport + Send + 'static>(
+pub(crate) fn try_start_notifier<T: Transport + Send + 'static>(
     client: BotClient<T>,
     chat_id: i64,
     state: RunState,

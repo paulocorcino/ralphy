@@ -123,7 +123,7 @@ const MUTATORS: &[&str] = &[
     "push", "splice", "set", "delete", "add", "clear", "unshift", "pop", "shift", "sort",
 ];
 
-pub fn ui_groups_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn ui_groups_cmd(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut verbose = false;
     let mut it = args.iter();

@@ -27,7 +27,7 @@ use render::{render_board_json, render_json, render_show_json, render_show_text,
 
 /// `ralphy issues` arguments.
 #[derive(Args)]
-pub struct IssuesArgs {
+pub(crate) struct IssuesArgs {
     /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
@@ -75,7 +75,7 @@ pub struct IssuesArgs {
 
 /// The output format `--format` selects.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
-pub enum Format {
+pub(crate) enum Format {
     #[default]
     Text,
     Json,
@@ -129,7 +129,7 @@ struct ShowView {
 
 /// `ralphy issues` entry point: resolve the repo, then either list the judged
 /// queue or show one issue, in text or JSON.
-pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
+pub(crate) fn issues_cmd(args: &IssuesArgs) -> Result<()> {
     let show = parse_show_spec(&args.spec)?;
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let tracker = GhTracker::new(&repo_root);

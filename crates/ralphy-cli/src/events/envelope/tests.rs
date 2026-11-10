@@ -220,7 +220,7 @@ fn issue_closed_has_full_envelope_shape() {
             model: Some("claude-sonnet-4".into()),
         },
     };
-    let v = runevent_to_cloudevent(&ev, &ctx(), &RunState::new("t", 1)).unwrap();
+    let v = runevent_to_cloudevent(&ev, &ctx(), &RunState::new("t", 1));
     assert_eq!(v["specversion"], "1.0");
     assert_eq!(v["type"], "dev.ralphy.issue.closed");
     assert_eq!(v["source"], "ralphy/o/r");
@@ -253,7 +253,7 @@ fn active_state() -> RunState {
 }
 
 fn map(ev: RunEvent, state: &RunState) -> Value {
-    runevent_to_cloudevent(&ev, &ctx(), state).expect("mapped")
+    runevent_to_cloudevent(&ev, &ctx(), state)
 }
 
 #[test]

@@ -21,8 +21,12 @@ use clap::Args;
 mod user_path;
 pub(crate) use user_path::remove_from_user_path;
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent command-line flag, not a state"
+)]
 #[derive(Args)]
-pub struct InstallArgs {
+pub(crate) struct InstallArgs {
     /// The folder to put `ralphy` in. Default: `~/.cargo/bin` when it exists,
     /// otherwise `~/.local/bin`.
     #[arg(long)]
@@ -67,7 +71,7 @@ pub(crate) fn warn_if_elevated() {
     }
 }
 
-pub fn run(args: &InstallArgs) -> Result<()> {
+pub(crate) fn run(args: &InstallArgs) -> Result<()> {
     let dir = match &args.dir {
         Some(d) => d.clone(),
         None => default_bin_dir()?,

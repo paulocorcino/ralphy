@@ -17,7 +17,7 @@ use serde::Serialize;
 /// that child's emitter carries the daemon's identity. Cross-process wire
 /// contract, NOT a shared symbol — `ralphy-daemon` sets the same literal (it does
 /// not depend on this crate). Absent on cron/manual/free-console runs.
-pub const DAEMON_ID_ENV: &str = "RALPHY_DAEMON_ID";
+pub(crate) const DAEMON_ID_ENV: &str = "RALPHY_DAEMON_ID";
 
 /// The reserved `data.emitter` identity block carried on every event (ADR-0019 §3).
 /// Every field is best-effort: `user` is empty when `git config user.email` is
@@ -25,7 +25,7 @@ pub const DAEMON_ID_ENV: &str = "RALPHY_DAEMON_ID";
 /// ever used as a key. `daemon_id` is an additive, daemon-only field: present
 /// ONLY when the run was spawned by the daemon, absent otherwise.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Emitter {
+pub(crate) struct Emitter {
     /// The Ralphy binary version — which contract vintage is emitting.
     pub version: String,
     /// `git config user.email` — attribution to a person (may be empty).
@@ -50,7 +50,7 @@ pub struct Emitter {
 
 /// Detect the emitter identity for this process and repo. Every probe is
 /// best-effort and falls back to a safe default rather than failing.
-pub fn detect(repo_root: &Path) -> Emitter {
+pub(crate) fn detect(repo_root: &Path) -> Emitter {
     Emitter {
         version: env!("CARGO_PKG_VERSION").to_string(),
         user: ralphy_core::git::user_email(repo_root).unwrap_or_default(),
@@ -177,7 +177,7 @@ std::thread_local! {
 /// Mint a fresh per-event ULID (the envelope `id`: the dedup + sort key), monotonic
 /// within a millisecond so same-ms events sort by emission order. Falls back to a
 /// plain ULID on the (practically impossible) same-ms overflow.
-pub fn new_id() -> String {
+pub(crate) fn new_id() -> String {
     ID_GEN
         .with(|g| {
             g.borrow_mut()
@@ -188,12 +188,12 @@ pub fn new_id() -> String {
 }
 
 /// Mint the process `runid` ULID (the run-correlation key), once at process start.
-pub fn new_runid() -> String {
+pub(crate) fn new_runid() -> String {
     ulid::Ulid::new().to_string()
 }
 
 /// The `CloudEvents` `source` for a repo slug: `ralphy/<owner>/<repo>`.
-pub fn source(slug: &str) -> String {
+pub(crate) fn source(slug: &str) -> String {
     format!("ralphy/{slug}")
 }
 

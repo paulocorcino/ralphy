@@ -48,7 +48,7 @@ fn with_gemini(s: &mut Settings, f: impl FnOnce(&mut GeminiSettings)) -> Result<
     s.set_agent_settings(GeminiSettings::SECTION, &g)
 }
 
-pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
+pub(crate) fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     require_known_key(key)?;
     if value.trim().is_empty() {
         bail!("value for '{key}' must not be empty — use `config unset {key}` to clear it");
@@ -284,7 +284,7 @@ fn set_gemini_model(s: &mut Settings, key: &str, value: &str) -> Result<()> {
     })
 }
 
-pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
+pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
     require_known_key(key)?;
     // The events sink knobs are cleared in the global store, not settings.json.
     if key == "events.url" || key == "events.token" {

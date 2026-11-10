@@ -21,23 +21,23 @@ use crate::owner_only;
 use crate::routes::Push;
 
 /// Lines older than this are removed (D3).
-pub const RETENTION_SECS: i64 = 90 * 24 * 3600;
+pub(crate) const RETENTION_SECS: i64 = 90 * 24 * 3600;
 /// The file is kept under this size (D3).
-pub const MAX_BYTES: u64 = 20 * 1024 * 1024;
+pub(crate) const MAX_BYTES: u64 = 20 * 1024 * 1024;
 /// A prune for size cuts down to this, so the next append does not prune again.
 const PRUNE_TO_BYTES: u64 = 16 * 1024 * 1024;
 /// The longest header value a line keeps.
 const MAX_HEADER_CHARS: usize = 512;
 
 /// The `daemon-audit.jsonl` path inside `dir`.
-pub fn log_path_in(dir: &Path) -> PathBuf {
+pub(crate) fn log_path_in(dir: &Path) -> PathBuf {
     dir.join("daemon-audit.jsonl")
 }
 
 /// What an event records (D4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum EventKind {
+pub(crate) enum EventKind {
     LoginOk,
     LoginFailed,
     Logout,
@@ -63,7 +63,7 @@ pub enum EventKind {
 /// Who sent the request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Actor {
+pub(crate) enum Actor {
     /// A browser with a device cookie.
     Device,
     /// A caller with an `Authorization` header: a peer daemon or a machine
@@ -76,7 +76,7 @@ pub enum Actor {
 /// Why a login failed, as far as the response tells it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum LoginFailure {
+pub(crate) enum LoginFailure {
     /// A wrong or replayed code, or a wrong password: the route answers both
     /// the same way.
     BadCredential,
@@ -86,7 +86,7 @@ pub enum LoginFailure {
 /// One line of the audit log. A line never holds a request body, a query
 /// string, a cookie or an `Authorization` value (D4).
 #[derive(Clone, Debug, Serialize)]
-pub struct Event {
+pub(crate) struct Event {
     /// RFC 3339, UTC.
     pub at: String,
     pub event: EventKind,
@@ -157,7 +157,7 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(event: EventKind, device: Option<DeviceId>, actor: Actor) -> Event {
+    pub(crate) fn new(event: EventKind, device: Option<DeviceId>, actor: Actor) -> Event {
         Event {
             at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             event,
@@ -188,7 +188,7 @@ impl Event {
 }
 
 /// The audit log of one daemon store, and the key of its device cookies.
-pub struct Audit {
+pub(crate) struct Audit {
     dir: Option<PathBuf>,
     key: OnceLock<Option<DeviceKey>>,
     /// Serializes appends and prunes.
@@ -203,7 +203,7 @@ pub struct Audit {
 impl Audit {
     /// The audit log in `dir`, or a log that records nothing when `dir` is
     /// `None`.
-    pub fn in_dir(dir: Option<PathBuf>) -> Audit {
+    pub(crate) fn in_dir(dir: Option<PathBuf>) -> Audit {
         Audit {
             dir,
             key: OnceLock::new(),
@@ -226,7 +226,7 @@ impl Audit {
     }
 
     /// The log file, or `None` when the log is off.
-    pub fn log_path(&self) -> Option<PathBuf> {
+    pub(crate) fn log_path(&self) -> Option<PathBuf> {
         self.dir.as_deref().map(log_path_in)
     }
 
@@ -234,7 +234,7 @@ impl Audit {
     /// store gets the file only when a browser first needs a cookie. `None`
     /// when the log is off, or the key cannot be read or created (logged
     /// once).
-    pub fn key(&self, create: bool) -> Option<&DeviceKey> {
+    pub(crate) fn key(&self, create: bool) -> Option<&DeviceKey> {
         if let Some(key) = self.key.get() {
             return key.as_ref();
         }
@@ -257,7 +257,12 @@ impl Audit {
     /// time this daemon sees the device, `device_profile_changed` when the
     /// facts that do not change for one device did change, and nothing when
     /// the report says what the last one said.
-    pub fn record_facts(&self, device: DeviceId, client: facts::ClientFacts, server: ServerFacts) {
+    pub(crate) fn record_facts(
+        &self,
+        device: DeviceId,
+        client: facts::ClientFacts,
+        server: ServerFacts,
+    ) {
         let normalized = normalize::normalize(&client, &server);
         let kind = {
             let mut last = self.last_facts.lock().expect("audit facts lock poisoned");
@@ -284,7 +289,7 @@ impl Audit {
     }
 
     /// Append `event`. A failed write is logged and never fails the request.
-    pub fn record(&self, event: &Event) {
+    pub(crate) fn record(&self, event: &Event) {
         self.write(event, None);
     }
 
@@ -292,7 +297,7 @@ impl Audit {
     /// launch or a verb that changes state. When the line's login signed in
     /// from another device, and this pair of login and device is new, a
     /// `login_other_device` line follows it.
-    pub fn record_use(&self, event: &Event, did: &str) {
+    pub(crate) fn record_use(&self, event: &Event, did: &str) {
         self.write(event, Some(did));
     }
 
@@ -430,7 +435,7 @@ fn append_line(path: &Path, event: &Event) -> Result<()> {
 /// Remove lines older than [`RETENTION_SECS`] at `now`, then the oldest lines
 /// while the file is over [`MAX_BYTES`]. A line whose time cannot be read is
 /// kept. Rewrites the file only when a line goes.
-pub fn prune(path: &Path, now: i64) -> Result<()> {
+pub(crate) fn prune(path: &Path, now: i64) -> Result<()> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -472,13 +477,13 @@ fn line_time(line: &str) -> Option<i64> {
         .map(|t| t.timestamp())
 }
 
-pub mod facts;
+pub(crate) mod facts;
 pub(crate) mod logins;
-pub mod normalize;
-pub mod read;
+pub(crate) mod normalize;
+pub(crate) mod read;
 mod server;
 pub(crate) use server::clip;
-pub use server::ServerFacts;
+pub(crate) use server::ServerFacts;
 
 #[cfg(test)]
 mod tests;

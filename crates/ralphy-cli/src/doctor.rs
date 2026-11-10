@@ -186,7 +186,7 @@ fn python_line(facts: &MachineFacts) -> ToolLine {
 
 fn agent_lines(facts: &MachineFacts) -> Vec<ToolLine> {
     if facts.agents.is_empty() {
-        let names: Vec<&str> = Agent::ALL.iter().map(Agent::cli_name).collect();
+        let names: Vec<&str> = Agent::ALL.iter().copied().map(Agent::cli_name).collect();
         return vec![missing(
             Tool::Agent,
             "agent CLI",

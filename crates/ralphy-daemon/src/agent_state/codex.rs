@@ -22,7 +22,7 @@ const QUESTION_TOOL: &str = "request_user_input";
 /// and no human is asked, so with `auto_review` it is work, not a wait. Codex
 /// sends no event when the operator grants a permission: the wait ends at the
 /// tool's `PostToolUse`, when the tool ends.
-pub fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
+pub(super) fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
     let tool = line.tool_name.as_deref();
     let signal = match line.event.as_str() {
         "SessionStart" => Signal::SessionBoundary,
@@ -58,7 +58,7 @@ pub fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
 
 /// The map of a console's Codex, which the daemon launches without
 /// auto-review.
-pub fn launched(line: &StatusLine) -> Option<Signal> {
+pub(super) fn launched(line: &StatusLine) -> Option<Signal> {
     codex_signal(line, AUTO_REVIEW)
 }
 

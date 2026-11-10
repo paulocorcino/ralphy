@@ -15,6 +15,6 @@ mod delivery;
 mod layer;
 mod poller;
 
-pub use crate::delivery::WorkerHandle as EventsHandle;
-pub use delivery::try_start_sink;
-pub use layer::{new_events_layer, new_queue};
+pub(crate) use crate::delivery::WorkerHandle as EventsHandle;
+pub(crate) use delivery::try_start_sink;
+pub(crate) use layer::{new_events_layer, new_queue};

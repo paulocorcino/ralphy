@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 /// Environment variable that overrides the stored per-repo token for a run.
-pub const TOKEN_ENV: &str = "RALPHY_EVENTS_TOKEN";
+pub(crate) const TOKEN_ENV: &str = "RALPHY_EVENTS_TOKEN";
 
 /// Test/override hook for the store's base directory, mirroring the ledger's
 /// `RALPHY_USAGE_DIR` (ADR-0008). When set, `events.toml` lives directly under it.
@@ -31,7 +31,7 @@ pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// token. Either may be absent — a URL with no token posts without an
 /// `Authorization` header.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EventsEntry {
+pub(crate) struct EventsEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,7 +48,7 @@ impl EventsEntry {
 
 /// The whole store: one [`EventsEntry`] per repo slug.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EventsStore {
+pub(crate) struct EventsStore {
     #[serde(default)]
     pub repos: BTreeMap<String, EventsEntry>,
 }
@@ -65,14 +65,14 @@ impl EventsStore {
     }
 
     /// The on-disk path of `events.toml`.
-    pub fn config_path() -> Result<PathBuf> {
+    pub(crate) fn config_path() -> Result<PathBuf> {
         Ok(Self::base_dir()
             .context("could not resolve a home directory for the events store")?
             .join("events.toml"))
     }
 
     /// Load the store from disk, or an empty store when no file exists yet.
-    pub fn load() -> Result<EventsStore> {
+    pub(crate) fn load() -> Result<EventsStore> {
         let path = Self::config_path()?;
         match std::fs::read_to_string(&path) {
             Ok(text) => {
@@ -84,7 +84,7 @@ impl EventsStore {
     }
 
     /// Write the store to disk owner-only, creating the base directory.
-    pub fn save(&self) -> Result<()> {
+    pub(crate) fn save(&self) -> Result<()> {
         self.save_to(&Self::config_path()?)
     }
 
@@ -99,23 +99,23 @@ impl EventsStore {
     }
 
     /// The entry for `slug`, if any.
-    pub fn entry(&self, slug: &str) -> Option<&EventsEntry> {
+    pub(crate) fn entry(&self, slug: &str) -> Option<&EventsEntry> {
         self.repos.get(slug)
     }
 
     /// Set the endpoint URL for `slug`, creating the entry if absent.
-    pub fn set_url(&mut self, slug: &str, url: &str) {
+    pub(crate) fn set_url(&mut self, slug: &str, url: &str) {
         self.repos.entry(slug.to_string()).or_default().url = Some(url.to_string());
     }
 
     /// Set the bearer token for `slug`, creating the entry if absent.
-    pub fn set_token(&mut self, slug: &str, token: &str) {
+    pub(crate) fn set_token(&mut self, slug: &str, token: &str) {
         self.repos.entry(slug.to_string()).or_default().token = Some(token.to_string());
     }
 
     /// Clear one field (`"url"` or `"token"`) of `slug`'s entry, dropping the entry
     /// entirely once both fields are empty so no vacant stanza lingers.
-    pub fn clear(&mut self, slug: &str, field: &str) {
+    pub(crate) fn clear(&mut self, slug: &str, field: &str) {
         if let Some(e) = self.repos.get_mut(slug) {
             match field {
                 "url" => e.url = None,
@@ -133,7 +133,7 @@ impl EventsStore {
     /// `to` wins and `from` is simply dropped: the operator configured the
     /// forge key deliberately, the hash key by accident of ordering. `false`
     /// when `from` is absent or equals `to`.
-    pub fn rekey(&mut self, from: &str, to: &str) -> bool {
+    pub(crate) fn rekey(&mut self, from: &str, to: &str) -> bool {
         if from == to {
             return false;
         }
@@ -147,7 +147,7 @@ impl EventsStore {
 
 /// The token a run should use: `RALPHY_EVENTS_TOKEN` when set and non-empty,
 /// otherwise the `stored` per-repo token. `None` when neither supplies one.
-pub fn effective_token(stored: Option<&str>) -> Option<String> {
+pub(crate) fn effective_token(stored: Option<&str>) -> Option<String> {
     if let Ok(env) = std::env::var(TOKEN_ENV) {
         if !env.trim().is_empty() {
             return Some(env);

@@ -11,7 +11,7 @@ use ralphy_core::{Agent, Execution, Issue, Plan, Workspace};
 /// planner and executor actually differ; a single-agent run uses its executor
 /// box directly, so that path is byte-for-byte unchanged (no wrapper in the call
 /// chain).
-pub struct SplitAgent {
+pub(crate) struct SplitAgent {
     pub planner: Box<dyn Agent>,
     pub executor: Box<dyn Agent>,
 }

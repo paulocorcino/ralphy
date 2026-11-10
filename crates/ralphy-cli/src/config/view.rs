@@ -9,7 +9,7 @@ use ralphy_agent_gemini::GeminiSettings;
 use ralphy_agent_opencode::OpenCodeSettings;
 use ralphy_core::{git, Settings, Workspace};
 
-pub fn get(ws: &Workspace, json: bool) -> Result<()> {
+pub(crate) fn get(ws: &Workspace, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string(&config_json(ws)?)?);
         return Ok(());

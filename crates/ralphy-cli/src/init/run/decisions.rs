@@ -54,7 +54,7 @@ pub(super) fn branch_decision(_current: &str, answer: &str) -> BranchDecision {
 /// The prompt shows `[Y/n]`, so the recommended default (empty/`y`/`yes`) creates
 /// the repo (`git init` + `gh repo create`); any other answer declines and init
 /// keeps the original "not a git repository" error. Pure, mirrors [`labels_decision`].
-pub fn create_repo_decision(answer: &str) -> bool {
+pub(crate) fn create_repo_decision(answer: &str) -> bool {
     matches!(
         answer.trim().to_ascii_lowercase().as_str(),
         "" | "y" | "yes"
@@ -65,14 +65,14 @@ pub fn create_repo_decision(answer: &str) -> bool {
 /// The prompt shows `[Y/n]`, so the default (empty/`y`/`yes`) is private — the
 /// safer default for a freshly created repo; an explicit `n`/`no` makes it public.
 /// Pure.
-pub fn private_visibility_decision(answer: &str) -> bool {
+pub(crate) fn private_visibility_decision(answer: &str) -> bool {
     !matches!(answer.trim().to_ascii_lowercase().as_str(), "n" | "no")
 }
 
 /// Derive the GitHub repo name from the (absolute) target directory: its final
 /// path segment, falling back to `repo` when the path has no usable base name
 /// (e.g. a drive/filesystem root). Pure over its input.
-pub fn repo_name_from_path(path: &Path) -> String {
+pub(crate) fn repo_name_from_path(path: &Path) -> String {
     path.file_name()
         .and_then(|s| s.to_str())
         .filter(|s| !s.is_empty())
@@ -82,7 +82,7 @@ pub fn repo_name_from_path(path: &Path) -> String {
 
 /// The label-creation decision: empty / `y` / `yes` → proceed (the default is
 /// recommended since stage 7 is idempotent); `n` / anything else → skip.
-pub fn labels_decision(answer: &str) -> bool {
+pub(crate) fn labels_decision(answer: &str) -> bool {
     matches!(
         answer.trim().to_ascii_lowercase().as_str(),
         "" | "y" | "yes"
@@ -104,6 +104,7 @@ pub(super) fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Res
             } else {
                 logged_in
                     .iter()
+                    .copied()
                     .map(Agent::cli_name)
                     .collect::<Vec<_>>()
                     .join(", ")

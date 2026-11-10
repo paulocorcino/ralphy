@@ -10,7 +10,7 @@ mod rollup;
 /// The per-run context every envelope shares: `source` (`ralphy/<owner>/<repo>`), the
 /// `runid` ULID minted at process start, the `data.emitter` object and the `data.git` block.
 #[derive(Debug, Clone)]
-pub struct EventCtx {
+pub(crate) struct EventCtx {
     pub source: String,
     pub runid: String,
     pub emitter: Value,
@@ -93,12 +93,12 @@ fn envelope(
 }
 
 /// A subject-less envelope for a synthetic `run.*` event with no [`RunEvent`] source.
-pub fn run_envelope(type_: &str, ctx: &EventCtx, state: &RunState, data: Value) -> Value {
+pub(crate) fn run_envelope(type_: &str, ctx: &EventCtx, state: &RunState, data: Value) -> Value {
     envelope(type_, None, ctx, state, data)
 }
 
 /// A `dev.ralphy.plan.step` envelope (#96): one checkbox moves to `checked` or `noticed`.
-pub fn plan_step_envelope(
+pub(crate) fn plan_step_envelope(
     ctx: &EventCtx,
     state: &RunState,
     number: u64,
@@ -116,7 +116,7 @@ pub fn plan_step_envelope(
 
 /// The `data` of `queue.built` and `queue.snapshot` (ADR-0020), built once so they cannot
 /// diverge. `assignee_filter` is the resolved login (ADR-0021 §5), `null` for the whole queue.
-pub fn queue_snapshot_data(
+pub(crate) fn queue_snapshot_data(
     issues: &Value,
     count: u64,
     order: &[u64],
@@ -133,7 +133,7 @@ pub fn queue_snapshot_data(
 }
 
 /// The `dev.ralphy.queue.snapshot` envelope of `ralphy issues --push` (ADR-0020).
-pub fn queue_snapshot_envelope(data: Value, ctx: &EventCtx, state: &RunState) -> Value {
+pub(crate) fn queue_snapshot_envelope(data: Value, ctx: &EventCtx, state: &RunState) -> Value {
     run_envelope("dev.ralphy.queue.snapshot", ctx, state, data)
 }
 
@@ -167,8 +167,12 @@ fn resolve(state: &RunState, number: u64) -> Option<u64> {
     }
 }
 
-/// Map one folded [`RunEvent`] to an envelope, or `None` when the sink does not forward it.
-pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -> Option<Value> {
+/// Map one folded [`RunEvent`] to its envelope.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one flat arm per RunEvent variant, matched exhaustively; a split loses that check"
+)]
+pub(crate) fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -> Value {
     match ev {
         RunEvent::QueueBuilt {
             count,
@@ -178,7 +182,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             assignee_filter,
             // Log-only (#222): the scope phrase never reaches the wire.
             scope: _,
-        } => Some(envelope(
+        } => envelope(
             "dev.ralphy.queue.built",
             None,
             ctx,
@@ -190,23 +194,23 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 *stop_before,
                 assignee_filter.as_deref(),
             ),
-        )),
-        RunEvent::IssueStarted { number, title } => Some(envelope(
+        ),
+        RunEvent::IssueStarted { number, title } => envelope(
             "dev.ralphy.issue.started",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number, "title": title }),
-        )),
+        ),
         RunEvent::Planning { model, effort } => {
             let subject = state.active.map(subject_for);
-            Some(envelope(
+            envelope(
                 "dev.ralphy.issue.planning",
                 subject.as_deref(),
                 ctx,
                 state,
                 json!({ "model": model, "effort": effort }),
-            ))
+            )
         }
         RunEvent::PlanWritten {
             number,
@@ -218,7 +222,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 .iter()
                 .map(|(text, status)| json!({ "text": text, "status": status }))
                 .collect();
-            Some(envelope(
+            envelope(
                 "dev.ralphy.plan.written",
                 Some(&subject_for(*number)),
                 ctx,
@@ -229,7 +233,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                     "usage": usage_json(usage),
                     "steps": steps,
                 }),
-            ))
+            )
         }
         RunEvent::Executing {
             number,
@@ -239,7 +243,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
         } => {
             let n = resolve(state, *number);
             let subject = n.map(subject_for);
-            Some(envelope(
+            envelope(
                 "dev.ralphy.issue.executing",
                 subject.as_deref(),
                 ctx,
@@ -250,7 +254,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                     "model": model,
                     "effort": effort,
                 }),
-            ))
+            )
         }
         RunEvent::IssueClosed {
             number,
@@ -258,33 +262,33 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             usage,
             // Console-only view; it never rides the envelope (ADR-0008 D8).
             invocations: _,
-        } => Some(envelope(
+        } => envelope(
             "dev.ralphy.issue.closed",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number, "tokens": tokens, "usage": usage_json(usage) }),
-        )),
-        RunEvent::NonGreen { number, outcome } => Some(envelope(
+        ),
+        RunEvent::NonGreen { number, outcome } => envelope(
             "dev.ralphy.issue.non_green",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number, "outcome": outcome }),
-        )),
-        RunEvent::NeedsSplit { number } => Some(envelope(
+        ),
+        RunEvent::NeedsSplit { number } => envelope(
             "dev.ralphy.issue.needs_split",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number }),
-        )),
+        ),
         RunEvent::Skipped {
             number,
             kind,
             label,
             blockers,
-        } => Some(envelope(
+        } => envelope(
             "dev.ralphy.issue.skipped",
             Some(&subject_for(*number)),
             ctx,
@@ -295,90 +299,76 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 "label": label,
                 "blocked_by": blockers,
             }),
-        )),
-        RunEvent::HumanBlocked { number, on } => Some(envelope(
+        ),
+        RunEvent::HumanBlocked { number, on } => envelope(
             "dev.ralphy.issue.human_blocked",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number, "on": on }),
-        )),
-        RunEvent::RunSkipped { reason } => Some(envelope(
+        ),
+        RunEvent::RunSkipped { reason } => envelope(
             "dev.ralphy.run.skipped",
             None,
             ctx,
             state,
             json!({ "reason": reason }),
-        )),
-        RunEvent::DeadlinePassed { number } => Some(envelope(
+        ),
+        RunEvent::DeadlinePassed { number } => envelope(
             "dev.ralphy.issue.deadline_passed",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number }),
-        )),
+        ),
         // Run-level, sent at the moment of the stop (`run.finished` lands after teardown).
         // The subject names the issue in flight; `number: 0` (between issues) becomes `null`.
-        RunEvent::RunStopped { number } => Some(envelope(
+        RunEvent::RunStopped { number } => envelope(
             "dev.ralphy.run.stopped",
             (*number != 0).then(|| subject_for(*number)).as_deref(),
             ctx,
             state,
             json!({ "number": (*number != 0).then_some(*number) }),
-        )),
+        ),
         RunEvent::SleepStarted {
             reset,
             target_epoch,
-        } => Some(envelope(
+        } => envelope(
             "dev.ralphy.run.sleep_started",
             None,
             ctx,
             state,
             json!({ "reset": reset, "target_epoch": target_epoch }),
-        )),
-        RunEvent::SleepEnded => Some(envelope(
-            "dev.ralphy.run.sleep_ended",
-            None,
-            ctx,
-            state,
-            json!({}),
-        )),
-        RunEvent::ApiDegraded => Some(envelope(
-            "dev.ralphy.run.api_degraded",
-            None,
-            ctx,
-            state,
-            json!({}),
-        )),
-        RunEvent::ApiRecovered => Some(envelope(
-            "dev.ralphy.run.api_recovered",
-            None,
-            ctx,
-            state,
-            json!({}),
-        )),
+        ),
+        RunEvent::SleepEnded => envelope("dev.ralphy.run.sleep_ended", None, ctx, state, json!({})),
+        RunEvent::ApiDegraded => {
+            envelope("dev.ralphy.run.api_degraded", None, ctx, state, json!({}))
+        }
+        RunEvent::ApiRecovered => {
+            envelope("dev.ralphy.run.api_recovered", None, ctx, state, json!({}))
+        }
         // The reap carries its window, so a consumer need not read the run's config.
-        RunEvent::IdleReaped { idle_minutes } => Some(envelope(
+        RunEvent::IdleReaped { idle_minutes } => envelope(
             "dev.ralphy.run.idle_reaped",
             None,
             ctx,
             state,
             json!({ "idle_minutes": idle_minutes }),
-        )),
+        ),
         // The cause is the refusal the waiver let the session escape (ADR-0072 D6).
-        RunEvent::HooksUnprovenAllowed { cause } => Some(envelope(
+        RunEvent::HooksUnprovenAllowed { cause } => envelope(
             "dev.ralphy.run.hooks_unproven_allowed",
             None,
             ctx,
             state,
             json!({ "cause": cause }),
-        )),
+        ),
         // The agent's own state (ADR-0059 §2), on the active issue's subject.
         RunEvent::AgentState {
             state: agent_state,
             since,
             detail,
-        } => Some(envelope(
+        } => envelope(
             "dev.ralphy.issue.agent_state",
             state.active.map(subject_for).as_deref(),
             ctx,
@@ -388,28 +378,28 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 "since": since,
                 "detail": detail,
             }),
-        )),
-        RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
+        ),
+        RunEvent::KnowledgeConsolidating { notes } => envelope(
             "dev.ralphy.knowledge.consolidating",
             None,
             ctx,
             state,
             json!({ "notes": notes }),
-        )),
-        RunEvent::KnowledgeConsolidated { archived } => Some(envelope(
+        ),
+        RunEvent::KnowledgeConsolidated { archived } => envelope(
             "dev.ralphy.knowledge.consolidated",
             None,
             ctx,
             state,
             json!({ "archived": archived }),
-        )),
-        RunEvent::Notice { level, message } => Some(envelope(
+        ),
+        RunEvent::Notice { level, message } => envelope(
             "dev.ralphy.run.notice",
             None,
             ctx,
             state,
             json!({ "level": level.to_string().to_lowercase(), "message": message }),
-        )),
+        ),
         RunEvent::RunStarted {
             repo,
             queue_labels,
@@ -426,7 +416,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 .iter()
                 .map(|q| json!({ "number": q.number, "title": q.title }))
                 .collect();
-            Some(envelope(
+            envelope(
                 "dev.ralphy.run.started",
                 None,
                 ctx,
@@ -440,7 +430,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                     "deadline_hours": deadline_hours,
                     "queue": queue,
                 }),
-            ))
+            )
         }
         RunEvent::RunFinished {
             outcome,
@@ -457,7 +447,7 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             duration_s,
         } => {
             let issues = rollup::finished_issues(rollup, state);
-            Some(envelope(
+            envelope(
                 "dev.ralphy.run.finished",
                 None,
                 ctx,
@@ -473,23 +463,23 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                     "tokens_total": { "up": up, "cr": cr, "cw": cw, "out": out },
                     "duration_s": duration_s,
                 }),
-            ))
+            )
         }
         // The raw plan snapshots (#96): the complete `plan.md` under `data.plan_md`.
-        RunEvent::PlanOpened { number, plan_md } => Some(envelope(
+        RunEvent::PlanOpened { number, plan_md } => envelope(
             "dev.ralphy.plan.opened",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number, "plan_md": plan_md }),
-        )),
-        RunEvent::PlanClosed { number, plan_md } => Some(envelope(
+        ),
+        RunEvent::PlanClosed { number, plan_md } => envelope(
             "dev.ralphy.plan.closed",
             Some(&subject_for(*number)),
             ctx,
             state,
             json!({ "number": number, "plan_md": plan_md }),
-        )),
+        ),
     }
 }
 
