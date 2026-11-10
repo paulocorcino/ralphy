@@ -183,8 +183,6 @@
     // debt: 1 site
     "promise/no-callback-in-promise": "off",
     // debt: 1 site
-    "unicorn/new-for-builtins": "off",
-    // debt: 1 site
     "unicorn/no-array-reverse": "off",
     // debt: 1 site
     "unicorn/no-immediate-mutation": "off",

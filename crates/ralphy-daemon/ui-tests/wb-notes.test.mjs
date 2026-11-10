@@ -209,7 +209,7 @@ test("a card is refused at the cap, with a toast and no write", () => {
   assert.equal(window.WBNotes.create({ repo: "r" }), null);
   assert.equal(window.WBNotes.openFromExplorer({ repo: "r", path: "new.note" }), null);
   assert.deepEqual(saved, []);
-  assert.deepEqual(toasts, Array(2).fill("You can have at most 32 notes. Close one first."));
+  assert.deepEqual(toasts, Array.from({ length: 2 }).fill("You can have at most 32 notes. Close one first."));
 });
 
 // ---- the stage: what `render` builds and what it drops ------------------------
