@@ -393,7 +393,7 @@ mod tests {
         std::fs::create_dir_all(&dest).unwrap();
         let settings = WorktreeSettings {
             copy: vec!["nope".into(), "../escape".into()],
-            share: vec!["".into()],
+            share: vec![String::new()],
         };
         let warnings = carry_over(&primary, &dest, &settings);
         assert_eq!(warnings.len(), 3, "{warnings:?}");
