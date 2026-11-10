@@ -170,8 +170,6 @@
     "unicorn/no-object-as-default-parameter": "off",
     // debt: 3 sites
     "unicorn/no-this-assignment": "off",
-    // debt: 2 sites
-    "unicorn/no-useless-switch-case": "off",
     // debt: 1 site
     "accessor-pairs": "off",
     // debt: 1 site
