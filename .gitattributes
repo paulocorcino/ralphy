@@ -13,3 +13,6 @@ assets/install/install.sh text eol=lf
 # oxfmt writes LF (.oxfmtrc.json). Git stores LF, so a checkout with CRLF
 # would make the format check depend on the machine.
 crates/ralphy-daemon/assets/ui/*.ts text eol=lf
+
+# shellcheck reads the working tree, so a shell script must check out with LF.
+*.sh text eol=lf
