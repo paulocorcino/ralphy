@@ -25,3 +25,5 @@
 {"date": "2026-11-10", "id": "14", "kind": "issue", "url": "https://github.com/paulocorcino/ralphy/issues/900"}
 {"date": "2026-11-10", "id": "15", "kind": "issue", "url": "https://github.com/paulocorcino/ralphy/issues/901"}
 {"date": "2026-11-10", "kind": "note", "text": "curly end state is multi-line (user, 2026-11-10): all would push 17 modules past 500 lines"}
+{"date": "2026-11-10", "kind": "note", "text": "Phase 8: eslint(no-var), eslint(prefer-const), eslint(no-useless-concat), eslint(no-useless-return), typescript(no-unnecessary-template-expression), unicorn(new-for-builtins), unicorn(no-useless-switch-case), unicorn(prefer-single-call), unicorn(prefer-dom-node-append), unicorn(prefer-code-point), unicorn(prefer-at), unicorn(prefer-import-meta-properties), unicorn(prefer-string-replace-all), unicorn(no-useless-undefined), unicorn(no-hex-escape) and unicorn(escape-case) are errors"}
+{"date": "2026-11-10", "kind": "note", "text": "Phase 8: eslint(curly) is an error with the option multi-line"}
