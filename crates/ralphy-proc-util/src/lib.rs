@@ -181,7 +181,7 @@ fn kill_tree_windows(root: u32) {
         CloseHandle(snap);
     }
 
-    let doomed = tree_to_kill(root, &table, std::process::id(), process_created);
+    let doomed = tree_to_kill(root, &table, std::process::id(), pid::process_created);
     for pid in doomed {
         // SAFETY: the handle is checked for null before use and closed once.
         unsafe {
@@ -237,33 +237,6 @@ fn created_before_parent(parent_created: Option<u64>, child_created: Option<u64>
         (parent_created, child_created),
         (Some(parent_at), Some(child_at)) if child_at < parent_at
     )
-}
-
-/// When `pid` was created, as a `FILETIME`, or `None` when it cannot be opened.
-#[cfg(windows)]
-#[expect(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
-fn process_created(pid: u32) -> Option<u64> {
-    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows_sys::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-    // SAFETY: the handle is checked for null before use and closed once; the
-    // four FILETIMEs are valid out pointers.
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() {
-            return None;
-        }
-        let zero = FILETIME {
-            dwLowDateTime: 0,
-            dwHighDateTime: 0,
-        };
-        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
-        let ok = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
-        CloseHandle(handle);
-        (ok != 0)
-            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
-    }
 }
 
 /// A home-scoped path: `override_base/tail` when a vendor `$XXX_HOME` is set,

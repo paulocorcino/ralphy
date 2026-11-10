@@ -135,6 +135,39 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     }
 }
 
+/// When `pid` was created, as a `FILETIME`, or `None` when it cannot be opened.
+#[cfg(windows)]
+#[expect(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
+pub(crate) fn process_created(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is checked for null before use and closed once; the
+    // four FILETIMEs are valid out pointers.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        let ok = GetProcessTimes(
+            handle,
+            &raw mut created,
+            &raw mut exited,
+            &raw mut kernel,
+            &raw mut user,
+        );
+        CloseHandle(handle);
+        (ok != 0)
+            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
