@@ -237,9 +237,10 @@ mod tests {
         for argv in &cmds {
             for token in argv {
                 let is_url = token.contains("://");
-                if !is_url && token.contains('/') && token.as_str() != subtree {
-                    panic!("unexpected path token {token:?} in {argv:?}");
-                }
+                assert!(
+                    is_url || !token.contains('/') || token.as_str() == subtree,
+                    "unexpected path token {token:?} in {argv:?}"
+                );
             }
         }
     }

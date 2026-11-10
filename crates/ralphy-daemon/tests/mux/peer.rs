@@ -324,9 +324,11 @@ impl Page {
     /// cursor position request is answered, as the page's terminal answers it.
     async fn until_count(&mut self, channel: u32, needle: &str, count: usize) {
         let read = self.read_until(channel, needle, count);
-        if tokio::time::timeout(WITHIN, read).await.is_err() {
-            panic!("{needle:?} on channel {channel}: {}", self.shown(channel));
-        }
+        assert!(
+            tokio::time::timeout(WITHIN, read).await.is_ok(),
+            "{needle:?} on channel {channel}: {}",
+            self.shown(channel)
+        );
     }
 
     async fn read_until(&mut self, channel: u32, needle: &str, count: usize) {

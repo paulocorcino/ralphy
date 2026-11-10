@@ -173,9 +173,11 @@ impl Screen {
                 self.take(channel, event).await;
             }
         };
-        if tokio::time::timeout(WITHIN, read).await.is_err() {
-            panic!("{needle:?} on the console: {}", self.shown());
-        }
+        assert!(
+            tokio::time::timeout(WITHIN, read).await.is_ok(),
+            "{needle:?} on the console: {}",
+            self.shown()
+        );
     }
 
     async fn take(&mut self, channel: &mut PeerChannel, event: PeerEvent) {
