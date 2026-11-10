@@ -5,7 +5,10 @@ use std::process::Command as ProcCommand;
 
 use anyhow::{Context, Result};
 
-use super::*;
+use super::{
+    render_install, render_query, render_uninstall, AutostartSpec, Platform, PowerShellFlavor,
+    LAUNCHD_LABEL, RUN_KEY, TASK_NAME, UNIT_NAME,
+};
 
 /// Whether the daemon's autostart registration currently exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

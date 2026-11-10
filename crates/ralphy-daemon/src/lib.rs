@@ -73,7 +73,15 @@ mod serve;
 #[cfg(unix)]
 pub use serve::socket;
 
-use routes::*;
+#[cfg(test)]
+use routes::{
+    confirm_totp_at, content_type, enroll_totp_at, next_poll_delay, now_unix, nudge_await_ready,
+    peer_session_open, remint_token_at, require_auth, require_login_at, revoke_totp_at,
+    security_state_at, set_password_at, ui_asset, CatchUp, HostedSessionInfo, PeerWatchSet,
+    PollCycle, SessionQuery, PEER_POLL_BACKOFF, PEER_POLL_DEADLINE, PEER_POLL_QUIET_PAUSE,
+    PEER_POLL_WINDOW_MS,
+};
+use routes::{router_with_roster, RouterDependencies};
 use serve::serve;
 
 /// The daemon's default TCP port. "ralphy" on a phone keypad starts 7-2-5-7.
