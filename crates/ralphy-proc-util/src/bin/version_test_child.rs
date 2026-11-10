@@ -12,9 +12,10 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args = mode_args();
-    match args.first().map(String::as_str).unwrap_or("") {
+    match args.first().map_or("", String::as_str) {
         "print" => {
-            println!("{}", args.get(1).map(String::as_str).unwrap_or(""));
+            let text = args.get(1).map_or("", String::as_str);
+            writeln!(std::io::stdout(), "{text}").expect("the test child can write stdout");
             ExitCode::SUCCESS
         }
         "count" => count(&args),

@@ -39,9 +39,7 @@ pub fn locate_cursor() -> Option<PathBuf> {
 /// What a `Command` is constructed with. Falls back to the bare name so the spawn
 /// failure names the vendor rather than an empty path.
 pub(crate) fn resolve_cursor_program() -> OsString {
-    locate_cursor()
-        .map(PathBuf::into_os_string)
-        .unwrap_or_else(|| NAMES[0].into())
+    locate_cursor().map_or_else(|| NAMES[0].into(), PathBuf::into_os_string)
 }
 
 /// The single configuration file that carries the operator's policy (D17). Their

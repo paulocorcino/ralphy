@@ -303,8 +303,10 @@ fn label_bootstrap_spec(label: &str) -> (String, String) {
     super::labels::ralphy_label_specs(None)
         .into_iter()
         .find(|s| s.name == label)
-        .map(|s| (s.color, s.description))
-        .unwrap_or_else(|| ("ededed".to_string(), format!("Ralphy: {label}")))
+        .map_or_else(
+            || ("ededed".to_owned(), format!("Ralphy: {label}")),
+            |s| (s.color, s.description),
+        )
 }
 
 /// Remove a label from an issue via `gh issue edit <n> --remove-label <label>`.

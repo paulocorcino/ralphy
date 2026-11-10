@@ -166,8 +166,8 @@ fn assistant_row(data: &str) -> Option<AssistantRow> {
         tokens: Tokens {
             input: field(tokens, "input"),
             output: field(tokens, "output"),
-            cache_read: cache.map(|c| field(c, "read")).unwrap_or(0),
-            cache_creation: cache.map(|c| field(c, "write")).unwrap_or(0),
+            cache_read: cache.map_or(0, |c| field(c, "read")),
+            cache_creation: cache.map_or(0, |c| field(c, "write")),
         },
         ts_ms: val
             .get("time")

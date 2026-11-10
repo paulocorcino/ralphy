@@ -190,12 +190,10 @@ fn stop_recorded(
                  stop it yourself and start it again",
                 recorded
                     .as_deref()
-                    .map(readable)
-                    .unwrap_or_else(|| "nothing".to_string()),
+                    .map_or_else(|| "nothing".to_owned(), readable),
                 running
                     .as_deref()
-                    .map(readable)
-                    .unwrap_or_else(|| "nothing".to_string())
+                    .map_or_else(|| "nothing".to_owned(), readable)
             );
         }
     }

@@ -119,7 +119,7 @@ pub fn install_skills_from(src: &Path, dst: &Path) -> Result<usize> {
         .with_context(|| format!("reading source skills {}", src.display()))?
     {
         let entry = entry.with_context(|| format!("reading entry in {}", src.display()))?;
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 

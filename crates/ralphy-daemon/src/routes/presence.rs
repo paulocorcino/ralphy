@@ -93,8 +93,7 @@ pub(crate) fn store_stamp(path: &Path) -> String {
         Ok(m) => {
             let modified = m
                 .modified()
-                .map(|t| format!("{t:?}"))
-                .unwrap_or_else(|e| e.to_string());
+                .map_or_else(|e| e.to_string(), |t| format!("{t:?}"));
             format!("{modified}/{}", m.len())
         }
         Err(e) => format!("error: {e}"),

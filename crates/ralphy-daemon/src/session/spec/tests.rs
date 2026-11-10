@@ -181,8 +181,7 @@ fn cursor_resolves_off_path_through_the_vendor_locator() {
             )
             .program,
             ralphy_proc_util::cursor::locate_cursor()
-                .map(PathBuf::into_os_string)
-                .unwrap_or_else(|| OsString::from("cursor-agent"))
+                .map_or_else(|| OsString::from("cursor-agent"), PathBuf::into_os_string)
         );
     }
     // The `RALPHY_DAEMON_AGENT_OVERRIDE` seam is NOT bypassed for this vendor:

@@ -202,14 +202,11 @@ pub(crate) fn finalize(
         .count();
 
     let skills_path = repo.join(skills_target(cfg.skills_dir.as_deref()));
-    let skill_count = std::fs::read_dir(&skills_path)
-        .ok()
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-                .count()
-        })
-        .unwrap_or(0);
+    let skill_count = std::fs::read_dir(&skills_path).ok().map_or(0, |rd| {
+        rd.filter_map(Result::ok)
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .count()
+    });
 
     let queue_labels = github::resolve_queue_labels(&[], repo);
     // Whole-repo housekeeping — never assignee-scoped (ADR-0021).

@@ -51,8 +51,7 @@ pub(crate) fn kimi_final_text(stdout: &str) -> String {
         let has_pending_tool_calls = obj
             .get("tool_calls")
             .and_then(Value::as_array)
-            .map(|a| !a.is_empty())
-            .unwrap_or(false);
+            .is_some_and(|a| !a.is_empty());
         if has_pending_tool_calls {
             continue;
         }

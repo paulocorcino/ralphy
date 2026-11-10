@@ -237,8 +237,7 @@ fn http_code(err: &str) -> String {
     Regex::new(r"HTTP (\d{3})")
         .expect("static regex")
         .captures(err)
-        .map(|c| c[1].to_string())
-        .unwrap_or_else(|| "error".to_string())
+        .map_or_else(|| "error".to_owned(), |c| c[1].to_string())
 }
 
 /// Apply the by-category size policy to already-downloaded, non-login bytes

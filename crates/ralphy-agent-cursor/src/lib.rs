@@ -258,10 +258,10 @@ impl Agent for CursorAgent {
 
         // A RESUMED plan (no child ran, `session` is `None`) must keep the
         // zero-token attributed value, never a stale one.
-        let plan_usage = session
-            .as_ref()
-            .map(|(r, ())| parse_cursor_usage(&r.stdout, model))
-            .unwrap_or_else(|| requested_model_usage(model));
+        let plan_usage = session.as_ref().map_or_else(
+            || requested_model_usage(model),
+            |(r, ())| parse_cursor_usage(&r.stdout, model),
+        );
 
         if let Some((r, ())) = session.as_ref() {
             let fold = fold_cursor_stream(&r.stdout);
@@ -428,9 +428,10 @@ fn note_vendor_error(fold: &outcome::CursorFold) {
 /// normal, not an error, and this never turns an `Err` return into a
 /// different outcome.
 fn note_usage_provenance(config_dir: &std::path::Path, session_id: &str) {
-    let store = usage::cursor_session_store(config_dir, session_id)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "no on-disk record".to_string());
+    let store = usage::cursor_session_store(config_dir, session_id).map_or_else(
+        || "no on-disk record".to_owned(),
+        |p| p.display().to_string(),
+    );
     tracing::warn!("{} (session store: {store})", usage::CURSOR_CREDIT_NOTE);
 }
 

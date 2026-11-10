@@ -242,11 +242,10 @@ fn read_usage_record(line: &str) -> Option<UsageRecord> {
         i64_field(usage, "inputCacheRead"),
         i64_field(usage, "inputCacheCreation"),
     )?;
-    let model = val
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(|m| m.strip_prefix("kimi-code/").unwrap_or(m).to_string())
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let model = val.get("model").and_then(|v| v.as_str()).map_or_else(
+        || DEFAULT_MODEL.to_owned(),
+        |m| m.strip_prefix("kimi-code/").unwrap_or(m).to_owned(),
+    );
     Some(UsageRecord {
         model,
         tokens,

@@ -274,9 +274,7 @@ pub fn pricing_offline_from_file() -> bool {
     let Ok(text) = std::fs::read_to_string(&path) else {
         return false;
     };
-    parse_pricing_toml(&text)
-        .map(|f| f.offline)
-        .unwrap_or(false)
+    parse_pricing_toml(&text).is_ok_and(|f| f.offline)
 }
 
 /// The price of the first candidate that is a key of `layer`.

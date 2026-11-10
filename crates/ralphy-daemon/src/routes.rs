@@ -311,8 +311,7 @@ fn spawn_watch_sub_sweep(peer_watch_subs: &Arc<fleet::watchsub::WatchSubs>) {
 pub(crate) fn now_unix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }
 
 pub(crate) fn encode_query_value(value: &str) -> String {

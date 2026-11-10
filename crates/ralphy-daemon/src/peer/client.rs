@@ -88,10 +88,7 @@ pub struct SelfRef<'a> {
 /// token that was never broken (measured in the #353 capstone). Refusing to dial
 /// names the collision instead.
 pub fn classify_self_dial(address: &str, port: u16, me: SelfRef<'_>) -> Option<PeerStatus> {
-    let loopback = address
-        .parse::<IpAddr>()
-        .map(|ip| ip.is_loopback())
-        .unwrap_or(false);
+    let loopback = address.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback());
     (loopback && port == me.port).then(|| PeerStatus::Refused {
         why: format!(
             "it announces {address}:{port}, the port of this daemon. \

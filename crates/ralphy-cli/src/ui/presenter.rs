@@ -416,8 +416,8 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
         .run
         .degraded
         .then(|| pick("🔄", "[api-retry]", opts.emoji));
-    let width = fit::terminal_width()
-        .saturating_sub(retry_prefix.map(|p| fit::display_width(p) + 1).unwrap_or(0));
+    let width =
+        fit::terminal_width().saturating_sub(retry_prefix.map_or(0, |p| fit::display_width(p) + 1));
     let line = render_active_line(
         phase,
         entry.number,

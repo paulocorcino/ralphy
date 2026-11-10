@@ -393,8 +393,7 @@ fn evidence_comment_flags_review_only_and_unmatched() {
         // The criterion line plus the next evidence line must not contain the flag.
         let two_lines_end = tail[line_end + 1..]
             .find('\n')
-            .map(|n| line_end + 1 + n)
-            .unwrap_or(tail.len());
+            .map_or(tail.len(), |n| line_end + 1 + n);
         assert!(
             !tail[..two_lines_end].contains("[NEEDS REVIEW"),
             "matched verified criterion must not be flagged: {}",

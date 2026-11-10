@@ -106,8 +106,7 @@ pub fn timer_spec(
     let repo_root = ws.repo_root();
     let repo_name = repo_root
         .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "repo".to_string());
+        .map_or_else(|| "repo".to_owned(), |n| n.to_string_lossy().into_owned());
     let log_path = log.unwrap_or_else(|| ws.ralphy_dir().join("schedule.log"));
     TimerSpec {
         task_name: format!("ralphy-{}-{repo_name}", target.slug()),

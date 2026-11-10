@@ -239,7 +239,7 @@ fn column_owner_errors(owners: &BTreeMap<&str, Vec<String>>, names: &[&str]) -> 
     names
         .iter()
         .filter_map(|name| {
-            let modules = owners.get(name).map(Vec::as_slice).unwrap_or(&[]);
+            let modules = owners.get(name).map_or(&[][..], Vec::as_slice);
             (modules.len() != 1).then(|| {
                 format!(
                     "{name}: declared in {} module(s) {modules:?}",

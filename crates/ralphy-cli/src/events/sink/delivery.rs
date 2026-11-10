@@ -71,10 +71,10 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
         .count();
     // The active issue as `{number, title}` (the normalized `issue` shape, #96) or
     // `null` when no issue is active — replacing the bare active number.
-    let issue = state
-        .active_issue()
-        .map(|e| json!({ "number": e.number, "title": e.title }))
-        .unwrap_or(Value::Null);
+    let issue = state.active_issue().map_or(
+        Value::Null,
+        |e| json!({ "number": e.number, "title": e.title }),
+    );
     crate::events::envelope::run_envelope(
         "dev.ralphy.run.heartbeat",
         ctx,

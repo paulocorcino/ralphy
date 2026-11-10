@@ -213,8 +213,7 @@ pub fn ralphy_exe() -> OsString {
     OWN_EXE
         .get_or_init(|| {
             ralphy_proc_util::exe::running_exe()
-                .map(Into::into)
-                .unwrap_or_else(|_| OsString::from("ralphy"))
+                .map_or_else(|_| OsString::from("ralphy"), Into::into)
         })
         .clone()
 }

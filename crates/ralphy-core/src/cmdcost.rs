@@ -193,8 +193,7 @@ pub fn decide(command: &str, plan_md: &str, state: &CostState) -> CostDecision {
 fn now_epoch() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
+        .map_or(0.0, |d| d.as_secs_f64())
 }
 
 /// Pre-hook bookkeeping for an ALLOWED Bash command: if it invokes a verify

@@ -104,8 +104,7 @@ pub fn transitions<'a>(prev: &[PlanStep], next: &'a [PlanStep]) -> Vec<&'a PlanS
             }
             prev.iter()
                 .find(|p| p.text == step.text)
-                .map(|p| p.status != step.status)
-                .unwrap_or(true)
+                .is_none_or(|p| p.status != step.status)
         })
         .collect()
 }

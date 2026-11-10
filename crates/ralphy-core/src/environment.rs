@@ -153,10 +153,10 @@ pub fn ensure_brief(ws: &Workspace) {
 /// path and PID, read fresh each run. `current_exe` is stable (same binary) but the
 /// PID is not — which is exactly why the brief cannot be cached.
 fn orchestrator_guard() -> String {
-    let exe = std::env::current_exe()
-        .ok()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "the ralphy executable".to_string());
+    let exe = std::env::current_exe().ok().map_or_else(
+        || "the ralphy executable".to_owned(),
+        |p| p.display().to_string(),
+    );
     guard_section(&exe, std::process::id())
 }
 

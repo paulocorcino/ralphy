@@ -126,8 +126,7 @@ impl Agent {
 
     fn resolve_program(self) -> OsString {
         self.locate_program()
-            .map(PathBuf::into_os_string)
-            .unwrap_or_else(|| self.program_name().into())
+            .map_or_else(|| self.program_name().into(), PathBuf::into_os_string)
     }
 }
 
@@ -386,8 +385,7 @@ fn claude_session_name(repo_slug: &str, console: Option<&str>) -> String {
     console
         .map(fold)
         .filter(|folded| !folded.is_empty())
-        .map(|folded| format!("wb-{folded}"))
-        .unwrap_or_else(|| console_name(repo_slug))
+        .map_or_else(|| console_name(repo_slug), |folded| format!("wb-{folded}"))
 }
 
 /// Fold `text` to lowercase `[a-z0-9]` joined by single dashes, trimmed.

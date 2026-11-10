@@ -152,13 +152,9 @@ impl Open {
         // A peer free console is the one composite-ref session hosted HERE. Match
         // both id and repo so an equal numeric id owned by the peer still proxies.
         let locally_owned = query.id.and_then(|id| {
-            sessions.get(id).filter(|info| {
-                query
-                    .repo
-                    .as_deref()
-                    .map(|repo| repo == info.repo)
-                    .unwrap_or(true)
-            })
+            sessions
+                .get(id)
+                .filter(|info| query.repo.as_deref().is_none_or(|repo| repo == info.repo))
         });
         Open {
             query,

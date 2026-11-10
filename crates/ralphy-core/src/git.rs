@@ -60,9 +60,7 @@ pub fn resolve_toplevel(path: &Path) -> Result<PathBuf> {
 /// whether to bootstrap a fresh repo (`git init` + a GitHub remote) before
 /// resolving the toplevel, rather than failing hard on a non-repo directory.
 pub fn is_repo(path: &Path) -> bool {
-    raw(path, &["rev-parse", "--is-inside-work-tree"])
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    raw(path, &["rev-parse", "--is-inside-work-tree"]).is_ok_and(|o| o.status.success())
 }
 
 /// `git init` a fresh repository at `path`, creating the directory first when it
@@ -235,8 +233,7 @@ pub fn commitish_exists(repo: &Path, refname: &str) -> bool {
             &format!("{refname}^{{commit}}"),
         ],
     )
-    .map(|o| o.status.success())
-    .unwrap_or(false)
+    .is_ok_and(|o| o.status.success())
 }
 
 pub fn checkout_new_branch(repo: &Path, branch: &str, base: &str) -> Result<()> {
@@ -259,9 +256,7 @@ pub fn validate_branch_name(repo: &Path, name: &str) -> Result<()> {
     if name.is_empty() || name.starts_with('-') {
         bail!("invalid branch name '{name}'");
     }
-    let ok = raw(repo, &["check-ref-format", "--branch", name])
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let ok = raw(repo, &["check-ref-format", "--branch", name]).is_ok_and(|o| o.status.success());
     if !ok {
         bail!("invalid branch name '{name}': not a valid git branch name");
     }

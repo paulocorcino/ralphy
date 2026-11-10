@@ -125,10 +125,7 @@ async fn over_http(
         .nth(1)
         .and_then(|code| code.parse().ok())
         .unwrap_or_else(|| panic!("a status line in {reply}"));
-    let json = reply
-        .split_once("\r\n\r\n")
-        .map(|(_, body)| body)
-        .unwrap_or("");
+    let json = reply.split_once("\r\n\r\n").map_or("", |(_, body)| body);
     let value = serde_json::from_str(json).unwrap_or(serde_json::Value::Null);
     (status, value)
 }

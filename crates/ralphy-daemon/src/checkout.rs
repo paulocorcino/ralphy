@@ -451,8 +451,7 @@ mod tests {
             .expect("docs/daemon.md has a Worktrees section");
         let end = doc[start + 3..]
             .find("\n## ")
-            .map(|i| start + 3 + i)
-            .unwrap_or(doc.len());
+            .map_or(doc.len(), |i| start + 3 + i);
         let section = &doc[start..end];
 
         // The names an operator types or looks for; the section's sentences are

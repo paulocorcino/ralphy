@@ -138,10 +138,7 @@ impl Session {
     /// would otherwise never end after a `quit`. A closed session counts as exited.
     pub fn has_exited(&mut self) -> bool {
         match self.pty.as_mut() {
-            Some(pty) => pty
-                .try_wait()
-                .map(|status| status.is_some())
-                .unwrap_or(true),
+            Some(pty) => pty.try_wait().map_or(true, |status| status.is_some()),
             None => true,
         }
     }

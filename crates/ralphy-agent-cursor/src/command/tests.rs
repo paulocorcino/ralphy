@@ -232,9 +232,7 @@ fn locate_cursor_delegates_to_the_shared_vendor_locator() {
     assert_eq!(locate_cursor(), ralphy_proc_util::cursor::locate_cursor());
     assert_eq!(
         resolve_cursor_program(),
-        locate_cursor()
-            .map(PathBuf::into_os_string)
-            .unwrap_or_else(|| NAMES[0].into())
+        locate_cursor().map_or_else(|| NAMES[0].into(), PathBuf::into_os_string)
     );
 }
 

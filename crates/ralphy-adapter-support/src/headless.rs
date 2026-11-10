@@ -345,7 +345,7 @@ fn reap_reason(
     // which clock fired.
     if let Some(b) = beat {
         if idle.expired(b, Instant::now()) {
-            ralphy_core::emit::idle_reaped(idle.window().map(|w| w.as_secs() / 60).unwrap_or(0));
+            ralphy_core::emit::idle_reaped(idle.window().map_or(0, |w| w.as_secs() / 60));
             return Some(Reap::Idle);
         }
     }

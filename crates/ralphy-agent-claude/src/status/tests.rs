@@ -126,10 +126,10 @@ fn every_child_shape_is_handed_the_status_file() {
         // Production text with whitespace removed: the call, not its layout.
         let code: String = src.split_whitespace().collect();
         let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
-        let watcher = bind
-            .captures(code)
-            .map(|c| c[1].to_string())
-            .unwrap_or_else(|| panic!("{name} must start a Watcher"));
+        let watcher = bind.captures(code).map_or_else(
+            || panic!("{name} must start a Watcher"),
+            |c| c[1].to_string(),
+        );
         assert!(
             code.contains(&format!("status::STATUS_ENV,{watcher}.path())")),
             "{name} must hand the child RALPHY_STATUS_FILE from that Watcher"

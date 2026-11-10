@@ -199,9 +199,7 @@ fn result_line(fails: &[HardFail]) -> String {
 }
 
 pub(crate) fn github_remote(repo: &Path) -> bool {
-    git::origin_url(repo)
-        .map(|url| url.contains("github.com"))
-        .unwrap_or(false)
+    git::origin_url(repo).is_some_and(|url| url.contains("github.com"))
 }
 
 /// The tool findings come from `doctor`, which owns the tool list; the remote
@@ -306,8 +304,7 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .is_ok_and(|s| s.success())
 }
 
 #[cfg(test)]

@@ -306,8 +306,7 @@ fn spawn_argv(
             let is_batch = path
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
-                .unwrap_or(false);
+                .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
             if is_batch {
                 let mut args: Vec<OsString> = vec![OsString::from("/C"), path.into_os_string()];
                 args.extend(rest.iter().map(OsString::from));

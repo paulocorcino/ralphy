@@ -152,10 +152,10 @@ fn branch_switch_refused_by_local_changes_leads_with_gits_reason() {
     ]);
     assert!(!out.status.success(), "git must refuse the switch");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let reason = stderr
-        .split_once("cannot switch branch: ")
-        .map(|(_, rest)| rest)
-        .unwrap_or_else(|| panic!("the error must lead with the refusal, got: {stderr}"));
+    let reason = stderr.split_once("cannot switch branch: ").map_or_else(
+        || panic!("the error must lead with the refusal, got: {stderr}"),
+        |(_, rest)| rest,
+    );
     assert!(
         reason.contains("local changes"),
         "git's reason must follow the prefix, got: {stderr}"

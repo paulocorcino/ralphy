@@ -237,7 +237,7 @@ pub(super) fn render_final_push(state: &RunState) -> String {
 /// The push sent on entering a usage-limit sleep (a new message so the phone
 /// buzzes, ADR-0007 D3). Bounded like the other pushes.
 pub fn render_sleep_push(state: &RunState) -> String {
-    let reset = state.sleep.as_ref().map(|s| s.reset.as_str()).unwrap_or("");
+    let reset = state.sleep.as_ref().map_or("", |s| s.reset.as_str());
     truncate_chars(
         format!(
             "🌙 {} — usage limit, waiting for reset ~{}",
@@ -295,7 +295,7 @@ fn truncate_chars(mut s: String, max: usize) -> String {
     if s.chars().count() <= max {
         return s;
     }
-    let idx = s.char_indices().nth(max).map(|(i, _)| i).unwrap_or(s.len());
+    let idx = s.char_indices().nth(max).map_or(s.len(), |(i, _)| i);
     s.truncate(idx);
     s
 }

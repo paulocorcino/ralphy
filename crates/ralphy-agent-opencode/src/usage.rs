@@ -24,8 +24,8 @@ fn usage_from_opencode_message(data: &serde_json::Value) -> Option<Usage> {
     Some(Usage {
         input: field(tokens, "input"),
         output: field(tokens, "output"),
-        cache_read: cache.map(|c| field(c, "read")).unwrap_or(0),
-        cache_creation: cache.map(|c| field(c, "write")).unwrap_or(0),
+        cache_read: cache.map_or(0, |c| field(c, "read")),
+        cache_creation: cache.map_or(0, |c| field(c, "write")),
         model: data
             .get("modelID")
             .and_then(|v| v.as_str())

@@ -62,7 +62,7 @@ pub(crate) fn log_stall(report: &StallReport, device: Option<&DeviceId>) {
         .take(HOLDER_MAX_CHARS)
         .collect();
     tracing::warn!(
-        device = %device.map(ToString::to_string).unwrap_or_else(|| "none".to_string()),
+        device = %device.map_or_else(|| "none".to_owned(), ToString::to_string),
         holder = ?holder,
         kind = report.kind.as_str(),
         what = ?what,

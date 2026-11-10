@@ -37,9 +37,7 @@ pub fn locate_gemini() -> Option<PathBuf> {
 /// What a `Command` is constructed with. Falls back to the bare name so the spawn
 /// failure names the vendor rather than an empty path.
 pub(crate) fn resolve_gemini_program() -> OsString {
-    locate_gemini()
-        .map(PathBuf::into_os_string)
-        .unwrap_or_else(|| NAME.into())
+    locate_gemini().map_or_else(|| NAME.into(), PathBuf::into_os_string)
 }
 
 /// Refuse a prompt the vendor would silently truncate (D2).

@@ -92,10 +92,10 @@ pub(crate) async fn usage_route(
         since.as_deref(),
     );
     let (descriptors, rejected) = read_peer_store(peers_dir).await;
-    let path = since
-        .as_deref()
-        .map(|value| format!("/api/peer/usage?since={}", encode_query_value(value)))
-        .unwrap_or_else(|| "/api/peer/usage".to_string());
+    let path = since.as_deref().map_or_else(
+        || "/api/peer/usage".to_owned(),
+        |value| format!("/api/peer/usage?since={}", encode_query_value(value)),
+    );
     let requests = descriptors.iter().cloned().map(|descriptor| {
         let path = path.clone();
         async move {

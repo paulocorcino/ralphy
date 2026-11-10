@@ -82,10 +82,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     )]
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
-    let name = db
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "session-store.db".to_string());
+    let name = db.file_name().map_or_else(
+        || "session-store.db".to_owned(),
+        |n| n.to_string_lossy().to_string(),
+    );
     // The guard exists BEFORE the first fallible copy, so the `?` below removes
     // the temp dir on its way out instead of leaking it.
     let copy = StoreCopy {

@@ -62,7 +62,7 @@ fn without_block(text: &str) -> Removal {
 /// when they do not have its shape.
 #[cfg(any(unix, test))]
 fn block_len(after: &[&str]) -> Option<usize> {
-    let line = |i: usize| after.get(i).map(|l| l.trim()).unwrap_or("");
+    let line = |i: usize| after.get(i).map_or("", |l| l.trim());
     let posix = line(0) == r#"case ":${PATH}:" in"#
         && line(1).starts_with("*:")
         && line(1).ends_with(":*) ;;")

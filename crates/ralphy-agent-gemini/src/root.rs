@@ -130,9 +130,7 @@ pub(crate) fn ensure(base: &Path) -> Result<GeminiRoot> {
         "{}\n",
         serde_json::to_string_pretty(&settings_document(auth_type.as_deref()))?
     );
-    let differs = std::fs::read_to_string(&settings)
-        .map(|s| s != want)
-        .unwrap_or(true);
+    let differs = std::fs::read_to_string(&settings).map_or(true, |s| s != want);
     if differs {
         std::fs::write(&settings, &want)
             .with_context(|| format!("writing {}", settings.display()))?;

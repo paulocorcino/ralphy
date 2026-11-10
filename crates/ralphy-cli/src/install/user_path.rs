@@ -126,8 +126,7 @@ fn profile_targets(env: &ShellEnv<'_>, exists: &dyn Fn(&Path) -> bool) -> Vec<(P
 
     let config = env
         .config_home
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| home.join(".config"));
+        .map_or_else(|| home.join(".config"), Path::to_path_buf);
     let fish = config.join("fish");
     if shell == Shell::Fish || exists(&fish) {
         targets.push((fish.join("conf.d").join("ralphy.fish"), Shell::Fish));

@@ -135,8 +135,7 @@ pub(crate) fn continue_on_auto_mode_violation(config_src: &str) -> Option<String
         return None;
     }
     let path = copilot_config_path()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "<copilot config>".into());
+        .map_or_else(|| "<copilot config>".into(), |p| p.display().to_string());
     // ADR-0041 D11.
     Some(format!(
         "Copilot's `continueOnAutoMode` is on in {path}: at a rate limit, Copilot \

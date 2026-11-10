@@ -257,9 +257,7 @@ pub fn home_scoped_path(
 /// Only `std`'s `Command` escapes a `.cmd` command line; `ralphy-pty` refuses
 /// a batch program whose command line cmd.exe would not read as text.
 pub fn resolve_program(name: &str) -> std::ffi::OsString {
-    locate_program(name)
-        .map(PathBuf::into_os_string)
-        .unwrap_or_else(|| name.into())
+    locate_program(name).map_or_else(|| name.into(), PathBuf::into_os_string)
 }
 
 /// Locate `name` on `PATH`, then in `~/.local/bin` and an nvm bin. Both
