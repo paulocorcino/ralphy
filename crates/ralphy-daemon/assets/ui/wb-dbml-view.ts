@@ -96,8 +96,9 @@ function columnRow(ctx: Ctx, column: DbmlColumn, out: DbmlRef[]) {
   name.title = column.note ? `${column.name}: ${column.note}` : column.name;
   if (column.pk) name.append(el(doc, "i", "bi bi-key"), " ");
   name.append(column.name);
-  for (const ref of out)
+  for (const ref of out) {
     if (ref.from.column === column.name) name.append(refNode(ctx, ref.to, "→ "));
+  }
   const type = el(doc, "td", "dbml-col-type");
   type.append(el(doc, "span", "dbml-type", column.type));
   for (const tag of tagsOf(column)) type.append(el(doc, "span", "dbml-tag", tag));
@@ -124,15 +125,17 @@ function setOpen(card: HTMLElement, open: boolean) {
   card.classList.toggle("dbml-open", open);
   const more = card.querySelector("button.dbml-more");
   const rest = table.columns.length - shown.size;
-  if (more)
+  if (more) {
     more.textContent = open
       ? "Show fewer columns"
       : `Show ${rest} more ${rest === 1 ? "column" : "columns"}`;
+  }
 }
 
 function clearMarks(article: Element) {
-  for (const row of article.querySelectorAll(".dbml-origin, .dbml-same"))
+  for (const row of article.querySelectorAll(".dbml-origin, .dbml-same")) {
     row.classList.remove("dbml-origin", "dbml-same");
+  }
 }
 
 // A click on a column name marks the columns with the same name, and opens
@@ -249,8 +252,9 @@ function onPick(ctx: Ctx) {
 }
 
 function clearSelection(ctx: Ctx) {
-  for (const box of ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick"))
+  for (const box of ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick")) {
     box.checked = false;
+  }
   onPick(ctx);
 }
 
@@ -258,8 +262,9 @@ function clearSelection(ctx: Ctx) {
 function selectGroup(ctx: Ctx, section: Element) {
   for (const box of section.querySelectorAll<HTMLInputElement>(
     ".dbml-card:not([hidden]) input.dbml-pick",
-  ))
+  )) {
     box.checked = true;
+  }
   onPick(ctx);
 }
 
@@ -325,8 +330,9 @@ export function renderDbmlGrid(doc: Document, article: Element, text: string): v
   let summary =
     `${plural(schema.tables.length, "table", "tables")} in ` +
     `${plural(groups.length, "group", "groups")}.`;
-  if (schema.skipped > 0)
+  if (schema.skipped > 0) {
     summary += ` ${plural(schema.skipped, "line was", "lines were")} not understood.`;
+  }
   article.append(summaryBar(ctx, summary));
   for (const group of groups) article.append(groupSection(ctx, group));
 }

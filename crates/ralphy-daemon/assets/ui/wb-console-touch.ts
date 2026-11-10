@@ -112,9 +112,9 @@ export function wireTouch(deps: TouchDeps) {
     touchAccum -= whole;
     // Decided per flush, not per gesture: an app can take the mouse or drop
     // into the alternate buffer while a finger is still down.
-    if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app")
+    if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") {
       wheelToApp(whole);
-    else term.scrollLines(whole);
+    } else term.scrollLines(whole);
   };
   // One scroll step, timed for the scroll probe when there is one.
   const timedFlush = (input: "touch" | "glide") => {

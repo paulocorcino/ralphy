@@ -54,7 +54,7 @@ export function mapWsl(text: string, peers: Peer[] | null | undefined) {
   const m = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)([\\/].*)?$/i.exec(text || "");
   const distro = m?.[1];
   if (!m || distro === undefined) return null;
-  const rest = (m[2] || "/").replace(/\\/g, "/");
+  const rest = ((m[2] ?? "") || "/").replaceAll("\\", "/");
   const peer = (peers || []).find((p) => {
     const named = /^WSL: (.+)$/i.exec(p.environment || "")?.[1];
     return named !== undefined && named.toLowerCase() === distro.toLowerCase();
@@ -84,7 +84,7 @@ export function sameName(a: string, b: string, sep: string) {
 
 export function samePath(a: string, b: string, sep: string) {
   const norm = (p: string) => {
-    const s = (p || "").replace(/[\\/]+$/, "").replace(/\\/g, "/");
+    const s = (p || "").replace(/[\\/]+$/u, "").replaceAll("\\", "/");
     return sep === "\\" ? s.toLowerCase() : s;
   };
   return norm(a) === norm(b);

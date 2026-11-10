@@ -79,11 +79,11 @@ export function uploadId(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Base64 of `bytes`, in slices small enough for `String.fromCharCode`. */
+/** Base64 of `bytes`, in slices small enough for `String.fromCodePoint`. */
 export function toBase64(bytes: Uint8Array): string {
   let text = "";
   for (let i = 0; i < bytes.length; i += 0x8000) {
-    text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    text += String.fromCodePoint(...bytes.subarray(i, i + 0x8000));
   }
   return btoa(text);
 }
@@ -91,20 +91,21 @@ export function toBase64(bytes: Uint8Array): string {
 /** The sentence for a part the daemon refused. */
 export function refusalText(reply: PartReply | null): string {
   if (!reply) return "The upload stopped: the daemon did not answer. Try again.";
-  if (reply.message === "unknown verb")
+  if (reply.message === "unknown verb") {
     return "This host runs an older daemon. Update Ralphy on it to upload files.";
-  switch (reply.reason) {
+  }
+  switch (reply.reason ?? "") {
     case "too large":
       return "The file is larger than the upload limit of this project.";
     case "conflict":
       return "A file with this name exists now.";
     case "refused":
       return "Ralphy cannot write a file there.";
-    case undefined:
-    default:
-      return (
-        `The daemon refused the upload: ` + `${reply.reason || reply.message || "no reason given"}.`
-      );
+    default: {
+      const reason = reply.reason ?? "";
+      const message = reply.message ?? "";
+      return `The daemon refused the upload: ${reason || message || "no reason given"}.`;
+    }
   }
 }
 
@@ -137,8 +138,9 @@ function resendFrom(reply: PartReply | null, seen: { expected: number }): number
     reply?.reason !== "offset" ||
     typeof reply.expected !== "number" ||
     reply.expected === seen.expected
-  )
+  ) {
     return null;
+  }
   seen.expected = reply.expected;
   return reply.expected;
 }
@@ -187,7 +189,9 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     // Send a failed item again, from the offset the daemon confirmed.
     retry(key: number) {
       const item = this.items.find((i) => i.key === key);
-      if (!item || item.state !== "failed") return undefined;
+      if (!item || item.state !== "failed") {
+        return;
+      }
       item.state = "waiting";
       item.error = "";
       return this.pump();
@@ -259,20 +263,20 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     // Move an item on by the reply to its part: done, the next offset, or
     // stopped with a reason.
     applyReply(item: UploadItem, reply: PartReply | null, seen: { expected: number }) {
-      if (reply?.status === "ok" && typeof reply.path === "string")
+      if (reply?.status === "ok" && typeof reply.path === "string") {
         return this.finished(item, reply.path);
+      }
       if (reply?.status === "ok" && typeof reply.received === "number") {
         item.sent = reply.received;
-        return undefined;
+        return;
       }
       const expected = resendFrom(reply, seen);
       if (expected !== null) {
         item.sent = expected;
-        return undefined;
+        return;
       }
       item.state = "failed";
       item.error = refusalText(reply);
-      return undefined;
     },
 
     finished(item: UploadItem, path: string) {

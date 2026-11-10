@@ -32,7 +32,7 @@ export const WBConsoleName = (function () {
   }
 
   function escapeRegExp(s: string) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return s.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   }
 
   // `<prefix> #<n>` with the lowest `n` that no name of that exact form uses.

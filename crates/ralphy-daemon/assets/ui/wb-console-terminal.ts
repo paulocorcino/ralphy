@@ -110,11 +110,12 @@ export function createTerminal(deps: TerminalDeps) {
     const probe = deps.scrollProbe?.watch(term, () => placeOf(body));
     // A wheel the page made for a touch (`wheelToApp`) is not trusted. In the
     // capture phase: xterm stops the wheel events it takes.
-    if (probe)
+    if (probe) {
       body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), {
         passive: true,
         capture: true,
       });
+    }
     const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts, probe });
     const { setSelecting, stopFling, stopScroll } = touch;
     fitAddon.fit();

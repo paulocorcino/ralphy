@@ -204,8 +204,9 @@ export const WBDeskSync = (function () {
   // name it saw go.
   function applyCheckout(desk: DeskView, change: CheckoutChange) {
     const held = desk.checkouts[change.repo];
-    if (change.op === "checkout" ? held === change.name : held !== change.ifName)
+    if (change.op === "checkout" ? held === change.name : held !== change.ifName) {
       return { desk, changed: false };
+    }
     const checkouts = { ...desk.checkouts };
     if (change.op === "checkout") checkouts[change.repo] = change.name;
     else delete checkouts[change.repo];
@@ -263,7 +264,7 @@ export const WBDeskSync = (function () {
     let server: DeskView = emptyDesk();
     // Unanswered changes, in order. The first `inflight.count` are the batch
     // the daemon has not answered yet; a resend reuses its `seq`.
-    let pending: DeskChange[] = [];
+    const pending: DeskChange[] = [];
     let inflight: { seq: number; count: number } | null = null;
 
     return {

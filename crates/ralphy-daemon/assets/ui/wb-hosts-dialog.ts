@@ -154,8 +154,9 @@ export function hostsDialog() {
       const payload: HostPayload = { destination: WBHosts.destination(s) };
       if (s.signIn === "key" && s.keyFile.trim()) payload.identity = s.keyFile.trim();
       if (s.name.trim()) payload.name = s.name.trim();
-      if (s.signIn === "config" && s.password && this.hostPasswordAllowed())
+      if (s.signIn === "config" && s.password && this.hostPasswordAllowed()) {
         payload.password = s.password;
+      }
       return payload;
     },
     // The daemon takes a password only over https or from this computer.

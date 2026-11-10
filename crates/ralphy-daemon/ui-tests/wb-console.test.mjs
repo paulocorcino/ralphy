@@ -4,13 +4,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
+const UI = join(import.meta.dirname, "../assets/ui");
 // The console family's source text, for the few pins on how it is written.
 // It is every module named `wb-console.ts`, `wb-console-*.ts`,
 // `wb-stage-*.ts`, `wb-desk.ts` or `wb-desk-*.ts`, joined in the order of
@@ -879,7 +878,7 @@ test("a birth writes only what it changed; an adopted console waits for the oper
     const adopted = deskWin("w-adopted");
     wb.recordBirth(adopted, { unrecorded: true });
     // A new console: its record is created.
-    wb.recordBirth(deskWin("w-new"), undefined);
+    wb.recordBirth(deskWin("w-new"));
     await settle();
     assert.deepEqual(changesOf(sent), [
       { op: "set", type: "window", id: "w-1", fields: { checkout: null } },

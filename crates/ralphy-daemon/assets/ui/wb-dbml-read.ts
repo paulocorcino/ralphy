@@ -63,10 +63,10 @@ function toLines(text: string): string[] {
     const cEnd = commentEnd(text, i);
     const sEnd = cEnd < 0 ? stringEnd(text, i) : -1;
     if (cEnd >= 0) {
-      out += text.slice(i, cEnd).replace(/[^\n]/g, "");
+      out += text.slice(i, cEnd).replaceAll(/[^\n]/gu, "");
       i = cEnd;
     } else if (sEnd >= 0) {
-      out += text.slice(i, sEnd).replace(/\s*\n\s*/g, " ");
+      out += text.slice(i, sEnd).replaceAll(/\s*\n\s*/gu, " ");
       i = sEnd;
     } else {
       out += braceBreak(text.charAt(i));
@@ -123,11 +123,13 @@ function readDotted(s: string, from: number): Dotted {
 function unquote(raw: string) {
   const s = raw.trim();
   const triple = s.length >= 6 && s.startsWith("'''") && s.endsWith("'''");
-  if (triple) return s.slice(3, -3).trim().replace(/\s+/g, " ");
+  if (triple) {
+    return s.slice(3, -3).trim().replaceAll(/\s+/gu, " ");
+  }
   const q = s[0];
   const quoted = s.length >= 2 && (q === "'" || q === '"' || q === "`") && s.endsWith(q);
   if (!quoted) return s;
-  return s.slice(1, -1).replace(/\\(['"`])/g, "$1");
+  return s.slice(1, -1).replaceAll(/\\(['"`])/gu, "$1");
 }
 
 // The end of a column type: `varchar(255)`, `DECIMAL(10, 2)`, `int[]`, or a
@@ -330,11 +332,11 @@ function openTopBlock(st: State, header: string): Block {
 }
 
 function openBlock(st: State, header: string) {
-  const top = st.stack[st.stack.length - 1];
+  const top = st.stack.at(-1);
   if (!top) st.stack.push(openTopBlock(st, header));
-  else if (top.kind === "table" && /^note$/i.test(header))
+  else if (top.kind === "table" && /^note$/iu.test(header)) {
     st.stack.push({ kind: "tablenote", table: top.table });
-  else st.stack.push(SKIP);
+  } else st.stack.push(SKIP);
 }
 
 function addInlineRef(st: State, table: DbmlTable, column: DbmlColumn, text: string) {
@@ -436,7 +438,7 @@ function readLine(st: State, line: string) {
     openBlock(st, line.slice(0, -1).trim());
     return;
   }
-  const top = st.stack[st.stack.length - 1];
+  const top = st.stack.at(-1);
   if (top) readBlockLine(st, top, line);
   else readTopLine(st, line);
 }

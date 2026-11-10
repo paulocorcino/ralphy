@@ -11,7 +11,7 @@ const fs = WBFileSearch;
 test("the toggle names the verb; anything else is a name search", () => {
   assert.equal(fs.verbFor("content"), "tree.grep");
   assert.equal(fs.verbFor("name"), "tree.find");
-  assert.equal(fs.verbFor(undefined), "tree.find");
+  assert.equal(fs.verbFor(), "tree.find");
 });
 
 test("a query is worth a walk at two trimmed characters", () => {

@@ -512,7 +512,7 @@ test("paintColumns gives the focus back to a column only while the keys are free
     again(undefined, "code");
     assert.deepEqual(focus, ["b", "b"], "another tab keeps its keys");
     box.focused = "x";
-    again(undefined);
+    again();
     assert.deepEqual(focus, ["b", "b"], "a focus outside the columns stays where it is");
   } finally {
     done();

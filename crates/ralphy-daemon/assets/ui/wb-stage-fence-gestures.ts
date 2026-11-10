@@ -293,8 +293,9 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           return;
         }
         if (!armed) {
-          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold))
+          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold)) {
             return;
+          }
           armed = true;
         }
         const next = resizeRect(

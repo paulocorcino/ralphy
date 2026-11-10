@@ -163,8 +163,9 @@ export function wbChanges() {
         this._reportCurrent(slug);
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
-        if (!this.$store.checkouts.checkoutOf(slug))
+        if (this.$store.checkouts.checkoutOf(slug) === null) {
           primaryReadMovesRow(this.$store.projects, slug, sync);
+        }
       } catch {
         if (seq === this._syncSeq) {
           this.syncFailed(slug, "the daemon did not answer");
@@ -251,8 +252,9 @@ export function wbChanges() {
       void this.loadSync(ref);
       // Under a selection the chip reads the worktree's branch from the
       // listing, not `p.branch`.
-      if (this.$store.checkouts.checkoutOf(ref))
+      if (this.$store.checkouts.checkoutOf(ref) !== null) {
         void this.$store.checkouts.ensureWorktreeListing(ref, true);
+      }
     },
 
     // --- the rows and the commit box -----------------------------------------

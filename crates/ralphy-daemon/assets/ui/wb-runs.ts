@@ -373,6 +373,7 @@ export const WBRun = {
   FACES: ["🦊", "🐼", "🦉", "🐙", "🐸", "🦝", "🐻", "🐨", "🦄", "🐝", "🐧", "🦋"],
   face(runid: string) {
     let h = 0;
+    // oxlint-disable-next-line unicorn/prefer-code-point -- codePointAt changes an emoji run's face
     for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     return this.FACES[h % this.FACES.length] ?? "";
   },

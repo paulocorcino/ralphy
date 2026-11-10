@@ -173,8 +173,9 @@ export function tabsStore(deps: TabsStoreDeps) {
         const grid = t.grid
           .map((col) => col.filter((x) => !seen.has(x)))
           .filter((col) => col.length);
-        if (grid.length && !this.tabs.some((x) => x.id === id))
+        if (grid.length > 0 && !this.tabs.some((x) => x.id === id)) {
           this.tabs.push(consoleTab(id, t.deskId, t.title, grid));
+        }
       }
     },
     // A console that left the page leaves its tab's grid, and a tab with no
@@ -304,8 +305,9 @@ export function tabsStore(deps: TabsStoreDeps) {
     // the pinned slot and the last tab on the left.
     renameTabId(oldId: string, newId: string) {
       if (this.active === oldId) this.showTab(newId);
-      if (this.slot?.kind === "pin" && this.slot.id === oldId)
+      if (this.slot?.kind === "pin" && this.slot.id === oldId) {
         this.slot = { kind: "pin", id: newId };
+      }
       if (this.lastLeft === oldId) this.lastLeft = newId;
     },
 

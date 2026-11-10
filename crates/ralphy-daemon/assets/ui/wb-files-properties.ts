@@ -33,7 +33,9 @@ export function propertiesItem(rows: Rows, node: WunderbaumNode | null) {
  * stops the tree's own handling of the key; `undefined` leaves every other key
  * to the tree. */
 export function propertiesKey(rows: Rows, e: WunderbaumKeyEvent) {
-  if (!e.node || !e.event.altKey || e.event.key !== "Enter") return undefined;
+  if (!e.node || !e.event.altKey || e.event.key !== "Enter") {
+    return;
+  }
   showProperties(rows, e.node);
   return false;
 }

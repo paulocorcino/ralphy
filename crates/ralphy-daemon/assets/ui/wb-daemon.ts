@@ -226,14 +226,13 @@ export function createDaemon(
     let over = false;
     let left = false;
     let leave: (() => void) | null = null;
-    let deadline: ReturnType<typeof setTimeout> | undefined;
     const finish = () => {
       over = true;
       left = true;
       clearTimeout(deadline);
       leave?.();
     };
-    deadline = setTimeout(finish, CONNECT_TIMEOUT_MS);
+    const deadline = setTimeout(finish, CONNECT_TIMEOUT_MS);
     leave = page.join({
       onOpen: (channels: PageChannels) => {
         if (over) return;

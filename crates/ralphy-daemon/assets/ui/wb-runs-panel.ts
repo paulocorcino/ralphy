@@ -138,8 +138,9 @@ export function wbRuns() {
       // Per-issue: tier routing gives two issues of one run different models.
       const seg = WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;
-      if (iss.blockedBy?.length)
+      if (iss.blockedBy.length > 0) {
         t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
+      }
       return t;
     },
     // Run → board (#301): a trail node opens that issue's detail. The Runs

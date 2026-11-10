@@ -29,8 +29,8 @@ export function slugOf(text: string) {
   return text
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
-    .replace(/\s+/g, "-");
+    .replaceAll(/[^\p{L}\p{N}\s-]/gu, "")
+    .replaceAll(/\s+/gu, "-");
 }
 
 let mermaidReady = false;

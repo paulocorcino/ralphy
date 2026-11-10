@@ -53,10 +53,12 @@ export async function liveSessionFor(reads: LiveReads, win: ConsoleWin, record: 
   let sessions;
   try {
     const read = await readSessions();
-    if (unheardRef(record.repo, read.unheard)) return undefined;
+    if (unheardRef(record.repo, read.unheard)) {
+      return;
+    }
     sessions = read.sessions;
   } catch {
-    return undefined;
+    return;
   }
   const layout: WBDeskFolds.FoldRecord[] = loadDesk();
   // Deleted by another page: this window still stands for it.

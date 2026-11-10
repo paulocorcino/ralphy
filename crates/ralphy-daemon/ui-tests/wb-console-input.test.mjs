@@ -4,8 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   DOUBLE_TAP_MS,
   FONT_DEFAULT,
@@ -44,7 +43,7 @@ import {
   touchScrollTarget,
 } from "../assets/ui/wb-console-input.ts";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
+const UI = join(import.meta.dirname, "../assets/ui");
 
 // --- pasteDecision: the image-paste rule (ADR-0055 §5) ----------------------
 
@@ -144,47 +143,47 @@ test("keyboardInset never returns a negative or a non-number", () => {
 // --- keySequence: the bytes a tapped key sends ----------------------------
 
 test("keySequence sends the control characters a virtual keyboard has no key for", () => {
-  assert.equal(keySequence("esc", false), "\x1b");
+  assert.equal(keySequence("esc", false), "\u001B");
   assert.equal(keySequence("tab", false), "\t");
   assert.equal(keySequence("enter", false), "\r");
-  assert.equal(keySequence("ctrl-c", false), "\x03");
+  assert.equal(keySequence("ctrl-c", false), "\u0003");
   assert.equal(keySequence("slash", false), "/");
   // The mode does not touch them — only the arrows are mode-dependent.
-  assert.equal(keySequence("esc", true), "\x1b");
+  assert.equal(keySequence("esc", true), "\u001B");
   assert.equal(keySequence("enter", true), "\r");
-  assert.equal(keySequence("ctrl-c", true), "\x03");
+  assert.equal(keySequence("ctrl-c", true), "\u0003");
   assert.equal(keySequence("slash", true), "/");
 });
 
 test("keySequence follows the terminal into application cursor mode", () => {
   // Normal mode: CSI. A shell's history and line editing read these.
-  assert.equal(keySequence("up", false), "\x1b[A");
-  assert.equal(keySequence("down", false), "\x1b[B");
-  assert.equal(keySequence("right", false), "\x1b[C");
-  assert.equal(keySequence("left", false), "\x1b[D");
+  assert.equal(keySequence("up", false), "\u001B[A");
+  assert.equal(keySequence("down", false), "\u001B[B");
+  assert.equal(keySequence("right", false), "\u001B[C");
+  assert.equal(keySequence("left", false), "\u001B[D");
   // Application mode: SS3. A full-screen program (which is what a vendor CLI's
   // menu is) asked for this, and sending CSI there scrolls nothing.
-  assert.equal(keySequence("up", true), "\x1bOA");
-  assert.equal(keySequence("down", true), "\x1bOB");
-  assert.equal(keySequence("right", true), "\x1bOC");
-  assert.equal(keySequence("left", true), "\x1bOD");
+  assert.equal(keySequence("up", true), "\u001BOA");
+  assert.equal(keySequence("down", true), "\u001BOB");
+  assert.equal(keySequence("right", true), "\u001BOC");
+  assert.equal(keySequence("left", true), "\u001BOD");
 });
 
 test("keySequence with the Shift latch sends xterm's shifted forms", () => {
   // Tab becomes back-tab, which Claude Code cycles its modes on.
-  assert.equal(keySequence("tab", false, true), "\x1b[Z");
-  assert.equal(keySequence("tab", true, true), "\x1b[Z");
+  assert.equal(keySequence("tab", false, true), "\u001B[Z");
+  assert.equal(keySequence("tab", true, true), "\u001B[Z");
   // A shifted arrow carries modifier 2, and it is CSI in both cursor modes.
   for (const appCursor of [false, true]) {
-    assert.equal(keySequence("up", appCursor, true), "\x1b[1;2A");
-    assert.equal(keySequence("down", appCursor, true), "\x1b[1;2B");
-    assert.equal(keySequence("right", appCursor, true), "\x1b[1;2C");
-    assert.equal(keySequence("left", appCursor, true), "\x1b[1;2D");
+    assert.equal(keySequence("up", appCursor, true), "\u001B[1;2A");
+    assert.equal(keySequence("down", appCursor, true), "\u001B[1;2B");
+    assert.equal(keySequence("right", appCursor, true), "\u001B[1;2C");
+    assert.equal(keySequence("left", appCursor, true), "\u001B[1;2D");
   }
   // No Shift form: sent unchanged.
-  assert.equal(keySequence("esc", false, true), "\x1b");
+  assert.equal(keySequence("esc", false, true), "\u001B");
   assert.equal(keySequence("enter", false, true), "\r");
-  assert.equal(keySequence("ctrl-c", false, true), "\x03");
+  assert.equal(keySequence("ctrl-c", false, true), "\u0003");
   assert.equal(keySequence("slash", false, true), "/");
 });
 
@@ -200,28 +199,28 @@ test("keySequence sends nothing for a name it does not know", () => {
 // --- applyCtrlLatch: a chord typed one finger at a time -------------------
 
 test("applyCtrlLatch folds the next single character and disarms", () => {
-  assert.deepEqual(applyCtrlLatch(true, "c"), { out: "\x03", latched: false });
-  assert.deepEqual(applyCtrlLatch(true, "C"), { out: "\x03", latched: false });
-  assert.deepEqual(applyCtrlLatch(true, "d"), { out: "\x04", latched: false });
-  assert.deepEqual(applyCtrlLatch(true, "["), { out: "\x1b", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "c"), { out: "\u0003", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "C"), { out: "\u0003", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "d"), { out: "\u0004", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "["), { out: "\u001B", latched: false });
 });
 
 test("applyCtrlLatch passes everything through while disarmed", () => {
   assert.deepEqual(applyCtrlLatch(false, "c"), { out: "c", latched: false });
-  assert.deepEqual(applyCtrlLatch(false, "\x1b[A"), { out: "\x1b[A", latched: false });
+  assert.deepEqual(applyCtrlLatch(false, "\u001B[A"), { out: "\u001B[A", latched: false });
 });
 
 test("applyCtrlLatch keeps the latch armed for input it cannot fold", () => {
   // An arrow is three bytes: masking the first would corrupt the escape and
   // silently eat the key the operator meant to modify.
-  assert.deepEqual(applyCtrlLatch(true, "\x1b[A"), { out: "\x1b[A", latched: true });
+  assert.deepEqual(applyCtrlLatch(true, "\u001B[A"), { out: "\u001B[A", latched: true });
   // A paste arrives as one long string on the same path.
   assert.deepEqual(applyCtrlLatch(true, "hello"), { out: "hello", latched: true });
   // Outside @-_ there is no control character to fold to.
   assert.deepEqual(applyCtrlLatch(true, "1"), { out: "1", latched: true });
-  assert.deepEqual(applyCtrlLatch(true, "\x03"), { out: "\x03", latched: true });
+  assert.deepEqual(applyCtrlLatch(true, "\u0003"), { out: "\u0003", latched: true });
   // Non-strings never reach the child, and must not throw on the way.
-  assert.deepEqual(applyCtrlLatch(true, undefined), { out: undefined, latched: true });
+  assert.deepEqual(applyCtrlLatch(true), { out: undefined, latched: true });
 });
 
 // --- terminalInputMode: the keyboard opens only from the key bar -----------
@@ -240,18 +239,18 @@ test("terminalInputMode hides the virtual keyboard until the bar opens it", () =
 
 test("isTerminalReply knows each answer xterm writes back for a query", () => {
   // ConPTY's startup `ESC[6n`, answered again on every reattach: the stray `R`.
-  assert.equal(isTerminalReply("\x1b[1;1R"), true);
-  assert.equal(isTerminalReply("\x1b[24;80R"), true);
-  assert.equal(isTerminalReply("\x1b[?24;80R"), true);
-  assert.equal(isTerminalReply("\x1b[0n"), true);
-  assert.equal(isTerminalReply("\x1b[?1;2c"), true);
-  assert.equal(isTerminalReply("\x1b[>0;276;0c"), true);
-  assert.equal(isTerminalReply("\x1b[?2004;1$y"), true);
-  assert.equal(isTerminalReply("\x1b[8;24;80t"), true);
-  assert.equal(isTerminalReply("\x1b[?0u"), true);
-  assert.equal(isTerminalReply("\x1bP1$r0m\x1b\\"), true);
-  assert.equal(isTerminalReply("\x1b]11;rgb:0000/0000/0000\x1b\\"), true);
-  assert.equal(isTerminalReply("\x1b]10;rgb:ffff/ffff/ffff\x07"), true);
+  assert.equal(isTerminalReply("\u001B[1;1R"), true);
+  assert.equal(isTerminalReply("\u001B[24;80R"), true);
+  assert.equal(isTerminalReply("\u001B[?24;80R"), true);
+  assert.equal(isTerminalReply("\u001B[0n"), true);
+  assert.equal(isTerminalReply("\u001B[?1;2c"), true);
+  assert.equal(isTerminalReply("\u001B[>0;276;0c"), true);
+  assert.equal(isTerminalReply("\u001B[?2004;1$y"), true);
+  assert.equal(isTerminalReply("\u001B[8;24;80t"), true);
+  assert.equal(isTerminalReply("\u001B[?0u"), true);
+  assert.equal(isTerminalReply("\u001BP1$r0m\u001B\\"), true);
+  assert.equal(isTerminalReply("\u001B]11;rgb:0000/0000/0000\u001B\\"), true);
+  assert.equal(isTerminalReply("\u001B]10;rgb:ffff/ffff/ffff\u0007"), true);
 });
 
 test("isTerminalReply lets typed keys and pastes through", () => {
@@ -259,15 +258,15 @@ test("isTerminalReply lets typed keys and pastes through", () => {
     "R",
     "c",
     "\r",
-    "\x03",
-    "\x1b",
-    "\x1b[A",
-    "\x1bOR",
-    "\x1b[3~",
-    "\x1b[200~text\x1b[201~",
-    "\x1b[I",
+    "\u0003",
+    "\u001B",
+    "\u001B[A",
+    "\u001BOR",
+    "\u001B[3~",
+    "\u001B[200~text\u001B[201~",
+    "\u001B[I",
     "ls -la\r",
-    "\x1b[1;1Rx",
+    "\u001B[1;1Rx",
     undefined,
   ]) {
     assert.equal(isTerminalReply(typed), false, JSON.stringify(typed));
@@ -297,7 +296,7 @@ test("keyBarVisible defaults to whether the machine has a touch surface", () => 
 
 test("pasteOffered needs a clipboard that can READ", () => {
   // An insecure LAN origin has no `navigator.clipboard` at all.
-  assert.equal(pasteOffered(undefined), false);
+  assert.equal(pasteOffered(), false);
   assert.equal(pasteOffered(null), false);
   // A write-only shim (the clipboard test recorder, or an old engine) is not
   // enough: there is no `execCommand` fallback for a read.
@@ -339,7 +338,7 @@ test("forceSelectionKeys is Option on macOS and Shift elsewhere", () => {
   // Alt outside macOS asks xterm for a column selection.
   assert.deepEqual(forceSelectionKeys("Win32"), { shiftKey: true });
   assert.deepEqual(forceSelectionKeys("Linux x86_64"), { shiftKey: true });
-  assert.deepEqual(forceSelectionKeys(undefined), { shiftKey: true });
+  assert.deepEqual(forceSelectionKeys(), { shiftKey: true });
 });
 
 test("holdMoveReport holds only button-less moves over a selection under a TUI", () => {
@@ -428,7 +427,7 @@ test("phoneBleed is maximize AND a phone-width viewport", () => {
   assert.equal(phoneBleed(false, 390), false);
   // A viewport that has never laid out reports NaN — no bleed, no throw.
   assert.equal(phoneBleed(true, NaN), false);
-  assert.equal(phoneBleed(true, undefined), false);
+  assert.equal(phoneBleed(true), false);
 });
 
 // --- selectionRow: the buffer line under a finger --------------------------
@@ -457,7 +456,7 @@ test("selectionRow never answers NaN", () => {
   assert.equal(selectionRow(140, 100, 0, 24, 50), 50);
   assert.equal(selectionRow(140, 100, NaN, 24, 50), 50);
   assert.equal(selectionRow(NaN, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(140, 100, 20, 24, undefined), 2);
+  assert.equal(selectionRow(140, 100, 20, 24), 2);
   assert.equal(selectionRow(140, undefined, 20, 24, 0), 7);
 });
 
@@ -506,7 +505,7 @@ test("touchCentroid is the point between the fingers", () => {
   assert.deepEqual(touchCentroid([{ clientX: 10, clientY: 20 }, { clientX: 30, clientY: 60 }]), { x: 20, y: 40 });
   assert.deepEqual(touchCentroid([{ clientX: 5, clientY: 5 }]), { x: 5, y: 5 });
   assert.deepEqual(touchCentroid([]), { x: 0, y: 0 });
-  assert.deepEqual(touchCentroid(undefined), { x: 0, y: 0 });
+  assert.deepEqual(touchCentroid(), { x: 0, y: 0 });
 });
 
 // --- dragThreshold / dragBegins: a tap is not a drag ------------------------
@@ -514,7 +513,7 @@ test("dragThreshold is 4px for a mouse and 10px for a finger, a pen or an unknow
   assert.equal(dragThreshold("mouse"), 4);
   assert.equal(dragThreshold("touch"), 10);
   assert.equal(dragThreshold("pen"), 10);
-  assert.equal(dragThreshold(undefined), 10);
+  assert.equal(dragThreshold(), 10);
   assert.equal(dragThreshold(""), 10);
 });
 
@@ -658,7 +657,7 @@ test("isWebKit is the one engine question both decisions ask", () => {
   assert.equal(isWebKit("Apple Computer, Inc."), true);
   assert.equal(isWebKit("Google Inc."), false);
   assert.equal(isWebKit(""), false);
-  assert.equal(isWebKit(undefined), false);
+  assert.equal(isWebKit(), false);
 });
 
 // --- prefersDomRenderer: which engines must not get the GPU renderer ------
@@ -691,10 +690,10 @@ test("prefersDomRenderer asks about the ENGINE, not the brand", () => {
 test("barKey: Shift toggles the latch and one key that sends bytes uses it", () => {
   assert.deepEqual(barKey("shift", false, false), { seq: "", latched: true });
   assert.deepEqual(barKey("shift", false, true), { seq: "", latched: false });
-  assert.deepEqual(barKey("tab", false, true), { seq: "\x1b[Z", latched: false });
-  assert.deepEqual(barKey("up", true, true), { seq: "\x1b[1;2A", latched: false });
+  assert.deepEqual(barKey("tab", false, true), { seq: "\u001B[Z", latched: false });
+  assert.deepEqual(barKey("up", true, true), { seq: "\u001B[1;2A", latched: false });
   // Esc, Enter and / have no Shift form, but they still use the latch up.
-  assert.deepEqual(barKey("esc", false, true), { seq: "\x1b", latched: false });
+  assert.deepEqual(barKey("esc", false, true), { seq: "\u001B", latched: false });
   assert.deepEqual(barKey("enter", false, true), { seq: "\r", latched: false });
   assert.deepEqual(barKey("slash", false, true), { seq: "/", latched: false });
   // A key that sends nothing leaves the latch as it was.
@@ -711,17 +710,17 @@ test("scrubClipboard drops the trailing newlines that would run a pasted command
 });
 
 test("scrubClipboard drops escape sequences and other control characters", () => {
-  assert.equal(scrubClipboard("a\x1b[31mred\x1b[0mb"), "a[31mred[0mb");
-  assert.equal(scrubClipboard("a\x00b\x07c\x7fd"), "abcd");
+  assert.equal(scrubClipboard("a\u001B[31mred\u001B[0mb"), "a[31mred[0mb");
+  assert.equal(scrubClipboard("a\u0000b\u0007c\u007Fd"), "abcd");
 });
 
 test("scrubClipboard drops the C1 controls, such as the one-character CSI U+009B", () => {
-  assert.equal(scrubClipboard("a\u009b31mb\u0080c\u009fd"), "a31mbcd");
-  assert.equal(scrubClipboard("\u00a0\u00e9"), "\u00a0\u00e9", "U+00A0 and above stay");
+  assert.equal(scrubClipboard("a\u009B31mb\u0080c\u009Fd"), "a31mbcd");
+  assert.equal(scrubClipboard("\u00A0\u00E9"), "\u00A0\u00E9", "U+00A0 and above stay");
 });
 
 test("scrubClipboard keeps tabs, inner newlines and non-ASCII text", () => {
   assert.equal(scrubClipboard("a\tb\r\nc"), "a\tb\nc");
-  assert.equal(scrubClipboard("café \u{1f600}"), "café \u{1f600}");
+  assert.equal(scrubClipboard("café \u{1F600}"), "café \u{1F600}");
   assert.equal(scrubClipboard(""), "");
 });

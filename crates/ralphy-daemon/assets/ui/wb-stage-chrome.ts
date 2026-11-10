@@ -367,8 +367,9 @@ export function createChrome(deps: ChromeDeps) {
       if (
         (e.target as HTMLElement).closest("button, .session-name, .session-name-input") ||
         isFull(win)
-      )
+      ) {
         return;
+      }
       // A finger's double tap is `wireTitleTouch`'s.
       if (win._lastPointerType !== "mouse") return;
       maxOrRestore();

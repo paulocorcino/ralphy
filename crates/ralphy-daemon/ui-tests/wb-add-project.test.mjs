@@ -292,9 +292,9 @@ test("the `..` row goes up one folder, to the drive list above a drive root", ()
   assert.equal(P.request(s).path, "");
 
   // No row above `/`, and none while a name is being typed.
-  let l = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/"), { dir: { path: "/", root: null, added: false }, entries: [] });
+  const l = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/"), { dir: { path: "/", root: null, added: false }, entries: [] });
   assert.equal(P.entries(l).length, 0);
-  let f = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fi"), DEV);
+  const f = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fi"), DEV);
   assert.equal(P.entries(f).length, DEV.entries.length);
 });
 

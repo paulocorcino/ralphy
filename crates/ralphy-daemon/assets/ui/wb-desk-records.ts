@@ -141,8 +141,9 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
       const a = SET_FIELDS[type](old);
       const b = SET_FIELDS[type](r);
       const fields: { [field: string]: JsonValue | undefined } = {};
-      for (const k of Object.keys(b))
+      for (const k of Object.keys(b)) {
         if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
+      }
       if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields });
     }
     if (!changes.length) return;

@@ -1,5 +1,5 @@
 const pascal = (name: string) =>
-  name.replace(
+  name.replaceAll(
     /(\w)(\w*)(_|-|\s*)/g,
     (_: string, first: string, rest: string) => first.toUpperCase() + rest.toLowerCase(),
   );

@@ -259,8 +259,9 @@ export function createDetach(deps: DetachDeps) {
 
   function onPopupBeat(id: string) {
     const entry = popups.entry(id);
-    if (entry?.peer)
+    if (entry?.peer) {
       entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
+    }
     // Any word clears the probe: `stillThere` asks "has it answered SINCE I
     // asked", and a beat is an answer.
     if (entry) entry.probed = false;

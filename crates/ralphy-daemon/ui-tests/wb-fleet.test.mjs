@@ -5,8 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { WBFleet } from "../assets/ui/wb-fleet.ts";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 // The module keeps no state, so one import serves every test.
 function load() {
@@ -209,7 +208,7 @@ test("the order peers arrive in does not change the grouping", () => {
 
 test("a missing repos or peers list is not a crash", () => {
   const fleet = load();
-  assert.deepEqual(fleet.fleetGroups(undefined, undefined), []);
+  assert.deepEqual(fleet.fleetGroups(), []);
   assert.equal(fleet.fleetGroups(null, [PEER]).length, 1);
 });
 
@@ -257,7 +256,7 @@ test("refSlug strips a ULID routing head and nothing else", () => {
   assert.equal(wb.refSlug("01ARZ3NDEKTSV4RRFFQ69G5FA/owner/repo"), "01ARZ3NDEKTSV4RRFFQ69G5FA/owner/repo");
   // Absent input yields the empty string, never "null" or "undefined".
   assert.equal(wb.refSlug(null), "");
-  assert.equal(wb.refSlug(undefined), "");
+  assert.equal(wb.refSlug(), "");
   assert.equal(wb.refSlug(""), "");
 });
 
@@ -324,7 +323,7 @@ test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a f
 });
 
 test("every group header shows its system's icon and the group label, and has no menu", () => {
-  const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/index.html"), "utf8");
+  const html = readFileSync(join(import.meta.dirname, "../assets/ui/index.html"), "utf8");
   const start = html.indexOf('class="env-group"');
   assert.ok(start >= 0, "no .env-group in index.html");
   const labelAt = html.indexOf('class="env-label"', start);

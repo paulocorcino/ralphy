@@ -390,8 +390,9 @@ export function createFences(deps: FenceDeps) {
   function focusDetached(id: string) {
     const live = popups.entry(id);
     if (live?.handle && !live.handle.closed) live.handle.focus();
-    else
+    else {
       link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
+    }
     WB.emit("fence-focus", { fence: id });
   }
 

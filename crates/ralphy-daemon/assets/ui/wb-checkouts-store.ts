@@ -143,8 +143,9 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       else delete next[ref];
       this.checkouts = next;
       window.WBConsole?.setCheckout?.(ref, name || null);
-      if (window.Alpine.store("projects").openSlug === ref)
+      if (window.Alpine.store("projects").openSlug === ref) {
         sendWindow(window, "workbench:checkout-changed");
+      }
       // The Changes panel and the sync row are the SELECTED checkout's (#407).
       // Another tree's change set is not this tree's "last value" (ADR-0070
       // D3): its reads start over.

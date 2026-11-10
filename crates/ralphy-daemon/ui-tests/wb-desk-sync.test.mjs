@@ -4,11 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { WBDeskSync } from "../assets/ui/wb-desk-sync.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 function load() {
   return WBDeskSync;

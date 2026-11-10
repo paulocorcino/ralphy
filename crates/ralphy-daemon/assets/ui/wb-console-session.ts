@@ -236,8 +236,9 @@ type RelaunchRecord = {
 };
 export function relaunchRequest(record: RelaunchRecord) {
   const repo = record.repo === "~" ? undefined : record.repo;
-  if (record.kind !== "agent")
+  if (record.kind !== "agent") {
     return { console: true, repo, command: consoleCommand(record.agent) };
+  }
   return { repo, agent: record.agent, checkout: record.checkout ?? null };
 }
 
@@ -391,7 +392,8 @@ export function sessionRowFor(
 export function agentStateTitle(state: string | null | undefined, detail?: string) {
   if (!state) return "";
   if (state === "unknown") return "Agent state unknown";
-  if (state === "silent")
+  if (state === "silent") {
     return detail ? `Agent state not reported: ${detail}` : "Agent state not reported";
+  }
   return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
 }

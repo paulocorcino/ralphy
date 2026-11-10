@@ -124,8 +124,9 @@ export function createDeskConverge(deps: ConvergeDeps) {
       at("top") === Math.round(r.top) &&
       at("width") === Math.round(r.width) &&
       at("height") === Math.round(r.height)
-    )
+    ) {
       return;
+    }
     win.style.left = r.left + "px";
     win.style.top = r.top + "px";
     win.style.width = r.width + "px";

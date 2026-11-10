@@ -124,7 +124,8 @@ export function wireDetached(window: Window, document: Document) {
   // A shell that never answers (a foreign opener, or one that closed
   // mid-handover) leaves the pane empty rather than pending forever.
   setTimeout(() => {
-    if (!document.querySelector("#viewers .viewer"))
+    if (!document.querySelector("#viewers .viewer")) {
       empty("The workbench did not send a file to this window");
+    }
   }, 3000);
 }

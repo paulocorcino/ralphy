@@ -309,7 +309,7 @@ test("a deps member left out fails the call that needs it", () => {
     const noCopy = fakeDeps(page).deps;
     delete noCopy.writeClipboard;
     const handle = createTerminal(noCopy).attachTerminal(fakeElement(), { console: true });
-    const osc = page.terminals[page.terminals.length - 1].osc.get(52);
+    const osc = page.terminals.at(-1).osc.get(52);
     assert.throws(() => osc("c;" + Buffer.from("x").toString("base64")), TypeError);
     handle.dispose();
   } finally {

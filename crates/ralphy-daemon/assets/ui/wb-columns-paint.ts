@@ -30,8 +30,13 @@ export function headGap(
   headWin: ConsoleWin | null | undefined,
   relaunching: (id: string) => boolean,
 ): "restore" | "wait" | null {
-  if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column"))
+  if (
+    headWin &&
+    !headWin.classList.contains("maximized") &&
+    !headWin.classList.contains("column")
+  ) {
     return "restore";
+  }
   if (head && !headWin && relaunching(head)) return "wait";
   return null;
 }

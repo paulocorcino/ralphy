@@ -4,15 +4,14 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { ReadDeadline } from "../assets/ui/wb-api.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS, resumeDecision } from "../assets/ui/wb-resume.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
 function fixture(name) {
@@ -114,7 +113,7 @@ test("detachSocket tolerates no socket and a throwing close", () => {
   const { detachSocket } = load();
   // Both run on a resume path that must never throw into the operator's face.
   assert.doesNotThrow(() => detachSocket(null));
-  assert.doesNotThrow(() => detachSocket(undefined));
+  assert.doesNotThrow(() => detachSocket());
   assert.doesNotThrow(() =>
     detachSocket({
       readyState: 1,
@@ -514,7 +513,7 @@ test("one socket carries presence, tree, runs and changes", () => {
   const changes = [];
   withFakes(() => {
     d.subscribePresence((p) => beats.push(p));
-    d.subscribeTree("o/r", () => {}, null, undefined, undefined);
+    d.subscribeTree("o/r", () => {}, null);
     d.subscribeRuns("o/r", () => runs.push("dirty"));
     d.subscribeChanges("o/r", (f) => changes.push(f.verb));
   });
@@ -572,7 +571,7 @@ test("a reopened socket re-sends the watches and reads once", () => {
   const sub = withFakes(() => {
     d.subscribePresence(() => {});
     d.subscribeRuns("o/r", () => (runReads += 1));
-    return d.subscribeTree("o/r", (rel) => dirty.push(rel), null, undefined, undefined);
+    return d.subscribeTree("o/r", (rel) => dirty.push(rel), null);
   });
   open(sockets[0]);
   sub.watch("");
@@ -596,7 +595,7 @@ test("a tree push on its channel reaches onDirty", () => {
   const dirty = [];
   withFakes(() => {
     d.subscribeRuns("o/r", () => {});
-    d.subscribeTree("o/r", (rel) => dirty.push(rel), null, undefined, undefined);
+    d.subscribeTree("o/r", (rel) => dirty.push(rel), null);
   });
   open(sockets[0]);
   push(sockets[0], "tree", "tree.dirty", { repo: "o/r", path: "src" });
@@ -645,7 +644,7 @@ test("subscribeTree holds the checkout's HEAD and routes head.dirty to onHead", 
 });
 
 test("subscribeTree without onHead sends no head.watch", () => {
-  const { ws, push } = treeSocket(null, undefined);
+  const { ws, push } = treeSocket(null);
   assert.deepEqual(sentOn(ws), []);
   assert.doesNotThrow(() => push("head.dirty", { repo: "o/r" }));
 });
@@ -717,7 +716,7 @@ test("a reopen re-reads each held dir and the branch once; the first open reads 
 });
 
 test("a closed tree subscription never reopens", () => {
-  const { sub, ws, sockets, drop, runRetries } = treeSocket(null, undefined);
+  const { sub, ws, sockets, drop, runRetries } = treeSocket(null);
   sub.watch("");
   sub.close();
   drop(ws);
@@ -739,7 +738,7 @@ function closeChannel(page, s, id, reason) {
 }
 
 test("a tree channel the daemon closes is opened again after 3 s with its watches", () => {
-  const page = treeSocket(null, undefined);
+  const page = treeSocket(null);
   const { sub, ws, dirty, runRetries } = page;
   sub.watch("");
   sub.watch("src");
@@ -758,13 +757,13 @@ test("a tree channel the daemon closes is opened again after 3 s with its watche
 });
 
 test("a reopened tree channel the daemon closes again waits for the next socket", () => {
-  const page = treeSocket(null, undefined);
+  const page = treeSocket(null);
   const { sub, ws, sockets, open, drop, runRetries } = page;
   sub.watch("src");
   closeChannel(page, ws, channelsOf(ws, "tree")[0], "refused");
   runRetries();
   const opens = channelsOf(ws, "tree");
-  closeChannel(page, ws, opens[opens.length - 1], "overflow");
+  closeChannel(page, ws, opens.at(-1), "overflow");
   runRetries();
   assert.deepEqual(channelsOf(ws, "tree"), opens, "no open after the second close");
   drop(ws);
@@ -779,7 +778,7 @@ test("after a page resume the tree sends its watches again on the new socket", (
   const page = eventPage();
   const dirty = [];
   page.withFakes(() => {
-    const sub = page.d.subscribeTree("o/r", (rel) => dirty.push(rel), null, undefined, undefined);
+    const sub = page.d.subscribeTree("o/r", (rel) => dirty.push(rel), null);
     page.open(page.sockets[0]);
     sub.watch("src");
   });
@@ -907,7 +906,7 @@ test("a command whose page socket misses the handshake deadline runs nothing", (
     for (const t of timers) if (t.ms === 8000) t.fn();
   });
   runRetries();
-  open(sockets[sockets.length - 1]);
+  open(sockets.at(-1));
   const spawnOpens = sockets.flatMap((s) =>
     s.sent.filter((f) => f.verb === "channel.open" && f.payload.kind === "spawn"),
   );
