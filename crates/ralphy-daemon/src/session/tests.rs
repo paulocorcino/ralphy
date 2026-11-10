@@ -68,7 +68,7 @@ fn session_info_serialises_checkout_only_when_present() {
 /// appends every write to `sink`: a child that does not read its input.
 struct Stuck {
     gate: Option<std::sync::mpsc::Receiver<()>>,
-    sink: std::sync::Arc<Mutex<Vec<u8>>>,
+    sink: Arc<Mutex<Vec<u8>>>,
 }
 
 impl std::io::Write for Stuck {
@@ -87,7 +87,7 @@ impl std::io::Write for Stuck {
 #[test]
 fn input_send_does_not_wait_for_a_child_that_does_not_read() {
     let (open, gate) = std::sync::mpsc::channel();
-    let sink = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::new(Mutex::new(Vec::new()));
     let input = Input::start(Box::new(Stuck {
         gate: Some(gate),
         sink: sink.clone(),

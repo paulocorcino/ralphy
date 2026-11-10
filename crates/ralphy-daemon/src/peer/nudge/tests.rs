@@ -302,12 +302,12 @@ fn a_pid_file_naming_no_keepalive_is_replaced() {
 #[test]
 fn a_distro_name_is_reduced_to_a_safe_file_name() {
     assert_eq!(
-        keepalive_pid_file(std::path::Path::new("store"), "Ubuntu-22.04"),
-        std::path::Path::new("store").join("keepalive-Ubuntu-22.04.pid")
+        keepalive_pid_file(Path::new("store"), "Ubuntu-22.04"),
+        Path::new("store").join("keepalive-Ubuntu-22.04.pid")
     );
     assert_eq!(
-        keepalive_pid_file(std::path::Path::new("store"), "../a b"),
-        std::path::Path::new("store").join("keepalive-.._a_b.pid")
+        keepalive_pid_file(Path::new("store"), "../a b"),
+        Path::new("store").join("keepalive-.._a_b.pid")
     );
 }
 

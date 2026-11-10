@@ -161,12 +161,12 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
 /// Whether the child's `dispatch-cwd:` line names `repo` — compared canonical,
 /// since the child prints the cwd the OS resolved (`/private/var/…` for a
 /// macOS temp dir spelled `/var/…`).
-fn ran_in(text: &str, repo: &std::path::Path) -> bool {
+fn ran_in(text: &str, repo: &Path) -> bool {
     let want = repo.canonicalize().expect("the repo exists");
     text.lines()
         .filter_map(|l| l.strip_prefix("dispatch-cwd: "))
         .any(|cwd| {
-            std::path::Path::new(cwd.trim())
+            Path::new(cwd.trim())
                 .canonicalize()
                 .is_ok_and(|got| got == want)
         })

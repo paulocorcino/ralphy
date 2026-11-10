@@ -130,9 +130,9 @@ fn watcher_emits_one_agent_state_per_transition_including_the_last_line() {
     .unwrap();
     f.flush().unwrap();
     // Let the thread take at least one poll (500 ms cadence).
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while mine(&sink, &tag).len() < 2 && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(50));
     }
     // The last line lands right before the stop — `stop()`'s final look
     // must fold it, whatever the poll cadence did.

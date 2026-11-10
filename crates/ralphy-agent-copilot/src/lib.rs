@@ -221,7 +221,7 @@ impl CopilotAgent {
     /// `--effort` rather than failing the run.
     fn catalog(&self) -> Option<&CopilotCatalog> {
         self.catalog
-            .get_or_init(|| match catalog::fetch_catalog() {
+            .get_or_init(|| match fetch_catalog() {
                 Ok(c) => Some(c),
                 Err(e) => {
                     tracing::warn!(error = %e, "no Copilot catalog: --effort will be omitted");

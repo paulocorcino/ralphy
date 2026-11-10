@@ -49,7 +49,7 @@ fn get(checks: &[HostCheck], id: CheckId) -> &HostCheck {
 fn a_host_with_doctor_shows_the_doctor_result() {
     let mut fake = FakeHost::default().answer("doctor --json", out(1, &format!("{DOCTOR}\n"), ""));
     fake.answers
-        .append(&mut linux_host(LINUX_PROBE, description("linux")).answers);
+        .append(&mut linux_host(LINUX_PROBE, &description("linux")).answers);
     let checks = checks_of(&mut fake);
     assert!(fake.index_of("doctor --json").is_some());
     for id in [CheckId::Git, CheckId::Gh] {
@@ -72,7 +72,7 @@ fn a_host_with_doctor_shows_the_doctor_result() {
 
 #[test]
 fn a_host_older_than_doctor_shows_the_probe_result() {
-    let mut fake = linux_host(LINUX_PROBE, description("linux"));
+    let mut fake = linux_host(LINUX_PROBE, &description("linux"));
     let checks = checks_of(&mut fake);
     assert!(fake.index_of("doctor --json").is_some());
     assert!(

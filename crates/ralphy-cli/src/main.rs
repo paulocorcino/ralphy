@@ -162,7 +162,7 @@ pub(crate) fn consolidate_defaults(
 fn consolidate_with_agent(
     agent: CliAgent,
     ws: &Workspace,
-    run_dir: &std::path::Path,
+    run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: std::time::Duration,
@@ -223,7 +223,7 @@ fn consolidate_with_agent(
 fn run_consolidation(
     agent: CliAgent,
     ws: &Workspace,
-    run_dir: &std::path::Path,
+    run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     max_minutes: u64,

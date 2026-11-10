@@ -38,9 +38,9 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
 
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
-    let mut store = crate::registry::RegistryStore::default();
+    let mut store = registry::RegistryStore::default();
     store.upsert("owner/workbench", &dir.path().to_string_lossy());
-    crate::registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).unwrap();
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -52,15 +52,15 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
             .build()
             .unwrap();
         let served = runtime.block_on(async move {
-            let (sockets, drain) = crate::mux::tracked();
-            let app = crate::router_tracking(
+            let (sockets, drain) = mux::tracked();
+            let app = router_tracking(
                 None,
                 registry_path,
-                std::path::PathBuf::from("does-not-exist"),
-                crate::StorePaths::default(),
-                std::time::Instant::now(),
+                PathBuf::from("does-not-exist"),
+                StorePaths::default(),
+                Instant::now(),
                 stop.clone(),
-                crate::auth::AuthState::localhost(),
+                auth::AuthState::localhost(),
                 sockets,
             );
             let tcp = tokio::net::TcpListener::from_std(listener).unwrap();

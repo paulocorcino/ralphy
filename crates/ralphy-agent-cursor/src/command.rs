@@ -152,7 +152,7 @@ pub(crate) fn build_cursor_command(
     // a worse break than the papercut it fixes, SHELL+MSYSTEM runs commands cleanly.
     #[cfg(windows)]
     if let Some(shell) = git_bash_shell_pin(
-        std::env::var_os("SHELL"),
+        std::env::var_os("SHELL").as_deref(),
         ralphy_proc_util::locate_git_bash(),
     ) {
         cmd.env("SHELL", shell).env("MSYSTEM", GIT_BASH_MSYSTEM);
@@ -183,7 +183,7 @@ const GIT_BASH_MSYSTEM: &str = "MINGW64";
 /// Pure over its inputs so every branch unit-tests without touching the real env.
 #[cfg(windows)]
 fn git_bash_shell_pin(
-    existing_shell: Option<std::ffi::OsString>,
+    existing_shell: Option<&std::ffi::OsStr>,
     located_git_bash: Option<PathBuf>,
 ) -> Option<PathBuf> {
     match existing_shell {

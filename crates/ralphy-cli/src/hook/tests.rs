@@ -249,5 +249,5 @@ fn transcript_missing_file_gives_none() {
 }
 
 fn json_str(s: &str) -> String {
-    serde_json::Value::String(s.to_string()).to_string()
+    Value::String(s.to_owned()).to_string()
 }

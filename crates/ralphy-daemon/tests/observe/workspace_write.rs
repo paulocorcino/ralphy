@@ -45,7 +45,7 @@ pub(super) async fn serve_repo() -> (u16, String, PathBuf) {
     let app = router(
         None,
         registry_path,
-        std::path::PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         ralphy_daemon::StorePaths::default(),
         Instant::now(),
         rx,
@@ -382,7 +382,7 @@ pub(super) async fn serve_worktree_repo() -> (u16, String, PathBuf) {
     let app = router(
         None,
         registry_path,
-        std::path::PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         ralphy_daemon::StorePaths::default(),
         Instant::now(),
         rx,

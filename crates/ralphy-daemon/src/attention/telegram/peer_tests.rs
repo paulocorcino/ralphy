@@ -184,7 +184,7 @@ use axum::response::IntoResponse as _;
 
 /// A daemon router as a peer: its own store in `home`, a bot when
 /// `with_bot`, the peer token.
-pub(super) async fn real_peer(home: &std::path::Path, with_bot: bool) -> u16 {
+pub(super) async fn real_peer(home: &Path, with_bot: bool) -> u16 {
     let config = home.join("telegram.toml");
     if with_bot {
         std::fs::write(&config, BOT).expect("write the config");

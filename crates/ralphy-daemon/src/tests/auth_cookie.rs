@@ -212,7 +212,7 @@ async fn logout_clears_cookie_and_needs_a_session() {
 #[tokio::test]
 async fn the_guard_hands_the_login_id_to_the_request() {
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
-    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
+    let policy = auth::AuthPolicy::Session(Arc::new(auth::SessionAuth {
         token: "tok".to_string(),
         totp: rfc_seed(),
         password: None,
@@ -258,7 +258,7 @@ async fn the_guard_hands_the_login_id_to_the_request() {
 #[tokio::test]
 async fn a_revoked_login_is_refused_and_another_is_not() {
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
-    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
+    let policy = auth::AuthPolicy::Session(Arc::new(auth::SessionAuth {
         token: "tok".to_string(),
         totp: rfc_seed(),
         password: None,

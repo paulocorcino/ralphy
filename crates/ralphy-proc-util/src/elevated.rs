@@ -35,7 +35,7 @@ pub fn runs_elevated() -> bool {
             token,
             TokenElevation,
             std::ptr::from_mut(&mut elevation).cast(),
-            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            u32::try_from(size_of::<TOKEN_ELEVATION>()).expect("the struct size fits in u32"),
             &raw mut len,
         );
         CloseHandle(token);

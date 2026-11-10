@@ -265,7 +265,7 @@ fn status_consults_no_remote_at_all() {
     std::fs::rename(&remote, &gone).unwrap();
     // Positive control: the remote really is unreachable now.
     assert!(
-        crate::git::git(&clone, &["ls-remote", "origin"]).is_err(),
+        git(&clone, &["ls-remote", "origin"]).is_err(),
         "the fixture must be unreachable, or this proves nothing"
     );
 

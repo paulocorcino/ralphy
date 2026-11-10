@@ -79,7 +79,7 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
             job,
             JobObjectExtendedLimitInformation,
             std::ptr::from_ref(&info).cast(),
-            u32::try_from(std::mem::size_of_val(&info)).expect("the struct size fits u32"),
+            u32::try_from(size_of_val(&info)).expect("the struct size fits u32"),
         )
     };
     assert_ne!(set, FALSE, "allowing breakaway on the test job");

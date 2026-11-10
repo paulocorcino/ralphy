@@ -34,7 +34,7 @@ fn add_with_a_password_adds_the_peer_key_then_signs_in_with_it() {
         .answer("uname -s", denied())
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("authorized_keys", out(0, "", ""));
-    let mut rest = linux_host(LINUX_PROBE, description("linux"));
+    let mut rest = linux_host(LINUX_PROBE, &description("linux"));
     fake.answers.append(&mut rest.answers);
     let mut report = Report::json(Vec::new());
     let d = add(
@@ -76,7 +76,7 @@ fn add_with_a_password_adds_the_peer_key_then_signs_in_with_it() {
 #[test]
 fn a_password_is_not_used_when_a_key_signs_in() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = linux_host(LINUX_PROBE, description("linux")).with_password();
+    let mut fake = linux_host(LINUX_PROBE, &description("linux")).with_password();
     add(
         &mut fake,
         &local(store.path()),

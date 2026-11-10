@@ -67,7 +67,7 @@ fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
     let mut first = description("linux");
     first.require_token = false;
     first.autostart = false;
-    let mut fake = linux_host(LINUX_PROBE, first);
+    let mut fake = linux_host(LINUX_PROBE, &first);
     let d = add(
         &mut fake,
         &local(store.path()),
@@ -115,7 +115,7 @@ fn add_names_an_unnamed_host_by_itself_in_one_run() {
     let store = tempfile::tempdir().unwrap();
     let mut first = description("linux");
     first.name = None;
-    let mut fake = linux_host(LINUX_PROBE, first).answer("daemon setup", out(0, "", ""));
+    let mut fake = linux_host(LINUX_PROBE, &first).answer("daemon setup", out(0, "", ""));
     add(
         &mut fake,
         &local(store.path()),
@@ -152,7 +152,7 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
     .unwrap();
     let mut ready = description("linux");
     ready.socket = Some("/home/paulo/.ralphy/daemon.sock".to_string());
-    let mut fake = linux_host(LINUX_PROBE, ready);
+    let mut fake = linux_host(LINUX_PROBE, &ready);
     let d = add(
         &mut fake,
         &local(store.path()),
@@ -168,7 +168,7 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
     assert_eq!(d.port, 7403);
     assert!(fake.index_of("restart").is_none(), "{:?}", fake.commands());
 
-    let mut fake = linux_host(LINUX_PROBE, description("linux"));
+    let mut fake = linux_host(LINUX_PROBE, &description("linux"));
     let again = add(
         &mut fake,
         &local(store.path()),
@@ -190,7 +190,7 @@ fn add_falls_back_to_the_peer_key() {
     let mut fake = FakeHost::before_doctor()
         .answer("uname -s", denied())
         .answer("uname -s", out(0, "Linux\n", ""));
-    let mut rest = linux_host(LINUX_PROBE, description("linux"));
+    let mut rest = linux_host(LINUX_PROBE, &description("linux"));
     rest.answers.remove(0);
     fake.answers.append(&mut rest.answers);
     let d = add(
@@ -292,7 +292,7 @@ fn add_linger_needs_sudo_is_not_fatal() {
         out(1, "", "Could not enable linger: Access denied\n"),
     );
     fake.answers
-        .append(&mut linux_host(LINUX_NO_LINGER, description("linux")).answers);
+        .append(&mut linux_host(LINUX_NO_LINGER, &description("linux")).answers);
     let mut printed = Report::text(Vec::new());
     let d = add(
         &mut fake,
@@ -322,7 +322,7 @@ fn add_refuses_this_computers_own_daemon() {
     let store = tempfile::tempdir().unwrap();
     let mut own = description("linux");
     own.daemon_id = Some(LOCAL_ID.to_string());
-    let mut fake = linux_host(LINUX_PROBE, own);
+    let mut fake = linux_host(LINUX_PROBE, &own);
     let err = add(
         &mut fake,
         &local(store.path()),

@@ -313,7 +313,7 @@ fn classify_tunnel_maps_the_ensure_answer() {
     assert_eq!(started.state(), "tunnel-closed");
     let held = classify_tunnel(
         "svrapp",
-        Ok(super::tunnel::Ensured::Running),
+        Ok(tunnel::Ensured::Running),
         "refused".into(),
         None,
     );

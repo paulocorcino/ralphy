@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn budget_setters_reach_the_issue_deadline() {
         let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
-        let agent = OpenCodeAgent::new(None, std::path::PathBuf::from("/run"))
+        let agent = OpenCodeAgent::new(None, PathBuf::from("/run"))
             .with_max_minutes_per_issue(120)
             .with_run_deadline(Some(run_deadline));
         assert_eq!(agent.budget.max_minutes_per_issue, 120);

@@ -226,7 +226,7 @@ fn prompt_example_verdicts() -> Vec<Verdict> {
         "/../../assets/prompts/prompt.plan.md"
     );
     let content =
-        std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
+        fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
     parse_ledger(&content)
 }
 

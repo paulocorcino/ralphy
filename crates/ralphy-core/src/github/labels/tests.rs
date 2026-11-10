@@ -64,9 +64,9 @@ fn runner_applied_labels_are_all_in_the_init_roster() {
         .map(|s| s.name)
         .collect();
     for label in [
-        crate::runner::NEEDS_SPLIT_LABEL,
-        crate::runner::NEEDS_HUMAN_REVIEW_LABEL,
-        crate::runner::TRIAGE_AGENT_LABEL,
+        NEEDS_SPLIT_LABEL,
+        NEEDS_HUMAN_REVIEW_LABEL,
+        TRIAGE_AGENT_LABEL,
         crate::runner::STOP_BEFORE_LABEL,
     ] {
         assert!(

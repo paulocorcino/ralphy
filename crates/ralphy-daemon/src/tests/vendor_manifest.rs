@@ -56,7 +56,7 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
 /// version and source the vulnerability scan reads (ADR-0072 D12).
 #[test]
 fn vendored_files_match_the_manifest() {
-    fn walk(dir: &include_dir::Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
+    fn walk(dir: &Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
         for f in dir.files() {
             let path = f.path().to_string_lossy().replace('\\', "/");
             let rel = path.strip_prefix("vendor/").unwrap_or(&path).to_string();

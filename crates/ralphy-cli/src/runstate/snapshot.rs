@@ -334,7 +334,7 @@ mod tests {
             steps: crate::plan_progress::parse_steps("- [x] previous issue's step\n"),
         };
         let snap = project(&ctx(), &two_of_three(), &plan);
-        assert_eq!(snap.plan, ralphy_run_snapshot::PlanBlock::default());
+        assert_eq!(snap.plan, PlanBlock::default());
         assert_eq!(snap.plan.issue, None);
         assert_eq!(snap.plan.steps, Vec::<PlanStepBlock>::new());
     }

@@ -220,7 +220,7 @@ impl Agent for CursorAgent {
         // bail carries no `(see <log>)` suffix.
         if let Some(msg) = auth::resume_requires_login(
             ralphy_adapter_support::plan_is_finalized_for(&plan_path, issue.number),
-            auth::probe_cursor_login,
+            probe_cursor_login,
         ) {
             anyhow::bail!("{msg}");
         }
@@ -250,7 +250,7 @@ impl Agent for CursorAgent {
             // and quota-stop shape (D13, #266).
             |log| {
                 model_refusal_stop(log, model).or_else(|| {
-                    outcome::cursor_limit_note(&outcome::fold_cursor_stream(log))
+                    outcome::cursor_limit_note(&fold_cursor_stream(log))
                         .map(|_| PlanLimit { reset: None }.into())
                 })
             },

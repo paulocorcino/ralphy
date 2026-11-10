@@ -129,7 +129,7 @@ mod tests {
             "## Steps\n- [x] do a `thing`\n- [ ] do another\n",
         )
         .unwrap();
-        crate::plan_progress::testutil::advance_mtime(&plan_path);
+        plan_progress::testutil::advance_mtime(&plan_path);
         poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
 
         let delivered = sink.0.lock().unwrap();

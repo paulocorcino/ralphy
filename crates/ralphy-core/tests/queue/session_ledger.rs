@@ -52,7 +52,7 @@ fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> Stri
 
     let slug = ralphy_core::git::project_slug(&repo);
     let file = usage_dir.join(format!("{}.jsonl", slug.replace('/', "-")));
-    let content = std::fs::read_to_string(&file)
+    let content = fs::read_to_string(&file)
         .unwrap_or_else(|e| panic!("ledger file {} unreadable: {e}", file.display()));
     let line = content
         .lines()

@@ -169,7 +169,8 @@ fn kill_tree_windows(root: u32) {
             return;
         }
         let mut entry: PROCESSENTRY32 = std::mem::zeroed();
-        entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+        entry.dwSize =
+            u32::try_from(size_of::<PROCESSENTRY32>()).expect("the struct size fits in u32");
         if Process32First(snap, &raw mut entry) != 0 {
             loop {
                 table.push((entry.th32ProcessID, entry.th32ParentProcessID));

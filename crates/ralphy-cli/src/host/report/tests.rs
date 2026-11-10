@@ -110,7 +110,7 @@ fn json_connected_fixed_added_and_linger_lines() {
     };
     report.fixed(&check, "ralphy daemon install").unwrap();
     report.linger_needs_sudo("paulo").unwrap();
-    let d = ralphy_daemon::peer::PeerDescriptor {
+    let d = PeerDescriptor {
         daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string(),
         name: "vps".to_string(),
         avatar: String::new(),

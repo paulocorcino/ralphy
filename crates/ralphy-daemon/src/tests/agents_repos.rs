@@ -16,7 +16,7 @@ async fn api_agents_serves_the_roster() {
         .collect();
     let expected: std::collections::BTreeSet<String> = session::Agent::ALL
         .iter()
-        .map(|&a| crate::dispatch::agent_flag(a).to_string())
+        .map(|&a| dispatch::agent_flag(a).to_owned())
         .collect();
     assert_eq!(served, expected, "served roster ids: {served:?}");
     assert_eq!(rows[0]["id"], "claude");
@@ -196,7 +196,7 @@ async fn api_repos_reports_reachability_and_branch() {
 
 #[tokio::test]
 async fn api_repos_reports_dirty_and_remote() {
-    fn git(dir: &std::path::Path, args: &[&str]) {
+    fn git(dir: &Path, args: &[&str]) {
         std::process::Command::new("git")
             .arg("-C")
             .arg(dir)

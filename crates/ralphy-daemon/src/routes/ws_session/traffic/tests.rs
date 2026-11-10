@@ -73,8 +73,8 @@ fn the_keys_carry_the_link_the_page_reported() {
 }
 
 fn command(json: &str) -> Command {
-    match crate::protocol::decode(&[&[0x02], json.as_bytes()].concat()) {
-        Ok(crate::protocol::Frame::Command(cmd)) => cmd,
+    match protocol::decode(&[&[0x02], json.as_bytes()].concat()) {
+        Ok(Frame::Command(cmd)) => cmd,
         other => panic!("not a command frame: {other:?}"),
     }
 }

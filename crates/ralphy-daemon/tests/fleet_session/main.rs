@@ -355,7 +355,7 @@ async fn fixture() -> (
 /// gave OR the one the OS resolved — `/private/var/…` for a macOS temp dir
 /// spelled `/var/…` (the `\\?\` verbatim prefix a Windows canonical path
 /// carries is dropped, the child never prints it).
-fn names_cwd(terminal: &str, dir: &std::path::Path) -> bool {
+fn names_cwd(terminal: &str, dir: &Path) -> bool {
     let raw = format!("CWD:{}", dir.display());
     let canonical = dir
         .canonicalize()

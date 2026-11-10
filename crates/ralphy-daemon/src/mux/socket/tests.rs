@@ -41,7 +41,7 @@ fn page(
             watchers: Arc::new(crate::watch::WatcherManager::new(crate::watch::MAX_WATCHES)),
             run_exits: broadcast::channel(4).0,
         },
-        login: Login::now(crate::auth::AuthState::localhost()),
+        login: Login::now(auth::AuthState::localhost()),
         held: super::super::Hold::none(),
     }
 }
@@ -75,7 +75,7 @@ type Ws =
 async fn connect(
     sessions: broadcast::Receiver<()>,
     pushes: broadcast::Receiver<Push>,
-) -> (Ws, tokio::sync::watch::Sender<bool>) {
+) -> (Ws, watch::Sender<bool>) {
     connect_on(sessions, pushes, presence_board::Shared::default()).await
 }
 
@@ -84,8 +84,8 @@ async fn connect_on(
     sessions: broadcast::Receiver<()>,
     pushes: broadcast::Receiver<Push>,
     board: presence_board::Shared,
-) -> (Ws, tokio::sync::watch::Sender<bool>) {
-    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+) -> (Ws, watch::Sender<bool>) {
+    let (stop_tx, stop_rx) = watch::channel(false);
     let app = one_page(page(sessions, pushes, board, stop_rx), None);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -107,7 +107,7 @@ async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) 
     use tokio_tungstenite::tungstenite::Message as Wire;
     let mut commands = Vec::new();
     let mut beats = 0;
-    let deadline = tokio::time::Instant::now() + within;
+    let deadline = Instant::now() + within;
     loop {
         let msg = match tokio::time::timeout_at(deadline, ws.next()).await {
             Err(_) => return (commands, beats, false),
@@ -231,7 +231,7 @@ async fn a_revoked_login_opens_no_channel() {
     let (_sessions_tx, sessions) = broadcast::channel(4);
     let (_pushes_tx, pushes) = broadcast::channel(4);
     let (_stop, shutdown) = watch::channel(false);
-    let auth = crate::auth::AuthState::localhost();
+    let auth = auth::AuthState::localhost();
     let login = crate::cookie::LoginId::mint();
     let mut served = page(
         sessions,
@@ -263,13 +263,13 @@ async fn a_revoked_login_opens_no_channel() {
 
 /// The board's answer within `within`: whether the operator is present.
 async fn present_within(board: &presence_board::Shared, want: bool, within: Duration) -> bool {
-    let deadline = tokio::time::Instant::now() + within;
+    let deadline = Instant::now() + within;
     loop {
         let now = std::time::SystemTime::now();
         if board.lock().unwrap().present(now) == want {
             return true;
         }
-        if tokio::time::Instant::now() > deadline {
+        if Instant::now() > deadline {
             return false;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;

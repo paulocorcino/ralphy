@@ -72,7 +72,7 @@ fn descriptor(port: u16) -> peer::PeerDescriptor {
 }
 
 /// The fleet body, read from `fleet_route` with `cache` as its memory.
-async fn fleet(dir: &std::path::Path, cache: &PeerRepoCache) -> serde_json::Value {
+async fn fleet(dir: &Path, cache: &PeerRepoCache) -> serde_json::Value {
     let resp = fleet_route(
         dir.join("repos.toml"),
         dir.join("peers"),

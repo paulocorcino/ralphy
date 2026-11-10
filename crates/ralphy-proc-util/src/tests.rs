@@ -6,7 +6,7 @@ fn path_with_dir_prepends_a_missing_directory() {
 
     let dir = Path::new("/home/me/.nvm/versions/node/v24.13.0/bin");
     let current = std::env::join_paths(["/usr/bin", "/bin"]).expect("fixture joins");
-    let widened = super::path_with_dir(dir, Some(current.as_os_str()))
+    let widened = path_with_dir(dir, Some(current.as_os_str()))
         .expect("a directory absent from PATH is prepended");
 
     let entries: Vec<_> = std::env::split_paths(&widened).collect();
@@ -32,7 +32,7 @@ fn path_with_dir_declines_a_directory_already_present() {
 
     let dir = Path::new("/opt/tools/bin");
     let current = std::env::join_paths(["/usr/bin", "/opt/tools/bin"]).expect("fixture joins");
-    assert!(super::path_with_dir(dir, Some(current.as_os_str())).is_none());
+    assert!(path_with_dir(dir, Some(current.as_os_str())).is_none());
 }
 
 /// An empty or absent `PATH` still yields a usable one-entry `PATH`.
@@ -41,7 +41,7 @@ fn path_with_dir_handles_an_absent_path() {
     use std::path::Path;
 
     let dir = Path::new("/opt/tools/bin");
-    let widened = super::path_with_dir(dir, None).expect("an absent PATH still widens");
+    let widened = path_with_dir(dir, None).expect("an absent PATH still widens");
     let entries: Vec<_> = std::env::split_paths(&widened).collect();
     assert!(entries.contains(&dir.to_path_buf()), "{entries:?}");
 }
@@ -57,7 +57,7 @@ fn program_dir_on_path_extends_a_declared_path() {
     let scrubbed = std::env::join_paths(["/scrubbed/bin"]).expect("fixture joins");
     let mut cmd = Command::new(&program);
     cmd.env("PATH", &scrubbed);
-    super::program_dir_on_path(&mut cmd);
+    program_dir_on_path(&mut cmd);
 
     let path = cmd
         .get_envs()
@@ -83,7 +83,7 @@ fn program_dir_on_path_leaves_a_bare_program_alone() {
     use std::process::Command;
 
     let mut cmd = Command::new("codex");
-    super::program_dir_on_path(&mut cmd);
+    program_dir_on_path(&mut cmd);
     assert!(
         cmd.get_envs()
             .all(|(k, _)| k != std::ffi::OsStr::new("PATH")),

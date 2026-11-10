@@ -408,12 +408,9 @@ async fn send(
     let mut builder = Request::builder()
         .method(method)
         .uri(format!("http://{authority}{path}"))
-        .header(
-            axum::http::header::AUTHORIZATION,
-            format!("Bearer {}", d.token),
-        );
+        .header(header::AUTHORIZATION, format!("Bearer {}", d.token));
     if body.is_some() {
-        builder = builder.header(axum::http::header::CONTENT_TYPE, "application/json");
+        builder = builder.header(header::CONTENT_TYPE, "application/json");
     }
     let req = builder
         .body(Full::new(Bytes::from(bytes)))

@@ -332,7 +332,7 @@ pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
     DoctorReport { tools }
 }
 
-pub(crate) fn print_report(report: &DoctorReport, out: &mut impl std::io::Write) -> Result<()> {
+pub(crate) fn print_report(report: &DoctorReport, out: &mut impl Write) -> Result<()> {
     for line in &report.tools {
         let tag = match (line.ok, line.required) {
             (true, _) => "ok  ",

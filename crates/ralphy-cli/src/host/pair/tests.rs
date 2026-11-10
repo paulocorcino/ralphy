@@ -58,13 +58,13 @@ pub(super) fn local(store: &Path) -> Local<'_> {
         daemon_id: Some(LOCAL_ID.to_string()),
         name: Some("anvil".to_string()),
         port: 7401,
-        build: ralphy_release::Build::parse("v0.1.0-rc.30"),
+        build: Build::parse("v0.1.0-rc.30"),
         target: Some("linux-x64"),
         latest: None,
     }
 }
 
-fn json(d: &ralphy_daemon::peer::DaemonDescription) -> String {
+fn json(d: &DaemonDescription) -> String {
     serde_json::to_string(d).expect("a description serializes")
 }
 
@@ -80,14 +80,14 @@ pub(super) fn no_keygen(_: &Path) -> Result<()> {
 
 /// A Linux host with Ralphy ready except for `first`'s gaps; the second
 /// describe carries the token.
-pub(super) fn linux_host(probe: &str, first: ralphy_daemon::peer::DaemonDescription) -> FakeHost {
+pub(super) fn linux_host(probe: &str, first: &DaemonDescription) -> FakeHost {
     let mut second = description("linux");
     second.token = Some("host-tok".to_string());
     FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, probe, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
-        .answer("describe", out(0, &json(&first), ""))
+        .answer("describe", out(0, &json(first), ""))
         .answer("daemon install", out(0, "", ""))
         .answer("require-token on", out(0, "", ""))
         .answer("daemon restart", out(0, "", ""))
@@ -112,7 +112,7 @@ fn check_applies_nothing() {
     let mut first = description("linux");
     first.require_token = false;
     first.autostart = false;
-    let mut fake = linux_host(LINUX_NO_LINGER, first);
+    let mut fake = linux_host(LINUX_NO_LINGER, &first);
     let mut printed = Report::text(Vec::new());
     let checks = check(
         &mut fake,

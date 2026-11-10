@@ -333,7 +333,7 @@ mod logins {
 ",
         )
         .unwrap();
-        let listed = super::super::logins::notices(&path, now, None, |_| false).unwrap();
+        let listed = logins::notices(&path, now, None, |_| false).unwrap();
         let logins: Vec<String> = listed.iter().map(|n| n.login.clone()).collect();
         assert_eq!(
             logins,
@@ -349,7 +349,7 @@ mod logins {
         let mut bus = pushes.subscribe();
         let audit =
             Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())).with_pushes(pushes.clone()));
-        let pushed = |bus: &mut tokio::sync::broadcast::Receiver<crate::routes::Push>| {
+        let drained = |bus: &mut tokio::sync::broadcast::Receiver<Push>| {
             let mut verbs = Vec::new();
             while let Ok(p) = bus.try_recv() {
                 verbs.push(p.verb());
@@ -361,12 +361,12 @@ mod logins {
         signed_in(&audit, login, Some(own));
         socket(&audit, login, Some(own)).console(&launch());
         assert!(
-            pushed(&mut bus).is_empty(),
+            drained(&mut bus).is_empty(),
             "a use from the login's own device"
         );
         socket(&audit, login, Some(other)).console(&launch());
         assert_eq!(
-            pushed(&mut bus),
+            drained(&mut bus),
             ["logins.dirty"],
             "the login_other_device line"
         );
@@ -374,12 +374,12 @@ mod logins {
         audit
             .dismiss_notice(&login, Some(&other), Actor::Device)
             .unwrap();
-        assert_eq!(pushed(&mut bus), ["logins.dirty"], "the dismissal");
+        assert_eq!(drained(&mut bus), ["logins.dirty"], "the dismissal");
         audit
             .dismiss_notice(&login, Some(&other), Actor::Device)
             .unwrap();
         assert!(
-            pushed(&mut bus).is_empty(),
+            drained(&mut bus).is_empty(),
             "a second dismissal changes nothing"
         );
     }

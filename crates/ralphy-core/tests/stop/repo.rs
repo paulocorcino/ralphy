@@ -40,7 +40,7 @@ pub(crate) fn sweep_stale(prefix: &str) {
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > std::time::Duration::from_secs(3600));
+            .is_some_and(|age| age > Duration::from_secs(3600));
         if old && entry.path().is_dir() {
             remove_scratch(&entry.path());
         }

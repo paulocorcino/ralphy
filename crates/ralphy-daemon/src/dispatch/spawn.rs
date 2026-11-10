@@ -165,7 +165,7 @@ pub trait Child: Send {
     /// on the first call and `None` thereafter — the caller owns the reader and
     /// must drain it to EOF (see the module OUTPUT STREAMING note). `wait` no
     /// longer owns the reader, so the drain and the wait can proceed concurrently.
-    fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>>;
+    fn take_output(&mut self) -> Option<Box<dyn Read + Send>>;
 }
 
 /// Spawns a blessed child. The seam that keeps [`dispatch`] testable: production
@@ -333,7 +333,7 @@ impl Child for ProcessChild {
         Ok(self.child.wait()?.code())
     }
 
-    fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
+    fn take_output(&mut self) -> Option<Box<dyn Read + Send>> {
         self.output.take().map(|r| Box::new(r) as _)
     }
 }

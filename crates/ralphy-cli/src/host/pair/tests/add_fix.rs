@@ -5,7 +5,7 @@ fn host_with_socket_and(first_gap: impl FnOnce(&mut DaemonDescription)) -> FakeH
     let mut first = description("linux");
     first.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
     first_gap(&mut first);
-    linux_host(LINUX_PROBE, first)
+    linux_host(LINUX_PROBE, &first)
 }
 
 fn run_add(fake: &mut FakeHost, store: &Path) -> Result<PeerDescriptor> {

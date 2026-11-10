@@ -84,7 +84,7 @@ fn session_router_at(registry_path: PathBuf, token: &str) -> Router {
     // One shared epoch: the `SessionAuth` signs/verifies cookies under it and
     // the wrapping `AuthState` bumps the SAME counter on logout/invalidate.
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
-    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
+    let policy = auth::AuthPolicy::Session(Arc::new(auth::SessionAuth {
         token: token.to_string(),
         totp: rfc_seed(),
         password: None,
@@ -145,7 +145,7 @@ async fn get_local(path: &str) -> Response {
 /// Every path embedded in [`UI`], slash-separated and relative to
 /// `assets/ui` — `include_dir` exposes only one directory level at a time.
 fn embedded_ui_paths() -> Vec<String> {
-    fn walk(dir: &include_dir::Dir<'_>, out: &mut Vec<String>) {
+    fn walk(dir: &Dir<'_>, out: &mut Vec<String>) {
         for f in dir.files() {
             out.push(f.path().to_string_lossy().replace('\\', "/"));
         }
@@ -221,7 +221,7 @@ fn swept_ui_assets() -> Vec<String> {
         .filter(|p| p.ends_with(".js") || p.ends_with(".html") || p.ends_with(".css"))
         // A page is fetched at its route; its file name is a 404.
         .map(
-            |p| match crate::assets::Shell::ALL.iter().find(|s| s.file() == p) {
+            |p| match assets::Shell::ALL.iter().find(|s| s.file() == p) {
                 Some(shell) => format!("/{}", shell.route()),
                 None => format!("/{p}"),
             },

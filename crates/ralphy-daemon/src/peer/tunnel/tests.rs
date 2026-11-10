@@ -110,7 +110,7 @@ fn ssh_falls_back_to_path_without_a_system_openssh() {
 #[test]
 #[ignore = "a child process of another test"]
 fn tunnel_stand_in() {
-    std::thread::sleep(std::time::Duration::from_secs(120));
+    std::thread::sleep(Duration::from_secs(120));
 }
 
 fn stand_in() -> Result<Child> {

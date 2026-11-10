@@ -10,7 +10,7 @@ fn no_shell_and_git_bash_found_pins_it() {
 fn an_operator_set_shell_is_never_overridden() {
     let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
     assert_eq!(
-        git_bash_shell_pin(Some("/usr/bin/fish".into()), Some(bash)),
+        git_bash_shell_pin(Some(std::ffi::OsStr::new("/usr/bin/fish")), Some(bash)),
         None,
         "a deliberate operator SHELL must pass through untouched (D8 stance)"
     );
@@ -33,7 +33,7 @@ fn no_git_bash_located_sets_nothing() {
 fn build_cursor_command_applies_the_pin() {
     let cmd = build_cursor_command("s1", None, Path::new("."), Path::new("cfg"));
     let expected = git_bash_shell_pin(
-        std::env::var_os("SHELL"),
+        std::env::var_os("SHELL").as_deref(),
         ralphy_proc_util::locate_git_bash(),
     );
     if let Some(p) = expected {

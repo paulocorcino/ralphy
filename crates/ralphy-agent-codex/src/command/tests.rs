@@ -65,8 +65,8 @@ fn codex_command_gives_the_status_hooks_on_one_side_of_exec() {
 #[test]
 fn a_run_in_a_project_with_its_own_hooks_gets_no_trust_flag() {
     let repo = tempfile::tempdir().expect("a temp dir");
-    std::fs::create_dir_all(repo.path().join(".codex")).expect("the .codex dir");
-    std::fs::write(repo.path().join(".codex").join("hooks.json"), "{}").expect("hooks.json");
+    fs::create_dir_all(repo.path().join(".codex")).expect("the .codex dir");
+    fs::write(repo.path().join(".codex").join("hooks.json"), "{}").expect("hooks.json");
     let args: Vec<String> = build_codex_command(
         CODEX_MODEL_SOL,
         "high",

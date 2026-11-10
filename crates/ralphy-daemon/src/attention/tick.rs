@@ -250,7 +250,7 @@ mod tests {
     }
 
     /// The files the tick reads: the registry, and a desk that is not there.
-    fn files_of(dir: &tempfile::TempDir, registry_path: &std::path::Path) -> DeskFiles {
+    fn files_of(dir: &tempfile::TempDir, registry_path: &Path) -> DeskFiles {
         DeskFiles {
             desk: dir.path().join("desk.toml"),
             registry: registry_path.to_path_buf(),

@@ -289,8 +289,8 @@ fn copilot_attributes_a_linked_worktree_cwd_to_its_repo() {
     let repo = tmp.path().join("repo");
     let repo_fwd = repo.to_string_lossy().replace('\\', "/");
     let wt = tmp.path().join("wt");
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(
+    fs::create_dir_all(&wt).unwrap();
+    fs::write(
         wt.join(".git"),
         format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
     )

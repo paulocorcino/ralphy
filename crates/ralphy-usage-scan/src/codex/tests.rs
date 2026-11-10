@@ -168,8 +168,8 @@ fn attributes_a_linked_worktree_cwd_to_its_repo() {
     let repo = root.join("repo");
     let wt = root.join("wt");
     let repo_fwd = repo.to_string_lossy().replace('\\', "/");
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(
+    fs::create_dir_all(&wt).unwrap();
+    fs::write(
         wt.join(".git"),
         format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
     )

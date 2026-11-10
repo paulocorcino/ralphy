@@ -4,16 +4,13 @@ use crate::run::report;
 /// A fake CloudEvents sink recording every delivered envelope.
 struct RecordingSink(Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
 
-impl crate::events::client::EventSink for RecordingSink {
-    fn post(
-        &self,
-        body: &serde_json::Value,
-    ) -> Result<crate::events::client::PostOutcome, anyhow::Error> {
+impl events::client::EventSink for RecordingSink {
+    fn post(&self, body: &serde_json::Value) -> Result<events::client::PostOutcome, anyhow::Error> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(body.clone());
-        Ok(crate::events::client::PostOutcome::Delivered)
+        Ok(events::client::PostOutcome::Delivered)
     }
 }
 

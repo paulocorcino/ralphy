@@ -82,7 +82,7 @@ fn no_keygen(_: &Path) -> Result<()> {
 
 fn run(fake: &mut FakeHost, local: &Local<'_>, fetch: &mut Fixed) -> (Result<()>, String) {
     let mut printed = Report::text(Vec::new());
-    let svrapp = pair::Destination {
+    let svrapp = Destination {
         dest: "svrapp",
         key_file: None,
     };
@@ -308,7 +308,7 @@ fn check_announces_what_install_would_send() {
     pair::check(
         &mut fake,
         &local(store.path(), "v0.1.0-rc.30", "windows-x64"),
-        pair::Destination {
+        Destination {
             dest: "svrapp",
             key_file: None,
         },
@@ -345,7 +345,7 @@ fn windows_release(payload: &[u8]) -> (Release, Vec<u8>, String) {
             zip::write::SimpleFileOptions::default(),
         )
         .expect("entry");
-        std::io::Write::write_all(&mut zip, payload).expect("write");
+        Write::write_all(&mut zip, payload).expect("write");
         zip.finish().expect("finish");
     }
     let name = "ralphy-v0.1.0-rc.30-windows-x64.zip";
