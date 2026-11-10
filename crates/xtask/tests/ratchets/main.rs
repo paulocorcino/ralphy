@@ -55,6 +55,7 @@ mod complexity_exceptions;
 mod core_dependencies;
 mod gate_exits;
 mod gate_mirrors_ci;
+mod gate_paths;
 mod ignore_lists;
 mod leftovers;
 mod peer_reply_pin;

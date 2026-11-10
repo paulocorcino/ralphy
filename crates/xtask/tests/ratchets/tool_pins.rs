@@ -61,6 +61,20 @@ fn ci_installs_the_pinned_oxfmt() {
     assert_pinned("OXFMT_VERSION", "oxfmt", OXFMT_VERSION);
 }
 
+/// The markdownlint-cli2 of the `checks` job of `ci.yml`, run by `npx`, and of
+/// the markdown step of the gate. A new version can find new sites, so a raise
+/// is its own commit.
+const MARKDOWNLINT_VERSION: &str = "0.18.1";
+
+#[test]
+fn ci_installs_the_pinned_markdownlint() {
+    assert_pinned(
+        "MARKDOWNLINT_VERSION",
+        "markdownlint-cli2",
+        MARKDOWNLINT_VERSION,
+    );
+}
+
 /// The `channel` of `rust-toolchain.toml`.
 fn pinned_rust_toolchain() -> String {
     let file = read(&workspace_root().join("rust-toolchain.toml"));
@@ -139,6 +153,9 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("ASTGREP", "ast-grep"),
     ("JSCPD", "jscpd"),
     ("GITLEAKS", "gitleaks"),
+    ("SHELLCHECK", "shellcheck"),
+    ("PSSCRIPTANALYZER", "PSScriptAnalyzer"),
+    ("MARKDOWNLINT", "markdownlint-cli2"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks

@@ -91,10 +91,20 @@ ubiquitous language, and each crate is roughly one bounded context.
   `cargo install --locked --version <v> cargo-machete`,
   `cargo install --locked --version <v> typos-cli`, and
   `go install github.com/rhysd/actionlint/cmd/actionlint@v<v>` (or the
-  release binary from `https://github.com/rhysd/actionlint/releases`). With
-  `shellcheck` on your `PATH`, actionlint checks the shell in each `run:`
-  step too, as CI does. Why nextest, and why the suite is slow on Windows:
-  [docs/BUILDING.md](./docs/BUILDING.md). Every `cargo` command in a
+  release binary from `https://github.com/rhysd/actionlint/releases`).
+  Three more tools run in the gate. `shellcheck` is pinned by `SHELLCHECK_*`
+  in `ci.yml`: the release binary from
+  `https://github.com/koalaman/shellcheck/releases`, or
+  `./.github/scripts/fetch-shellcheck.sh` on Linux. With `shellcheck` on your
+  `PATH`, actionlint checks the shell in each `run:` step too, as CI does.
+  PSScriptAnalyzer is pinned by `PSSCRIPTANALYZER_VERSION`: in PowerShell 7
+  (`pwsh`), `Install-Module PSScriptAnalyzer -RequiredVersion <v> -Scope
+  CurrentUser`. `gitleaks` is pinned by `GITLEAKS_VERSION` in
+  `security.yml`, where CI runs it:
+  `go install github.com/gitleaks/gitleaks/v8@v<v>` (or the release binary
+  from `https://github.com/gitleaks/gitleaks/releases`). Markdown is checked
+  with `npx`, so it needs no install. Why nextest, and why the suite is slow
+  on Windows: [docs/BUILDING.md](./docs/BUILDING.md). Every `cargo` command in a
   workflow has `--locked`: the ratchet
   `every_cargo_command_in_a_workflow_is_locked` fails when one does not.
 

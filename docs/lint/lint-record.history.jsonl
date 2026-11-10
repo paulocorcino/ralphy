@@ -7,3 +7,4 @@
 {"answer": "(a) only the crates that parse outside data", "date": "2026-11-09", "id": "D7", "kind": "decision"}
 {"answer": "(a) the rule turns on and the file carries one exception with its reason", "date": "2026-11-09", "id": "D8", "kind": "decision"}
 {"answer": "(a) markdownlint with MD013 (line length) off and the other rules on", "date": "2026-11-09", "id": "D9", "kind": "decision"}
+{"date": "2026-11-09", "kind": "note", "text": "Phase 0 closed"}

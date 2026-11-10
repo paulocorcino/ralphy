@@ -96,6 +96,59 @@ pub const STEPS: &[Step] = &[
     ),
     step("typos", &["Spelling (typos)"], "typos", &[]),
     step(
+        "shellcheck",
+        &["Shell scripts (shellcheck)"],
+        "shellcheck",
+        &[
+            ".github/scripts/check-install-sh.sh",
+            ".github/scripts/fetch-actionlint.sh",
+            ".github/scripts/fetch-ast-grep.sh",
+            ".github/scripts/fetch-cargo-machete.sh",
+            ".github/scripts/fetch-oxfmt.sh",
+            ".github/scripts/fetch-oxlint.sh",
+            ".github/scripts/fetch-shellcheck.sh",
+            ".github/scripts/fetch-tsgolint.sh",
+            ".github/scripts/fetch-typos.sh",
+            "assets/install/install.sh",
+        ],
+    ),
+    // One run, each file named: `Invoke-ScriptAnalyzer -Path` takes one path, and
+    // `-Recurse` would also read the scripts that git does not track.
+    step(
+        "psscriptanalyzer",
+        &["PowerShell scripts (PSScriptAnalyzer)"],
+        "pwsh",
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            concat!(
+                "$n = 0; foreach ($f in ",
+                "'.github/scripts/nextest-windows.ps1', ",
+                "'.github/scripts/windows-hang-sampler.ps1', ",
+                "'assets/install/install.ps1', ",
+                "'scripts/update-ralphy.ps1'",
+                ") { $r = Invoke-ScriptAnalyzer -Path $f ",
+                "-Settings PSScriptAnalyzerSettings.psd1; ",
+                "$r | Format-List; $n += ($r | Measure-Object).Count }; ",
+                "if ($n -gt 0) { exit 1 }"
+            ),
+        ],
+    ),
+    step(
+        "markdownlint",
+        &["Markdown (markdownlint)"],
+        "npx",
+        &["-y", "markdownlint-cli2@0.18.1"],
+    ),
+    // CI runs gitleaks in `security.yml`, with its own action.
+    step(
+        "gitleaks",
+        &[],
+        "gitleaks",
+        &["git", "--log-opts=main..HEAD"],
+    ),
+    step(
         "ast-grep",
         &["Rules by shape (ast-grep)"],
         "npx",
