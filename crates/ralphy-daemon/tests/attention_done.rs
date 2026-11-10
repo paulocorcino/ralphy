@@ -201,7 +201,7 @@ async fn the_done_mark_fires_on_a_turn_end_and_not_on_a_session_boundary() {
     append(&status, WORKING);
     append(&status, SESSION_START);
     after_a_tick().await;
-    assert!(requests_now(port).await.is_empty());
+    assert_eq!(requests_now(port).await, Vec::<serde_json::Value>::new());
     assert!(mark_is_on(&desk_path), "a session start leaves the mark on");
 
     append(&status, WORKING);

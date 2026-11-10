@@ -95,9 +95,18 @@ fn rust_lines_that_add_a_power_are_found() {
 
 #[test]
 fn ordinary_lines_are_not_found() {
-    assert!(caps("a.rs", "let unsafe_count = 0; // not unsafe code").is_empty());
-    assert!(caps("a.rs", "std::env::var(\"HOME\")").is_empty());
-    assert!(caps("a.md", "Command::new is described in the docs").is_empty());
+    assert_eq!(
+        caps("a.rs", "let unsafe_count = 0; // not unsafe code"),
+        Vec::<Capability>::new()
+    );
+    assert_eq!(
+        caps("a.rs", "std::env::var(\"HOME\")"),
+        Vec::<Capability>::new()
+    );
+    assert_eq!(
+        caps("a.md", "Command::new is described in the docs"),
+        Vec::<Capability>::new()
+    );
 }
 
 #[test]
@@ -111,7 +120,7 @@ fn javascript_dynamic_code_is_found() {
         [Capability::DynamicCode]
     );
     assert_eq!(caps("ui/index.html", "atob(x)"), [Capability::DynamicCode]);
-    assert!(caps("a.rs", "eval(payload)").is_empty());
+    assert_eq!(caps("a.rs", "eval(payload)"), Vec::<Capability>::new());
 }
 
 #[test]
@@ -123,13 +132,16 @@ fn encoded_and_minified_text_is_found() {
     );
     let long = "a+b;".repeat(300);
     assert_eq!(caps("ui/app.js", &long), [Capability::Obfuscated]);
-    assert!(caps("notes.md", &"word ".repeat(300)).is_empty());
+    assert_eq!(
+        caps("notes.md", &"word ".repeat(300)),
+        Vec::<Capability>::new()
+    );
     // A long string of prose in Rust holds more spaces than minified code.
     let prose = format!(
         "const RULE: &str = \"{}\";",
         "one rule, `code`. ".repeat(80)
     );
-    assert!(caps("a.rs", &prose).is_empty());
+    assert_eq!(caps("a.rs", &prose), Vec::<Capability>::new());
 }
 
 /// The details of every finding on one line, in the order they were found.
@@ -197,7 +209,10 @@ fn a_long_cargo_lock_line_gives_nothing() {
 
 #[test]
 fn vendored_code_is_reported_once_by_path_not_by_line() {
-    assert!(caps("ui/vendor/lib.min.js", "eval(x)").is_empty());
+    assert_eq!(
+        caps("ui/vendor/lib.min.js", "eval(x)"),
+        Vec::<Capability>::new()
+    );
     let found: Vec<_> = path_findings(&file("crates/d/assets/ui/vendor/lib.min.js"))
         .into_iter()
         .map(|f| f.cap)
@@ -218,16 +233,19 @@ fn sensitive_paths_are_found() {
         cap("crates/xtask/src/capabilities/rules.rs"),
         [Capability::SecurityPolicy]
     );
-    assert!(cap("crates/x/src/lib.rs").is_empty());
+    assert_eq!(cap("crates/x/src/lib.rs"), Vec::<Capability>::new());
     assert_eq!(cap("web/package-lock.json"), [Capability::Dependency]);
 }
 
 #[test]
 fn lockfile_lines_are_not_read_one_by_one() {
     let integrity = format!("\"integrity\": \"sha512-{}\"", "QUJD".repeat(25));
-    assert!(caps("web/package-lock.json", &integrity).is_empty());
+    assert_eq!(
+        caps("web/package-lock.json", &integrity),
+        Vec::<Capability>::new()
+    );
     let (_, hosts) = line_findings("web/package-lock.json", 1, "https://registry.npmjs.org/x");
-    assert!(hosts.is_empty());
+    assert_eq!(hosts, Vec::<String>::new());
 }
 
 #[test]

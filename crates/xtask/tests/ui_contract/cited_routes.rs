@@ -250,7 +250,10 @@ fn the_scan_reads_citations_as_routes() {
     assert!(is_served("/api/sess*", &served), "a family of routes");
     assert!(!is_served("/api/gone", &served));
     assert!(!is_served("/ws/tree", &served));
-    assert!(citations(&cited, "\"/ws/.ralphy/gemini-home\"").is_empty());
+    assert_eq!(
+        citations(&cited, "\"/ws/.ralphy/gemini-home\""),
+        Vec::<String>::new()
+    );
     assert_eq!(
         citations(&cited, "http://127.0.0.1:7431/api/repos?x=1"),
         ["/api/repos"],

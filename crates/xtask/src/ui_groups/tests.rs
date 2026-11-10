@@ -233,7 +233,7 @@ fn a_hole_inside_a_hole_is_one_read() {
 
 #[test]
 fn this_followed_by_a_bracket_is_no_access() {
-    assert!(accesses_of_x("this[x] = 1;").is_empty());
+    assert_eq!(accesses_of_x("this[x] = 1;"), Vec::<(String, bool)>::new());
 }
 
 #[test]

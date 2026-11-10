@@ -252,7 +252,7 @@ fn refolding_a_version_is_refused_because_its_fragments_are_gone() {
     forced.push("--force".to_string());
     changelog_cmd(&forced).expect("--force is allowed to replace");
     let history = load_history(&root.join("changelog.json")).expect("history");
-    assert!(history.releases[0].entries.is_empty());
+    assert_eq!(history.releases[0].entries, Vec::<Entry>::new());
     remove_scratch(&root);
 }
 

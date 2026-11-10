@@ -188,7 +188,7 @@ fn a_failed_send_is_tried_again() {
 
     fake.fail.store(false, Ordering::SeqCst);
     let third = tick(&mut sender, &path, &fake, &requests, at(136));
-    assert!(third.is_empty());
+    assert_eq!(third, Vec::<String>::new());
     assert_eq!(fake.count(), 1, "the next tick sends it");
 }
 

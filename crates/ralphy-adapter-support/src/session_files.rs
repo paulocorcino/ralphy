@@ -83,7 +83,10 @@ mod tests {
         let after = vec![a.clone(), b.clone()];
         assert_eq!(session_files_appeared(&before, &after), vec![b]);
         // A snapshot that only grew (same set) yields nothing.
-        assert!(session_files_appeared(&after, &after).is_empty());
+        assert_eq!(
+            session_files_appeared(&after, &after),
+            Vec::<PathBuf>::new()
+        );
     }
 
     #[test]
@@ -129,6 +132,9 @@ mod tests {
     fn list_session_files_missing_dir_is_empty() {
         let dir = std::env::temp_dir().join("ralphy-sf-does-not-exist-xyz");
         remove_scratch_dir(&dir);
-        assert!(list_session_files(&dir, "jsonl", false, None).is_empty());
+        assert_eq!(
+            list_session_files(&dir, "jsonl", false, None),
+            Vec::<PathBuf>::new()
+        );
     }
 }

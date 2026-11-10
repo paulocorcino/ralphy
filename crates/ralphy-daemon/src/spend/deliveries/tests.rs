@@ -129,7 +129,10 @@ fn interactive_usage_is_overhead_not_a_delivery() {
     .json()];
     let summary = fold_within(&[], &interactive, Window::All, None);
 
-    assert!(summary.deliveries.is_empty());
+    assert_eq!(
+        summary.deliveries,
+        Vec::<crate::spend::deliveries::DeliveryRow>::new()
+    );
     assert_eq!(summary.overhead.interactive_usd, Some(15.0));
     assert_eq!(summary.overhead.interactive_sessions, 1);
     assert_eq!(

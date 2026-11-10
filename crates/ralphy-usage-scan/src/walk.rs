@@ -49,6 +49,9 @@ mod tests {
             found,
             [deep.join("deep.jsonl"), dir.path().join("top.jsonl")]
         );
-        assert!(files_under(&dir.path().join("missing"), is_jsonl).is_empty());
+        assert_eq!(
+            files_under(&dir.path().join("missing"), is_jsonl),
+            Vec::<PathBuf>::new()
+        );
     }
 }

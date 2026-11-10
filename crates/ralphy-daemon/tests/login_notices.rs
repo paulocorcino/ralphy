@@ -315,7 +315,7 @@ async fn the_device_a_notice_names_cannot_dismiss_it() {
         assert_eq!(resp.status(), StatusCode::OK, "{body}");
     }
     assert_eq!(dismissed_lines(dir.path()), 2);
-    assert!(notices(&auth, dir.path()).await.is_empty());
+    assert_eq!(notices(&auth, dir.path()).await, Vec::<Value>::new());
 }
 
 /// `here` marks the notice of the device that reads the list.

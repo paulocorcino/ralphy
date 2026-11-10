@@ -5,8 +5,8 @@ use super::*;
 #[test]
 fn fold_of_empty_store_is_empty() {
     let (accepted, rejected) = fold(&[]);
-    assert!(accepted.is_empty());
-    assert!(rejected.is_empty());
+    assert_eq!(accepted, Vec::<PeerDescriptor>::new());
+    assert_eq!(rejected, Vec::<PeerReject>::new());
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn fold_keeps_unknown_fields() {
         1,
         "a newer peer's extra field must not be fatal: {rejected:?}"
     );
-    assert!(rejected.is_empty());
+    assert_eq!(rejected, Vec::<PeerReject>::new());
 }
 
 #[test]

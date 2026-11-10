@@ -417,7 +417,7 @@ fn excludes_run_owned_by_session_meta_id() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]

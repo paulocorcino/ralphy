@@ -285,7 +285,7 @@ fn a_new_run_of_the_same_issue_ends_the_request() {
         old(),
         finished("owner/r", "20261028-110000", later, &[(71, "done")]),
     ]);
-    assert!(list(&[], &runs, &|_| false).is_empty());
+    assert_eq!(list(&[], &runs, &|_| false), Vec::<AttentionRequest>::new());
     // So does a live run that works it.
     let mut working = run("01LIVE", "executing", None);
     working.snapshot.started_at = later.to_string();
@@ -299,7 +299,7 @@ fn a_new_run_of_the_same_issue_ends_the_request() {
         finished: vec![old()],
         ..RunsRead::default()
     };
-    assert!(list(&[], &runs, &|_| false).is_empty());
+    assert_eq!(list(&[], &runs, &|_| false), Vec::<AttentionRequest>::new());
     // The same number in another repo does not.
     working.repo = "owner/other".to_string();
     let runs = RunsRead {

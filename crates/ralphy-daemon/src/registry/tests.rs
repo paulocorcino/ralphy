@@ -64,7 +64,7 @@ fn a_retired_console_worktree_key_loads_and_is_not_written_back() {
         "the retired key is never written back: {text}"
     );
     let back = load_from(&path).unwrap();
-    assert!(back.retired_console_worktree().is_empty());
+    assert_eq!(back.retired_console_worktree(), Vec::<&str>::new());
     assert_eq!(back.entry("owner/repo").unwrap().path, "/old");
 
     let mut store = RegistryStore::default();
@@ -314,7 +314,10 @@ fn slugs_for_path_matches_canonical_and_string_forms() {
         gone.slugs_for_path(Path::new(r"C:\no\such\dir")),
         vec!["path-gone".to_string()]
     );
-    assert!(gone.slugs_for_path(Path::new("/no/such/other")).is_empty());
+    assert_eq!(
+        gone.slugs_for_path(Path::new("/no/such/other")),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -404,7 +407,7 @@ fn former_slugs_round_trip_and_are_omitted_when_empty() {
     assert_eq!(back, store);
     // An older store without the key still loads.
     let old: RegistryStore = toml::from_str("[repos.\"o/r\"]\npath = \"/x\"\n").unwrap();
-    assert!(old.entry("o/r").unwrap().former_slugs.is_empty());
+    assert_eq!(old.entry("o/r").unwrap().former_slugs, Vec::<String>::new());
 }
 
 /// A remoteless repo is named by its folder; a forge repo by its slug, even

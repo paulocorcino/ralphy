@@ -86,7 +86,7 @@ fn commit_decision_maps_clean_dirty_yes_and_refusal() {
     // Empty input accepts the `[Y/n]` default and commits the snapshot.
     assert_eq!(commit_decision(false, ""), CommitDecision::Commit);
     match commit_decision(false, "no") {
-        CommitDecision::Abort(msg) => assert!(!msg.is_empty()),
+        CommitDecision::Abort(msg) => assert_ne!(msg, ""),
         other @ (CommitDecision::NothingToCommit | CommitDecision::Commit) => {
             panic!("expected Abort, got {other:?}")
         }

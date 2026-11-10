@@ -58,7 +58,7 @@ fn tail_reports_transitions_and_handles_partial_lines() {
     let path = dir.path().join(STATUS_FILE);
     let mut f = std::fs::File::create(&path).unwrap();
     let mut tail = Tail::new(path.clone(), claude_signal);
-    assert!(tail.poll().is_empty());
+    assert_eq!(tail.poll(), Vec::<agent_state::Observed>::new());
 
     let line = |event: &str, tool: &str| {
         format!(
@@ -82,7 +82,7 @@ fn tail_reports_transitions_and_handles_partial_lines() {
     let (head, rest) = stop.split_at(10);
     write!(f, "{head}").unwrap();
     f.flush().unwrap();
-    assert!(tail.poll().is_empty());
+    assert_eq!(tail.poll(), Vec::<agent_state::Observed>::new());
     writeln!(f, "{rest}").unwrap();
     f.flush().unwrap();
     let got: Vec<&str> = tail.poll().iter().map(|o| o.state.as_str()).collect();

@@ -376,7 +376,10 @@ fn yes_publishes_a_consolidation_that_drew_on_collaborators() {
     let threads = [thread(31, &[("IC_own", "OWNER"), ("IC_out", "NONE")])];
     for drew_on in [vec!["IC_own"], vec![]] {
         let mut draft = consolidation(31, &drew_on);
-        assert!(hold_untrusted_consolidations(&mut draft, &threads).is_empty());
+        assert_eq!(
+            hold_untrusted_consolidations(&mut draft, &threads),
+            Vec::<u64>::new()
+        );
         let t = RecordingTracker::default();
         apply_triage(&draft, &t, &labels(), |_| true).unwrap();
         assert_eq!(t.upserts.borrow().len(), 1, "{drew_on:?}");

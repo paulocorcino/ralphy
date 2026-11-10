@@ -439,5 +439,5 @@ fn the_issues_flag_is_the_forced_set_verbatim() {
         forced_issue_set(&run_args(&["--issues", "5,3,9"])),
         [5, 3, 9]
     );
-    assert!(forced_issue_set(&run_args(&[])).is_empty());
+    assert_eq!(forced_issue_set(&run_args(&[])), Vec::<u64>::new());
 }

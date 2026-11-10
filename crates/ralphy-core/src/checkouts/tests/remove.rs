@@ -119,7 +119,7 @@ fn remove_applies_the_gates_in_order() {
     }
 
     // (7) nothing left to list.
-    assert!(list(&root).unwrap().worktrees.is_empty());
+    assert_eq!(list(&root).unwrap().worktrees, Vec::<Checkout>::new());
 
     remove_scratch(&root);
 }

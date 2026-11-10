@@ -116,7 +116,10 @@ fn chained_casts_count_a_cast_over_a_cast() {
     );
     let baseline = [("a.ts", 1)];
     let one = |file: &str, n| BTreeMap::from([(file.to_string(), n)]);
-    assert!(chained_cast_errors(&one("a.ts", 1), &baseline).is_empty());
+    assert_eq!(
+        chained_cast_errors(&one("a.ts", 1), &baseline),
+        Vec::<String>::new()
+    );
     assert_eq!(chained_cast_errors(&one("a.ts", 2), &baseline).len(), 1);
     assert_eq!(chained_cast_errors(&one("b.ts", 1), &baseline).len(), 2);
 }
@@ -128,7 +131,10 @@ fn a_new_module_or_a_changed_any_count_fails_the_ratchet() {
         pairs.iter().map(|(f, n)| (f.to_string(), *n)).collect()
     };
 
-    assert!(any_errors(&actual(&[("a.ts", 2), ("b.ts", 1)]), &baseline).is_empty());
+    assert_eq!(
+        any_errors(&actual(&[("a.ts", 2), ("b.ts", 1)]), &baseline),
+        Vec::<String>::new()
+    );
 
     let errors = any_errors(&actual(&[("a.ts", 3), ("b.ts", 1), ("c.ts", 1)]), &baseline);
     assert_eq!(errors.len(), 2, "{errors:#?}");

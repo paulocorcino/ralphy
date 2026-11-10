@@ -253,5 +253,5 @@ fn a_fetched_text_file_takes_the_written_name_and_is_not_an_image() {
     };
     written_name_and_image(&outcome, &mut name, &mut images);
     assert_eq!(name, "diagnose.log");
-    assert!(images.is_empty());
+    assert_eq!(images, Vec::<PathBuf>::new());
 }

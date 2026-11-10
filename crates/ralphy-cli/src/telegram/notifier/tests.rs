@@ -160,7 +160,7 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
         .filter(|(method, _)| method == "editMessageText")
         .map(|(_, body)| body["message_id"].as_i64().unwrap())
         .collect();
-    assert!(!edit_ids.is_empty());
+    assert_ne!(edit_ids, Vec::<i64>::new());
     assert!(edit_ids.iter().all(|&id| id == 100));
 }
 

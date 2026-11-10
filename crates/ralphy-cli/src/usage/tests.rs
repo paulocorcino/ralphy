@@ -74,7 +74,7 @@ fn resolve_slug_treats_a_dot_project_as_a_path_not_a_literal_slug() {
         slug, ".",
         "`.` must be resolved, not used as a literal slug"
     );
-    assert!(!slug.is_empty());
+    assert_ne!(slug, "");
 }
 
 #[test]

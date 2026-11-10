@@ -234,6 +234,9 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["x".to_string()]);
 
-        assert!(checkout_dirs(&tmp.path().join("nowhere").to_string_lossy()).is_empty());
+        assert_eq!(
+            checkout_dirs(&tmp.path().join("nowhere").to_string_lossy()),
+            Vec::<PathBuf>::new()
+        );
     }
 }

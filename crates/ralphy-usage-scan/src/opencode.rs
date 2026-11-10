@@ -348,7 +348,7 @@ mod tests {
     #[test]
     fn opencode_missing_db_is_zero() {
         let records = scan(Path::new("does-not-exist-anywhere.db"), &[], None);
-        assert!(records.is_empty());
+        assert_eq!(records, Vec::<InteractiveRecord>::new());
     }
 
     #[test]
@@ -357,7 +357,7 @@ mod tests {
         let path = tmp.path().join("opencode.db");
         fs::write(&path, b"this is not a sqlite database at all").unwrap();
         let records = scan(&path, &[], None);
-        assert!(records.is_empty());
+        assert_eq!(records, Vec::<InteractiveRecord>::new());
     }
 
     #[test]

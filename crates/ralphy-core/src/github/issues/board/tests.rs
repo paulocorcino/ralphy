@@ -52,6 +52,6 @@ fn parse_closed_board_lowercases_state_reason() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].state, "closed");
     assert_eq!(rows[0].reason.as_deref(), Some("completed"));
-    assert!(rows[0].blocked_by.is_empty());
+    assert_eq!(rows[0].blocked_by, Vec::<u64>::new());
     assert_eq!(rows[1].reason.as_deref(), Some("not_planned"));
 }

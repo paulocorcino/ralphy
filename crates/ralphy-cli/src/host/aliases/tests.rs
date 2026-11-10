@@ -16,7 +16,7 @@ Match host x
 #[test]
 fn parse_config_hosts_keeps_only_concrete_names() {
     assert_eq!(parse_config_hosts(CONFIG), ["svrapp", "web", "db"]);
-    assert!(parse_config_hosts("").is_empty());
+    assert_eq!(parse_config_hosts(""), Vec::<String>::new());
 }
 
 /// A `#` ends the names of a `Host` line, and a `Host` keyword with no name
@@ -24,7 +24,7 @@ fn parse_config_hosts_keeps_only_concrete_names() {
 #[test]
 fn parse_config_hosts_stops_at_a_comment_and_needs_a_name() {
     assert_eq!(parse_config_hosts("Host a # b c"), ["a"]);
-    assert!(parse_config_hosts("Host").is_empty());
+    assert_eq!(parse_config_hosts("Host"), Vec::<String>::new());
 }
 
 // format of `ssh -G svrapp`, OpenSSH 9

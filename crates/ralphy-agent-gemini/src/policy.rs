@@ -197,15 +197,18 @@ mod tests {
     /// run that is about to be more restrictive than they asked for.
     #[test]
     fn importing_tolerates_a_missing_or_broken_directory() {
-        assert!(import_deny_rules(None).is_empty());
+        assert_eq!(import_deny_rules(None), Vec::<String>::new());
         let dir = tempfile::tempdir().unwrap();
-        assert!(import_deny_rules(Some(&dir.path().join("nope"))).is_empty());
-        assert!(import_deny_rules(Some(dir.path())).is_empty());
+        assert_eq!(
+            import_deny_rules(Some(&dir.path().join("nope"))),
+            Vec::<String>::new()
+        );
+        assert_eq!(import_deny_rules(Some(dir.path())), Vec::<String>::new());
         std::fs::write(dir.path().join("bad.toml"), b"[[rule\n").unwrap();
-        assert!(import_deny_rules(Some(dir.path())).is_empty());
+        assert_eq!(import_deny_rules(Some(dir.path())), Vec::<String>::new());
         // A parsable file with no rules at all.
         std::fs::write(dir.path().join("empty.toml"), b"other = 1\n").unwrap();
-        assert!(import_deny_rules(Some(dir.path())).is_empty());
+        assert_eq!(import_deny_rules(Some(dir.path())), Vec::<String>::new());
     }
 
     /// The document lands inside Ralphy's own root, never the operator's.

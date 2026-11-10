@@ -301,7 +301,10 @@ pnpm run test:harness
                 "pnpm run test:harness"
             ]
         );
-        assert!(verify_lines("## Verify\nnone\n\n## Steps\n").is_empty());
+        assert_eq!(
+            verify_lines("## Verify\nnone\n\n## Steps\n"),
+            Vec::<String>::new()
+        );
         assert_eq!(
             verify_lines("## Verify\n```\ncargo test\n```\n## X\n"),
             vec!["cargo test"]

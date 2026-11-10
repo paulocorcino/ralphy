@@ -73,7 +73,7 @@ fn the_closed_sets_match_the_template() {
 #[test]
 fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     let good = "# T\n\nStatus: accepted\nKind: structural\n\n## Compliance\n\n- D1: checked.\n";
-    assert!(format_errors("good.md", good).is_empty());
+    assert_eq!(format_errors("good.md", good), Vec::<String>::new());
 
     let status = format_errors("s.md", "Status: accepted (x)\nKind: feature\n");
     assert!(
@@ -93,7 +93,7 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     );
 
     let superseded = "Status: superseded by ADR-0070\nKind: process\n";
-    assert!(format_errors("x.md", superseded).is_empty());
+    assert_eq!(format_errors("x.md", superseded), Vec::<String>::new());
 
     let no_heading = format_errors("h.md", "Status: proposed\nKind: structural\n");
     assert!(
@@ -110,7 +110,7 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     );
     let after_comment =
         "Status: proposed\nKind: structural\n\n## Compliance\n\n<!-- c --> - D1: x\n";
-    assert!(format_errors("a.md", after_comment).is_empty());
+    assert_eq!(format_errors("a.md", after_comment), Vec::<String>::new());
 
     let missing = format_errors("n.md", "# T\n");
     assert!(

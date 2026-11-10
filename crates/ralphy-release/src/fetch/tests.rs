@@ -328,7 +328,7 @@ fn a_malformed_body_does_not_poison_the_cache() {
     refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
     handle.join().expect("server thread");
 
-    assert!(load(&cache).is_empty());
+    assert_eq!(load(&cache), Vec::<Release>::new());
     assert!(
         !cache.exists(),
         "an unparseable body must not be written at all"
@@ -377,5 +377,8 @@ fn a_release_is_read_by_its_tag() {
 
 #[test]
 fn an_absent_cache_reads_as_nothing_known() {
-    assert!(load(&temp_cache_path("absent-never-written")).is_empty());
+    assert_eq!(
+        load(&temp_cache_path("absent-never-written")),
+        Vec::<Release>::new()
+    );
 }

@@ -156,9 +156,15 @@ fn admin_tier_controls_are_reported_never_worked_around() {
 
     // Controls: an empty document, malformed JSON and a missing dir are all
     // silent — an unreadable admin file must never fail a run.
-    assert!(inspect_admin_tier(Some("{}"), None).is_empty());
-    assert!(inspect_admin_tier(Some("not json at all"), None).is_empty());
-    assert!(inspect_admin_tier(None, None).is_empty());
+    assert_eq!(
+        inspect_admin_tier(Some("{}"), None),
+        Vec::<AdminControl>::new()
+    );
+    assert_eq!(
+        inspect_admin_tier(Some("not json at all"), None),
+        Vec::<AdminControl>::new()
+    );
+    assert_eq!(inspect_admin_tier(None, None), Vec::<AdminControl>::new());
     assert_eq!(
         inspect_admin_tier(Some(DOC), Some(&dir.path().join("nope"))).len(),
         3,

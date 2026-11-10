@@ -398,7 +398,7 @@ mod tests {
         // The repo is a git checkout and CI has git on PATH, so detection must
         // surface it — a live, cross-platform smoke test of the probe path.
         let d = detect();
-        assert!(!d.os.is_empty());
+        assert_ne!(d.os, "");
         assert!(
             d.tools.iter().any(|t| t.starts_with("git")),
             "expected git among {:?}",

@@ -171,5 +171,8 @@ fn a_chained_command_is_read_one_command_at_a_time() {
         missing("cargo run | tee out; cargo test --locked"),
         ["cargo run"]
     );
-    assert!(missing("cd x && cargo build --locked && cargo test --locked | tee out").is_empty());
+    assert_eq!(
+        missing("cd x && cargo build --locked && cargo test --locked | tee out"),
+        Vec::<String>::new()
+    );
 }

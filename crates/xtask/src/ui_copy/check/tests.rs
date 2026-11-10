@@ -62,9 +62,15 @@ fn a_banned_term_is_reported_and_a_path_that_holds_it_is_not() {
         vec!["banned:plane"]
     );
     assert_eq!(broken(Kind::Text, "About ralphy"), vec!["banned:ralphy"]);
-    assert!(broken(Kind::Text, "Edit <repo>/.ralphy/settings.json").is_empty());
-    assert!(broken(Kind::Text, "Airplane mode").is_empty());
-    assert!(broken(Kind::Text, "Remove from Ralphy").is_empty());
+    assert_eq!(
+        broken(Kind::Text, "Edit <repo>/.ralphy/settings.json"),
+        Vec::<String>::new()
+    );
+    assert_eq!(broken(Kind::Text, "Airplane mode"), Vec::<String>::new());
+    assert_eq!(
+        broken(Kind::Text, "Remove from Ralphy"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -108,7 +114,7 @@ fn a_text_that_goes_on_with_a_sentence_is_not_judged_by_its_first_letter() {
     let rules = rules();
     let mut rest = row(Kind::Text, "to start one.");
     rest.continues = true;
-    assert!(check(&[rest], &rules).violations.is_empty());
+    assert_eq!(check(&[rest], &rules).violations, Vec::<Violation>::new());
 }
 
 #[test]
@@ -165,7 +171,7 @@ fn plain_words_contractions_and_sentence_length_are_reported() {
         broken(Kind::Placeholder, "For e.g. a login"),
         vec!["plain:e.g."]
     );
-    assert!(broken(Kind::Text, "Adjust it").is_empty());
+    assert_eq!(broken(Kind::Text, "Adjust it"), Vec::<String>::new());
     // A wide whitespace char before a listed term (U+00A0, U+2009).
     assert_eq!(
         broken(Kind::Text, "Wait\u{a0}just a moment."),
@@ -180,13 +186,19 @@ fn plain_words_contractions_and_sentence_length_are_reported() {
         vec!["contraction"]
     );
     assert_eq!(broken(Kind::Text, "It’s done."), vec!["contraction"]);
-    assert!(broken(Kind::Text, "Commit its changes.").is_empty());
+    assert_eq!(
+        broken(Kind::Text, "Commit its changes."),
+        Vec::<String>::new()
+    );
     assert_eq!(
         broken(Kind::Text, "One two three four five six. Short."),
         vec!["sentence-length"]
     );
     // A hole is not a word.
-    assert!(broken(Kind::Text, "One {a} two {b} three four five.").is_empty());
+    assert_eq!(
+        broken(Kind::Text, "One {a} two {b} three four five."),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -272,5 +284,5 @@ fn the_repo_rules_ban_an_adr_citation() {
             .collect()
     };
     assert!(rules_of("Held awake for its peer (ADR-0052 §4).").contains(&"banned:ADR".to_string()));
-    assert!(rules_of("Held awake for its peer.").is_empty());
+    assert_eq!(rules_of("Held awake for its peer."), Vec::<String>::new());
 }

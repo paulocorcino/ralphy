@@ -42,7 +42,7 @@ fn a_marked_function_over_ten_passes_the_check() {
         "struct S;\nimpl S {{\n    {kept}{}}}\n",
         function_of("m", 11)
     );
-    assert!(errors_of(&method).is_empty());
+    assert_eq!(errors_of(&method), Vec::<String>::new());
 }
 
 #[test]

@@ -123,11 +123,11 @@ fn run_directory_only_change_is_clean_for_core_and_git_read() {
 
     std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
     std::fs::write(dir.join(".ralphy").join("x.txt"), "scratch\n").unwrap();
-    assert!(changes(&dir).unwrap().is_empty());
+    assert_eq!(changes(&dir).unwrap(), Vec::<Change>::new());
     assert!(!ralphy_git_read::dirty(&dir).unwrap());
 
     std::fs::write(dir.join("a.txt"), "a\n").unwrap();
-    assert!(!changes(&dir).unwrap().is_empty());
+    assert_ne!(changes(&dir).unwrap(), Vec::<Change>::new());
     assert!(ralphy_git_read::dirty(&dir).unwrap());
 
     remove_scratch(&dir);

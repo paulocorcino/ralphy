@@ -268,8 +268,8 @@ mod tests {
         // started: a commit list under a `## What's Changed` heading.
         let (kinds, highlights) =
             parse_body("## What's Changed\n* feat(workbench): a thing by @someone in #1\n");
-        assert!(kinds.is_empty());
-        assert!(highlights.is_empty());
+        assert_eq!(kinds, Vec::<String>::new());
+        assert_eq!(highlights, Vec::<String>::new());
     }
 
     #[test]

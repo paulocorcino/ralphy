@@ -75,7 +75,10 @@ fn parse_issue_labels_reads_names_and_tolerates_empty() {
         vec!["ready-for-human".to_string(), "needs-triage".to_string()]
     );
     // No labels → empty, not an error.
-    assert!(parse_issue_labels(r#"{"labels": []}"#).unwrap().is_empty());
+    assert_eq!(
+        parse_issue_labels(r#"{"labels": []}"#).unwrap(),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -102,7 +105,7 @@ fn parses_issue_with_labels() {
 fn tolerates_missing_body_and_labels() {
     let issue = parse_issue(r#"{"number":1,"title":"t"}"#).unwrap();
     assert_eq!(issue.body, "");
-    assert!(issue.labels.is_empty());
+    assert_eq!(issue.labels, Vec::<String>::new());
 }
 
 fn issue(number: u64) -> Issue {

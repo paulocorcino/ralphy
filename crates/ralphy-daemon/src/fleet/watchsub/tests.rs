@@ -67,7 +67,7 @@ async fn traversal_is_refused_without_creating_a_sub() {
             &["../escape".to_string()]
         )
         .is_err());
-    assert!(subs.take_buffered("escape").is_empty());
+    assert_eq!(subs.take_buffered("escape"), Vec::<(String, String)>::new());
     assert!(!watchers.repo_active("owner/repo"));
 }
 
@@ -177,7 +177,7 @@ async fn a_wait_on_an_unknown_sub_still_holds_its_deadline() {
     let started = Instant::now();
     let (dirty, outcome) = subs.wait("nobody", deadline).await;
 
-    assert!(dirty.is_empty());
+    assert_eq!(dirty, Vec::<(String, String)>::new());
     assert_eq!(outcome, WaitOutcome::NoSub);
     assert!(
         started.elapsed() >= deadline.checked_sub(Duration::from_millis(50)).unwrap(),
@@ -251,7 +251,7 @@ async fn a_cancelled_wait_hands_its_receiver_back() {
         WaitOutcome::Dirty,
         "a cancelled wait must leave the subscription listening: {dirty:?}"
     );
-    assert!(!dirty.is_empty());
+    assert_ne!(dirty, Vec::<(String, String)>::new());
 }
 
 /// A second subscribe on the same id holds the set it sends: a path it adds

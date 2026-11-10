@@ -22,8 +22,8 @@ mod fold;
 fn read_store_of_missing_dir_is_empty() {
     let dir = tempfile::tempdir().unwrap();
     let (accepted, rejected) = read_store(&dir.path().join("no-such-peers"));
-    assert!(accepted.is_empty());
-    assert!(rejected.is_empty());
+    assert_eq!(accepted, Vec::<PeerDescriptor>::new());
+    assert_eq!(rejected, Vec::<PeerReject>::new());
 }
 
 /// ADR-0070 D4: a store that exists but cannot be listed is a failure the
@@ -41,7 +41,7 @@ fn an_unreadable_store_is_a_failure_not_an_empty_fleet() {
         "the fixture must not read as missing"
     );
     let (accepted, rejected) = read_store(&store);
-    assert!(accepted.is_empty());
+    assert_eq!(accepted, Vec::<PeerDescriptor>::new());
     assert_eq!(rejected.len(), 1, "one failure: {rejected:?}");
     assert!(
         rejected[0].why().contains("cannot be read"),

@@ -121,7 +121,7 @@ fn plan_present_returns_ok() {
     .unwrap()
     .expect("fresh plan yields Some");
     assert_eq!(p, 7);
-    assert!(r.log.is_empty());
+    assert_eq!(r.log, "");
     remove_scratch_dir(&dir);
 }
 

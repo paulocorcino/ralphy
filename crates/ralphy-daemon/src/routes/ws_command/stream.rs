@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(decode_utf8(&mut carry, &[0xA9]), "é");
         assert_eq!(decode_utf8(&mut carry, &[0xE2]), "");
         assert_eq!(decode_utf8(&mut carry, &[0x82, 0xAC]), "€");
-        assert!(carry.is_empty());
+        assert_eq!(carry, Vec::<u8>::new());
         assert_eq!(decode_utf8(&mut carry, &[0xFF]), "\u{FFFD}");
         assert_eq!(decode_utf8(&mut carry, b"a"), "a");
     }

@@ -27,8 +27,14 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         1
     );
     assert_eq!(template_html_sinks("b.innerHTML = text;").len(), 1);
-    assert!(template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';").is_empty());
-    assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
+    assert_eq!(
+        template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        template_html_sinks("menu.innerHTML = \"\";"),
+        Vec::<String>::new()
+    );
     // The whole console family, and the whole shell family: the shell,
     // `wb-files.ts`, `wb-move-dialog.ts` and the two consoles tab modules build menus.
     for (name, src) in [CONSOLE_FAMILY, SHELL_FAMILY].concat() {

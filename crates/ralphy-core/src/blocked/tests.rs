@@ -63,7 +63,7 @@ fn blocked_by_in_unmarked_comment_is_ignored() {
     let body = "## Steps\n- [ ] do it\n";
     let comments = vec!["## Blocked by\n- #9\n".to_string()];
     // No marker → the comment's `## Blocked by` does not gate.
-    assert!(parse_blocked_by_all(body, &comments).is_empty());
+    assert_eq!(parse_blocked_by_all(body, &comments), Vec::<u64>::new());
 }
 
 #[test]

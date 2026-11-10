@@ -171,7 +171,7 @@ fn zero_numbered_event_without_active_is_ignored() {
         model: String::new(),
         effort: None,
     });
-    assert!(state.issues.is_empty());
+    assert_eq!(state.issues, Vec::<IssueEntry>::new());
 }
 
 #[test]
@@ -347,7 +347,7 @@ fn queue_built_seeds_queue_ref_not_issues() {
         assignee_filter: None,
         scope: None,
     });
-    assert!(legacy.queue.is_empty());
+    assert_eq!(legacy.queue, Vec::<QueueRef>::new());
 }
 
 #[test]

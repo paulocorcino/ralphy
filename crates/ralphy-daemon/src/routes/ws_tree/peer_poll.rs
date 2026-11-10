@@ -428,7 +428,7 @@ mod tests {
     fn a_poll_with_no_dirs_is_quiet() {
         let got = reply(200, r#"{"dirty":[]}"#);
         assert_eq!(got.cycle, PollCycle::Quiet);
-        assert!(got.dirty.is_empty());
+        assert_eq!(got.dirty, Vec::<String>::new());
         assert_eq!(
             reply(200, r#"{"dirty":[{"nopath":1}]}"#).cycle,
             PollCycle::Quiet
@@ -450,7 +450,7 @@ mod tests {
         );
         let error = read_poll_reply(Err(anyhow::anyhow!("refused")), "repo", 3);
         assert_eq!(error.cycle, PollCycle::Failed);
-        assert!(error.dirty.is_empty());
+        assert_eq!(error.dirty, Vec::<String>::new());
     }
 
     #[test]

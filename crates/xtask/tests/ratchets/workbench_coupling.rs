@@ -143,7 +143,10 @@ fn coupling_counts_read_code_and_are_exact() {
 
     let baseline = [("a.ts", 2)];
     let one = |file: &str, n| BTreeMap::from([(file.to_string(), n)]);
-    assert!(flash_errors(&one("a.ts", 2), &baseline).is_empty());
+    assert_eq!(
+        flash_errors(&one("a.ts", 2), &baseline),
+        Vec::<String>::new()
+    );
     assert_eq!(flash_errors(&one("a.ts", 1), &baseline).len(), 1);
     assert_eq!(flash_errors(&one("a.ts", 3), &baseline).len(), 1);
     assert_eq!(flash_errors(&one("b.ts", 1), &baseline).len(), 2);

@@ -4,8 +4,8 @@ use super::*;
 fn parse_u64_list_reads_debug_vec_and_tolerates_empty() {
     assert_eq!(parse_u64_list(Some("[30]")), vec![30]);
     assert_eq!(parse_u64_list(Some("[30, 18]")), vec![30, 18]);
-    assert!(parse_u64_list(Some("[]")).is_empty());
-    assert!(parse_u64_list(None).is_empty());
+    assert_eq!(parse_u64_list(Some("[]")), Vec::<u64>::new());
+    assert_eq!(parse_u64_list(None), Vec::<u64>::new());
 }
 
 fn decode(fields: EventFields) -> Option<RunEvent> {
@@ -326,8 +326,11 @@ fn parse_steps_json_maps_array_and_tolerates_absence() {
         )),
         vec![("a".into(), "open".into()), ("b".into(), "checked".into())]
     );
-    assert!(parse_steps_json(None).is_empty());
-    assert!(parse_steps_json(Some("not json")).is_empty());
+    assert_eq!(parse_steps_json(None), Vec::<(String, String)>::new());
+    assert_eq!(
+        parse_steps_json(Some("not json")),
+        Vec::<(String, String)>::new()
+    );
 }
 
 #[test]

@@ -152,7 +152,7 @@ fn zero_usage_stub_parses_to_empty() {
     \"input_cache_read\": 0, \"input_cache_creation\": 0}, \"message_id\": \"msg-empty\"}}}";
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", body);
     let records = scan_legacy_only(tmp.path());
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn kimi_missing_stores_contribute_zero() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]

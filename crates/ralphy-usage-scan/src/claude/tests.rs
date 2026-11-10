@@ -258,7 +258,7 @@ fn zero_usage_session_scans_to_empty() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]

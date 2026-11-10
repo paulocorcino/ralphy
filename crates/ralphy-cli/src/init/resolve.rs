@@ -251,7 +251,7 @@ mod tests {
         // Empty input keeps the default.
         assert_eq!(resolve_list(&default, "  "), default);
         // The literal `none` clears it.
-        assert!(resolve_list(&default, "none").is_empty());
+        assert_eq!(resolve_list(&default, "none"), Vec::<String>::new());
         // A CSV override splits, trims, and drops blanks.
         assert_eq!(
             resolve_list(&default, " x.md , , y.md "),

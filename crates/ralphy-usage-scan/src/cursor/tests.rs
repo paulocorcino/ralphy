@@ -60,7 +60,10 @@ fn chats_meta_yields_a_session_with_tokens_unavailable() {
 
 #[test]
 fn an_absent_store_returns_an_empty_vec() {
-    assert!(scan(Path::new("does-not-exist")).is_empty());
+    assert_eq!(
+        scan(Path::new("does-not-exist")),
+        Vec::<InteractiveRecord>::new()
+    );
 }
 
 fn seed_transcript(base: &Path, sid: &str) {

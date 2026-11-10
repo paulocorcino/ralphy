@@ -96,7 +96,7 @@ fn a_new_file_or_a_changed_count_fails_the_ratchet() {
     assert!(errors.iter().any(|e| e.contains("1 -> 2")), "{errors:#?}");
 
     let same = BTreeMap::from([(key("a.rs", "git"), 1)]);
-    assert!(spawn_errors(&same, &baseline).is_empty());
+    assert_eq!(spawn_errors(&same, &baseline), Vec::<String>::new());
 
     let gone = BTreeMap::new();
     let errors = spawn_errors(&gone, &baseline);

@@ -387,6 +387,6 @@ mod tests {
         )
         .await;
         assert!(pushed(&mut rx), "a request that ended is a change");
-        assert!(ids(&runs).is_empty());
+        assert_eq!(ids(&runs), Vec::<String>::new());
     }
 }

@@ -287,12 +287,15 @@ mod tests {
         git(dir.path(), &["remote", "remove", "origin"]);
         let reg = register_or_migrate(&registry_path, &top).unwrap();
         assert_eq!(reg.slug, "o/r", "the forge key stays");
-        assert!(reg.migrated_from.is_empty());
+        assert_eq!(reg.migrated_from, Vec::<String>::new());
         let declined = reg.declined.expect("the hash key was declined");
         assert!(declined.starts_with("path-"));
         let store = registry::load_from(&registry_path).unwrap();
         assert_eq!(store.repos.len(), 1, "no hash entry inserted");
-        assert!(store.entry("o/r").unwrap().former_slugs.is_empty());
+        assert_eq!(
+            store.entry("o/r").unwrap().former_slugs,
+            Vec::<String>::new()
+        );
     }
 
     #[test]

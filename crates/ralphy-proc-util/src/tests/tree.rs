@@ -73,7 +73,10 @@ fn a_tree_kill_never_ends_the_process_doing_it() {
     let table = [(10, 1), (20, 10), (30, 20), (40, 10)];
     let doomed = super::tree_to_kill(10, &table, 20, |_| None);
     assert_eq!(doomed, vec![10, 40]);
-    assert!(super::tree_to_kill(20, &table, 20, |_| None).is_empty());
+    assert_eq!(
+        super::tree_to_kill(20, &table, 20, |_| None),
+        Vec::<u32>::new()
+    );
 }
 
 /// A process created before the parent it records is not that parent's child:

@@ -231,7 +231,10 @@ fn session_stems_ignores_a_file_that_is_not_a_session() {
     std::fs::write(chats.join("checkpoint-1.json"), b"{}").unwrap();
     std::fs::write(chats.join("session-2.txt"), b"x").unwrap();
 
-    assert!(session_stems(cli_dir.path()).is_empty());
+    assert_eq!(
+        session_stems(cli_dir.path()),
+        Vec::<(std::time::SystemTime, String, Vec<PathBuf>)>::new()
+    );
 }
 
 #[test]

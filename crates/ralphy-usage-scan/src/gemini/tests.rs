@@ -221,11 +221,14 @@ fn a_nested_subagent_file_is_counted() {
 
 #[test]
 fn a_missing_or_malformed_store_is_empty_never_an_error() {
-    assert!(scan(Path::new("does-not-exist")).is_empty());
+    assert_eq!(
+        scan(Path::new("does-not-exist")),
+        Vec::<InteractiveRecord>::new()
+    );
 
     let empty = tempfile::tempdir().unwrap();
     fs::create_dir_all(empty.path().join("tmp")).unwrap();
-    assert!(scan(empty.path()).is_empty());
+    assert_eq!(scan(empty.path()), Vec::<InteractiveRecord>::new());
 
     let garbage = tempfile::tempdir().unwrap();
     seed(
@@ -235,7 +238,7 @@ fn a_missing_or_malformed_store_is_empty_never_an_error() {
         "session-x.jsonl",
         "not json\nnot json either\n",
     );
-    assert!(scan(garbage.path()).is_empty());
+    assert_eq!(scan(garbage.path()), Vec::<InteractiveRecord>::new());
 }
 
 /// `lastUpdated` lives on `$set` mutation records after the header — trusting
@@ -394,7 +397,10 @@ fn since_is_inclusive_and_never_filters_on_an_unparseable_bound() {
     };
     assert_eq!(with_since("2026-07-21T01:00:00Z").len(), 1, "inclusive");
     assert_eq!(with_since("not-a-timestamp").len(), 1);
-    assert!(with_since("2026-07-21T01:00:01Z").is_empty());
+    assert_eq!(
+        with_since("2026-07-21T01:00:01Z"),
+        Vec::<InteractiveRecord>::new()
+    );
 }
 
 #[test]

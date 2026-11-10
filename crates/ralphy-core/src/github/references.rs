@@ -81,8 +81,8 @@ mod tests {
         let r = parse_reference(r#"{"number":7,"state":"CLOSED"}"#).unwrap();
         assert_eq!(r.number, 7);
         assert_eq!(r.state, "CLOSED");
-        assert!(r.title.is_empty());
-        assert!(r.body.is_empty());
-        assert!(r.url.is_empty());
+        assert_eq!(r.title, "");
+        assert_eq!(r.body, "");
+        assert_eq!(r.url, "");
     }
 }

@@ -142,7 +142,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         make(tmp.path(), &["20260101-000001", "20260101-000002"]);
         let out = prune(tmp.path(), 0, false);
-        assert!(out.removed.is_empty());
+        assert_eq!(out.removed, Vec::<PathBuf>::new());
         assert_eq!(names_left(tmp.path()).len(), 2);
     }
 
@@ -196,7 +196,7 @@ mod tests {
         make(tmp.path(), &["20260101-000001", "20260101-000002"]);
         let current = tmp.path().join("20260101-000001");
         let out = prune_run_dirs(tmp.path(), 1, &current, false, |p| fs::remove_dir_all(p));
-        assert!(out.removed.is_empty());
+        assert_eq!(out.removed, Vec::<PathBuf>::new());
         assert_eq!(names_left(tmp.path()).len(), 2);
     }
 
