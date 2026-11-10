@@ -240,7 +240,7 @@ fn the_discard_control_is_pinned_in_the_markup() {
     // the only thing proving it. The staged
     // list is the block between its `x-for` key and that list's close.
     let staged_from = html
-        .find(r#"'s:' + c.path"#)
+        .find(r"'s:' + c.path")
         .expect("index.html must keep the staged group's x-for key");
     let staged_block = &html[staged_from..];
     let staged_end = staged_block

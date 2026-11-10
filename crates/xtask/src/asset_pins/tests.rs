@@ -82,12 +82,12 @@ fn assertion_prose_is_not_counted_as_a_pin() {
 #[test]
 fn a_pin_table_is_read_to_its_closing_bracket() {
     let lines = [
-        r#"        for pin in ["#,
+        r"        for pin in [",
         r#"            "a(","#,
         r#"            "b(","#,
-        r#"        ] {"#,
+        r"        ] {",
         r#"            assert!(js.contains(pin), "must keep it");"#,
-        r#"        }"#,
+        r"        }",
     ];
     let mut out = Vec::new();
     collect("x.rs", &lines.join("\n"), &mut out);
@@ -100,8 +100,13 @@ fn a_pin_table_is_read_to_its_closing_bracket() {
 /// inner quote and recorded as the pin `class=`.
 #[test]
 fn a_raw_string_pin_is_read_to_its_real_end() {
+    #[expect(
+        clippy::needless_raw_string_hashes,
+        reason = "the literal holds a quote and a hash: one hash fewer ends it early"
+    )]
+    let input = r##"["jumpFence(", r#"class="fence-item""#]"##;
     assert_eq!(
-        string_literals(r##"["jumpFence(", r#"class="fence-item""#]"##),
+        string_literals(input),
         vec!["jumpFence(".to_string(), "class=\"fence-item\"".to_string()]
     );
     // Multiple hashes, and a `"#` that is not the terminator.

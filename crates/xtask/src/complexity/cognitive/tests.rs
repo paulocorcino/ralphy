@@ -13,7 +13,7 @@ fn one(src: &str) -> u32 {
 
 #[test]
 fn a_structure_costs_its_nesting_and_else_costs_one() {
-    let src = r#"
+    let src = r"
         fn f(x: Option<u32>, v: &[u32]) -> u32 {
             let mut n = 0;
             for a in v {                 // +1
@@ -31,7 +31,7 @@ fn a_structure_costs_its_nesting_and_else_costs_one() {
             }
             n
         }
-    "#;
+    ";
     assert_eq!(one(src), 8);
 }
 
@@ -53,7 +53,7 @@ fn each_run_of_one_logical_operator_costs_one() {
 
 #[test]
 fn a_closure_nests_and_a_label_or_let_else_costs_one() {
-    let src = r#"
+    let src = r"
         fn k(v: Vec<Option<u32>>) -> u32 {
             let Some(first) = v.first().copied().flatten() else { return 0 }; // +1
             let add = |x: u32| if x > 1 { x } else { 0 };                      // +2, +1
@@ -62,7 +62,7 @@ fn a_closure_nests_and_a_label_or_let_else_costs_one() {
             }
             add(first)
         }
-    "#;
+    ";
     assert_eq!(one(src), 6);
 }
 
@@ -70,7 +70,7 @@ fn a_closure_nests_and_a_label_or_let_else_costs_one() {
 fn macro_arguments_and_select_arms_are_scored() {
     let fmt = r#"fn m(a: bool) -> String { format!("{}", if a { 1 } else { 2 }) }"#;
     assert_eq!(one(fmt), 2);
-    let select = r#"
+    let select = r"
         async fn s(mut rx: Rx) {
             tokio::select! {                         // +1
                 biased;
@@ -78,13 +78,13 @@ fn macro_arguments_and_select_arms_are_scored() {
                 else => {}
             }
         }
-    "#;
+    ";
     assert_eq!(one(select), 3);
 }
 
 #[test]
 fn methods_and_inner_functions_are_scored_and_test_code_is_not() {
-    let src = r#"
+    let src = r"
         struct S;
         impl S { fn a(&self) -> u32 { if true { 1 } else { 2 } } }
         trait T { fn b(&self) { if true {} } fn c(&self); }
@@ -93,7 +93,7 @@ fn methods_and_inner_functions_are_scored_and_test_code_is_not() {
         mod tests { fn t() { if true {} } }
         #[test]
         fn u() { if true {} }
-    "#;
+    ";
     let found = scores(src);
     let names: Vec<(&str, u32)> = found.iter().map(|(n, v)| (n.as_str(), *v)).collect();
     assert_eq!(names, [("a", 2), ("b", 1), ("outer", 0), ("inner", 1)]);

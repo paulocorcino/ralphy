@@ -242,7 +242,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     );
     let html = super::INDEX_HTML;
     assert!(
-        html.contains(r#"onRemove: (row) => this.removeWorktree(ref, row),"#)
+        html.contains(r"onRemove: (row) => this.removeWorktree(ref, row),")
             || shell_family().contains("onRemove: (row) => this.removeWorktree(ref, row),"),
         "the Files chip's menu wires the remove action"
     );

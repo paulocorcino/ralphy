@@ -108,7 +108,7 @@ fn ui_literals(js: &str) -> BTreeSet<String> {
     let compares = [
         r#"WBFail\.message\([^)]*\)\s*[!=]==\s*"([^"]+)""#,
         r#"\b(?:key|body|reply|group|h)\??\.state\s*[!=]==\s*"([^"]+)""#,
-        r#"/([^/\\]+)/i?\.test\((?:reason|message)\)"#,
+        r"/([^/\\]+)/i?\.test\((?:reason|message)\)",
     ];
     for pattern in compares {
         let re = Regex::new(pattern).expect("a valid regex");

@@ -71,7 +71,7 @@ fn the_script_of_a_shell_is_judged_as_a_command() {
             r#"bash -c "git push origin main""#,
             true,
         ),
-        ("format in a script", r#"cmd /c format C: /q"#, true),
+        ("format in a script", r"cmd /c format C: /q", true),
         ("four shells deep", "cmd /c cmd /c cmd /c cmd /c dir", true),
         ("encoded command", "pwsh -EncodedCommand SQBFAFgA", true),
         ("encoded, short", "powershell -enc SQBFAFgA", true),

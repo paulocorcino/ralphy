@@ -34,10 +34,11 @@ fn put(root: &Path, rel: &str, text: &str) {
 #[test]
 fn the_inventory_skips_vendor_and_cross_references_the_pins() {
     let root = scratch("inventory");
-    put(
-        &root,
-        "crates/ralphy-daemon/src/tests.rs",
-        r##"
+    #[expect(
+        clippy::needless_raw_string_hashes,
+        reason = "the literal holds a quote and a hash: one hash fewer ends it early"
+    )]
+    let tests_rs = r##"
     fn t() {
         let html = include_str!("../assets/ui/index.html");
         for pin in [r#"title="close""#, r#"data-act="stage""#] {
@@ -45,8 +46,8 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
         }
         assert!(html.contains("stage"), "the close button says close");
     }
-"##,
-    );
+"##;
+    put(&root, "crates/ralphy-daemon/src/tests.rs", tests_rs);
     put(
         &root,
         "crates/ralphy-daemon/assets/ui/index.html",

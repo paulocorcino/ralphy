@@ -159,7 +159,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     );
     let html = squeeze(super::INDEX_HTML);
     assert!(
-        html.contains(r#"it.type==='toggle'"#),
+        html.contains(r"it.type==='toggle'"),
         "index.html must render the toggle control"
     );
 }
