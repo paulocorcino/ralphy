@@ -69,7 +69,7 @@ fn presence_gate_takes_over_stale_lock() {
     fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
     match presence_gate(&path, false, |_| false) {
         PresenceGate::Proceed { warn: Some(w) } => {
-            assert_eq!(w, "ignoring stale run.lock (pid 4000001 not running)")
+            assert_eq!(w, "ignoring stale run.lock (pid 4000001 not running)");
         }
         other @ (PresenceGate::Proceed { warn: None } | PresenceGate::Defer(_)) => {
             panic!("expected Proceed with a warning, got {other:?}")

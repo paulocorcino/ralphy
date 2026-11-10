@@ -163,7 +163,7 @@ pub(crate) fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn Issu
                     reference = n,
                     error = %e,
                     "fetching referenced issue failed — skipping"
-                )
+                );
             }
         }
     }

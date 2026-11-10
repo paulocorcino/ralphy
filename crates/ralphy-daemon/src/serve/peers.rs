@@ -163,7 +163,7 @@ pub(crate) fn announce_peer(
                     store = %store.display(),
                     error = %e,
                     "could not announce into this peer store"
-                )
+                );
             }
         }
     }

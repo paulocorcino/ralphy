@@ -218,7 +218,7 @@ impl Opening {
             Ok(Ok(())) => {}
             Ok(Err(_closed)) => return,
             Err(_elapsed) => {
-                tracing::debug!(channel, "a channel ended before its frames were sent")
+                tracing::debug!(channel, "a channel ended before its frames were sent");
             }
         }
         drop(out);

@@ -64,7 +64,7 @@ pub(crate) fn close_and_record(
                 error = %e,
                 "reading the plan at close failed — no review debt, no evidence, \
                  no handoff recorded"
-            )
+            );
         })
         .ok();
     let verdicts = plan_md

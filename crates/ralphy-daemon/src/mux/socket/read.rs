@@ -267,7 +267,7 @@ impl Reader {
                 // Sent, or the socket is gone already.
                 Ok(Ok(()) | Err(_)) => {}
                 Err(_elapsed) => {
-                    tracing::debug!(channel = id, "the refusal was not sent before the end")
+                    tracing::debug!(channel = id, "the refusal was not sent before the end");
                 }
             }
         }

@@ -143,7 +143,7 @@ pub(crate) fn prepare_issue(cx: &IssueCtx, issue: &Issue) -> Result<Prepared> {
                 number = issue.number,
                 error = %e,
                 "fetching issue comments failed — gating and planning with body only"
-            )
+            );
         }
     }
 

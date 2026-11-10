@@ -12,6 +12,7 @@
 //! download through the same primitive here, so both paths replace a binary the
 //! same way (ADR-0056 §8).
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -323,7 +324,11 @@ fn print_path_added(dir: &Path, added: &user_path::Added) {
     }
     match &added.reload {
         Some(cmd) => {
-            println!("Open a new terminal to use `ralphy`, or run this in this one: {cmd}")
+            writeln!(
+                std::io::stdout(),
+                "Open a new terminal to use `ralphy`, or run this in this one: {cmd}"
+            )
+            .expect("the report goes to stdout, as println! sent it");
         }
         None => println!("Open a new terminal to use `ralphy`."),
     }

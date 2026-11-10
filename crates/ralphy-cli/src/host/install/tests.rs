@@ -239,7 +239,7 @@ fn nothing_is_sent_when_the_install_must_not_happen() {
                 assert!(
                     result.is_ok() && printed.contains("Nothing was installed"),
                     "{why}"
-                )
+                );
             }
             _ => assert!(result.is_err(), "{why}"),
         }

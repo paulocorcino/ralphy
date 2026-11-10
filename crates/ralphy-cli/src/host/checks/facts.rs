@@ -82,7 +82,7 @@ fn read_section(facts: &mut HostFacts, name: &str, lines: &[&str]) {
                 lines
                     .iter()
                     .any(|l| l.contains("REG_SZ") && l.ends_with('1')),
-            )
+            );
         }
         "standby" => facts.sleeps = standby_sleeps(lines),
         _ => {}

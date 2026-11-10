@@ -165,7 +165,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
         "claude.plan_model" => with_claude(s, |c| c.plan_model = Some(value.to_owned()))?,
         "claude.plan_effort" | "claude.exec_effort" => set_claude_effort(s, key, value)?,
         "claude.default_exec_model" => {
-            with_claude(s, |c| c.default_exec_model = Some(value.to_owned()))?
+            with_claude(s, |c| c.default_exec_model = Some(value.to_owned()))?;
         }
         "claude.max_minutes_per_issue" => {
             let n = value.parse::<u64>().with_context(|| {
@@ -180,13 +180,13 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             let b = value
                 .parse::<bool>()
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_claude(s, |c| c.console_name = b)?
+            with_claude(s, |c| c.console_name = b)?;
         }
         "claude.console_classic_screen" => {
             let b = value
                 .parse::<bool>()
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_claude(s, |c| c.console_classic_screen = b)?
+            with_claude(s, |c| c.console_classic_screen = b)?;
         }
         // The escape of the hook proof (ADR-0072 D6): local-only, the daemon
         // refuses to set it.
@@ -194,7 +194,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             let b = value
                 .parse::<bool>()
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_claude(s, |c| c.run_without_guard_proof_i_understand_the_risk = b)?
+            with_claude(s, |c| c.run_without_guard_proof_i_understand_the_risk = b)?;
         }
         "copilot.plan_model" => with_copilot(s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(s, |c| c.exec_model = Some(value.to_owned()))?,
@@ -205,7 +205,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             let b = value
                 .parse::<bool>()
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_copilot(s, |c| c.allow_builtin_mcp_servers_i_understand_the_risk = b)?
+            with_copilot(s, |c| c.allow_builtin_mcp_servers_i_understand_the_risk = b)?;
         }
         "gemini.plan_model" | "gemini.exec_model" => set_gemini_model(s, key, value)?,
         // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
@@ -215,7 +215,7 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
             let b = value
                 .parse::<bool>()
                 .with_context(|| format!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_cursor(s, |c| c.allow_codebase_indexing_i_understand_the_risk = b)?
+            with_cursor(s, |c| c.allow_codebase_indexing_i_understand_the_risk = b)?;
         }
         _ => unreachable!(),
     }
@@ -316,20 +316,20 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
         "claude.console_name" => with_claude(&mut s, |c| c.console_name = false)?,
         "claude.console_classic_screen" => {
-            with_claude(&mut s, |c| c.console_classic_screen = false)?
+            with_claude(&mut s, |c| c.console_classic_screen = false)?;
         }
         "claude.run_without_guard_proof_i_understand_the_risk" => with_claude(&mut s, |c| {
-            c.run_without_guard_proof_i_understand_the_risk = false
+            c.run_without_guard_proof_i_understand_the_risk = false;
         })?,
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,
         "copilot.exec_effort" => with_copilot(&mut s, |c| c.exec_effort = None)?,
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => with_copilot(&mut s, |c| {
-            c.allow_builtin_mcp_servers_i_understand_the_risk = false
+            c.allow_builtin_mcp_servers_i_understand_the_risk = false;
         })?,
         "cursor.allow_codebase_indexing_i_understand_the_risk" => with_cursor(&mut s, |c| {
-            c.allow_codebase_indexing_i_understand_the_risk = false
+            c.allow_codebase_indexing_i_understand_the_risk = false;
         })?,
         "gemini.plan_model" => with_gemini(&mut s, |g| g.plan_model = None)?,
         "gemini.exec_model" => with_gemini(&mut s, |g| g.exec_model = None)?,

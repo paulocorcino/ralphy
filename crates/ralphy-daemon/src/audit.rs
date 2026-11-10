@@ -246,7 +246,7 @@ impl Audit {
             .get_or_init(|| {
                 DeviceKey::load_or_create(&path)
                     .inspect_err(|e| {
-                        tracing::warn!(error = format!("{e:#}"), "device cookies are off")
+                        tracing::warn!(error = format!("{e:#}"), "device cookies are off");
                     })
                     .ok()
             })

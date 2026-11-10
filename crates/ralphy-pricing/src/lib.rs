@@ -220,7 +220,7 @@ impl PriceTable {
                     path = %path.display(),
                     error = %e,
                     "parsing pricing.toml failed — using defaults"
-                )
+                );
             }
         }
         table

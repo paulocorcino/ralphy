@@ -264,7 +264,7 @@ impl CopilotAgent {
 fn warn_effort_mismatch(requested: Option<&str>, session_id: &str) {
     warn_effort_mismatch_with(requested, session_id, || {
         usage::copilot_recorded_effort(session_id)
-    })
+    });
 }
 
 /// The reader is a closure so a test can COUNT its invocations — the "a default

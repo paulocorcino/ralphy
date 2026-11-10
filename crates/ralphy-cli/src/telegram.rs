@@ -7,6 +7,7 @@ pub use ralphy_telegram::client;
 pub mod config;
 pub mod notifier;
 
+use std::io::Write as _;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -120,7 +121,11 @@ fn status() -> Result<()> {
             match cfg.chat_id {
                 Some(id) => println!("Telegram: configured (chat {id}, notifications on)."),
                 None => {
-                    println!("Telegram: token stored but no chat captured — run `telegram setup`.")
+                    writeln!(
+                        std::io::stdout(),
+                        "Telegram: token stored but no chat captured — run `telegram setup`."
+                    )
+                    .expect("the report goes to stdout, as println! sent it");
                 }
             }
             println!("Token: {}", masked_token(&token));

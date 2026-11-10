@@ -37,7 +37,7 @@ fn run_finished_triple_is_pinned() {
     let summary = crate::run::summary::RunSummary::from_report(&report, 1);
     let run_usage = report.run_usage.clone();
     let ((), events) = capture_events(|| {
-        crate::run::report::emit_run_finished(&summary, &run_usage, std::time::Instant::now())
+        crate::run::report::emit_run_finished(&summary, &run_usage, std::time::Instant::now());
     });
     let ev = events
         .iter()
@@ -119,7 +119,7 @@ fn no_work_triple_is_pinned() {
     assert_eq!(f.issues_json.as_deref(), Some(""));
     match crate::runstate::event_to_runevent(&ev.target, &ev.message, f) {
         Some(crate::runstate::RunEvent::RunFinished { issues, .. }) => {
-            assert_eq!(issues, serde_json::Value::Null)
+            assert_eq!(issues, serde_json::Value::Null);
         }
         other => panic!("expected RunFinished, got {other:?}"),
     }

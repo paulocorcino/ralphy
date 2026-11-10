@@ -108,14 +108,14 @@ fn carry_ledgers(sources: &[&str], to: &str) {
     for from in sources {
         match ralphy_core::ledger::rename_project(from, to) {
             Ok(true) => {
-                tracing::info!(from, to = %to, "usage ledger carried to the new project key")
+                tracing::info!(from, to = %to, "usage ledger carried to the new project key");
             }
             Ok(false) => {}
             Err(e) => {
                 tracing::warn!(
                     error = %e, from, to = %to,
                     "usage ledger not carried; the old file stays"
-                )
+                );
             }
         }
     }

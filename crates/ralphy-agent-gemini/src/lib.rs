@@ -255,7 +255,7 @@ fn report_skill_discovery(
             }
         }
         None => {
-            tracing::warn!("gemini: skill discovery receipt unavailable (spawn error or timeout)")
+            tracing::warn!("gemini: skill discovery receipt unavailable (spawn error or timeout)");
         }
     }
 }
