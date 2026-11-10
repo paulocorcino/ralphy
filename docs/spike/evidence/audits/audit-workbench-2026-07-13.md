@@ -240,6 +240,7 @@ Severidade: **C**rítico / **A**lto / **M**édio / **B**aixo. "Evidência" = arq
 5. **M4/M5**: fallbacks locais (login 6 dígitos, projetos/branches/board seed) restritos a `file://`; em modo daemon, falha → erro visível.
 6. **A5**: `onTreeDirty` reconcilia em vez de anexar (`removeChildren()` antes do `node.load()`, preservando expansão) — corrige a duplicação da árvore a cada save.
 7. **B1/B2**: remover "(mock)" e as afirmações falsas; implementar (filtro client-side trivial + atalho "/") ou remover a busca; remover o ícone morto.
+
 - *Critério de aceite:* nenhuma informação fabricada alcançável quando servido pelo daemon; cada falha de verbo/endpoint tem apresentação visual própria; dois saves seguidos não alteram a contagem de nós da árvore.
 
 ### Etapa 1 — Presença, identidade e estado reais (backend pequeno + frontend)

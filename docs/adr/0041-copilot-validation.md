@@ -123,7 +123,7 @@ The gate that cannot produce all of these is decorative.
 ## Phase 2 — full non-dry-run
 
 - **Green close reaching the sentinel** — execute ends `exit 0` + HEAD-diff commit
-  + `RALPHY_DONE_EXIT`, on the real `result` envelope (D3); the verify gate passes;
+  - `RALPHY_DONE_EXIT`, on the real `result` envelope (D3); the verify gate passes;
   the issue closes green with the acceptance ledger written back.
 - **`codeChanges` is a false friend (D3)** — record the envelope's
   `codeChanges: {linesAdded, linesRemoved, filesModified}` next to the real

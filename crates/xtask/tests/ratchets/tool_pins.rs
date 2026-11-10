@@ -61,6 +61,20 @@ fn ci_installs_the_pinned_oxfmt() {
     assert_pinned("OXFMT_VERSION", "oxfmt", OXFMT_VERSION);
 }
 
+/// The markdownlint-cli2 of the `checks` job of `ci.yml`, run by `npx`, and of
+/// the markdown step of the gate. A new version can find new sites, so a raise
+/// is its own commit.
+const MARKDOWNLINT_VERSION: &str = "0.18.1";
+
+#[test]
+fn ci_installs_the_pinned_markdownlint() {
+    assert_pinned(
+        "MARKDOWNLINT_VERSION",
+        "markdownlint-cli2",
+        MARKDOWNLINT_VERSION,
+    );
+}
+
 /// The `channel` of `rust-toolchain.toml`.
 fn pinned_rust_toolchain() -> String {
     let file = read(&workspace_root().join("rust-toolchain.toml"));
@@ -105,4 +119,106 @@ const ASTGREP_VERSION: &str = "0.51.1";
 #[test]
 fn ci_installs_the_pinned_ast_grep() {
     assert_pinned("ASTGREP_VERSION", "@ast-grep/cli", ASTGREP_VERSION);
+}
+
+/// The pins of `docs/lint/pins.txt`: tool name to version, from its one
+/// `As of YYYY-MM-DD: tool X.Y.Z, tool X.Y.Z.` line.
+fn pins_file() -> BTreeMap<String, String> {
+    let file = read(&workspace_root().join("docs/lint/pins.txt"));
+    let line = file
+        .lines()
+        .find_map(|l| {
+            let list = l.strip_prefix("As of ")?.split_once(": ")?.1;
+            Some(list.trim_end().trim_end_matches('.').to_owned())
+        })
+        .expect("pins.txt has an `As of YYYY-MM-DD: tool X.Y.Z, ...` line");
+    line.split(", ")
+        .map(|pin| {
+            let (tool, version) = pin
+                .rsplit_once(' ')
+                .expect("a pin in pins.txt is `tool X.Y.Z`");
+            (tool.to_owned(), version.to_owned())
+        })
+        .collect()
+}
+
+/// The name that `pins.txt` gives the tool of each `*_VERSION` key.
+const PIN_NAMES: &[(&str, &str)] = &[
+    ("OXLINT", "oxlint"),
+    ("TSGOLINT", "oxlint-tsgolint"),
+    ("OXFMT", "oxfmt"),
+    ("ACTIONLINT", "actionlint"),
+    ("MACHETE", "cargo-machete"),
+    ("TYPOS", "typos"),
+    ("ASTGREP", "ast-grep"),
+    ("JSCPD", "jscpd"),
+    ("GITLEAKS", "gitleaks"),
+    ("SHELLCHECK", "shellcheck"),
+    ("PSSCRIPTANALYZER", "PSScriptAnalyzer"),
+    ("MARKDOWNLINT", "markdownlint-cli2"),
+];
+
+/// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks
+/// keeps its key, so the test names it in its failure.
+fn pin_name_of_env_key(key: &str) -> String {
+    PIN_NAMES.iter().find(|(k, _)| *k == key).map_or_else(
+        || format!("{key}_VERSION (add it to PIN_NAMES)"),
+        |(_, n)| (*n).to_owned(),
+    )
+}
+
+/// Every `<KEY>_VERSION: <version>` line of a workflow, as (tool, version).
+fn workflow_pins(workflow: &str) -> Vec<(String, String)> {
+    let re = Regex::new(r#"(?m)^\s*([A-Z0-9]+)_VERSION: "?(\d+(?:\.\d+)*)"?\s*$"#)
+        .expect("the version line pattern is valid");
+    let text = read(&workspace_root().join(".github/workflows").join(workflow));
+    re.captures_iter(&text)
+        .map(|c| (pin_name_of_env_key(&c[1]), c[2].to_owned()))
+        .collect()
+}
+
+/// Every `<tool>@<version>` argument of the steps of the gate, as
+/// (tool, version). The scope of `@ast-grep/cli` is part of the package name.
+fn gate_pins() -> Vec<(String, String)> {
+    gate_steps::STEPS
+        .iter()
+        .flat_map(|s| s.args.iter())
+        .filter_map(|arg| arg.rsplit_once('@'))
+        .filter(|(tool, _)| !tool.is_empty())
+        .map(|(tool, version)| {
+            let name = if tool == "@ast-grep/cli" {
+                "ast-grep"
+            } else {
+                tool
+            };
+            (name.to_owned(), version.to_owned())
+        })
+        .collect()
+}
+
+/// `docs/lint/pins.txt` is the file the weekly drift check reads. It lists
+/// each pin of `ci.yml`, `security.yml`, the gate steps and
+/// `rust-toolchain.toml`, at the same version, and nothing else.
+#[test]
+fn pins_file_lists_every_pin() {
+    let listed = pins_file();
+    let mut repo: Vec<(String, String)> = workflow_pins("ci.yml");
+    repo.extend(workflow_pins("security.yml"));
+    repo.extend(gate_pins());
+    repo.push(("Rust".to_owned(), pinned_rust_toolchain()));
+    let wrong: Vec<String> = repo
+        .iter()
+        .filter(|(tool, version)| listed.get(tool) != Some(version))
+        .map(|(tool, version)| format!("{tool} {version} (pins.txt: {:?})", listed.get(tool)))
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "docs/lint/pins.txt must list these pins at these versions: {wrong:?}"
+    );
+    let sourced: BTreeSet<&String> = repo.iter().map(|(tool, _)| tool).collect();
+    let extra: Vec<&String> = listed.keys().filter(|t| !sourced.contains(t)).collect();
+    assert!(
+        extra.is_empty(),
+        "pins.txt lists tools that no workflow, gate step or toolchain file pins: {extra:?}"
+    );
 }

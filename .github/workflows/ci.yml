@@ -48,6 +48,17 @@ env:
   # through npx, and `ci_installs_the_pinned_ast_grep` fails when the two differ.
   ASTGREP_VERSION: "0.51.1"
   ASTGREP_SHA256: 42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
+  # The shellcheck of the `checks` job: a release binary, pinned like actionlint.
+  SHELLCHECK_VERSION: "0.11.0"
+  SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+  # The PSScriptAnalyzer module of the `checks` job, installed from the
+  # PowerShell Gallery at this version. The step of `xtask gate` runs the
+  # module installed on the machine.
+  PSSCRIPTANALYZER_VERSION: "1.25.0"
+  # The markdownlint-cli2 of the `checks` job. The markdownlint step of
+  # `xtask gate` runs the same version through npx, and
+  # `ci_installs_the_pinned_markdownlint` fails when the two differ.
+  MARKDOWNLINT_VERSION: "0.18.1"
 
 jobs:
   lint:
@@ -110,6 +121,32 @@ jobs:
         run: |
           ./.github/scripts/fetch-actionlint.sh
           ./actionlint
+
+      # The release binary, pinned by version and checksum. The scripts are the
+      # files git tracks, which `.gitattributes` checks out with LF line ends.
+      - name: Shell scripts (shellcheck)
+        run: |
+          ./.github/scripts/fetch-shellcheck.sh
+          git ls-files -z '*.sh' | xargs -0 ./shellcheck
+
+      # Each tracked script is checked alone. The rules are in
+      # PSScriptAnalyzerSettings.psd1.
+      - name: PowerShell scripts (PSScriptAnalyzer)
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -RequiredVersion $env:PSSCRIPTANALYZER_VERSION -Scope CurrentUser -Force
+          $found = 0
+          foreach ($file in git ls-files '*.ps1') {
+            $result = Invoke-ScriptAnalyzer -Path $file -Settings PSScriptAnalyzerSettings.psd1
+            $result | Format-List
+            $found += ($result | Measure-Object).Count
+          }
+          if ($found -gt 0) { exit 1 }
+
+      # The rules are in .markdownlint-cli2.jsonc; a rule with sites left is
+      # off there and has a debt line.
+      - name: Markdown (markdownlint)
+        run: npx -y "markdownlint-cli2@${MARKDOWNLINT_VERSION}"
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.

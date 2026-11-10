@@ -78,5 +78,5 @@ engine `warn!` already sits in its vendor module and keeps its module-path targe
   NotifierHandle`; `events::sink` re-exports `WorkerHandle as EventsHandle`, so the
   composition root and in-crate paths keep resolving.
 - `crate::delivery` is deliberately NOT `ralphy-adapter-support`: that crate is
-  vendor-neutral *child-driving* plumbing (CONTEXT.md — Adapter support), unrelated
+  vendor-neutral _child-driving_ plumbing (CONTEXT.md — Adapter support), unrelated
   to event sinks.

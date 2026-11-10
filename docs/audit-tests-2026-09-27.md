@@ -133,6 +133,7 @@ codex `tests.rs:266`; claude `status.rs:313`; kimi/gemini
 argv vec equality).
 
 **DELETE:**
+
 - `*_agent_is_a_dyn_agent` ×7 (compile-only; `ralphy-cli/src/run/wiring.rs:228`
   already boxes each agent).
 - `mint_session_id_is_a_fresh_uuid` ×3 (tests uuid).
@@ -246,6 +247,7 @@ runs `node --test` (`ci.yml:52-77`).
 ### 3.3 `ralphy-daemon/src/*` other modules (490 tests, ~300 read)
 
 **LIES-FP (beyond P0-1):**
+
 - D-1 `autostart/tests.rs:30`, `:97`: needle `"daemon"` also matches
   `TASK_NAME` and the log path. `autostart.rs:140` `'{exe}' daemon *>>` →
   `'{exe}' *>>` survives. Assert `"'/usr/local/bin/ralphy' daemon"`.
@@ -347,6 +349,7 @@ that must be caught: `tree_watch.rs:121-238`, `head_watch.rs:129/154/183`,
 flake record found; act only if one appears.
 
 **Scripts `tests/*.py` and `*.js` (81 files, 44,288 lines):**
+
 - CI never runs the 79 Playwright `.py` files. They are manual acceptance scripts,
   one per issue. They are maintained (`fe73d571` updated 11 of them;
   `7bd6d958` updated 318/319), referenced from `src/tests.rs`, `assets/ui/*.js`
@@ -367,6 +370,7 @@ flake record found; act only if one appears.
 KEEP ~195, MERGE 38 (→ ~8), LIES-FP 15, LIES-FN 9, DELETE 30.
 
 **LIES-FP (beyond P0-15):**
+
 - C-A1 `runstate/event/tests.rs:40` `the_idle_reap_is_emitted_below_warn…`: no
   emitter is called. Delete.
 - C-A2 `runstate/event/tests.rs:310` `decoder_maps_kimi_planning_and_executing`:
@@ -433,6 +437,7 @@ KEEP ~268, MERGE ~109, LIES-FP 17, LIES-FN 13, DELETE 12. Strongest files:
 `runlock`, `hook`, telegram worker.
 
 **LIES-FP (beyond P0-12 to P0-14):**
+
 - C-B1 `run.rs:646` `no_print_notice_call_remains_in_run_cmd`: the function no
   longer exists in `crates/`. Cannot fail. Delete. Verified by hand.
 - C-B2 `run.rs:667` `resolution_byte_for_byte_when_absent`: builds its own
@@ -481,7 +486,7 @@ into `internal_commands_are_listed_apart_and_still_parse`;
 `cli/tests.rs:275-324`; resolver tests `config/tests.rs:21-48`, `:280-331`,
 `run/wiring/tests.rs:216-255`, `:297-316`, `run.rs:747`; config key round trips
 `config/tests.rs:377`, `:417`, `:485`, `:502`, `:652`; `run/wiring/tests.rs:339`
-+ `:413` (one loop over all variants — adds 5 vendors); `wiring:162-213`,
+- `:413` (one loop over all variants — adds 5 vendors); `wiring:162-213`,
 `triage:201/223/239`, `client.rs:322-358`, `summary.rs` from_report pair,
 `hook.rs:336/347`; `tests/mutate.rs:105` + `:152` (`:152` switches to a branch
 that does not exist, so it fails even without the lock).
@@ -506,6 +511,7 @@ lifecycle decisions. `tests/stop.rs`, `tests/verify_gate.rs`, `sync/tests.rs` an
 `protocol` are strong.
 
 **LIES-FP:**
+
 - K-1 `tests/release_profile.rs:4`: `contains("strip = true")` over the whole
   `Cargo.toml`; renaming `[profile.release]` survives. One binary for one grep.
   Delete. Verified by hand.
@@ -561,6 +567,7 @@ queue suite.
 | xtask | 105 | 97 | 2 | 3 | 1 | 2 |
 
 **LIES-FP (beyond P0-4, P0-5):**
+
 - S-1 `proc-util/src/tests.rs:500` `locate_program_prefers_path_over_local_bin`:
   `~/.local/bin` is empty. Put a `tool` there too.
 - S-2 `proc-util/src/pid.rs:116` `pid_is_alive_detects_own_process`: alive
@@ -621,6 +628,7 @@ lock.
 modules. No test stubs the function it tests.
 
 **LIES-FP:**
+
 - J-1 `wb-encoding.test.mjs:277`: never checks the dirty mark; deleting
   `wb-viewer.js:1400-1401` survives.
 - J-2 `wb-daemon.test.mjs:189`: `typeof RESUME_DEBOUNCE_MS === "number"`. Delete.

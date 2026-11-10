@@ -15,6 +15,7 @@ correctly skipped with no plan):
 ```
 ralphy.exe run --repo C:/Dev/FinCal --issues 111 --agent kimi --base-branch master --dry-run --verbose
 ```
+
 Log: `docs/live/kimi-274-plan.log`.
 
 - **Real plan artifact.** `plan written number=111 open_steps=14`; the emitted
@@ -52,6 +53,7 @@ the Kimi rows **prefixed** (`kimi-code/k3`), added for the run path only. So eve
 rule guards against, one step removed).
 
 **Fix (pointed, reuse-respecting — `feat/copilot`):**
+
 - `pricing.rs::resolve` gains a `strip_provider_prefix` fallback (`kimi-code/k3`
   → `k3`), the same normalization seam that already handles release-date suffixes
   and dot-vs-dash — so the run path's prefixed id and the scan's bare id resolve to
@@ -173,6 +175,7 @@ is a **flat subscription + billing-cycle quota**, not metered per-token billing.
 
 Therefore the unit mismatch is **categorical**, and stateable in full without the
 operator's billing page:
+
 - **Ralphy's number** sums `wire.jsonl` tokens and projects USD via the ADR-0034
   **list-price counterfactual** (K2-family: input 0.95 / output 4.0 / cache_read 0.16
   per 1M). Concrete this pass: plan #111 = `57 006 / 1 014 784 / 21 422` → **$0.30**;
@@ -210,7 +213,9 @@ auth message** — it fell through to the generic error:
 planning cmd=kimi model=kimi-code/k3
 Error: kimi produced no plan at C:/Dev/FinCal\.ralphy\plan.md
 ```
+
 Log: `docs/live/kimi-274-loggedout.log`, kimi.log:
+
 ```
 error: failed to run prompt: config.invalid: Model "kimi-code/k3" is not configured in config.toml…
 ```
@@ -239,6 +244,7 @@ Two secondary observations: (a) `config.toml` is **not** byte-stable across a
 logout (the catalog is stripped), refining the Phase 5 hygiene note — it *is* stable
 across authenticated runs; (b) the no-`-m` logged-out signal is cleaner
 (`No model configured … use /login to sign in`) but the adapter always pins `-m`.
+
 ## Phase 4b — the exit-75 ceiling (D9), marquee — ✅ CEILING OBSERVED LIVE → the mapping is WRONG (issues #282)
 
 **The marquee event happened.** A real `kimi-code` 0.28 **billing-cycle ceiling**
@@ -246,9 +252,11 @@ was hit live (from the day's runs) — the limit #155 could never force. It does
 arrive as ADR-0028 D9 predicts.
 
 Raw `kimi -p … -m kimi-code/k3` on the exhausted quota → **exit code `1`** (not `75`):
+
 ```
 error: failed to run prompt: provider.api_error: 403 You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle. …
 ```
+
 Real ralphy plan-only (`docs/live/kimi-274-limit.log`) → `Error: kimi produced no
 plan` — **not** `Limit(None)`, `--stop-on-limit` never engaged.
 
@@ -273,6 +281,7 @@ plan` — **not** `Limit(None)`, `--stop-on-limit` never engaged.
 **Verdict:** D9 is **observed-live but refuted** — the ADR-0028 D9 exit-75 claim does
 not describe the real 0.28 billing ceiling. ADR stays **proposed**; the D9 section must
 be rewritten to "exit-1 + `provider.api_error: 403 … billing cycle` text" per #282.
+
 ## Phase 6 — cross-platform parity (WSL) — ◐ PARTIAL (env/resolve findings captured; live Linux run deferred)
 
 - **Environment:** Ubuntu-22.04; the **Linux** `kimi-code` binary is a 160 MB ELF at

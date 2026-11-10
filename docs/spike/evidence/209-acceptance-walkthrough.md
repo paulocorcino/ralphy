@@ -61,7 +61,7 @@ corroborating #202-#208.
   live Translator-API screenshot since headless chromium 1.60 lacks it.
 - **M1** — after the real `/ws` presence heartbeat ticks at least once,
   `uptimeText` is non-empty and not the `"connecting…"` placeholder; the
-  topbar's rendered text starts with `up `.
+  topbar's rendered text starts with `up`.
 - **A6** — the `.viewer-disk-badge` element is present in the viewer DOM
   (hidden on a clean tab); after a real `file.write` to the open file and a
   simulated directory nudge (`refreshOpenViewers('')`, what a real

@@ -101,6 +101,7 @@ skew a round-trip gate would catch mechanically.
 ## 3. Findings
 
 ### F1 — The event vocabulary has no owner *(contract-level, root cause)*
+
 As per §2: the run's entire observable contract is 30 scattered string literals
 plus free-form field names, matched by one decoder in another crate, with the
 loop closed for 1 of 30. The emit side is unergonomic (`info!` with 8 hand-typed
@@ -108,6 +109,7 @@ fields at `run.rs:328`), which is *why* F2 and F3 happened: printing was easier
 than emitting, and the presenter grew its own state.
 
 ### F2 — Border outcomes never reach the bus *(contract bug)*
+
 Two exits produce **zero delivered events**:
 
 - **Empty queue** (`run.rs:167-178`): returns before `emit_queue_built`
@@ -130,6 +132,7 @@ imperative on purpose): `print_header` (`run.rs:162`), `print_info_line`
 (`run.rs:165`), final panel (`report.rs:191`).
 
 ### F3 — Three reducers over one stream; one observable divergence *(structural)*
+
 `RunState` is instantiated by the Telegram and CloudEvents engines. The
 presenter instead maintains `LiveState`/`ActiveIssue` (`ui/presenter.rs:33,51`)
 and `QueueState` (`ui.rs:80`). Semantic diff, verified field by field:
@@ -147,6 +150,7 @@ hand-threaded, and the guaranteed cost of a fourth sink (the ADR-0032
 daemon/workbench will be one) is a fourth reducer.
 
 ### F4 — Final summary computed twice; `run.finished` internally incoherent *(debt)*
+
 `emit_run_finished` (`report.rs:56-87`) and `render_final_panel`
 (`report.rs:94-192`) re-derive done/skipped/blocked/hitl from the same
 `QueueReport` with duplicated predicates; the panel has `blocked`/`hitl`, the
@@ -156,17 +160,20 @@ from `QueueReport` while `data.issues[]` is re-derived from the folded
 two can legally disagree within the same payload.
 
 ### F5 — Per-adapter decoder arms *(debt, feeds F1)*
+
 9 of the 30 strings exist only to say *which* adapter is planning/executing;
 the adapter identity is already a field-worthy datum. Every new adapter must
 edit `event.rs` twice or silently break three sinks (the kimi scar, §2).
 
 ### F6 — Second envelope-delivery implementation *(minor)*
+
 `ralphy issues --push` POSTs `queue.snapshot` synchronously via
 `UreqEventTransport::post` directly (`issues.rs:290`), outside the delivery
 spine — no retry, no warn-gate. (The *data builder* is correctly shared:
 `queue_snapshot_data`, `envelope.rs:151`, the ADR-0020 anti-drift pattern.)
 
 ### Explicitly examined and judged healthy / not worth touching
+
 - The tracing-as-bus decision (ADR-0006/0007) — cheap, decoupled, keeps
   adapters free of CLI types. **Do not replace.**
 - The `delivery` spine (ADR-0024) — exactly right; needs no change for F1–F4.
@@ -202,6 +209,7 @@ shippable and revertible, each landing green (`cargo fmt --check`,
 `clippy -D warnings`, `cargo test`, both OSes).
 
 ### Phase 0 — Characterization harness (the no-regression mechanism)
+
 Before touching any emit site, add to `ralphy-cli` a test-only capturing
 subscriber (a `Layer` that records `(level, target, message, EventFields)`)
 and **characterization tests** that drive the *current* emitters where feasible
@@ -209,6 +217,7 @@ and pin today's `(message, fields, level)` triples. This is the safety net every
 later phase runs under; it also becomes the permanent round-trip gate.
 
 ### Phase 1 — Give the vocabulary an owner (fixes F1, F5)
+
 1. New module `ralphy_core::emit` (name per ADR): **one typed emit function per
    lifecycle event** — `emit::issue_started(number, title)`,
    `emit::queue_built(…)`, `emit::planning(cmd, model, effort)`, … Each owns its
@@ -230,6 +239,7 @@ later phase runs under; it also becomes the permanent round-trip gate.
 Wire format: byte-identical. `docs/events.md`: unchanged.
 
 ### Phase 2 — Borders become events (fixes F2)
+
 1. Restructure `run_cmd` so the empty-queue check runs **after** the workers can
    start (title is already derived by then), and emit:
    `queue built` (count 0, scoped) → `run started` → `run finished`
@@ -244,6 +254,7 @@ Wire format: byte-identical. `docs/events.md`: unchanged.
    already covered by `run.started.data.git`.
 
 ### Phase 3 — One fold (fixes F3)
+
 1. Move supersede semantics into `RunState::apply` (design point for the ADR:
    a terminal status for a plan-only pass, e.g. `Planned`, wire-additive) —
    this alone fixes the dry-run Telegram/heartbeat bug **for free in all sinks**.
@@ -259,6 +270,7 @@ Wire format: byte-identical. `docs/events.md`: unchanged.
    have this style of test).
 
 ### Phase 4 — One summary builder (fixes F4)
+
 1. `RunSummary::from(&QueueReport)` built once in `report.rs`; both the panel
    and `emit::run_finished` consume it. `blocked`/`hitl` join the event
    (additive).
@@ -268,12 +280,14 @@ Wire format: byte-identical. `docs/events.md`: unchanged.
    longer disagree inside one payload.
 
 ### Deferred / non-goals (deliberate)
+
 - Replacing tracing with a typed bus; touching the `delivery` spine.
 - Unifying emoji/label tables; reworking the `plan.step` poller.
 - Routing `issues --push` through the spine (F6) — the command is synchronous
   by design; at most extract the retry helper later.
 
 ### ADR work that follows this audit (in order)
+
 1. New ADR: "The event vocabulary lives in `ralphy-core::emit`" (Phase 1) —
    supersedes the implicit string contract; cites the `IDLE_REAPED_MSG` precedent.
 2. Amendment to ADR-0019: border events (`run.skipped`, `no_work` outcome,

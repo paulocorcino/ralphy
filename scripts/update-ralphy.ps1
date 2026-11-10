@@ -114,7 +114,7 @@ function Read-PidFile([string]$storeDir) {
     return [pscustomobject]$info
 }
 
-function Get-PortFromArgs([string[]]$argv) {
+function Get-PortFromArgv([string[]]$argv) {
     for ($i = 0; $i -lt $argv.Count; $i++) {
         if ($argv[$i] -eq '--port' -and $i + 1 -lt $argv.Count) { return [int]$argv[$i + 1] }
         if ($argv[$i] -match '^--port=(\d+)$') { return [int]$Matches[1] }
@@ -143,7 +143,7 @@ function Get-PortOwner([int]$port) {
     return Get-CimInstance Win32_Process -Filter "ProcessId=$($conn.OwningProcess)" -ErrorAction SilentlyContinue
 }
 
-function Test-PortAnswers([int]$port) {
+function Test-PortAnswer([int]$port) {
     try {
         Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -TimeoutSec 3 -NoProxy -SkipHttpErrorCheck | Out-Null
         return $true
@@ -278,7 +278,7 @@ if (-not $Worker) {
     $storeDir = Get-StoreDir
     $pidInfo = Read-PidFile $storeDir
     $installed = Resolve-InstalledBin $pidInfo
-    $daemonPort = Get-PortFromArgs $pidInfo.Args
+    $daemonPort = Get-PortFromArgv $pidInfo.Args
     $lock = Join-Path $storeDir 'update-ralphy.lock'
     $cancelFile = Join-Path $storeDir 'update-ralphy.cancel'
 
@@ -325,7 +325,7 @@ if (-not $Worker) {
             $token = (Get-Content $tokenFile -Raw).Trim()
             if ($token) { $headers['Authorization'] = "Bearer $token" }
         }
-        $listening = Test-PortAnswers $daemonPort
+        $listening = Test-PortAnswer $daemonPort
         $consoles = $null
         if ($listening) {
             try {
@@ -465,7 +465,7 @@ public static class UpdateRalphyWatchdog {
 }
 '@
 
-function Write-Log([string]$text) {
+function Write-LogEntry([string]$text) {
     Add-Content -Path $Log -Value ('[{0:HH:mm:ss}] {1}' -f (Get-Date), $text) -Encoding utf8
 }
 function Write-Phase([string]$text) { Add-Content -Path $Log -Value "PHASE: $text" -Encoding utf8 }
@@ -473,17 +473,17 @@ function Write-Result([string]$text) { Add-Content -Path $Log -Value "RESULT: $t
 
 # Run a native program with its output in the log; return its exit code.
 function Invoke-Logged([string]$what, [scriptblock]$run) {
-    Write-Log $what
+    Write-LogEntry $what
     & $run *>> $Log
     return $LASTEXITCODE
 }
 
 # Repeat the compiler's error lines at the end, so a failed build reads in one place.
-function Write-BuildErrors([int]$fromLine) {
+function Write-BuildError([int]$fromLine) {
     $errors = @(Get-Content -Path $Log -Encoding utf8 | Select-Object -Skip $fromLine |
         Where-Object { $_ -match '^\s*error(\[E\d+\])?:' })
     if ($errors.Count -eq 0) { return }
-    Write-Log "the build errors ($($errors.Count)):"
+    Write-LogEntry "the build errors ($($errors.Count)):"
     foreach ($e in $errors) { Add-Content -Path $Log -Value "  $e" -Encoding utf8 }
 }
 
@@ -520,18 +520,18 @@ function Restart-Windows([string]$why) {
     do {
         $info = Read-PidFile $Store
         $running = if ($info.Pid -gt 0) { Get-Process -Id $info.Pid -ErrorAction SilentlyContinue } else { $null }
-        $answers = $running -and (Test-PortAnswers $Port)
+        $answers = $running -and (Test-PortAnswer $Port)
         if ($answers) { break }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
-    if (-not $running) { Write-Log 'ERROR: no daemon is recorded as running after the restart'; return $false }
-    if (-not $answers) { Write-Log "ERROR: daemon pid $($info.Pid) runs, but nothing answers on port $Port"; return $false }
+    if (-not $running) { Write-LogEntry 'ERROR: no daemon is recorded as running after the restart'; return $false }
+    if (-not $answers) { Write-LogEntry "ERROR: daemon pid $($info.Pid) runs, but nothing answers on port $Port"; return $false }
     $owner = Get-PortOwner $Port
     if ($owner -and $owner.ProcessId -ne $info.Pid) {
-        Write-Log "ERROR: daemon pid $($info.Pid) runs, but port $Port is held by pid $($owner.ProcessId)"
+        Write-LogEntry "ERROR: daemon pid $($info.Pid) runs, but port $Port is held by pid $($owner.ProcessId)"
         return $false
     }
-    Write-Log "daemon pid $($info.Pid) runs $($running.Path) and listens on port $Port"
+    Write-LogEntry "daemon pid $($info.Pid) runs $($running.Path) and listens on port $Port"
     return $true
 }
 
@@ -549,11 +549,11 @@ function Get-ParkName {
 # Put the previous binary back. The failed one is parked, not deleted: it may
 # still be running.
 function Restore-Windows {
-    if (-not (Test-Path $prev)) { Write-Log "ERROR: no previous binary at $prev"; return $false }
+    if (-not (Test-Path $prev)) { Write-LogEntry "ERROR: no previous binary at $prev"; return $false }
     $failed = Get-ParkName
     if (Test-Path $Bin) { Move-Item -LiteralPath $Bin -Destination $failed -Force }
     Copy-Item -LiteralPath $prev -Destination $Bin -Force
-    Write-Log "put back $(Get-Version $Bin); the replaced binary is parked at $failed"
+    Write-LogEntry "put back $(Get-Version $Bin); the replaced binary is parked at $failed"
     return (Restart-Windows 'previous version')
 }
 
@@ -564,23 +564,23 @@ function Clear-Port {
     if ($owner.ProcessId -eq $info.Pid) { return $true }   # the daemon itself; the restart stops it
     $leaf = if ($owner.ExecutablePath) { Split-Path $owner.ExecutablePath -Leaf } else { $owner.Name }
     if ($leaf -match '^ralphy\.exe') {
-        Write-Log "port $Port is held by ralphy pid $($owner.ProcessId), not the recorded daemon: stopping it"
-        Write-Log "  $($owner.CommandLine)"
+        Write-LogEntry "port $Port is held by ralphy pid $($owner.ProcessId), not the recorded daemon: stopping it"
+        Write-LogEntry "  $($owner.CommandLine)"
         Stop-Process -Id $owner.ProcessId -Force
         Start-Sleep -Seconds 1
         return -not (Get-PortOwner $Port)
     }
-    Write-Log "ERROR: port $Port is held by $leaf (pid $($owner.ProcessId)), which is not Ralphy. Stop it by hand."
+    Write-LogEntry "ERROR: port $Port is held by $leaf (pid $($owner.ProcessId)), which is not Ralphy. Stop it by hand."
     return $false
 }
 
 try {
-    Write-Log "update-ralphy worker pid $PID"
-    Write-Log "installed: $Bin ($before)"
+    Write-LogEntry "update-ralphy worker pid $PID"
+    Write-LogEntry "installed: $Bin ($before)"
     if ($wsl) {
         $wslHelper = Get-WslHelper $Store
         $beforeWsl = (& wsl.exe @WslTarget -- bash $wslHelper version 2>$null) | Select-Object -Last 1
-        Write-Log "WSL peer: $beforeWsl"
+        Write-LogEntry "WSL peer: $beforeWsl"
     }
 
     if ($Rollback) {
@@ -607,14 +607,14 @@ try {
     }
     if ($code -ne 0) {
         [UpdateRalphyWatchdog]::Disarm()
-        Write-BuildErrors $mark
+        Write-BuildError $mark
         Write-Result "FAILED - the Windows build failed (exit $code). Nothing changed."
         exit 1
     }
     $built = Join-Path $TargetDir 'release\ralphy.exe'
     if (-not (Test-Path $built)) { [UpdateRalphyWatchdog]::Disarm(); Write-Result "FAILED - no binary at $built. Nothing changed."; exit 1 }
     $newVersion = Get-Version $built
-    Write-Log "built $newVersion"
+    Write-LogEntry "built $newVersion"
 
     if ($wsl) {
         $repoLinux = ((& wsl.exe @WslTarget -- wslpath -a ($Repo -replace '\\', '/')) | Select-Object -First 1).Trim()
@@ -623,7 +623,7 @@ try {
         $code = Invoke-Logged 'cargo build --release --locked -p ralphy-cli --bin ralphy (WSL)' { & wsl.exe @WslTarget -- bash $wslHelper build $repoLinux }
         if ($code -ne 0) {
             [UpdateRalphyWatchdog]::Disarm()
-            Write-BuildErrors $mark
+            Write-BuildError $mark
             Invoke-Logged 'WSL: giving the running binary its name back' { & wsl.exe @WslTarget -- bash $wslHelper restore } | Out-Null
             Write-Result "FAILED - the WSL build failed (exit $code). Windows was not changed."
             exit 1
@@ -653,11 +653,11 @@ try {
             Move-Item -LiteralPath $Bin -Destination (Get-ParkName) -Force
         }
         Copy-Item -LiteralPath $built -Destination $Bin -Force
-        Write-Log "installed $newVersion at $Bin (previous kept at $prev)"
+        Write-LogEntry "installed $newVersion at $Bin (previous kept at $prev)"
     }
 
     if (-not (Restart-Windows 'new version')) {
-        Write-Log 'WARNING: the new daemon did not come up; putting the previous version back'
+        Write-LogEntry 'WARNING: the new daemon did not come up; putting the previous version back'
         if (Restore-Windows) {
             Write-Result "FAILED - $newVersion did not start; $(Get-Version $Bin) runs again. See the daemon.log in the store."
             exit 1
@@ -671,7 +671,7 @@ try {
         Write-Phase '4/4 restart the WSL peer'
         $code = Invoke-Logged 'WSL: ralphy daemon restart' { & wsl.exe @WslTarget -- bash $wslHelper restart }
         if ($code -ne 0) {
-            Write-Log 'WARNING: the WSL daemon did not come up; putting its previous binary back'
+            Write-LogEntry 'WARNING: the WSL daemon did not come up; putting its previous binary back'
             $back = Invoke-Logged 'WSL: rollback' { & wsl.exe @WslTarget -- bash $wslHelper rollback }
             $wslNote = if ($back -eq 0) { "; the WSL peer failed and runs $beforeWsl again" } else { '; the WSL peer is DOWN' }
         } else {
@@ -682,21 +682,21 @@ try {
     }
 
     foreach ($old in Get-ChildItem -Path (Split-Path $Bin) -Filter 'ralphy.exe.old*' -ErrorAction SilentlyContinue) {
-        try { Remove-Item -LiteralPath $old.FullName -Force } catch { Write-Log "kept $($old.Name): still in use" }
+        try { Remove-Item -LiteralPath $old.FullName -Force } catch { Write-LogEntry "kept $($old.Name): still in use" }
     }
     $daemonPid = (Read-PidFile $Store).Pid
     $others = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'ralphy%'" -ErrorAction SilentlyContinue |
             Where-Object { $_.ProcessId -ne $daemonPid })
     if ($others.Count -gt 0) {
-        Write-Log 'these ralphy processes still run the version they started with (not stopped):'
-        foreach ($o in $others) { Write-Log "  pid $($o.ProcessId): $($o.CommandLine)" }
+        Write-LogEntry 'these ralphy processes still run the version they started with (not stopped):'
+        foreach ($o in $others) { Write-LogEntry "  pid $($o.ProcessId): $($o.CommandLine)" }
     }
     Write-Result "OK - $before -> $newVersion$wslNote"
     exit 0
 } catch {
     [UpdateRalphyWatchdog]::Disarm()
-    Write-Log "ERROR: $($_.Exception.Message)"
-    Write-Log $_.ScriptStackTrace
+    Write-LogEntry "ERROR: $($_.Exception.Message)"
+    Write-LogEntry $_.ScriptStackTrace
     $info = Read-PidFile $Store
     if ($info.Pid -and (Get-Process -Id $info.Pid -ErrorAction SilentlyContinue)) {
         Write-Result "FAILED - stopped on an error; the daemon pid $($info.Pid) still runs ($(Get-Version $Bin))"

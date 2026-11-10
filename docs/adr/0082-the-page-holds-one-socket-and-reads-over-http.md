@@ -284,7 +284,6 @@ socket's own shutdown wait (2 s) plus one second, before it drops the
 runtime. A console's `session-end {reason: "daemon-shutdown"}` reaches the
 page. Checked by the unit test `the_process_stop_waits_for_an_open_page_socket`.
 
-
 ## Amendment (2026-11-01): one owner resumes the page
 
 **The daemon door owns the resume of the page.** `wb-daemon.ts` hears each

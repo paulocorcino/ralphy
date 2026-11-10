@@ -2,7 +2,7 @@
 
 A trail-to-completion for the HITL capstone of **local fleet federation**
 ([ADR-0052](../adr/0052-local-fleet-federation.md), issue **#353**, parent PRD
-#348). Slices #349–#352 shipped and are verified in CI with **two daemons on
+# 348). Slices #349–#352 shipped and are verified in CI with **two daemons on
 loopback on one OS**, deliberately, so no CI job depends on WSL existing. That
 leaves the real topology unproven. This is the run a human signs off before the
 feature is called done.

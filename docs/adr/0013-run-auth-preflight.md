@@ -4,7 +4,7 @@ Status: accepted.
 
 Issue #65 added a `ralphy run` preflight gate for agent binary presence: fail
 before queue work if the selected planner/executor CLI is not on `PATH`. Issue
-#66 asked whether that preflight should also prove the selected agent is logged
+# 66 asked whether that preflight should also prove the selected agent is logged
 in.
 
 We tested the logged-out path against both supported subscription agents before
@@ -72,7 +72,6 @@ with a direct login command and no repository debris.
   succeed.
 - **Inspect local auth files.** Rejected: file layout is private CLI state, differs
   by vendor/version, and can be wrong relative to the actual runtime environment.
-
 
 ## Amendment (2026-07-29): the auth detector only judges a run that FAILED
 

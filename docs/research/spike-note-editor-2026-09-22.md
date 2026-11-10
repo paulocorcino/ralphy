@@ -22,7 +22,7 @@ scratch and are not kept; this file is the record.
 | 10 cards 240Ã—180 | 95 ms (~10 ms each) | 22 ms |
 | heap, all three + 20 cards | 33.5 MB | (same page) |
 | roundtrip of fixture | bullets `*`â†’ fixed with `remarkStringifyOptionsCtx {bullet:'-'}`; table cells re-padded, one trailing newline added â€” semantic-preserving | byte-identical |
-| `## ` / `- [ ] ` input rules | yes, markup dissolves; `/` slash menu; block handle `+ â ¿`; selection toolbar; table editing | yes, markup stays visible (dimmed); tables never render as a grid |
+| `##` / `- [ ]` input rules | yes, markup dissolves; `/` slash menu; block handle `+ â ¿`; selection toolbar; table editing | yes, markup stays visible (dimmed); tables never render as a grid |
 | mermaid fence | plain code block (custom node view possible) | plain code block |
 
 Features dropped from Crepe for the lean build: CodeMirror (code-block editing, âˆ’1.2 MB of language

@@ -72,7 +72,7 @@ No workflow in `.github/` ran `node` at all.
 **A hand-maintained sweep list goes stale faster than it gets audited.** Three
 tests swept the served assets for mock copy, seed data and dead translation
 identifiers, each over a hardcoded list of paths. `wb-release.js` shipped in
-#391 and was outside all three the day it was born; seven embedded `.js` files
+# 391 and was outside all three the day it was born; seven embedded `.js` files
 were invisible to every sweep.
 
 **The two regressions a split actually causes were caught by nothing.** Dropping

@@ -181,7 +181,7 @@ carries the verbs to a peer's checkout unchanged.
 ### 6. The editor is hybrid WYSIWYG: Milkdown Crepe, lean, vendored as a build
 
 The operator wants the Notion reading experience: no source mode and no
-preview mode, `## ` becomes a heading as it is typed, a task list has real
+preview mode, `##` becomes a heading as it is typed, a task list has real
 checkboxes, a table is a grid. That rules out the workbench's existing
 markdown path (marked + a textarea, or Monaco: Monaco's decorations style
 text but cannot hide it, so a hybrid cannot be built on it) and asks for a
@@ -199,7 +199,7 @@ code, quote and an ordered list):
 | coexists with Monaco's AMD loader | yes, no errors, Monaco models intact | yes | — |
 | mount, 10 cards of 240×180 | 95 ms (~10 ms each), 33 MB heap for the whole page | 22 ms | — |
 | fixture roundtrip | bullets `*`→`-` fixed by `remarkStringifyOptionsCtx`; table cells re-padded, one trailing newline — semantic-preserving | byte-identical | — |
-| typing `## `, `- [ ] ` | markup dissolves; `/` menu; block handle; selection toolbar; tables edit as grids | markup stays visible (dimmed); **a table never renders as a grid** | — |
+| typing `##`, `- [ ]` | markup dissolves; `/` menu; block handle; selection toolbar; tables edit as grids | markup stays visible (dimmed); **a table never renders as a grid** | — |
 
 Crepe is the one that *is* the requested experience; ink-mde's family cannot
 render a table and the project is stale. **Milkdown Crepe, MIT, is adopted**,
@@ -531,7 +531,7 @@ mounts inside the editor's own element and is ~480px tall, and `blockEdit`'s
 `root` options are floating-ui *boundaries*, not portals — pointing them at
 `document.body` moves nothing. A card therefore opens at 320×260 instead of the
 sketch's smaller box, and the answer to a cramped menu is to resize the card.
-Every block the menu offers is also reachable by typing it (`# `, `- [ ] `,
+Every block the menu offers is also reachable by typing it (`#`, `- [ ]`,
 `|`), which is the path §6 chose this editor for.
 
 ## Amendment (2026-09-22): the card wears the plane's chrome, its title renames it, and the ground and the ink are chosen apart
@@ -654,7 +654,7 @@ block is moved by selecting and cutting it. It is hidden in CSS and not
 through `blockHandle.shouldShow`, which is in Crepe's config type and read by
 no code in `@milkdown/plugin-block`. The menu itself drops `h4`–`h6`, which a
 card renders within a tenth of an em of body text; they are still typeable as
-`#### `.
+`####`.
 
 **One node view replaced every node view.** The mermaid fence of §15 was
 registered as `editorViewOptionsCtx.nodeViews`, and Milkdown builds its view as
@@ -721,7 +721,7 @@ last line, both of which land a caret.
 
 **A heading has to look like one.** Crepe's reset gives every level
 `font-weight: 400`; with the card's levels a fifth of an em apart, typing
-`## ` changed nothing anyone could see — the marks vanished into the heading
+`##` changed nothing anyone could see — the marks vanished into the heading
 they made and the line looked like the paragraph it had been. The levels are
 600 now, and the scale opens a little (h1 1.35em).
 
@@ -739,8 +739,8 @@ The operator's third pass, and the first one that asked *what can I type*. The
 answer measured against the real bundle (Playwright over the vendored
 `crepe.js`, every row typed with a keyboard): **the flavour is CommonMark +
 GFM**, and every mark of it already worked — `*italic*`, `**bold**`,
-`` `code` ``, `~~struck~~`, `# `…`### `, `- `, `1. `, `- [ ] `, `> `, `~~~`,
-`|3x3| `, `---`, `[text](url)`. Nothing had regressed since the spike. What
+`` `code` ``, `~~struck~~`, `#`…`###`, `-`, `1.`, `- [ ]`, `>`, `~~~`,
+`|3x3|`, `---`, `[text](url)`. Nothing had regressed since the spike. What
 was missing was that **none of it is discoverable**: this editor is hybrid
 WYSIWYG (§6), so a mark dissolves the instant it is recognised and there is
 nothing left on screen to read it off. The `/` menu answers that question for
@@ -750,18 +750,18 @@ blocks and nothing answered it for marks.
 table of what to type and what it makes, in the shell's modal classes over
 DOM this module builds itself (so it also works in the detached-fence popup,
 which has no Alpine). It names the flavour, the two marks that are this card's
-own — `## ` is an index anchor, a ```` ```mermaid ```` fence draws — and the
+own — `##` is an index anchor, a ```` ```mermaid ```` fence draws — and the
 rule a table cannot show: *a block mark fires on the space after it*. A chip
 therefore carries no trailing space; a test pins that, because a space that
 cannot be seen is worse than the prose that replaces it.
 
 **`[ ]` on a plain line makes a task.** GFM's own rule only sets the
 `checked` attribute and requires a list item to already be there
-(`wrapInTaskListInputRule`, read and then measured): `- [ ] ` worked and
-`[ ] ` alone was escaped into the document as the literal text `\[ ]`. A note
+(`wrapInTaskListInputRule`, read and then measured): `- [ ]` worked and
+`[ ]` alone was escaped into the document as the literal text `\[ ]`. A note
 is mostly checklists and the brackets are what an operator reaches for, so
 this bundle adds the wrapping half — and the retick that upstream also
-refuses, `[x] ` typed into an item that is already a task. It stands down
+refuses, `[x]` typed into an item that is already a task. It stands down
 wherever upstream's rule applies.
 
 **The index is a control on the card.** §10 put the `##` map in the `Note`
@@ -773,10 +773,10 @@ when the note has no `##`, so it never opens onto nothing. The list is built
 on each open from the live document, because the headings change with every
 keystroke.
 
-**An empty line offers a title.** *(Amended 2026-09-27.)* `## ` makes a
+**An empty line offers a title.** *(Amended 2026-09-27.)* `##` makes a
 title only for someone who knows markdown. The empty line that holds the caret
 shows a faint "Add title" beside its placeholder, and an empty title shows
-"Remove title". A click does what typing or deleting `## ` does, in one
+"Remove title". A click does what typing or deleting `##` does, in one
 transaction, so Ctrl+Z undoes it. It is part of the placeholder: it goes as
 soon as the line has text, and it is hidden while the editor has no focus. It
 is always `##`, and only on a paragraph or heading directly in the note, not
@@ -821,7 +821,7 @@ rule for an *image* and none for a link — measured: `[here](path)` stayed text
 and the autosave escaped it into the file as `\[here]\(path)`. The only doors
 were the selection toolbar and the `/` menu, neither of which is what someone
 writing markdown reaches for, and the cheat sheet added an amendment ago was
-wrong to list it. The bundle adds the rule. It also adds **`@@<path> `**,
+wrong to list it. The bundle adds the rule. It also adds **`@@<path>`**,
 which expands to `[<path>](<path>)`: a note about a repo is mostly paths, and
 §12 already resolves a relative link against the checkout root. Both clear the
 stored mark after the replacement — without that the mark is live at the caret

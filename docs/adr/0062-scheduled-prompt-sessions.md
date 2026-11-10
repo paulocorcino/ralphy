@@ -23,8 +23,8 @@ validator, dispatched by a hand-written `match Agent` in the CLI. And
 `ralphy run --if-idle` or `ralphy triage --if-idle --yes`
 (`crates/ralphy-cli/src/schedule/spec.rs:73-92`).
 
-There is no way to say *"every Monday, with Codex, read this prompt and
-tell me what it finds"*. The pieces exist — `run_text_session`
+There is no way to say _"every Monday, with Codex, read this prompt and
+tell me what it finds"_. The pieces exist — `run_text_session`
 (`crates/ralphy-adapter-support/src/json_session.rs:165`) drives a prompt
 to a log; the timer machinery takes a target and an interval — but no
 target carries an operator-written prompt, and no CLI verb runs one. The

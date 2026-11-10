@@ -66,6 +66,7 @@ etc.). Treat those keys as the wire contract when wiring the backend.
 ## Foundation pieces (what this guide covers in full)
 
 ### Layout & chrome
+
 A CSS-grid shell of **four columns**: **icon rail · sidebar · canvas · Runs panel**
 (with the topbar spanning the top row). The chrome panels (topbar/rail/sidebar/runs)
 sit on `--chrome`, one subtle step above the canvas ground `--bg`, so the dotted
@@ -78,6 +79,7 @@ and the whole thing animates. All colours are tokens from
 a genuinely new colour is an amendment to ADR-0035.
 
 ### Rail toggles, account menu & the auth gate
+
 The icon rail is **interactive chrome** (handlers in [app.js](app.js)): **Projects**
 (`toggleSide`) shows/hides the sidebar, **Runs** (`toggleRuns`) reveals the
 right-hand panel, **Kanban** (`toggleKanban`) opens the tasks board as a canvas
@@ -109,6 +111,7 @@ on `#workspace` — resizes/repositions every window back inside the box, so con
 reflow for **both** the sidebar and the Runs panel.
 
 ### Tabbed canvas (Agents tab + file tabs)
+
 The canvas is a **tabbed workspace**, not a single view. A tab strip (`.tabbar`)
 runs across the top: tab 0 is the fixed **Agents** tab (never closes) and hosts the
 floating agent consoles; every opened file rides in after it as a **closable** tab.
@@ -121,6 +124,7 @@ refused (`open-refused`), everything else → source. This shape ("tabbed worksp
 Agents fixed") is a candidate to harden into an ADR.
 
 ### Project accordion (sidebar)
+
 `projects` is the daemon's repo list (a mirror of `/api/repos`): each has a
 `slug`, `branch`, `state` (daemon reachability: live/idle/offline), `remote`
 (github/local), and a file `tree`. The list is a **single-open accordion**:
@@ -145,6 +149,7 @@ remote** (`canSwitchBranch` → `state !== "offline"`): a local-only repo is sti
 git checkout with branches, so only an *unreachable* repo makes the chip inert.
 
 ### File tree (Wunderbaum)
+
 The tree is a real, mature, dependency-free library — **[Wunderbaum](https://github.com/mar10/wunderbaum)**
 (mar10; the jQuery-free successor to Fancytree) — chosen over jsTree specifically
 to avoid jQuery. It loads from a **nested JSON `source`** (`folder`/`children`),
@@ -153,6 +158,7 @@ repo tree and **lazy-load subfolders** (Wunderbaum supports it); the gestures
 already emit on the seam.
 
 Gotchas already paid for (keep them):
+
 - Wunderbaum puts the `wunderbaum` class **on the host element itself** → theme
   selectors are compound: `.wb-host.wunderbaum`, not descendant.
 - A node has **no `isFolder()`** — use `node.folder || node.children`.
@@ -161,17 +167,20 @@ Gotchas already paid for (keep them):
 - `mar10.Wunderbaum.getNode(event)` resolves a node from a DOM event (right-click).
 
 ### File-type icons
+
 Resolved by extension in [app.js](app.js): coloured **Devicon** font glyphs for
 known types (ts/js/json/rs/prisma/css/html…), **Bootstrap Icons** for folders and
 the neutral fallback. Brand colours that go near-black on the dark ground
 (Markdown, Rust) get a light-tone class override in styles.css.
 
 ### Right-click context menu
+
 Built in [app.js](app.js) (`#ctxmenu`): Open, Rename (inline, also F2), Copy
 relative path (also writes clipboard), New file/folder, Delete. Every item calls
 `WB.emit(...)` — the menu is the clearest example of "gesture → intent".
 
 ### Themed scrollbars
+
 Every scroll surface is themed to the warm-dark palette (`--border` thumb,
 `--border-focus` on hover, transparent track): the sidebar and the Wunderbaum
 viewport (which needs its own rule — it lost the page default), the **file viewers**
@@ -180,6 +189,7 @@ pane), and the **Runs panel** scroll areas (`.plan-md`, `.branch-list`). No nati
 scrollbar is left unstyled.
 
 ### Typography
+
 The chrome is monospace (terminal feel). **Rendered prose** — the plan.md in the
 Runs panel — uses a UI sans (`--font-ui`) so it reads well, while code spans/blocks
 stay monospace (`--font-mono`). Both tokens live in [styles.css](styles.css) `:root`.
@@ -189,6 +199,7 @@ vars when it **loses focus**, and their defaults are near-white — the theme
 overrides them to the same warm tone so a selected row doesn't flash white on blur.
 
 ### Vendored libraries (loaded locally, no CDN at runtime)
+
 `alpine.min.js` (reactivity), `lucide.min.js` (chrome icons — prune to a subset
 when the icon set stabilises), `wunderbaum/` (tree), `devicon/` +
 `bootstrap-icons/` (file icons). Later modules added `codemirror/`, `marked`,
@@ -317,7 +328,7 @@ API is absent the control is **hidden entirely** (not disabled).
 | Console shortcuts | `consoleItems()` + Alt+Shift+`1/2/3/0` | New-console accelerators, matched by physical key (`e.code`), guarded off inputs/modals | `console-open {agent,plain}` |
 
 Faithful sources: run/issue vocabulary and glyphs mirror `ralphy-cli/src/runstate/`
-+ the Telegram/presenter tables; the verbs' argv is `dispatch.rs`; run flags
+- the Telegram/presenter tables; the verbs' argv is `dispatch.rs`; run flags
 (`--agent` default claude, `--plan-agent`, `--branch-mode`) are `ralphy-cli/src/cli.rs`.
 
 ## Kanban board (added after the foundation)

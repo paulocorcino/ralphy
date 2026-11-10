@@ -455,7 +455,6 @@ start work stands (`asleep`/`unreachable` split, the readiness wait, the chip);
 its rejection paragraph is superseded by this amendment, recorded here rather
 than edited there so the validation reads as it was written.
 
-
 ## Amendment (2026-09-29): peers on other machines
 
 [ADR-0067](0067-peers-on-other-machines-through-ssh.md) extends this ADR to
@@ -466,7 +465,6 @@ forward that the local daemon holds (a **peer tunnel**). The peer client stays
 loopback-only and the protocol is unchanged. ADR-0067 also closes, for those
 peers, the trust gap §3 accepted for WSL: a peer behind a tunnel requires its
 token even on loopback.
-
 
 ## Amendment (2026-10-01): the next daemon adopts the keepalive
 
@@ -490,7 +488,6 @@ cost the peer its sessions. That restart ends the old daemon with a tree kill,
 so the keepalive that daemon spawned ends too. The peer keeps its sessions only
 because the new daemon opens a keepalive within seconds of starting, well inside
 `vmIdleTimeout`.
-
 
 ## Amendment (2026-10-10): the reply shapes belong to the protocol version
 
@@ -541,7 +538,6 @@ refusal that names the older daemon. So the version stays, and the commit that
 adds the verb says why and pins the new hash with the same version.
 `file.stat` and `tree.size` (ADR-0036, amendment of 2026-10-15) are the first
 verbs added this way after version 4.
-
 
 ## Amendment (2026-10-31): a peer's consoles and spawned verbs go over its page socket
 

@@ -13,13 +13,13 @@ fields, and every consumer is a `tracing_subscriber::Layer` folding that same
 stream — the console presenter (ADR-0006), the `ralphy.log` file, and the
 Telegram notifier (ADR-0007). The canonical decoder
 ([runstate.rs](../../crates/ralphy-cli/src/runstate.rs), `event_to_runevent`)
-proves the point: the event bus is a *contract*, unit-tested per message, not
+proves the point: the event bus is a _contract_, unit-tested per message, not
 an accident of logging.
 
 What is missing is a consumer that lives **outside the operator's machine**.
 The motivating scenario is a web platform that follows runs live across
 several developers' machines — multiple Ralphy processes, possibly concurrent
-on one host — and that collects backlog/issue information *through Ralphy*,
+on one host — and that collects backlog/issue information _through Ralphy_,
 never holding a GitHub token of its own. Ralphy is the bus; the platform is a
 subscriber.
 
@@ -65,7 +65,7 @@ backoff (~3 attempts, mirroring the posture of `gh_output`'s transient-retry
 wrapper in [github.rs](../../crates/ralphy-core/src/github.rs)); 4xx is a
 configuration error and drops immediately. On exhaustion or queue overflow
 the event is dropped and a **single** warning reaches `ralphy.log` — emitted
-*outside* the bus the sink consumes, so a failing endpoint can never feed
+_outside_ the bus the sink consumes, so a failing endpoint can never feed
 itself `run.notice` events in a loop. The run never waits on the sink. Consumers get
 at-most-once delivery and must treat the stream as lossy: the heartbeat (§4)
 and the CloudEvents `id` give them liveness and dedup.
@@ -100,7 +100,7 @@ renders "now" without folding perfectly, and declares a run dead by heartbeat
 silence rather than by guessing. The heartbeat keeps beating through
 usage-limit sleeps (phase `sleeping`), so an hours-long ADR-0003 sleep is
 never mistaken for a dead run; `run.finished` is emitted only on clean
-termination — a crash or kill is *detected* by silence, never reported.
+termination — a crash or kill is _detected_ by silence, never reported.
 
 ### 5. Configuration: global store, keyed per repo
 
@@ -140,7 +140,7 @@ early-platform window, keeping `runid` the **only** envelope extension:
 
 - **Reserved `data` blocks.** Alongside `emitter`, every event carries
   `data.git` (`{repository, branch}` — the slug plus the operating run branch,
-  constant per run, resolved *before* the ctx is built). Subject-scoped events
+  constant per run, resolved _before_ the ctx is built). Subject-scoped events
   (`issue.*`, `plan.*`) carry `data.issue` (`{number, title}`); every event
   except `run.finished` carries `data.agent` (`{name, model, effort}` — the
   current phase's agent, exec-agent default, `null` before a phase). These live
@@ -152,7 +152,7 @@ early-platform window, keeping `runid` the **only** envelope extension:
 - **`run.finished` rollup.** Adds `data.issues` = `[{number, title, status,
   kind?, review_only?}]` (granular terminal `status`; `kind` only on a skip;
   `review_only` is the count of the issue's acceptance-ledger lines that closed
-  `[review-only]`, present only when non-zero — attention debt on a *delivered*
+  `[review-only]`, present only when non-zero — attention debt on a _delivered_
   issue) beside the scalar counts. The rollup lists only issues that entered the run.
 - **`run.heartbeat.issue`** becomes `{number, title}` | `null` (was a bare
   number) — a deliberate breaking normalization (no consumer grandfathered).
@@ -168,7 +168,7 @@ early-platform window, keeping `runid` the **only** envelope extension:
 ### 8. Amendment: `issue.skipped.blocked_by`
 
 `issue.skipped` gains `data.blocked_by` = `[u64]` — the still-open issue
-number(s) that gated a `blocked_by` skip, so a consumer can name *which* issue
+number(s) that gated a `blocked_by` skip, so a consumer can name _which_ issue
 held the skip (`skipped (blocked by #139)`) rather than only that it was
 blocked. The `run.finished` per-issue rollup carries the same field on its
 `skipped` entries (`{…, kind, blocked_by[]}`). The list is empty for the other

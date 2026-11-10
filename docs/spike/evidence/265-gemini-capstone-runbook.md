@@ -51,7 +51,7 @@ Grounded on Gemini CLI **0.51.0** (the validation note records the #253
 
 Record the resolved values at the top of the evidence doc (host OS + build,
 `gemini --version`, account/tier, `security.auth.selectedType`, ralphy binary path
-+ branch + commit, date) — the environment block every `docs/evidence/*` file
+- branch + commit, date) — the environment block every `docs/evidence/*` file
 opens with.
 
 Standard invocation used throughout (Windows shown; WSL/Linux identical but

@@ -236,6 +236,7 @@ environment truthfully and blocked:**
 ```
 Error: `gh label list --json name,color` failed: unknown command "label" for "gh"
 ```
+
 exit 1
 
 The distro's `gh` is the Ubuntu 22.04 archive package, **2.4.0+dfsg1 (2022)**,

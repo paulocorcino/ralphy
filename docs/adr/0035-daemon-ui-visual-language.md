@@ -196,4 +196,5 @@ up 4% larger than its own body, which is no hierarchy at all.
 - The palette is documented once; the stylesheet stays the single source of the
   literal values, and this ADR the source of their *meaning*.
 </content>
+
 </invoke>

@@ -47,6 +47,7 @@ inference. Every row cites a command that was actually run and its output.
 ## Capability matrix — the questions every vendor must answer
 
 ### C1 — Invocation and the headless contract
+
 - What is the **headless one-shot** invocation (the `-p` analog)? Is there one?
 - Does the prompt go on **argv or stdin**? *(Argv has a hard OS ceiling —
   ~32 KB on Windows. Ralphy's `prompt.execute.md` is ~24 KB **before** the issue
@@ -60,6 +61,7 @@ inference. Every row cites a command that was actually run and its output.
   process's cwd?
 
 ### C2 — The output stream
+
 - What **structured output** modes exist, and is one mandatory for correctness?
   *(Kimi's rich TUI renderer crashes on a cp1252-redirected stdout — ADR-0028 D5.
   Assume the default renderer is hostile to capture until proven otherwise.)*
@@ -75,6 +77,7 @@ inference. Every row cites a command that was actually run and its output.
   through a shell tool.
 
 ### C3 — Completion and the sentinel
+
 - Does the vendor reliably emit an operator-chosen token as the **last line** of
   its final message? Test it explicitly — this is `DONE_SENTINEL`'s whole basis.
 - Are there **semantic exit codes** beyond 0/1? *(Kimi's `75 = RETRYABLE` is the
@@ -85,6 +88,7 @@ inference. Every row cites a command that was actually run and its output.
   a vendor decision — it always delegates to `classify`.
 
 ### C4 — Models
+
 - Is the vendor **single-model** or **multi-model**?
 - Is there a **free, deterministic** way to enumerate available models?
   *(Beware: asking the agent in-band — `-p "/model --list"` — is a paid model
@@ -118,6 +122,7 @@ inference. Every row cites a command that was actually run and its output.
 > it is the cheapest enumeration Ralphy has found.
 
 ### C5 — Authentication
+
 - Which command does the operator run to log in? It must appear verbatim in the
   adapter's `<VENDOR>_AUTH_ERROR_MSG`.
 - **Probe the logged-out state deliberately** and record the exact exit code and
@@ -131,6 +136,7 @@ inference. Every row cites a command that was actually run and its output.
   credential-file inspection — that is the settled house style.
 
 ### C6 — Usage and the session store
+
 - Where is the session store, and what is its **topology**: flat JSONL, nested
   JSONL, or a database?
 - Can Ralphy **mint the session id** before spawning (a `--session-id` analog)?
@@ -149,6 +155,7 @@ inference. Every row cites a command that was actually run and its output.
   never-erroring `scan_<vendor>` that tolerates a missing store.
 
 ### C7 — Limits
+
 - How does a quota exhaustion **surface**: exit code, structured stream record,
   or prose?
 - Is there a **schedulable reset hint**? If the hint is unreliable, discard it
@@ -160,6 +167,7 @@ inference. Every row cites a command that was actually run and its output.
 - Is there an operator-facing **spend cap** flag, and is it a hard or soft cap?
 
 ### C8 — Skills and prompts
+
 - How does the vendor discover **skills**: an explicit flag, a config
   environment variable, or a conventional directory? *(If it already reads a
   directory Ralphy's ecosystem populates, materialization may be free — but
@@ -176,6 +184,7 @@ inference. Every row cites a command that was actually run and its output.
   empty — the assembly test is the anti-drift gate.
 
 ### C9 — Blast radius and the product ethos
+
 Ralphy **never pushes and never opens PRs**. A vendor that ships capabilities
 which would do so on the agent's behalf is a direct conflict, not a preference.
 
@@ -194,6 +203,7 @@ Every "yes" needs an explicit stance in the vendor ADR: forced off, forced on,
 or deliberately left to the operator.
 
 ### C10 — Cross-platform and I/O hygiene
+
 - Console-encoding traps on Windows (cp1252 crashes; UTF-8 env vars that flip
   the CLI into TUI detection — ADR-0028 D5).
 - Which env vars must be **removed** vs **set** on the child.

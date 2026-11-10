@@ -194,6 +194,10 @@ REGISTRY = {  # tool name in an `As of` line -> where its latest stable release 
     "vulture": "pypi:vulture", "ast-grep": "npm:@ast-grep/cli", "deptry": "pypi:deptry",
     "pip-audit": "pypi:pip-audit", "complexipy": "pypi:complexipy", "golangci-lint": "github:golangci/golangci-lint",
     "Rust": "github:rust-lang/rust", "clippy": None,  # clippy ships with Rust
+    "actionlint": "github:rhysd/actionlint", "cargo-machete": "github:bnjbvr/cargo-machete",
+    "typos": "github:crate-ci/typos", "oxfmt": "npm:oxfmt", "shellcheck": "github:koalaman/shellcheck",
+    "markdownlint-cli2": "npm:markdownlint-cli2", "gitleaks": "github:gitleaks/gitleaks",
+    "PSScriptAnalyzer": "github:PowerShell/PSScriptAnalyzer",
 }
 _ASOF = re.compile(r"^As of (\d{4}-\d{2}-\d{2}): (.*?\.)(?:\s|$)", re.M)
 _PAIR = re.compile(r"([A-Za-z][\w.-]*) v?(\d+(?:\.\d+)*)\b")

@@ -637,7 +637,7 @@ error and nothing runs. The dialog hides the field in the same case.
 **Measured (2026-09-30).** `OpenSSH_for_Windows_9.5p2`, started with no console
 (`DETACHED_PROCESS`, as the daemon starts its children), calls `SSH_ASKPASS`
 with `SSH_ASKPASS_REQUIRE=force`, with or without `DISPLAY`. The prompt it
-passed was `root@10.1.1.4's password: `, and it made one attempt.
+passed was `root@10.1.1.4's password:`, and it made one attempt.
 
 ## Amendment (2026-09-30): the Hosts dialog
 
@@ -913,6 +913,7 @@ stays unreachable. The wait counts from the ensure that sees the exit. While
 it waits, no `ssh` runs, and the diagnosis says when Ralphy tries again.
 
 **W2. Three things end the wait.**
+
 - The peer gives any HTTP answer to its handshake through the tunnel, even
   a refusal of the token: the tunnel works. The next exit is replaced at
   once again.

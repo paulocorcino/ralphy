@@ -26,11 +26,11 @@ An issue whose execution finished cleanly, as opposed to one that stopped as blo
 The runner closing a green queue issue so that it leaves the queue, while the human still merges the branch.
 
 **Review gate**:
-An optional step after the verify gate and before close-on-green. In it, the *reviewer* reads the issue, the plan and the diff, and answers *approve* or *changes requested*. It can keep an issue from being green, but it can never make an issue green. One round of changes goes back to the executor; after that the issue stays open for a human. Not built yet (ADR-0077).
+An optional step after the verify gate and before close-on-green. In it, the _reviewer_ reads the issue, the plan and the diff, and answers _approve_ or _changes requested_. It can keep an issue from being green, but it can never make an issue green. One round of changes goes back to the executor; after that the issue stays open for a human. Not built yet (ADR-0077).
 _Avoid_: code review, PR review (both are the human's review of the branch).
 
 **Acceptance ledger**:
-The per-issue list that pairs each acceptance criterion of an issue with a verdict (*verified* or *review-only*) and the evidence behind it. It is the record of how the delivered work maps back to what the issue asked (ADR-0011).
+The per-issue list that pairs each acceptance criterion of an issue with a verdict (_verified_ or _review-only_) and the evidence behind it. It is the record of how the delivered work maps back to what the issue asked (ADR-0011).
 _Avoid_: acceptance check (sounds like a gate), checklist.
 
 **Evidence (close handoff)**:
@@ -83,7 +83,7 @@ Where an agent's state comes from: a file the vendor fills through a hook or a p
 _Avoid_: hook status (that is one command), state provider.
 
 **Phase roles (triager / planner / executor / reviewer)**:
-The closed set of jobs an **adapter** fills on one issue: the *triager* decides if the issue can enter the queue, the *planner* writes the plan, the *executor* carries out the plan and commits, and the *reviewer* checks the executor's change with a fresh context. The reviewer is not built yet (ADR-0077). One-shot tasks (diagnose, draft, consolidate) are not phase roles.
+The closed set of jobs an **adapter** fills on one issue: the _triager_ decides if the issue can enter the queue, the _planner_ writes the plan, the _executor_ carries out the plan and commits, and the _reviewer_ checks the executor's change with a fresh context. The reviewer is not built yet (ADR-0077). One-shot tasks (diagnose, draft, consolidate) are not phase roles.
 _Avoid_: stage, role (overloaded with triage roles), agent type.
 
 **Role artifact**:
@@ -396,10 +396,10 @@ _Avoid_: group, zone, region, container, swimlane, project fence, team.
 
 **Duty**:
 The job the operator gives one agent console in a **fence**, such as lead,
-reviewer or tester. A duty has a *charter* (the text the agent gets when the
-console starts) and a *description* (one line the other agents in the fence
+reviewer or tester. A duty has a _charter_ (the text the agent gets when the
+console starts) and a _description_ (one line the other agents in the fence
 see). A duty belongs to the console, like the **console name**. A fence has
-at most one *lead*, and the lead is the first to hear that the squad is
+at most one _lead_, and the lead is the first to hear that the squad is
 stuck. Not built yet.
 _Avoid_: label (a forge label), role (a **phase role** is the unattended
 mode's closed set), persona, mode.
@@ -437,9 +437,9 @@ the operator dismisses it. (ADR-0085)
 _Avoid_: alert, notification, inbox, task.
 
 **Operating mode (unattended / supervised)**:
-The two ways agents work in Ralphy. In *unattended* mode, a **run** works the
+The two ways agents work in Ralphy. In _unattended_ mode, a **run** works the
 queue: the runner moves an issue between **phase roles**, and the roles talk
-only through **role artifacts**. In *supervised* mode, the operator puts agent
+only through **role artifacts**. In _supervised_ mode, the operator puts agent
 consoles in a **fence** and runs the work; the agents in that fence may send
 live messages to each other.
 _Avoid_: AFK mode (AFK is a **queue label**), autopilot, manual mode.
@@ -650,9 +650,9 @@ a surface: there is no `cli` or `workbench` text domain.
 _Avoid_: domain alone (it also means the DDD domain), namespace.
 
 **Wording**:
-One text of the **wording catalog**. A *value wording* is the text, icon and
-plain-text fallback of one value of a closed set; an *event wording* is a
-sentence that tells an event; a *failure wording* is the text of a **failure
+One text of the **wording catalog**. A _value wording_ is the text, icon and
+plain-text fallback of one value of a closed set; an _event wording_ is a
+sentence that tells an event; a _failure wording_ is the text of a **failure
 code**.
 _Avoid_: label (a **queue label** is a GitHub label), copy, string.
 

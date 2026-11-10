@@ -112,10 +112,10 @@ The Claude `PreToolUse` guard is not ported onto the Codex path.
 
 **Superseded.** This decision originally stopped-and-reported on every Codex limit
 (`effective_stop_on_limit` forced `true` for Codex), on the premise that Codex's
-reset hint was never trustworthy. That premise was wrong: when Codex *does* emit a
+reset hint was never trustworthy. That premise was wrong: when Codex _does_ emit a
 `try again at <datetime>`, the datetime is an **absolute RFC3339 instant**
 (`2026-06-09T18:00:00Z`) — its own date and zone, no next-occurrence guess. That is
-*more* trustworthy than Claude's relative `"resets 3pm"`, not less. So Codex now
+_more_ trustworthy than Claude's relative `"resets 3pm"`, not less. So Codex now
 follows the same default as Claude (ADR-0003 D1): auto-resume, with `--stop-on-limit`
 as the opt-out.
 
@@ -125,7 +125,7 @@ The split is the reset hint, not the vendor. The adapter matches the limit text
 is present. The core's `next_reset` parses that RFC3339 instant directly and waits
 for it. When Codex emits only "wait for limits to reset (every 5h and every week)"
 with no near-term time, the hint is `None` → `Outcome::Limit(None)` → ADR-0003's "no
-parseable reset → stop" fallback still fires. Blocking for hours on a *guessed* wake
+parseable reset → stop" fallback still fires. Blocking for hours on a _guessed_ wake
 time — the original concern — never happens, because the only thing waited on is an
 explicit absolute instant.
 
@@ -220,7 +220,7 @@ route through the exact invocation this ADR fixes (`codex exec -C <neutral dir>
   operator's interactive default, not a complement to it.
 - The invocation surface is unchanged in 0.144.1: `exec`, `-C`, `-m`, `-c`,
   `-s`, `-o`, `-i`, stdin `-`, `--skip-git-repo-check` all behave as D2 fixed.
-- Two observational cautions: the model's *self-reported* slug is unreliable
+- Two observational cautions: the model's _self-reported_ slug is unreliable
   (Sol answered "gpt-5.3-codex"; Terra/Luna answered "gpt-5") — the banner and
   the session rollout are the only truth about which model ran (the rollout is
   what ADR-0008 usage tracking already reads, so `usage` stays faithful). And
@@ -241,13 +241,13 @@ Terra / Luna; effort only sets how hard the chosen model thinks. Init/triage
 one-shots keep `DEFAULT_CODEX_EFFORT`. Amends D3's frozen-effort clause and
 the 2026-07-10 `held at the vendor default` wording for run plan/execute.
 
-## Amendment (2026-07-24): the execute tier is one cost/power ladder — model *and* default effort — with a new `xhigh` rung
+## Amendment (2026-07-24): the execute tier is one cost/power ladder — model _and_ default effort — with a new `xhigh` rung
 
 The 2026-07-10 amendment routed the tier to a model and froze effort at the
 vendor default; the 2026-07-23 amendment let the operator's `--exec-effort`
 move effort but kept it **orthogonal** to the tier. That orthogonality left the
 planner unable to ask for the thing operators actually wanted: the flagship
-*thinking harder*. Sol at tier `high` ran at `medium` effort, and the only way
+_thinking harder_. Sol at tier `high` ran at `medium` effort, and the only way
 to reach Sol at `high` effort was an operator flag applied uniformly to every
 issue in the run — not a per-issue judgment the plan could make from the work in
 front of it.
@@ -265,7 +265,7 @@ a single point on a `(model, effort)` cost/power ladder, and a fourth rung
 
 - **Luna stays on `low`.** Dropping Luna for Terra:low was considered and
   rejected: Terra costs 2.5× Luna per token (the seeded floor: Sol 41.75, Terra
-  20.875, Luna 8.35), and `low` is *defined* as mechanical, localized,
+  20.875, Luna 8.35), and `low` is _defined_ as mechanical, localized,
   well-understood work — the territory where the cheap model has the least
   downside. No measured Luna failure rate justifies the 2.5× on the most common
   trivial-task tier. The conservative Terra:low fallback named in the 2026-07-10
@@ -278,7 +278,7 @@ a single point on a `(model, effort)` cost/power ladder, and a fourth rung
 - **Effort precedence is unchanged in spirit, refined in the default.** The
   order is `--exec-effort` override → the **tier-derived** effort above (was:
   the flat `medium`). An explicit operator flag still wins on every issue — the
-  operator is never denied (the opt-in posture). Only the *unset* default moved
+  operator is never denied (the opt-in posture). Only the _unset_ default moved
   from flat `medium` to per-tier. `--exec-model` still short-circuits the model
   column exactly as before (override → `config.toml` model → the table).
 - **Plan phase is untouched.** Planning runs before any tier exists, so it keeps
@@ -288,12 +288,12 @@ a single point on a `(model, effort)` cost/power ladder, and a fourth rung
 - **`xhigh` is the neutral-lexicon rung (ADR-0044), not a Codex value.** Codex's
   `model_reasoning_effort` accepts `minimal|low|medium|high`; the `xhigh` tier
   therefore maps to the argv effort `high` at the single routing point — the
-  neutral word names the *rung*, the concrete word `high` is what reaches
+  neutral word names the _rung_, the concrete word `high` is what reaches
   `codex exec`. The plan charter's `## Execution model` line gains `xhigh` as a
   fourth accepted value (codex overlay only; other vendors are unchanged).
 - **Direct model selection is unaffected.** `--exec-model gpt-5.6-luna` (or any
   id) bypasses the ladder entirely, so an operator invoking a model by hand gets
-  exactly it — the ladder is the *auto-routing* default, not a cage.
+  exactly it — the ladder is the _auto-routing_ default, not a cage.
 
 This supersedes the 2026-07-23 amendment's "effort stays orthogonal to
 tier→model" for the execute phase; that orthogonality still holds for the plan

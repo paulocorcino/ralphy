@@ -219,7 +219,7 @@ tags keep them separate:
 
 For Phase 1 the Runs panel is fed by the **raw merged output** a daemon-spawned
 run already streams over `/ws/command` (`status:"output"`, ADR-0032 §5 / issue
-#180). The mock's **structured** run feed (issue trail, plan viewer, phase glyphs
+# 180). The mock's **structured** run feed (issue trail, plan viewer, phase glyphs
 from `ralphy:run-event`) is **deferred to the events platform** (ADR-0019, Phase
 2); no daemon-side CloudEvents relay is built now, so ADR-0032 §5 is not stretched.
 

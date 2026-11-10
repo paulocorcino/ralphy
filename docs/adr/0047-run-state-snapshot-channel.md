@@ -2,7 +2,7 @@
 
 Status: **accepted** (2026-07-24, issue #298, under PRD #296) — decided and
 implemented. This ADR gates the run-state track: the implementation issues under
-#296 build what is written here.
+# 296 build what is written here.
 
 Extended by ADR-0077 (proposed: the snapshot phase state `reviewing`).
 
@@ -18,7 +18,7 @@ crate dependencies) and [ADR-0036](./0036-workbench-daemon-integration-protocol.
 The workbench's Runs panel is empty in daemon mode. Its picker, issue trail and
 plan viewer already ship; what is missing is any way for the browser to learn
 that a run exists. The only thing the operator sees today is merged stdout from
-a run *that browser* happened to spawn — a run started from a terminal is
+a run _that browser_ happened to spawn — a run started from a terminal is
 invisible, and a page reload loses even that.
 
 The run process already holds exactly the model the panel wants: the pure
@@ -51,7 +51,7 @@ That it is a **snapshot and not an event stream** is the load-bearing part:
 - It needs **no inbound port, no token, no configuration**, and behaves
   identically on Windows and Linux.
 
-The cost is honest and accepted: the operator sees the *last written* state, not
+The cost is honest and accepted: the operator sees the _last written_ state, not
 every transition. Anything that must be a durable log of what happened is the
 **event sink**'s job (ADR-0019/ADR-0039), not this channel's.
 
@@ -89,7 +89,7 @@ Path: `<repo>/.ralphy/runstate/<runid>.json`.
 - Under `.ralphy/`, which the repo already gitignores (`gitignore.rs`), so a
   snapshot can never be committed.
 - **Not** under `.ralphy/runs/`: that namespace already holds the per-run log
-  directories keyed by a timestamp *stamp*, not by `runid`. Mixing a flat file
+  directories keyed by a timestamp _stamp_, not by `runid`. Mixing a flat file
   keyed one way into a tree of directories keyed another way makes the reader's
   listing ambiguous and invites the two keys to be confused.
 - The filename is the `runid` — the ULID that already correlates the run's
@@ -115,7 +115,7 @@ this decision forces on existing code outside the new destination.
 
 ### 5. What the document carries — and what it deliberately does not
 
-The document is the *panel's* view of a run, small enough to rewrite four times
+The document is the _panel's_ view of a run, small enough to rewrite four times
 a second:
 
 - **Header** — `v` (see §6), `runid`, run title, repo slug, branch, planner and
@@ -175,13 +175,13 @@ An orphan is reported as dead and swept — never rendered as a live run.
 **The pid travels in the snapshot header, not in the run lock.** The obvious
 carrier is the repo-scoped run lock (`.ralphy/run.lock`), which already records
 its holder's pid and start time — and it is the wrong one, because the lock has
-one slot and this channel has N documents. The lock is a *signal, not a mutex*
+one slot and this channel has N documents. The lock is a _signal, not a mutex_
 by design: `acquire` overwrites it, so with two runs in flight in one repo it
 names only the newer one, and the older run's snapshot would classify as dead
 while that run is working. Concurrent runs in a repo are a supported case (PRD
-#296, user story 9), so the carrier must be per-document.
+# 296, user story 9), so the carrier must be per-document.
 
-This does not weaken §7. What §7 forbids is a *liveness assertion* — a flag or a
+This does not weaken §7. What §7 forbids is a _liveness assertion_ — a flag or a
 timestamp the document maintains about itself. A pid is an identity fact, exactly
 as it is in the lock's own `LockInfo`; the document states who wrote it and stays
 silent about whether that process still lives. The mechanism is unchanged and
@@ -227,7 +227,7 @@ that reuses the existing `WatcherManager` behind `/ws/tree` rather than
 introducing a second push mechanism.
 
 Because a snapshot is state, the browser applies it by **replacement**. Running a
-snapshot channel *and* the existing client-side event fold in daemon mode would
+snapshot channel _and_ the existing client-side event fold in daemon mode would
 be two mechanisms for one job; the event fold survives only in the static demo,
 where seed data is honest.
 
@@ -305,7 +305,7 @@ cannot be cleared by the failure it is meant to detect.
 - `runid` becomes an unconditional property of a run rather than an
   events-sink-only one. Prose that treats it as part of the events feature must
   be corrected.
-- The daemon gains its first dependency on a shared *data* shape produced by the
+- The daemon gains its first dependency on a shared _data_ shape produced by the
   CLI. ADR-0032 §10's "never imports the core" stands; §10 should record that
   the leaf-crate exception now includes `ralphy-run-snapshot`.
 - Run **history** stays out. This channel describes live runs only, and its
@@ -347,10 +347,10 @@ that produced two failures the channel is supposed to prevent — both observed 
 a live run in this repo:
 
 - **The plan viewer blanks for the whole plan phase.** Planning deletes
-  `plan.md` before the planner rewrites it (*plan fresh every run; never reuse a
-  stale artifact* — correct, and not the defect). A queue transition around the
+  `plan.md` before the planner rewrites it (_plan fresh every run; never reuse a
+  stale artifact_ — correct, and not the defect). A queue transition around the
   phase change triggers a re-read at the exact moment the file is absent; the
-  refusal is rendered as *"no plan"*, and nothing ever tells the panel that the
+  refusal is rendered as _"no plan"_, and nothing ever tells the panel that the
   new plan arrived.
 - **Steps never advance.** The executor ticks checkboxes in `plan.md`, but the
   daemon's subscription watches `.ralphy/runstate` (§3) — not the plan file — so
@@ -387,7 +387,7 @@ are still read through `file.read`.
 What the block adds is bounded by the plan's **step count** — tens of entries of
 normalized identity text — and it does not grow as the agent works, because
 checking a box changes a status, not the size of the block. This is the part of
-the plan that *goes stale*, which is precisely why it belongs in state; the prose
+the plan that _goes stale_, which is precisely why it belongs in state; the prose
 does not change once written, which is precisely why a confined read still serves
 it.
 
@@ -456,7 +456,7 @@ this analysis in two new forms. Both are refused, and recorded here so the
 question is settled rather than re-argued:
 
 - **`events.url` pointed at the daemon** (by default, or fanned out to it when it
-  happens to be up). A push has no memory, and late-join is this panel's *normal*
+  happens to be up). A push has no memory, and late-join is this panel's _normal_
   case: it opens mid-run, and a run may outlive a daemon restart or predate the
   daemon entirely — the exact scenarios §1 chose disk for. A conditional second
   destination would also make the panel's fidelity depend on whether the daemon
@@ -500,7 +500,7 @@ document.
 
 §8 says the document is "removed at exit", and CONTEXT.md repeats it:
 "finished runs are removed, not archived". That stays true for
-`<repo>/.ralphy/runstate/` — the directory's contract is *live runs only*,
+`<repo>/.ralphy/runstate/` — the directory's contract is _live runs only_,
 and every reader (the daemon's `runs.list`, the dead-pid sweep) depends on
 it.
 

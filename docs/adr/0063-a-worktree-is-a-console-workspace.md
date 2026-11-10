@@ -9,7 +9,7 @@ the *console* half of the `console_worktree` experiment and takes over the
 git mechanics of [ADR-0058](./0058-checkout-per-run.md) §2 and §5 (deferred)
 without its run-path changes.
 
-_Extends [ADR-0036](./0036-workbench-daemon-integration-protocol.md) §2 with
+*Extends [ADR-0036](./0036-workbench-daemon-integration-protocol.md) §2 with
 one Query and two Mutate verbs and one optional argument on every repo-scoped
 verb. Amends [ADR-0032](./0032-daemon-mode-supervised-launcher.md) §2
 (the console spawn takes a checkout), [ADR-0033](./0033-interactive-usage-stateless-scan.md)
@@ -17,7 +17,7 @@ verb. Amends [ADR-0032](./0032-daemon-mode-supervised-launcher.md) §2
 (one desk field) and retires `RepoEntry::console_worktree`. Leaves
 [ADR-0042](./0042-cursor-adapter.md) §flags and [ADR-0043](./0043-gemini-adapter.md)
 at "never" for the vendors' own worktree flags, now with the mechanism that
-makes "never" free._
+makes "never" free.*
 
 ## Two consoles on one repo share one HEAD
 
@@ -275,7 +275,7 @@ setup script (ADR-0042's reason for "never" on `.cursor/worktrees.json`).
 temp repo (spawn-bound: one fixture per test file, per
 `docs/BUILDING.md`); (2) daemon verbs + `checkout` resolution at the two
 `execute_oneshot` sites; (3) `SessionQuery.checkout` + `SessionInfo.checkout`
-+ `spec_for` signature + `console_worktree` retirement + Gemini/Cursor
+- `spec_for` signature + `console_worktree` retirement + Gemini/Cursor
 path fixes; (4) picker section + desk field + console title, with a
 `wb-project` fold test and one `wb_worktree_*.py`; (5) usage-scan
 common-dir matcher; (6) docs and amendments. (1)–(2) are green without

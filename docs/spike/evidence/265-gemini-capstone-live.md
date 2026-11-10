@@ -16,11 +16,13 @@ Host: Windows 11 (10.0.26200). `gemini --version` → **0.51.0**, node at
 `pro` deliberately unused.
 
 Standard invocation:
+
 ```bash
 ./target/release/ralphy.exe run --repo C:/Dev/FinCal --issues <n> --agent gemini \
   --base-branch master --branch-mode new \
   --plan-model <flash-id> --exec-model <flash-id> --max-minutes-per-issue <n> --verbose
 ```
+
 Note `--issues <n>` (direct fetch), not `--only-issue <n>` — the latter filters the
 label queue and a labelless throwaway issue falls out as `no_work`.
 
@@ -79,10 +81,12 @@ mirroring the Cursor capstone's #117.
 ## Phase 3 — usage vs billing, discrepancy explained (AC2)
 
 Execute-turn terminal envelope (`result.stats`), pinned `gemini-3.5-flash`:
+
 ```
 total_tokens 569377 · input_tokens 565088 · output_tokens 1342 · cached 448012 · input 117076
 models: {"gemini-3.5-flash": {…}}   # single key — pinning removed the router
 ```
+
 The three D9 traps, live:
 
 | Trap | Naive | Correct | Here |
@@ -138,6 +142,7 @@ mechanics closed clean. Recorded as an open item, not observed live this pass.
 ## Phase 7 — HITL ruling (AC6)
 
 Maintainer ruling, 2026-07-22 (low-budget): **both deferred, recorded as open limits.**
+
 - **True quota exhaustion (D11)** — stays deferred; observing it would burn ~10K
   requests/day (run sat at 139/10K), contradicting the budget. `429→Limit(None)` +
   ADR-0030 synthetic cadence remains provisional but is the cheapest to revise and is
