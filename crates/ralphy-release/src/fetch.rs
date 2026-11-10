@@ -130,9 +130,7 @@ pub fn load(cache_path: &Path) -> Vec<Release> {
 /// crate's switch so an air-gapped operator turns off every outbound read the
 /// same way.
 pub fn offline_env() -> bool {
-    std::env::var("RALPHY_RELEASE_OFFLINE")
-        .ok()
-        .is_some_and(|v| v.trim() == "1")
+    std::env::var("RALPHY_RELEASE_OFFLINE").is_ok_and(|v| v.trim() == "1")
 }
 
 fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {

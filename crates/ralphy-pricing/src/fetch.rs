@@ -95,9 +95,7 @@ pub fn refresh_if_stale(opts: &RefreshOpts<'_>) {
 
 /// True when `RALPHY_PRICING_OFFLINE` trims to `"1"`.
 pub fn pricing_offline_env() -> bool {
-    std::env::var("RALPHY_PRICING_OFFLINE")
-        .ok()
-        .is_some_and(|v| v.trim() == "1")
+    std::env::var("RALPHY_PRICING_OFFLINE").is_ok_and(|v| v.trim() == "1")
 }
 
 fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
