@@ -140,14 +140,12 @@ fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
     // Resolve to an absolute path so the repo name comes from the real directory (a
     // bare `.` has no file name) and the git/gh calls below have a stable cwd. The
     // dir may not exist yet — create it, then canonicalize.
-    let abs = match std::fs::canonicalize(target) {
-        Ok(p) => p,
-        Err(_) => {
-            std::fs::create_dir_all(target)
-                .with_context(|| format!("creating {}", target.display()))?;
-            std::fs::canonicalize(target)
-                .with_context(|| format!("resolving {}", target.display()))?
-        }
+    let abs = if let Ok(p) = std::fs::canonicalize(target) {
+        p
+    } else {
+        std::fs::create_dir_all(target)
+            .with_context(|| format!("creating {}", target.display()))?;
+        std::fs::canonicalize(target).with_context(|| format!("resolving {}", target.display()))?
     };
     let name = repo_name_from_path(&abs);
 

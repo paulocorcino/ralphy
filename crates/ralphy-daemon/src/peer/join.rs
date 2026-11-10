@@ -62,18 +62,17 @@ pub(crate) async fn read_peer_lists(peers_dir: PathBuf) -> (Vec<PeerList>, Vec<S
             unanswered.push(peer.daemon_id);
             continue;
         };
-        match serde_json::from_slice::<AttentionList>(&body) {
-            Ok(list) => lists.push(PeerList {
+        if let Ok(list) = serde_json::from_slice::<AttentionList>(&body) {
+            lists.push(PeerList {
                 daemon_id: peer.daemon_id,
                 list,
-            }),
-            Err(_) => {
-                tracing::warn!(
-                    daemon_id = %peer.daemon_id,
-                    "peer returned an invalid attention list"
-                );
-                unanswered.push(peer.daemon_id);
-            }
+            });
+        } else {
+            tracing::warn!(
+                daemon_id = %peer.daemon_id,
+                "peer returned an invalid attention list"
+            );
+            unanswered.push(peer.daemon_id);
         }
     }
     (lists, unanswered)

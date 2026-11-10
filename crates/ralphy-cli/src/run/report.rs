@@ -300,14 +300,13 @@ pub(crate) fn empty_queue_scope(
             .join(", ");
         return format!("issues [{list}]");
     }
-    match only_issue {
-        Some(n) => format!("issue #{n}"),
-        None => {
-            let base = format!("labels [{}]", labels.join(", "));
-            match assignee {
-                Some(a) => format!("{base} assigned to {a}"),
-                None => base,
-            }
+    if let Some(n) = only_issue {
+        format!("issue #{n}")
+    } else {
+        let base = format!("labels [{}]", labels.join(", "));
+        match assignee {
+            Some(a) => format!("{base} assigned to {a}"),
+            None => base,
         }
     }
 }

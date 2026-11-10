@@ -51,15 +51,14 @@ pub(crate) fn one_shot_base(repo: &Path) -> PathBuf {
     if ralphy_core::git::is_repo(repo) {
         return repo.join(".ralphy");
     }
-    match ralphy_proc_util::home_dir() {
-        Some(home) => home.join(".ralphy"),
-        None => {
-            tracing::warn!(
-                "gemini: no home directory — the one-shot's configuration root falls back to \
-                 the system temp dir, so its installation identity will not persist"
-            );
-            std::env::temp_dir().join("ralphy")
-        }
+    if let Some(home) = ralphy_proc_util::home_dir() {
+        home.join(".ralphy")
+    } else {
+        tracing::warn!(
+            "gemini: no home directory — the one-shot's configuration root falls back to \
+             the system temp dir, so its installation identity will not persist"
+        );
+        std::env::temp_dir().join("ralphy")
     }
 }
 

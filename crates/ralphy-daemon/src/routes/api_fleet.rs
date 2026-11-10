@@ -183,9 +183,10 @@ async fn probe_one(d: peer::PeerDescriptor, probe_id: String, bound_port: u16) -
 /// refuses or serves a body this daemon cannot read.
 async fn read_peer_repos(d: &peer::PeerDescriptor) -> Option<fleet::PeerRepoStore> {
     match peer::client::get(d, "/api/repos").await {
-        Ok((200, body)) => match fleet::store_from_repos_json(&body) {
-            Some(store) => Some(store),
-            None => {
+        Ok((200, body)) => {
+            if let Some(store) = fleet::store_from_repos_json(&body) {
+                Some(store)
+            } else {
                 tracing::warn!(
                     peer = %d.environment,
                     "peer served an /api/repos body this daemon cannot read; \
@@ -193,7 +194,7 @@ async fn read_peer_repos(d: &peer::PeerDescriptor) -> Option<fleet::PeerRepoStor
                 );
                 None
             }
-        },
+        }
         Ok((code, _)) => {
             tracing::warn!(
                 peer = %d.environment,

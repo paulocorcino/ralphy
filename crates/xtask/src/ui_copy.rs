@@ -286,6 +286,37 @@ pub(crate) fn squeeze(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// One named or numeric HTML entity, decoded. None for any other name.
+fn decode_entity(e: &str) -> Option<char> {
+    match e {
+        "amp" => Some('&'),
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "quot" => Some('"'),
+        "apos" => Some('\''),
+        "nbsp" => Some(' '),
+        "hellip" => Some('…'),
+        "middot" => Some('·'),
+        "mdash" => Some('—'),
+        "ndash" => Some('–'),
+        "times" => Some('×'),
+        "larr" => Some('←'),
+        "rarr" => Some('→'),
+        "uarr" => Some('↑'),
+        "darr" => Some('↓'),
+        "bull" => Some('•'),
+        "copy" => Some('©'),
+        _ => {
+            let num = e.strip_prefix('#')?;
+            let code = match num.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => num.parse().ok()?,
+            };
+            char::from_u32(code)
+        }
+    }
+}
+
 /// The HTML entities this UI writes, decoded. An unknown one is left as is.
 pub(crate) fn decode_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -297,42 +328,15 @@ pub(crate) fn decode_entities(s: &str) -> String {
             .find(';')
             .filter(|&end| end <= 10)
             .map(|end| &rest[1..end]);
-        let decoded = entity.and_then(|e| match e {
-            "amp" => Some('&'),
-            "lt" => Some('<'),
-            "gt" => Some('>'),
-            "quot" => Some('"'),
-            "apos" => Some('\''),
-            "nbsp" => Some(' '),
-            "hellip" => Some('…'),
-            "middot" => Some('·'),
-            "mdash" => Some('—'),
-            "ndash" => Some('–'),
-            "times" => Some('×'),
-            "larr" => Some('←'),
-            "rarr" => Some('→'),
-            "uarr" => Some('↑'),
-            "darr" => Some('↓'),
-            "bull" => Some('•'),
-            "copy" => Some('©'),
-            _ => {
-                let num = e.strip_prefix('#')?;
-                let code = match num.strip_prefix(['x', 'X']) {
-                    Some(hex) => u32::from_str_radix(hex, 16).ok()?,
-                    None => num.parse().ok()?,
-                };
-                char::from_u32(code)
-            }
-        });
-        match (entity, decoded) {
-            (Some(e), Some(c)) => {
-                out.push(c);
-                rest = &rest[e.len() + 2..];
-            }
-            _ => {
-                out.push('&');
-                rest = &rest[1..];
-            }
+        let decoded = entity.and_then(decode_entity);
+        if let (Some(e), Some(c)) = (entity, decoded) {
+            out.push(c);
+            rest = rest
+                .get(e.len() + 2..)
+                .expect("an entity is '&', its name and ';', all inside rest");
+        } else {
+            out.push('&');
+            rest = rest.get(1..).expect("rest starts with '&'");
         }
     }
     out.push_str(rest);

@@ -425,23 +425,17 @@ fn recv_and_join(
     grace: Duration,
     stream: &str,
 ) -> Vec<u8> {
-    match rx.recv_timeout(grace) {
-        Ok(buf) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the reader already sent its bytes; a panic in it leaves nothing to keep"
-            )]
-            let _ = handle.join();
-            buf
-        }
-        Err(_) => {
-            tracing::warn!(
-                stream,
-                "headless reader still blocked after the tree-kill — this stream's captured \
-                 output was dropped"
-            );
-            Vec::new()
-        }
+    if let Ok(buf) = rx.recv_timeout(grace) {
+        // A panic in the reader leaves nothing to keep: its payload is dropped here.
+        let _reader_exit = handle.join();
+        buf
+    } else {
+        tracing::warn!(
+            stream,
+            "headless reader still blocked after the tree-kill — this stream's captured \
+             output was dropped"
+        );
+        Vec::new()
     }
 }
 

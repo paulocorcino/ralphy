@@ -334,16 +334,13 @@ fn kahn(queue: Vec<Issue>, deps: &BTreeMap<u64, BTreeSet<u64>>) -> Vec<Issue> {
                 .iter()
                 .all(|d| placed.contains(d))
         });
-        match ready {
-            Some(n) => {
-                placed.insert(n);
-                out.push(by_number.remove(&n).expect("key present"));
-            }
-            None => {
-                // Cycle: emit the remainder ascending; the runtime gate decides.
-                out.extend(by_number.into_values());
-                break;
-            }
+        if let Some(n) = ready {
+            placed.insert(n);
+            out.push(by_number.remove(&n).expect("key present"));
+        } else {
+            // Cycle: emit the remainder ascending; the runtime gate decides.
+            out.extend(by_number.into_values());
+            break;
         }
     }
     out

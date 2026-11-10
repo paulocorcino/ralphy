@@ -348,23 +348,17 @@ fn recv_and_join(
     handle: thread::JoinHandle<()>,
     stream: &str,
 ) -> String {
-    match rx.recv_timeout(OUTPUT_COLLECT_GRACE) {
-        Ok(buf) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the drain thread does not panic, and its bytes arrived over the channel"
-            )]
-            let _ = handle.join();
-            String::from_utf8_lossy(&buf).into_owned()
-        }
-        Err(_) => {
-            tracing::warn!(
-                stream,
-                "verify gate reader still blocked after the tree-kill — this stream's captured \
-                output was dropped"
-            );
-            String::new()
-        }
+    if let Ok(buf) = rx.recv_timeout(OUTPUT_COLLECT_GRACE) {
+        // The drain thread does not panic, and its bytes arrived over the channel.
+        let _drain_exit = handle.join();
+        String::from_utf8_lossy(&buf).into_owned()
+    } else {
+        tracing::warn!(
+            stream,
+            "verify gate reader still blocked after the tree-kill — this stream's captured \
+            output was dropped"
+        );
+        String::new()
     }
 }
 

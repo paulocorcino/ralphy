@@ -36,26 +36,23 @@ fn build_cursor_command_applies_the_pin() {
         std::env::var_os("SHELL"),
         ralphy_proc_util::locate_git_bash(),
     );
-    match expected {
-        Some(p) => {
-            assert_eq!(env_of(&cmd, "SHELL").map(PathBuf::from), Some(p));
-            // MSYSTEM must ride along, or git-bash returns "no exit status".
-            assert_eq!(
-                env_of(&cmd, "MSYSTEM").as_deref(),
-                Some("MINGW64"),
-                "pinning SHELL to git-bash without MSYSTEM breaks the shell"
-            );
-        }
-        None => {
-            assert!(
-                !cmd.get_envs().any(|(k, _)| k == "SHELL"),
-                "SHELL must not be set when the pin declines"
-            );
-            assert!(
-                !cmd.get_envs().any(|(k, _)| k == "MSYSTEM"),
-                "MSYSTEM must not be set when SHELL is not pinned"
-            );
-        }
+    if let Some(p) = expected {
+        assert_eq!(env_of(&cmd, "SHELL").map(PathBuf::from), Some(p));
+        // MSYSTEM must ride along, or git-bash returns "no exit status".
+        assert_eq!(
+            env_of(&cmd, "MSYSTEM").as_deref(),
+            Some("MINGW64"),
+            "pinning SHELL to git-bash without MSYSTEM breaks the shell"
+        );
+    } else {
+        assert!(
+            !cmd.get_envs().any(|(k, _)| k == "SHELL"),
+            "SHELL must not be set when the pin declines"
+        );
+        assert!(
+            !cmd.get_envs().any(|(k, _)| k == "MSYSTEM"),
+            "MSYSTEM must not be set when SHELL is not pinned"
+        );
     }
     // The one-shot builder delegates, so it inherits the same wiring.
     let init = build_cursor_init_command(None, Path::new("."), Path::new("cfg"));

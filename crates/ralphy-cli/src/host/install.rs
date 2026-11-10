@@ -215,19 +215,16 @@ pub(crate) fn release_binary(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e).with_context(|| format!("reading {}", cache.display())),
     };
-    let bytes = match cached {
-        Some(bytes) => bytes,
-        None => {
-            let bytes = fetch(&archive.browser_download_url, Some(archive.size))?;
-            verify(&bytes, &expected)?;
-            if let Some(dir) = cache.parent() {
-                std::fs::create_dir_all(dir)
-                    .with_context(|| format!("creating {}", dir.display()))?;
-            }
-            std::fs::write(&cache, &bytes)
-                .with_context(|| format!("writing {}", cache.display()))?;
-            bytes
+    let bytes = if let Some(bytes) = cached {
+        bytes
+    } else {
+        let bytes = fetch(&archive.browser_download_url, Some(archive.size))?;
+        verify(&bytes, &expected)?;
+        if let Some(dir) = cache.parent() {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
+        std::fs::write(&cache, &bytes).with_context(|| format!("writing {}", cache.display()))?;
+        bytes
     };
 
     let staging = std::env::temp_dir().join(format!("ralphy-host-install-{}", std::process::id()));

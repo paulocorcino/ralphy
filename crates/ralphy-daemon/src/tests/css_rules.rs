@@ -135,15 +135,13 @@ fn the_write_and_discard_controls_are_not_hover_gated() {
 fn strip_css_comments(block: &str) -> String {
     let mut out = String::new();
     let mut rest = block;
-    while let Some(at) = rest.find("/*") {
-        out.push_str(&rest[..at]);
-        match rest[at + 2..].find("*/") {
-            Some(end_at) => rest = &rest[at + 2 + end_at + 2..],
-            None => {
-                rest = "";
-                break;
-            }
-        }
+    while let Some((before, after)) = rest.split_once("/*") {
+        out.push_str(before);
+        let Some((_, tail)) = after.split_once("*/") else {
+            rest = "";
+            break;
+        };
+        rest = tail;
     }
     out.push_str(rest);
     out

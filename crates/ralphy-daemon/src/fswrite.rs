@@ -247,19 +247,14 @@ pub(crate) fn write_bytes(root: &Path, rel: &str, bytes: &[u8]) -> Result<(), Wr
     let tmp = path.with_file_name(name);
     std::fs::write(&tmp, bytes)
         .map_err(|e| failed(WriteError::Io, "writing the temporary file", &e))?;
-    match std::fs::rename(&tmp, &path) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            // The rename is what makes this atomic; a failure leaves the old
-            // file intact, and the half-written sibling must not be left on
-            // the operator's tree.
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the rename error is the one reported, and the sibling may be gone"
-            )]
-            let _ = std::fs::remove_file(&tmp);
-            Err(WriteError::Io)
-        }
+    if let Ok(()) = std::fs::rename(&tmp, &path) {
+        Ok(())
+    } else {
+        // The rename is what makes this atomic; a failure leaves the old
+        // file intact, and the half-written sibling must not be left on
+        // the operator's tree.
+        let _sibling_removed = std::fs::remove_file(&tmp);
+        Err(WriteError::Io)
     }
 }
 

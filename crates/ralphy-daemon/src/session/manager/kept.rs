@@ -126,16 +126,15 @@ impl KeptOutput {
     /// is not poisoned, because the panic does not leave this call.
     pub(super) fn on_screen<R>(&mut self, f: impl FnOnce(&mut Screen) -> R) -> Option<R> {
         let screen = self.screen.as_mut()?;
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(screen))) {
-            Ok(result) => Some(result),
-            Err(_) => {
-                tracing::warn!(
-                    session = self.session,
-                    "the console screen failed; a reattach of this session now gets the raw output"
-                );
-                self.screen = None;
-                None
-            }
+        if let Ok(result) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(screen))) {
+            Some(result)
+        } else {
+            tracing::warn!(
+                session = self.session,
+                "the console screen failed; a reattach of this session now gets the raw output"
+            );
+            self.screen = None;
+            None
         }
     }
 }

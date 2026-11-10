@@ -5,6 +5,7 @@
 //! `CHANGELOG.md`, `changelog.json` and the crate manifests' version lines are
 //! this tool's.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -158,23 +159,26 @@ fn write_notes(root: &Path, wanted: &str, out: &Path) -> Result<()> {
         .iter()
         .find(|r| r.version == wanted || r.version.strip_prefix('v').unwrap_or(&r.version) == bare);
 
-    let (body, announce) = match record {
-        Some(record) => (render_notes(record), record.announce),
-        None => {
-            // Not a reason to fail a release that is already built: publish an
-            // honest body and say so in the log.
-            eprintln!("warning: no changelog record for {wanted} — publishing a pointer instead");
-            // Absolute, not relative: this renders on a GitHub release page,
-            // where `../CHANGELOG.md` resolves to nothing.
-            (
-                concat!(
-                    "No changelog entry was recorded for this release. See the ",
-                    "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
-                )
-                .to_string(),
-                false,
+    let (body, announce) = if let Some(record) = record {
+        (render_notes(record), record.announce)
+    } else {
+        // Not a reason to fail a release that is already built: publish an
+        // honest body and say so in the log.
+        writeln!(
+            std::io::stderr(),
+            "warning: no changelog record for {wanted} — publishing a pointer instead"
+        )
+        .expect("the warning goes to stderr, as eprintln sent it");
+        // Absolute, not relative: this renders on a GitHub release page,
+        // where `../CHANGELOG.md` resolves to nothing.
+        (
+            concat!(
+                "No changelog entry was recorded for this release. See the ",
+                "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
             )
-        }
+            .to_owned(),
+            false,
+        )
     };
 
     write_release_body(out, &body, announce)?;

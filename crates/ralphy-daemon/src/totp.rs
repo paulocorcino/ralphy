@@ -207,13 +207,12 @@ pub fn save_seed_to(seed: &Seed, path: &Path) -> Result<()> {
 /// save, and return a fresh one with `true`. The `bool` ("was newly minted")
 /// lets `daemon setup` show the enrolment URI exactly once.
 pub fn ensure_seed_at(path: &Path) -> Result<(Seed, bool)> {
-    match load_seed_from(path)? {
-        Some(seed) => Ok((seed, false)),
-        None => {
-            let seed = generate_seed();
-            save_seed_to(&seed, path)?;
-            Ok((seed, true))
-        }
+    if let Some(seed) = load_seed_from(path)? {
+        Ok((seed, false))
+    } else {
+        let seed = generate_seed();
+        save_seed_to(&seed, path)?;
+        Ok((seed, true))
     }
 }
 

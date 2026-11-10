@@ -51,15 +51,12 @@ fn join_line(
     text: &str,
 ) {
     let (_, joined) = pending.get_or_insert((line, String::new()));
-    match text.strip_suffix('\\') {
-        Some(rest) => {
-            joined.push_str(rest);
-            joined.push(' ');
-        }
-        None => {
-            joined.push_str(text);
-            commands.extend(pending.take());
-        }
+    if let Some(rest) = text.strip_suffix('\\') {
+        joined.push_str(rest);
+        joined.push(' ');
+    } else {
+        joined.push_str(text);
+        commands.extend(pending.take());
     }
 }
 

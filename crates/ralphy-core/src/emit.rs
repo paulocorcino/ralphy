@@ -154,9 +154,10 @@ pub const RUN_STOPPED_MSG: &str = "operator stop — halting run";
 /// decode as a real issue number under the `unwrap_or(0)` the decoder applies to
 /// every other message.
 pub fn run_stopped(number: Option<u64>) {
-    match number {
-        Some(number) => info!(number, "{}", RUN_STOPPED_MSG),
-        None => info!("{}", RUN_STOPPED_MSG),
+    if let Some(number) = number {
+        info!(number, "{}", RUN_STOPPED_MSG);
+    } else {
+        info!("{}", RUN_STOPPED_MSG);
     }
 }
 
