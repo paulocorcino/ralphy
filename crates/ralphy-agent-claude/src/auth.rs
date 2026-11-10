@@ -97,10 +97,10 @@ pub(crate) fn transcript_limit(jsonl: &str) -> Option<Option<ResetAt>> {
 fn line_is_rate_limit_error(v: &serde_json::Value) -> bool {
     let api_rate_limited = v
         .get("isApiErrorMessage")
-        .and_then(|b| b.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
         && (v.get("error").and_then(|e| e.as_str()) == Some("rate_limit")
-            || v.get("apiErrorStatus").and_then(|s| s.as_u64()) == Some(429));
+            || v.get("apiErrorStatus").and_then(serde_json::Value::as_u64) == Some(429));
     let rate_limit_event = v.get("type").and_then(|t| t.as_str()) == Some("rate_limit_event")
         && v.get("rate_limit_info")
             .and_then(|i| i.get("status"))
@@ -211,7 +211,7 @@ fn title_case_weekday(wd: &str) -> String {
     match chars.next() {
         Some(first) => first
             .to_uppercase()
-            .chain(chars.flat_map(|c| c.to_lowercase()))
+            .chain(chars.flat_map(char::to_lowercase))
             .collect(),
         None => String::new(),
     }

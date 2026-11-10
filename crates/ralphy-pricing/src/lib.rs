@@ -248,7 +248,7 @@ fn parse_pricing_table(
         toml::from_str(text).map_err(|e| format!("toml: {e}; flatten: {flatten_err}"))?;
     let offline = value
         .get("offline")
-        .and_then(|v| v.as_bool())
+        .and_then(toml::Value::as_bool)
         .unwrap_or(false);
     let mut overrides = BTreeMap::new();
     if let toml::Value::Table(table) = value {
@@ -374,7 +374,9 @@ pub fn pricing_cache_file() -> Option<PathBuf> {
 /// is not a real model id) gets a distinct, actionable message instead of the
 /// nonsensical "add `unknown` to pricing.toml". Logged at most once per id.
 fn warn_unknown(model: &str) {
-    let mut seen = WARNED.lock().unwrap_or_else(|e| e.into_inner());
+    let mut seen = WARNED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if seen.insert(model.to_string()) {
         if model == UNKNOWN_MODEL {
             warn!(

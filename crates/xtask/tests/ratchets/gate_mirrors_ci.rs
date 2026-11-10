@@ -94,7 +94,7 @@ fn the_gate_mirrors_every_ci_step() {
     assert!(ci.len() >= 15, "the step scan is blind: {ci:?}");
     let gate: BTreeSet<String> = gate_steps::STEPS
         .iter()
-        .flat_map(|s| s.ci.iter().map(|n| n.to_string()))
+        .flat_map(|s| s.ci.iter().map(ToString::to_string))
         .collect();
     let not_local: BTreeSet<String> = NOT_LOCAL.iter().map(|(n, _)| n.to_string()).collect();
     let unmirrored: Vec<&String> = ci

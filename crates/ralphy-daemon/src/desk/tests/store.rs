@@ -100,7 +100,7 @@ fn save_leaves_no_temp_file_behind() {
     .unwrap();
     let leftovers: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n != "desk.toml")
         .collect();

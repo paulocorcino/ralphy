@@ -51,7 +51,7 @@ pub(crate) fn skill_list_violation(listing: &str, required: &[String]) -> Option
     };
     let enabled: Vec<&str> = entries
         .iter()
-        .filter(|e| e.get("enabled").and_then(|b| b.as_bool()) == Some(true))
+        .filter(|e| e.get("enabled").and_then(serde_json::Value::as_bool) == Some(true))
         .filter_map(|e| e.get("name").and_then(|n| n.as_str()))
         .collect();
     let missing = required.iter().find(|r| !enabled.contains(&r.as_str()))?;
@@ -121,7 +121,7 @@ mod tests {
     fn required() -> Vec<String> {
         ["reviewer", "setup-pocock", "staged-plan"]
             .iter()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect()
     }
 

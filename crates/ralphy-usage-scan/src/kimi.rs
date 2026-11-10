@@ -166,7 +166,7 @@ fn read_status_update(line: &str) -> Option<(Option<String>, Snap)> {
     // Unix seconds (float) → ms.
     let ts_ms = val
         .get("timestamp")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .map(|s| (s * 1000.0) as i64);
     let total = tokens.input + tokens.output + tokens.cache_read + tokens.cache_creation;
     let key = payload
@@ -249,7 +249,7 @@ fn read_usage_record(line: &str) -> Option<UsageRecord> {
     Some(UsageRecord {
         model,
         tokens,
-        ts_ms: val.get("time").and_then(|v| v.as_i64()),
+        ts_ms: val.get("time").and_then(serde_json::Value::as_i64),
     })
 }
 
@@ -389,7 +389,9 @@ fn to_breakdown(
 
 /// A JSON object's `key` as `i64`, 0 when absent/non-numeric.
 fn i64_field(obj: &serde_json::Value, key: &str) -> i64 {
-    obj.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+    obj.get(key)
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0)
 }
 
 /// A unix-ms instant → RFC3339 UTC; empty string when absent or out of range.

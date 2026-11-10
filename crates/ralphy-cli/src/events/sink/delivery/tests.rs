@@ -300,7 +300,7 @@ impl EventSink for RecordingSink {
     fn post(&self, body: &Value) -> anyhow::Result<PostOutcome> {
         self.0
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(body.clone());
         Ok(PostOutcome::Delivered)
     }
@@ -323,7 +323,10 @@ fn deliver_from_pre_start_ring(events: Vec<RunEvent>) -> Vec<Value> {
     )
     .expect("the sink worker spawns");
     handle.shutdown();
-    let out = recorded.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let out = recorded
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     out
 }
 

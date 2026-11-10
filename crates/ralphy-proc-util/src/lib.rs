@@ -49,7 +49,7 @@ pub fn program_dir_on_path(cmd: &mut Command) {
         .get_envs()
         .find(|(key, _)| key.eq_ignore_ascii_case(std::ffi::OsStr::new("PATH")))
         .and_then(|(_, value)| value)
-        .map(|v| v.to_os_string())
+        .map(std::ffi::OsStr::to_os_string)
         .or_else(|| std::env::var_os("PATH"));
     if let Some(widened) = path_with_dir(dir, existing.as_deref()) {
         cmd.env("PATH", widened);
@@ -321,7 +321,7 @@ pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
         return Vec::new();
     };
     let mut found: Vec<(Vec<u64>, PathBuf)> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| {
             let dir = e.path();
             let key = dir

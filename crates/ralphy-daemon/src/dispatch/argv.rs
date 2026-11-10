@@ -31,7 +31,7 @@ pub enum ArgvError {
 /// and NO argv — the client never contributes a raw argument, so remote input can
 /// never widen the command line.
 pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let owned = |parts: &[&str]| parts.iter().map(ToString::to_string).collect::<Vec<_>>();
     match verb {
         Verb::Triage => Ok(owned(&["triage", "--if-idle", "--yes"])),
         Verb::PushQueue => Ok(owned(&["issues", "--push"])),
@@ -131,7 +131,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
 pub fn board_argv() -> Vec<String> {
     ["issues", "--format", "json", "--board"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -142,7 +142,7 @@ pub fn board_argv() -> Vec<String> {
 pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let n = payload
         .get("number")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .filter(|&n| n > 0)
         .ok_or(ArgvError::BadParam("number"))?;
     Ok(vec![
@@ -160,7 +160,7 @@ pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvE
 pub fn branch_list_argv() -> Vec<String> {
     ["branch", "list", "--format", "json"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -171,7 +171,7 @@ pub fn branch_list_argv() -> Vec<String> {
 pub fn worktree_list_argv() -> Vec<String> {
     ["worktree", "list", "--format", "json"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -181,7 +181,7 @@ pub fn worktree_list_argv() -> Vec<String> {
 pub fn changes_list_argv() -> Vec<String> {
     ["changes", "list", "--format", "json"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -191,7 +191,7 @@ pub fn changes_list_argv() -> Vec<String> {
 pub fn sync_status_argv() -> Vec<String> {
     ["sync", "status", "--format", "json"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -401,7 +401,7 @@ pub fn worktree_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, 
 pub fn label_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let number = payload
         .get("number")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .filter(|&n| n > 0)
         .ok_or(ArgvError::BadParam("number"))?;
     let label = payload

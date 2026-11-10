@@ -177,7 +177,10 @@ impl Keepalives {
     ) -> Result<bool> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future wake over it would be the worse failure.
-        let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut held = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let still_running = match held.get_mut(distro) {
             // `try_wait` is the one question asked of the child, and it is a
             // read: it neither blocks nor signals. `Err` means the handle itself

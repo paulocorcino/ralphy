@@ -131,7 +131,11 @@ pub(crate) fn continue_on_auto_mode_violation(config_src: &str) -> Option<String
             return None;
         }
     };
-    if parsed.get("continueOnAutoMode").and_then(|v| v.as_bool()) != Some(true) {
+    if parsed
+        .get("continueOnAutoMode")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
         return None;
     }
     let path = copilot_config_path()

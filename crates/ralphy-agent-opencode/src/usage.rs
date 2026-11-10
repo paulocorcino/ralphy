@@ -19,7 +19,9 @@ fn usage_from_opencode_message(data: &serde_json::Value) -> Option<Usage> {
         return None;
     }
     let tokens = data.get("tokens").filter(|t| t.is_object())?;
-    let field = |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |obj: &serde_json::Value, k: &str| {
+        obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0)
+    };
     let cache = tokens.get("cache");
     Some(Usage {
         input: field(tokens, "input"),

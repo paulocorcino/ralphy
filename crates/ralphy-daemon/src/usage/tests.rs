@@ -132,7 +132,9 @@ fn scoping_to_a_project_keeps_only_its_rows_and_never_touches_missing() {
 /// default. Env is process-global, so the three legs run in one test.
 #[test]
 fn copilot_db_path_prefers_the_env_override() {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = (
         std::env::var_os("RALPHY_COPILOT_DB"),
         std::env::var_os("COPILOT_HOME"),
@@ -175,7 +177,9 @@ fn copilot_db_path_prefers_the_env_override() {
 /// it, while the test-only `$RALPHY_CURSOR_DIR` still wins.
 #[test]
 fn cursor_dir_path_ignores_the_scratch_config_dir() {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = (
         std::env::var_os("CURSOR_CONFIG_DIR"),
         std::env::var_os("RALPHY_CURSOR_DIR"),
@@ -223,7 +227,9 @@ fn cursor_dir_path_ignores_the_scratch_config_dir() {
 /// test-only `$RALPHY_GEMINI_DIR` still wins.
 #[test]
 fn gemini_dir_path_ignores_ralphys_own_cli_home() {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = (
         std::env::var_os("GEMINI_CLI_HOME"),
         std::env::var_os("RALPHY_GEMINI_DIR"),

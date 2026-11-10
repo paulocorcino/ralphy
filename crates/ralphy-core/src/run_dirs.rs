@@ -46,7 +46,7 @@ pub fn prune_run_dirs(
         return out;
     };
     let mut stamps: Vec<(String, PathBuf)> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;

@@ -49,7 +49,7 @@ fn toolless_assistant_text(line: &str) -> Option<String> {
     let toolless = data
         .get("toolRequests")
         .and_then(Value::as_array)
-        .is_some_and(|a| a.is_empty());
+        .is_some_and(Vec::is_empty);
     if !toolless {
         return None;
     }

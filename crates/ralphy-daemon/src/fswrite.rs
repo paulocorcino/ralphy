@@ -133,7 +133,10 @@ fn is_protected(name: &OsStr) -> bool {
 /// denylist and is refused. The carve-out is the narrow thing; the denylist is
 /// the default.
 fn is_note_in_notes_dir(path: &Path) -> bool {
-    let parts: Vec<&OsStr> = path.components().map(|c| c.as_os_str()).collect();
+    let parts: Vec<&OsStr> = path
+        .components()
+        .map(std::path::Component::as_os_str)
+        .collect();
     let [dir, sub, name] = parts[..] else {
         return false;
     };

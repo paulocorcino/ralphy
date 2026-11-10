@@ -442,7 +442,7 @@ fn recovery_line(value: &serde_json::Value) -> Option<RecoveryLine> {
     let token = |name: &str| {
         tokens
             .and_then(|value| value.get(name))
-            .and_then(|value| value.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0)
     };
     let candidate = value

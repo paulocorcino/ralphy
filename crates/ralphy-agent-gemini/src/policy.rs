@@ -74,7 +74,7 @@ fn policy_files(dir: &Path) -> Vec<PathBuf> {
         return Vec::new();
     };
     let mut files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("toml"))
         .collect();

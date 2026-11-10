@@ -104,7 +104,7 @@ pub(super) fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Res
             } else {
                 logged_in
                     .iter()
-                    .map(|x| x.cli_name())
+                    .map(Agent::cli_name)
                     .collect::<Vec<_>>()
                     .join(", ")
             }

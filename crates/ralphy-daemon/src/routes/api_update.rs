@@ -230,7 +230,7 @@ mod tests {
             _daemon_id: Option<&str>,
         ) -> anyhow::Result<Box<dyn dispatch::Child>> {
             let mut argv = self.argv.lock().expect("the argv lock is never poisoned");
-            *argv = args.iter().map(|a| a.to_string()).collect();
+            *argv = args.iter().map(ToString::to_string).collect();
             Ok(Box::new(Scripted {
                 output: Some(self.text.as_bytes().to_vec()),
                 code: self.code,

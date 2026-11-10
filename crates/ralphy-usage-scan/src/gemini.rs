@@ -241,11 +241,16 @@ fn widen_last(last_ts: &mut String, updated: &str) {
 
 /// Add one assistant turn's `tokens` block to the aggregate of its `model`.
 fn add_turn(by_model: &mut BTreeMap<String, Tokens>, tokens: &serde_json::Value, model: &str) {
-    let n = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let n = |k: &str| {
+        tokens
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     let (input, cached) = (n("input"), n("cached"));
     // A record with no `total` cannot be differenced — reconstruct the sum
     // from the parts instead, or the turn would report input-only spend.
-    let total = match tokens.get("total").and_then(|v| v.as_u64()) {
+    let total = match tokens.get("total").and_then(serde_json::Value::as_u64) {
         Some(t) => t,
         None => input + n("output") + n("thoughts"),
     };

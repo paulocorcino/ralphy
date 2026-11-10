@@ -323,7 +323,7 @@ fn blob_read_argv_composes_exact_vector_and_refuses() {
         "json",
     ]
     .iter()
-    .map(|s| s.to_string())
+    .map(ToString::to_string)
     .collect();
 
     assert_eq!(

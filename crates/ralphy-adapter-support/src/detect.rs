@@ -105,7 +105,7 @@ mod tests {
         );
         let got = scan_json_lines(stream, |v| {
             (v.get("type").and_then(|t| t.as_str()) == Some("target"))
-                .then(|| v.get("v").and_then(|n| n.as_u64()))
+                .then(|| v.get("v").and_then(serde_json::Value::as_u64))
                 .flatten()
         });
         assert_eq!(got, Some(7));

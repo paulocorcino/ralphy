@@ -151,7 +151,7 @@ fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
             } else {
                 logged_in
                     .iter()
-                    .map(|x| x.cli_name())
+                    .map(Agent::cli_name)
                     .collect::<Vec<_>>()
                     .join(", ")
             }

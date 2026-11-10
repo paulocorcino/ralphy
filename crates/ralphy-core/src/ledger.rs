@@ -107,7 +107,12 @@ pub fn sum_tokens(jsonl: &str) -> Usage {
         let Some(tokens) = value.get("tokens") else {
             continue;
         };
-        let field = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| {
+            tokens
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         total.input += field("input");
         total.output += field("output");
         total.cache_read += field("cache_read");
@@ -163,12 +168,17 @@ pub fn read_rows(jsonl: &str) -> Vec<UsageRow> {
                 .unwrap_or("")
                 .to_string()
         };
-        let n = |k: &str| value.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let n = |k: &str| {
+            value
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         let tok = |k: &str| {
             value
                 .get("tokens")
                 .and_then(|t| t.get(k))
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or(0)
         };
         rows.push(UsageRow {

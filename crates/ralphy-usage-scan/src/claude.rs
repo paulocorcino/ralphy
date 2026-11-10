@@ -132,7 +132,12 @@ fn read_usage_line(line: &str) -> Option<UsageLine> {
     let message = value.get("message")?;
     let model = message.get("model").and_then(|v| v.as_str())?;
     let usage = message.get("usage")?;
-    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |k: &str| {
+        usage
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     Some(UsageLine {
         model: model.to_string(),
         toks: [
@@ -267,12 +272,12 @@ fn ts_lt(a: &str, b: &str) -> bool {
 fn cache_creation_tokens(usage: &serde_json::Value) -> u64 {
     if let Some(flat) = usage
         .get("cache_creation_input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
     {
         return flat;
     }
     if let Some(obj) = usage.get("cache_creation").and_then(|v| v.as_object()) {
-        let tier = |k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let tier = |k: &str| obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         return tier("ephemeral_5m_input_tokens") + tier("ephemeral_1h_input_tokens");
     }
     0

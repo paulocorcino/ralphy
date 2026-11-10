@@ -49,7 +49,12 @@ pub(crate) fn parse_plan_usage(stdout: &str) -> Usage {
         let Some(usage) = value.get("usage") else {
             continue;
         };
-        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| {
+            usage
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         let mut u = Usage {
             input: field("input_tokens"),
             output: field("output_tokens"),
@@ -175,7 +180,12 @@ fn dominant_model_key(model_usage: &serde_json::Map<String, serde_json::Value>) 
 /// (`inputTokens`, `cacheReadInputTokens`, …), unlike the snake_case top-level
 /// `usage` block — Claude Code reports the per-model breakdown in the other case.
 fn model_usage_total(entry: &serde_json::Value) -> u64 {
-    let f = |k: &str| entry.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let f = |k: &str| {
+        entry
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     f("inputTokens") + f("outputTokens") + f("cacheReadInputTokens") + f("cacheCreationInputTokens")
 }
 
@@ -197,12 +207,12 @@ fn dashed_cwd(cwd: &str) -> String {
 fn cache_creation_tokens(usage: &serde_json::Value) -> u64 {
     if let Some(flat) = usage
         .get("cache_creation_input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
     {
         return flat;
     }
     if let Some(obj) = usage.get("cache_creation").and_then(|v| v.as_object()) {
-        let tier = |k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let tier = |k: &str| obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         return tier("ephemeral_5m_input_tokens") + tier("ephemeral_1h_input_tokens");
     }
     0
@@ -272,7 +282,12 @@ fn first_sight(message: &serde_json::Value, seen: &mut std::collections::HashSet
 /// read; `iterations[]` is never descended into, so its repeated `usage` is
 /// ignored by construction.
 fn usage_tokens(usage: &serde_json::Value) -> Usage {
-    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |k: &str| {
+        usage
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     Usage {
         input: field("input_tokens"),
         output: field("output_tokens"),

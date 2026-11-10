@@ -164,7 +164,7 @@ async fn flush_and_report(
             return;
         }
     }
-    let code = joined.ok().and_then(|r| r.ok()).flatten();
+    let code = joined.ok().and_then(Result::ok).flatten();
     wire.reply(
         id,
         verb,

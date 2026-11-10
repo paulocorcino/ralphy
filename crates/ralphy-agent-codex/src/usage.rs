@@ -29,7 +29,7 @@ fn parse_codex_rollout_usage(jsonl: &str, model: Option<String>) -> Usage {
         ..Usage::default()
     };
     if let Some(ttu) = last {
-        let field = |k: &str| ttu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| ttu.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         let cached = field("cached_input_tokens");
         usage.input = field("input_tokens").saturating_sub(cached);
         usage.output = field("output_tokens");

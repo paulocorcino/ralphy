@@ -127,7 +127,12 @@ impl Presenter {
             multi: self.multi.clone(),
             state: Arc::clone(&self.state),
             color: self.color,
-            flush: Some(self.tx.lock().unwrap_or_else(|e| e.into_inner()).clone()),
+            flush: Some(
+                self.tx
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
             edge: Arc::new(Mutex::new(crate::ui::EdgeNoticeState::default())),
         }
     }
@@ -176,7 +181,10 @@ impl Renderer {
     /// No-op off a colour TTY or when no active bar exists.
     fn tick(&self) {
         if self.opts.color {
-            let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let s = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             repaint_active_bar(&s, self.opts);
         }
     }
@@ -187,7 +195,10 @@ impl Renderer {
         let ts = Local::now();
         // Recover from poison rather than panic: this runs inside `on_event`, so a
         // panic here would corrupt the run on a tracing call.
-        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let extra = self.drive(&mut s, &event);
 

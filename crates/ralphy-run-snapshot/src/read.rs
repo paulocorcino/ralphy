@@ -151,7 +151,7 @@ fn parse(raw: &str) -> Result<RunSnapshot, &'static str> {
     // `v` is read before the struct so a document a newer ralphy retyped is
     // refused as such rather than misreported as malformed.
     let value: serde_json::Value = serde_json::from_str(raw).or(Err("malformed"))?;
-    match value.get("v").and_then(|v| v.as_u64()) {
+    match value.get("v").and_then(serde_json::Value::as_u64) {
         Some(v) if v > u64::from(SNAPSHOT_VERSION) => return Err("unsupported version"),
         Some(_) => {}
         None => return Err("malformed"),

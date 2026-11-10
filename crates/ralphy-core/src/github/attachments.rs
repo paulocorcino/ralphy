@@ -55,7 +55,7 @@ pub fn classify_format(filename: &str) -> FormatClass {
         .rsplit('.')
         .next()
         .filter(|e| !e.is_empty() && *e != filename)
-        .map(|e| e.to_ascii_lowercase());
+        .map(str::to_ascii_lowercase);
     match ext.as_deref() {
         Some(e) if FREE_TEXT_EXTS.contains(&e) => FormatClass::FreeText,
         Some(e) if STRUCTURED_EXTS.contains(&e) => FormatClass::Structured,
@@ -107,7 +107,7 @@ pub fn extract_user_attachment_links(body: &str, comments: &[String]) -> Vec<Str
     let re = Regex::new(r"https?://github\.com/user-attachments/\S+").expect("static regex");
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    let sources = std::iter::once(body).chain(comments.iter().map(|s| s.as_str()));
+    let sources = std::iter::once(body).chain(comments.iter().map(String::as_str));
     for text in sources {
         for m in re.find_iter(text) {
             let url = m

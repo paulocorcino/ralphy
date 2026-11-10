@@ -314,7 +314,7 @@ fn consolidation(number: u64, drew_on: &[&str]) -> TriageDraft {
             verdict: TriageVerdict::Consolidate,
             comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nspec")),
             draft_issue: None,
-            drew_on: drew_on.iter().map(|s| s.to_string()).collect(),
+            drew_on: drew_on.iter().map(ToString::to_string).collect(),
         }],
     }
 }

@@ -60,7 +60,7 @@ fn issue(number: u64, labels: &[&str], body: &str) -> Issue {
         number,
         title: format!("issue {number}"),
         body: body.to_string(),
-        labels: labels.iter().map(|s| s.to_string()).collect(),
+        labels: labels.iter().map(ToString::to_string).collect(),
         comments: Vec::new(),
     }
 }
@@ -68,12 +68,12 @@ fn issue(number: u64, labels: &[&str], body: &str) -> Issue {
 fn human() -> Vec<String> {
     ["needs-info", "wontfix"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
 fn spec(tokens: &[&str]) -> Vec<String> {
-    tokens.iter().map(|s| s.to_string()).collect()
+    tokens.iter().map(ToString::to_string).collect()
 }
 
 /// A structured comment for the `show_view` call sites.

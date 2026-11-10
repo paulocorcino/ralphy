@@ -47,7 +47,9 @@ fn serialized_ledger_model(usage: &ralphy_core::Usage) -> String {
 
 #[test]
 fn plan_and_execute_agent_paths_serialize_the_resolved_model() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = std::env::var_os("CODEX_HOME");
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("repo");
@@ -125,7 +127,9 @@ fn done_plan(ws: &Workspace) -> Plan {
 /// auth banner — and a genuinely failed one must still say `codex login`.
 #[test]
 fn a_clean_execute_outlives_its_own_auth_message_in_the_log() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = std::env::var_os("CODEX_HOME");
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("repo");

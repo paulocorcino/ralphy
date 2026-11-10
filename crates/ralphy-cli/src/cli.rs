@@ -181,7 +181,7 @@ pub(crate) fn command() -> clap::Command {
         .get_subcommands()
         .filter(|sub| sub.is_hide_set())
         .map(|sub| {
-            let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
+            let about = sub.get_about().map(ToString::to_string).unwrap_or_default();
             (sub.get_name().to_string(), about)
         })
         .collect();

@@ -298,9 +298,16 @@ impl Traffic {
             return false;
         }
         if self.keys.session.is_none() {
-            self.keys.session = cmd.payload.get("session").and_then(|v| v.as_u64());
+            self.keys.session = cmd
+                .payload
+                .get("session")
+                .and_then(serde_json::Value::as_u64);
         }
-        let replay = cmd.payload.get("replay").and_then(|v| v.as_bool()) == Some(true);
+        let replay = cmd
+            .payload
+            .get("replay")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true);
         let gzip = cmd.payload.get("replay_encoding").and_then(|v| v.as_str()) == Some("gzip");
         self.peer_stage = PeerStage::FirstOutput { replay, gzip };
         true

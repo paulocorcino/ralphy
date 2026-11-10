@@ -161,7 +161,7 @@ pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
     let optional = |key: &str| {
         fields
             .get(key)
-            .map(|v| v.to_string())
+            .map(ToString::to_string)
             .filter(|v| !v.is_empty())
     };
     let headline = optional("headline");

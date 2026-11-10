@@ -229,7 +229,7 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
         let detail = error_detail(val);
         let status = detail
             .get("statusCode")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
         let msg = detail
             .get("message")

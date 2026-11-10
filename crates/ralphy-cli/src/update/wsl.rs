@@ -30,7 +30,7 @@ fn exec_start_argv(spec: &NudgeSpec) -> Vec<String> {
         &spec.unit,
     ]
     .iter()
-    .map(|a| a.to_string())
+    .map(ToString::to_string)
     .collect()
 }
 

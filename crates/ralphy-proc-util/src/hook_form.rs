@@ -151,7 +151,9 @@ static WARNED: LazyLock<Mutex<HashSet<(PathBuf, String)>>> =
 fn first_warning(bin: &Path, reason: &str) -> bool {
     let bin = std::fs::canonicalize(bin).unwrap_or_else(|_| bin.to_path_buf());
     // A poisoned set still holds valid entries: each insert is one call.
-    let mut warned = WARNED.lock().unwrap_or_else(|e| e.into_inner());
+    let mut warned = WARNED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     warned.insert((bin, reason.to_string()))
 }
 
@@ -162,7 +164,9 @@ static VERSION_CACHE: LazyLock<Mutex<HashMap<CacheKey, String>>> =
 
 fn lock_cache() -> MutexGuard<'static, HashMap<CacheKey, String>> {
     // A poisoned cache still holds valid entries: each insert is one call.
-    VERSION_CACHE.lock().unwrap_or_else(|e| e.into_inner())
+    VERSION_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn cache_key(bin: &Path) -> Option<CacheKey> {

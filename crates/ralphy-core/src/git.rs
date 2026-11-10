@@ -331,7 +331,7 @@ pub fn head_sha(repo: &Path) -> Result<String> {
 /// `git log --oneline` order. An empty range yields an empty vec.
 pub fn log_oneline(repo: &Path, range: &str) -> Result<Vec<String>> {
     let out = git(repo, &["log", "--oneline", range])?;
-    Ok(out.lines().map(|l| l.to_string()).collect())
+    Ok(out.lines().map(str::to_owned).collect())
 }
 
 /// Number of commits in `range` (e.g. `base..branch`). Zero == empty branch.

@@ -74,7 +74,7 @@ fn each_forbidden_edge_is_reported() {
 fn node(name: &str, deps: &[&str]) -> (String, Vec<String>) {
     (
         name.to_string(),
-        deps.iter().map(|d| d.to_string()).collect(),
+        deps.iter().map(ToString::to_string).collect(),
     )
 }
 

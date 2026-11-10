@@ -44,7 +44,7 @@ async fn a_run_snapshot_in_a_registered_repo_is_listed() {
     std::fs::remove_file(ralphy_run_snapshot::snapshot_path(&home, "01RUNWAITS"))
         .expect("remove the run snapshot");
     let (_, reply) = wait_for(port, "/api/attention", |r| {
-        r.as_array().is_some_and(|a| a.is_empty())
+        r.as_array().is_some_and(Vec::is_empty)
     })
     .await;
     assert_eq!(reply["requests"], serde_json::json!([]), "{reply}");

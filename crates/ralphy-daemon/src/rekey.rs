@@ -206,7 +206,7 @@ mod tests {
         ) -> anyhow::Result<Box<dyn Child>> {
             assert!(daemon_id.is_none(), "a heal carries no daemon id");
             self.calls.lock().unwrap().push((
-                args.iter().map(|a| a.to_string()).collect(),
+                args.iter().map(ToString::to_string).collect(),
                 cwd.to_path_buf(),
             ));
             Ok(Box::new(FakeChild))

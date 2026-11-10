@@ -154,7 +154,9 @@ fn assistant_row(data: &str) -> Option<AssistantRow> {
         return None;
     }
     let tokens = val.get("tokens").filter(|t| t.is_object())?;
-    let field = |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |obj: &serde_json::Value, k: &str| {
+        obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0)
+    };
     let cache = tokens.get("cache");
     Some(AssistantRow {
         model: val
@@ -172,7 +174,7 @@ fn assistant_row(data: &str) -> Option<AssistantRow> {
         ts_ms: val
             .get("time")
             .and_then(|t| t.get("created"))
-            .and_then(|v| v.as_i64()),
+            .and_then(serde_json::Value::as_i64),
     })
 }
 

@@ -87,7 +87,7 @@ mod tests {
                     serde_json::json!({
                         "state": o.state.as_str(),
                         "detail": o.detail,
-                        "cause": o.cause.map(|c| c.as_str()),
+                        "cause": o.cause.map(super::super::fold::Cause::as_str),
                         "ts": o.ts,
                     })
                 });

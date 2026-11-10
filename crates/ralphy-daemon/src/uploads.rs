@@ -126,7 +126,7 @@ impl UploadError {
 /// before the decode, so an oversized part never allocates its bytes.
 pub fn parse(payload: &serde_json::Value) -> Result<Part, UploadError> {
     let text = |key: &str| payload.get(key).and_then(|v| v.as_str());
-    let number = |key: &str| payload.get(key).and_then(|v| v.as_u64());
+    let number = |key: &str| payload.get(key).and_then(serde_json::Value::as_u64);
     let id = text("id")
         .filter(|id| is_id(id))
         .ok_or(UploadError::Invalid)?;
@@ -273,7 +273,7 @@ fn sweep(root: &Path, now: SystemTime) {
 fn is_older(path: &Path, cutoff: SystemTime) -> bool {
     std::fs::symlink_metadata(path)
         .ok()
-        .filter(|meta| meta.is_file())
+        .filter(std::fs::Metadata::is_file)
         .and_then(|meta| meta.modified().ok())
         .is_some_and(|modified| modified < cutoff)
 }

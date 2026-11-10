@@ -28,7 +28,7 @@ fn fold_matches_the_shared_mapping_fixture() {
                 serde_json::json!({
                     "state": o.state.as_str(),
                     "detail": o.detail,
-                    "cause": o.cause.map(|c| c.as_str()),
+                    "cause": o.cause.map(agent_state::Cause::as_str),
                     "ts": o.ts,
                 })
             });

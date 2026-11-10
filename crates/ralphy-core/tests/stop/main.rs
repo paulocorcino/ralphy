@@ -42,7 +42,9 @@ impl StopFlagGuard {
     fn acquire() -> Self {
         // A panicking test poisons the lock; recover rather than cascade — the
         // flag is reset right below, so there is no state left to protect.
-        let lock = STOP_FLAG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = STOP_FLAG_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ralphy_core::stop::clear();
         Self(lock)
     }

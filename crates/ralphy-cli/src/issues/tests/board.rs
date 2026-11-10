@@ -17,7 +17,7 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
                 state: state.to_string(),
                 reason: reason.map(str::to_string),
                 labels: vec!["ready-for-agent".to_string()],
-                assignees: assignees.iter().map(|s| s.to_string()).collect(),
+                assignees: assignees.iter().map(ToString::to_string).collect(),
                 blocked_by: blocked_by.to_vec(),
                 created: "2026-07-01T00:00:00Z".to_string(),
                 updated: "2026-07-02T00:00:00Z".to_string(),

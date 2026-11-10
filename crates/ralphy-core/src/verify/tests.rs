@@ -54,7 +54,7 @@ fn run_all_pass() {
     let report = run(&[ok_cmd(), ok_cmd()], &dir, Duration::from_secs(30));
     assert!(report.passed, "both ok commands pass");
     assert_eq!(report.commands.len(), 2);
-    assert!(report.commands.iter().all(|c| c.passed()));
+    assert!(report.commands.iter().all(CommandOutcome::passed));
 }
 
 #[test]

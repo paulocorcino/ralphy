@@ -210,7 +210,7 @@ pub(super) fn lock_rows() -> Vec<LockRow> {
             "--repo".to_string(),
             root.to_string_lossy().to_string(),
         ];
-        full.extend(args.iter().map(|a| a.to_string()));
+        full.extend(args.iter().map(ToString::to_string));
         rows.push(LockRow {
             verb,
             lock_repo: root,

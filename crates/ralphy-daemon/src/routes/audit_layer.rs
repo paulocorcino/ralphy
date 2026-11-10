@@ -102,7 +102,7 @@ pub(crate) fn upload_event(
     };
     let mut e = verb_event(cmd, device, actor, ip);
     e.file = Some(audit::clip(&file));
-    e.size = cmd.payload.get("total").and_then(|v| v.as_u64());
+    e.size = cmd.payload.get("total").and_then(serde_json::Value::as_u64);
     e.result = Some(result);
     Some(e)
 }

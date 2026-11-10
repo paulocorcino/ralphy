@@ -246,7 +246,7 @@ fn an_indexed_member_is_a_read_and_a_step_on_it_is_a_write() {
 fn a_binding_names_only_free_members_of_shell_scope() {
     let known: BTreeSet<String> = ["openSlug", "tabs", "rowOpen", "branchOpen", "item", "label"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect();
     let html = "\
 <head><script>let openSlug = 1;</script></head>
@@ -283,7 +283,10 @@ fn a_binding_names_only_free_members_of_shell_scope() {
 }
 
 fn binding_lines(html: &str) -> Vec<(usize, Vec<String>)> {
-    let known: BTreeSet<String> = ["openSlug", "tabs"].iter().map(|s| s.to_string()).collect();
+    let known: BTreeSet<String> = ["openSlug", "tabs"]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
     scan_bindings(html, &known)
         .into_iter()
         .map(|b| (b.line, b.names.into_iter().collect()))
@@ -314,7 +317,7 @@ fn an_unquoted_value_ends_at_white_space() {
 
 /// The names the one `x-text` expression `expr` reads, out of `known`.
 fn names_read(expr: &str, known: &[&str]) -> Vec<String> {
-    let known: BTreeSet<String> = known.iter().map(|s| s.to_string()).collect();
+    let known: BTreeSet<String> = known.iter().map(ToString::to_string).collect();
     let html = format!("<body x-data=\"shell\"><i x-text=\"{expr}\"></i></body>");
     scan_bindings(&html, &known)
         .into_iter()

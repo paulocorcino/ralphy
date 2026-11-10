@@ -11,7 +11,7 @@ fn path_with_dir_prepends_a_missing_directory() {
 
     let entries: Vec<_> = std::env::split_paths(&widened).collect();
     assert_eq!(
-        entries.first().map(|p| p.as_path()),
+        entries.first().map(PathBuf::as_path),
         Some(dir),
         "{entries:?}"
     );
@@ -66,7 +66,7 @@ fn program_dir_on_path_extends_a_declared_path() {
         .expect("PATH is set on the command");
     let entries: Vec<_> = std::env::split_paths(path).collect();
     assert_eq!(
-        entries.first().map(|p| p.as_path()),
+        entries.first().map(PathBuf::as_path),
         program.parent(),
         "the program's own directory leads: {entries:?}"
     );

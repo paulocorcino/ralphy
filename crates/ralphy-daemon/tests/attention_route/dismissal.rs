@@ -92,7 +92,7 @@ async fn a_live_request_cannot_be_dismissed() {
     }
     let (status, body) = dismiss(port, &issue(99)).await;
     assert_eq!(status, 404, "an unknown id: {body}");
-    let (_, reply) = wait_for(port, "/api/attention", |r| r.is_array()).await;
+    let (_, reply) = wait_for(port, "/api/attention", serde_json::Value::is_array).await;
     assert_eq!(ids(&reply["requests"]), both, "{reply}");
     assert!(!home.join("attention-dismissed.jsonl").exists());
 }

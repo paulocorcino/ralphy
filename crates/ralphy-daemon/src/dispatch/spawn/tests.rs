@@ -42,7 +42,7 @@ impl Spawner for FakeSpawner {
     ) -> Result<Box<dyn Child>> {
         self.calls.lock().unwrap().push((
             program.to_os_string(),
-            args.iter().map(|a| a.to_string()).collect(),
+            args.iter().map(ToString::to_string).collect(),
             cwd.to_path_buf(),
             daemon_id.map(str::to_owned),
         ));

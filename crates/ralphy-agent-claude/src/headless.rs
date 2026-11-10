@@ -30,7 +30,7 @@ pub(crate) fn headless_args(
     effort: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec!["-p".into(), "--dangerously-skip-permissions".into()];
-    args.extend(crate::STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
+    args.extend(crate::STREAM_JSON_ARGS.iter().map(ToString::to_string));
     args.extend([
         "--settings".into(),
         settings.to_string_lossy().into_owned(),

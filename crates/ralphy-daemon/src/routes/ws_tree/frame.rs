@@ -227,7 +227,10 @@ mod tests {
         .expect("a well formed checkout is kept");
         assert_eq!(req.rel, ".ralphy/worktrees/wt-a/src");
         assert_eq!(req.alias, Some(alias("src", "wt-a")));
-        assert_eq!(req.checkout.as_ref().map(|c| c.name()), Some("wt-a"));
+        assert_eq!(
+            req.checkout.as_ref().map(checkout::Checkout::name),
+            Some("wt-a")
+        );
     }
 
     #[test]
@@ -239,7 +242,10 @@ mod tests {
         .expect("a head watch names a checkout");
         assert_eq!(req.rel, "src");
         assert_eq!(req.alias, Some(alias("", "wt-a")));
-        assert_eq!(req.checkout.as_ref().map(|c| c.name()), Some("wt-a"));
+        assert_eq!(
+            req.checkout.as_ref().map(checkout::Checkout::name),
+            Some("wt-a")
+        );
     }
 
     #[test]

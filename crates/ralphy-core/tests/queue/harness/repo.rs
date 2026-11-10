@@ -184,7 +184,7 @@ pub(crate) fn issue_labeled(number: u64, labels: &[&str]) -> Issue {
         number,
         title: format!("issue {number}"),
         body: String::new(),
-        labels: labels.iter().map(|s| s.to_string()).collect(),
+        labels: labels.iter().map(ToString::to_string).collect(),
         comments: vec![],
     }
 }
@@ -212,7 +212,7 @@ pub(crate) fn default_human_return() -> Vec<String> {
         "triage-agent",
     ]
     .iter()
-    .map(|s| s.to_string())
+    .map(ToString::to_string)
     .collect()
 }
 

@@ -283,7 +283,7 @@ fn read_snapshot(payload: &serde_json::Value) -> Option<RawTotals> {
     if !ttu.is_object() {
         return None;
     }
-    let field = |k: &str| ttu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |k: &str| ttu.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
     Some(RawTotals {
         input: field("input_tokens"),
         output: field("output_tokens"),

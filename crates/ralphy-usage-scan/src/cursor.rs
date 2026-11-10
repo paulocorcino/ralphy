@@ -60,7 +60,7 @@ fn scan_chats(
     let sessions = hashes
         .flatten()
         .filter_map(|hash| fs::read_dir(hash.path()).ok())
-        .flat_map(|sessions| sessions.flatten());
+        .flat_map(Iterator::flatten);
     for session in sessions {
         let session_id = session.file_name().to_string_lossy().to_string();
         if input.run_session_ids.contains(&session_id) {
@@ -82,7 +82,7 @@ fn chat_record(
 ) -> Option<InteractiveRecord> {
     let text = fs::read_to_string(session_dir.join("meta.json")).ok()?;
     let meta = serde_json::from_str::<serde_json::Value>(&text).ok()?;
-    let ms = |k: &str| meta.get(k).and_then(|v| v.as_i64());
+    let ms = |k: &str| meta.get(k).and_then(serde_json::Value::as_i64);
     let cwd = meta.get("cwd").and_then(|v| v.as_str());
     let matched = cwd.and_then(|c| crate::attribution::find_repo(input.repos, c));
     let (project, actor_email) = attribute(email_cache, matched);

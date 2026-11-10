@@ -228,7 +228,10 @@ impl Tunnels {
     /// The peer `daemon_id` answered through its tunnel: the next exit of its
     /// `ssh` is replaced at once.
     pub fn answered(&self, daemon_id: &str) {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.failing.remove(daemon_id);
     }
 
@@ -260,7 +263,10 @@ impl Tunnels {
 
     /// Whether the `ssh` this process holds for `daemon_id` is still running.
     pub fn is_alive(&self, daemon_id: &str) -> bool {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .held
             .get_mut(daemon_id)
@@ -270,7 +276,10 @@ impl Tunnels {
     /// The last line the previous `ssh` to `daemon_id` wrote on its stderr
     /// before it exited, when it wrote one.
     pub fn last_said(&self, daemon_id: &str) -> Option<String> {
-        let state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.last_said.get(daemon_id).cloned()
     }
 
@@ -284,7 +293,10 @@ impl Tunnels {
     ) -> Result<Ensured> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future tunnel over it would be the worse failure.
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(running) = reap_held(&mut state, daemon_id, spec, now) {
             return Ok(running);
         }

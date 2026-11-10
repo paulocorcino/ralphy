@@ -69,7 +69,7 @@ fn remotely_settable_key(key: &str) -> bool {
     reason = "a verb this builder does not serve is refused, which fails closed"
 )]
 pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let owned = |parts: &[&str]| parts.iter().map(ToString::to_string).collect::<Vec<_>>();
     let key = || -> Result<String, ArgvError> {
         let key = payload
             .get("key")

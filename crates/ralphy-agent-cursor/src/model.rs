@@ -134,7 +134,7 @@ mod tests {
             .nth(1)
             .expect("the refusal carries the catalogue")
             .split(',')
-            .map(|s| s.trim())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect();
         assert!(ids.len() > 100, "catalogue looked short: {}", ids.len());
