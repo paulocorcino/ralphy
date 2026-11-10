@@ -279,9 +279,9 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
     spec.status = Some(files);
 }
 
-/// The OpenCode part of [`spec_with_status`]: the state plugin file, named
+/// The `OpenCode` part of [`spec_with_status`]: the state plugin file, named
 /// in `OPENCODE_CONFIG_CONTENT`, and `RALPHY_STATUS_FILE` (ADR-0085 D2). The
-/// config holds the plugin only: OpenCode merges it with the operator's own
+/// config holds the plugin only: `OpenCode` merges it with the operator's own
 /// config, so their settings and plugins still load. A failed write launches
 /// the console without the plugin, as for Claude.
 fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {

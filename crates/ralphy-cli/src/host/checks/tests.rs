@@ -477,7 +477,7 @@ fn checks_linux_linger_unknown_is_a_warning() {
     assert_eq!(get(&checks, Linger).status, CheckStatus::Warn);
 }
 
-/// A macOS host with FileVault off and no automatic sign-in gets the generic
+/// A macOS host with `FileVault` off and no automatic sign-in gets the generic
 /// advice, and a probe with no `pmset` section leaves the sleep setting unread.
 #[test]
 fn checks_macos_without_automatic_sign_in_or_sleep_setting() {

@@ -249,7 +249,7 @@ fn last_fetch_is_the_fetch_head_mtime() {
 
 /// The absence of `FETCH_HEAD` proves "did not fetch", not "made no network
 /// call" — `git ls-remote`, the natural way to freshen counts, writes no
-/// FETCH_HEAD and would pass that oracle. Here the remote PATH is made
+/// `FETCH_HEAD` and would pass that oracle. Here the remote PATH is made
 /// unreachable after the clone: the remote-tracking refs stay readable, so a
 /// local-only reader answers unchanged, while anything that consults the remote
 /// fails.

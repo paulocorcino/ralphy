@@ -1,5 +1,5 @@
 //! The cognitive complexity of Rust functions, read from the source text
-//! (ADR-0081, amendment 2026-10-12). The rules are those of the SonarSource
+//! (ADR-0081, amendment 2026-10-12). The rules are those of the `SonarSource`
 //! specification ("Cognitive Complexity", G. Ann Campbell, 2018):
 //!
 //! - `if`, `match`, `for`, `while`, `loop`, a `let … else` and a

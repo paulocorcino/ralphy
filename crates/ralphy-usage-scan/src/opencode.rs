@@ -1,10 +1,10 @@
-//! The OpenCode module of the usage scan (ADR-0033 §2/§6, ADR-0008 D5). Reads the
+//! The `OpenCode` module of the usage scan (ADR-0033 §2/§6, ADR-0008 D5). Reads the
 //! `opencode.db` SQLite `message` store read-only into per-session × model
 //! interactive records.
 //!
 //! Two OpenCode-specific rules, both proven live by the adapter
 //! (`ralphy-agent-opencode/src/usage.rs`, ADR-0008 D5): (1) `tokens.reasoning`
-//! is NOT added to `output` — OpenCode's own `total = input + output +
+//! is NOT added to `output` — `OpenCode`'s own `total = input + output +
 //! cache.read` reconciles without it, so reasoning already sits inside `output`;
 //! re-adding it double-counts. (2) The CLI `cost` field is never read (0 for the
 //! operator's un-priced custom providers).
@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{InteractiveRecord, OpenCodeScan, Tokens};
 
-/// Scan the OpenCode SQLite store into interactive records (one per session ×
+/// Scan the `OpenCode` SQLite store into interactive records (one per session ×
 /// model). Fully best-effort: any `rusqlite` error (missing db, lock, schema
 /// drift, corrupt file) yields an empty vec via the single `read_opencode`
 /// error funnel. `since` drops records whose `last_ts` is strictly before it

@@ -91,7 +91,7 @@ fn queue_snapshot_data_matches_queue_built_data() {
         assert_eq!(snapshot["data"], built["data"], "{case}");
     }
 }
-/// Each run event maps to its CloudEvent `type`, carries `subject:
+/// Each run event maps to its `CloudEvent` `type`, carries `subject:
 /// issue/<n>` only when it is about one issue (a run-scoped event carries
 /// none), and puts its fields under `data`.
 #[test]

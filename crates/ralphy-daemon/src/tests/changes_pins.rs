@@ -4,7 +4,7 @@
 use super::*;
 
 /// #308 pins the editor swap where it can actually regress: the embedded
-/// asset tree. Monaco is vendored, CodeMirror is gone, and the four heavy
+/// asset tree. Monaco is vendored, `CodeMirror` is gone, and the four heavy
 /// language workers stay excluded (the exclusion rule is prefix-based
 /// because Monaco 0.56 ships content-hashed chunk names).
 #[test]

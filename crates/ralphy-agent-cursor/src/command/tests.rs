@@ -254,7 +254,7 @@ mod shell_pin;
 ///
 /// It drives the production builder (`build_cursor_command`) so the pin under
 /// test is the shipped one, in a throwaway git repo (no trace, unlike touching
-/// the lab repo), and forces the exact POSIX heredoc commit that ParserErrors
+/// the lab repo), and forces the exact POSIX heredoc commit that `ParserErrors`
 /// under PowerShell. The discriminator is the vendor's `ps-script` PowerShell
 /// wrapper: under the git-bash pin it is never created; strip the pin (the
 /// pre-fix state) and it reappears.

@@ -22,7 +22,7 @@ pub enum TelegramCommand {
     /// Save the bot token, then find your chat when you send `/start` to the
     /// bot.
     Setup {
-        /// The bot token from BotFather. Default: the `RALPHY_TELEGRAM_TOKEN`
+        /// The bot token from `BotFather`. Default: the `RALPHY_TELEGRAM_TOKEN`
         /// environment variable.
         #[arg(long)]
         token: Option<String>,

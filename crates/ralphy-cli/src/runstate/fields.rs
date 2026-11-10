@@ -48,7 +48,7 @@ pub struct EventFields {
     /// Reasoning effort rung (`low`/`medium`/`high`/`xhigh`/`max`), or absent
     /// when the adapter emitted an empty string / documented no-op (ADR-0044 D9).
     pub effort: Option<String>,
-    /// Provider-native dialect selector (OpenCode `--variant`). Decoder-inert
+    /// Provider-native dialect selector (`OpenCode` `--variant`). Decoder-inert
     /// like `cmd`: recorded for `ralphy.log` / sinks, never folded into
     /// `RunEvent::{Planning,Executing}.effort` (ADR-0044 D9).
     pub variant: Option<String>,

@@ -205,7 +205,7 @@ pub(crate) mod win {
         pub(crate) first_is_user_full_access: bool,
     }
 
-    /// Frees the security descriptor GetNamedSecurityInfoW allocated, on every
+    /// Frees the security descriptor `GetNamedSecurityInfoW` allocated, on every
     /// return path.
     struct Descriptor(PSECURITY_DESCRIPTOR);
 

@@ -115,7 +115,7 @@ fn is_known(keygen: &Path, r: &Resolved) -> Result<bool> {
 /// The host key `ssh` negotiates with `dest`, as `known_hosts` lines. `ssh`
 /// records it into a throwaway file and then offers no sign-in method, so
 /// nothing signs in. `ssh-keyscan` is not used: the one in Windows
-/// (OpenSSH_for_Windows 9.5p2) reads no key from an OpenSSH 10 server
+/// (`OpenSSH_for_Windows` 9.5p2) reads no key from an OpenSSH 10 server
 /// (`choose_kex: unsupported KEX method sntrup761x25519-sha512@openssh.com`).
 fn scan(ssh: &Path, dest: &str) -> Result<Vec<ScanLine>> {
     let dir = std::env::temp_dir().join(format!("ralphy-hostkey-{}", ulid::Ulid::new()));

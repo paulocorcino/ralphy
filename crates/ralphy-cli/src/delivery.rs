@@ -2,9 +2,9 @@
 //! drop-oldest ring ([`EventQueue`]), one generic `tracing` [`DeliveryLayer`], and
 //! one background worker loop ([`run_delivery_worker`]) with a bounded-shutdown
 //! [`WorkerHandle`] — all parameterized by a per-sink [`DeliveryEngine`] fold. The
-//! Telegram notifier (ADR-0007) and the CloudEvents sink (ADR-0019) are two engines
+//! Telegram notifier (ADR-0007) and the `CloudEvents` sink (ADR-0019) are two engines
 //! over this one spine; each owns its own vendor transport and message/envelope
-//! shaping, plus any sink-specific policy (CloudEvents' retry/backoff). What is
+//! shaping, plus any sink-specific policy (`CloudEvents`' retry/backoff). What is
 //! shared here is the concurrency + lifetime substrate: the ring's drop-oldest
 //! back-pressure, the Layer's off-the-run-path enqueue, and the worker's
 //! poll/drain/fold/shutdown lifecycle.
@@ -22,7 +22,7 @@ use tracing_subscriber::layer::{Context, Layer};
 use crate::runstate::{event_to_runevent, EventFields, RunEvent};
 
 /// The default ring capacity for [`EventQueue::new`] (the Telegram notifier's bound,
-/// ADR-0007 D4/D7). The CloudEvents sink builds a wider ring via
+/// ADR-0007 D4/D7). The `CloudEvents` sink builds a wider ring via
 /// [`EventQueue::with_capacity`] (ADR-0019 ~1000).
 const QUEUE_CAPACITY: usize = 256;
 
@@ -148,7 +148,7 @@ impl<S: Subscriber> Layer<S> for DeliveryLayer {
 /// drained ring. `on_start`/`on_finish` bracket the worker's life; `on_event` folds
 /// each drained event in order; `on_tick(changed)` runs once per poll after the
 /// batch is folded (`changed` is whether that batch was non-empty), carrying any
-/// time-driven work (Telegram's throttled card refresh, CloudEvents' heartbeat +
+/// time-driven work (Telegram's throttled card refresh, `CloudEvents`' heartbeat +
 /// plan-step poll). The engine owns its vendor transport and all sink-specific
 /// policy; the worker owns only the poll/drain/shutdown lifecycle.
 pub trait DeliveryEngine {

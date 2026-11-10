@@ -54,7 +54,7 @@ struct GhBoardIssue {
 /// four board lanes and the drawer need. `state` is `"open"`/`"closed"`; `reason`
 /// is the lowercased `stateReason` (populated only for closed issues); `blocked_by`
 /// is parsed from the body's `## Blocked by` section (empty for the body-less
-/// closed read). Snake_case on the wire, matching the project's JSON convention.
+/// closed read). `Snake_case` on the wire, matching the project's JSON convention.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct BoardIssue {
     pub number: u64,

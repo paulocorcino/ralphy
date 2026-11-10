@@ -1,5 +1,5 @@
 //! The sink's delivery engine (ADR-0019, ADR-0024): a [`DeliveryEngine`] fold that
-//! maps each drained event into a CloudEvents envelope and POSTs it with retry, plus
+//! maps each drained event into a `CloudEvents` envelope and POSTs it with retry, plus
 //! the ~30s heartbeat and the plan-step poll on each tick. The ring, worker loop, and
 //! bounded-shutdown handle are the shared [`crate::delivery`] spine.
 
@@ -91,9 +91,9 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
     )
 }
 
-/// The CloudEvents sink fold (ADR-0019, ADR-0024): folds each drained event into a
+/// The `CloudEvents` sink fold (ADR-0019, ADR-0024): folds each drained event into a
 /// local [`RunState`] (so adapter events carrying issue `0` resolve to the active
-/// issue), maps it to a CloudEvents envelope, and POSTs it with retry; each tick
+/// issue), maps it to a `CloudEvents` envelope, and POSTs it with retry; each tick
 /// runs the plan-step poll and the ~30s heartbeat timer. Owns its own
 /// [`EventSink`] transport and the run's drop-guard `warned` flag.
 struct CloudEventsEngine<T: EventSink> {

@@ -3,7 +3,7 @@
 //! fold, the exit-code taxonomy and the policy document — is confined here.
 //! See docs/adr/0043.
 //!
-//! Like Codex, Kimi, OpenCode, Copilot and Cursor (and unlike Claude's live PTY
+//! Like Codex, Kimi, `OpenCode`, Copilot and Cursor (and unlike Claude's live PTY
 //! session), Gemini needs no interactive session: `plan` and `execute` both pipe
 //! the charter on **stdin** (ADR-0043 D2).
 //!

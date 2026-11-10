@@ -120,7 +120,7 @@ pub(crate) fn tier_to_model_effort(tier: Option<&str>) -> (&'static str, &'stati
 /// `exec` when another one follows it.
 ///
 /// GUARD ASYMMETRY: `danger-full-access` runs with no equivalent of the Claude
-/// adapter's PreToolUse guard hook — Ralphy gives Codex the status hooks only
+/// adapter's `PreToolUse` guard hook — Ralphy gives Codex the status hooks only
 /// — so safety here rests on the isolated run branch and the prompt's hard
 /// rules.
 pub(crate) fn build_codex_command(

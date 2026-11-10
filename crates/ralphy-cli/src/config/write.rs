@@ -20,7 +20,7 @@ fn with_claude(s: &mut Settings, f: impl FnOnce(&mut ClaudeSettings)) -> Result<
     s.set_agent_settings(ClaudeSettings::SECTION, &c)
 }
 
-/// Load-mutate-store the OpenCode section; same contract as [`with_claude`].
+/// Load-mutate-store the `OpenCode` section; same contract as [`with_claude`].
 fn with_opencode(s: &mut Settings, f: impl FnOnce(&mut OpenCodeSettings)) -> Result<()> {
     let mut o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION)?;
     f(&mut o);

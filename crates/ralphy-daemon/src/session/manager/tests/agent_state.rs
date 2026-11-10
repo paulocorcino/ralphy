@@ -315,7 +315,7 @@ fn a_tick_after_an_input_shows_the_newer_waiting() {
 }
 
 /// The daemon's start check runs the ralphy program, so its failure makes a
-/// Claude or Codex console silent at once, and not an OpenCode console,
+/// Claude or Codex console silent at once, and not an `OpenCode` console,
 /// whose plugin never runs that program.
 #[tokio::test]
 async fn a_failed_start_check_silences_only_a_vendor_that_runs_ralphy() {

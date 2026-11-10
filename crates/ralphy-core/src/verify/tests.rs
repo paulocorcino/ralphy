@@ -8,7 +8,7 @@ fn tail_keeps_whole_last_lines() {
 
 /// Regression: the byte cut at `len - TAIL_BYTES` can land inside a multi-byte
 /// char (box-drawing '└' in vitest output). `tail` must nudge to a char boundary
-/// instead of panicking. Each '└' is 3 bytes on 0/3/6… boundaries; TAIL_BYTES is
+/// instead of panicking. Each '└' is 3 bytes on 0/3/6… boundaries; `TAIL_BYTES` is
 /// not a multiple of 3, so a pure run of '└' guarantees the cut lands mid-char.
 #[test]
 fn tail_does_not_split_multibyte_char() {

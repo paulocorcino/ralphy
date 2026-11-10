@@ -20,11 +20,11 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 /// the conventional `.agents/skills` hierarchy (CWD up to repo root, plus
 /// `$HOME/.agents/skills` and `/etc/codex/skills`), and its sole skills config key,
 /// `[[skills.config]]`, just toggles a skill on/off — there is no additional-path
-/// setting (unlike OpenCode's `skills.paths`). `.agents/skills` is therefore a
+/// setting (unlike `OpenCode`'s `skills.paths`). `.agents/skills` is therefore a
 /// user-owned, shared location we must NOT wipe.
 ///
 /// So the real skill content lives in `.ralphy/skills` (cleared-and-replaced
-/// wholesale, like the OpenCode adapter, and kept out of git by `.ralphy/.gitignore`),
+/// wholesale, like the `OpenCode` adapter, and kept out of git by `.ralphy/.gitignore`),
 /// and only per-skill symlinks are placed into `.agents/skills/<name>` —
 /// **additively**, replacing just the subdirectories ralphy owns and leaving sibling
 /// (user) skills intact. On Windows, where a symlink needs Developer Mode/admin, the

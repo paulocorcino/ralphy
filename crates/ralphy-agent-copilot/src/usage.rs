@@ -1,7 +1,7 @@
 //! Copilot token-usage capture (ADR-0041 D10): the run's own minted
 //! `--session-id` selects the rows Copilot wrote into its `session-store.db`.
 //!
-//! Unlike OpenCode's, this correlation needs no stream parsing — Ralphy mints the
+//! Unlike `OpenCode`'s, this correlation needs no stream parsing — Ralphy mints the
 //! session id (`command::mint_session_id`) and hands it to the CLI, so the key is
 //! known before the child starts. The stream's `result.usage.premiumRequests` is
 //! an AI-CREDIT figure, not tokens, and is never read: the two currencies must not

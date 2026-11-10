@@ -311,7 +311,7 @@ pub(crate) fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
 /// A New-mode config with the per-phase asymmetry a split run produces: the
 /// planner auto-resumes through a plan-time limit (`stop_on_limit_plan = false`,
 /// e.g. a Claude planner) while the executor stops on an execute-time limit
-/// (`stop_on_limit_exec = true`, e.g. an OpenCode executor). See docs/adr/0009.
+/// (`stop_on_limit_exec = true`, e.g. an `OpenCode` executor). See docs/adr/0009.
 pub(crate) fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
     QueueConfig {
         repo_root: repo.to_path_buf(),

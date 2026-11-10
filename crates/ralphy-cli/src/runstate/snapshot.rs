@@ -3,7 +3,7 @@
 //!
 //! No process, no clock, no filesystem — everything time- or environment-derived
 //! arrives in [`SnapshotCtx`], minted once at run boot. That is what lets this be
-//! unit-tested like the CloudEvents envelope mapper and the fold itself; the
+//! unit-tested like the `CloudEvents` envelope mapper and the fold itself; the
 //! writing lives in `run::snapshot_engine`.
 
 use ralphy_run_snapshot::{

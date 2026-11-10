@@ -23,7 +23,7 @@ pub(crate) fn build_opencode_command(
     command_with(model, variant, root, skills_dir, None)
 }
 
-/// The state plugin of a run (ADR-0085 D2): the plugin file OpenCode loads,
+/// The state plugin of a run (ADR-0085 D2): the plugin file `OpenCode` loads,
 /// and the status file the plugin appends to.
 pub(crate) struct StatePlugin<'a> {
     pub(crate) plugin: &'a Path,
@@ -95,8 +95,8 @@ fn command_with(
 // `ralphy-daemon/src/agent_state/opencode.rs`: it imports no adapter crate
 // (ADR-0059 §5).
 /// The `plugin` entry that names `path`: a `file:///` URL with forward
-/// slashes, the form OpenCode loaded on Windows and on Linux (measured with
-/// OpenCode 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
+/// slashes, the form `OpenCode` loaded on Windows and on Linux (measured with
+/// `OpenCode` 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
 pub(crate) fn plugin_entry(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
     let text = text.strip_prefix("//?/").unwrap_or(&text);
@@ -111,7 +111,7 @@ pub(crate) fn plugin_entry(path: &Path) -> String {
 /// the model as a tool error; the run goes on (measured with opencode 1.18.32).
 /// The map has no `"*"` entry, so the operator's own bash rules still apply.
 /// A plan or an execute also names Ralphy's state plugin under `plugin`;
-/// OpenCode joins that list with the operator's own plugins.
+/// `OpenCode` joins that list with the operator's own plugins.
 fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
     let mut bash = serde_json::Map::new();
     for words in DENIED_FORGE_WRITES {

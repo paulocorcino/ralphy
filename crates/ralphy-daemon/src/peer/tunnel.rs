@@ -45,7 +45,7 @@ const SSH_OVERRIDE_ENV: &str = "RALPHY_DAEMON_SSH_OVERRIDE";
 /// a destination that starts with `-` from being read as an option.
 /// `ExitOnForwardFailure` does not cover a socket that refuses a connection:
 /// the forward is set up and the failure shows only when a client connects
-/// (measured 2026-10-02, OpenSSH_for_Windows_9.5p2 to OpenSSH_8.2p1).
+/// (measured 2026-10-02, `OpenSSH_for_Windows_9.5p2` to `OpenSSH_8.2p1`).
 pub fn tunnel_argv(ssh: &Path, spec: &TunnelSpec) -> Vec<String> {
     let target = match &spec.peer_socket {
         Some(socket) => socket.clone(),

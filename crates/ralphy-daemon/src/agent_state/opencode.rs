@@ -1,4 +1,4 @@
-//! The OpenCode map, a copy of the one in `ralphy-agent-opencode/src/status.rs`:
+//! The `OpenCode` map, a copy of the one in `ralphy-agent-opencode/src/status.rs`:
 //! one line of the state plugin in, one fold signal out (ADR-0085 D2, D7).
 //! Also the plugin file a console loads, and the config entry that names it.
 
@@ -17,10 +17,10 @@ pub const PLUGIN_LOADED: &str = "plugin.loaded";
 // copies: the daemon imports no adapter crate (ADR-0059 §5). The shared
 // fixture test below holds the two maps equal.
 // jscpd:ignore-start
-/// The tool OpenCode asks the operator a question with.
+/// The tool `OpenCode` asks the operator a question with.
 const QUESTION_TOOL: &str = "question";
 
-/// The OpenCode map (ADR-0085 D7): one line of the state plugin in, one fold
+/// The `OpenCode` map (ADR-0085 D7): one line of the state plugin in, one fold
 /// signal out, or `None` for a line that changes no state. The plugin's
 /// first line, `plugin.loaded`, is only the proof that it runs. A
 /// `session.created` line is a new lead session: the plugin writes none for
@@ -61,8 +61,8 @@ pub fn opencode_signal(line: &StatusLine) -> Option<Signal> {
 // The adapter names a run's plugin the same way, in
 // `ralphy-agent-opencode/src/command.rs` (ADR-0059 §5).
 /// The `plugin` entry that names `path`: a `file:///` URL with forward
-/// slashes, the form OpenCode loaded on Windows and on Linux (measured with
-/// OpenCode 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
+/// slashes, the form `OpenCode` loaded on Windows and on Linux (measured with
+/// `OpenCode` 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
 pub fn plugin_entry(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
     let text = text.strip_prefix("//?/").unwrap_or(&text);
@@ -70,7 +70,7 @@ pub fn plugin_entry(path: &Path) -> String {
 }
 
 /// The `OPENCODE_CONFIG_CONTENT` of a console: the state plugin and nothing
-/// else. OpenCode merges it with the operator's own config, so their
+/// else. `OpenCode` merges it with the operator's own config, so their
 /// settings and plugins still load.
 pub fn console_config(plugin: &Path) -> String {
     serde_json::json!({ "plugin": [plugin_entry(plugin)] }).to_string()

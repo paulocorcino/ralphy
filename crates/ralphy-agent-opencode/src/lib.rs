@@ -1,9 +1,9 @@
-//! The OpenCode CLI adapter: drives `opencode run` behind the core [`Agent`]
+//! The `OpenCode` CLI adapter: drives `opencode run` behind the core [`Agent`]
 //! contract. Everything OpenCode-specific — the binary, the model/variant flags,
 //! the headless invocation, the line-delimited-JSON event stream, and the
 //! signal→[`ralphy_core::Outcome`] mapping — is confined here. See docs/adr/0005.
 //!
-//! Like the Codex adapter (and unlike Claude's live PTY session), OpenCode needs
+//! Like the Codex adapter (and unlike Claude's live PTY session), `OpenCode` needs
 //! no interactive session: `plan` and `execute` both run headless `opencode run`
 //! with the prompt piped on stdin, and completion is detected from the
 //! `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the JSON
@@ -12,7 +12,7 @@
 //!
 //! Skills materialization (ADR-0005 D7) is implemented here: before every `plan`
 //! and `execute` call the embedded skills tree is extracted to `<repo>/.ralphy/skills`
-//! and the absolute path is injected as `OPENCODE_CONFIG_CONTENT` so OpenCode's
+//! and the absolute path is injected as `OPENCODE_CONFIG_CONTENT` so `OpenCode`'s
 //! `skills.paths` config key points at it. Auth-error (D6) is implemented:
 //! `is_opencode_auth_error` detects `ProviderAuthError` in the combined log and an
 //! actionable bail fires in both `plan` and `execute` before any generic
@@ -21,11 +21,11 @@
 //! `parse_opencode_log_limit` the logfmt server log for quota blocks that never
 //! reach the JSON stream), and `classify_opencode_outcome` upgrades
 //! `Timeout`/`Stuck` to `Outcome::Limit` when one is seen. Any reset hint is then
-//! **discarded** (`unschedulable_opencode_limit`): OpenCode fronts many providers
-//! whose reset strings are unreliable (FinCal #73), so the runner never schedules
+//! **discarded** (`unschedulable_opencode_limit`): `OpenCode` fronts many providers
+//! whose reset strings are unreliable (`FinCal` #73), so the runner never schedules
 //! on one and instead retries on the ~30-min synthetic cadence (ADR-0030 D1).
 //! Auto-resume is the default for all agents; `--stop-on-limit` is the opt-out
-//! (ADR-0030 D3) — it is no longer forced for OpenCode.
+//! (ADR-0030 D3) — it is no longer forced for `OpenCode`.
 
 use std::fs;
 use std::path::PathBuf;
@@ -46,9 +46,9 @@ mod status;
 mod tasks;
 mod usage;
 
-/// OpenCode's headless `run` has no image-input channel, so images are never
+/// `OpenCode`'s headless `run` has no image-input channel, so images are never
 /// fetched for it — the manifest shows `not fetched (opencode has no image
-/// input)` (ADR-0025 §4). A future vision OpenCode flips this in its own crate.
+/// input)` (ADR-0025 §4). A future vision `OpenCode` flips this in its own crate.
 pub const ACCEPTS_IMAGES: bool = false;
 
 use command::{build_watched_opencode_command, StatePlugin};
@@ -61,9 +61,9 @@ use skills::materialize_opencode_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 use usage::{opencode_usage, resolved_model_label, session_id_from_stream};
 
-/// The OpenCode planning prompt, embedded so the binary is self-contained as a
+/// The `OpenCode` planning prompt, embedded so the binary is self-contained as a
 /// global tool. A variant of `prompt.plan.md` with the `## Execution model` tier
-/// line removed (OpenCode drops complexity routing, ADR-0005 D3/D8a) and the
+/// line removed (`OpenCode` drops complexity routing, ADR-0005 D3/D8a) and the
 /// reviewer step committed to the **inline `reviewer` skill** — auto-discovered
 /// via `skills.paths`, **not** a subagent. Headless custom-subagent dispatch is
 /// blocked upstream (`opencode#29616`/`#20059`: Task tool `subagent_type` is
@@ -79,7 +79,7 @@ const PROMPT_PLAN_OPENCODE: &str = include_str!("../../../assets/prompts/prompt.
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OpenCodeSettings {
     /// The model id to pass as `-m <id>` when no `--exec-model` flag is given.
-    /// `None` / empty → OpenCode resolves the model itself.
+    /// `None` / empty → `OpenCode` resolves the model itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
@@ -90,7 +90,7 @@ impl OpenCodeSettings {
 }
 
 /// Drives the `opencode` CLI. `model` is the operator override (omitted entirely
-/// when `None`, deferring to OpenCode's own resolution, ADR-0005 D4); `variant`
+/// when `None`, deferring to `OpenCode`'s own resolution, ADR-0005 D4); `variant`
 /// is the operator's optional provider-native dialect (`--exec-variant`), passed
 /// through only when set (D3 / ADR-0044 D8) — orthogonal to Ralphy's Effort word;
 /// `plan_effort`/`exec_effort` accept the neutral word at the CLI and are a
@@ -125,7 +125,7 @@ impl OpenCodeAgent {
     }
 
     /// A stand-in for the `opencode run` child, so a test drives a plan or an
-    /// execute with no OpenCode installed.
+    /// execute with no `OpenCode` installed.
     #[cfg(test)]
     fn with_run_hook(
         mut self,
@@ -170,7 +170,7 @@ impl OpenCodeAgent {
 
     /// Set the operator's optional `--variant` knob (ADR-0005 D3). Provider-native
     /// dialect from `--exec-variant` only — never from resolved Effort (ADR-0044
-    /// D8). Passed through to OpenCode only when present; omitted otherwise so the
+    /// D8). Passed through to `OpenCode` only when present; omitted otherwise so the
     /// adapter never sends a value the provider rejects.
     pub fn with_variant(mut self, variant: Option<String>) -> Self {
         self.variant = variant;

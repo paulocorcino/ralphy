@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 /// Records what `dispatch` asked to spawn and hands back a child with a preset
 /// exit code — no OS process touched, so the argv mapping is asserted purely.
-/// One recorded spawn: (program, argv, cwd, daemon_id).
+/// One recorded spawn: (program, argv, cwd, `daemon_id`).
 type SpawnCall = (OsString, Vec<String>, PathBuf, Option<String>);
 
 #[derive(Default)]

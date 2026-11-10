@@ -27,7 +27,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(1);
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const MAX_ATTEMPTS: u32 = 2;
 /// The largest models.dev body the fetch reads (ADR-0072 D9). Measured
-/// 2026-10-01 with curl: `api.json` is 5_282_228 bytes (5.04 MiB); the cap is
+/// 2026-10-01 with curl: `api.json` is `5_282_228` bytes (5.04 MiB); the cap is
 /// three times that, rounded up. A larger body fails the fetch and leaves the
 /// cache as it was.
 pub const MAX_MODELS_DEV_BYTES: u64 = 16 * 1024 * 1024;

@@ -7,7 +7,7 @@
 //! Claude's *session* transcripts sit flat as `*.jsonl` (though each one may own a
 //! `<session-id>/subagents/` tree the adapter collects separately, by session id
 //! rather than by recursion, so the rule below still holds); Codex nests
-//! `rollout-*.jsonl` under `<YYYY>/<MM>/<DD>/`. OpenCode has no file store (it
+//! `rollout-*.jsonl` under `<YYYY>/<MM>/<DD>/`. `OpenCode` has no file store (it
 //! correlates a session id to a SQLite DB) and uses neither helper.
 
 use std::fs;

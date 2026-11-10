@@ -75,7 +75,7 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
 
 /// Split the `userknownhostsfile` value of `ssh -G`. It prints the paths
 /// unquoted, so a space inside a path looks like a separator (measured with
-/// OpenSSH_for_Windows 9.5p2: `C:/Temp/sp ace/kh C:\Users\me/.ssh/known_hosts`).
+/// `OpenSSH_for_Windows` 9.5p2: `C:/Temp/sp ace/kh C:\Users\me/.ssh/known_hosts`).
 /// A new path starts with `/`, `~`, `\`, `%` or a drive letter; any other word
 /// continues the path before it.
 pub(crate) fn split_known_hosts(value: &str) -> Vec<String> {

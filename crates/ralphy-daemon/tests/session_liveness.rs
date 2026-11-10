@@ -48,7 +48,7 @@ fn terminal(data: &[u8]) -> Message {
     )
 }
 
-/// Read until `needle` (or 10s), answering the ConPTY startup `ESC[6n`.
+/// Read until `needle` (or 10s), answering the `ConPTY` startup `ESC[6n`.
 async fn read_until(ws: &mut Ws, needle: &str) -> String {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();

@@ -1,4 +1,4 @@
-//! The HTTP transport for the CloudEvents sink (ADR-0019).
+//! The HTTP transport for the `CloudEvents` sink (ADR-0019).
 //!
 //! Delivery sits behind an [`EventSink`] trait so the worker's retry/drop policy is
 //! testable without a network: [`UreqEventTransport`] is the real blocking `ureq`
@@ -13,7 +13,7 @@ use std::time::Duration;
 use anyhow::Result;
 use serde_json::Value;
 
-/// The structured content type every event is POSTed as (CloudEvents 1.0).
+/// The structured content type every event is `POSTed` as (`CloudEvents` 1.0).
 const CONTENT_TYPE: &str = "application/cloudevents+json";
 
 /// How the endpoint (or the network) responded to one POST, mapped to the
@@ -31,7 +31,7 @@ pub enum PostOutcome {
 /// The delivery transport the sink worker POSTs each envelope through. One call
 /// per event; the returned [`PostOutcome`] drives retry vs. drop.
 pub trait EventSink {
-    /// POST one CloudEvents envelope, classifying the response.
+    /// POST one `CloudEvents` envelope, classifying the response.
     fn post(&self, body: &Value) -> Result<PostOutcome>;
 }
 

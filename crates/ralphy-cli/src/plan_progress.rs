@@ -19,7 +19,7 @@ pub enum StepStatus {
 }
 
 impl StepStatus {
-    /// The wire word both consumers ship: the CloudEvents `data.status` and the
+    /// The wire word both consumers ship: the `CloudEvents` `data.status` and the
     /// snapshot document's `plan.steps[].status`.
     pub fn wire(self) -> &'static str {
         match self {

@@ -17,7 +17,7 @@ pub(super) enum CommitDecision {
     Abort(String),
 }
 
-/// Map (is_clean, answer) to a [`CommitDecision`]. A clean tree never commits; a
+/// Map (`is_clean`, answer) to a [`CommitDecision`]. A clean tree never commits; a
 /// dirty tree commits on the recommended default (empty/yes/y — the prompt shows
 /// `[Y/n]`, so accepting it commits the snapshot) and aborts only on an explicit
 /// decline, which stops init before any branch or scaffold write.

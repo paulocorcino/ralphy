@@ -102,7 +102,7 @@ pub struct DaemonConfig {
     /// token, enforced at boot by [`auth::AuthPolicy::for_bind`] (ADR-0032 §4).
     pub bind: IpAddr,
     /// Extra host names this daemon answers as, beyond the ones its bind implies:
-    /// a MagicDNS name, a reverse-proxy hostname. The cross-site gate refuses any
+    /// a `MagicDNS` name, a reverse-proxy hostname. The cross-site gate refuses any
     /// other `Host`, which is what keeps DNS rebinding out — so reaching the
     /// daemon by NAME (rather than by the bound IP) is an explicit declaration.
     pub allowed_hosts: Vec<String>,

@@ -93,7 +93,7 @@ async fn api_usage_carries_run_and_interactive_records() {
 }
 
 /// `/api/usage` carries the interactive records of every seeded vendor store:
-/// one Codex rollout, one OpenCode row, one Copilot row and one legacy Kimi
+/// one Codex rollout, one `OpenCode` row, one Copilot row and one legacy Kimi
 /// `wire.jsonl` flow through the scan and appear in the `interactive` array
 /// with their agent and session id. Proves each store's router argument
 /// (`codex_dir`, `opencode_db`, `copilot_db`, `kimi_dir`) is threaded end to

@@ -1,5 +1,5 @@
 //! The vendor-neutral **plan/execute shell** the headless adapters (Codex,
-//! OpenCode) share. Each adapter's `plan()`/`execute()` repeated the same
+//! `OpenCode`) share. Each adapter's `plan()`/`execute()` repeated the same
 //! mechanical front and back around the one vendor-specific step (build the
 //! command, snapshot usage, run headless): create the run/`.ralphy` dirs, write
 //! the plan charter, remove a stale plan, then — after the run — walk the no-plan

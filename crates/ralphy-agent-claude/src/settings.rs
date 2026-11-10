@@ -149,7 +149,7 @@ pub(crate) struct ExecConfig {
     pub(crate) remote_control: bool,
     /// When true, use a `claude -p` loop instead of an interactive PTY session.
     pub(crate) headless_exec: bool,
-    /// Maximum number of `-p` calls before declaring MaxCalls (headless only).
+    /// Maximum number of `-p` calls before declaring `MaxCalls` (headless only).
     pub(crate) max_exec_calls: u32,
     /// The run's global wall-clock deadline, if any. Each issue's budget is
     /// clamped to `min(per-issue, run_deadline)` so an issue started near the

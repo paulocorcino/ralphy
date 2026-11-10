@@ -12,11 +12,11 @@
 //!   - the runner's verify gate ([`record_gate_costs`]), which already runs the
 //!     exact `## Verify` commands and now times them — durable, cross-issue
 //!     knowledge (the suite's cost doesn't change between issues);
-//!   - the Claude adapter's PostToolUse hook, which times in-session runs so
+//!   - the Claude adapter's `PostToolUse` hook, which times in-session runs so
 //!     even the FIRST issue of a fresh repo learns the cost after paying it
 //!     once.
 //!
-//! One reader consumes it: the PreToolUse guard hook calls [`decide`] before
+//! One reader consumes it: the `PreToolUse` guard hook calls [`decide`] before
 //! every Bash command. A command matching a `## Verify` line whose recorded
 //! cost is expensive is denied while the plan still has real work open — with
 //! a message pointing at the scoped alternative — and allowed again on the

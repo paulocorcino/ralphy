@@ -68,7 +68,7 @@ fn flatten(s: &str) -> String {
         .collect()
 }
 
-/// Read terminal frames until `needle` shows up, answering ConPTY's startup
+/// Read terminal frames until `needle` shows up, answering `ConPTY`'s startup
 /// `ESC[6n` along the way, and capture the `session-open` payload seen on the
 /// way (the bridge sends it FIRST, before any terminal byte).
 async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Value>) {

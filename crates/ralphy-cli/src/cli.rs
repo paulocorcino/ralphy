@@ -248,7 +248,7 @@ pub(crate) struct RunArgs {
 
     /// The agent that writes the plan. Without it, `--agent` also plans. For
     /// example, `--agent opencode --plan-agent claude` means Claude plans and
-    /// OpenCode does the work. Any two agents can be paired.
+    /// `OpenCode` does the work. Any two agents can be paired.
     // ADR-0009.
     #[arg(long = "plan-agent", value_enum)]
     pub(crate) plan_agent: Option<CliAgent>,
@@ -313,8 +313,8 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) exec_model: Option<String>,
 
-    /// OpenCode only: a `--variant` value, passed to `opencode run` as it is.
-    /// `--plan-effort` and `--exec-effort` have no effect on OpenCode. When
+    /// `OpenCode` only: a `--variant` value, passed to `opencode run` as it is.
+    /// `--plan-effort` and `--exec-effort` have no effect on `OpenCode`. When
     /// unset, Ralphy sends no variant.
     // ADR-0005 D3 amendment, ADR-0044 D8.
     #[arg(long)]

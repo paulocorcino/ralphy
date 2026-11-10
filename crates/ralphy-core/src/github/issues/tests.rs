@@ -36,7 +36,7 @@ fn resolve_login_passes_through_concrete_login() {
 
 /// The `@me` arm hits the live `gh api user`. Ignored by default (needs network
 /// + `gh` auth); mirrors the `e2e_references_for_bioledger_29` ignore pattern.
-///   cargo test -p ralphy-core resolve_login_at_me_hits_gh_api_user -- --ignored --nocapture
+///   cargo test -p ralphy-core `resolve_login_at_me_hits_gh_api_user` -- --ignored --nocapture
 #[test]
 #[ignore = "live network: gh api user"]
 fn resolve_login_at_me_hits_gh_api_user() {

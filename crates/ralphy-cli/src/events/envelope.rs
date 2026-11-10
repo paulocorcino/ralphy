@@ -1,4 +1,4 @@
-//! The `RunEvent` -> CloudEvents 1.0 envelope mapping (ADR-0019). The per-variant tests
+//! The `RunEvent` -> `CloudEvents` 1.0 envelope mapping (ADR-0019). The per-variant tests
 //! are the source of truth for the wire shape that `docs/events.md` describes.
 
 use serde_json::{json, Value};
@@ -55,7 +55,7 @@ fn issue_block(state: &RunState, number: u64) -> Value {
     json!({ "number": number, "title": issue_title(state, number) })
 }
 
-/// A CloudEvents 1.0 envelope with exactly one extension attribute, `runid` (ADR-0019 §3).
+/// A `CloudEvents` 1.0 envelope with exactly one extension attribute, `runid` (ADR-0019 §3).
 fn envelope(
     type_: &str,
     subject: Option<&str>,

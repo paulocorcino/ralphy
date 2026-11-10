@@ -6,7 +6,7 @@
 //! The seam is thin: `on_event` calls `runstate::event_to_runevent` to decode the
 //! raw tracing event into a [`RunEvent`], then hands it to a dedicated render thread
 //! over a channel. ALL terminal I/O lives on that thread ([`Renderer`]), so a stalled
-//! console write (e.g. Windows QuickEdit text selection pausing output) can only
+//! console write (e.g. Windows `QuickEdit` text selection pausing output) can only
 //! freeze the UI, never the run thread that emitted the log line. The renderer owns
 //! the side effects — timestamps, per-issue duration, and writing through
 //! `indicatif`'s `MultiProgress` so warn/error lines never corrupt live output.
@@ -74,7 +74,7 @@ enum PresenterMsg {
 }
 
 /// The render half of the presenter: owns all terminal I/O and the live state, and
-/// runs on its own thread so a stalled console write (e.g. Windows QuickEdit text
+/// runs on its own thread so a stalled console write (e.g. Windows `QuickEdit` text
 /// selection pausing output) freezes only the UI, never the run.
 struct Renderer {
     multi: MultiProgress,

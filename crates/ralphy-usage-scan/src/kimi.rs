@@ -340,7 +340,7 @@ fn session_id_from_path(path: &Path, sessions_root: &Path) -> String {
         .to_string()
 }
 
-/// Resolve (project, actor_email) from the WORKSPACE segment (`sessions/<WORKSPACE>/…`)
+/// Resolve (project, `actor_email`) from the WORKSPACE segment (`sessions/<WORKSPACE>/…`)
 /// against `repos` via [`crate::attribution::find_repo`], caching the git email
 /// per matched slug.
 fn workspace_attribution(

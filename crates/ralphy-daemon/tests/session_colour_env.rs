@@ -25,7 +25,7 @@ use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Accumulate output until it contains `needle`, bounded to 5s. Plays the
-/// terminal emulator, answering the ConPTY startup cursor-position request —
+/// terminal emulator, answering the `ConPTY` startup cursor-position request —
 /// without it the child blocks before running on Windows.
 async fn read_until(
     session: &mut Session,

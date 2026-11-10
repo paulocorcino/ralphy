@@ -362,7 +362,7 @@ mod tests {
 
     // ── skill_list_violation ──────────────────────────────────────────────
 
-    /// Real `copilot skill list --json` output (CLI 1.0.90, FinCal, 2026-10-01;
+    /// Real `copilot skill list --json` output (CLI 1.0.90, `FinCal`, 2026-10-01;
     /// descriptions shortened, paths made neutral).
     const LISTING: &str = include_str!("../fixtures/skill-list-2026-10-01.json");
 

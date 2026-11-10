@@ -28,7 +28,7 @@ fn terminal(data: &[u8]) -> Message {
 }
 
 /// Read decoded terminal output until `needle` appears (or 10s). When
-/// `answer_cursor`, plays the terminal emulator by answering the ConPTY
+/// `answer_cursor`, plays the terminal emulator by answering the `ConPTY`
 /// startup `ESC[6n` so the child unblocks on Windows. On a REATTACH the
 /// child is already past startup and the replayed scrollback carries that
 /// startup `ESC[6n` as history — re-answering it would inject a stray

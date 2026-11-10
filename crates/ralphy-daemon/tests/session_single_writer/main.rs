@@ -79,7 +79,7 @@ async fn drain_capturing_announcement(ws: &mut Ws, secs: u64) -> (bool, Option<S
     (ended.is_ok(), announced)
 }
 
-/// Read until `needle` (or 10s); answer the ConPTY startup `ESC[6n` only when
+/// Read until `needle` (or 10s); answer the `ConPTY` startup `ESC[6n` only when
 /// `answer_cursor` (the taker reattaches past startup — see `session_persistence`).
 async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
     tokio::time::timeout(Duration::from_secs(10), async {

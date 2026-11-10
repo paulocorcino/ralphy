@@ -12,9 +12,9 @@ pub fn resolve_optional_model(flag: Option<String>, persisted: Option<String>) -
         .or_else(|| persisted.filter(|s| !s.is_empty()))
 }
 
-/// Resolve the OpenCode execution model from the per-run flag and the
+/// Resolve the `OpenCode` execution model from the per-run flag and the
 /// persisted setting (ADR-0010). Precedence: `exec_model` flag > persisted
-/// `opencode.model` > `None` (OpenCode resolves its own default). Empty
+/// `opencode.model` > `None` (`OpenCode` resolves its own default). Empty
 /// strings are treated as unset.
 pub fn resolve_opencode_model(
     exec_model: Option<String>,

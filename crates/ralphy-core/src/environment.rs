@@ -243,7 +243,7 @@ fn parse_version(text: &str) -> Option<String> {
 
 /// The WSL flavor of the host, or `None` when not under WSL (native Linux,
 /// Windows, macOS). Read from `/proc/version` — absent off Linux, so the read
-/// simply fails and yields `None` without any platform gate. os_info reports the
+/// simply fails and yields `None` without any platform gate. `os_info` reports the
 /// underlying distro under WSL and never surfaces this, yet it is the exact
 /// signal that separates a real Linux box from one where a Windows toolchain may
 /// be reachable (or, on WSL1, unreachable) — the class of trap this brief exists

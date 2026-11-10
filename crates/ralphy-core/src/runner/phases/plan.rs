@@ -18,7 +18,7 @@ const MAX_PLAN_LIMIT_RESUMES: u32 = 2;
 /// Parse a plan's checkbox lines into `(text, status)` pairs (#96): a `- [ ]` line
 /// is `open`, `- [x]`/`- [X]` is `checked`, `- [!]` is `noticed`. `text` is the raw
 /// step text after the marker, trimmed. Non-checkbox lines are ignored. Used to
-/// build the `steps_json` field carried on `plan written` (the CloudEvents sink maps
+/// build the `steps_json` field carried on `plan written` (the `CloudEvents` sink maps
 /// it to `plan.written.data.steps`), keeping the envelope mapper free of file I/O.
 pub(crate) fn parse_plan_steps(md: &str) -> Vec<(String, &'static str)> {
     md.lines()

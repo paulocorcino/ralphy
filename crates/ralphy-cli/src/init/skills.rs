@@ -58,8 +58,8 @@ pub(crate) const SKILLS_REF: &str = "main";
 /// Build the exact git argv sequence for a sparse fetch of `subtree` from the skills
 /// repo at `git_ref`. Pure: the impure shell feeds these to `git::git`.
 /// Order: init → remote add → sparse-checkout init --cone →
-///        sparse-checkout set `<subtree>` → fetch --depth 1 origin <git_ref> →
-///        checkout FETCH_HEAD.
+///        sparse-checkout set `<subtree>` → fetch --depth 1 origin <`git_ref`> →
+///        checkout `FETCH_HEAD`.
 pub fn sparse_fetch_commands(git_ref: &str, subtree: &str) -> Vec<Vec<String>> {
     vec![
         vec!["init".into()],

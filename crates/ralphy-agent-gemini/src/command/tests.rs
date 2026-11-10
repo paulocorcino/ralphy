@@ -256,7 +256,7 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
     );
 }
 
-/// D7's failure direction, exactly: an inherited VertexAI flag from unrelated
+/// D7's failure direction, exactly: an inherited `VertexAI` flag from unrelated
 /// cloud tooling would silently redirect a `gemini-api-key` operator's run to
 /// another account, and the run would still look green.
 #[test]

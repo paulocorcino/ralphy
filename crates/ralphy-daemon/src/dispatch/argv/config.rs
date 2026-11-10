@@ -30,7 +30,7 @@ fn well_shaped_key(key: &str) -> bool {
 ///   purpose: Copilot's credentialled builtin MCP server that can open a PR on
 ///   its own (ADR-0041 D7), Cursor's upload of the repository to the vendor
 ///   (ADR-0042 D6). The long key IS the gesture; a checkbox is not.
-/// - `events.token` is the bearer every CloudEvent carries to the sink: set
+/// - `events.token` is the bearer every `CloudEvent` carries to the sink: set
 ///   remotely, it redirects the run's telemetry credential.
 /// - `queue.trust_all_comments` lets a comment by any GitHub account reach the
 ///   agent's prompt: set remotely, it opens the prompt to strangers

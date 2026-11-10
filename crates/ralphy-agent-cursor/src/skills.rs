@@ -134,7 +134,7 @@ mod tests {
         }
     }
 
-    /// A source-text grep for the literal "home_dir" cannot catch a regression
+    /// A source-text grep for the literal "`home_dir`" cannot catch a regression
     /// that reaches the user-level root through a different call shape, and it
     /// only ever checked `skills.rs`'s own text — not the actual location a
     /// leak would land. This observes the REAL location instead: snapshot

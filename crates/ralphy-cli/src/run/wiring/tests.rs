@@ -20,7 +20,7 @@ fn effort_translation_preserves_each_resolved_phase() {
 
 /// Every `build_agent` arm hands the adapter the effort it resolved for each
 /// phase — through `effort_strings`, into the adapter's own setters (Copilot
-/// falls back to its persisted `copilot.*_effort`; OpenCode's dialect rides
+/// falls back to its persisted `copilot.*_effort`; `OpenCode`'s dialect rides
 /// `with_variant`). Read from production text with whitespace removed, one
 /// arm at a time, whatever the order of the arms.
 #[test]

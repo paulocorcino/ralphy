@@ -116,7 +116,7 @@ pub(crate) enum HostCommand {
         /// An alias from your SSH config, or `user@host`.
         destination: String,
     },
-    /// Add a host's key to your known_hosts, only when its fingerprint is the
+    /// Add a host's key to your `known_hosts`, only when its fingerprint is the
     /// one given.
     Trust {
         /// An alias from your SSH config, or `user@host`.

@@ -18,7 +18,7 @@ use crate::{pricing, ui, CliAgent};
 /// there is nothing to commit and the panel's "clean run" report stays accurate. The
 /// caller runs this AFTER the presenter finalize and BEFORE the notifier/sink
 /// shutdown so it surfaces as a first-class lifecycle event in both surfaces: the
-/// `info!`/`warn!` here decode to RunEvents the console presenter renders
+/// `info!`/`warn!` here decode to `RunEvents` the console presenter renders
 /// (timestamp + 📚) and the live Telegram card folds (a 📚 line during, a footer
 /// segment after). A failed session is a warning, never a run failure — the run
 /// already succeeded and the notes stay loose for a later retry. `ANTHROPIC_API_KEY`

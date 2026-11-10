@@ -24,7 +24,7 @@ pub use logged::{run_headless_logged, run_headless_logged_watched, HeadlessCall,
 /// The raw result of driving one headless child to completion or timeout.
 ///
 /// `stdout` and `stderr` are kept **separate** (each captured as lossy-UTF-8) so
-/// every adapter can combine or slice them as it needs — the OpenCode adapter
+/// every adapter can combine or slice them as it needs — the `OpenCode` adapter
 /// parses the JSON event stream from stdout alone, while Codex and Claude
 /// concatenate the two. `exit` is `Some(status)` on a natural exit and `None`
 /// exactly when the child was killed — either on the timeout deadline (then

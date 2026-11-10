@@ -47,7 +47,7 @@ pub struct IssuesArgs {
     pub fields: Option<String>,
 
     /// Send the current queue to the configured `events.url` (as a
-    /// `dev.ralphy.queue.snapshot` CloudEvent) instead of printing it. Fails when
+    /// `dev.ralphy.queue.snapshot` `CloudEvent`) instead of printing it. Fails when
     /// this repo has no `events.url`.
     // ADR-0020.
     #[arg(long)]
@@ -309,7 +309,7 @@ fn build_list_queue(
     }
 }
 
-/// Emit the judged queue as a `dev.ralphy.queue.snapshot` CloudEvent to the
+/// Emit the judged queue as a `dev.ralphy.queue.snapshot` `CloudEvent` to the
 /// configured `events.url` (ADR-0020), reusing the ADR-0019 sink transport and the
 /// SAME `data` builder the runner's `queue.built` uses (so the two shapes cannot
 /// diverge). A one-shot synchronous POST — no ring, no worker. Fails clearly when

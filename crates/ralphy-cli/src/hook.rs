@@ -128,8 +128,8 @@ fn last_text(blocks: &[Value]) -> Option<&str> {
         .rfind(|t| !t.is_empty())
 }
 
-/// Run the `hook post` subcommand (PostToolUse, matcher `Bash`): close the
-/// timing loop the guard's verification-cost gate opened. The PreToolUse guard
+/// Run the `hook post` subcommand (`PostToolUse`, matcher `Bash`): close the
+/// timing loop the guard's verification-cost gate opened. The `PreToolUse` guard
 /// stamps when a plan `## Verify` command starts; this hook, firing right after
 /// the tool returns, records the elapsed wall clock as that command's durable
 /// cost — so even the first session in a fresh repo learns an expensive suite's

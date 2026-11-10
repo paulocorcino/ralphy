@@ -1,7 +1,7 @@
 use super::*;
 use crate::run::report;
 
-/// A fake CloudEvents sink recording every delivered envelope.
+/// A fake `CloudEvents` sink recording every delivered envelope.
 struct RecordingSink(Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
 
 impl events::client::EventSink for RecordingSink {

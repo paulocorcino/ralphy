@@ -1,4 +1,4 @@
-//! Emitter identity + id minting for the CloudEvents sink (ADR-0019).
+//! Emitter identity + id minting for the `CloudEvents` sink (ADR-0019).
 //!
 //! Every event carries a `data.emitter` object identifying the process that sent
 //! it (version, user, host, os, pid, ip, tz) and a per-event ULID `id`; the run is
@@ -192,7 +192,7 @@ pub fn new_runid() -> String {
     ulid::Ulid::new().to_string()
 }
 
-/// The CloudEvents `source` for a repo slug: `ralphy/<owner>/<repo>`.
+/// The `CloudEvents` `source` for a repo slug: `ralphy/<owner>/<repo>`.
 pub fn source(slug: &str) -> String {
     format!("ralphy/{slug}")
 }

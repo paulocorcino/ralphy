@@ -116,7 +116,7 @@ pub(crate) fn seed_cursor_config_dir(operator_dir: Option<&Path>, scratch: &Path
 /// hundreds of invocations and the files name the operator's repositories.
 /// On **Windows only**, `SHELL` (plus `MSYSTEM`) is pinned to a located git-bash
 /// (D20) so the vendor runs shell tool calls under bash, not PowerShell — where a
-/// POSIX heredoc commit message (`-m "$(cat <<'EOF' … EOF)"`) ParserErrors. `MSYSTEM`
+/// POSIX heredoc commit message (`-m "$(cat <<'EOF' … EOF)"`) `ParserErrors`. `MSYSTEM`
 /// is required with it: without the MSYS runtime flag git-bash returns "no exit
 /// status" for every command. Both are left untouched when the operator already set
 /// `SHELL` or no git-bash is found (see [`git_bash_shell_pin`]).
@@ -170,7 +170,7 @@ const GIT_BASH_MSYSTEM: &str = "MINGW64";
 /// The `SHELL` a Windows run pins so `cursor-agent` runs its shell tool calls under
 /// git-bash, not PowerShell (ADR-0042 D20). The vendor's classifier reads `SHELL`;
 /// native `ralphy.exe` spawns the CLI with `MSYSTEM` absent and `SHELL` empty, so it
-/// falls through to PowerShell and a POSIX heredoc commit ParserErrors on the first
+/// falls through to PowerShell and a POSIX heredoc commit `ParserErrors` on the first
 /// try of every execute session.
 ///
 /// `Some(path)` says set it; `None` leaves `SHELL` exactly as the parent env has it,

@@ -79,7 +79,7 @@ fn terminal(data: &[u8]) -> Message {
     )
 }
 
-/// Read terminal frames until `needle`, answering ConPTY's startup `ESC[6n`,
+/// Read terminal frames until `needle`, answering `ConPTY`'s startup `ESC[6n`,
 /// and capture the `session-open` payload (sent before any terminal byte).
 async fn read_until(ws: &mut Ws, needle: &str) -> Option<serde_json::Value> {
     let mut terminal_text = String::new();

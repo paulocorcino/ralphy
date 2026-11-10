@@ -212,7 +212,7 @@ fn label_queue(
 
 /// Order by dependency (Blocked-by edges + split-bundle children), ascending
 /// number as tie-break — the pending list shown to the user IS the sequence
-/// run_queue will work, and a dependency-consistent order lets one run drain
+/// `run_queue` will work, and a dependency-consistent order lets one run drain
 /// a graph whose numbering disagrees with its edges.
 ///
 /// Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is

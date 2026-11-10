@@ -68,7 +68,7 @@ fn skip_osc(raw: &[u8], mut i: usize) -> usize {
 
 /// Return `true` when raw interactive PTY output shows the logged-out REPL.
 /// The signature is the status-line pair `Not logged in · Run /login`
-/// (captured from CLI v2.1.198 — see tests/fixtures/login_tui_exec.log); the
+/// (captured from CLI v2.1.198 — see `tests/fixtures/login_tui_exec.log`); the
 /// headless banner says `Please run /login`, so `run /login` matches both.
 /// Both substrings are required, the same AND rule as [`crate::auth::is_claude_auth_error`].
 pub(super) fn is_login_tui_output(raw: &[u8]) -> bool {

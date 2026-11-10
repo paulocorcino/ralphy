@@ -32,7 +32,7 @@ pub enum RunEvent {
     /// enriched per-issue snapshot (ADR-0020) — a `serde_json::Value` array of
     /// `{number, title, labels[], queue_status, skip_reason?, blocked_by[],
     /// position?}`, or `Value::Null` when the resolver produced none (the legacy
-    /// shape). The Telegram/console fold ignores `issues`; only the CloudEvents
+    /// shape). The Telegram/console fold ignores `issues`; only the `CloudEvents`
     /// sink carries it onto `queue.built`.
     QueueBuilt {
         count: u64,
@@ -41,7 +41,7 @@ pub enum RunEvent {
         issues: serde_json::Value,
         /// The resolved concrete login the queue was scoped to (ADR-0021 §5);
         /// `None` = whole queue (unfiltered, or an explicit `--issues`/`--only-issue`
-        /// selection). Only the CloudEvents sink carries it onto `queue.built`.
+        /// selection). Only the `CloudEvents` sink carries it onto `queue.built`.
         assignee_filter: Option<String>,
         /// The human-readable queue scope phrase (`labels [AFK]`, `issue #7`…),
         /// LOG-ONLY (#222): the console edge notice is folded from it and it is

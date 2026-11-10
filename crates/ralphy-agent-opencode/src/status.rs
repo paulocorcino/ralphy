@@ -1,4 +1,4 @@
-//! The agent's own state from OpenCode's bus events (ADR-0085 D2, D7).
+//! The agent's own state from `OpenCode`'s bus events (ADR-0085 D2, D7).
 //!
 //! The run writes Ralphy's state plugin into the run dir and names it in
 //! `OPENCODE_CONFIG_CONTENT`; the plugin appends one status line per state
@@ -30,10 +30,10 @@ const STATE_PLUGIN: &str = include_str!("../../../assets/opencode/ralphy-state-p
 // stays two copies: the daemon imports no adapter crate (ADR-0059 §5). The
 // shared fixture test holds the two maps equal.
 // jscpd:ignore-start
-/// The tool OpenCode asks the operator a question with.
+/// The tool `OpenCode` asks the operator a question with.
 const QUESTION_TOOL: &str = "question";
 
-/// The OpenCode map (ADR-0085 D7): one line of the state plugin in, one fold
+/// The `OpenCode` map (ADR-0085 D7): one line of the state plugin in, one fold
 /// signal out, or `None` for a line that changes no state. The plugin's
 /// first line, `plugin.loaded`, is only the proof that it runs. A
 /// `session.created` line is a new lead session: the plugin writes none for

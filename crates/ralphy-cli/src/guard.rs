@@ -1,12 +1,12 @@
-//! The `ralphy hook guard` PreToolUse safety hook.
+//! The `ralphy hook guard` `PreToolUse` safety hook.
 //!
 //! Claude Code runs this before every Bash/PowerShell/Edit/Write/MultiEdit/
-//! NotebookEdit call. The loop runs with --dangerously-skip-permissions, so this
+//! `NotebookEdit` call. The loop runs with --dangerously-skip-permissions, so this
 //! hook is the main guardrail against a destructive command — but it is a
 //! best-effort deny-list, not a sandbox: a creative command line can slip past.
 //!
 //! Only the Claude adapter installs this hook; the other vendor CLIs offer no
-//! PreToolUse equivalent, so their safety rests on the isolated run branch and
+//! `PreToolUse` equivalent, so their safety rests on the isolated run branch and
 //! the self-review (see README "Command guardrails").
 //!
 //! A recursive delete inside the worktree or the system temp dir is allowed
@@ -122,7 +122,7 @@ pub struct GuardContext {
     pub temp_dir: String,
 }
 
-/// Evaluate whether a PreToolUse call should be allowed or denied.
+/// Evaluate whether a `PreToolUse` call should be allowed or denied.
 ///
 /// `tool_name` is the `tool_name` field from the hook payload.
 /// `tool_input` is the `tool_input` object.

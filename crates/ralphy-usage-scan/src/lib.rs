@@ -4,7 +4,7 @@
 //! daemon calls it on request and serializes the result.
 //!
 //! This slice ships the **Claude** ([`claude`]), **Codex** ([`codex`]),
-//! **OpenCode** ([`opencode`]), **Kimi** ([`kimi`]), **Copilot**
+//! **`OpenCode`** ([`opencode`]), **Kimi** ([`kimi`]), **Copilot**
 //! ([`copilot`]), **Cursor** ([`cursor`]), and **Gemini** ([`gemini`]) modules. The
 //! one-module-per-vendor shape (§7) leaves room for more to follow. The [`kimi`]
 //! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
@@ -36,7 +36,7 @@ pub use opencode::scan_opencode;
 pub use recovery::{resolve_models, RecoveryCandidate, RecoveryResult, RecoveryStores};
 
 /// The four Messages-API token counts an interactive record carries (ADR-0033 §3
-/// record shape). Snake_case field names mirror the ledger's `tokens` block so a
+/// record shape). `Snake_case` field names mirror the ledger's `tokens` block so a
 /// UI can render run and interactive records the same way.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Tokens {
@@ -97,7 +97,7 @@ pub struct CodexScan<'a> {
     pub since: Option<&'a str>,
 }
 
-/// Everything the OpenCode scan reads, mirroring [`CodexScan`]: `db_path` is the
+/// Everything the `OpenCode` scan reads, mirroring [`CodexScan`]: `db_path` is the
 /// `opencode.db` SQLite store (the scan opens it read-only and reads its
 /// `message`/`session` tables), plus the run-owned ids to exclude, the repo
 /// registry for attribution, and an optional `since` lower bound on `last_ts`

@@ -4,7 +4,7 @@
 //! (each `<ralphy exe> hook status`), points the child at a per-session
 //! status file through `RALPHY_STATUS_FILE`, and tails that file from the
 //! session's own pump tick. A Codex console takes its hooks inline, as `-c`
-//! arguments, and gets no settings file. An OpenCode console gets a state
+//! arguments, and gets no settings file. An `OpenCode` console gets a state
 //! plugin file instead, named in `OPENCODE_CONFIG_CONTENT`, which appends to
 //! the same kind of status file (ADR-0085 D2). The fold from hook line to state
 //! (ADR-0085 D7) is **duplicated** here, in [`fold`] and the vendor maps —
@@ -288,7 +288,7 @@ pub fn state_source(agent: Agent) -> StateSource {
 pub enum HookVendor {
     Claude,
     Codex,
-    /// OpenCode, whose state plugin writes the lines (ADR-0085 D2).
+    /// `OpenCode`, whose state plugin writes the lines (ADR-0085 D2).
     OpenCode,
 }
 
@@ -357,7 +357,7 @@ impl HookVendor {
 
     /// Whether the vendor's hook runs the ralphy program (`ralphy hook
     /// status`), so that the daemon's start check of that program speaks for
-    /// it. OpenCode's plugin runs in OpenCode and never starts it.
+    /// it. `OpenCode`'s plugin runs in `OpenCode` and never starts it.
     pub(crate) fn runs_the_ralphy_program(self) -> bool {
         match self {
             HookVendor::Claude | HookVendor::Codex => true,
@@ -367,7 +367,7 @@ impl HookVendor {
 
     /// Whether the vendor sends an event when the operator grants a
     /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
-    /// runs, OpenCode sends `permission.replied`; Codex sends nothing until
+    /// runs, `OpenCode` sends `permission.replied`; Codex sends nothing until
     /// the tool ends.
     fn sends_a_grant(self) -> bool {
         match self {

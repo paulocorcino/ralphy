@@ -3,7 +3,7 @@
 //! record-stream fold, and the signal→[`Outcome`] mapping — is confined here.
 //! See docs/adr/0042.
 //!
-//! Like Codex, Kimi, OpenCode and Copilot (and unlike Claude's live PTY session),
+//! Like Codex, Kimi, `OpenCode` and Copilot (and unlike Claude's live PTY session),
 //! Cursor needs no interactive session: `plan` and `execute` both pipe the charter
 //! on **stdin** (ADR-0042 D2).
 //!

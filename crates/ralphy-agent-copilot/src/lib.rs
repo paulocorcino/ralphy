@@ -3,7 +3,7 @@
 //! JSON-lines stream parser, and the signal→[`Outcome`] mapping — is confined
 //! here. See docs/adr/0041.
 //!
-//! Like the Codex, Kimi and OpenCode adapters (and unlike Claude's live PTY
+//! Like the Codex, Kimi and `OpenCode` adapters (and unlike Claude's live PTY
 //! session), Copilot needs no interactive session: `plan` and `execute` both pipe
 //! the charter on **stdin** with no `-p` at all — `prompt.execute.md` is ~24 KB
 //! before the issue body is appended, against a Windows argv ceiling of

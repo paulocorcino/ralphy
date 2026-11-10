@@ -1,4 +1,4 @@
-//! The tests of the OpenCode map and of a run's watcher.
+//! The tests of the `OpenCode` map and of a run's watcher.
 
 use super::*;
 

@@ -1,6 +1,6 @@
 use super::*;
 
-/// An OpenCode console loads Ralphy's state plugin (ADR-0085 D2): the live
+/// An `OpenCode` console loads Ralphy's state plugin (ADR-0085 D2): the live
 /// child's `OPENCODE_CONFIG_CONTENT` names the session's plugin file, and
 /// only it, as a `file:///` URL; `RALPHY_STATUS_FILE` names the session's
 /// status file; the plugin file holds the plugin; a line in the status file

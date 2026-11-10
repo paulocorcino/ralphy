@@ -177,7 +177,7 @@ fn dominant_model_key(model_usage: &serde_json::Map<String, serde_json::Value>) 
 }
 
 /// Sum a `modelUsage` entry's token counts. These fields are **camelCase**
-/// (`inputTokens`, `cacheReadInputTokens`, …), unlike the snake_case top-level
+/// (`inputTokens`, `cacheReadInputTokens`, …), unlike the `snake_case` top-level
 /// `usage` block — Claude Code reports the per-model breakdown in the other case.
 fn model_usage_total(entry: &serde_json::Value) -> u64 {
     let f = |k: &str| {

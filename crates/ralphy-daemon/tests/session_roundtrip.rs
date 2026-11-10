@@ -30,7 +30,7 @@ fn through_codec(data: Vec<u8>) -> Vec<u8> {
 ///
 /// Plays the terminal emulator (the role xterm.js fills in production): the
 /// session manager is a transparent byte pipe by design, so this loop answers
-/// the ConPTY startup cursor-position request (`ESC[6n`) — otherwise the child
+/// the `ConPTY` startup cursor-position request (`ESC[6n`) — otherwise the child
 /// blocks before it runs on Windows.
 async fn read_until(
     session: &mut Session,

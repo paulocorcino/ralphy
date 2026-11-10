@@ -101,7 +101,7 @@ struct TelegramEngine<T: Transport> {
     /// call — the ~60s idle refresh alone would otherwise `warn!` once a minute
     /// forever — so the first failure warns concisely and every later one is
     /// silent, until a success clears the gate (a genuinely new drop warns again).
-    /// Mirrors the CloudEvents sink's warn-once discipline (`events::sink`).
+    /// Mirrors the `CloudEvents` sink's warn-once discipline (`events::sink`).
     net_warned: bool,
 }
 

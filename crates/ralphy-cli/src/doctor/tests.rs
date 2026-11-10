@@ -318,7 +318,7 @@ fn doctor_names_the_codex_state_source() {
     assert!(hook_command(Agent::Copilot, Path::new("copilot")).is_none());
 }
 
-/// OpenCode's state comes from a plugin: there is no command to run, so the
+/// `OpenCode`'s state comes from a plugin: there is no command to run, so the
 /// doctor names the source and says how it is checked, as an `ok` line.
 #[test]
 fn doctor_names_the_opencode_state_source() {
