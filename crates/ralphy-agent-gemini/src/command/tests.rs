@@ -302,7 +302,7 @@ fn an_inherited_vertexai_flag_is_scrubbed() {
         .filter(|n| n.starts_with("GEMINI_") || n.starts_with("GOOGLE_"))
         .collect();
     kept.push("GEMINI_CLI_HOME");
-    kept.sort();
+    kept.sort_unstable();
     assert_eq!(kept, ["GEMINI_API_KEY", "GEMINI_CLI_HOME"]);
     // Never `env_clear`: the child is Node.
     assert!(!removed.contains(&"PATH"), "{removed:?}");
