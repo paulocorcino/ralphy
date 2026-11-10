@@ -94,7 +94,9 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
     )
     .expect("spawning the stand-in daemon");
     let mut in_job = FALSE;
-    let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &mut in_job) };
+    // SAFETY: the child is alive until the kill below, and `job` is the job
+    // object created above; `in_job` is a valid out-parameter.
+    let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &raw mut in_job) };
     child.kill().expect("ending the stand-in daemon");
     child.wait().expect("reaping the stand-in daemon");
     unsafe { CloseHandle(job) };

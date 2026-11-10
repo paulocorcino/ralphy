@@ -267,7 +267,7 @@ fn configure_raw_input() {
     unsafe {
         let input = GetStdHandle(STD_INPUT_HANDLE);
         let mut mode = 0;
-        if GetConsoleMode(input, &mut mode) != 0 {
+        if GetConsoleMode(input, &raw mut mode) != 0 {
             let raw = mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
             let _ = SetConsoleMode(input, raw);
         }

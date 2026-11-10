@@ -170,10 +170,10 @@ fn kill_tree_windows(root: u32) {
         }
         let mut entry: PROCESSENTRY32 = std::mem::zeroed();
         entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
-        if Process32First(snap, &mut entry) != 0 {
+        if Process32First(snap, &raw mut entry) != 0 {
             loop {
                 table.push((entry.th32ProcessID, entry.th32ParentProcessID));
-                if Process32Next(snap, &mut entry) == 0 {
+                if Process32Next(snap, &raw mut entry) == 0 {
                     break;
                 }
             }

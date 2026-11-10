@@ -234,9 +234,9 @@ pub(crate) mod win {
                 DACL_SECURITY_INFORMATION,
                 null_mut(),
                 null_mut(),
-                &mut dacl,
+                &raw mut dacl,
                 null_mut(),
-                &mut sd,
+                &raw mut sd,
             )
         };
         if code != ERROR_SUCCESS {
@@ -248,7 +248,7 @@ pub(crate) mod win {
         let mut control = 0u16;
         let mut revision = 0u32;
         // SAFETY: `sd.0` is the descriptor returned above.
-        if unsafe { GetSecurityDescriptorControl(sd.0, &mut control, &mut revision) } == 0 {
+        if unsafe { GetSecurityDescriptorControl(sd.0, &raw mut control, &raw mut revision) } == 0 {
             return Err(io::Error::last_os_error()).context("reading the descriptor control");
         }
 
@@ -260,7 +260,7 @@ pub(crate) mod win {
             let count = unsafe { (*dacl).AceCount };
             let mut ace: *mut core::ffi::c_void = null_mut();
             // SAFETY: index 0 is checked against `count`; `ace` is a valid out pointer.
-            let first = count > 0 && unsafe { GetAce(dacl, 0, &mut ace) } != 0 && {
+            let first = count > 0 && unsafe { GetAce(dacl, 0, &raw mut ace) } != 0 && {
                 let ace = ace.cast::<ACCESS_ALLOWED_ACE>();
                 // SAFETY: GetAce returned a pointer to ACE 0 inside the DACL; an
                 // ACCESS_ALLOWED ACE holds its SID from `SidStart` on.
@@ -288,7 +288,7 @@ pub(crate) mod win {
             let mut raw: HANDLE = null_mut();
             // SAFETY: the pseudo-handle of GetCurrentProcess needs no closing, and
             // `raw` is a valid out pointer for the token handle.
-            if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+            if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut raw) } == 0 {
                 return Err(io::Error::last_os_error()).context("opening the process token");
             }
             let token = Token(raw);
@@ -296,7 +296,7 @@ pub(crate) mod win {
             let mut len = 0u32;
             // SAFETY: a null buffer of length 0 only asks for the size into `len`.
             let probed =
-                unsafe { GetTokenInformation(token.0, TokenUser, null_mut(), 0, &mut len) };
+                unsafe { GetTokenInformation(token.0, TokenUser, null_mut(), 0, &raw mut len) };
             // The size probe fails by design (ERROR_INSUFFICIENT_BUFFER).
             if probed != 0 || len == 0 {
                 return Err(io::Error::last_os_error()).context("sizing the token user");
@@ -304,7 +304,13 @@ pub(crate) mod win {
             let mut buf = vec![0u64; (len as usize).div_ceil(8)];
             // SAFETY: `buf` holds at least `len` writable bytes.
             let filled = unsafe {
-                GetTokenInformation(token.0, TokenUser, buf.as_mut_ptr().cast(), len, &mut len)
+                GetTokenInformation(
+                    token.0,
+                    TokenUser,
+                    buf.as_mut_ptr().cast(),
+                    len,
+                    &raw mut len,
+                )
             };
             if filled == 0 {
                 return Err(io::Error::last_os_error()).context("reading the token user");

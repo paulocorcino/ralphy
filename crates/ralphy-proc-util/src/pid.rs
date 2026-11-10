@@ -55,7 +55,8 @@ pub fn pid_is_alive(pid: u32) -> bool {
         // An exited process can still be opened while a handle to it is held
         // elsewhere; STILL_ACTIVE separates the two.
         let mut code: u32 = 0;
-        let alive = GetExitCodeProcess(handle, &mut code) != 0 && code == STILL_ACTIVE as u32;
+        let alive =
+            GetExitCodeProcess(handle, &raw mut code) != 0 && code == STILL_ACTIVE.cast_unsigned();
         CloseHandle(handle);
         alive
     }
@@ -125,7 +126,7 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
         }
         let mut buf = vec![0u16; 32_768];
         let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len) != 0;
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &raw mut len) != 0;
         CloseHandle(handle);
         if !ok {
             return None;

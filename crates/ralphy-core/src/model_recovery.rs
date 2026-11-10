@@ -281,7 +281,7 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
             0,
             u32::MAX,
             u32::MAX,
-            &mut overlapped,
+            &raw mut overlapped,
         )
     };
     if result != 0 {
@@ -315,7 +315,7 @@ fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
             0,
             u32::MAX,
             u32::MAX,
-            &mut overlapped,
+            &raw mut overlapped,
         )
     };
     if result != 0 {
@@ -350,7 +350,7 @@ fn unlock(file: &File) -> std::io::Result<()> {
             0,
             u32::MAX,
             u32::MAX,
-            &mut overlapped,
+            &raw mut overlapped,
         )
     };
     if result != 0 {
