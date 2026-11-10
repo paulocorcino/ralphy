@@ -27,6 +27,11 @@
 //! over the complexity limit pass, in Rust and in the workbench. The tool pin
 //! ties the oxlint of CI to the oxlint step of `xtask gate`. The gate ratchet
 //! ties the steps of `xtask gate` to the check steps of CI.
+//!
+//! The gate exit ratchet counts the lines that let a CI or gate step pass when
+//! its tool fails. The ignore list ratchet keeps the size of each list that
+//! hides files from a linter. The core dependency test keeps every vendor crate
+//! out of the manifest of `ralphy-core`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -47,7 +52,10 @@ mod gate_steps;
 
 mod ast_grep_ignores;
 mod complexity_exceptions;
+mod core_dependencies;
+mod gate_exits;
 mod gate_mirrors_ci;
+mod ignore_lists;
 mod leftovers;
 mod peer_reply_pin;
 mod rust_coupling;
