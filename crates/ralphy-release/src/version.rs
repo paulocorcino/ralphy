@@ -148,7 +148,7 @@ mod tests {
         // `0.1.0-rc19` ("rc" < "rc19"), so every user on rc19 would be told
         // they were up to date forever.
         assert!(v("v0.1.0-rc19") < v("v0.1.0-rc.20"));
-        assert!(v("v0.1.0-rc.19") == v("v0.1.0-rc19"));
+        assert_eq!(v("v0.1.0-rc.19"), v("v0.1.0-rc19"));
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
     fn a_padded_candidate_still_parses_and_orders() {
         // A numeric semver identifier may not carry leading zeros, so rc019
         // must lose them rather than fail to parse.
-        assert!(v("v0.1.0-rc019") == v("v0.1.0-rc.19"));
+        assert_eq!(v("v0.1.0-rc019"), v("v0.1.0-rc.19"));
     }
 
     #[test]
