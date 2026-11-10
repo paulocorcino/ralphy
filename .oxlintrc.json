@@ -154,8 +154,7 @@
     "max-classes-per-file": "off",
     // debt: 6 sites
     "no-new-func": "off",
-    // debt: 5 sites
-    "prefer-const": "off",
+    "prefer-const": "error",
     // debt: 5 sites
     "unicorn/prefer-code-point": "off",
     // debt: 5 sites

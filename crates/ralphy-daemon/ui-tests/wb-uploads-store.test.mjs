@@ -124,14 +124,13 @@ test("files go one after another, each in its own project", async () => {
 });
 
 test("cancel stops a file between two parts, and a reply after it changes nothing", async () => {
-  let s;
   const healthy = daemon();
   const ref = store((p, all) => {
     const reply = healthy(p, all);
     if (p.offset === 0) s.cancel(s.items[0].key);
     return reply;
   });
-  s = ref.s;
+  const s = ref.s;
   await s.add([{ file: file(PART_BYTES * 3), repo: "o/r", folder: "", onConflict: "fail" }]);
   assert.equal(ref.sent.length, 1, "no part after the cancel");
   assert.equal(s.items[0].state, "cancelled");

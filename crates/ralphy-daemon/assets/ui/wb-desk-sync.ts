@@ -263,7 +263,7 @@ export const WBDeskSync = (function () {
     let server: DeskView = emptyDesk();
     // Unanswered changes, in order. The first `inflight.count` are the batch
     // the daemon has not answered yet; a resend reuses its `seq`.
-    let pending: DeskChange[] = [];
+    const pending: DeskChange[] = [];
     let inflight: { seq: number; count: number } | null = null;
 
     return {
