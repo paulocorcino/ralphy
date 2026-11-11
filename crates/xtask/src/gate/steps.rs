@@ -184,6 +184,14 @@ pub const STEPS: &[Step] = &[
     // `TAPLO_VERSION`. No `taplo fmt --check` yet: on Windows the TOML files
     // check out with CRLF, which taplo reports as a format change.
     step("taplo", &["TOML (taplo)"], "taplo", &["check"]),
+    // lychee.toml holds the settings (offline); `ci.yml` fetches the release
+    // binary at `LYCHEE_VERSION`.
+    step(
+        "lychee",
+        &["Local links (lychee)"],
+        "lychee",
+        &["--offline", "--no-progress", "."],
+    ),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
         "gitleaks",

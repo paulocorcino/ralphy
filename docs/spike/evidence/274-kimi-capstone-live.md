@@ -1,7 +1,7 @@
 # Kimi deep re-validation capstone (#274) — live evidence
 
 Companion to the runbook [`274-kimi-capstone-runbook.md`](./274-kimi-capstone-runbook.md)
-and the plan of record [`0028-kimi-revalidation.md`](../adr/0028-kimi-revalidation.md).
+and the plan of record [`0028-kimi-revalidation.md`](../../adr/0028-kimi-revalidation.md).
 Raw per-command logs under `docs/live/kimi-274-*.log`. Captured on Windows 11
 26200, `kimi-code` **0.28.0**, Ralphy release built 2026-07-22, branch `feat/copilot`.
 

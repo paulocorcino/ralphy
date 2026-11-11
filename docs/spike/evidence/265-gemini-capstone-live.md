@@ -1,7 +1,7 @@
 # Live capstone — `ralphy run --agent gemini` end-to-end (#265)
 
 Raw-evidence companion to the accepted note
-[docs/adr/0043-gemini-validation.md](../adr/0043-gemini-validation.md). Where that
+[docs/adr/0043-gemini-validation.md](../../adr/0043-gemini-validation.md). Where that
 file records the verdict per phase, this one carries the numbers, commands and log
 lines behind it. The runbook that drove it is
 [265-gemini-capstone-runbook.md](./265-gemini-capstone-runbook.md).

@@ -1,7 +1,7 @@
 # Live capstone — `ralphy run --agent cursor` end-to-end (#251)
 
 Raw-evidence companion to the accepted note
-[docs/adr/0042-cursor-validation.md](../adr/0042-cursor-validation.md). Where that
+[docs/adr/0042-cursor-validation.md](../../adr/0042-cursor-validation.md). Where that
 file records the verdict per phase, this one carries the numbers, commands and log
 lines behind it.
 

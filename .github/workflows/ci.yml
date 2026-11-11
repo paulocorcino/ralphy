@@ -72,6 +72,10 @@ env:
   # The taplo step of `xtask gate` run the taplo on PATH.
   TAPLO_VERSION: "0.10.0"
   TAPLO_SHA256: 8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
+  # The lychee of the `checks` job: a release binary, pinned by checksum.
+  # The lychee step of `xtask gate` runs the lychee on PATH.
+  LYCHEE_VERSION: "0.24.2"
+  LYCHEE_SHA256: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
 
 jobs:
   lint:
@@ -184,6 +188,14 @@ jobs:
           gunzip taplo.gz
           chmod +x taplo
           ./taplo check
+
+      # Offline: the settings are in lychee.toml.
+      - name: Local links (lychee)
+        run: |
+          curl -fsSL -o lychee.tar.gz "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${LYCHEE_SHA256}  lychee.tar.gz" | sha256sum -c -
+          tar -xzf lychee.tar.gz --strip-components=1 lychee-x86_64-unknown-linux-gnu/lychee
+          ./lychee --offline --no-progress .
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.

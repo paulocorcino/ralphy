@@ -160,6 +160,7 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("HTMLVALIDATE", "html-validate"),
     ("STYLELINT", "stylelint"),
     ("TAPLO", "taplo"),
+    ("LYCHEE", "lychee"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks

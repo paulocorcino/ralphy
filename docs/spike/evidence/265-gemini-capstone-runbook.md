@@ -9,9 +9,9 @@ captured numbers, commands and log lines move into
 `docs/evidence/265-gemini-capstone-live.md` (H2 phases mirroring
 `251-cursor-capstone-live.md`), raw per-command logs go to
 `docs/live/gemini-265-<probe>.log`, and the verdict-per-phase plus a back-link
-land in [docs/adr/0043-gemini-validation.md](../adr/0043-gemini-validation.md).
+land in [docs/adr/0043-gemini-validation.md](../../adr/0043-gemini-validation.md).
 The decisions each phase exercises are D1–D18 in
-[docs/adr/0043-gemini-adapter.md](../adr/0043-gemini-adapter.md).
+[docs/adr/0043-gemini-adapter.md](../../adr/0043-gemini-adapter.md).
 
 Grounded on Gemini CLI **0.51.0** (the validation note records the #253
 `fetch failed` blocker as **healed** — `gemini -p hello` now returns on the host).

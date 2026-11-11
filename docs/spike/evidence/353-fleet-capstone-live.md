@@ -1,7 +1,7 @@
 # Live evidence — local fleet capstone (#353)
 
 Captured evidence for the HITL capstone of
-[ADR-0052](../adr/0052-local-fleet-federation.md), following
+[ADR-0052](../../adr/0052-local-fleet-federation.md), following
 [353-fleet-capstone-runbook.md](353-fleet-capstone-runbook.md). Phases below
 mirror the runbook's; the verdict-per-phase and the design-vs-host sorting land
 in `docs/adr/0052-local-fleet-validation.md` at the wrap-up.
@@ -111,9 +111,9 @@ Two fields are wrong above, from one cause. `environment` reads `"Linux"`
 rather than `"WSL: Ubuntu-22.04"`, and the optional `nudge` block is **absent
 entirely**.
 
-[`announced_descriptor`](../../crates/ralphy-daemon/src/lib.rs#L220) derives
+[`announced_descriptor`](../../../crates/ralphy-daemon/src/lib.rs#L220) derives
 both from `wsl_distro`, which
-[`detect_environment`](../../crates/ralphy-daemon/src/peer.rs#L204) reads from
+[`detect_environment`](../../../crates/ralphy-daemon/src/peer.rs#L204) reads from
 the process's `WSL_DISTRO_NAME`. Measured on this host:
 
 | Context | `WSL_DISTRO_NAME` |
@@ -359,7 +359,7 @@ The refusal is the core's own prose, unchanged by the proxy hop.
 
 Worth stating precisely rather than claiming a gate fired. There is **no
 daemon-side confirmation** for push: per
-[`app.js`](../../crates/ralphy-daemon/assets/ui/app.js#L816) the consent model is
+[`app.js`] the consent model is
 "the OPERATOR's own click is the whole consent — there is no opt-in flag on this
 path (ADR-0046 amendment)". So the gate lives in the workbench, and an
 authenticated client acting for the operator (this capstone's script, or the
