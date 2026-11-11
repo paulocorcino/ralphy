@@ -78,7 +78,9 @@ export function runsStore(_deps: RunsStoreDeps) {
     // Alpine calls this once, when `main.ts` registers the store.
     init() {
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
-      window.addEventListener("workbench:project-changed", () => this.runsFollowProject());
+      window.addEventListener("workbench:project-changed", () => {
+        this.runsFollowProject();
+      });
     },
 
     // Hydrate from `runs.list` (ADR-0047 §9), by REPLACEMENT — a snapshot is
@@ -168,9 +170,9 @@ export function runsStore(_deps: RunsStoreDeps) {
       if (slug === null || slug === "") return;
       // What a push means for the page (a hidden tab, the board) is the
       // page's: `app.ts` hears it.
-      this._runsSub = window.WBDaemon.subscribeRuns(slug, () =>
-        sendWindow(window, "workbench:runs-dirty"),
-      );
+      this._runsSub = window.WBDaemon.subscribeRuns(slug, () => {
+        sendWindow(window, "workbench:runs-dirty");
+      });
     },
     destroyRunsSub() {
       try {

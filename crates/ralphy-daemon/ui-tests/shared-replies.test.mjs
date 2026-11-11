@@ -85,7 +85,7 @@ test("issue.show: the issue view takes the body and comments of the reply", asyn
   const { scope: state } = loadComponent("wbBoard", { from: loaded });
   const reply = fixture("issue.show");
   assert.ok(reply.issue.body.length > 0, "the fixture holds a body");
-  loaded.window.WBDaemon.observe = async () => reply;
+  loaded.window.WBDaemon.observe = () => Promise.resolve(reply);
   loaded.state.$store.modals.flash = () => {};
   state.$store.projects.setOpen("o/r");
   state.kanbanSel = reply.issue.number;
@@ -127,10 +127,10 @@ test("project.remove: the unknown-repo refusal has its own cause", () => {
 
 test("project.remove: the unknown-repo refusal means the project is already gone", async () => {
   const { state, window } = loadShell();
-  window.WBDaemon.observe = async () => fixture("project.remove--unknown-repo");
+  window.WBDaemon.observe = () => Promise.resolve(fixture("project.remove--unknown-repo"));
   const flashed = [];
   state.$store.modals.flash = (m) => flashed.push(m);
-  state.$store.modals.askConfirm = async () => true;
+  state.$store.modals.askConfirm = () => Promise.resolve(true);
   state.$store.projects.loadRepos = () => {};
   const p = { slug: "nope/gone" };
   state.$store.projects.setProjects([p, { slug: "o/r" }]);
@@ -163,7 +163,7 @@ test("session-end--refused: a refused launch shows the daemon's own words", () =
 
 test("file.upload: the reply to the last part marks the file done at the daemon's path", async () => {
   const done = fixture("file.upload");
-  const s = uploadsStore({ messages: { flash: () => {} }, send: async () => done });
+  const s = uploadsStore({ messages: { flash: () => {} }, send: () => Promise.resolve(done) });
   await s.add([{ file: new File([new Uint8Array(3)], "up.bin"), repo: "o/r", folder: "", onConflict: "fail" }]);
   assert.deepEqual(
     s.items.map((i) => [i.state, i.path]),

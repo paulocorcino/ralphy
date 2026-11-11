@@ -46,7 +46,7 @@ export type NoteOpenDeps = {
   /** Take what the editor holds into the card. */
   syncFromEditor: (el: NoteCard) => void;
   /** Write what the card holds now. */
-  flush: (el: NoteCard) => Promise<void>;
+  flush: (el: NoteCard) => Promise<unknown>;
 };
 
 export function createNoteOpen(deps: NoteOpenDeps) {
@@ -147,6 +147,7 @@ export function createNoteOpen(deps: NoteOpenDeps) {
           render();
         },
       });
+      return null;
     });
   }
 

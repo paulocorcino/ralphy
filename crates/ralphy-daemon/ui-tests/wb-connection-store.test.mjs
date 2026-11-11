@@ -71,16 +71,18 @@ function connectedPage(opts = {}) {
 async function withFetchSpy(fn, until = null) {
   const urls = [];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = (url) => {
     urls.push(String(url));
-    return { ok: true, status: 200, json: async () => [] };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) });
   };
   try {
     await fn(urls);
     // Let the reads chained behind the first await land.
-    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    for (let i = 0; i < 10; i++) await new Promise((r) => { setImmediate(r); });
     const deadline = Date.now() + 2000;
-    while (until && !urls.includes(until) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+    if (until) {
+      while (!urls.includes(until) && Date.now() < deadline) await new Promise((r) => { setTimeout(r, 5); });
+    }
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -106,7 +108,7 @@ test("fmtUptime steps down through the units and never renders a negative", () =
 });
 
 // The binding cannot see ticks STOP; the clock that `init` starts must.
-test("presenceStale turns true on the clock once the heartbeat is older than the limit", async () => {
+test("presenceStale turns true on the clock once the heartbeat is older than the limit", () => {
   const { store } = storeOnly();
   // The daemon door owns the heartbeat's time and judges it.
   let lost = false;
@@ -115,7 +117,7 @@ test("presenceStale turns true on the clock once the heartbeat is older than the
   const realSetInterval = globalThis.setInterval;
   const realFetch = globalThis.fetch;
   globalThis.setInterval = (fn, ms) => (ticks.push({ fn, ms }), 0);
-  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => null });
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
   try {
     store.init();
   } finally {
@@ -143,7 +145,7 @@ test("init holds the page socket on its session read", () => {
   const realSetInterval = globalThis.setInterval;
   const realFetch = globalThis.fetch;
   globalThis.setInterval = () => 0;
-  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => null });
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
   try {
     store.init();
   } finally {
@@ -263,7 +265,7 @@ test("sessions.dirty on a visible tab reads the sessions", async () => {
 test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async () => {
   const { state, store, window } = connectedPage(VISIBLE);
   state.checkColumnDesk = async () => {};
-  window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
+  window.WBDaemon.observe = (verb) => Promise.resolve(verb === "runs.list" ? { status: "ok", runs: [] } : null);
   state.$store.projects.setOpen("o/r");
   state.runsOpen = false;
   state.$store.runs.runsByProject["o/r"] = [{ runid: "r1" }];
@@ -312,7 +314,7 @@ test("the peer tick and a project-list push read no change set and no branch", a
   state.checkColumnDesk = async () => {};
   state.$store.projects.setOpen("o/r");
   state.$store.projects.fleetPeers = [{ daemon_id: "d" }];
-  await withFetchSpy(async () => {
+  await withFetchSpy(() => {
     state.$store.projects.peerTick();
     store.onPresencePush("repos.dirty", {});
     store.onPresencePush("peers.dirty", {});
@@ -332,10 +334,10 @@ test("a session read keeps the policy, and restores the view only when authorize
     const restored = [];
     state.$store.tabs.restoreView = () => restored.push("restore");
     const realFetch = globalThis.fetch;
-    globalThis.fetch = async () => ({
+    globalThis.fetch = () => Promise.resolve({
       ok: true,
       status: 200,
-      json: async () => ({ authed, password: true, policy: "bearer", avatar: "🦊" }),
+      json: () => Promise.resolve({ authed, password: true, policy: "bearer", avatar: "🦊" }),
     });
     try {
       await store.probeSession();

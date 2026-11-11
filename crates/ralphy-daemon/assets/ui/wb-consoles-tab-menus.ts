@@ -17,6 +17,7 @@ import type { MenuRow } from "./wb-agents.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { sendWindow } from "./wb-events.ts";
+import { showConsoleWindow } from "./wb-console-place.ts";
 
 /** A row of the Note menu (`WBNotes.list`). */
 type NoteItem = ReturnType<Window["WBNotes"]["list"]>[number];
@@ -180,14 +181,13 @@ export function wbConsoleMenus() {
     revealWindow(id: string) {
       this.windowMenu = false;
       // A console in its own tab is shown in its tab (ADR-0037 §3d).
-      const tab = this.$store.tabs.tabOf(id);
-      if (tab) {
-        this.$store.tabs.activate(tab.id);
-        return;
-      }
-      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
-      // AFTER the tab is laid out: a `display:none` tab measures 0.
-      void this.$nextTick(() => WBConsole.reveal(id));
+      showConsoleWindow(
+        this.$store.tabs,
+        (reveal) => {
+          void this.$nextTick(reveal);
+        },
+        id,
+      );
     },
 
     // The note cap, stated before the click — `fenceAtCap`'s shape, and for
@@ -236,7 +236,9 @@ export function wbConsoleMenus() {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
-      void this.$nextTick(() => window.WBNotes.jump(id));
+      void this.$nextTick(() => {
+        window.WBNotes.jump(id);
+      });
     },
     // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
     // The menu closes on the way on top so the card is in view; putting back
@@ -251,7 +253,9 @@ export function wbConsoleMenus() {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // As `jumpNote`: a `display:none` tab measures a 0×0 viewport.
-      void this.$nextTick(() => window.WBNotes.keepOnTop(n.id));
+      void this.$nextTick(() => {
+        window.WBNotes.keepOnTop(n.id);
+      });
     },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.
@@ -265,7 +269,9 @@ export function wbConsoleMenus() {
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.fenceMenu = false;
       // As `revealWindow`: a `display:none` tab measures 0.
-      void this.$nextTick(() => WBConsole.jumpToFence(id));
+      void this.$nextTick(() => {
+        WBConsole.jumpToFence(id);
+      });
     },
     // Alt+Shift+F<n> → the n-th fence, up to F12 (the fence cap). MEASURED
     // (Chromium 148): Alt+Shift+F10/F11/F12 all reach the document —
@@ -291,7 +297,9 @@ export function wbConsoleMenus() {
 
     // The listeners, added once when Alpine builds the toolbar.
     init() {
-      window.addEventListener("workbench:menus-close", () => this.closeOwnMenus());
+      window.addEventListener("workbench:menus-close", () => {
+        this.closeOwnMenus();
+      });
 
       // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
       // action as a click. Matched on `e.code` so layout does not matter. R is no

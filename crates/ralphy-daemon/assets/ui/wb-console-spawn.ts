@@ -306,7 +306,9 @@ export function createSpawn(deps: SpawnDeps) {
             readFleet: () => readFleetNow()?.(),
           }
         : {}),
-      onPeerHold: (group) => showPeerDown(peerStrip, win, body, group),
+      onPeerHold: (group) => {
+        showPeerDown(peerStrip, win, body, group);
+      },
       onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
       onLink: (state) => {
         switch (state) {
@@ -323,7 +325,7 @@ export function createSpawn(deps: SpawnDeps) {
             return;
           default: {
             const unreachable: never = state;
-            return unreachable;
+            void unreachable;
           }
         }
       },
@@ -429,6 +431,7 @@ export function createSpawn(deps: SpawnDeps) {
           (response) => {
             if (WBSessionRoute.closeSucceeded(response.status)) finish();
             else win._term?.term.write(`\r\n[close failed — the daemon refused it]\r\n`);
+            return null;
           },
           () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),
         );

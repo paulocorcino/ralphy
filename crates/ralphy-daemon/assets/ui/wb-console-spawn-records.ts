@@ -54,7 +54,9 @@ export function createSpawnRecords(deps: SpawnRecordDeps) {
     }
     if (carry?.unrecorded === true) {
       win._deskUnrecorded = true;
-      setTimeout(() => adoptOrphan(win), ADOPT_GRACE_MS);
+      setTimeout(() => {
+        adoptOrphan(win);
+      }, ADOPT_GRACE_MS);
       return;
     }
     createRecord(win);
@@ -64,9 +66,10 @@ export function createSpawnRecords(deps: SpawnRecordDeps) {
     if (!win.isConnected || !win._deskUnrecorded) return;
     // A fresh read first: the record may have landed without a push here.
     void reloadDesk().then(() => {
-      if (!win.isConnected || !win._deskUnrecorded) return;
-      if (currentDesk().some((r) => r.id === win._deskId)) return;
+      if (!win.isConnected || !win._deskUnrecorded) return null;
+      if (currentDesk().some((r) => r.id === win._deskId)) return null;
       recordLeft(win);
+      return null;
     });
   }
 

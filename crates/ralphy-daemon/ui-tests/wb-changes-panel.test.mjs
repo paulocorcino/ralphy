@@ -49,7 +49,7 @@ function page(opts = {}) {
 // A page whose `WBDaemon.observe` answers each call with the next reply.
 function observedPage(replies) {
   const p = page();
-  p.window.WBDaemon.observe = async () => replies.shift() ?? null;
+  p.window.WBDaemon.observe = () => Promise.resolve(replies.shift() ?? null);
   p.shell.$store.projects.setOpen("o/r");
   p.shell.$store.modals.flash = () => {};
   return p;
@@ -164,7 +164,7 @@ test("opening the Changes view, the sidebar refresh and a branch act read the ch
   shell.showSideView("changes");
   assert.deepEqual(reads, ["changes:o/r", "sync:o/r"], "opening the view");
   reads.length = 0;
-  window.WBDaemon.observe = async () => ({ status: "ok" });
+  window.WBDaemon.observe = () => Promise.resolve({ status: "ok" });
   shell.$store.checkouts.ensureWorktreeListing = () => {};
   const dialog = loadComponent("wbBranchDialog", { from: loaded }).scope;
   await dialog._mutateBranch("branch.switch", "o/r", "side", () => {});
@@ -276,10 +276,10 @@ test("a refused Changes act lands in the Changes panel and still flashes", async
   for (const [act, run] of CHANGE_ACTS) {
     const { shell, changes: st, window } = page();
     const said = `The daemon refused ${act}.`;
-    window.WBDaemon.observe = async () => ({ status: "error", message: said });
+    window.WBDaemon.observe = () => Promise.resolve({ status: "error", message: said });
     st.loadChanges = () => {};
     st.loadSync = () => {};
-    shell.$store.modals.askConfirm = async () => true;
+    shell.$store.modals.askConfirm = () => Promise.resolve(true);
     const flashed = [];
     shell.$store.modals.flash = (msg) => flashed.push(msg);
     await run(st);
@@ -297,7 +297,7 @@ test("one remote act at a time: the busy slot refuses a second act and frees its
   const answers = [];
   window.WBDaemon.observe = (verb) => {
     sent.push(verb);
-    return new Promise((resolve) => answers.push(resolve));
+    return new Promise((resolve) => { answers.push(resolve); });
   };
   const acts = [st.syncFetch("o/r")];
   assert.equal(st.syncBusy, "fetch");
@@ -308,13 +308,13 @@ test("one remote act at a time: the busy slot refuses a second act and frees its
   assert.deepEqual(whileBusy, ["sync.fetch"], "an act that finds the slot taken sends nothing");
   assert.equal(st.syncBusy, null, "an answered act frees the slot");
 
-  window.WBDaemon.observe = async () => ({ status: "error", message: "The push was refused." });
+  window.WBDaemon.observe = () => Promise.resolve({ status: "error", message: "The push was refused." });
   await st.syncPush("o/r");
   assert.equal(st.syncBusy, null, "a refused act frees the slot");
 
-  window.WBDaemon.observe = async (verb) => {
+  window.WBDaemon.observe = (verb) => {
     sent.push(verb);
-    throw new Error("the socket closed");
+    return Promise.reject(new Error("the socket closed"));
   };
   await st.syncPull("o/r");
   assert.equal(st.syncBusy, null, "an act whose transport threw frees the slot");
@@ -369,9 +369,9 @@ test("every change-set write is refused while the change set is not current", as
   const { shell, changes: state, window } = page();
   const replies = [CHANGES_OK, { status: "error", message: "git exited 128" }];
   const verbs = [];
-  window.WBDaemon.observe = async (verb) => {
+  window.WBDaemon.observe = (verb) => {
     verbs.push(verb);
-    return replies.shift() ?? { status: "ok" };
+    return Promise.resolve(replies.shift() ?? { status: "ok" });
   };
   shell.$store.projects.setOpen("o/r");
   shell.$store.modals.flash = () => {};
@@ -380,7 +380,7 @@ test("every change-set write is refused while the change set is not current", as
   await state.loadChanges("o/r");
   assert.equal(shell.$store.connection.writeLocked(), true);
   verbs.length = 0;
-  shell.$store.modals.askConfirm = async () => true;
+  shell.$store.modals.askConfirm = () => Promise.resolve(true);
   state.commitMsgSlug = "o/r";
   state.commitMsg = "msg";
   await state.stagePaths("o/r", ["a.txt"]);
@@ -410,9 +410,9 @@ test("every change-set write reaches the daemon while the change set is current"
     const { shell, changes: state, window } = page();
     const replies = [CHANGES_OK];
     const verbs = [];
-    window.WBDaemon.observe = async (verb) => {
+    window.WBDaemon.observe = (verb) => {
       verbs.push(verb);
-      return replies.shift() ?? { status: "ok" };
+      return Promise.resolve(replies.shift() ?? { status: "ok" });
     };
     shell.$store.projects.setOpen("o/r");
     shell.$store.modals.flash = () => {};
@@ -420,7 +420,7 @@ test("every change-set write reaches the daemon while the change set is current"
     await state.loadChanges("o/r");
     assert.equal(shell.$store.connection.writeLocked(), false, name);
     verbs.length = 0;
-    shell.$store.modals.askConfirm = async () => true;
+    shell.$store.modals.askConfirm = () => Promise.resolve(true);
     state.commitMsgSlug = "o/r";
     state.commitMsg = "msg";
     await act(state);

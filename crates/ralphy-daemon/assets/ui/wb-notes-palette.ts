@@ -80,8 +80,12 @@ export function createNotePalette(deps: NotePaletteDeps) {
     pop.hidden = true;
     // The press must not reach the card's drag or the plane's accelerators,
     // and the swatch must not blur the editor before it repaints.
-    pop.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-    pop.addEventListener("mousedown", (ev) => ev.preventDefault());
+    pop.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();
+    });
+    pop.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+    });
     // `text` turns the strip from swatches into CHIPS — a colour can be shown
     // as itself, a font and a size cannot, so those two rows name what they
     // offer and the font chips are drawn IN the font they name.
@@ -163,11 +167,21 @@ export function createNotePalette(deps: NotePaletteDeps) {
     paintPalette(el);
     markDirty(el);
   }
-  const setTone = (el: NoteCard, tone: string) => restyle(el, { tone });
-  const setFill = (el: NoteCard, fill: string) => restyle(el, { fill });
-  const setInk = (el: NoteCard, ink: string) => restyle(el, { ink });
-  const setFont = (el: NoteCard, font: string) => restyle(el, { font });
-  const setSize = (el: NoteCard, size: string) => restyle(el, { size });
+  const setTone = (el: NoteCard, tone: string) => {
+    restyle(el, { tone });
+  };
+  const setFill = (el: NoteCard, fill: string) => {
+    restyle(el, { fill });
+  };
+  const setInk = (el: NoteCard, ink: string) => {
+    restyle(el, { ink });
+  };
+  const setFont = (el: NoteCard, font: string) => {
+    restyle(el, { font });
+  };
+  const setSize = (el: NoteCard, size: string) => {
+    restyle(el, { size });
+  };
 
   return { togglePalette, closePalette, buildPalette };
 }

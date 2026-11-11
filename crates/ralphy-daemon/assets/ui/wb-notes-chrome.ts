@@ -100,7 +100,9 @@ export function createNoteChrome(deps: NoteChromeDeps) {
       if (ev.key === "Enter") commitTitle(el);
       else if (ev.key === "Escape") endTitle(el);
     });
-    titleEdit.addEventListener("blur", () => commitTitle(el));
+    titleEdit.addEventListener("blur", () => {
+      commitTitle(el);
+    });
     // A PRESS THAT DID NOT MOVE opens the field, and that shape is the whole
     // of it. The title is `flex: 1` and therefore most of the head, which is
     // the drag handle: swallowing its `pointerdown` (the obvious way to stop a
@@ -117,7 +119,9 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     title.addEventListener("pointerdown", (ev) => {
       press = { x: ev.clientX, y: ev.clientY };
     });
-    title.addEventListener("mousedown", (ev) => ev.preventDefault());
+    title.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+    });
     title.addEventListener("pointerup", (ev) => {
       const from = press;
       press = null;
@@ -201,7 +205,9 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     close.type = "button";
     close.title = "Close this note. The file is kept.";
     close.innerHTML = '<i class="bi bi-x-lg"></i>';
-    close.addEventListener("click", () => closeCard(el.dataset.noteId));
+    close.addEventListener("click", () => {
+      closeCard(el.dataset["noteId"]);
+    });
     // Shown only while the card is on top, in the place of `✕` (CSS): the
     // close removes the card from the desk, which is not what the operator
     // means when they want the card out of the way.
@@ -306,7 +312,9 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     dir.value = DEFAULT_DIR;
     dir.title = "Where this note is saved";
     // The plane's accelerators must not fire on a directory being typed.
-    dir.addEventListener("keydown", (e) => e.stopPropagation());
+    dir.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+    });
     // The rename field (ADR-0064 §11), in the footer beside the path it
     // replaces while an edit is open. An INPUT and not `window.prompt`: the
     // native dialog is dismissed by default in an automated browser, which is
@@ -321,7 +329,9 @@ export function createNoteChrome(deps: NoteChromeDeps) {
       if (ev.key === "Enter") commitRename(el);
       else if (ev.key === "Escape") endRename(el);
     });
-    rename.addEventListener("blur", () => endRename(el));
+    rename.addEventListener("blur", () => {
+      endRename(el);
+    });
     const state = document.createElement("span");
     state.className = "note-state";
     foot.append(more, path, dir, rename, state);
@@ -335,7 +345,9 @@ export function createNoteChrome(deps: NoteChromeDeps) {
         "pointerdown",
         consoleHost?.startResize(el, d, {
           locked: () => el._noteLocked === true || onTop(el),
-          onDrop: () => persistCards(el),
+          onDrop: () => {
+            persistCards(el);
+          },
           min: NOTE_MIN,
         }) ?? (() => {}),
       );
@@ -384,7 +396,10 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     // handed back to it — a remount is the whole of `CrepeLean`'s surface for
     // "here is different text", and a retitle is rare enough to afford one.
     // The FILE keeps its name: `⋯ → Rename file…` is the other verb.
-    void mountEditor(el, el._noteMarkdown).then(() => markDirty(el));
+    void mountEditor(el, el._noteMarkdown).then(() => {
+      markDirty(el);
+      return null;
+    });
     paintTitle(el);
   }
 

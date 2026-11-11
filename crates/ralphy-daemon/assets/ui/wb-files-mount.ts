@@ -116,10 +116,12 @@ export function mountTree(files: MountFiles) {
     // read before opens from memory. A restore of the expanded folders
     // stops here too.
     beforeExpand: (e: WunderbaumExpandEvent) => {
-      if (!e.flag || files.openPeerDown() == null || e.node.children) {
-        return;
-      }
-      return mem.cache.has(files.treeKey(files.relPath(e.node))) ? undefined : false;
+      const opens =
+        !e.flag ||
+        files.openPeerDown() == null ||
+        Boolean(e.node.children) ||
+        mem.cache.has(files.treeKey(files.relPath(e.node)));
+      return opens ? undefined : false;
     },
     // A level (re)loaded while a search is on carries no match marks, and
     // in `hide` mode an unmarked row is not painted.
@@ -191,7 +193,9 @@ export function mountTree(files: MountFiles) {
       () => {
         if (!files.$store.connection.tabHidden()) files.onHeadMoved();
       },
-      (reason: string | null) => files.treeWatchFailed(reason),
+      (reason: string | null) => {
+        files.treeWatchFailed(reason);
+      },
     );
     files._treeSub.watch("");
   }
@@ -264,7 +268,9 @@ export function destroyTree(files: MountFiles) {
     files._tree?.destroy();
   } catch {}
   files._tree = null;
-  document.querySelectorAll(".wb-host").forEach((h) => (h.innerHTML = ""));
+  document.querySelectorAll(".wb-host").forEach((h) => {
+    h.replaceChildren();
+  });
   // These states describe a tree that no longer exists.
   files.treeLoading = false;
   files.treeError = "";

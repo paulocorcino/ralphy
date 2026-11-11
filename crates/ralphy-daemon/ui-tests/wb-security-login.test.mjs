@@ -15,15 +15,15 @@ async function toggle({ enrolled, requireLogin, ok = true, code = "", unreachabl
   const connection = shell.$store.connection;
   connection.securityChanged({ totpEnrolled: enrolled, requireLogin });
   const calls = [];
-  connection.logOff = async () => calls.push("log-off");
-  connection.probeSession = async () => calls.push("probe");
-  scope.askFreshCode = async () => code;
+  connection.logOff = () => Promise.resolve(calls.push("log-off"));
+  connection.probeSession = () => Promise.resolve(calls.push("probe"));
+  scope.askFreshCode = () => Promise.resolve(code);
   const requests = [];
   const real = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = (url, init) => {
     requests.push([url, init.body]);
     if (unreachable) throw new TypeError("Failed to fetch");
-    return { ok, status: ok ? 200 : 401, headers: { get: () => null } };
+    return Promise.resolve({ ok, status: ok ? 200 : 401, headers: { get: () => null } });
   };
   const box = { checked: requireLogin };
   scope.securityOpen = true;

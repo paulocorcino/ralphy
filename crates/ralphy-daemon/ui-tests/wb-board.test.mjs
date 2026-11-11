@@ -54,7 +54,7 @@ function page(opts = {}) {
 // A board whose `WBDaemon.observe` answers each call with the next reply.
 function observedBoard(replies) {
   const loaded = loadShell();
-  loaded.window.WBDaemon.observe = async () => replies.shift() ?? null;
+  loaded.window.WBDaemon.observe = () => Promise.resolve(replies.shift() ?? null);
   loaded.state.$store.projects.setOpen("o/r");
   loaded.state.$store.modals.flash = () => {};
   const { scope } = loadComponent("wbBoard", { from: loaded });

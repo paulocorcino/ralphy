@@ -80,8 +80,12 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     window,
     messages,
     reopenRefused,
-    renderMarkdown: (rec) => markdown.renderMarkdown(rec),
-    drawMermaid: (rec) => markdown.drawMermaid(rec),
+    renderMarkdown: (rec) => {
+      markdown.renderMarkdown(rec);
+    },
+    drawMermaid: (rec) => {
+      markdown.drawMermaid(rec);
+    },
   });
   const { showSaveError, clearSaveError, descOf, reloadFile, applyFresh, showDiskBadge } = saver;
   const viewerEncoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
@@ -93,7 +97,9 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     alive,
     findInEditor,
     mirrors: (id) => mirrors(id),
-    refresh: () => refresh(),
+    refresh: () => {
+      refresh();
+    },
     setPathLabel,
     detachBtnHtml,
     mirrorBtnHtml,

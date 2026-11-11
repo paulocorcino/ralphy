@@ -19,7 +19,7 @@ function page({ desk = {} } = {}) {
   const flashed = [];
   const hooks = {};
   let landDesk = () => {};
-  const landed = new Promise((resolve) => (landDesk = resolve));
+  const landed = new Promise((resolve) => { landDesk = resolve; });
   globalThis.window = {
     Alpine: { store: (name) => (name === "projects" ? projects : undefined), nextTick: (fn) => fn() },
     addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
@@ -29,7 +29,7 @@ function page({ desk = {} } = {}) {
       return true;
     },
     WBDaemon: {
-      observe: async () => null,
+      observe: () => Promise.resolve(null),
       onUnknownCheckout: (fn) => (hooks.unknownCheckout = fn),
     },
     WBConsole: {
@@ -102,7 +102,7 @@ function manualDaemon() {
   const waiting = {};
   globalThis.window.WBDaemon.observe = (verb, { repo }) => {
     reads.push(repo);
-    return new Promise((resolve) => (waiting[repo] ||= []).push(resolve));
+    return new Promise((resolve) => { (waiting[repo] ||= []).push(resolve); });
   };
   const reply = (ref, names) =>
     waiting[ref].shift()({ status: "ok", checkouts: { worktrees: names.map((name) => ({ name, branch: name })) } });

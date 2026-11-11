@@ -1,7 +1,7 @@
 // The note cards on the stage: how `render` builds a card for a record and
-// how it takes a card off (ADR-0064 §§7, 8, 14). `createNotes` builds it with
-// the card's closure names as typed deps, after the card on top, whose
-// `onTopNow` and `putBack` it calls.
+// how it takes a card off (ADR-0064 §§7, 8, 14), and the writes of every card
+// as the page goes. `createNotes` builds it with the card's closure names as
+// typed deps, after the card on top, whose `onTopNow` and `putBack` it calls.
 import type { NoteCard, NoteSource } from "./wb-types.d.ts";
 
 /** A draft that came home with a re-attach: the text and the name it chose. */
@@ -9,6 +9,10 @@ export type Home = { draft: string; claim: string | null };
 
 /** What `createNotes` hands the stage: the card's closure names. */
 export type NoteStageDeps = {
+  /** The plane; null before the page has it. */
+  stage: () => HTMLElement | null;
+  /** Read the editor's text into the card. */
+  syncFromEditor: (el: NoteCard) => void;
   /** The card's chrome for one record, already on the stage. */
   buildCard: (record: NoteSource) => NoteCard;
   /** Drafts that came home with a re-attach, by note id. */
@@ -24,7 +28,7 @@ export type NoteStageDeps = {
   /** Put the card on top back on the desk. */
   putBack: () => void;
   /** Write what the card holds now. */
-  flush: (el: NoteCard) => Promise<void>;
+  flush: (el: NoteCard) => Promise<unknown>;
   /** Take a card off the stage, with its editor. */
   tearDownCard: (el: NoteCard) => void;
   /** True in a detached fence's popup, where the document holds a fragment of the plane. */
@@ -33,6 +37,8 @@ export type NoteStageDeps = {
 
 export function createNoteStage(deps: NoteStageDeps) {
   const {
+    stage,
+    syncFromEditor,
     buildCard,
     drafts,
     mountHome,
@@ -79,5 +85,30 @@ export function createNoteStage(deps: NoteStageDeps) {
     tearDownCard(el);
   }
 
-  return { mountCard, dropCard };
+  // Every card writes what it holds before the page goes: best effort, as
+  // `wb-console.ts` takes for the desk on `pagehide`.
+  function flushAll() {
+    const st = stage();
+    if (!st) return;
+    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
+      // `flush` re-reads the editor itself, so an unannounced last keystroke
+      // is carried here too.
+      void flush(el);
+    }
+  }
+
+  // Whether any note card holds an edit not yet saved (ADR-0070 D6). The
+  // editor is asked first, like every flush point: its change notification
+  // can land after the last keystroke.
+  function anyDirty() {
+    const st = stage();
+    if (!st) return false;
+    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
+      syncFromEditor(el);
+      if (el._noteDirty) return true;
+    }
+    return false;
+  }
+
+  return { mountCard, dropCard, flushAll, anyDirty };
 }

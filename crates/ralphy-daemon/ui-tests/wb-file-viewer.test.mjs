@@ -188,7 +188,7 @@ function loadWithDom() {
   return { viewer: createViewer(window, document, { messages: { flash() {} } }), mount, log, models, document };
 }
 after(() => Object.assign(WBMonaco, REAL_MONACO));
-const settle = () => new Promise((r) => setTimeout(r, 5));
+const settle = () => new Promise((r) => { setTimeout(r, 5); });
 const paneOf = (mount, id) => mount.children.find((c) => c.dataset.tabId === id);
 const mirrors = (mount) => mount.children.filter((c) => c.className.includes("mirror-viewer"));
 const openCode = (viewer, id, path) =>

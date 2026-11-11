@@ -6,10 +6,10 @@ import { ATTEMPTS, RETRY_DELAY_MS, Refused, patiently } from "../assets/ui/wb-re
 // A read that fails `fails` times with `err`, then answers "ok".
 function flaky(fails, err) {
   const calls = { n: 0 };
-  const read = async () => {
+  const read = () => {
     calls.n += 1;
     if (calls.n <= fails) throw err;
-    return "ok";
+    return Promise.resolve("ok");
   };
   return { read, calls };
 }
@@ -17,7 +17,7 @@ function flaky(fails, err) {
 test("a read lost without a reply is asked again and the caller gets the answer", async () => {
   const { read, calls } = flaky(2, new Error("connection closed before a reply"));
   const waits = [];
-  assert.equal(await patiently(read, async (ms) => void waits.push(ms)), "ok");
+  assert.equal(await patiently(read, (ms) => Promise.resolve(void waits.push(ms))), "ok");
   assert.equal(calls.n, 3);
   assert.deepEqual(waits, [RETRY_DELAY_MS, RETRY_DELAY_MS]);
 });

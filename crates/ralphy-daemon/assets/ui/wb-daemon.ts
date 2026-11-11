@@ -149,7 +149,9 @@ export function createDaemon(
         // tree must not run before the read that failed has settled its whole
         // `.then`/`.catch` chain, or the stale mount's catch paints its error
         // onto the fresh one (a microtask would still race that chain).
-        setTimeout(() => noteUnknownCheckout(payload, reply), 0);
+        setTimeout(() => {
+          noteUnknownCheckout(payload, reply);
+        }, 0);
         return reply;
       });
   }
@@ -394,7 +396,9 @@ export function createDaemon(
   }
   document.addEventListener("visibilitychange", onVisibility);
   // A tablet resumes on a different link; its socket died without a close.
-  window.addEventListener("online", () => resumeOn("online", 0));
+  window.addEventListener("online", () => {
+    resumeOn("online", 0);
+  });
 
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum

@@ -134,21 +134,22 @@ export function createNoteFile(deps: NoteFileDeps) {
       .then((reply) => {
         if (WBFail.isError(reply)) {
           paintState(el, WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-          return;
+          return null;
         }
         patch(record.id, { path: to });
         paintPath(el, to);
         paintState(el, "Renamed");
+        return null;
       })
-      .catch((err: unknown) =>
+      .catch((err: unknown) => {
         paintState(
           el,
           WBFail.cause(
             { message: err instanceof Error ? err.message : undefined },
             "The daemon did not answer.",
           ),
-        ),
-      );
+        );
+      });
   }
 
   // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
@@ -166,28 +167,30 @@ export function createNoteFile(deps: NoteFileDeps) {
         danger: true,
       })
       .then((ok) => {
-        if (!ok) return;
+        if (!ok) return null;
         window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
           .then((reply) => {
             if (WBFail.isError(reply)) {
               paintState(el, WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
-              return;
+              return null;
             }
             // The record goes without a toast: an undo that cannot put the file
             // back would be a lie.
             el._noteDirty = false;
             consoleHost?.saveNotes(removeNote(consoleHost.notes(), record.id));
             render();
+            return null;
           })
-          .catch((err: unknown) =>
+          .catch((err: unknown) => {
             paintState(
               el,
               WBFail.cause(
                 { message: err instanceof Error ? err.message : undefined },
                 "The daemon did not answer.",
               ),
-            ),
-          );
+            );
+          });
+        return null;
       });
   }
 

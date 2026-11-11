@@ -7,7 +7,7 @@ import { apiFetch, ReadDeadline } from "../assets/ui/wb-api.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
 
 // Let every pending promise callback run; setImmediate is not under mock timers.
-const flush = () => new Promise((r) => setImmediate(r));
+const flush = () => new Promise((r) => { setImmediate(r); });
 
 // The abort signal is the deadline's own; the rest of the init is what the caller gave.
 function withoutSignal(calls) {
@@ -155,7 +155,7 @@ test("a read past its deadline reports a stall", async () => {
 
 test("apiFetch removes its listener from the caller's signal when the request settles", async () => {
   const prev = globalThis.fetch;
-  globalThis.fetch = async () => new Response("[]", { status: 200 });
+  globalThis.fetch = () => Promise.resolve(new Response("[]", { status: 200 }));
   const listeners = new Set();
   const signal = {
     aborted: false,

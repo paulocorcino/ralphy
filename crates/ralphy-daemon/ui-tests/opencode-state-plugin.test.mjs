@@ -130,7 +130,7 @@ test("the plugin never throws and never prints", async () => {
       null,
     ];
     for (const event of events) {
-      await assert.doesNotReject(async () => hooks.event({ event }), JSON.stringify(event));
+      await assert.doesNotReject(() => Promise.resolve(hooks.event({ event })), JSON.stringify(event));
     }
     await assert.doesNotReject(async () => {
       await hooks.event();

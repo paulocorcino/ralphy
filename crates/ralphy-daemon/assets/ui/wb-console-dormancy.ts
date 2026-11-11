@@ -109,7 +109,7 @@ export function createDormancy(deps: DormancyDeps) {
         return;
       default: {
         const unreachable: never = trigger;
-        return unreachable;
+        void unreachable;
       }
     }
   }
@@ -255,16 +255,20 @@ export function createDormancy(deps: DormancyDeps) {
       },
       // On top now, so first in line for a context. The `applyDormancy` above
       // asks too, but not when the focus came from a note card.
-      focused: () => budget().scheduleGpu(),
+      focused: () => {
+        budget().scheduleGpu();
+      },
     });
     // Only the daemon's log reads this; the resume is the daemon door's. The
     // console is built before `WBDaemon`, so on a return this listener runs
     // before the door's, and `shown` goes out on the old socket.
-    document.addEventListener("visibilitychange", () =>
-      notePage(document.visibilityState !== "visible"),
-    );
+    document.addEventListener("visibilitychange", () => {
+      notePage(document.visibilityState !== "visible");
+    });
     // A page that closes, or that iOS freezes, may fire only this one.
-    window.addEventListener("pagehide", () => notePage(true));
+    window.addEventListener("pagehide", () => {
+      notePage(true);
+    });
     // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
     // so the restore this would catch cannot happen here.
 
@@ -309,7 +313,9 @@ export function createDormancy(deps: DormancyDeps) {
       window.addEventListener("orientationchange", publishInset);
       window.addEventListener("resize", publishInset);
       // A terminal that has LOST focus cannot be the reason a keyboard is up.
-      document.addEventListener("focusout", () => setTimeout(publishInset, 250));
+      document.addEventListener("focusout", () => {
+        setTimeout(publishInset, 250);
+      });
     }
   }
 

@@ -12,12 +12,13 @@ function feeds() {
   });
 }
 
+const wake = () => Promise.resolve(true);
+
 test("the getters return the last value fed, read after the factory was built", () => {
   const f = feeds();
   assert.deepEqual(f.lastSessions(), []);
   assert.equal(f.wakePeerNow(), null);
   assert.equal(f.readFleetNow(), null);
-  const wake = async () => true;
   const read = () => {};
   f.ingestFleet([], { wake, read });
   assert.equal(f.wakePeerNow(), wake);
@@ -80,7 +81,7 @@ test("a shared sessions read that passed its deadline is not shared again", asyn
     const second = f.readSessions().catch((e) => e);
     assert.equal(fetches, 1, "the second read shares the first request");
     mock.timers.tick(20000);
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => { setImmediate(r); });
     assert.equal((await first).name, "ReadDeadline");
     assert.equal((await second).name, "ReadDeadline");
     f.readSessions().catch(() => {});

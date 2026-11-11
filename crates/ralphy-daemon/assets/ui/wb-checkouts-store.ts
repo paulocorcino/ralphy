@@ -73,13 +73,18 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     init() {
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon.onUnknownCheckout(
-        (repo, name) => repo != null && this.checkoutGone(repo, name),
-      );
+      window.WBDaemon.onUnknownCheckout((repo, name) => {
+        if (repo != null) this.checkoutGone(repo, name);
+      });
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
-      void window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
+      void window.WBConsole?.whenDeskLoaded?.().then(() => {
+        this.adoptDeskCheckouts();
+        return null;
+      });
       // A branch refusal names an act against the project that WAS open.
-      window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
+      window.addEventListener("workbench:project-changed", () => {
+        this.branchError = "";
+      });
     },
 
     // The Changes view read the change count of `slug`; `null` is a read

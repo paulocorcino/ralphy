@@ -82,7 +82,7 @@ function fakeDeps(more = {}) {
     pageWindows: () => [],
     desk: () => [],
     lastSessions: () => [],
-    askConfirm: async () => true,
+    askConfirm: () => Promise.resolve(true),
     projectNameOf: (ref) => ref.split("/").pop(),
     projectTitleOf: (ref) => ref,
     setWin: (win, fields) => writes.push({ win, fields }),
@@ -153,7 +153,7 @@ function pageWithStore(repos) {
   const window = {
     Alpine: { store: (name) => (name === "checkouts" ? store : undefined) },
     WBDaemon: {
-      observe: async (verb, { repo }) =>
+      observe: (verb, { repo }) =>
         verb === "worktree.list" ? { status: "ok", checkouts: { worktrees: repos[repo] } } : null,
     },
     addEventListener() {},
@@ -188,7 +188,7 @@ test("a worktree being deleted is not offered in the console switcher", async ()
   // The delete of feat-a is in flight when an agent window of this repo opens.
   store.hideWorktree("paulocorcino/vibeforge", "feat-a");
   title.ensureListing("paulocorcino/vibeforge");
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise((resolve) => { setTimeout(resolve, 5); });
   assert.deepEqual(switcherRows(title, win), ["primary", "feat-b"]);
 });
 

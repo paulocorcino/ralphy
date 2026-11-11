@@ -30,7 +30,9 @@ function channelSocket(sock: WebSocket): ChannelSocket {
     get readyState() {
       return sock.readyState;
     },
-    send: (data: Uint8Array) => sock.send(onArrayBuffer(data) ? data : data.slice()),
+    send: (data: Uint8Array) => {
+      sock.send(onArrayBuffer(data) ? data : data.slice());
+    },
   };
 }
 
@@ -162,7 +164,9 @@ export function createPageSocket({
       } else if (!waitingForSession) {
         connect();
       }
-      return () => leave(user);
+      return () => {
+        leave(user);
+      };
     },
     // Hold the first socket until `read`, the page's read of its session,
     // settles. A page that already opened a socket ignores it.

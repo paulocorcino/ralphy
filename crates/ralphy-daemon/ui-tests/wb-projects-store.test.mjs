@@ -98,7 +98,7 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
     remote: null,
   };
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, json: async () => [row] });
+  globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve([row]) });
   try {
     await state.loadRepos();
   } finally {
@@ -120,7 +120,7 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
     row("o/none", null),
   ];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, json: async () => rows });
+  globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(rows) });
   try {
     await state.loadRepos();
   } finally {
@@ -135,9 +135,9 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
 // Answers each fetch with the next reply in `replies` (`{ status, body }`).
 function scriptedFetch(replies) {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
+  globalThis.fetch = () => {
     const { status, body } = replies.shift() || { status: 500, body: null };
-    return { ok: status === 200, status, json: async () => body };
+    return Promise.resolve({ ok: status === 200, status, json: () => Promise.resolve(body) });
   };
   return () => (globalThis.fetch = realFetch);
 }
@@ -277,7 +277,7 @@ test("two fleet reads close together list each peer row once", async () => {
     repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
   };
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => fleet });
+  globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fleet) });
   try {
     await Promise.all([state.loadFleet(), state.loadFleet()]);
   } finally {
@@ -292,9 +292,9 @@ test("fleet reads asked now share the read in flight, and a later ask reads agai
   state.setProjects([]);
   let reads = 0;
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = (url) => {
     if (url === "/api/fleet") reads += 1;
-    return { ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ peers: [], repos: [] }) });
   };
   try {
     await Promise.all([state.readFleetNow(), state.readFleetNow(), state.readFleetNow()]);
@@ -326,7 +326,7 @@ test("a good fleet read is sent to the files", async () => {
   const state = loadShell({ window: { dispatchEvent: (e) => (events.push(e), true) } }).state.$store.projects;
   const sent = (type) => events.filter((e) => e.type === type).map((e) => e.detail ?? null);
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) });
+  globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ peers: [], repos: [] }) });
   try {
     await state.loadFleet();
   } finally {
@@ -344,7 +344,7 @@ test("a project read keeps the peer rows and the live dots until the fleet and t
   // `/api/repos` answers; the fleet and the sessions never do.
   globalThis.fetch = (url) =>
     String(url) === "/api/repos"
-      ? Promise.resolve({ ok: true, status: 200, json: async () => [{ slug: "a", reachable: true }] })
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ slug: "a", reachable: true }]) })
       : new Promise(() => {});
   try {
     await state.loadRepos({ git: false });
@@ -409,7 +409,7 @@ test("updatePeer installs on the host, adds it again, and stops at a failure", a
     },
   };
   let reloads = 0;
-  state.loadRepos = async () => {
+  state.loadRepos = () => {
     reloads++;
   };
   const payload = { destination: "me@vps", name: "vps", identity: "/k" };
@@ -466,7 +466,7 @@ async function wake(replies) {
   const flashed = [];
   shell.$store.modals.flash = (text) => flashed.push(text);
   const reloads = [];
-  state.loadRepos = async () => reloads.push("repos");
+  state.loadRepos = () => Promise.resolve(reloads.push("repos"));
   const restore = scriptedFetch(replies);
   try {
     return { woke: await state.wakePeer("d2"), flashed, reloads };

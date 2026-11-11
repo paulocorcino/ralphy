@@ -51,6 +51,7 @@ export function createDeskFlush(deps: FlushDeps) {
       .then((out) => {
         flushing = false;
         flushed(out);
+        return null;
       });
   }
 

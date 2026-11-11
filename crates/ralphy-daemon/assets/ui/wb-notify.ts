@@ -23,9 +23,9 @@ export function canNotify() {
 }
 
 /** Ask the browser for permission to notify, unless it already answered. */
-async function askPermission() {
-  if (!canNotify()) return "denied";
-  if (Notification.permission !== "default") return Notification.permission;
+function askPermission(): Promise<NotificationPermission> {
+  if (!canNotify()) return Promise.resolve("denied");
+  if (Notification.permission !== "default") return Promise.resolve(Notification.permission);
   return Notification.requestPermission();
 }
 
@@ -72,7 +72,11 @@ export const WBNotify = {
         body: "A test notification from this browser.",
         tag: "ralphy-test",
       });
-      note.onclick = () => window.focus();
+      // The one handler of a new object, and the ui-tests' fakes have no addEventListener.
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener -- see the line above
+      note.onclick = () => {
+        window.focus();
+      };
       return "shown";
     } catch {
       // A browser that notifies only from a service worker throws here.

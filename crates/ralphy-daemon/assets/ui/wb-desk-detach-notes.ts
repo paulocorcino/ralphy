@@ -38,6 +38,7 @@ export function createNoteReports(deps: NoteReportDeps) {
           recordNoteName(id, { noteId: x.id, path: x.path });
         }
       }
+      return null;
     });
   }
 

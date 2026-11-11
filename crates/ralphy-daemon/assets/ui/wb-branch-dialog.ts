@@ -55,12 +55,12 @@ export function wbBranchDialog() {
     worktreeRemoving: emptyRecord<string[]>(),
 
     init() {
-      window.addEventListener("workbench:branch-open", (e) =>
-        this.openBranchModal(e.detail.project),
-      );
-      window.addEventListener("workbench:checkout-menu", (e) =>
-        this.openCheckoutChip(e.detail.project, e.detail.anchor),
-      );
+      window.addEventListener("workbench:branch-open", (e) => {
+        this.openBranchModal(e.detail.project);
+      });
+      window.addEventListener("workbench:checkout-menu", (e) => {
+        this.openCheckoutChip(e.detail.project, e.detail.anchor);
+      });
     },
 
     openBranchModal(p: Project) {
@@ -156,7 +156,9 @@ export function wbBranchDialog() {
           p.branch,
           p.dirty,
         ),
-        onPick: (row) => this.$store.checkouts.setCheckout(ref, row.primary ? null : row.name),
+        onPick: (row) => {
+          this.$store.checkouts.setCheckout(ref, row.primary ? null : row.name);
+        },
         onRemove: (row) => this.removeWorktree(ref, row),
       });
     },

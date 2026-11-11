@@ -31,9 +31,9 @@ function dialog(opts = {}) {
   const replies = { "host.aliases": { status: "ok", aliases: ALIASES } };
   const scripts = {};
   window.WBDaemon = {
-    observe: async (verb, payload) => {
+    observe: (verb, payload) => {
       calls.push({ verb, payload });
-      return replies[verb] || { status: "ok" };
+      return Promise.resolve(replies[verb] || { status: "ok" });
     },
     spawn: (verb, payload, onStatus) => {
       calls.push({ verb, payload });
@@ -43,7 +43,7 @@ function dialog(opts = {}) {
   };
   const reloads = [];
   // What a real reload brings back after an add: the new tunnel peer's group.
-  shell.$store.projects.loadRepos = async () => {
+  shell.$store.projects.loadRepos = () => {
     reloads.push(1);
     shell.$store.projects.setProjects([{ key: VPS_ID + "/me/app", slug: "me/app", path: "/srv/app", daemon: VPS_ID }]);
     shell.$store.projects.fleetPeers = [
@@ -54,7 +54,7 @@ function dialog(opts = {}) {
   return { state, data, shell, window, calls, replies, scripts, reloads, verbs };
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const tick = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 test("dialog: the dialog opens with a fleet of one and lists the SSH config hosts", async () => {
   const { state, shell, verbs } = dialog();

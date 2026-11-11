@@ -168,7 +168,9 @@ export function toMermaidEr(schema: DbmlSchema, names: string[]): string {
   const picked = [...new Set(names)].flatMap((n) => byName.get(n) ?? []);
   const ids = new Map(picked.map((t, i) => [t.name, `t${i}`]));
   const lines = ["erDiagram"];
-  picked.forEach((table, i) => lines.push(...entityLines(`t${i}`, table)));
+  picked.forEach((table, i) => {
+    lines.push(...entityLines(`t${i}`, table));
+  });
   for (const ref of schema.refs) {
     const from = ids.get(ref.from.table);
     const to = ids.get(ref.to.table);

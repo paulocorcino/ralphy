@@ -71,7 +71,7 @@ function shellWith(reply) {
   return { state, window, document, observed, written, opened, viewer, fire, emitted };
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = () => new Promise((r) => { setImmediate(r); });
 
 test("a decoded read opens the pane with its encoding and bom", async () => {
   const { state, opened } = shellWith({ status: "ok", content: "§", encoding: "windows-1252", bom: false });

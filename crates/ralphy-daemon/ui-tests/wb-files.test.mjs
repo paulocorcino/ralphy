@@ -147,7 +147,7 @@ test("each workbench event reaches the files, and a create re-lists before it re
   let settle;
   files.onTreeDirty = (rel) => {
     calls.push(`dirty ${rel}`);
-    return new Promise((r) => (settle = r));
+    return new Promise((r) => { settle = r; });
   };
   files.revealRel = (rel) => calls.push(`reveal ${rel}`);
   fire("workbench:project-changed", { slug: "o/r", previous: null });
@@ -160,7 +160,7 @@ test("each workbench event reaches the files, and a create re-lists before it re
   fire("workbench:tree-dirty", { rel: "src", reveal: "src/new.txt" });
   assert.equal(calls.at(-1), "dirty src", "the reveal waits for the level");
   settle();
-  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => { setImmediate(r); });
   assert.deepEqual(calls, [
     "project",
     "fleet",
@@ -199,7 +199,7 @@ test("a head.dirty push sends workbench:head-moved once for the open project", a
   files.$store.projects.setOpen("o/r");
   files.onHeadMoved();
   files.onHeadMoved();
-  await new Promise((r) => setTimeout(r, 5));
+  await new Promise((r) => { setTimeout(r, 5); });
   assert.deepEqual(
     events.filter((e) => e.type === "workbench:head-moved").map((e) => e.detail),
     [{ ref: "o/r" }],
@@ -361,9 +361,9 @@ async function withSearchShell(run, reply = { status: "ok", hits: [], truncated:
   const calls = [];
   let answer = reply;
   window.WBDaemon = {
-    observe: async (verb, payload) => {
+    observe: (verb, payload) => {
       calls.push({ verb, payload });
-      return typeof answer === "function" ? answer() : answer;
+      return Promise.resolve(typeof answer === "function" ? answer() : answer);
     },
     // The real door's rule (wb-daemon.test.mjs pins it): the key only for a
     // real name, so a no-selection payload is the pre-#406 one.
@@ -394,7 +394,7 @@ test("a reply that is not the newest is dropped, never painted", async () => {
   await withSearchShell(async (s, calls, answer) => {
     s.fileSearch.open = true;
     let release;
-    answer(() => new Promise((r) => (release = r)));
+    answer(() => new Promise((r) => { release = r; }));
     s.fileSearch.query = "old";
     const slow = s.fileSearchNow();
     // A newer search lands first.
@@ -555,7 +555,7 @@ test("a tree level that fails to load draws no error row, closes, and asks the f
   const node = { title: "src", data: {}, lazy: true, parent: null, setExpanded: (flag) => closed.push(flag) };
   state.relPath = () => "src";
   const result = await options.lazyLoad({ node });
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => { setTimeout(r, 0); });
   assert.equal(result, false, "a rethrow makes Wunderbaum draw an error row");
   assert.deepEqual(closed, [false]);
   assert.equal(fleetReads, 1);
@@ -634,7 +634,7 @@ function fakeTree(disk) {
       this.children = null;
       tree.element.scrollTop = 0;
     },
-    async load(source) {
+    load(source) {
       this.children = source.map((s) => node(s.title, this, s));
     },
     async setExpanded(flag) {
@@ -672,7 +672,7 @@ function reconcileFiles(tree, disk) {
   const s = loadComponent("wbFiles").scope;
   const calls = [];
   s._tree = tree;
-  s.fetchTreeLevel = async (rel) => disk[rel];
+  s.fetchTreeLevel = (rel) => Promise.resolve(disk[rel]);
   s.revalidateBelow = (node, rel) => calls.push(["revalidateBelow", rel]);
   s.forgetValidatedBelow = (rel) => calls.push(["forgetValidatedBelow", rel]);
   return { s, calls };
@@ -762,10 +762,10 @@ test("a re-list keeps the scroll offset and the selection, unless a reveal lande
   // A reveal during the read owns the selection and the scroll offset.
   disk[""] = [{ title: "x.txt" }, { title: "y.txt" }];
   tree.element.scrollTop = 120;
-  s.fetchTreeLevel = async (rel) => {
+  s.fetchTreeLevel = (rel) => {
     s._revealSeq += 1;
     s._revealedRel = "y.txt";
-    return disk[rel];
+    return Promise.resolve(disk[rel]);
   };
   await s._reconcileOnce(tree.root, "");
   assert.equal(tree.relOf(tree.active), "y.txt");
@@ -796,7 +796,7 @@ test("a reconcile asked for during a pass waits for the level, which is read onc
   let finish;
   s._reconcileOnce = (node, rel) => {
     passes.push(rel);
-    return passes.length === 1 ? new Promise((resolve, reject) => (finish = { resolve, reject })) : Promise.resolve();
+    return passes.length === 1 ? new Promise((resolve, reject) => { finish = { resolve, reject }; }) : Promise.resolve();
   };
   const first = s.reconcileLevel(tree.root, "");
   let settled = false;
@@ -899,17 +899,17 @@ async function duplicate(rel, names) {
   const real = globalThis.WBDaemon;
   const writes = [];
   globalThis.WBDaemon = {
-    observe: async () => ({ status: "ok", entries: names.map((name) => ({ name })) }),
-    write: async (verb, payload) => {
+    observe: () => Promise.resolve({ status: "ok", entries: names.map((name) => ({ name })) }),
+    write: (verb, payload) => {
       writes.push([verb, payload.path, payload.to]);
-      return { status: "ok" };
+      return Promise.resolve({ status: "ok" });
     },
     withCheckout: (payload) => ({ ...payload }),
   };
   s.$store.projects.setOpen("o/r");
   s.relPath = () => rel;
   s.onTreeDirty = async () => {};
-  s.revealRel = async () => null;
+  s.revealRel = () => Promise.resolve(null);
   try {
     await s.duplicateNode({});
   } finally {
@@ -932,13 +932,13 @@ test("a nudge re-reads an image tab through the image read, and a text tab throu
   const reads = [];
   const changed = [];
   globalThis.WBDaemon = {
-    observe: async (verb, payload) => {
+    observe: (verb, payload) => {
       reads.push([verb, payload.path]);
-      return { status: "ok", content: "text" };
+      return Promise.resolve({ status: "ok", content: "text" });
     },
-    readImage: async (project, path) => {
+    readImage: (project, path) => {
       reads.push(["image", path]);
-      return "data:image/png;base64,AA==";
+      return Promise.resolve("data:image/png;base64,AA==");
     },
     withCheckout: (payload) => ({ ...payload }),
   };

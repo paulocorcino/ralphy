@@ -226,6 +226,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-popups.js",
                 "wb-desk-records.js",
                 "wb-desk-restore.js",
+                "wb-stage-fence-tile.js",
                 "wb-stage-fences.js",
                 "wb-stage-window.js",
                 "wb-stage-columns.js",

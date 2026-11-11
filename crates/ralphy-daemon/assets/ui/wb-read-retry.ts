@@ -12,7 +12,10 @@ export class Refused extends Error {}
 export const ATTEMPTS = 3;
 export const RETRY_DELAY_MS = 1500;
 
-const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const pause = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 // Run `read` up to `ATTEMPTS` times, waiting `RETRY_DELAY_MS` between the
 // tries. A `Refused` error, or the last try failing, rejects with that error.

@@ -56,7 +56,14 @@ export function fetchContent(
   // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
   if (ftype === "image") {
     let refusal: TabBody = null;
-    return WBDaemon.readImage(project, path, (reason) => (refusal = refuse(reason)), checkout)
+    return WBDaemon.readImage(
+      project,
+      path,
+      (reason) => {
+        refusal = refuse(reason);
+      },
+      checkout,
+    )
       .then((url) => (url == null ? refusal : { content: url }))
       .catch(() => refuse("transport"));
   }
@@ -140,7 +147,7 @@ export function openTab(
         ? Promise.resolve({ content, encoding, bom })
         : store.fetchContent(project, path, ftype, ck);
     void bytes.then((body) => {
-      if (body == null) return; // nothing to show: fetchContent closed the tab
+      if (body == null) return null; // nothing to show: fetchContent closed the tab
       WBViewer.open({
         id,
         project,
@@ -157,6 +164,7 @@ export function openTab(
       if (fragment !== undefined && fragment !== "") WBViewer.jumpTo(id, fragment);
       // oxlint-disable-next-line unicorn/no-array-callback-reference -- not an array
       if (find != null && find !== "") WBViewer.find(id, find);
+      return null;
     });
   });
 }

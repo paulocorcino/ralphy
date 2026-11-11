@@ -149,8 +149,12 @@ export function connectionStore(deps: ConnectionStoreDeps) {
           if (build !== "" && this.pageBuild !== "" && build !== this.pageBuild) this.onBuildSkew();
         },
         {
-          onPush: (verb, payload) => this.onPresencePush(verb, payload),
-          onOpen: (reopened) => this.onPresenceOpen(reopened),
+          onPush: (verb, payload) => {
+            this.onPresencePush(verb, payload);
+          },
+          onOpen: (reopened) => {
+            this.onPresenceOpen(reopened);
+          },
         },
       );
     },

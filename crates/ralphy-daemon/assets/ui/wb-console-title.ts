@@ -216,7 +216,9 @@ export function createTitle(deps: TitleDeps) {
     };
     paint();
     btn.append(icon);
-    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    btn.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
     btn.addEventListener("pointerenter", paint);
     btn.addEventListener("focus", paint);
     btn.addEventListener("click", (e) => {
@@ -245,7 +247,9 @@ export function createTitle(deps: TitleDeps) {
     const caret = document.createElement("i");
     caret.className = "bi bi-chevron-down";
     btn.append(caret);
-    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    btn.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openCheckoutMenu(win, btn);
@@ -308,8 +312,12 @@ export function createTitle(deps: TitleDeps) {
       input.remove();
       if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
     };
-    input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-    input.addEventListener("dblclick", (ev) => ev.stopPropagation());
+    input.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();
+    });
+    input.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+    });
     input.addEventListener("keydown", (ev) => {
       // Held here so an Escape meant for this edit never reaches the plane.
       ev.stopPropagation();
@@ -317,7 +325,9 @@ export function createTitle(deps: TitleDeps) {
       if (ev.isComposing) return;
       if (ev.key === "Enter" || ev.key === "Escape") endEdit(ev.key === "Enter");
     });
-    input.addEventListener("blur", () => endEdit(false));
+    input.addEventListener("blur", () => {
+      endEdit(false);
+    });
     span.replaceWith(input);
     input.focus();
     input.select();

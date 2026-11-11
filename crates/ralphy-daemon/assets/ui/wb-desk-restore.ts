@@ -108,6 +108,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
       void reloadDesk().then(() => {
         if (isDeskLoaded()) restoreDesk();
         else retryDeskLoad();
+        return null;
       });
     }, deskRetryMs);
     deskRetryMs = Math.min(deskRetryMs * 2, 30000);
@@ -240,9 +241,9 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
       .then(async ([, { sessions, unheard }]) => {
         if (!isDeskLoaded()) {
           retryDeskLoad();
-          return;
+          return null;
         }
-        if (deskReconciled) return;
+        if (deskReconciled) return null;
         deskReconciled = true;
         const away = awayMap();
         // Not restored twice: `reattachFence` can run while this fetch is in
@@ -269,6 +270,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
         }
         await Promise.allSettled(pending);
         settleRestore();
+        return null;
       })
       .catch(() => {
         // A refused/unreachable desk restores nothing. The glyph is lit ANYWAY:

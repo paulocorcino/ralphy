@@ -49,7 +49,7 @@ function shell() {
   return { state, observed, images, opened, emitted, flashed };
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = () => new Promise((r) => { setImmediate(r); });
 const P = "owner/repo";
 const fileTabs = (state) => state.$store.tabs.tabs.filter((t) => String(t.id).startsWith("file:"));
 const diffTabs = (state) => state.$store.tabs.tabs.filter((t) => String(t.id).startsWith("diff:"));

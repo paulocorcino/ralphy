@@ -166,11 +166,16 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     openMenu = null;
   }
   function checkoutMenu({ anchor, host, rows, onPick, onRemove, onCreate }: CheckoutMenuOptions) {
-    if (openMenu?.anchor === anchor) return closeCheckoutMenu();
+    if (openMenu?.anchor === anchor) {
+      closeCheckoutMenu();
+      return null;
+    }
     closeCheckoutMenu();
     const menu = document.createElement("div");
     menu.className = "session-checkout-menu";
-    menu.addEventListener("pointerdown", (e) => e.stopPropagation());
+    menu.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+    });
     for (const row of rows) menu.append(checkoutItem(row, onPick, onRemove));
     if (onCreate) {
       const create = document.createElement("button");

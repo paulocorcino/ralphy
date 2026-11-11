@@ -58,7 +58,7 @@ test("the daemon sink PUTs the body to /api/desk — the control the null sink i
   }
 });
 
-test("the daemon sink's putSync rides keepalive, so a closing tab's last write survives", async () => {
+test("the daemon sink's putSync rides keepalive, so a closing tab's last write survives", () => {
   const spy = spyFetch();
   try {
     load().daemon().putSync(BODY);
@@ -75,8 +75,8 @@ test("the daemon sink chains its writes, so two mutations cannot land out of ord
   const prev = globalThis.fetch;
   let release;
   let sawFirst;
-  const gate = new Promise((r) => (release = r));
-  const firstCalled = new Promise((r) => (sawFirst = r));
+  const gate = new Promise((r) => { release = r; });
+  const firstCalled = new Promise((r) => { sawFirst = r; });
   globalThis.fetch = (url, init) => {
     order.push(JSON.parse(init.body).windows[0]);
     // The FIRST write hangs until released; an unchained sink would issue the

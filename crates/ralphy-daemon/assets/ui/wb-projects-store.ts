@@ -148,7 +148,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       // A peer pushes neither its reachability nor its sessions, so they are
       // read every 30 s while a peer is listed and the tab is visible
       // (ADR-0070 D2 event 6). `loadRepos` reads the fleet and the sessions.
-      this._peerTick = setInterval(() => this.peerTick(), this.PEER_READ_MS);
+      this._peerTick = setInterval(() => {
+        this.peerTick();
+      }, this.PEER_READ_MS);
     },
 
     // A peer reads no git fact: the change set and the branch have their own

@@ -12,6 +12,7 @@ import type { MonacoEditor } from "./wb-monaco.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import type { ViewerFind } from "./wb-viewer-find.ts";
+import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
 
 // The words of that notice, from the image's `src` and `alt` alone: a short
@@ -115,7 +116,6 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     detachClick,
     mountEditor,
   } = deps;
-  const { save, reloadFile, applyFresh, hideDiskBadge } = deps.saver;
   const { wireEncodingMenu } = deps.encoding;
   const { mdSearch, mdSearchStep, mdSearchClose } = deps.find;
 
@@ -170,7 +170,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     rec.saveBtn = el.querySelector<HTMLElement>('[data-act="save"]');
 
     // edit / preview toggle
-    need(el, '[data-act="toggle"]').onclick = () => toggleEdit(rec);
+    need(el, '[data-act="toggle"]').addEventListener("click", () => {
+      toggleEdit(rec);
+    });
     // The heading outline on a NARROW pane: the same <nav>, laid over the
     // article by CSS while `.md-split` carries `toc-open` (on a wide pane the
     // button is not shown and the nav is the column it always was). A jump or
@@ -180,16 +182,10 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     need(el, ".md-outline").addEventListener("click", (ev) => {
       if ((ev.target as Element).closest(".outline-item")) split.classList.remove("toc-open");
     });
-    need(el, ".md-scroll").addEventListener("pointerdown", () =>
-      split.classList.remove("toc-open"),
-    );
-    need(el, '[data-act="save"]').onclick = () => save(rec);
-    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
-    need(el, '[data-act="disk"]').onclick = () => {
-      if (rec.pendingDisk !== undefined) applyFresh(rec, rec.pendingDisk);
-      hideDiskBadge(rec);
-    };
-    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
+    need(el, ".md-scroll").addEventListener("pointerdown", () => {
+      split.classList.remove("toc-open");
+    });
+    wireFileButtons(el, rec, { ...deps.saver, detachClick });
     // in-page find over the rendered article
     const find = need(el, ".md-find");
     const input = need<HTMLInputElement>(el, ".md-find-input");
@@ -198,17 +194,27 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       input.focus();
       input.select();
     };
-    input.addEventListener("input", () => mdSearch(rec, input.value));
+    input.addEventListener("input", () => {
+      mdSearch(rec, input.value);
+    });
     input.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") mdSearchStep(rec, e.shiftKey ? -1 : 1);
       if (e.key === "Escape") mdSearchClose(rec);
     });
-    need(el, '[data-find="next"]').onclick = () => mdSearchStep(rec, 1);
-    need(el, '[data-find="prev"]').onclick = () => mdSearchStep(rec, -1);
-    need(el, '[data-find="close"]').onclick = () => mdSearchClose(rec);
+    need(el, '[data-find="next"]').addEventListener("click", () => {
+      mdSearchStep(rec, 1);
+    });
+    need(el, '[data-find="prev"]').addEventListener("click", () => {
+      mdSearchStep(rec, -1);
+    });
+    need(el, '[data-find="close"]').addEventListener("click", () => {
+      mdSearchClose(rec);
+    });
     // Links inside the rendered article: one delegated listener for the pane's
     // lifetime, so a re-render (reload, edit→preview) never re-wires anything.
-    need(el, ".md-body").addEventListener("click", (ev) => linkClick(rec, ev));
+    need(el, ".md-body").addEventListener("click", (ev) => {
+      linkClick(rec, ev);
+    });
 
     renderMarkdown(rec);
   }
@@ -245,6 +251,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
         .then((url) => {
           if (url != null && url !== "") img.src = url;
+          return null;
         })
         .catch(() => {});
     });
@@ -361,7 +368,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       a.className = "outline-item lvl-" + h.tagName.toLowerCase();
       a.textContent = h.textContent;
       a.title = h.textContent;
-      a.onclick = () => h.scrollIntoView({ behavior: "smooth", block: "start" });
+      a.addEventListener("click", () => {
+        h.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
       nav.append(a);
     });
   }

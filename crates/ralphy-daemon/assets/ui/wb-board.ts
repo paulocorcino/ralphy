@@ -477,24 +477,24 @@ export function wbBoard() {
 
     init() {
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
-      window.addEventListener("workbench:project-changed", () => this.boardFollowProject());
+      window.addEventListener("workbench:project-changed", this.boardFollowProject.bind(this));
       // A refresh trigger of the page (#301): the runs socket, a reopened
       // socket, the tab becoming visible, a login. The predicate decides.
-      window.addEventListener("workbench:board-refresh", (e) =>
-        this.maybeRefreshBoard(e.detail.trigger),
-      );
-      // The board opened (`toggleKanban`): lazy-load the tracker for the open
-      // project.
+      window.addEventListener("workbench:board-refresh", (e) => {
+        this.maybeRefreshBoard(e.detail.trigger);
+      });
+      // The board opened (`toggleKanban`): lazy-load the tracker for the open project.
       window.addEventListener("workbench:board-opened", () => {
         this.kanbanSel = null;
         void this.loadBoard();
       });
       // A trail node of the Runs panel (#301) opens that issue's detail.
-      window.addEventListener("workbench:issue-open", (e) => this.openIssue(e.detail.issue));
-      // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
-      // 120s floor on the first tick.
+      window.addEventListener("workbench:issue-open", (e) => {
+        this.openIssue(e.detail.issue);
+      });
+      // Anchor the clock at page load: a zero `_boardLoadedAt` clears the 120s floor.
       this._boardLoadedAt = Date.now();
-      this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
+      this._boardBackstop = setInterval(this.boardBackstopTick.bind(this), 30000);
     },
   });
 }

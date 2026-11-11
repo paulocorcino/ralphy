@@ -99,9 +99,9 @@ async function heldPicker(replies = {}) {
   const { dialog } = page();
   const verbs = [];
   globalThis.WBDaemon = globalThis.window.WBDaemon; // `_mutateBranch` reads the bare global
-  globalThis.window.WBDaemon.observe = async (verb, args) => {
+  globalThis.window.WBDaemon.observe = (verb, args) => {
     verbs.push([verb, args.name ?? null]);
-    return replies[verb] ?? null;
+    return Promise.resolve(replies[verb] ?? null);
   };
   dialog.branchModal = { slug: "o/r", filter: "", branches: [], current: "main", primaryBranch: "main", dirty: false, checkoutDirty: false, worktrees: {} };
   replies["branch.list"] = {
@@ -142,7 +142,7 @@ test("a refused switch shows git's words after the act", async () => {
     },
   });
   dialog.switchBranch("free");
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => { setTimeout(r, 0); });
   const note = dialog.$store.checkouts.branchError;
   assert.match(note, /^Could not switch branch: error: Your local changes/);
 });
@@ -160,16 +160,16 @@ function deleter() {
   const flashed = [];
   let listed = ["wt-a", "wt-b"];
   const listing = () => ({ primary: "/repo", worktrees: listed.map((name) => ({ name, branch: name })) });
-  globalThis.window.WBDaemon.observe = async (verb, args) => {
+  globalThis.window.WBDaemon.observe = (verb, args) => {
     sent.push([verb, args.name ?? null]);
-    if (verb === "worktree.list") return { status: "ok", checkouts: listing() };
-    return new Promise((resolve) => (pending[args.name] = resolve));
+    if (verb === "worktree.list") return Promise.resolve({ status: "ok", checkouts: listing() });
+    return Promise.resolve(new Promise((resolve) => { pending[args.name] = resolve; }));
   };
   globalThis.window.WBConsole.askNotice = (n) => notices.push(n.message);
-  shell.$store.modals.askConfirm = async () => true;
+  shell.$store.modals.askConfirm = () => Promise.resolve(true);
   shell.$store.modals.flash = (msg) => flashed.push(msg);
   const shown = () => (store.worktreeListings["o/r"]?.worktrees || []).map((w) => w.name);
-  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const tick = () => new Promise((r) => { setTimeout(r, 0); });
   return {
     dialog,
     store,

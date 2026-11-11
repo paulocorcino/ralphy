@@ -64,10 +64,10 @@ function page(t, replies = []) {
   const sent = [];
   globalThis.window = { addEventListener() {}, dispatchEvent() {} };
   globalThis.document = { visibilityState: "visible", addEventListener() {} };
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = (url, init) => {
     sent.push([init.method, url, init.body]);
     const { status, body } = replies.shift();
-    return { ok: status >= 200 && status < 300, status, json: async () => body };
+    return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
   };
   return { data: wbLoginNotice(), sent };
 }
@@ -178,10 +178,10 @@ test("the notice reads the list again on workbench:logins-reread", async (t) => 
     for (const fn of listeners.get(e.type) ?? []) fn(e);
   };
   data.init();
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   assert.deepEqual(sent, [["GET", "/api/audit/logins/notices", undefined]]);
   window.dispatchEvent(new Event("workbench:logins-reread"));
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   assert.deepEqual(sent, [
     ["GET", "/api/audit/logins/notices", undefined],
     ["GET", "/api/audit/logins/notices", undefined],
