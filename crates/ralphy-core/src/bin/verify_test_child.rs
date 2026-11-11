@@ -26,28 +26,25 @@ fn main() {
             // reaches EOF, which only the pre-collect tree-kill can force while
             // the orphan below holds the pipe.
             println!("foreground-marker-before-leak");
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a test helper child has nowhere to report a failed flush"
-            )]
-            let _ = std::io::Write::flush(&mut std::io::stdout());
+            // A test helper child has nowhere to report a failed flush.
+            match std::io::Write::flush(&mut std::io::stdout()) {
+                Ok(()) | Err(_) => {}
+            }
             // Grandchild inherits our stdout (Stdio::inherit is the default), then
             // we exit 0 straight away — the orphan holds the pipe open.
             if let Ok(exe) = std::env::current_exe() {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the grandchild only holds the pipe, and a failed spawn fails the test"
-                )]
-                let _ = std::process::Command::new(exe).arg("sleep").spawn();
+                // The grandchild only holds the pipe, and a failed spawn fails the test.
+                match std::process::Command::new(exe).arg("sleep").spawn() {
+                    Ok(_) | Err(_) => {}
+                }
             }
         }
         "sleep-with-grandchild" => {
             if let Ok(exe) = std::env::current_exe() {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the grandchild only holds the pipe, and a failed spawn fails the test"
-                )]
-                let _ = std::process::Command::new(exe).arg("sleep").spawn();
+                // The grandchild only holds the pipe, and a failed spawn fails the test.
+                match std::process::Command::new(exe).arg("sleep").spawn() {
+                    Ok(_) | Err(_) => {}
+                }
             }
             std::thread::sleep(Duration::from_secs(60));
         }

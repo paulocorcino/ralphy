@@ -43,46 +43,46 @@ pub trait Repo {
 
     /// Whether `refname` resolves to a commit.
     fn commitish_exists(&self, refname: &str) -> bool {
-        let _ = refname;
+        let _: &str = refname;
         true
     }
 
     fn checkout_new_branch(&self, branch: &str, base: &str) -> Result<()> {
-        let _ = (branch, base);
+        let _: (&str, &str) = (branch, base);
         Ok(())
     }
 
     /// Switch to `refname`, discarding uncommitted tracked changes.
     fn checkout_force(&self, refname: &str) -> Result<()> {
-        let _ = refname;
+        let _: &str = refname;
         Ok(())
     }
 
     fn delete_branch(&self, branch: &str) -> Result<()> {
-        let _ = branch;
+        let _: &str = branch;
         Ok(())
     }
 
     /// Create a lightweight local tag at `target` (the pre-run undo marker).
     fn tag(&self, name: &str, target: &str) -> Result<()> {
-        let _ = (name, target);
+        let _: (&str, &str) = (name, target);
         Ok(())
     }
 
     fn delete_tag(&self, name: &str) -> Result<()> {
-        let _ = name;
+        let _: &str = name;
         Ok(())
     }
 
     /// Number of commits in `range` (e.g. `base..branch`).
     fn rev_list_count(&self, range: &str) -> Result<usize> {
-        let _ = range;
+        let _: &str = range;
         Ok(0)
     }
 
     /// One-line log entries over `range`, one per commit.
     fn log_oneline(&self, range: &str) -> Result<Vec<String>> {
-        let _ = range;
+        let _: &str = range;
         Ok(Vec::new())
     }
 

@@ -99,7 +99,7 @@ pub fn initial_commit(repo: &Path) -> Result<()> {
 
 /// Best-effort `git fetch origin`. A missing remote is not fatal here.
 pub fn fetch_origin(repo: &Path) -> Result<()> {
-    let _ = raw(repo, &["fetch", "origin", "--quiet"])?;
+    drop(raw(repo, &["fetch", "origin", "--quiet"])?);
     Ok(())
 }
 

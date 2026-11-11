@@ -105,12 +105,10 @@ fn install_global_capture() {
     use std::sync::OnceLock;
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a global default set elsewhere makes this fail, and the doc above calls \
-                     that harmless"
-        )]
-        let _ = tracing::subscriber::set_global_default(GlobalCapture);
+        // A global default set elsewhere makes this fail; the doc above calls that harmless.
+        match tracing::subscriber::set_global_default(GlobalCapture) {
+            Ok(()) | Err(_) => {}
+        }
     });
 }
 

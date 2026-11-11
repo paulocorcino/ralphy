@@ -131,11 +131,10 @@ impl SessionModelMap {
         std::fs::write(&temp, bytes)
             .with_context(|| format!("writing model recovery temp file {}", temp.display()))?;
         if let Err(error) = rename(&temp, path) {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the rename error is the one returned, and a leftover temp file is no harm"
-            )]
-            let _ = std::fs::remove_file(&temp);
+            // The rename error is the one returned, and a leftover temp file is no harm.
+            if let Err(cleanup) = std::fs::remove_file(&temp) {
+                tracing::debug!(path = %temp.display(), %cleanup, "could not remove temp file");
+            }
             return Err(error)
                 .with_context(|| format!("replacing model recovery map {}", path.display()));
         }
@@ -191,11 +190,10 @@ impl MapLock {
 
 impl Drop for MapLock {
     fn drop(&mut self) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a drop cannot report an error, and the lock ends when the file closes"
-        )]
-        let _ = unlock(&self.file);
+        // A drop cannot report an error, and the lock ends when the file closes.
+        if let Err(error) = unlock(&self.file) {
+            tracing::debug!(%error, "could not unlock the model recovery map");
+        }
     }
 }
 
