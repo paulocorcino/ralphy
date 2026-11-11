@@ -157,6 +157,7 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("PSSCRIPTANALYZER", "PSScriptAnalyzer"),
     ("MARKDOWNLINT", "markdownlint-cli2"),
     ("YAMLLINT", "yamllint"),
+    ("HTMLVALIDATE", "html-validate"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks

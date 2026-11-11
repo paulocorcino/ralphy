@@ -62,6 +62,9 @@ env:
   # The yamllint of the `checks` job. The yamllint step of `xtask gate`
   # runs the module installed on the machine.
   YAMLLINT_VERSION: "1.38.0"
+  # The html-validate of the `checks` job. The html-validate step of
+  # `xtask gate` runs the same version through npx.
+  HTMLVALIDATE_VERSION: "11.21.0"
 
 jobs:
   lint:
@@ -155,6 +158,11 @@ jobs:
       # and has a debt line.
       - name: YAML (yamllint)
         run: pipx run "yamllint==${YAMLLINT_VERSION}" -s .
+
+      # The rules are in .htmlvalidate.json; their reasons and debt counts
+      # are at the html-validate step of crates/xtask/src/gate/steps.rs.
+      - name: HTML (html-validate)
+        run: npx -y "html-validate@${HTMLVALIDATE_VERSION}" crates/ralphy-daemon/assets/ui
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.

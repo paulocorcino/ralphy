@@ -17,7 +17,7 @@
           </select>
 
           <label class="run-label" for="add-project-folder" x-show="addProjectListable()">Folder</label>
-          <input id="add-project-folder" class="host-input" x-ref="addProjectFolder" x-show="addProjectListable()"
+          <input type="text" id="add-project-folder" class="host-input" x-ref="addProjectFolder" x-show="addProjectListable()"
                  :value="addProject.text" :disabled="addProject.adding"
                  @input="addProjectText($event.target.value)" @keydown="addProjectKey($event)"
                  role="combobox" aria-autocomplete="list" aria-controls="add-project-list"

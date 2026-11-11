@@ -149,6 +149,22 @@ pub const STEPS: &[Step] = &[
         "python",
         &["-m", "yamllint", "-s", "."],
     ),
+    // Rules off in .htmlvalidate.json (JSON has no comments). Noise:
+    // void-style (both forms are valid), text-content, empty-heading and
+    // attribute-misuse (Alpine fills text and binds :href at run time).
+    // Debt: no-implicit-button-type 170 sites, no-inline-style 11,
+    // prefer-native-element 4, autocomplete-password 2,
+    // element-permitted-content 1.
+    step(
+        "html-validate",
+        &["HTML (html-validate)"],
+        "npx",
+        &[
+            "-y",
+            "html-validate@11.21.0",
+            "crates/ralphy-daemon/assets/ui",
+        ],
+    ),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
         "gitleaks",
