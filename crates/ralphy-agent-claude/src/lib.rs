@@ -30,8 +30,6 @@ use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 
 mod api_watch;
 mod auth;
-#[cfg(test)]
-mod cleanup;
 mod headless;
 mod interactive;
 mod plan;
@@ -383,5 +381,7 @@ fn plan_from_run(plan_path: &Path, log_path: &Path, run: RunFacts, log: &str) ->
     })
 }
 
+#[cfg(test)]
+mod cleanup;
 #[cfg(test)]
 mod tests;
