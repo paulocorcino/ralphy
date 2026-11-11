@@ -16,6 +16,8 @@
 // D7 of the lint plan: production code here parses outside data; indexing must not panic.
 #![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
+// Kimi and Codex import the same names; two vendors' lists, each changes with its own adapter.
+// jscpd:ignore-start
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -27,6 +29,7 @@ use ralphy_adapter_support::{
 };
 use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 use tracing::info;
+// jscpd:ignore-end
 
 mod auth;
 #[cfg(test)]
