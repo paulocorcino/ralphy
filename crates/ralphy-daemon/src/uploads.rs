@@ -214,7 +214,7 @@ pub(crate) fn accept(
     if held != part.offset {
         return Err(UploadError::Offset { expected: held });
     }
-    let end = part.offset + part.data.len() as u64;
+    let end = part.offset + u64::try_from(part.data.len()).unwrap_or(u64::MAX);
     if end > part.total {
         return Err(UploadError::TooLarge);
     }

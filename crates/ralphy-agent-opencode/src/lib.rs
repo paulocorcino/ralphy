@@ -26,6 +26,8 @@
 //! on one and instead retries on the ~30-min synthetic cadence (ADR-0030 D1).
 //! Auto-resume is the default for all agents; `--stop-on-limit` is the opt-out
 //! (ADR-0030 D3) — it is no longer forced for `OpenCode`.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::PathBuf;

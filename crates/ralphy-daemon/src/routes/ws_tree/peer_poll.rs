@@ -330,7 +330,7 @@ pub(crate) fn spawn_peer_tree_poller(
                 repo = %repo_ref,
                 sub = %sub,
                 cycle = ?cycle,
-                took_ms = started.elapsed().as_millis() as u64,
+                took_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
                 "peer tree poll cycle"
             );
             pause(cycle).await;

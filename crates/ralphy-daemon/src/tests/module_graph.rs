@@ -6,8 +6,8 @@ use super::*;
 fn module_tags(html: &str) -> Vec<String> {
     html.match_indices(r#"<script type="module" src=""#)
         .filter_map(|(at, open)| {
-            let rest = &html[at + open.len()..];
-            rest.find('"').map(|end| rest[..end].to_string())
+            let rest = html.split_at(at + open.len()).1;
+            rest.split_once('"').map(|(src, _)| src.to_owned())
         })
         .collect()
 }
@@ -72,12 +72,12 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
     for name in &modules {
         let text = std::fs::read_to_string(src.join(name)).expect("a module is readable");
         for (at, _) in text.match_indices("window.WB") {
-            let rest = &text[at + "window.".len()..];
+            let rest = text.split_at(at + "window.".len()).1;
             let ident: String = rest
                 .chars()
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
-            if rest[ident.len()..].trim_start().starts_with("= ") {
+            if rest.split_at(ident.len()).1.trim_start().starts_with("= ") {
                 assert!(
                     MODULE_WINDOW_NAMES.contains(&ident.as_str()),
                     "{name} sets window.{ident}: a module exports; it sets a window name only \
@@ -97,7 +97,8 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
 fn workbench_event_names(text: &str) -> Vec<String> {
     text.match_indices("workbench:")
         .map(|(at, tag)| {
-            text[at + tag.len()..]
+            text.split_at(at + tag.len())
+                .1
                 .chars()
                 .take_while(|c| c.is_ascii_lowercase() || *c == '-')
                 .collect::<String>()
@@ -113,8 +114,8 @@ fn typed_event_names(globals: &str, map: &str) -> std::collections::BTreeSet<Str
     let start = globals
         .find(&open)
         .unwrap_or_else(|| panic!("globals.d.ts must declare {open}"));
-    let body = &globals[start + open.len()..];
-    let body = &body[..body.find("\n}").expect("the interface closes")];
+    let body = globals.split_at(start + open.len()).1;
+    let body = body.split_once("\n}").expect("the interface closes").0;
     body.lines()
         .filter_map(|line| line.trim().strip_prefix("\"workbench:"))
         .filter_map(|rest| rest.split_once("\":").map(|(name, _)| name.to_owned()))
@@ -177,12 +178,16 @@ fn every_workbench_event_name_is_in_the_typed_list() {
     // A dialog hears its `-open` event with `.window`: that name is a window event.
     let html = INDEX_HTML;
     for (at, _) in html.match_indices("@workbench:") {
-        let rest = &html[at + 1..];
+        let rest = html.split_at(at + 1).1;
         let event = workbench_event_names(rest)
             .into_iter()
             .next()
             .unwrap_or_default();
-        if rest["workbench:".len() + event.len()..].starts_with(".window") {
+        if rest
+            .split_at("workbench:".len() + event.len())
+            .1
+            .starts_with(".window")
+        {
             assert!(
                 window.contains(&event),
                 "index.html hears workbench:{event} on the window, and WindowEventMap does not \

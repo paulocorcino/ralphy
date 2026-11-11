@@ -121,7 +121,7 @@ fn production(text: &str) -> &str {
                 .peek()
                 .is_some_and(|next| next.trim_start().starts_with("mod "))
         {
-            return &text[..offset];
+            return text.split_at(offset).0;
         }
         offset += line.len();
     }
@@ -129,11 +129,13 @@ fn production(text: &str) -> &str {
 }
 
 fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed");
     for entry in entries {
         let path = entry
-            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+            .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+            .expect("this test needs the call to succeed")
             .path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if path.is_dir() {

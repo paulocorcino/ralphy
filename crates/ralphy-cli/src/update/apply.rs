@@ -101,7 +101,7 @@ pub(crate) fn download(url: &str, expected_size: Option<u64>) -> Result<Vec<u8>>
         .take(cap.saturating_add(1))
         .read_to_end(&mut bytes)
         .with_context(|| format!("reading the body of {url}"))?;
-    if bytes.len() as u64 > cap {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > cap {
         bail!("{url} returned more than the {cap} bytes it published; refusing it");
     }
     Ok(bytes)

@@ -27,21 +27,21 @@ where
 {
     let msg = ws.next().await.expect("a message").expect("message is Ok");
     let bytes = match msg {
-        Message::Binary(b) => b,
+        Message::Binary(b) => Ok(b),
         other @ (Message::Text(_)
         | Message::Ping(_)
         | Message::Pong(_)
         | Message::Close(_)
-        | Message::Frame(_)) => {
-            panic!("expected a binary presence frame, got {other:?}")
+        | Message::Frame(_)) => Err(format!("expected a binary presence frame, got {other:?}")),
+    }
+    .expect("this test needs a binary message");
+    let presence = match protocol::decode(&bytes).expect("decodes to a frame") {
+        Frame::Presence(p) => Ok(p),
+        frame @ (Frame::Terminal { .. } | Frame::Command(_) | Frame::Channel { .. }) => {
+            Err(format!("expected a presence frame, got {frame:?}"))
         }
     };
-    match protocol::decode(&bytes).expect("decodes to a frame") {
-        Frame::Presence(p) => p,
-        frame @ (Frame::Terminal { .. } | Frame::Command(_) | Frame::Channel { .. }) => {
-            panic!("expected a presence frame, got {frame:?}")
-        }
-    }
+    presence.expect("this test needs a presence frame")
 }
 
 #[tokio::test]

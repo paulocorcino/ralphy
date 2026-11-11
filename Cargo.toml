@@ -55,6 +55,10 @@ allow_attributes = "deny"
 disallowed_methods = "deny"
 too_many_arguments = "deny"
 str_to_string = "deny"
+panic = "deny"
+string_slice = "deny"
+as_conversions = "deny"
+undocumented_unsafe_blocks = "deny"
 # The lint gate: `pedantic` is on. A lint `allow` below is debt that docs/lint/lint-transition.md
 # turns on (this list only shrinks), or noise, off for good with its reason.
 pedantic = { level = "deny", priority = -1 }
@@ -72,8 +76,6 @@ needless_pass_by_value = "allow"
 return_self_not_must_use = "allow"
 # debt: 45 sites
 case_sensitive_file_extension_comparisons = "allow"
-# debt: 38 sites
-cast_possible_truncation = "allow"
 # debt: 35 sites
 too_many_lines = "allow"
 # debt: 33 sites
@@ -81,11 +83,7 @@ unreadable_literal = "allow"
 # debt: 23 sites
 default_trait_access = "allow"
 # debt: 22 sites
-cast_precision_loss = "allow"
-# debt: 22 sites
 items_after_statements = "allow"
-# debt: 21 sites
-cast_sign_loss = "allow"
 # debt: 17 sites
 match_same_arms = "allow"
 # debt: 16 sites
@@ -106,8 +104,6 @@ option_option = "allow"
 ref_option = "allow"
 # debt: 11 sites
 used_underscore_binding = "allow"
-# debt: 9 sites
-cast_possible_wrap = "allow"
 # debt: 8 sites
 struct_excessive_bools = "allow"
 # debt: 7 sites

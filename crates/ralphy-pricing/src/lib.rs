@@ -4,6 +4,8 @@
 //! plus a bare-id slug overlay; an optional disk cache and `pricing.toml`
 //! override both. A model absent from every layer reports **unknown** cost
 //! (`None`) — never `0`, which would hide spend.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 #![cfg_attr(
     test,
     expect(
@@ -22,6 +24,8 @@ use tracing::warn;
 pub mod fetch;
 mod floor;
 mod ingest;
+mod tokens;
+pub use tokens::fmt_tokens;
 
 /// A usage record's numeric token split, mirroring `ralphy_core::Usage`'s four
 /// counts. It exists so this crate carries no `ralphy-core` edge and can be
@@ -113,6 +117,11 @@ impl PriceTable {
 
     /// The read-time USD cost of `tokens` priced as `model`, or `None` when the
     /// model is absent from every layer (logged once — never reported as `0`).
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "a USD cost; a token count above 2^53 loses far less than a cent"
+    )]
     pub fn cost_usd(&self, model: &str, tokens: &TokenCounts) -> Option<f64> {
         let Some(price) = self.resolve(model) else {
             warn_unknown(model);

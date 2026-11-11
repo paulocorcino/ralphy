@@ -135,7 +135,7 @@ pub(crate) fn session_started(path: &Path, from: u64) -> bool {
         return false;
     };
     let start = usize::try_from(from).map_or(bytes.len(), |f| f.min(bytes.len()));
-    String::from_utf8_lossy(&bytes[start..])
+    String::from_utf8_lossy(bytes.get(start..).unwrap_or_default())
         .lines()
         .any(|line| {
             serde_json::from_str::<Value>(line.trim())

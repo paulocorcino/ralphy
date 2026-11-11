@@ -77,11 +77,11 @@ fn code(offset: i64) -> String {
         .duration_since(UNIX_EPOCH)
         .expect("read the system clock")
         .as_secs();
-    let counter = (now / 30) as i64 + offset;
+    let counter = (now / 30).cast_signed() + offset;
     let mut mac = Hmac::<Sha1>::new_from_slice(SEED).expect("key the HMAC");
-    mac.update(&(counter as u64).to_be_bytes());
+    mac.update(&counter.cast_unsigned().to_be_bytes());
     let hs = mac.finalize().into_bytes();
-    let off = (hs[hs.len() - 1] & 0x0f) as usize;
+    let off = usize::from(hs.last().expect("a SHA-1 digest is 20 bytes") & 0x0f);
     let [b0, b1, b2, b3] = *hs
         .get(off..)
         .and_then(<[u8]>::first_chunk::<4>)

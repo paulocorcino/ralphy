@@ -322,12 +322,13 @@ pub(crate) fn decode_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(at) = rest.find('&') {
-        out.push_str(&rest[..at]);
-        rest = &rest[at..];
+        let (text, from_amp) = rest.split_at(at);
+        out.push_str(text);
+        rest = from_amp;
         let entity = rest
             .find(';')
             .filter(|&end| end <= 10)
-            .map(|end| &rest[1..end]);
+            .map(|end| rest.split_at(end).0.split_at(1).1);
         let decoded = entity.and_then(decode_entity);
         if let (Some(e), Some(c)) = (entity, decoded) {
             out.push(c);

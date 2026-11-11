@@ -132,7 +132,12 @@ fn main() {
                 flush_stdout();
             }
             other if other.starts_with("flood ") => {
-                let kib = other["flood ".len()..].trim().parse::<usize>().unwrap_or(0);
+                let kib = other
+                    .split_at("flood ".len())
+                    .1
+                    .trim()
+                    .parse::<usize>()
+                    .unwrap_or(0);
                 // A write error means the PTY is closed, and the test is over.
                 match flood(kib) {
                     Ok(()) | Err(_) => {}
@@ -144,12 +149,12 @@ fn main() {
                 // scrollback -> socket -> xterm's parser. The argument is the
                 // already-base64 payload, or `?`/`!` to exercise the read and
                 // clear forms the UI must refuse.
-                let payload = other["osc52 ".len()..].trim();
+                let payload = other.split_at("osc52 ".len()).1.trim();
                 print!("\x1b]52;c;{payload}\x07");
                 flush_stdout();
             }
             other if other.starts_with("env ") => {
-                let name = other["env ".len()..].trim();
+                let name = other.split_at("env ".len()).1.trim();
                 // An unset variable prints an EMPTY value rather than nothing, so
                 // a test can tell "not set" from "the child never answered".
                 let value = std::env::var(name).unwrap_or_default();

@@ -222,7 +222,7 @@ async fn a_revoked_login_is_not_listed() {
     write_log(dir.path(), &revoked.to_string(), 1);
     let auth = AuthState::localhost();
     assert_eq!(notices(&auth, dir.path()).await.len(), 1);
-    auth.revoke_login(revoked, chrono::Utc::now().timestamp() as u64)
+    auth.revoke_login(revoked, chrono::Utc::now().timestamp().cast_unsigned())
         .expect("revoke the login");
     let list = notices(&auth, dir.path()).await;
     assert!(list.is_empty(), "{list:?}");
@@ -379,15 +379,18 @@ where
                 continue;
             };
             match protocol::decode(&bytes) {
-                Ok(Frame::Command(c)) if c.verb == verb => return c.payload,
+                Ok(Frame::Command(c)) if c.verb == verb => return Some(c.payload),
                 _ => continue,
             }
         }
-        panic!("the page socket closed before {verb}");
+        None
     };
     tokio::time::timeout(std::time::Duration::from_secs(10), read)
         .await
-        .unwrap_or_else(|_| panic!("no {verb} within 10 s"))
+        .map_err(|elapsed| format!("no {verb} within 10 s ({elapsed})"))
+        .expect("this test needs the call to succeed")
+        .ok_or_else(|| format!("the page socket closed before {verb}"))
+        .expect("this test needs the value")
 }
 
 /// A dismiss on the served router puts `logins.dirty` on the page socket.

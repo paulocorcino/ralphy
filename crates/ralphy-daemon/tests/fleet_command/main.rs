@@ -107,15 +107,16 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
             if let Message::Binary(bytes) = message.expect("the websocket frame arrives") {
                 if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
                     if reply.id == id {
-                        return reply.payload;
+                        return Some(reply.payload);
                     }
                 }
             }
         }
-        panic!("command socket closed without a reply");
+        None
     })
     .await
     .expect("command reply timed out")
+    .expect("command socket closed without a reply")
 }
 
 async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> Vec<Command> {
@@ -149,13 +150,14 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
             );
             replies.push(reply);
             if terminal {
-                return replies;
+                return Some(replies);
             }
         }
-        panic!("command socket closed without a terminal reply");
+        None
     })
     .await
     .expect("command reply timed out")
+    .expect("command socket closed without a terminal reply")
 }
 
 /// Whether the child's `dispatch-cwd:` line names `repo` — compared canonical,

@@ -208,7 +208,7 @@ fn fn_body_strings(src: &str, name: &str) -> BTreeSet<String> {
     }) else {
         return BTreeSet::new();
     };
-    let indent = &header[..header.len() - header.trim_start().len()];
+    let indent = header.split_at(header.len() - header.trim_start().len()).0;
     let close = format!("{indent}}}");
     let quoted = Regex::new(r#""([^"]*)""#).expect("a valid regex");
     let mut out = BTreeSet::new();

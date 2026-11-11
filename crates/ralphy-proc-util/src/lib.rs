@@ -137,9 +137,9 @@ pub fn kill_tree_by_pid(pid: u32) {
         // group. A pgid of 1 is refused: `kill(-1, ...)` signals every process.
         if pid > 1 {
             // Negating a u32 that fits pid_t: pids are well under i32::MAX.
-            let pgid = -(pid as i32);
+            let group = -pid.cast_signed();
             // SAFETY: kill(2) takes plain integers and touches no memory.
-            unsafe { libc::kill(pgid as libc::pid_t, libc::SIGKILL) };
+            unsafe { libc::kill(group, libc::SIGKILL) };
         }
     }
 }

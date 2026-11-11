@@ -94,7 +94,7 @@ fn vendored_crepe_states_its_recipe() {
             .split_once(&format!("\"{name}\": \""))
             .unwrap_or_else(|| panic!("the recipe must pin {name}"))
             .1;
-        after[..after.find('"').expect("a closing quote")].to_string()
+        after.split_once('"').expect("a closing quote").0.to_owned()
     };
     let build = include_str!("../../vendor-build/crepe/build.mjs");
     let features: Vec<&str> = build

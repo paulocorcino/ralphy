@@ -323,7 +323,7 @@ fn contains_shape(stmt: &str) -> Option<Shape> {
     // `assert!(` itself contains a `!` and a naive search finds that first.
     let negated = stmt
         .match_indices(".contains(")
-        .any(|(at, _)| receiver_is_negated(&stmt[..at]));
+        .any(|(at, _)| receiver_is_negated(stmt.split_at(at).0));
     Some(if negated {
         Shape::Negative
     } else {

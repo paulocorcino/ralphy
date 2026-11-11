@@ -202,7 +202,9 @@ fn bullet_block<'a>(md: &'a str, key: &str) -> &'a str {
         .map(|m| m.start())
         .find(|&s| s > start)
         .unwrap_or(md.len());
-    md[start..end].trim_end()
+    md.get(start..end)
+        .expect("both ends are regex match starts, so char boundaries")
+        .trim_end()
 }
 
 /// Trimmed section body following the first heading matching `re`.

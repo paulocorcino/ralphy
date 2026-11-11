@@ -57,7 +57,7 @@ impl Seed {
         let hs = mac.finalize().into_bytes();
         // RFC 6238 §5.3 dynamic truncation: low 4 bits of the last byte pick the
         // 4-byte window; mask the top bit, take mod 10^6, zero-pad to 6.
-        let offset = (hs[hs.len() - 1] & 0x0f) as usize;
+        let offset = usize::from(hs.last().expect("a SHA-1 digest is 20 bytes") & 0x0f);
         let [b0, b1, b2, b3] = *hs
             .get(offset..)
             .and_then(<[u8]>::first_chunk::<4>)
@@ -74,14 +74,13 @@ impl Seed {
     /// records it, and a later code whose step is not strictly greater is a replay.
     /// Each candidate compares constant-time via `auth::ct_eq`.
     pub fn matched_step(&self, code: &str, unix_secs: u64, skew_steps: i64) -> Option<u64> {
-        let counter = (unix_secs / PERIOD) as i64;
+        let counter = (unix_secs / PERIOD).cast_signed();
         for s in -skew_steps..=skew_steps {
-            let c = counter + s;
-            if c < 0 {
+            let Ok(c) = u64::try_from(counter + s) else {
                 continue;
-            }
-            if auth::ct_eq(self.code_at(c as u64).as_bytes(), code.as_bytes()) {
-                return Some(c as u64);
+            };
+            if auth::ct_eq(self.code_at(c).as_bytes(), code.as_bytes()) {
+                return Some(c);
             }
         }
         None

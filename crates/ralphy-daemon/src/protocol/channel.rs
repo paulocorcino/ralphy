@@ -108,7 +108,9 @@ mod tests {
 
     #[test]
     fn a_large_frame_is_cut_into_pieces_of_16_kib() {
-        let inner: Vec<u8> = (0..40 * 1024).map(|i| (i % 251) as u8).collect();
+        let inner: Vec<u8> = (0..40 * 1024)
+            .map(|i| u8::try_from(i % 251).expect("below 251"))
+            .collect();
         let frames = cut(7, &inner);
         let shape: Vec<(bool, usize)> = frames
             .iter()

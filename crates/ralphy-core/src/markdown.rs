@@ -9,10 +9,10 @@ pub(crate) fn section_after_heading<'a>(md: &'a str, heading_re: &Regex) -> &'a 
     let Some(start_m) = heading_re.find(md) else {
         return "";
     };
-    let after = &md[start_m.end()..];
+    let after = md.split_at(start_m.end()).1;
     let end_re = Regex::new(r"(?m)^##\s+").expect("valid regex");
     let end = end_re.find(after).map_or(after.len(), |m| m.start());
-    &after[..end]
+    after.split_at(end).0
 }
 
 #[cfg(test)]

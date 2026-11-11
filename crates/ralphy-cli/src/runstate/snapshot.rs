@@ -423,7 +423,9 @@ mod tests {
         let terminal_start = PANEL
             .find("TERMINAL: new Set([")
             .expect("wb-runs.ts declares a TERMINAL set");
-        let terminal_set = PANEL[terminal_start..]
+        let terminal_set = PANEL
+            .split_at(terminal_start)
+            .1
             .split("])")
             .next()
             .expect("split always yields a first part");

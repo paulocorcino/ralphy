@@ -19,6 +19,8 @@
 //! `Agent` contract entirely. Token usage is captured in `usage` from the
 //! stream's terminal `result` record and summed per invocation — records are
 //! incremental, not cumulative (ADR-0042 D11).
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::PathBuf;
@@ -340,14 +342,13 @@ impl Agent for CursorAgent {
         note_vendor_error(&fold);
         note_usage_provenance(&self.config_dir(), &session_id);
         // #266: on a quota stop, name any work this call already committed so it
-        // is not silently discarded. `7.min(len)` guards the empty-sha default
-        // both shas fall back to (`unwrap_or_default()` above) from panicking on
-        // the slice.
+        // is not silently discarded. A sha shorter than 7 (the empty default of
+        // `unwrap_or_default()` above) is shown whole.
         let range = committed.then(|| {
             format!(
                 "{}..{}",
-                &before_sha[..7.min(before_sha.len())],
-                &after_sha[..7.min(after_sha.len())]
+                before_sha.get(..7).unwrap_or(&before_sha),
+                after_sha.get(..7).unwrap_or(&after_sha)
             )
         });
         // A quota stop reaches `fold` (built from `r.stdout`) only as a

@@ -46,7 +46,7 @@ mod tests {
             pid: std::process::id(),
             issues: (0..issues)
                 .map(|i| IssueBlock {
-                    number: i as u64,
+                    number: u64::try_from(i).expect("a length fits u64"),
                     title: format!("issue {i}"),
                     status: "pending".into(),
                     ..IssueBlock::default()

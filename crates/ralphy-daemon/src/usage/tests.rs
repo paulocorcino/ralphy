@@ -273,10 +273,16 @@ fn gemini_dir_path_ignores_ralphys_own_cli_home() {
 #[test]
 fn every_launchable_vendor_has_a_store_path_resolver() {
     let src = include_str!("../usage.rs");
-    let body = &src[src
-        .find("pub fn interactive_records(")
-        .expect("interactive_records must exist")..];
-    let body = &body[..body.find("\n}").expect("interactive_records must end")];
+    let body = src
+        .split_at(
+            src.find("pub fn interactive_records(")
+                .expect("interactive_records must exist"),
+        )
+        .1;
+    let body = body
+        .split_once("\n}")
+        .expect("interactive_records must end")
+        .0;
     // Code only, with comment lines and all whitespace removed, so a
     // commented-out scan does not count as a call.
     let code: String = body

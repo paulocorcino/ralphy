@@ -59,7 +59,8 @@ impl ProgressBeat {
     /// comparing elapsed time, so a tick of staleness is irrelevant and there is
     /// no other memory being published alongside it.
     pub fn beat(&self, now: Instant) {
-        let ms = now.saturating_duration_since(self.base).as_millis() as u64;
+        let since = now.saturating_duration_since(self.base).as_millis();
+        let ms = u64::try_from(since).unwrap_or(u64::MAX);
         self.since_base_ms.store(ms, Ordering::Relaxed);
     }
 

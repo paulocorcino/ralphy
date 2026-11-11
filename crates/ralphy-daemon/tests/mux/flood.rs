@@ -53,7 +53,8 @@ async fn read_until(ws: &mut Ws, channel: u32, needle: &str) -> u64 {
     loop {
         let inner = next_inner(ws, channel, WITHIN)
             .await
-            .unwrap_or_else(|| panic!("`{needle}` on channel {channel}, after {shown:?}"));
+            .ok_or_else(|| format!("`{needle}` on channel {channel}, after {shown:?}"))
+            .expect("this test needs the value");
         let Ok(Frame::Terminal { session, data }) = protocol::decode(&inner) else {
             continue;
         };
@@ -102,7 +103,7 @@ async fn pieces_until_replays(ws: &mut Ws) -> Vec<(u32, bool)> {
             let bytes = match ws.next().await {
                 Some(Ok(Message::Binary(bytes))) => bytes,
                 Some(Ok(_)) => continue,
-                None | Some(Err(_)) => panic!("the socket ended before the replays were whole"),
+                None | Some(Err(_)) => return false,
             };
             let Ok(Frame::Channel {
                 channel,
@@ -125,6 +126,7 @@ async fn pieces_until_replays(ws: &mut Ws) -> Vec<(u32, bool)> {
                 whole[at] |= String::from_utf8_lossy(&data).contains("FLOOD-DONE");
             }
         }
+        true
     })
     .await;
     assert!(
@@ -133,6 +135,11 @@ async fn pieces_until_replays(ws: &mut Ws) -> Vec<(u32, bool)> {
          ({} pieces seen, the last {:?})",
         seen.len(),
         seen.last()
+    );
+    assert_eq!(
+        read.ok(),
+        Some(true),
+        "the socket ended before the replays were whole"
     );
     seen
 }

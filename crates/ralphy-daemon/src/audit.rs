@@ -446,12 +446,20 @@ pub(crate) fn prune(path: &Path, now: i64) -> Result<()> {
         .lines()
         .filter(|line| line_time(line).is_none_or(|at| at >= cutoff))
         .collect();
-    let size = |lines: &[&str]| lines.iter().map(|l| l.len() as u64 + 1).sum::<u64>();
+    let size = |lines: &[&str]| {
+        lines
+            .iter()
+            .map(|l| u64::try_from(l.len()).unwrap_or(u64::MAX) + 1)
+            .sum::<u64>()
+    };
     if size(&kept) > MAX_BYTES {
         let mut total = size(&kept);
         let mut drop = 0;
         while total > PRUNE_TO_BYTES && drop < kept.len() {
-            total -= kept[drop].len() as u64 + 1;
+            total -= kept
+                .get(drop)
+                .map_or(0, |l| u64::try_from(l.len()).unwrap_or(u64::MAX))
+                + 1;
             drop += 1;
         }
         kept.drain(..drop);

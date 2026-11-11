@@ -99,15 +99,16 @@ async fn ask(port: u16, verb: &str, payload: Value) -> Value {
             if let Message::Binary(bytes) = message.expect("the websocket frame arrives") {
                 if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
                     if reply.id == 1 {
-                        return reply.payload;
+                        return Some(reply.payload);
                     }
                 }
             }
         }
-        panic!("command socket closed without a reply");
+        None
     })
     .await
     .expect("command reply timed out")
+    .expect("command socket closed without a reply")
 }
 
 /// A local daemon that relays to a peer. The peer's project holds `note.txt`

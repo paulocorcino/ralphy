@@ -292,11 +292,11 @@ fn svg_root_element(src: &str) -> bool {
             // Not a prologue construct: this is the root element (or not an SVG).
             return rest.starts_with("<svg");
         };
-        let after = &rest[open.len()..];
-        let Some(i) = after.find(close) else {
+        let after = rest.split_at(open.len()).1;
+        let Some((_, after_close)) = after.split_once(close) else {
             return false;
         };
-        rest = after[i + close.len()..].trim_start();
+        rest = after_close.trim_start();
     }
 }
 
@@ -318,6 +318,11 @@ pub const MAX_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 /// [`MAX_IMAGE_BYTES`] image (the largest payload a verb takes, `image.write`)
 /// plus 64 KiB for the JSON envelope. A larger message is refused before it is
 /// parsed (ADR-0072 D11).
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "MAX_IMAGE_BYTES is 4 MiB, which fits usize on every target"
+)]
 pub const MAX_COMMAND_BYTES: usize = (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 64 * 1024;
 
 /// Read the confined `rel` file under `root` as an allowlisted image. The

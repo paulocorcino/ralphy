@@ -71,10 +71,12 @@ fn parse_overlay(overlay: &str) -> BTreeMap<String, String> {
                 slots.insert(prev, std::mem::take(&mut buf));
             }
             current = Some(name.trim().to_owned());
-        } else if current.is_some() {
-            buf.push_str(line);
         } else {
-            panic!("overlay content before the first slot marker: {line:?}");
+            assert!(
+                current.is_some(),
+                "overlay content before the first slot marker: {line:?}"
+            );
+            buf.push_str(line);
         }
     }
     if let Some(prev) = current {
@@ -90,15 +92,18 @@ fn assemble(template: &str, slots: &BTreeMap<String, String>) -> String {
     for name in SLOTS {
         let content = slots
             .get(name)
-            .unwrap_or_else(|| panic!("overlay is missing slot {name:?}"));
+            .ok_or_else(|| format!("overlay is missing slot {name:?}"))
+            .expect("this test needs the value");
         let crlf = format!("{{{{{name}}}}}\r\n");
         let lf = format!("{{{{{name}}}}}\n");
         if out.contains(&crlf) {
             out = out.replace(&crlf, content);
-        } else if out.contains(&lf) {
-            out = out.replace(&lf, content);
         } else {
-            panic!("template has no {{{{{name}}}}} placeholder line");
+            assert!(
+                out.contains(&lf),
+                "template has no {{{{{name}}}}} placeholder line"
+            );
+            out = out.replace(&lf, content);
         }
     }
     assert!(
@@ -235,7 +240,8 @@ fn first(verdicts: &[Verdict], kind: VerdictKind) -> &Verdict {
     verdicts
         .iter()
         .find(|v| v.kind == kind)
-        .unwrap_or_else(|| panic!("the prompt ledger example must carry a {kind:?} line"))
+        .ok_or_else(|| format!("the prompt ledger example must carry a {kind:?} line"))
+        .expect("this test needs the value")
 }
 
 /// The documented ledger format is exactly what the #12 parser accepts: the

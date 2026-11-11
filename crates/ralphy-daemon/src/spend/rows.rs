@@ -263,8 +263,8 @@ fn interactive_row<'a>(object: &'a Object, input: &SpendInput<'a>) -> Interactiv
 /// timestamps share that shape. An absent or short value buckets nowhere.
 fn civil_date(ts: Option<&str>) -> &str {
     match ts {
-        Some(ts) if ts.len() >= 10 && ts.is_char_boundary(10) => &ts[..10],
-        _ => "",
+        Some(ts) => ts.get(..10).unwrap_or(""),
+        None => "",
     }
 }
 

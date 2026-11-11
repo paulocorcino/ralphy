@@ -12,8 +12,8 @@ use ralphy_pty::CURSOR_POSITION_REQUEST;
 pub(crate) fn strip_pty_escapes(raw: &[u8]) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(raw.len());
     let mut i = 0;
-    while i < raw.len() {
-        match raw[i] {
+    while let Some(&byte) = raw.get(i) {
+        match byte {
             0x1b => i = skip_escape(raw, i + 1, &mut out),
             b'\r' | b'\n' => {
                 out.push(b' ');
@@ -43,7 +43,7 @@ fn skip_escape(raw: &[u8], i: usize, out: &mut Vec<u8>) -> usize {
 /// Skip a CSI body from `i`: params/intermediates until a final byte in
 /// 0x40-0x7e. The cursor moves `C`, `H` and `f` leave a space in `out`.
 fn skip_csi(raw: &[u8], mut i: usize, out: &mut Vec<u8>) -> usize {
-    while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
+    while raw.get(i).is_some_and(|b| !(0x40..=0x7e).contains(b)) {
         i += 1;
     }
     if matches!(raw.get(i), Some(b'C' | b'H' | b'f')) {
@@ -54,11 +54,11 @@ fn skip_csi(raw: &[u8], mut i: usize, out: &mut Vec<u8>) -> usize {
 
 /// Skip an OSC body from `i`: swallow until BEL or ST (ESC `\`).
 fn skip_osc(raw: &[u8], mut i: usize) -> usize {
-    while i < raw.len() {
-        if raw[i] == 0x07 {
+    while let Some(&byte) = raw.get(i) {
+        if byte == 0x07 {
             return i + 1;
         }
-        if raw[i] == 0x1b && raw.get(i + 1) == Some(&b'\\') {
+        if byte == 0x1b && raw.get(i + 1) == Some(&b'\\') {
             return i + 2;
         }
         i += 1;

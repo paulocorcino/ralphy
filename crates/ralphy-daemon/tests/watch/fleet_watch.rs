@@ -81,15 +81,16 @@ async fn next_tree_dirty(ws: &mut Channel, repo: &str) -> serde_json::Value {
             if let Message::Binary(bytes) = message.expect("read the next frame") {
                 if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                     if cmd.verb == "tree.dirty" && cmd.payload["repo"] == repo {
-                        return cmd.payload;
+                        return Some(cmd.payload);
                     }
                 }
             }
         }
-        panic!("tree channel closed without a matching dirty frame");
+        None
     })
     .await
     .expect("tree dirty timed out")
+    .expect("tree channel closed without a matching dirty frame")
 }
 
 #[tokio::test]

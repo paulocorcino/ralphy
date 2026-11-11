@@ -217,7 +217,7 @@ pub(crate) async fn peer_tree_poll_route(
         paths = poll.paths.len(),
         reason = outcome.as_str(),
         dirty = dirty.len(),
-        took_ms = started.elapsed().as_millis() as u64,
+        took_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         "peer tree poll answered"
     );
     let dirty: Vec<serde_json::Value> = dirty

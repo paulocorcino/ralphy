@@ -244,7 +244,7 @@ fn has_compliance(text: &str) -> bool {
             if in_comment {
                 match rest.find("-->") {
                     Some(end) => {
-                        rest = rest[end + 3..].trim();
+                        rest = rest.split_at(end + 3).1.trim();
                         in_comment = false;
                     }
                     None => rest = "",
@@ -252,7 +252,7 @@ fn has_compliance(text: &str) -> bool {
             } else {
                 match rest.find("<!--") {
                     Some(0) => {
-                        rest = &rest[4..];
+                        rest = rest.split_at(4).1;
                         in_comment = true;
                     }
                     Some(_) | None => return true,
@@ -266,12 +266,14 @@ fn has_compliance(text: &str) -> bool {
 /// `(number, file name, text)` of each `NNNN-*.md` file in `dir`.
 fn adr_files(dir: &Path) -> Vec<(u32, String, String)> {
     let numbered = Regex::new(r"^(\d{4})-.*\.md$").expect("the pattern is a valid regex literal");
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed");
     let mut out = Vec::new();
     for entry in entries {
         let path = entry
-            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+            .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+            .expect("this test needs the call to succeed")
             .path();
         let name = path
             .file_name()
@@ -299,5 +301,7 @@ fn adr_dir() -> PathBuf {
 }
 
 fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+    std::fs::read_to_string(path)
+        .map_err(|e| format!("reading {}: {e}", path.display()))
+        .expect("this test needs the call to succeed")
 }

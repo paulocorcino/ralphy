@@ -101,10 +101,7 @@ async fn tree_search(
     })
     .await;
     match searched {
-        Some(Ok(mut reply)) => {
-            reply["status"] = serde_json::json!("ok");
-            reply
-        }
+        Some(Ok(reply)) => with_ok_status(reply),
         Some(Err(_)) => serde_json::json!({ "status": "error", "reason": "not found" }),
         None => unavailable(),
     }
@@ -167,8 +164,15 @@ async fn tree_size(
 
 /// A reply of `status: "ok"` that carries the fields of `value`.
 fn ok_reply(value: &impl serde::Serialize) -> serde_json::Value {
-    let mut reply = serde_json::json!(value);
-    reply["status"] = serde_json::json!("ok");
+    with_ok_status(serde_json::json!(value))
+}
+
+/// `reply` with `status: "ok"` added to its fields.
+fn with_ok_status(mut reply: serde_json::Value) -> serde_json::Value {
+    reply
+        .as_object_mut()
+        .expect("a reply serializes as an object")
+        .insert("status".into(), serde_json::json!("ok"));
     reply
 }
 

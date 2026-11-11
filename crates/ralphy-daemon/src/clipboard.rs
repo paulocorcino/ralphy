@@ -49,14 +49,17 @@ const MAX_SUFFIX: u32 = 100;
 /// oversized payload is refused without ever allocating its decode.
 pub fn decode_image(base64: Option<&str>) -> Result<(ImageType, Vec<u8>), &'static str> {
     let text = base64.ok_or("not an image")?;
-    let max_encoded = (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4;
+    let max_encoded = usize::try_from(MAX_IMAGE_BYTES)
+        .unwrap_or(usize::MAX)
+        .div_ceil(3)
+        * 4;
     if text.len() > max_encoded {
         return Err("too large");
     }
     let bytes = data_encoding::BASE64
         .decode(text.as_bytes())
         .map_err(|e| confine::miss("not an image", "decoding the pasted image", &e))?;
-    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_IMAGE_BYTES {
         return Err("too large");
     }
     let kind = ImageType::detect_raster(&bytes).ok_or("not an image")?;
@@ -114,7 +117,7 @@ fn utc_stamp(now: SystemTime) -> String {
     let since = now.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = since.as_secs();
     let millis = since.subsec_millis();
-    let days = (secs / 86_400) as i64;
+    let days = (secs / 86_400).cast_signed();
     let rem = secs % 86_400;
     let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
 
@@ -182,10 +185,11 @@ mod tests {
     fn decode_image_refuses_an_oversized_payload_before_decoding_it() {
         // One byte over the cap, as the browser would encode it.
         let mut big = PNG.to_vec();
-        big.resize((MAX_IMAGE_BYTES + 1) as usize, 0);
+        let max = usize::try_from(MAX_IMAGE_BYTES).expect("4 MiB fits usize");
+        big.resize(max + 1, 0);
         assert_eq!(decode_image(Some(&b64(&big))), Err("too large"));
         // Exactly at the cap is accepted — the bound is the read cap, not under it.
-        big.truncate(MAX_IMAGE_BYTES as usize);
+        big.truncate(max);
         assert!(decode_image(Some(&b64(&big))).is_ok());
     }
 

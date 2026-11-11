@@ -86,8 +86,11 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         .find("The release dot and the What's new panel")
         .expect("styles.css: the release block moved");
     let mut missing = Vec::new();
-    for (at, _) in css[start..].match_indices("var(--") {
-        let name = css[start + at + 4..]
+    let block = css.split_at(start).1;
+    for (at, _) in block.match_indices("var(--") {
+        let name = block
+            .split_at(at + 4)
+            .1
             .split(')')
             .next()
             .unwrap_or_default()

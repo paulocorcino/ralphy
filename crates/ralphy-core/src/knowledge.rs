@@ -147,9 +147,12 @@ fn parse_folded_marker(line: &str) -> Option<Vec<u64>> {
 /// must cite the issues it came from, so a file without a single one is not a
 /// consolidation output.
 fn has_provenance(knowledge: &str) -> bool {
-    knowledge
-        .match_indices("(#")
-        .any(|(i, m)| knowledge[i + m.len()..].starts_with(|c: char| c.is_ascii_digit()))
+    knowledge.match_indices("(#").any(|(i, m)| {
+        knowledge
+            .split_at(i + m.len())
+            .1
+            .starts_with(|c: char| c.is_ascii_digit())
+    })
 }
 
 /// Split the loose notes into (folded → archive, unfolded → keep loose) using

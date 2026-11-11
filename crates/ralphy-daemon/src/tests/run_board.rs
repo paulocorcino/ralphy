@@ -66,7 +66,7 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
     assert!(
         phase_tick
             .find("}, ")
-            .is_some_and(|end| phase_tick[end..].starts_with("}, 1000);")),
+            .is_some_and(|end| phase_tick.split_at(end).1.starts_with("}, 1000);")),
         "the phase clock must tick once a second"
     );
 }
@@ -109,12 +109,9 @@ fn the_design_system_scrollbar_is_the_default_not_a_list() {
     // reasoning along with the code.
     let mut code = String::with_capacity(css.len());
     let mut rest = css.as_str();
-    while let Some(start) = rest.find("/*") {
-        code.push_str(&rest[..start]);
-        rest = match rest[start + 2..].find("*/") {
-            Some(end) => &rest[start + 2 + end + 2..],
-            None => "",
-        };
+    while let Some((before, comment)) = rest.split_once("/*") {
+        code.push_str(before);
+        rest = comment.split_once("*/").map_or("", |(_, after)| after);
     }
     code.push_str(rest);
     assert!(
@@ -198,8 +195,12 @@ fn stopping_a_run_confirms_through_the_design_system_dialog() {
     let start = code
         .find("asyncstopRun(")
         .expect("the shell must keep stopRun");
-    let body = &code[start..];
-    let body = &body[..body[1..].find("async").map_or(body.len(), |i| i + 1)];
+    let body = code.split_at(start).1;
+    let body = body
+        .split_at(1)
+        .1
+        .find("async")
+        .map_or(body, |i| body.split_at(i + 1).0);
     assert!(
         body.contains(r#"constok=awaitthis.$store.modals.askConfirm({title:"Stopthisrun?","#),
         "stopRun must confirm through askConfirm: {body}"
@@ -254,7 +255,9 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
         .find(r#"data-act="plan-discard""#)
         .expect("the discard control must exist");
     assert!(
-        html[discard..discard + 220].contains(":disabled=\"$store.connection.writeLocked()\""),
+        html.get(discard..discard + 220)
+            .expect("the 220 bytes after the discard control are ASCII markup")
+            .contains(":disabled=\"$store.connection.writeLocked()\""),
         "the discard must be gated while a run holds the repo"
     );
     // A dialog a MODAL asks for must sit above it. Every `.modal-scrim` shares
@@ -300,7 +303,9 @@ fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
         .find(".plan-picker-caret {")
         .expect("styles.css must style the picker caret");
     assert!(
-        css[caret..caret + 200].contains("pointer-events: none"),
+        css.get(caret..caret + 200)
+            .expect("the 200 bytes after the caret rule are ASCII CSS")
+            .contains("pointer-events: none"),
         "the caret must be inert to the pointer so the click reaches the select"
     );
 }

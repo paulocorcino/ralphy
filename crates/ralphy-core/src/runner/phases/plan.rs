@@ -196,7 +196,7 @@ fn emit_plan_written(issue: &Issue, plan: &Plan, plan_md: &str) {
     let steps_json = plan_steps_json(plan_md);
     crate::emit::plan_written(
         issue.number,
-        plan.open_steps as u64,
+        u64::try_from(plan.open_steps).unwrap_or(u64::MAX),
         &plan.usage,
         &steps_json,
     );

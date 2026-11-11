@@ -2,6 +2,8 @@
 //! and the helpers the route handlers share. The handlers live in one module
 //! per URL space, and each of those modules registers its own routes
 //! (`<area>_routes`); the router merges them.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -318,7 +320,7 @@ pub(crate) fn encode_query_value(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
-            encoded.push(byte as char);
+            encoded.push(char::from(byte));
         } else {
             use std::fmt::Write as _;
             #[expect(

@@ -80,7 +80,8 @@ fn queried(reply: &serde_json::Value, field: &str) -> String {
     assert_eq!(reply["status"], "ok", "a zero exit answers ok; got {reply}");
     reply[field]
         .as_str()
-        .unwrap_or_else(|| panic!("the child's echo under {field:?}; got {reply}"))
+        .ok_or_else(|| format!("the child's echo under {field:?}; got {reply}"))
+        .expect("this test needs the value")
         .to_owned()
 }
 
@@ -92,7 +93,8 @@ fn relayed(reply: &serde_json::Value) -> String {
     );
     reply["message"]
         .as_str()
-        .unwrap_or_else(|| panic!("an error message string; got {reply}"))
+        .ok_or_else(|| format!("an error message string; got {reply}"))
+        .expect("this test needs the value")
         .to_owned()
 }
 
@@ -101,7 +103,8 @@ fn cwd_of(text: &str) -> PathBuf {
     let line = text
         .lines()
         .find_map(|l| l.strip_prefix("dispatch-cwd: "))
-        .unwrap_or_else(|| panic!("a dispatch-cwd line in the echo; got {text:?}"));
+        .ok_or_else(|| format!("a dispatch-cwd line in the echo; got {text:?}"))
+        .expect("this test needs the value");
     PathBuf::from(line.trim())
 }
 

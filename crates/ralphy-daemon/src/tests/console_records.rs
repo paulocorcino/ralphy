@@ -258,7 +258,11 @@ fn console_name_rides_every_record_copy() {
             .split_once(name)
             .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
     for copy in [
         "function recordOf(",
@@ -287,15 +291,25 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
         .split_once("function spawnWindow(")
         .expect("the console family must keep spawnWindow")
         .1;
-    let body = squeeze(&after[..after.find("\n  }").expect("the function must close")]);
+    let body = squeeze(
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0,
+    );
     // The guard of the statement that adds the name, whatever its layout
     // and whatever the order of its two conditions.
     let set = body
         .find("termOpts={...termOpts,name:win._deskConsoleName}")
         .expect("spawnWindow must send the console name (#480)");
-    let guard = &body[body[..set]
-        .rfind("if(")
-        .expect("the name is sent under a guard")..set];
+    let before_set = body.split_at(set).0;
+    let guard = before_set
+        .split_at(
+            before_set
+                .rfind("if(")
+                .expect("the name is sent under a guard"),
+        )
+        .1;
     for condition in ["termOpts.id==null", "termOpts.console!==true"] {
         assert!(
             guard.contains(condition),

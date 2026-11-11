@@ -144,10 +144,16 @@ fn distro_liveness_answers_without_starting_anything() {
 
     // The reads above cannot see a started session, so the argv is pinned.
     let src = include_str!("../nudge.rs");
-    let body = &src[src
-        .find("pub fn is_distro_running(")
-        .expect("is_distro_running must exist")..];
-    let body = &body[..body.find("\n}").expect("is_distro_running must end")];
+    let body = src
+        .split_at(
+            src.find("pub fn is_distro_running(")
+                .expect("is_distro_running must exist"),
+        )
+        .1;
+    let body = body
+        .split_once("\n}")
+        .expect("is_distro_running must end")
+        .0;
     assert!(
         body.contains(r#".args(["--list", "--running", "--quiet"])"#),
         "the liveness read must be the management listing: {body}"

@@ -68,12 +68,13 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
-    // SAFETY: plain Win32 calls on handles this test owns; the info struct
-    // is a zeroed POD of the size passed.
+    // SAFETY: both arguments may be null: no security attributes, no name.
     let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
     assert!(!job.is_null(), "creating a job object");
+    // SAFETY: the struct is plain data, and all zero bytes is a valid value.
     let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
     info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+    // SAFETY: `job` is a live handle, and the pointer and size describe `info`.
     let set = unsafe {
         SetInformationJobObject(
             job,
@@ -83,6 +84,7 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
         )
     };
     assert_ne!(set, FALSE, "allowing breakaway on the test job");
+    // SAFETY: `job` is a live handle; the current-process pseudo handle is always valid.
     let joined = unsafe { AssignProcessToJobObject(job, GetCurrentProcess()) };
     assert_ne!(joined, FALSE, "putting the test process in the job");
 
@@ -99,6 +101,7 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
     let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &raw mut in_job) };
     child.kill().expect("ending the stand-in daemon");
     child.wait().expect("reaping the stand-in daemon");
+    // SAFETY: `job` is a live handle this test owns and closes once.
     unsafe { CloseHandle(job) };
     assert_ne!(asked, FALSE, "asking whether the child is in the job");
     assert_eq!(

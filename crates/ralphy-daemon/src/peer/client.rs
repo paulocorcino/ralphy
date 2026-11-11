@@ -60,6 +60,11 @@ const _: () = assert!(PEER_CONNECT_TIMEOUT.as_millis() < PEER_TIMEOUT.as_millis(
 /// Ceiling on a peer's response body. A maximum-size accepted image expands by
 /// 4/3 in base64, then rides in a small JSON envelope; derive the cap from that
 /// user-visible boundary while still bounding any descriptor-named port.
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "MAX_IMAGE_BYTES is 4 MiB, which fits usize on every target"
+)]
 const MAX_PEER_BODY: usize = (crate::tree::MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 1024;
 
 /// Who this daemon is, for the checks a probe makes before and after dialling.

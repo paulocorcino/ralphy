@@ -127,7 +127,7 @@ pub fn resolve_queue_view(
         });
     }
     Ok(QueueView {
-        count: queue.len() as u64,
+        count: u64::try_from(queue.len()).unwrap_or(u64::MAX),
         order: queue.iter().map(|i| i.number).collect(),
         stop_before,
         issues,

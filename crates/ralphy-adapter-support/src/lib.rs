@@ -37,6 +37,9 @@ pub mod agent_state;
 mod budget;
 pub use budget::{issue_deadline, IssueBudget};
 
+mod cleanup;
+pub use cleanup::remove_stale_file;
+
 mod classify;
 pub use classify::{classify, CompletionSignals};
 

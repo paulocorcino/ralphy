@@ -59,6 +59,7 @@ mod gate_paths;
 mod ignore_lists;
 mod jscpd_markers;
 mod leftovers;
+mod lint_expects;
 mod peer_reply_pin;
 mod rust_coupling;
 mod skipped_tests;
@@ -75,11 +76,14 @@ const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 
 /// The `.ts` modules directly under `ui`: `vendor/` is not read.
 fn ts_modules(ui: &Path) -> Vec<PathBuf> {
-    let entries = std::fs::read_dir(ui).unwrap_or_else(|e| panic!("reading {}: {e}", ui.display()));
+    let entries = std::fs::read_dir(ui)
+        .map_err(|e| format!("reading {}: {e}", ui.display()))
+        .expect("this test needs the call to succeed");
     let mut modules = Vec::new();
     for entry in entries {
         let path = entry
-            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", ui.display()))
+            .map_err(|e| format!("reading an entry of {}: {e}", ui.display()))
+            .expect("this test needs the call to succeed")
             .path();
         let is_ts = path.extension().is_some_and(|ext| ext == "ts");
         if path.is_file() && is_ts {
@@ -155,5 +159,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+    std::fs::read_to_string(path)
+        .map_err(|e| format!("reading {}: {e}", path.display()))
+        .expect("this test needs the call to succeed")
 }

@@ -23,11 +23,11 @@ pub(super) enum Schedule {
 /// `m`/`h` with a clear message.
 pub(super) fn parse_interval(s: &str) -> Result<Schedule> {
     let s = s.trim();
-    let unit = match s.chars().last() {
-        Some(c) => c,
-        None => bail!("empty interval: use <N>m or <N>h (e.g. 30m, 2h)"),
+    let mut chars = s.chars();
+    let Some(unit) = chars.next_back() else {
+        bail!("empty interval: use <N>m or <N>h (e.g. 30m, 2h)");
     };
-    let head = &s[..s.len() - unit.len_utf8()];
+    let head = chars.as_str();
     let n: u32 = head
         .parse()
         .with_context(|| format!("invalid interval {s:?}: expected <N>m or <N>h (e.g. 30m, 2h)"))?;

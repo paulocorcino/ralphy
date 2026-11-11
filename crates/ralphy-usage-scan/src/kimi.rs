@@ -164,6 +164,11 @@ fn read_status_update(line: &str) -> Option<(Option<String>, Snap)> {
         i64_field(tu, "input_cache_creation"),
     )?;
     // Unix seconds (float) → ms.
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        reason = "a float-to-int `as` saturates, and Unix ms fit i64 for any real date"
+    )]
     let ts_ms = val
         .get("timestamp")
         .and_then(serde_json::Value::as_f64)
@@ -380,10 +385,10 @@ fn to_breakdown(
         return None;
     }
     Some(Tokens {
-        input: input as u64,
-        output: output as u64,
-        cache_read: cache_read as u64,
-        cache_creation: cache_creation as u64,
+        input: input.cast_unsigned(),
+        output: output.cast_unsigned(),
+        cache_read: cache_read.cast_unsigned(),
+        cache_creation: cache_creation.cast_unsigned(),
     })
 }
 

@@ -91,19 +91,21 @@ async fn next_changes_dirty(tree: &mut Channel) -> String {
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.verb == "changes.dirty" {
-                    return cmd
-                        .payload
-                        .get("repo")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_owned();
+                    return Some(
+                        cmd.payload
+                            .get("repo")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_owned(),
+                    );
                 }
             }
         }
-        panic!("the changes channel closed before any changes.dirty frame");
+        None
     })
     .await
     .expect("a changes.dirty frame must arrive within 15s")
+    .expect("the changes channel closed before any changes.dirty frame")
 }
 
 #[tokio::test]

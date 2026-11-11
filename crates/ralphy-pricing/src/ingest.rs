@@ -60,6 +60,11 @@ fn price_of(cost: &Value) -> Option<ModelPrice> {
 
 /// Parse a JSON number as `f64`. `None` for missing, null, or non-numeric values
 /// — callers map that to "skip row" (input/output) or `0.0` (cache fields).
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "a JSON integer price becomes the nearest f64, as a JSON float would"
+)]
 fn json_f64(v: Option<&Value>) -> Option<f64> {
     let v = v?;
     v.as_f64()

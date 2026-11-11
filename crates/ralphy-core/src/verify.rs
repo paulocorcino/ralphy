@@ -373,9 +373,9 @@ fn tail(s: &str) -> String {
         start += 1;
     }
     // Advance to the next newline so we drop the partial leading line.
-    let slice = &trimmed[start..];
-    match slice.find('\n') {
-        Some(nl) => slice[nl + 1..].to_string(),
+    let slice = trimmed.split_at(start).1;
+    match slice.split_once('\n') {
+        Some((_, rest)) => rest.to_owned(),
         None => slice.to_owned(),
     }
 }

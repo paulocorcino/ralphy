@@ -135,10 +135,11 @@ pub(crate) fn pin<'a>(
     let ev = events
         .iter()
         .find(|f| f.message == message)
-        .unwrap_or_else(|| {
+        .ok_or_else(|| {
             let seen: Vec<&str> = events.iter().map(|e| e.message.as_str()).collect();
-            panic!("no `{message}` event was emitted; captured: {seen:?}")
-        });
+            format!("no `{message}` event was emitted; captured: {seen:?}")
+        })
+        .expect("this test needs the event");
     assert_eq!(
         ev.level,
         Some(tracing::Level::INFO),

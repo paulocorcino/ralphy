@@ -69,7 +69,8 @@ pub(crate) fn fold(
     }
 
     let peak_usd = days.values().map(|d| d.usd).fold(0.0_f64, f64::max);
-    let peak_deliveries = days.values().map(|d| d.issues.len()).max().unwrap_or(0) as u64;
+    let peak_deliveries = days.values().map(|d| d.issues.len()).max().unwrap_or(0);
+    let peak_deliveries = u64::try_from(peak_deliveries).unwrap_or(u64::MAX);
     days.into_iter()
         .map(|(date, day)| activity_day(date, day, peak_usd, peak_deliveries))
         .collect()
@@ -77,7 +78,7 @@ pub(crate) fn fold(
 
 /// One day of the band, with its bars relative to the peak days.
 fn activity_day(date: String, day: Day, peak_usd: f64, peak_deliveries: u64) -> ActivityDay {
-    let deliveries = day.issues.len() as u64;
+    let deliveries = u64::try_from(day.issues.len()).unwrap_or(u64::MAX);
     ActivityDay {
         date,
         usd: day.usd,
@@ -102,12 +103,13 @@ fn window_days(window: Window, since: Option<&str>) -> Vec<String> {
     let (Some(days), Some(since)) = (window.days(), since) else {
         return Vec::new();
     };
-    let Ok(start) = NaiveDate::parse_from_str(&since[..since.len().min(10)], "%Y-%m-%d") else {
+    let Ok(start) = NaiveDate::parse_from_str(since.split_at(since.len().min(10)).0, "%Y-%m-%d")
+    else {
         return Vec::new();
     };
     start
         .iter_days()
-        .take(days as usize)
+        .take(usize::try_from(days).unwrap_or(usize::MAX))
         .map(|date| date.format("%Y-%m-%d").to_string())
         .collect()
 }

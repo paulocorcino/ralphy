@@ -222,16 +222,17 @@ impl Page {
                 .expect("the page socket stays open")
                 .expect("the page socket reads");
             let bytes = match message {
-                Message::Binary(bytes) => bytes,
+                Message::Binary(bytes) => Ok(bytes),
                 Message::Ping(payload) => {
                     self.peer_pings += usize::from(!payload.is_empty());
                     continue;
                 }
                 Message::Pong(_) => continue,
-                other @ (Message::Text(_) | Message::Close(_) | Message::Frame(_)) => {
-                    panic!("an unexpected message on the page socket: {other:?}")
-                }
-            };
+                other @ (Message::Text(_) | Message::Close(_) | Message::Frame(_)) => Err(format!(
+                    "an unexpected message on the page socket: {other:?}"
+                )),
+            }
+            .expect("this test needs a binary message");
             match protocol::decode(&bytes).expect("a well-formed frame") {
                 Frame::Channel {
                     channel,
@@ -259,15 +260,17 @@ impl Page {
     }
 
     fn seen(&mut self, channel: u32, frame: Frame, pieces: Vec<usize>) -> Inner {
+        assert!(
+            !matches!(&frame, Frame::Command(command)
+                if channel == 0 && command.verb == "channel.closed"),
+            "a channel ended: {frame:?}"
+        );
         match &frame {
             Frame::Terminal { data, .. } => self
                 .text
                 .entry(channel)
                 .or_default()
                 .extend_from_slice(data),
-            Frame::Command(command) if channel == 0 && command.verb == "channel.closed" => {
-                panic!("a channel ended: {command:?}")
-            }
             Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. } => {}
         }
         Inner {
@@ -294,7 +297,8 @@ impl Page {
     async fn command(&mut self, channel: u32, verb: &str) -> Command {
         tokio::time::timeout(WITHIN, self.read_command(channel, verb))
             .await
-            .unwrap_or_else(|_| panic!("{verb} on channel {channel} within the wait"))
+            .map_err(|elapsed| format!("{verb} on channel {channel} within the wait ({elapsed})"))
+            .expect("this test needs the call to succeed")
     }
 
     async fn read_command(&mut self, channel: u32, verb: &str) -> Command {
@@ -303,15 +307,16 @@ impl Page {
             if inner.channel != channel {
                 continue;
             }
-            match inner.frame {
-                Frame::Command(command) if command.verb == verb => return command,
+            let found = match inner.frame {
+                Frame::Command(command) if command.verb == verb => Ok(command),
                 other @ (Frame::Terminal { .. }
                 | Frame::Command(_)
                 | Frame::Presence(_)
-                | Frame::Channel { .. }) => {
-                    panic!("expected {verb} on channel {channel}, got {other:?}")
-                }
-            }
+                | Frame::Channel { .. }) => Err(format!(
+                    "expected {verb} on channel {channel}, got {other:?}"
+                )),
+            };
+            return found.expect("this test needs the command");
         }
     }
 
@@ -377,16 +382,18 @@ impl Page {
                 };
                 match protocol::decode(&bytes).expect("a well-formed frame") {
                     Frame::Channel { channel: c, .. } if c == channel => {
-                        panic!("a frame on channel {channel} before its end")
+                        return Err(format!("a frame on channel {channel} before its end"));
                     }
                     Frame::Command(command)
                         if command.verb == "channel.closed"
                             && command.payload["channel"] == channel =>
                     {
-                        return command.payload["reason"]
-                            .as_str()
+                        return Ok(command
+                            .payload
+                            .get("reason")
+                            .and_then(serde_json::Value::as_str)
                             .unwrap_or_default()
-                            .to_owned();
+                            .to_owned());
                     }
                     Frame::Channel { .. }
                     | Frame::Command(_)
@@ -397,7 +404,9 @@ impl Page {
         };
         tokio::time::timeout(WITHIN, read)
             .await
-            .unwrap_or_else(|_| panic!("channel {channel} ends within the wait"))
+            .map_err(|elapsed| format!("channel {channel} ends within the wait ({elapsed})"))
+            .expect("this test needs the call to succeed")
+            .expect("this test needs the channel to end without a frame")
     }
 
     /// Send one inner frame on `channel`.
