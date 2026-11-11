@@ -194,7 +194,7 @@ export function createDesk(deps: DeskDeps) {
     sync.restored();
     // The `pagehide` flush would send this page's changes on the way out.
     WBDeskSink.setHold(true);
-    window.location?.reload?.();
+    window.location.reload();
   }
   // ONE desk change: the view takes it at once, the daemon on the next flush.
   function emitDesk(change: DeskChange) {
@@ -329,7 +329,7 @@ export function createDesk(deps: DeskDeps) {
         // 409 "readable": another tab started the new desk first. The desk is
         // readable, so this tab reads it like any other.
         const body = r.status === 409 ? await r.json().catch(() => null) : null;
-        if (body && "state" in body && body.state === "readable") return;
+        if (body && "state" in body) return;
         throw new Error(`the daemon answered ${r.status}`);
       })
       .then(() => reloadDesk())
@@ -338,7 +338,7 @@ export function createDesk(deps: DeskDeps) {
         // Consoles opened over the unreadable desk queued their records: they
         // go on this flush. With none up, the boot restore never ran, so it
         // runs now.
-        if (wins.size) scheduleDeskFlush();
+        if (wins.size > 0) scheduleDeskFlush();
         else restoreDesk();
       });
   }
@@ -355,7 +355,9 @@ export function createDesk(deps: DeskDeps) {
   // The daemon refuses a write over a desk it cannot read; the page shows
   // the failure and sends nothing until the desk reads again.
   function deskUnreadable(out: FlushAnswer) {
-    if (out.reply?.error) console.warn("saved desk:", out.reply.error);
+    const error = out.reply?.error ?? "";
+    // oxlint-disable-next-line no-console -- the daemon's text is for a developer
+    if (error !== "") console.warn("saved desk:", error);
     deskFailure = "the file is damaged";
     deskLoaded = false;
     sync.fail();
@@ -369,7 +371,7 @@ export function createDesk(deps: DeskDeps) {
     flushPendingOffset();
     // Every dirty note, too (ADR-0064 §7): the autosave debounce is 800 ms. A
     // best effort, as the desk's own last flush below.
-    window.WBNotes?.flushAll();
+    window.WBNotes.flushAll();
     // NOTHING closes a detached popup here: `pagehide` fires on a RELOAD as on
     // a close (#347). The popup declares its peer lost after `PEER_WINDOW_MS`
     // without a beat and closes itself (ADR-0051 §8).

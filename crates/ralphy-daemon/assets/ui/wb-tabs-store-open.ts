@@ -44,7 +44,7 @@ export function fetchContent(
 ): Promise<TabBody> {
   const refuse = (reason: string) => {
     window.WB.emit("open-refused", { project, path, reason });
-    window.Alpine.store("modals").flash?.(
+    window.Alpine.store("modals").flash(
       WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."),
     );
     if (reason === "not found" || reason === "transport") {
@@ -82,7 +82,7 @@ export function openLink(store: OpenTabs, { project, path, fragment, checkout, a
   const title = path.split("/").pop() ?? path;
   if (as === "bytes") {
     window.WB.emit("open-refused", { project, path, reason: "not a note" });
-    window.Alpine.store("modals").flash?.(`${path} is not a note.`);
+    window.Alpine.store("modals").flash(`${path} is not a note.`);
     return;
   }
   const ftype = classify(title);
@@ -94,7 +94,7 @@ export function openLink(store: OpenTabs, { project, path, fragment, checkout, a
   }
   if (ftype === "binary") {
     window.WB.emit("open-refused", { project, path, reason: "binary" });
-    window.Alpine.store("modals").flash?.("Cannot open binary files.");
+    window.Alpine.store("modals").flash("Cannot open binary files.");
     return;
   }
   if (project === null) return;
@@ -116,8 +116,9 @@ export function openTab(
   const id = fileTabId(project, path, ck);
   if (store.tabs.some((t) => t.id === id)) {
     store.activate(id);
-    if (fragment) WBViewer.jumpTo(id, fragment);
-    if (find) WBViewer.find(id, find);
+    if (fragment !== undefined && fragment !== "") WBViewer.jumpTo(id, fragment);
+    // oxlint-disable-next-line unicorn/no-array-callback-reference -- not an array
+    if (find != null && find !== "") WBViewer.find(id, find);
     return;
   }
   store.tabs.push({
@@ -153,8 +154,9 @@ export function openTab(
       // THEN activates the stored one, so the last read to answer must not
       // own the screen.
       store.syncViewer();
-      if (fragment) WBViewer.jumpTo(id, fragment);
-      if (find) WBViewer.find(id, find);
+      if (fragment !== undefined && fragment !== "") WBViewer.jumpTo(id, fragment);
+      // oxlint-disable-next-line unicorn/no-array-callback-reference -- not an array
+      if (find != null && find !== "") WBViewer.find(id, find);
     });
   });
 }

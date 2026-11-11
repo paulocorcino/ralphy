@@ -68,7 +68,7 @@ export function createDeskFlush(deps: FlushDeps) {
   // daemon may still accept is sent again with the same `seq`, later.
   let flushBackoff = 1000;
   function flushed(out: FlushAnswer) {
-    const kind = out?.kind;
+    const kind = out.kind;
     if (kind === "held") return;
     if (kind === "ok") {
       flushedOk(out);
@@ -82,7 +82,8 @@ export function createDeskFlush(deps: FlushDeps) {
   // The daemon took the batch: the desk it sent is the view now.
   function flushedOk(out: FlushAnswer) {
     flushBackoff = 1000;
-    for (const r of out.reply?.refused || []) console.warn("desk change refused:", r.error);
+    // oxlint-disable-next-line no-console -- the daemon's text is for a developer
+    for (const r of out.reply?.refused ?? []) console.warn("desk change refused:", r.error);
     const verdict = sync.acked(out.reply);
     if (verdict === "reload") {
       reloadForRestoredDesk();

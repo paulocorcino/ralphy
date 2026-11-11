@@ -242,7 +242,7 @@ fn shell_locks_consoles_and_fences() {
         "tiling a locked fence must be a no-op"
     );
     assert!(
-        body("function recordOf(").contains("locked: !!win._deskLocked"),
+        body("function recordOf(").contains("locked: win._deskLocked,"),
         "recordOf must write the lock as a bool"
     );
     assert!(
@@ -255,7 +255,7 @@ fn shell_locks_consoles_and_fences() {
     );
     assert!(
         body("function ingestDesk(").contains("converge()")
-            && body("function converge(").contains("applyLock(w, !!r.locked)"),
+            && body("function converge(").contains("applyLock(w, r.locked === true)"),
         "a lock set on another device must reach this page's windows on its next GET"
     );
     let css = served_css();

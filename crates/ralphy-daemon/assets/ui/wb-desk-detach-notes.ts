@@ -34,7 +34,7 @@ export function createNoteReports(deps: NoteReportDeps) {
   function replayNoteNames(id: string, members: NonNullable<DetachMessage["members"]>) {
     void whenDeskLoaded().then(() => {
       for (const x of members) {
-        if (x?.kind === "note" && typeof x.path === "string") {
+        if (x.kind === "note" && typeof x.path === "string") {
           recordNoteName(id, { noteId: x.id, path: x.path });
         }
       }

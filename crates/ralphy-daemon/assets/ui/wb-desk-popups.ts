@@ -135,7 +135,7 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
     return {
       handle: null,
       members: [],
-      memberIds: memberIds || [],
+      memberIds: memberIds ?? [],
       fence: null,
       poll: null,
       greeted: false,
@@ -157,11 +157,12 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
     const out: Record<string, string[]> = {};
     for (const id of detached) {
       const popup = fencePopups.get(id);
-      const live = (popup?.members || []).map((m) => m.id).filter(Boolean);
+      const live = (popup?.members ?? []).map((m) => m.id).filter(Boolean);
       // `adopted` is what lets an EMPTY live list mean empty: the popup answered
       // and holds nothing. Without it the fallback below would re-persist the
       // very consoles the operator just closed in there.
-      out[id] = popup?.adopted || live.length ? live : (popup?.memberIds || []).slice();
+      out[id] =
+        popup?.adopted === true || live.length > 0 ? live : (popup?.memberIds ?? []).slice();
     }
     return out;
   }
@@ -172,7 +173,7 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
   function commitDetached(next: string[]) {
     detached = next;
     link.writeRegistry(detached, detachedMembers());
-    if (detached.length) startBeat();
+    if (detached.length > 0) startBeat();
     else stopBeat();
   }
 

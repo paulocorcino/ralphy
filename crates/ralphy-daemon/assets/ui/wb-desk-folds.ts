@@ -77,10 +77,10 @@ export function reconcileDesk<S extends LiveSession, R extends FoldRecord = Desk
   sessions,
   relaunchAgents = false,
 }: ReconcileInput<S, R>) {
-  const live = sessions || [];
+  const live = sessions ?? [];
   const used = new Set<number>();
   const out: DeskVerdict<S, R>[] = [];
-  for (const record of layout || []) {
+  for (const record of layout ?? []) {
     // A session that names its record is that record's, whatever a stale
     // `sessionId` says, and never another record's (ADR-0050 amendment
     // 2026-10-04). The tuple below is for sessions from an older daemon.
@@ -120,14 +120,14 @@ export function reconcileDesk<S extends LiveSession, R extends FoldRecord = Desk
   // as two — or, for a shell, from spawning a SECOND PTY. Only with no such
   // record is it adopted into a fresh one, so it stays visible and closable.
   // The ids an adopted window may take: one window per record id.
-  const taken = new Set((layout || []).map((r) => r.id));
+  const taken = new Set((layout ?? []).map((r) => r.id));
   live.forEach((s, idx) => {
     if (used.has(idx)) return;
     // A session that names a record this page has not read is adopted under
     // that id, so the page that launched it and this one write one record.
     if (s.record != null) {
       const id = taken.has(s.record) ? null : s.record;
-      if (id) taken.add(id);
+      if (id !== null) taken.add(id);
       out.push({ record: null, session: s, action: "adopt", id });
       return;
     }
@@ -176,13 +176,13 @@ export function placeholderSession<S extends LiveSession>({
     );
   const verdict = reconcileDesk({
     layout,
-    sessions: (sessions || []).filter((s) => s && !shown(s)),
+    sessions: (sessions ?? []).filter((s) => !shown(s)),
   }).find(({ record }) => record?.id === recordId);
   return verdict?.action === "attach" ? verdict.session : null;
 }
 
 export function isUnknownCheckout(reply: { status: string; message?: string } | null | undefined) {
-  return !!reply && reply.status === "error" && reply.message === "unknown checkout";
+  return reply != null && reply.status === "error" && reply.message === "unknown checkout";
 }
 
 // Pure. What one window is, given the painted consoles. `maximized: null`
@@ -192,19 +192,19 @@ export function columnClasses(
   painted: readonly { id: string; index: number; row?: number }[] | null | undefined,
   id: string,
 ) {
-  const list = painted || [];
+  const list = painted ?? [];
   const entry = list.find((p) => p.id === id);
   if (!entry) return { column: false, maximized: null };
-  return { column: list.length >= 2, maximized: entry.index === 0 && !entry.row };
+  return { column: list.length >= 2, maximized: entry.index === 0 && (entry.row ?? 0) === 0 };
 }
 
 // The repos a fence's members belong to, for the fence's chrome. Deduped,
 // sorted (DOM order is not stable), `"~"` rendered as `home` like `list()`.
 export function fenceRepos(members: readonly ({ repo?: string } | undefined)[]) {
   const names = new Set<string>();
-  for (const m of members || []) {
+  for (const m of members) {
     const repo = m?.repo === "~" ? "home" : m?.repo;
-    if (repo) names.add(repo);
+    if (repo !== undefined && repo !== "") names.add(repo);
   }
   // The members of a `Set` are distinct, so there is no tie; `<` compares UTF-16
   // code units, as the sort without a compare function does.
@@ -216,19 +216,19 @@ export function fenceRepos(members: readonly ({ repo?: string } | undefined)[]) 
 // out. Folding membership here is what makes "the list and the fence never
 // disagree" a property of the code.
 export function fenceSummaries(fences: readonly DeskFence[], windows: readonly WindowRect[]) {
-  const list = fences || [];
-  const all = windows || [];
-  const byId = new Map(all.map((w): [string, WindowRect] => [w?.id, w]));
+  const list = fences;
+  const all = windows;
+  const byId = new Map(all.map((w): [string, WindowRect] => [w.id, w]));
   const membership = fenceMembership(list, all);
   return list.map((f) => {
-    const members = (membership[f.id] || []).map((wid) => byId.get(wid));
+    const members = (membership[f.id] ?? []).map((wid) => byId.get(wid));
     return {
       id: f.id,
-      name: f.name || "",
+      name: f.name ?? "",
       count: members.length,
-      onStage: members.filter((m) => !m?.inTab).length,
+      onStage: members.filter((m) => m?.inTab !== true).length,
       repos: fenceRepos(members),
-      locked: !!f.locked,
+      locked: f.locked === true,
     };
   });
 }
@@ -241,7 +241,7 @@ export function fenceSummaries(fences: readonly DeskFence[], windows: readonly W
 // nowhere, and the caller refuses rather than nudging into a gap.
 const FENCE_SLOT_SCAN = 64;
 export function nextFenceSlot(rects: readonly Rect[], offset: Offset, viewport: Size) {
-  const taken = rects || [];
+  const taken = rects;
   const cap = Math.max(taken.length, FENCE_SLOT_SCAN);
   for (let i = 0; i <= cap; i++) {
     const candidate = fenceSpawnRect(offset, viewport, i);
@@ -257,19 +257,19 @@ export function nextFenceSlot(rects: readonly Rect[], offset: Offset, viewport: 
 // a row: side-by-side fences are never pixel-aligned on `top`.
 const FENCE_BAND = 120;
 
-type OrderedFence = { id: string; rect: Rect };
+type OrderedFence = { id: string; rect?: Rect | null };
 
 // The band of a fence, from its top; a fence with no rect is at the origin.
 function fenceBand(f: OrderedFence | undefined) {
-  return Math.floor((f?.rect?.top || 0) / FENCE_BAND);
+  return Math.floor((f?.rect?.top ?? 0) / FENCE_BAND);
 }
 
 function fenceLeft(f: OrderedFence | undefined) {
-  return f?.rect?.left || 0;
+  return f?.rect?.left ?? 0;
 }
 
 function fenceOrder(fences: readonly OrderedFence[]) {
-  return [...(fences || [])].sort((a, b) => {
+  return fences.toSorted((a, b) => {
     const at = fenceBand(a);
     const bt = fenceBand(b);
     if (at !== bt) return at - bt;
@@ -278,7 +278,7 @@ function fenceOrder(fences: readonly OrderedFence[]) {
     if (al !== bl) return al - bl;
     // Total order, so the walk is the same on every client: two fences at the
     // very same point would otherwise cycle in whatever order `sort` picked.
-    return String(a?.id).localeCompare(String(b?.id));
+    return a.id.localeCompare(b.id);
   });
 }
 
@@ -286,12 +286,12 @@ function fenceOrder(fences: readonly OrderedFence[]) {
 // which end to enter from, so the first Alt+Shift+→ lands on the top-left
 // fence and the first Alt+Shift+← on the bottom-right one.
 export function fenceCycle(
-  fences: readonly { id: string; rect: Rect }[],
+  fences: readonly OrderedFence[],
   currentId: string | null | undefined,
   step: number,
 ) {
   const order = fenceOrder(fences);
-  if (!order.length) return null;
+  if (order.length === 0) return null;
   const d = step < 0 ? -1 : 1;
   const at = order.findIndex((f) => f.id === currentId);
   if (at < 0) return order.at(d > 0 ? 0 : -1)?.id ?? null;
@@ -312,9 +312,9 @@ export function detachFold(
   event: DetachEvent,
 ): { registry: string[]; effects: DetachEffect[] } {
   const reg = Array.isArray(registry) ? registry : [];
-  const id = event?.fenceId;
+  const id = event.fenceId;
   const held = reg.includes(id);
-  switch (event?.type) {
+  switch (event.type) {
     case "detach":
       // Already detached: one popup per fence, so this is a request to SEE
       // the window that already exists, not to open a second one.
@@ -345,8 +345,8 @@ export function noteNameOk(
   record: DeskNote | null | undefined,
   msg: { noteId?: unknown; path?: unknown },
 ) {
-  const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
-  if (!held || !record || record.id !== msg.noteId || record.path) return false;
+  const held = (entry?.members ?? []).some((x) => x.kind === "note" && x.id === msg.noteId);
+  if (!held || !record || record.id !== msg.noteId || (record.path ?? "") !== "") return false;
   return isNotePath(msg.path);
 }
 
@@ -377,9 +377,9 @@ export function popupMatches(
 }
 
 const FENCE_NAME_RE = /^Fence (\d+)$/;
-export function nextFenceName(existing: readonly { name?: string }[]) {
-  const highest = (existing || []).reduce((max: number, f) => {
-    const m = FENCE_NAME_RE.exec(String(f?.name ?? ""));
+export function nextFenceName(existing: readonly { name?: string | null }[] = []) {
+  const highest = existing.reduce((max: number, f) => {
+    const m = FENCE_NAME_RE.exec(f.name ?? "");
     return m ? Math.max(max, Number(m[1])) : max;
   }, 0);
   return `Fence ${highest + 1}`;

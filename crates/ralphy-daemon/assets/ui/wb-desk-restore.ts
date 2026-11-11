@@ -124,15 +124,15 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     const away = new Map<string, string>();
     for (const id of popups.detachedIds()) {
       for (const wid of entryMemberIds(popups.entry(id))) away.set(wid, id);
-      for (const wid of membership[id] || []) away.set(wid, id);
+      for (const wid of membership[id] ?? []) away.set(wid, id);
     }
     return away;
   }
 
   // The window ids a popup entry names: the ids it stored, then its snapshot.
   function entryMemberIds(entry: PopupEntry | undefined) {
-    const snapshot = (entry?.members || []).filter((m) => m.id).map((m) => m.id);
-    return [...(entry?.memberIds || []), ...snapshot];
+    const snapshot = (entry?.members ?? []).filter((m) => m.id).map((m) => m.id);
+    return [...(entry?.memberIds ?? []), ...snapshot];
   }
 
   // The fallback snapshot, so a popup that never answers still has somewhere
@@ -166,7 +166,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
       spawnPlaceholder(verdict.record, null, null, {
         unheard: unheardRef(verdict.record.repo, unheard),
       });
-    } else if (!(verdict.id && onPlane.has(verdict.id))) {
+    } else if (verdict.id === null || !onPlane.has(verdict.id)) {
       adopt(verdict.session, verdict.id);
     }
   }
@@ -195,7 +195,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   // names when it names one.
   function adopt(session: HostedSession, id: string | null) {
     spawnWindow({ id: session.id, repo: session.repo }, session.agent || "console", session.repo, {
-      id: id || undefined,
+      id: (id ?? "") || undefined,
       kind: session.kind,
       daemonId: session.daemon_id,
       environment: session.environment,
@@ -211,7 +211,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     // STAGE grows to hold them. Fences go on the stage BEFORE that fold.
     // Re-persist the member ids the fallback seeded, so a fence whose popup
     // never answers still skips its members on the NEXT reload.
-    if (popups.detachedIds().length) commitDetached(popups.detachedIds());
+    if (popups.detachedIds().length > 0) commitDetached(popups.detachedIds());
     renderFences();
     renderNotes();
     // The glyph is DOM the fences own: lit only once they are on the stage.
@@ -229,7 +229,7 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   // time, not module load. `canLaunch === false` (the popup) refuses too: it
   // must never author a session.
   function relaunchesAgents() {
-    return OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true;
+    return OPTS.canLaunch !== false && viewStore.read()?.relaunch === true;
   }
 
   // Restore the desk: reconcile the saved layout against the daemon's live
@@ -284,13 +284,13 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   // fetch decides which records to put on the plane.
   function restoreDetached() {
     const saved = link.readRegistry();
-    if (!saved.length) return;
+    if (saved.length === 0) return;
     const savedMembers = link.readMembers();
     for (const id of saved) {
       // No handle (it died with the document), only member ids. `popup-here`
       // hands the snapshot back; `restoreDesk` seeds a fallback from the
       // records it skips.
-      popups.put(id, newPopupEntry(savedMembers[id] || []));
+      popups.put(id, newPopupEntry(savedMembers[id] ?? []));
     }
     commitDetached(saved);
     link.post({ type: "origin-here", tab: link.tab });
@@ -304,13 +304,13 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     members: PopupMember[] | null | undefined,
   ) {
     const origin = fenceOrigin(fence);
-    for (const m of members || []) mountMember(m, shiftedRecord(m, origin));
+    for (const m of members ?? []) mountMember(m, shiftedRecord(m, origin));
     applyExtent();
   }
 
   // The top-left corner of the fence in the opener's plane; no rect is 0, 0.
   function fenceOrigin(fence: { rect?: Partial<Rect> | null } | null | undefined) {
-    return { left: fence?.rect?.left || 0, top: fence?.rect?.top || 0 };
+    return { left: fence?.rect?.left ?? 0, top: fence?.rect?.top ?? 0 };
   }
 
   // The member's record, moved to sit near this window's top-left.
@@ -319,8 +319,8 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
       ...m,
       rect: {
         ...m.rect,
-        left: (m.rect?.left || 0) - origin.left + 12,
-        top: (m.rect?.top || 0) - origin.top + 12,
+        left: (m.rect?.left ?? 0) - origin.left + 12,
+        top: (m.rect?.top ?? 0) - origin.top + 12,
       },
     };
   }
@@ -328,9 +328,11 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
   // A note, a console with a live session, or the placeholder of one without.
   function mountMember(m: PopupMember, record: ReturnType<typeof shiftedRecord>) {
     if (m.kind === "note") {
-      window.WBNotes?.mountDetached(record as NoteSource);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a note member is a note
+      window.WBNotes.mountDetached(record as NoteSource);
     } else if (m.session != null) {
-      spawnWindow({ id: m.session, repo: m.repo }, m.agent || "console", m.repo, record);
+      const agent = (m.agent ?? "") || "console";
+      spawnWindow({ id: m.session, repo: m.repo ?? null }, agent, m.repo, record);
     } else {
       spawnPlaceholder(record);
     }

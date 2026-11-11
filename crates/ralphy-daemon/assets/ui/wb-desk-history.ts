@@ -53,7 +53,7 @@ function rows(list: VersionInfo[] | null | undefined, when: (ms: number) => stri
   return list.map((v) => ({
     id: v.id,
     when: when(v.savedAt),
-    reason: REASON_TEXT[v.reason] || v.reason,
+    reason: REASON_TEXT[v.reason] ?? v.reason,
     counts: [
       plural(v.windows, "console", "consoles"),
       plural(v.fences, "fence", "fences"),

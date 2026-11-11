@@ -139,7 +139,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // The popup holds a fragment of the plane and authors no session; its
     // injected `viewStore` reads nothing, and `canLaunch` refuses besides.
     assert!(
-        js.contains("OPTS.canLaunch!==false&&viewStore?.read()?.relaunch===true"),
+        js.contains("OPTS.canLaunch!==false&&viewStore.read()?.relaunch===true"),
         "the opt-in must be read through the injected view store, and never in the popup"
     );
 

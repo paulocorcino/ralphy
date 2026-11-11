@@ -21,10 +21,10 @@ export function peerFold(
   windowMs: number,
 ): PeerOut {
   const seen = typeof state?.seen === "number" ? state.seen : null;
-  const lost = !!state?.lost;
+  const lost = state?.lost === true;
   const same = { seen, lost };
   if (lost) return { state: same, effects: [] };
-  switch (event?.type) {
+  switch (event.type) {
     case "beat":
       return {
         state: { seen: typeof event.at === "number" ? event.at : seen, lost: false },
