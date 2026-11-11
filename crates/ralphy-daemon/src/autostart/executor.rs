@@ -7,8 +7,12 @@ use anyhow::{Context, Result};
 
 use super::{
     render_install, render_query, render_uninstall, AutostartSpec, Platform, PowerShellFlavor,
-    LAUNCHD_LABEL, RUN_KEY, TASK_NAME, UNIT_NAME,
+    LAUNCHD_LABEL, UNIT_NAME,
 };
+#[cfg(all(unix, not(target_os = "macos")))]
+use super::{systemd_is_enabled, systemd_unit};
+#[cfg(windows)]
+use super::{RUN_KEY, TASK_NAME};
 
 /// Whether the daemon's autostart registration currently exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,9 +243,9 @@ pub fn install() -> Result<()> {
     // (ADR-0067 amendment D8), so the reload is explicit.
     run_argv(
         &[
-            "systemctl".to_string(),
-            "--user".to_string(),
-            "daemon-reload".to_string(),
+            "systemctl".to_owned(),
+            "--user".to_owned(),
+            "daemon-reload".to_owned(),
         ],
         false,
     )?;

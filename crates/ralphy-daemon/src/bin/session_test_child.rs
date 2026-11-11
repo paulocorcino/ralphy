@@ -237,14 +237,14 @@ fn configure_raw_input() {
     // read or passed back; both calls take the stdin descriptor this process owns.
     unsafe {
         let mut attrs: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(libc::STDIN_FILENO, &mut attrs) != 0 {
+        if libc::tcgetattr(libc::STDIN_FILENO, &raw mut attrs) != 0 {
             return;
         }
         attrs.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
         // Non-canonical reads return as soon as one byte is there, never on a timer.
         attrs.c_cc[libc::VMIN] = 1;
         attrs.c_cc[libc::VTIME] = 0;
-        let _ = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &attrs);
+        let _ = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const attrs);
     }
 }
 

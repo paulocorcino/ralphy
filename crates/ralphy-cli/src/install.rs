@@ -267,8 +267,7 @@ fn copy_permissions(from: Option<&Path>, to: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let mode = from
         .and_then(|p| std::fs::metadata(p).ok())
-        .map(|m| m.permissions().mode())
-        .unwrap_or(0o755);
+        .map_or(0o755, |m| m.permissions().mode());
     #[expect(
         clippy::let_underscore_must_use,
         reason = "the copy is already in place, and a mode that cannot be set leaves the \
