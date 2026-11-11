@@ -188,8 +188,15 @@
       "files": ["**/assets/ui/*.ts"],
       "rules": {
         "typescript/no-unsafe-type-assertion": "error",
-        "typescript/no-unnecessary-type-parameters": "error"
+        "typescript/no-unnecessary-type-parameters": "error",
+        "typescript/consistent-type-imports": "error"
       }
+    },
+    // `globals.d.ts` is a script: it names other modules' types with `import()`,
+    // because a top-level `import` would make it a module and its names not global.
+    {
+      "files": ["**/globals.d.ts"],
+      "rules": { "typescript/consistent-type-imports": "off" }
     }
   ]
 }

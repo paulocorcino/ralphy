@@ -3,6 +3,7 @@
 // the shell (`app.ts`) reads is in `wb-shell-types.d.ts`. Types only: the
 // build skips a `.d.ts` file, so a module imports from here with
 // `import type` (#613).
+import type { createConsole } from "./wb-console.ts";
 import type { createTerminal } from "./wb-console-terminal.ts";
 import type { createTitle } from "./wb-console-title.ts";
 import type { DeskDeps } from "./wb-desk.ts";
@@ -367,7 +368,7 @@ export type NoteCard = HTMLElement & {
  * entry module passes it as `deps.console` of `createNotes`.
  */
 export type CardHost = Pick<
-  ReturnType<typeof import("./wb-console.ts").createConsole>,
+  ReturnType<typeof createConsole>,
   | "notes"
   | "saveNotes"
   | "fenceRecords"

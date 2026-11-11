@@ -13,6 +13,7 @@
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import type { AlpineMagics } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { sendWindow } from "./wb-events.ts";
 import { underProtectedDir } from "./wb-file-paths.ts";
@@ -175,7 +176,7 @@ export function wbUploadDialog() {
 /** What the drop needs from the files tree. */
 type DropTree = {
   createDir(node: WunderbaumNode | null): string;
-  $store: import("./wb-alpine.ts").AlpineMagics["$store"];
+  $store: AlpineMagics["$store"];
 };
 
 /** Whether a drag carries files from the operator's computer. */

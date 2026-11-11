@@ -28,6 +28,7 @@ import type {
   Point,
   Presentation,
   Rect,
+  SpawnCarry,
 } from "./wb-types.d.ts";
 
 const { fullscreenOffered } = WBConsoleInput;
@@ -45,11 +46,7 @@ export type { Gestures };
 
 // What `buildChrome` seeds a window from: a desk record, or a partial of one
 // that carries at least `kind`.
-export type ChromeRecord =
-  | Partial<DeskRecord>
-  | import("./wb-types.d.ts").SpawnCarry
-  | null
-  | undefined;
+export type ChromeRecord = Partial<DeskRecord> | SpawnCarry | null | undefined;
 
 // What the chrome reads from the console, and nothing else.
 export type ChromeDeps = {

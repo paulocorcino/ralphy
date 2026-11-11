@@ -6,6 +6,14 @@
 // skips a `.d.ts` file, so `app.ts` imports from here with `import type`
 // (#653).
 
+import type { WBChanges } from "./wb-changes.ts";
+import type { WBDaemonApi } from "./wb-daemon.ts";
+import type { Read } from "./wb-fail.ts";
+import type { WBKanban } from "./wb-kanban.ts";
+import type { Messages } from "./wb-messages.ts";
+import type { WBRun } from "./wb-runs.ts";
+import type { WBSpend } from "./wb-spend.ts";
+
 // Types of other modules that the shell names.
 export type { RosterRow } from "./wb-agents.ts";
 export type { ChangeEntry, Sync } from "./wb-changes.ts";
@@ -23,7 +31,7 @@ export type { Slot } from "./wb-split.ts";
 export type Timer = ReturnType<typeof setInterval> | null;
 
 /** The read state of a shown fact (`WBFail.readFold`); `null` before the first read. */
-export type ReadState = import("./wb-fail.ts").Read | null;
+export type ReadState = Read | null;
 
 /** An open modal: the flag path it answers to, and the element that gets focus back. */
 export type ModalEntry = { path: string; opener: HTMLElement | null };
@@ -40,7 +48,7 @@ export type ConfirmAsk = {
 /** What the entry module hands `wire` (`app.ts`). */
 export type WireDeps = {
   /** The page's door for operator messages. */
-  messages: import("./wb-messages.ts").Messages;
+  messages: Messages;
 };
 
 /** What `askPrompt` takes; each field has a default. */
@@ -53,7 +61,7 @@ export type PromptAsk = {
 };
 
 /** A persistent socket the shell keeps: `resume` re-opens it after a suspend. */
-export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subscribePresence"]>;
+export type Subscription = ReturnType<WBDaemonApi["subscribePresence"]>;
 
 /** The shell fields its methods set on first use: none is in the literal. */
 export type ShellLate = {
@@ -63,14 +71,14 @@ export type ShellLate = {
 /** The repo's ready plan on the board: its text and `WBRun.planSummary` of it. */
 export type ReadyPlan = {
   md: string;
-  summary: ReturnType<typeof import("./wb-runs.ts").WBRun.planSummary>;
+  summary: ReturnType<typeof WBRun.planSummary>;
 };
 
 /** The run pill of a board card (`WBKanban.runningFor`), or `null`. */
-export type RunPill = ReturnType<typeof import("./wb-kanban.ts").WBKanban.runningFor>;
+export type RunPill = ReturnType<typeof WBKanban.runningFor>;
 
-type SpendInput = NonNullable<Parameters<typeof import("./wb-spend.ts").WBSpend.state>[0]>;
-type LedgerInput = NonNullable<Parameters<typeof import("./wb-spend.ts").WBSpend.ledger>[0]>;
+type SpendInput = NonNullable<Parameters<typeof WBSpend.state>[0]>;
+type LedgerInput = NonNullable<Parameters<typeof WBSpend.ledger>[0]>;
 
 /** The `/api/spend` document, or `null` before a read. */
 export type SpendDoc = SpendInput["doc"];
@@ -131,7 +139,7 @@ export type TabBody =
   | null;
 
 /** A diff tab's two sides (`WBChanges.diffTarget`). */
-export type DiffTarget = ReturnType<typeof import("./wb-changes.ts").WBChanges.diffTarget>;
+export type DiffTarget = ReturnType<typeof WBChanges.diffTarget>;
 
 /** A row of the context menu: a separator, or an action. */
 export type MenuItem =
