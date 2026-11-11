@@ -42,8 +42,7 @@ fn interactive_args(
     plugin_dir: &Path,
     model: &str,
     effort: Option<&str>,
-    remote_control: bool,
-    rc_name: &str,
+    remote_control: Option<&str>,
 ) -> Vec<std::ffi::OsString> {
     let mut args = vec![
         "--dangerously-skip-permissions".into(),
@@ -55,7 +54,7 @@ fn interactive_args(
         model.into(),
     ];
     args.extend(crate::effort_args(effort).into_iter().map(Into::into));
-    if remote_control {
+    if let Some(rc_name) = remote_control {
         args.extend(["--remote-control".into(), rc_name.into()]);
     }
     // No positional prompt: the pump types the charter once the session's
@@ -117,7 +116,7 @@ impl ClaudeAgent {
             // With the waiver the charter is typed at once: a shell form
             // writes no line worth a wait.
             crate::status::refuse_or_go_on(
-                crate::status::shell_form(reason),
+                &crate::status::shell_form(reason),
                 self.exec.run_without_guard_proof,
             )?;
         }
@@ -150,8 +149,7 @@ impl ClaudeAgent {
                     &plugin_dir,
                     &exec_model,
                     exec_effort.as_deref(),
-                    self.exec.remote_control,
-                    &rc_name,
+                    self.exec.remote_control.then_some(rc_name.as_str()),
                 ))
         };
 
@@ -168,7 +166,7 @@ impl ClaudeAgent {
             "",
         );
 
-        let transcript_dir = self.transcript_dir(ws);
+        let transcript_dir = crate::usage::transcript_dir(ws);
         let transcript_since = SystemTime::now()
             .checked_sub(Duration::from_secs(2))
             .unwrap_or(SystemTime::UNIX_EPOCH);
@@ -191,13 +189,12 @@ impl ClaudeAgent {
             proof.waiver = self.exec.run_without_guard_proof;
             let mut session =
                 PtySession::spawn(build_cmd()).context("spawning the claude execution session")?;
-            let end = self.drive_session(
-                &mut session,
-                &flag_file,
-                transcript_dir.as_deref(),
+            let files = SessionFiles {
+                flag_file: &flag_file,
+                transcript_dir: transcript_dir.as_deref(),
                 transcript_since,
-                proof,
-            );
+            };
+            let end = self.drive_session(&mut session, files, proof);
             // Kill the tree and drop the session (closes the ConPTY), on every path.
             // The child may have exited already, and the tree is reclaimed.
             if let Err(e) = session.kill() {
@@ -207,7 +204,6 @@ impl ClaudeAgent {
                 RespawnStep::Done(o) => break o,
                 RespawnStep::Again => {
                     info!("api degraded past kill — re-spawning child once against plan.md");
-                    continue;
                 }
             }
         };
@@ -220,14 +216,11 @@ impl ClaudeAgent {
     fn drive_session(
         &self,
         session: &mut PtySession,
-        flag_file: &Path,
-        transcript_dir: Option<&Path>,
-        transcript_since: SystemTime,
+        files: SessionFiles<'_>,
         proof: ProofWait,
     ) -> Result<DriveEnd> {
         let rx = session.output_channel()?;
-        let mut pump =
-            SessionPump::new(self, rx, flag_file, transcript_dir, transcript_since, proof);
+        let mut pump = SessionPump::new(self, rx, files, proof);
         let exit = loop {
             if let Some(exit) = pump.step(session)? {
                 break exit;
@@ -237,9 +230,22 @@ impl ClaudeAgent {
         if matches!(exit, SessionExit::Respawn) {
             return Ok(DriveEnd::Respawn);
         }
-        let outcome = classify_exit(exit, flag_file, transcript_dir, transcript_since)?;
+        let outcome = classify_exit(
+            exit,
+            files.flag_file,
+            files.transcript_dir,
+            files.transcript_since,
+        )?;
         Ok(DriveEnd::Outcome(outcome))
     }
+}
+
+/// The files one session child writes and the poll loop reads.
+#[derive(Clone, Copy)]
+struct SessionFiles<'a> {
+    flag_file: &'a Path,
+    transcript_dir: Option<&'a Path>,
+    transcript_since: SystemTime,
 }
 
 /// Why the poll loop of [`ClaudeAgent::drive_session`] stopped.
@@ -285,18 +291,16 @@ impl<'a> SessionPump<'a> {
     fn new(
         agent: &ClaudeAgent,
         rx: mpsc::Receiver<Vec<u8>>,
-        flag_file: &'a Path,
-        transcript_dir: Option<&'a Path>,
-        transcript_since: SystemTime,
+        files: SessionFiles<'a>,
         proof: ProofWait,
     ) -> Self {
         Self {
             rx,
             log: std::fs::File::create(agent.run_dir.join("exec.log")).ok(),
             deadline: agent.issue_deadline(),
-            flag_file,
-            transcript_dir,
-            transcript_since,
+            flag_file: files.flag_file,
+            transcript_dir: files.transcript_dir,
+            transcript_since: files.transcript_since,
             next_transcript_poll: Instant::now(),
             dsr_carry: Vec::new(),
             login_watch: LoginTuiWatch::new(),

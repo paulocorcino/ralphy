@@ -67,7 +67,6 @@ impl ProofGate {
     /// `Refuse` from the deadline on when no line came.
     pub(super) fn poll(&mut self, line_seen: bool, now: Instant) -> GateAction {
         match self.state {
-            GateState::Typed => GateAction::Wait,
             GateState::Refused => GateAction::Refuse,
             GateState::Waiting if line_seen => {
                 self.state = GateState::Typed;
@@ -77,7 +76,7 @@ impl ProofGate {
                 self.state = GateState::Refused;
                 GateAction::Refuse
             }
-            GateState::Waiting => GateAction::Wait,
+            GateState::Typed | GateState::Waiting => GateAction::Wait,
         }
     }
 
@@ -144,7 +143,7 @@ impl ProofWait {
             GateAction::Refuse => {
                 let cause =
                     crate::status::no_session_start(&self.settings, &self.project, self.window);
-                crate::status::refuse_or_go_on(cause, self.waiver)?;
+                crate::status::refuse_or_go_on(&cause, self.waiver)?;
                 self.gate.go_on();
             }
         }

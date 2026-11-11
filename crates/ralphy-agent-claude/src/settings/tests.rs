@@ -247,11 +247,11 @@ fn the_status_hooks_match_the_shared_event_list() {
 /// from either writer reds here where the pure-builder test stays green.
 #[test]
 fn the_written_settings_files_carry_the_status_hooks() {
+    type Writer = fn(&ClaudeAgent) -> Result<SettingsFile>;
     let dir = tempfile::tempdir().unwrap();
     let agent = ClaudeAgent::new(None, None, dir.path().to_path_buf());
     // Both writers land on the SAME path (the run's one settings file), so
     // each is written and read back in turn.
-    type Writer = fn(&ClaudeAgent) -> Result<SettingsFile>;
     let writers: [(&str, Writer, bool); 2] = [
         ("exec", |a| a.write_exec_settings(), true),
         ("plan", |a| a.write_plan_settings(), false),

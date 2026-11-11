@@ -50,7 +50,7 @@ use ralphy_adapter_support::remove_stale_file;
 use settings::{recommended_model, ExecConfig};
 use usage::{
     fold_exec_usage, parse_plan_session_id, parse_plan_usage, parse_transcript_usage,
-    session_id_from_files, subagent_transcripts,
+    session_id_from_files, subagent_transcripts, transcript_dir,
 };
 
 pub use settings::ClaudeSettings;
@@ -301,7 +301,7 @@ impl Agent for ClaudeAgent {
         // is a concurrent pre-existing session and is excluded (ADR-0008 D10,
         // appeared-over-grew). A missing dir yields empty before/after and zero
         // usage — best-effort, never failing the run.
-        let transcript_dir = self.transcript_dir(ws);
+        let transcript_dir = transcript_dir(ws);
         let before = transcript_dir
             .as_deref()
             .map(|d| list_session_files(d, "jsonl", false, None))

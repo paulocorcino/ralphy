@@ -158,27 +158,25 @@ pub(crate) fn no_session_start(
 /// alone explains the silence.
 fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
     let home = ralphy_proc_util::home_dir();
-    let mut cause = String::new();
-    if let Some(file) =
-        ralphy_proc_util::hook_form::disable_all_hooks(home.as_deref(), Some(project))
-    {
-        cause.push_str(&format!(
-            "{} sets disableAllHooks to true, so Claude Code runs no hook; ",
-            file.display()
-        ));
-    }
+    let disabled = ralphy_proc_util::hook_form::disable_all_hooks(home.as_deref(), Some(project))
+        .map(|file| {
+            format!(
+                "{} sets disableAllHooks to true, so Claude Code runs no hook; ",
+                file.display()
+            )
+        })
+        .unwrap_or_default();
     let program = ralphy_proc_util::exe::running_exe().map_or_else(
         |e| format!("the ralphy program (not found: {e:#})"),
         |p| p.display().to_string(),
     );
-    cause.push_str(&format!(
-        "no SessionStart hook event came in {} s; the hooks in {} run {}. \
+    format!(
+        "{disabled}no SessionStart hook event came in {} s; the hooks in {} run {}. \
          Fix the cause and start again",
         window.as_secs(),
         ralphy_proc_util::hook_form::native(settings).display(),
         program
-    ));
-    cause
+    )
 }
 
 /// The cause of a session whose hooks would run through a shell: such a
@@ -196,7 +194,7 @@ pub(crate) const WAIVER_KEY: &str = "claude.run_without_guard_proof_i_understand
 /// ADR-0072 D6) the session goes on and one warning event carries the
 /// cause; without it, the refusal names the cause and the way out.
 pub(crate) fn refuse_or_go_on(
-    cause: ralphy_core::HooksUnproven,
+    cause: &ralphy_core::HooksUnproven,
     waiver: bool,
 ) -> anyhow::Result<()> {
     if waiver {
@@ -223,13 +221,13 @@ pub(crate) fn proof_gate<'a>(
     waiver: bool,
 ) -> anyhow::Result<ralphy_adapter_support::PromptGate<'a>> {
     if let Some(reason) = &settings.unproven {
-        refuse_or_go_on(shell_form(reason), waiver)?;
+        refuse_or_go_on(&shell_form(reason), waiver)?;
         return Ok(Box::new(|| Ok(())));
     }
     Ok(Box::new(move || {
         match await_session_start(&status_file, &settings.path, project, PROOF_WINDOW) {
             Ok(()) => Ok(()),
-            Err(cause) => refuse_or_go_on(cause, waiver),
+            Err(cause) => refuse_or_go_on(&cause, waiver),
         }
     }))
 }
