@@ -85,8 +85,10 @@ export function createWindowGestures(deps: WindowGestureDeps) {
   // hooks are the window's, which is every existing caller.
   function makeDraggable(win: HTMLElement, handle: HTMLElement, opts?: GestureHooks) {
     // Without `opts` the element is a console window.
+    // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
     const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
     // The rect at the end of the drag, computed at the act.
+    // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
     const persist = opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }));
     handle.addEventListener("pointerdown", (e) => {
       if ((e.target as HTMLElement).closest("button, .session-name-input")) return;
@@ -285,9 +287,11 @@ export function createWindowGestures(deps: WindowGestureDeps) {
   // Same seam as `makeDraggable`'s, for the same second caller.
   function startResize(win: HTMLElement, dir: string, opts?: ResizeHooks) {
     // Without `opts` the element is a console window.
+    // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
     const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
+    // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
     const persist = opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }));
-    const min = opts?.min || RESIZE_MIN;
+    const min = opts?.min ?? RESIZE_MIN;
     return (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;

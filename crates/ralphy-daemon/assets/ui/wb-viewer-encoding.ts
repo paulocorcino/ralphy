@@ -35,7 +35,7 @@ const ENCODINGS: Encoding[] = [
 // → `UTF-16 LE`, `windows-1252` → `Windows-1252`), plus ` BOM` when one
 // was read and will be written back.
 export function encodingLabel(name: string | null | undefined, bom: boolean) {
-  let text = String(name || "UTF-8");
+  let text = (name ?? "") || "UTF-8";
   text = text.replace(/^utf-16(le|be)$/i, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
   text = text.replace(/^windows-/i, "Windows-");
   return bom ? `${text} BOM` : text;
@@ -61,7 +61,7 @@ function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
     const row = ENCODINGS[i];
     if (!row) continue;
     const [, name, bom] = row;
-    const current = String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
+    const current = rec.encoding.toLowerCase() === name && rec.bom === bom;
     item.classList.toggle("current", current);
   }
 }
@@ -118,6 +118,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       document.addEventListener("keydown", onKey, true);
     };
     menu.onclick = (ev: MouseEvent) => {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a text node has no closest
       const item = (ev.target as Element).closest?.<HTMLElement>(".enc-item");
       if (!item) return;
       ev.stopPropagation();
@@ -135,7 +136,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const go = () => {
       readWith(rec, name)
         .then((reply) => {
-          if (!reply || reply.status !== "ok") {
+          if (reply.status !== "ok") {
             showSaveError(
               rec,
               WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`),
@@ -143,7 +144,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
             return;
           }
           rec.encoding = reply.encoding || name;
-          rec.bom = !!reply.bom;
+          rec.bom = reply.bom;
           refreshEncodingPill(rec);
           if (rec.refused !== null) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
@@ -152,7 +153,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
           showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`),
         );
     };
-    if (!rec.dirty) return go();
+    if (rec.dirty !== true) {
+      go();
+      return;
+    }
     // The design-system dialog where there is a shell; `window.confirm` only
     // in a detached popup, which has no shell and no other dialog.
     const ask =
@@ -162,7 +166,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
         confirmLabel: "Reopen",
         danger: true,
       }) ?? Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
-    void ask.then((ok) => ok && go());
+    void ask.then((ok) => {
+      if (ok === true) go();
+      return null;
+    });
   }
 
   // Save with: the text as it is, written under `name` — the conversion the

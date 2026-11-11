@@ -210,7 +210,10 @@
         "**/ui/wb-runs*.ts",
         "**/ui/wb-desk*.ts",
         "**/ui/wb-tabs*.ts",
-        "**/ui/wb-board*.ts"
+        "**/ui/wb-board*.ts",
+        "**/ui/wb-file*.ts",
+        "**/ui/wb-viewer*.ts",
+        "**/ui/wb-stage*.ts"
       ],
       "rules": {
         "typescript/strict-boolean-expressions": "error",

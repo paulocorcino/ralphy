@@ -250,7 +250,7 @@ fn shell_locks_consoles_and_fences() {
         "deskOf must carry the lock into rebuilds and the popup"
     );
     assert!(
-        body("function renderFences(").contains("paintFenceLock(el, !!f.locked)"),
+        body("function renderFences(").contains("paintFenceLock(el, Boolean(f.locked))"),
         "renderFences is the one place a fence's lock reaches the DOM"
     );
     assert!(

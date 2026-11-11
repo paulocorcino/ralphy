@@ -73,7 +73,7 @@ export function fetchTreeLevel(files: LevelFiles, rel: string): Promise<Wunderba
     files.$store.checkouts.checkoutOf(files.$store.projects.openSlug),
   );
   return WBDaemon.observe("tree.list", payload).then((reply) => {
-    if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
+    if (reply.status !== "ok" || !Array.isArray(reply.entries)) {
       throw new WBReadRetry.Refused(WBFail.message(reply, ""));
     }
     files.treeFresh();
@@ -97,7 +97,7 @@ export function pruneTreeCache(files: LevelFiles, rel: string, entries: TreeEntr
   for (const key of [...cache.keys()]) {
     if (!key.startsWith(prefix)) continue;
     const child = key.slice(prefix.length).split("/")[0];
-    if (!child || dirs.has(child)) continue;
+    if (child === undefined || child === "" || dirs.has(child)) continue;
     cache.delete(key);
     validated.delete(key);
   }
@@ -123,7 +123,7 @@ function treeNodes(files: LevelFiles, entries: TreeEntry[]): WunderbaumSource[] 
     const node: WunderbaumSource = en.dir
       ? { title: en.name, folder: true, lazy: true }
       : { title: en.name, icon: files.fileIcon(en.name) };
-    if (en.ignored) node.classes = "wb-ignored";
+    if (en.ignored === true) node.classes = "wb-ignored";
     return node;
   });
 }
@@ -169,8 +169,8 @@ export function levelShows(files: LevelFiles, node: WunderbaumNode, specs: Wunde
     return (
       row !== undefined &&
       row.title === spec.title &&
-      files.isFolder(row) === !!spec.folder &&
-      !!row.hasClass?.("wb-ignored") === (spec.classes === "wb-ignored")
+      files.isFolder(row) === Boolean(spec.folder) &&
+      row.hasClass("wb-ignored") === (spec.classes === "wb-ignored")
     );
   });
 }

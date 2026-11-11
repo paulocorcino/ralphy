@@ -31,12 +31,12 @@ export function openEntry(files: OpenFiles, node: WunderbaumNode) {
   }
   // No tree is mounted without an open project.
   const slug = files.$store.projects.openSlug;
-  if (!slug) return;
+  if (slug == null || slug === "") return;
   if (ftype === "binary") {
     // Flash it too: a click that silently does nothing reads as a broken
     // tree.
     window.WB.emit("open-refused", { project: slug, path, reason: "binary" });
-    files.$store.modals.flash?.("Cannot open binary files.");
+    files.$store.modals.flash("Cannot open binary files.");
     return;
   }
   // Out of a CONTENT search: the tab lands on the first occurrence
@@ -48,8 +48,8 @@ export function openEntry(files: OpenFiles, node: WunderbaumNode) {
 // The term to land on: the live query, only while the CONTENT filter is on.
 export function searchFindTerm(files: OpenFiles) {
   const fs = files.fileSearch;
-  if (!fs.open || fs.mode !== "content" || !fs.hits.length) return null;
-  const q = String(fs.query ?? "").trim();
+  if (!fs.open || fs.mode !== "content" || fs.hits.length === 0) return null;
+  const q = fs.query.trim();
   return q || null;
 }
 
@@ -62,7 +62,8 @@ export function copyEntryPath(files: OpenFiles, node: WunderbaumNode, full: bool
   const root = full
     ? files.$store.projects.projects.find((p) => p.slug === files.$store.projects.openSlug)?.root
     : "";
-  const path = root ? fullPath(root, rel) : rel;
+  const path = root != null && root !== "" ? fullPath(root, rel) : rel;
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on an insecure origin
   navigator.clipboard?.writeText(path).catch(() => {});
   window.WB.emit("copy-path", { ...files.nodeDetail(node), path });
 }

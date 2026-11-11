@@ -32,7 +32,7 @@ function verbFor(mode: string): "tree.grep" | "tree.find" {
 // Trimmed and at least MIN_CHARS: below that the daemon answers empty anyway,
 // so the client does not spend a socket to learn it.
 function worthSearching(query: string | null | undefined): boolean {
-  return String(query ?? "").trim().length >= MIN_CHARS;
+  return (query ?? "").trim().length >= MIN_CHARS;
 }
 
 // The distinct directories the hits live in — every ancestor, not just the
@@ -40,8 +40,8 @@ function worthSearching(query: string | null | undefined): boolean {
 // for. A hit at the root has no ancestor and contributes nothing.
 function dirsToLoad(hits: Hit[] | null | undefined): string[] {
   const dirs = new Set<string>();
-  for (const h of hits || []) {
-    const parts = String(h.path || "").split("/");
+  for (const h of hits ?? []) {
+    const parts = (h.path || "").split("/");
     for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
   }
   return [...dirs].sort((a, b) => a.split("/").length - b.split("/").length || (a < b ? -1 : 1));
@@ -49,7 +49,7 @@ function dirsToLoad(hits: Hit[] | null | undefined): string[] {
 
 // The gutter line for a settled search. Empty when the tree says it all.
 function note({ hits, truncated }: { hits: Hit[]; truncated: boolean }): string {
-  if (!hits.length) return "No matches";
+  if (hits.length === 0) return "No matches";
   if (truncated) return `First ${MAX_HITS} matches. Narrow the search to see more.`;
   return "";
 }
@@ -60,7 +60,7 @@ function note({ hits, truncated }: { hits: Hit[]; truncated: boolean }): string 
 function toCollapse(before: string[] | null, now: string[] | null | undefined): string[] {
   if (!before) return [];
   const had = new Set(before);
-  return (now || [])
+  return (now ?? [])
     .filter((rel) => !had.has(rel))
     .sort((a, b) => b.split("/").length - a.split("/").length || (a < b ? -1 : 1));
 }
@@ -69,7 +69,7 @@ function toCollapse(before: string[] | null, now: string[] | null | undefined): 
 // `true` for a name hit (which has no count to show).
 function hitMap(hits: Hit[] | null | undefined): Map<string, number | true> {
   const m = new Map<string, number | true>();
-  for (const h of hits || []) m.set(h.path, typeof h.count === "number" ? h.count : true);
+  for (const h of hits ?? []) m.set(h.path, typeof h.count === "number" ? h.count : true);
   return m;
 }
 

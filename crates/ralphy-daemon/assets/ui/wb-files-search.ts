@@ -44,7 +44,7 @@ type SearchFiles = {
 // arrives after a project switch, is dropped.
 export function searchNow(files: SearchFiles): Promise<void> {
   clearTimeout(files._fileSearchTimer);
-  const query = String(files.fileSearch.query ?? "").trim();
+  const query = files.fileSearch.query.trim();
   if (!WBFileSearch.worthSearching(query)) {
     return files.clearFileSearch();
   }
@@ -64,14 +64,15 @@ export function searchNow(files: SearchFiles): Promise<void> {
   return window.WBDaemon.observe(verb, payload)
     .then((reply) => {
       if (seq !== files.fileSearch.seq || slug !== files.$store.projects.openSlug) return;
-      if (WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
+      if (WBFail.isError(reply) || !Array.isArray(reply.hits)) {
         files.fileSearch.note = WBFail.failed(
           reply,
           "Could not search: the daemon gave no reason.",
         );
         return;
       }
-      return files.applyFileSearch(reply.hits, !!reply.truncated, seq);
+      // oxlint-disable-next-line typescript/consistent-return -- an early exit waits for nothing
+      return files.applyFileSearch(reply.hits, Boolean(reply.truncated), seq);
     })
     .catch((err: unknown) => {
       if (seq !== files.fileSearch.seq) return;
@@ -164,7 +165,7 @@ export async function clearSearch(files: SearchFiles) {
   files._restoringExpansion = true;
   tree.enableUpdate(false);
   try {
-    if (tree.isFilterActive?.()) tree.clearFilter();
+    if (tree.isFilterActive()) tree.clearFilter();
     const fold = WBFileSearch.toCollapse(before, files.expandedRels());
     for (const rel of fold) {
       if (tree !== files.rawTree()) return;

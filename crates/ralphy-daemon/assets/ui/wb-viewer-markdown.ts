@@ -26,7 +26,8 @@ export function remoteImageNotice(src: string, alt: string) {
     // Not an absolute URL: no host to name.
   }
   const what = alt.trim() || "image";
-  const from = url?.host ? ` (${url.host})` : "";
+  const host = url?.host ?? "";
+  const from = host === "" ? "" : ` (${host})`;
   const reason =
     url?.protocol === "http:"
       ? "Images over plain http are not shown."
@@ -51,7 +52,7 @@ function repoRelative(dir: string, src: string) {
   for (const part of (dir ? dir.split("/") : []).concat(clean.split("/"))) {
     if (!part || part === ".") continue;
     if (part === "..") {
-      if (!out.length) return null;
+      if (out.length === 0) return null;
       out.pop();
       continue;
     }
@@ -69,13 +70,13 @@ function repoRelative(dir: string, src: string) {
 //     folded against the document's own directory like an `<img src>`
 //   • climbs out of the repo → null — not ours, and the daemon would refuse it
 export function linkTarget(dir: string, href: string | null) {
-  if (!href) return null;
+  if (href === null || href === "") return null;
   if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
   if (/^[a-z][a-z0-9+.-]*:/iu.test(href) || href.startsWith("/")) {
     return { kind: "external" as const };
   }
   const path = repoRelative(dir, href);
-  if (!path) return null;
+  if (path === null) return null;
   const hash = href.indexOf("#");
   return { kind: "file" as const, path, fragment: hash < 0 ? "" : href.slice(hash + 1) };
 }
@@ -231,18 +232,19 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
   function resolveImages(rec: ViewerRecord, article: Element) {
-    if (!window.WBDaemon?.readImage) return;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test window has no WBDaemon
+    if (typeof window.WBDaemon?.readImage !== "function") return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
     article.querySelectorAll<HTMLImageElement>("img[src]").forEach((img) => {
-      const src = img.getAttribute("src") || "";
+      const src = img.getAttribute("src") ?? "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
       if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
       const rel = repoRelative(dir, src);
-      if (!rel) return;
+      if (rel === null) return;
       WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
         .then((url) => {
-          if (url) img.src = url;
+          if (url != null && url !== "") img.src = url;
         })
         .catch(() => {});
     });
@@ -264,8 +266,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       const icon = document.createElement("i");
       icon.className = "bi bi-image";
       const { text, reason } = remoteImageNotice(
-        img.getAttribute("src") || "",
-        img.getAttribute("alt") || "",
+        img.getAttribute("src") ?? "",
+        img.getAttribute("alt") ?? "",
       );
       note.title = reason;
       note.append(icon, text);
@@ -277,8 +279,9 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // window. A repo file becomes an open REQUEST to the shell; external links
   // open in a new tab so the workbench is not what gets replaced.
   function linkClick(rec: ViewerRecord, ev: Event) {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a text node has no closest
     const a = (ev.target as Element).closest?.<HTMLAnchorElement>("a[href]");
-    if (!a || !rec.el?.contains(a)) return;
+    if (!a || rec.el?.contains(a) !== true) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
     const target = linkTarget(dir, a.getAttribute("href"));
     if (!target) {
@@ -327,7 +330,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   }
 
   function drawMermaid(rec: ViewerRecord) {
-    if (!rec.mermaidPending || !rec.mermaidPending.length) return;
+    if (!rec.mermaidPending || rec.mermaidPending.length === 0) return;
     const pending = rec.mermaidPending;
     rec.mermaidPending = [];
     pending.forEach((holder) => {
@@ -347,7 +350,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     const nav = inPane(rec, ".md-outline");
     nav.innerHTML = "";
     const heads = article.querySelectorAll("h1, h2, h3, h4");
-    if (!heads.length) {
+    if (heads.length === 0) {
       nav.innerHTML = '<div class="outline-empty">No headings</div>';
       return;
     }
@@ -393,6 +396,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   }
 
   // One listener for every markdown pane; a test's stub document has none.
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test document has none
   document.addEventListener?.("securitypolicyviolation", blockedImage);
   return { buildMarkdown, renderMarkdown, drawMermaid, jumpTo };
 }

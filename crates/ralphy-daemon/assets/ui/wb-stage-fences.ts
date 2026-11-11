@@ -143,16 +143,16 @@ export function createFences(deps: FenceDeps) {
     restoreRect,
     setWin,
   });
-
+  const dialogName = (f: DeskFence) => (f.name ?? "") || "this fence";
   async function tileOnConfirm(f: DeskFence) {
     // A detached fence has nothing here to tile; `arrangeFence` says so.
     if (popups.isDetached(f.id)) return arrangeFence(f.id);
     const ok = await askConfirm({
       title: "Tile this fence?",
-      message: `Rearranges the consoles in ${f.name || "this fence"}. Sessions keep running.`,
+      message: `Rearranges the consoles in ${dialogName(f)}. Sessions keep running.`,
       confirmLabel: "Tile",
     });
-    if (ok) arrangeFence(f.id);
+    if (ok === true) arrangeFence(f.id);
   }
 
   async function removeOnConfirm(f: DeskFence) {
@@ -160,11 +160,11 @@ export function createFences(deps: FenceDeps) {
     if (popups.isDetached(f.id)) return removeFence(f.id);
     const ok = await askConfirm({
       title: "Remove this fence?",
-      message: `Removes ${f.name || "this fence"}. Consoles stay where they are.`,
+      message: `Removes ${dialogName(f)}. Consoles stay where they are.`,
       confirmLabel: "Remove",
       danger: true,
     });
-    if (ok) removeFence(f.id);
+    if (ok === true) removeFence(f.id);
   }
 
   // A fence is a stage child BELOW every window (`z-index: 1` against `Z_BASE`)
@@ -186,7 +186,7 @@ export function createFences(deps: FenceDeps) {
     const name = document.createElement("input");
     name.className = "fence-name";
     name.setAttribute("aria-label", "Fence name");
-    name.value = f.name || "";
+    name.value = f.name ?? "";
     // READ-ONLY until double-clicked: the field lives in a bar the operator also
     // clicks to drag, and an always-live input turns a slip into a rename. No
     // `title`, no hover affordance: a read-only field that lights up reads as editable.
@@ -281,12 +281,12 @@ export function createFences(deps: FenceDeps) {
       const st = stage();
       if (!st || popups.isDetached(f.id)) return;
       const all = readWindowRects(st);
-      const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] || []);
+      const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] ?? []);
       // A console in its own tab stays there.
       const items = all
         .filter((w) => ids.has(w.id) && !w.inTab)
         .map((w) => ({ id: w.id, rect: w.rect }));
-      if (!items.length) return;
+      if (items.length === 0) return;
       sendDocument(document, "workbench:fence-columns", { items });
     });
     // Close stays the OUTERMOST control (wb_fence_342.py asserts it).
@@ -341,7 +341,7 @@ export function createFences(deps: FenceDeps) {
       handle,
       members,
       memberIds: members.map((m) => m.id).filter(Boolean),
-      fence: fence || { id, name: "", rect: null },
+      fence: fence ?? { id, name: "", rect: null },
       // This popup's identity, on every lifecycle message both ways (#476).
       pid: newPid(),
       poll: null,
@@ -397,7 +397,7 @@ export function createFences(deps: FenceDeps) {
   }
 
   function fenceMemberIds(st: HTMLElement | null, id: string) {
-    return st ? fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [] : [];
+    return st ? (fenceMembership(readFenceRects(st), readWindowRects(st))[id] ?? []) : [];
   }
 
   // A force-closed popup fires no `beforeunload`, so the opener watches for it;
@@ -433,7 +433,7 @@ export function createFences(deps: FenceDeps) {
     // The FULL fence list with this fence's LIVE rect: the fold's `break` decides
     // an overlapping pair.
     const live = fences().map((x) => (x.id === id ? { id: x.id, rect } : x));
-    const ids = new Set(fenceMembership(live, all)[id] || []);
+    const ids = new Set(fenceMembership(live, all)[id] ?? []);
     // A maximized console is NOT tiled: a tile rect written onto it is invisible
     // while it REPLACES the pre-maximize rect (#338). A LOCKED one is skipped too.
     const members = all
@@ -445,7 +445,7 @@ export function createFences(deps: FenceDeps) {
           !m.el._deskLocked,
       )
       .map((m) => m.el);
-    if (!members.length) return;
+    if (members.length === 0) return;
     const headH = fenceHeadHeight(el);
     const tiles = tileIntoRect(
       {
@@ -493,7 +493,7 @@ export function createFences(deps: FenceDeps) {
   }
 
   function fenceHeadHeight(el: HTMLElement) {
-    return el.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
+    return (el.querySelector<HTMLElement>(".fence-head")?.offsetHeight ?? 0) || 28;
   }
 
   return { buildFence, startFenceMove, startFenceResize, arrangeFence, detachFence };

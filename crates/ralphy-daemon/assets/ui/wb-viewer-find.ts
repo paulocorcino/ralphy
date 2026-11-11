@@ -18,7 +18,9 @@ export type ViewerFind = ReturnType<typeof createViewerFind>;
 function takesText(n: Node) {
   const parent = n.parentElement;
   return (
-    !!n.nodeValue?.trim() && !!parent && !parent.closest("svg, script, style, button, [hidden]")
+    Boolean(n.nodeValue?.trim()) &&
+    parent !== null &&
+    !parent.closest("svg, script, style, button, [hidden]")
   );
 }
 
@@ -27,7 +29,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
 
   // --- in-page find over rendered markdown -------------------------------
   function clearHits(rec: ViewerRecord) {
-    (rec.hits || []).forEach((mk) => {
+    (rec.hits ?? []).forEach((mk) => {
       const t = document.createTextNode(mk.textContent);
       mk.replaceWith(t);
     });
@@ -55,6 +57,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
     requestAnimationFrame(() => {
       if (!alive(rec) || !rec.ed) return;
       const model = ed.getModel();
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test model has no find
       const hit = model?.findNextMatch?.(
         term,
         { lineNumber: 1, column: 1 },
@@ -125,13 +128,13 @@ export function createViewerFind(deps: ViewerFindDeps) {
     }
     rec.hits = hits;
     rec.hitIdx = -1;
-    count.textContent = hits.length ? `0/${hits.length}` : "No matches";
-    if (hits.length) mdSearchStep(rec, 1);
+    count.textContent = hits.length > 0 ? `0/${hits.length}` : "No matches";
+    if (hits.length > 0) mdSearchStep(rec, 1);
   }
 
   function mdSearchStep(rec: ViewerRecord, dir: number) {
     const hits = rec.hits;
-    if (!hits || !hits.length) return;
+    if (!hits || hits.length === 0) return;
     const before = rec.hitIdx ?? -1;
     if (before >= 0) hits[before]?.classList.remove("current");
     const idx = (before + dir + hits.length) % hits.length;

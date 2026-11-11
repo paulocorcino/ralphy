@@ -68,7 +68,7 @@ function isNoteInNotesDir(rel: string) {
   // `.` and empty segments are dropped first: `Path::components()` on the
   // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
   // there and would be two different answers here.
-  const parts = rel.split("/").filter((p) => p && p !== ".");
+  const parts = rel.split("/").filter((p) => p.length > 0 && p !== ".");
   const [root, folder, name] = parts;
   return (
     parts.length === 3 &&
@@ -127,7 +127,9 @@ export function duplicateRel(rel: string, taken: Set<string>) {
 // worktree — the checkout, so the same rel in two trees is two tabs (the
 // primary's id is the pre-#406 spelling, byte for byte).
 export function fileTabId(project: string, path: string, checkout: string | null | undefined) {
-  return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
+  return checkout != null && checkout !== ""
+    ? `file:${project}@${checkout}:${path}`
+    : `file:${project}:${path}`;
 }
 
 // Which viewer a file gets: markdown, a Mermaid diagram (`.mmd`) and a
@@ -192,5 +194,5 @@ const TREE_ICONS: Record<string, string> = {
 export function treeIcon(title: string) {
   const name = title.toLowerCase();
   if (name.endsWith("lock") || name === "package-lock.json") return "devicon-json-plain colored";
-  return TREE_ICONS[extOf(name)] || "bi bi-file-earmark";
+  return (TREE_ICONS[extOf(name)] ?? "") || "bi bi-file-earmark";
 }

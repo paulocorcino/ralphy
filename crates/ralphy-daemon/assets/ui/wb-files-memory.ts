@@ -12,11 +12,11 @@ type MemoryFiles = {
 
 // Lazily create the three tree-memory collections (see the note in wb-files.ts).
 export function treeMemory(files: MemoryFiles): TreeMemory {
-  files._treeCache ||= new Map();
-  files._treeValidated ||= new Set();
-  files._treeExpanded ||= new Map();
+  files._treeCache ??= new Map();
+  files._treeValidated ??= new Set();
+  files._treeExpanded ??= new Map();
   // path → count (content) or `true` (name): what the filter predicate reads.
-  files._fileHits ||= new Map();
+  files._fileHits ??= new Map();
   return {
     cache: files._treeCache,
     validated: files._treeValidated,

@@ -27,7 +27,7 @@ type PeerFiles = {
 // The fleet group of the open project's peer while the fleet calls that
 // peer down, else null.
 export function peerDownGroup(files: PeerFiles) {
-  const daemon = WBFleet.refDaemon(files.$store.projects.openSlug || "");
+  const daemon = WBFleet.refDaemon(files.$store.projects.openSlug ?? "");
   if (!daemon) return null;
   const group = files.$store.projects.fleetGroups().find((g) => g.daemon === daemon);
   return group && !WBFleet.available(group) ? group : null;
@@ -43,10 +43,10 @@ export function wakePeerDown(files: PeerFiles) {
 // After each good fleet read: the read that calls the open project's peer
 // back reads again the levels the tree shows.
 export function followFleet(files: PeerFiles) {
-  const down = !!files.openPeerDown();
+  const down = Boolean(files.openPeerDown());
   if (
     !down &&
-    files._filesPeerDown &&
+    (files._filesPeerDown ?? "") !== "" &&
     files._filesPeerDown === files.$store.projects.openSlug &&
     files._tree
   ) {

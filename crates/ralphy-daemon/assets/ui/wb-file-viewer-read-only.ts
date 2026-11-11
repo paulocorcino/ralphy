@@ -38,15 +38,15 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
 
   // --- a diff tab (read-only, two-sided) ----------------------------------
   function mountDiff(rec: BytesRecord, container: HTMLElement) {
-    if (rec.mounting || rec.mountFailed) return Promise.resolve();
+    if (rec.mounting === true || rec.mountFailed === true) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .then((monaco) => {
+      .then(() => {
         rec.mounting = false;
         // Same record-identity liveness rule as mountEditor: a diff tab closed
         // inside the boot window must mount nothing on its detached container.
         // A diff record always carries its HEAD side; half a diff would read as "no changes".
-        if (!monaco || !alive(rec) || rec.original === undefined) return;
+        if (!alive(rec) || rec.original === undefined) return null;
         const ed = WBMonaco.createDiff(container, {
           original: rec.original,
           modified: rec.content,
@@ -58,6 +58,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         rec.ed = ed;
         watchNarrow(rec, ed);
         if (rec.visible) ed.layout();
+        return null;
       })
       .catch((err: unknown) => {
         // No `<pre>` degrade here: two texts side by side have no honest
@@ -67,7 +68,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
         rec.mountFailed = true;
         console.error("[workbench] monaco diff failed to mount", err);
         messages.flash("Could not open the editor.");
-        window.Alpine?.store("tabs")?.closeTab(rec.id);
+        window.Alpine.store("tabs").closeTab(rec.id);
       });
   }
 
@@ -165,7 +166,8 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     unencodable: "This file cannot be decoded with that encoding.",
   };
   function refusalText(reason: string) {
-    if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
+    const text = REFUSAL_TEXT[reason] ?? "";
+    if (text !== "") return text;
     // `detached.html` loads no `wb-fail.ts`.
     return WBFail.failed(
       { message: reason },

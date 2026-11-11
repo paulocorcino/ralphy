@@ -32,12 +32,12 @@ fn the_destructive_console_clicks_confirm_first() {
         (
             r#"title: "Tile this fence?""#,
             1,
-            "if (ok) arrangeFence(f.id);",
+            "if (ok === true) arrangeFence(f.id);",
         ),
         (
             r#"title: "Remove this fence?""#,
             1,
-            "if (ok) removeFence(f.id);",
+            "if (ok === true) removeFence(f.id);",
         ),
         ("title: `Restart in ${", 1, "if (ok !== true) return;"),
         (
