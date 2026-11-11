@@ -240,7 +240,7 @@ pub(crate) mod win {
             )
         };
         if code != ERROR_SUCCESS {
-            let err = io::Error::from_raw_os_error(code as i32);
+            let err = io::Error::from_raw_os_error(code.cast_signed());
             bail!("reading the access list of {}: {err}", path.display());
         }
         let sd = Descriptor(sd);
@@ -378,7 +378,7 @@ pub(crate) mod win {
             )
         };
         if code != ERROR_SUCCESS {
-            let err = io::Error::from_raw_os_error(code as i32);
+            let err = io::Error::from_raw_os_error(code.cast_signed());
             bail!("writing the file's access list: {err}");
         }
         Ok(())

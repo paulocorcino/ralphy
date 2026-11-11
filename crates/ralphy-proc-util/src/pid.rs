@@ -16,7 +16,7 @@
 pub fn pid_is_alive(pid: u32) -> bool {
     // Signal 0 probes without sending: 0 = alive, EPERM = alive but not ours.
     // SAFETY: kill(2) takes plain integers and touches no memory.
-    let r = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    let r = unsafe { libc::kill(pid.cast_signed(), 0) };
     r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
@@ -30,7 +30,7 @@ pub fn kill_pid(pid: u32) {
     // `kill(0, ...)` and `kill(-1, ...)` would reach a group or every process.
     if pid > 1 {
         // SAFETY: kill(2) takes plain integers and touches no memory.
-        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        unsafe { libc::kill(pid.cast_signed(), libc::SIGKILL) };
     }
 }
 
@@ -50,7 +50,7 @@ pub fn pid_is_alive(pid: u32) -> bool {
             // A process we can see but not open is still a live process —
             // conservative: never take over a lock we can't inspect.
             return std::io::Error::last_os_error().raw_os_error()
-                == Some(ERROR_ACCESS_DENIED as i32);
+                == Some(ERROR_ACCESS_DENIED.cast_signed());
         }
         // An exited process can still be opened while a handle to it is held
         // elsewhere; STILL_ACTIVE separates the two.
@@ -87,9 +87,9 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     // SAFETY: `buf` holds `buf.len()` writable bytes, the size passed.
     let written = unsafe {
         libc::proc_pidpath(
-            pid as libc::c_int,
+            pid.cast_signed(),
             buf.as_mut_ptr().cast(),
-            buf.len() as u32,
+            u32::try_from(buf.len()).unwrap_or(u32::MAX),
         )
     };
     if written <= 0 {

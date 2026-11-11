@@ -74,7 +74,7 @@ impl Seed {
     /// records it, and a later code whose step is not strictly greater is a replay.
     /// Each candidate compares constant-time via `auth::ct_eq`.
     pub fn matched_step(&self, code: &str, unix_secs: u64, skew_steps: i64) -> Option<u64> {
-        let counter = (unix_secs / PERIOD) as i64;
+        let counter = (unix_secs / PERIOD).cast_signed();
         for s in -skew_steps..=skew_steps {
             let c = counter + s;
             if c < 0 {

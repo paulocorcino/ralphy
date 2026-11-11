@@ -114,7 +114,7 @@ fn utc_stamp(now: SystemTime) -> String {
     let since = now.duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = since.as_secs();
     let millis = since.subsec_millis();
-    let days = (secs / 86_400) as i64;
+    let days = (secs / 86_400).cast_signed();
     let rem = secs % 86_400;
     let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
 

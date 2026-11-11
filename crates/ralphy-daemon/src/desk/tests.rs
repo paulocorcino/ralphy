@@ -425,11 +425,12 @@ fn a_note_card_round_trips_its_placement() {
 
 #[test]
 fn prune_notes_keeps_the_newest_cap_in_layout_order() {
-    let notes: Vec<DeskNote> = (1..=NOTE_MAX as i64 + 1)
+    let max = i64::try_from(NOTE_MAX).expect("the note cap fits i64");
+    let notes: Vec<DeskNote> = (1..=max + 1)
         .map(|n| note(&format!("n{n}"), &format!("a{n}.note"), n))
         .collect();
     let kept: Vec<String> = prune_notes(notes).into_iter().map(|n| n.id).collect();
-    let expected: Vec<String> = (2..=NOTE_MAX as i64 + 1).map(|n| format!("n{n}")).collect();
+    let expected: Vec<String> = (2..=max + 1).map(|n| format!("n{n}")).collect();
     // The negative control is `n1`: an inverted or unsorted prune keeps it.
     assert_eq!(kept, expected, "the lowest-ts card is evicted");
     assert_eq!(kept.len(), NOTE_MAX);
