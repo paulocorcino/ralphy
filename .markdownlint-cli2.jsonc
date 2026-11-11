@@ -41,6 +41,8 @@
     // debt: 1 sites
     "MD041": false,
     // debt: 9 sites
-    "MD056": false
+    "MD056": false,
+    // debt: 1687 sites (new in markdownlint-cli2 0.24.0)
+    "MD060": false
   }
 }
