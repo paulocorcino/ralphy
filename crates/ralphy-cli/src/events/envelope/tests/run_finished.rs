@@ -114,7 +114,8 @@ fn run_finished_rollup_stays_coherent_under_a_starved_fold() {
     let issues = v["data"]["issues"].as_array().expect("an issues array");
     assert_eq!(issues.len(), 6, "the starved fold does not truncate: {v}");
 
-    let count = |s: &str| issues.iter().filter(|e| e["status"] == s).count() as u64;
+    let count = |s: &str| issues.iter().filter(|e| e["status"] == s).count();
+    let count = |s: &str| u64::try_from(count(s)).expect("a length fits u64");
     assert_eq!(count("done"), v["data"]["issues_done"].as_u64().unwrap());
     assert_eq!(count("done"), 1);
     assert_eq!(
@@ -125,8 +126,11 @@ fn run_finished_rollup_stays_coherent_under_a_starved_fold() {
     assert_eq!(count("hitl"), v["data"]["issues_hitl"].as_u64().unwrap());
     assert_eq!(count("hitl"), 1);
     // Everything else (skipped ×2 + planned) is the generic skip bucket.
-    let rest =
-        issues.len() as u64 - count("done") - count("non_green") - count("blocked") - count("hitl");
+    let rest = u64::try_from(issues.len()).expect("a length fits u64")
+        - count("done")
+        - count("non_green")
+        - count("blocked")
+        - count("hitl");
     assert_eq!(rest, v["data"]["issues_skipped"].as_u64().unwrap());
     assert_eq!(rest, 3);
 }

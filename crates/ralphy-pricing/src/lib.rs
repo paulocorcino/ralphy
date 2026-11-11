@@ -114,6 +114,7 @@ impl PriceTable {
     /// The read-time USD cost of `tokens` priced as `model`, or `None` when the
     /// model is absent from every layer (logged once — never reported as `0`).
     #[expect(
+        clippy::as_conversions,
         clippy::cast_precision_loss,
         reason = "a USD cost; a token count above 2^53 loses far less than a cent"
     )]

@@ -5,6 +5,7 @@
 /// `part / whole` as `0.0..=1.0`, and `0.0` for an empty whole — a share of
 /// nothing is not a share, and `NaN` would reach a bar's width.
 #[expect(
+    clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "a share for a bar or a percentage; a loss above 2^53 is far below its precision"
 )]
@@ -71,6 +72,7 @@ pub(crate) fn volume_label(tokens: u64) -> String {
 /// thousand. Mirrors the CLI footer's `fmt_tokens` so the web and the terminal
 /// abbreviate identically.
 #[expect(
+    clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
 )]

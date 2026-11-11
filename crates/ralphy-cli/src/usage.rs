@@ -139,6 +139,7 @@ fn fmt_usd(usd: Option<f64>, partial: bool) -> String {
 
 /// Format a token count compactly: `1.2M`, `8.4k`, or a bare count.
 #[expect(
+    clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
 )]

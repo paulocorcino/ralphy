@@ -363,7 +363,10 @@ fn windows_release(payload: &[u8]) -> (Release, Vec<u8>, String) {
         draft: false,
         body: None,
         assets: vec![
-            asset(name, zip_bytes.len() as u64),
+            asset(
+                name,
+                u64::try_from(zip_bytes.len()).expect("a length fits u64"),
+            ),
             asset(&format!("{name}.sha256"), 90),
         ],
     };

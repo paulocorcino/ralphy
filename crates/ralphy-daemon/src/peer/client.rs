@@ -61,6 +61,7 @@ const _: () = assert!(PEER_CONNECT_TIMEOUT.as_millis() < PEER_TIMEOUT.as_millis(
 /// 4/3 in base64, then rides in a small JSON envelope; derive the cap from that
 /// user-visible boundary while still bounding any descriptor-named port.
 #[expect(
+    clippy::as_conversions,
     clippy::cast_possible_truncation,
     reason = "MAX_IMAGE_BYTES is 4 MiB, which fits usize on every target"
 )]

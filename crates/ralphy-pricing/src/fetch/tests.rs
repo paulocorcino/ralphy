@@ -311,7 +311,7 @@ fn a_failed_fetch_falls_back_and_leaves_the_cache_alone() {
 fn an_oversized_body_fails_and_leaves_the_cache() {
     let filler = "a".repeat(usize::try_from(MAX_MODELS_DEV_BYTES).expect("16 MiB fits usize"));
     let body = format!("{{\"x\":\"{filler}\"}}");
-    assert!(body.len() as u64 > MAX_MODELS_DEV_BYTES);
+    assert!(u64::try_from(body.len()).expect("a length fits u64") > MAX_MODELS_DEV_BYTES);
     let (port, accepts, handle) = serve_n(http_response(200, &body), 1);
     let url = format!("http://127.0.0.1:{port}/api.json");
     assert!(fetch_body(&url).is_err(), "an oversized body was read");

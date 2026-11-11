@@ -291,7 +291,7 @@ fn a_tar_gz_yields_the_binary_too() {
         let mut builder = tar::Builder::new(encoder);
         let payload = b"new binary";
         let mut header = tar::Header::new_gnu();
-        header.set_size(payload.len() as u64);
+        header.set_size(u64::try_from(payload.len()).expect("a length fits u64"));
         header.set_mode(0o755);
         header.set_cksum();
         builder

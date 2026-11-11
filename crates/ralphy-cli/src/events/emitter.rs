@@ -106,13 +106,10 @@ fn probe_agent() -> ureq::Agent {
 fn public_ip() -> Option<String> {
     let agent = probe_agent();
     let deadline = std::time::Instant::now() + IP_PROBE_BUDGET;
-    let raw = IP_PROBES_RAW
-        .iter()
-        .map(|url| (*url, parse_raw_ip as fn(&str) -> Option<String>));
-    let probes = raw.chain(std::iter::once((
-        IP_PROBE_TRACE,
-        parse_cloudflare_trace as fn(&str) -> Option<String>,
-    )));
+    let parse_raw: fn(&str) -> Option<String> = parse_raw_ip;
+    let parse_trace: fn(&str) -> Option<String> = parse_cloudflare_trace;
+    let raw = IP_PROBES_RAW.iter().map(|url| (*url, parse_raw));
+    let probes = raw.chain(std::iter::once((IP_PROBE_TRACE, parse_trace)));
     for (url, parse) in probes {
         if std::time::Instant::now() >= deadline {
             return None;

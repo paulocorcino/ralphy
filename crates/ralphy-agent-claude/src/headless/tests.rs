@@ -268,7 +268,10 @@ fn run_headless_steps(
     max_exec_calls: u32,
 ) -> HeadlessReason {
     let mut streak = 0u32;
-    for (classified, committed) in calls.iter().take(max_exec_calls as usize) {
+    for (classified, committed) in calls
+        .iter()
+        .take(usize::try_from(max_exec_calls).expect("a u32 fits usize"))
+    {
         match headless_step(streak, classified.clone(), *committed) {
             LoopStep::Terminal(r) => return r,
             LoopStep::Continue(s) => streak = s,

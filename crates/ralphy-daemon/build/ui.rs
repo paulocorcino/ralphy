@@ -162,7 +162,7 @@ fn rewrite_imports(name: &str, code: String) -> Result<String> {
 
 fn span_of(src: &Str, base: u32) -> (usize, usize) {
     (
-        (src.span.lo.0 - base) as usize,
-        (src.span.hi.0 - base) as usize,
+        usize::try_from(src.span.lo.0 - base).expect("a u32 offset fits usize"),
+        usize::try_from(src.span.hi.0 - base).expect("a u32 offset fits usize"),
     )
 }

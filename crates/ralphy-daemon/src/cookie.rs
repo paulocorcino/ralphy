@@ -157,6 +157,16 @@ impl fmt::Debug for LoginId {
 }
 
 /// `bytes` in base64url without padding.
+/// The `BASE64URL` character of the low 6 bits of `acc`.
+fn sextet(acc: u32) -> char {
+    let index = usize::try_from(acc & 63).expect("6 bits fit usize");
+    char::from(
+        *BASE64URL
+            .get(index)
+            .expect("the alphabet has 64 characters"),
+    )
+}
+
 fn to_base64url(bytes: &[u8]) -> String {
     let mut out = String::with_capacity((bytes.len() * 8).div_ceil(6));
     let mut acc: u32 = 0;
@@ -166,11 +176,11 @@ fn to_base64url(bytes: &[u8]) -> String {
         bits += 8;
         while bits >= 6 {
             bits -= 6;
-            out.push(char::from(BASE64URL[((acc >> bits) & 63) as usize]));
+            out.push(sextet(acc >> bits));
         }
     }
     if bits > 0 {
-        out.push(char::from(BASE64URL[((acc << (6 - bits)) & 63) as usize]));
+        out.push(sextet(acc << (6 - bits)));
     }
     out
 }

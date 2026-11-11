@@ -165,7 +165,7 @@ fn assert_heartbeat_grew_then_froze(beat: &std::path::Path) {
             "level {label:?} never wrote, so its freeze proves nothing — got {text:?}"
         );
     }
-    let len_at_kill = text.len() as u64;
+    let len_at_kill = u64::try_from(text.len()).expect("a length fits u64");
     std::thread::sleep(Duration::from_millis(1500));
     let len_after = std::fs::metadata(beat).map_or(0, |m| m.len());
     assert_eq!(

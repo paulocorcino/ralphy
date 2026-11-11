@@ -131,7 +131,7 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
         if !ok {
             return None;
         }
-        buf.truncate(len as usize);
+        buf.truncate(usize::try_from(len).unwrap_or(usize::MAX));
         Some(std::path::PathBuf::from(String::from_utf16_lossy(&buf)))
     }
 }

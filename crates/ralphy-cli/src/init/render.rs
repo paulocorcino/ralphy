@@ -22,7 +22,7 @@ pub(crate) fn qa_color() -> bool {
 /// The content width the Q&A wraps to: the terminal's columns, clamped so help
 /// stays readable on a narrow pane and doesn't sprawl across an ultra-wide one.
 fn qa_width() -> usize {
-    (console::Term::stdout().size().1 as usize).clamp(48, 92)
+    usize::from(console::Term::stdout().size().1).clamp(48, 92)
 }
 
 /// `force_styling` overrides console's own TTY probe: the caller's `color`

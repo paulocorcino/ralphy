@@ -210,7 +210,7 @@ mod tests {
         fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
             self.output
                 .take()
-                .map(|b| Box::new(std::io::Cursor::new(b)) as _)
+                .map(|b| -> Box<dyn std::io::Read + Send> { Box::new(std::io::Cursor::new(b)) })
         }
     }
 

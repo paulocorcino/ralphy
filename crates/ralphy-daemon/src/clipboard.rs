@@ -59,7 +59,7 @@ pub fn decode_image(base64: Option<&str>) -> Result<(ImageType, Vec<u8>), &'stat
     let bytes = data_encoding::BASE64
         .decode(text.as_bytes())
         .map_err(|e| confine::miss("not an image", "decoding the pasted image", &e))?;
-    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_IMAGE_BYTES {
         return Err("too large");
     }
     let kind = ImageType::detect_raster(&bytes).ok_or("not an image")?;

@@ -165,6 +165,7 @@ fn read_status_update(line: &str) -> Option<(Option<String>, Snap)> {
     )?;
     // Unix seconds (float) → ms.
     #[expect(
+        clippy::as_conversions,
         clippy::cast_possible_truncation,
         reason = "a float-to-int `as` saturates, and Unix ms fit i64 for any real date"
     )]

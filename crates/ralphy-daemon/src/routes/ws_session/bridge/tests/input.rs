@@ -29,7 +29,7 @@ async fn input_is_not_held_behind_output() {
     attach.rx = rx;
     attach.snapshot.clear();
     for n in 0..512u32 {
-        tx.send(vec![b'a' + (n % 26) as u8; 4096])
+        tx.send(vec![b'a' + u8::try_from(n % 26).expect("below 256"); 4096])
             .expect("the attachment holds a receiver");
     }
     let mut size = manager

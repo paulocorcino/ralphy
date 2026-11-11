@@ -363,6 +363,7 @@ fn folder_size(dir: &Path) -> u64 {
 }
 
 #[expect(
+    clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
 )]

@@ -63,7 +63,7 @@ pub(super) fn emit_queue_built(
         None => None,
     };
     ralphy_core::emit::queue_built(
-        queue.len() as u64,
+        u64::try_from(queue.len()).unwrap_or(u64::MAX),
         &order.join(" -> "),
         stop_before,
         &issues_json,

@@ -72,7 +72,7 @@ struct Shown {
 
 impl Shown {
     fn count(&self) -> u64 {
-        self.offset + self.bytes.len() as u64
+        self.offset + u64::try_from(self.bytes.len()).expect("a length fits u64")
     }
 
     fn text(&self) -> String {

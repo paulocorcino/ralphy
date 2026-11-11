@@ -57,7 +57,7 @@ impl Seed {
         let hs = mac.finalize().into_bytes();
         // RFC 6238 §5.3 dynamic truncation: low 4 bits of the last byte pick the
         // 4-byte window; mask the top bit, take mod 10^6, zero-pad to 6.
-        let offset = (hs[hs.len() - 1] & 0x0f) as usize;
+        let offset = usize::from(hs.last().expect("a SHA-1 digest is 20 bytes") & 0x0f);
         let [b0, b1, b2, b3] = *hs
             .get(offset..)
             .and_then(<[u8]>::first_chunk::<4>)

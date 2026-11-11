@@ -74,7 +74,8 @@ pub(crate) fn close_and_record(
     let review_only = verdicts
         .iter()
         .filter(|v| v.kind == acceptance::VerdictKind::ReviewOnly)
-        .count() as u64;
+        .count();
+    let review_only = u64::try_from(review_only).unwrap_or(u64::MAX);
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),

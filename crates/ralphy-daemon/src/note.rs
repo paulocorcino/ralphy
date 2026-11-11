@@ -189,7 +189,7 @@ pub fn decode(bytes: &[u8]) -> Result<String, NoteError> {
         .map_err(|e| confine::miss(NoteError::NotNote, "inflating the note", &e))?;
     // Exactly, not at least: flate2 answers a stream that ends mid-block with
     // the bytes it got and no error, so the length IS the integrity check.
-    if text.len() as u64 != len {
+    if u64::try_from(text.len()).unwrap_or(u64::MAX) != len {
         return Err(NoteError::NotNote);
     }
     String::from_utf8(text)
@@ -248,7 +248,7 @@ pub fn write(root: &Path, rel: &str, markdown: &str) -> Result<(), NoteError> {
         fswrite::ensure_dir(root, ".ralphy")?;
         fswrite::ensure_dir(root, DIR)?;
     }
-    if markdown.len() as u64 > MAX_READ_BYTES {
+    if u64::try_from(markdown.len()).unwrap_or(u64::MAX) > MAX_READ_BYTES {
         return Err(NoteError::TooLarge);
     }
     Ok(fswrite::write_bytes(root, rel, &encode(markdown))?)

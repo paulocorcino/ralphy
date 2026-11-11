@@ -98,7 +98,10 @@ fn a_publish_between_the_replay_and_the_subscribe_waits_for_the_lock() {
     if waited.get() {
         publish(&kept, &tx, b"between\r\n".to_vec());
     }
-    assert_eq!(sub.offset, sub.replay.len() as u64);
+    assert_eq!(
+        sub.offset,
+        u64::try_from(sub.replay.len()).expect("a length fits u64")
+    );
     let mut seen = sub.replay;
     while let Ok(chunk) = sub.rx.try_recv() {
         seen.extend(chunk);

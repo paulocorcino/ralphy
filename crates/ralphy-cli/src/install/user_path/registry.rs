@@ -88,7 +88,7 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
     if kind != REG_SZ && kind != REG_EXPAND_SZ {
         bail!("the user Path is not a text value (type {kind})");
     }
-    let mut buf = vec![0u16; (bytes as usize).div_ceil(2)];
+    let mut buf = vec![0u16; usize::try_from(bytes).unwrap_or(0).div_ceil(2)];
     let mut size = u32::try_from(buf.len() * 2).unwrap_or(u32::MAX);
     // SAFETY: `buf` holds `size` bytes and outlives the call.
     let status = unsafe {
@@ -104,7 +104,7 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
     if status != ERROR_SUCCESS {
         bail!("reading the user Path failed (error {status})");
     }
-    buf.truncate((size as usize) / 2);
+    buf.truncate(usize::try_from(size).unwrap_or(usize::MAX) / 2);
     while buf.last() == Some(&0) {
         buf.pop();
     }
@@ -139,7 +139,7 @@ fn broadcast() {
             HWND_BROADCAST,
             WM_SETTINGCHANGE,
             0,
-            area.as_ptr() as isize,
+            area.as_ptr().expose_provenance().cast_signed(),
             SMTO_ABORTIFHUNG,
             5000,
             &raw mut result,

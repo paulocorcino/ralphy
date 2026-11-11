@@ -301,7 +301,7 @@ pub(crate) mod win {
             if probed != 0 || len == 0 {
                 return Err(io::Error::last_os_error()).context("sizing the token user");
             }
-            let mut buf = vec![0u64; (len as usize).div_ceil(8)];
+            let mut buf = vec![0u64; usize::try_from(len).unwrap_or(0).div_ceil(8)];
             // SAFETY: `buf` holds at least `len` writable bytes.
             let filled = unsafe {
                 GetTokenInformation(
@@ -341,7 +341,8 @@ pub(crate) mod win {
         let user = CurrentUser::query()?;
         let sid = user.sid();
         // SAFETY: `sid` is a valid SID owned by `user`.
-        let sid_len = unsafe { GetLengthSid(sid) } as usize;
+        let sid_len = unsafe { GetLengthSid(sid) };
+        let sid_len = usize::try_from(sid_len).context("sizing the user SID")?;
         // The ACE's `SidStart` field is the first 4 bytes of the SID.
         let acl_len =
             size_of::<ACL>() + size_of::<ACCESS_ALLOWED_ACE>() - size_of::<u32>() + sid_len;

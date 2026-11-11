@@ -241,7 +241,7 @@ impl Tail {
         let Ok(n) = file.read_to_end(&mut buf) else {
             return lines;
         };
-        self.offset += n as u64;
+        self.offset += u64::try_from(n).unwrap_or(u64::MAX);
         self.carry.extend_from_slice(&buf);
         while let Some(nl) = self.carry.iter().position(|b| *b == b'\n') {
             let line: Vec<u8> = self.carry.drain(..=nl).collect();

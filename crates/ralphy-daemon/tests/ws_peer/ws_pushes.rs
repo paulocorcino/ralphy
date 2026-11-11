@@ -178,7 +178,11 @@ async fn a_changed_project_registry_pushes_repos_dirty() {
     let push = change_until_push(&mut ws, "repos.dirty", |n| {
         // A new length each round: the stamp sees it even on a file system
         // that stores times to the second.
-        std::fs::write(&registry, "#".repeat(n as usize + 1)).unwrap();
+        std::fs::write(
+            &registry,
+            "#".repeat(usize::try_from(n).expect("a u32 fits usize") + 1),
+        )
+        .unwrap();
     })
     .await;
     assert!(push.is_some(), "repos.dirty after the registry changed");

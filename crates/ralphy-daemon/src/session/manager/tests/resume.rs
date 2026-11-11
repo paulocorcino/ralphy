@@ -96,7 +96,7 @@ fn a_since_before_the_ring_start_gets_the_snapshot() {
         kept.push(&bytes);
         i += 1;
     }
-    let start = (written - SCROLLBACK_CAP_BYTES) as u64;
+    let start = u64::try_from(written - SCROLLBACK_CAP_BYTES).expect("a length fits u64");
     assert!(!kept.replay(Some(start - 1)).1, "one byte before the ring");
     let (tail, resume) = kept.replay(Some(start));
     assert!(resume, "the first byte the ring has");
@@ -141,7 +141,11 @@ fn a_resume_while_publishing_gets_every_byte_after_since_once() {
     let expected = &all[usize::try_from(since).expect("a small count")..];
     for (n, mut sub) in std::iter::once(middle).chain(later).enumerate() {
         assert!(sub.resume, "attach {n} resumes");
-        assert_eq!(sub.offset, since + sub.replay.len() as u64, "attach {n}");
+        assert_eq!(
+            sub.offset,
+            since + u64::try_from(sub.replay.len()).expect("a length fits u64"),
+            "attach {n}"
+        );
         let mut seen = sub.replay;
         while let Ok(chunk) = sub.rx.try_recv() {
             seen.extend(chunk);
@@ -173,7 +177,10 @@ async fn an_attachment_says_its_offset_and_whether_it_resumed() {
         .attach_as(id, false, None, None, Some(offset))
         .expect("a free slot");
     assert!(resumed.resume);
-    assert_eq!(resumed.offset, offset + resumed.snapshot.len() as u64);
+    assert_eq!(
+        resumed.offset,
+        offset + u64::try_from(resumed.snapshot.len()).expect("a length fits u64")
+    );
     let watcher = manager.watch(id, None).expect("a live session");
     assert!(!watcher.resume);
     manager.close(id);
@@ -224,7 +231,7 @@ async fn a_resync_after_a_lag_shows_the_session_screen() {
     page.feed(&watcher.snapshot);
     let mut live = 0u64;
     while let Ok(chunk) = watcher.rx.try_recv() {
-        live += chunk.len() as u64;
+        live += u64::try_from(chunk.len()).expect("a length fits u64");
         page.feed(&chunk);
     }
     assert_eq!(

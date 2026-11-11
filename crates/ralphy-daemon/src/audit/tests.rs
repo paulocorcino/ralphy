@@ -40,7 +40,11 @@ fn prune_cuts_the_oldest_lines_when_the_file_is_over_the_cap() {
     std::fs::write(&path, lines.join("\n") + "\n").unwrap();
     prune(&path, now).unwrap();
     let kept = std::fs::read_to_string(&path).unwrap();
-    assert!(kept.len() as u64 <= PRUNE_TO_BYTES, "{}", kept.len());
+    assert!(
+        u64::try_from(kept.len()).expect("a length fits u64") <= PRUNE_TO_BYTES,
+        "{}",
+        kept.len()
+    );
     assert!(kept.contains("\"20x"), "the newest line stays");
     assert!(!kept.contains("\"00x"), "the oldest line goes");
 }

@@ -129,7 +129,11 @@ fn decode_refuses_a_text_that_inflates_past_the_read_cap() {
     // size, so the bomb is never held whole beyond one byte of slack.
     let max = usize::try_from(MAX_READ_BYTES).expect("2 MiB fits usize");
     let bomb = encode(&"a".repeat(max + 1));
-    assert!((bomb.len() as u64) < MAX_READ_BYTES, "{}", bomb.len());
+    assert!(
+        u64::try_from(bomb.len()).expect("a length fits u64") < MAX_READ_BYTES,
+        "{}",
+        bomb.len()
+    );
     assert_eq!(decode(&bomb), Err(NoteError::TooLarge));
 }
 

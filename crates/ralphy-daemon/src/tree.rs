@@ -319,6 +319,7 @@ pub const MAX_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 /// plus 64 KiB for the JSON envelope. A larger message is refused before it is
 /// parsed (ADR-0072 D11).
 #[expect(
+    clippy::as_conversions,
     clippy::cast_possible_truncation,
     reason = "MAX_IMAGE_BYTES is 4 MiB, which fits usize on every target"
 )]

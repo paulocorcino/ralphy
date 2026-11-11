@@ -91,6 +91,7 @@ impl PresenceBoard {
             None => None,
             Some(at) if at.is_finite() => {
                 #[expect(
+                    clippy::as_conversions,
                     clippy::cast_possible_truncation,
                     clippy::cast_sign_loss,
                     reason = "a float-to-int `as` saturates, and max(0.0) keeps it at or above 0"
