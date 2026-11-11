@@ -71,7 +71,7 @@ fn queue_snapshot_data_matches_queue_built_data() {
                 order: vec![1],
                 stop_before: None,
                 issues: issues.clone(),
-                assignee_filter: filter.map(str::to_string),
+                assignee_filter: filter.map(str::to_owned),
                 scope: None,
             },
             &RunState::new("t", 1),
@@ -91,7 +91,7 @@ fn queue_snapshot_data_matches_queue_built_data() {
         assert_eq!(snapshot["data"], built["data"], "{case}");
     }
 }
-/// Each run event maps to its CloudEvent `type`, carries `subject:
+/// Each run event maps to its `CloudEvent` `type`, carries `subject:
 /// issue/<n>` only when it is about one issue (a run-scoped event carries
 /// none), and puts its fields under `data`.
 #[test]
@@ -387,7 +387,7 @@ fn run_started_maps_cli_params_without_subject() {
         scope: None,
     });
     state.apply(ev.clone());
-    let v = runevent_to_cloudevent(&ev, &ctx(), &state).expect("mapped");
+    let v = runevent_to_cloudevent(&ev, &ctx(), &state);
     assert_eq!(v["type"], "dev.ralphy.run.started");
     assert!(
         v.get("subject").is_none(),

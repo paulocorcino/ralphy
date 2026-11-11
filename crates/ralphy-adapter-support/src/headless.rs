@@ -24,7 +24,7 @@ pub use logged::{run_headless_logged, run_headless_logged_watched, HeadlessCall,
 /// The raw result of driving one headless child to completion or timeout.
 ///
 /// `stdout` and `stderr` are kept **separate** (each captured as lossy-UTF-8) so
-/// every adapter can combine or slice them as it needs — the OpenCode adapter
+/// every adapter can combine or slice them as it needs — the `OpenCode` adapter
 /// parses the JSON event stream from stdout alone, while Codex and Claude
 /// concatenate the two. `exit` is `Some(status)` on a natural exit and `None`
 /// exactly when the child was killed — either on the timeout deadline (then
@@ -345,7 +345,7 @@ fn reap_reason(
     // which clock fired.
     if let Some(b) = beat {
         if idle.expired(b, Instant::now()) {
-            ralphy_core::emit::idle_reaped(idle.window().map(|w| w.as_secs() / 60).unwrap_or(0));
+            ralphy_core::emit::idle_reaped(idle.window().map_or(0, |w| w.as_secs() / 60));
             return Some(Reap::Idle);
         }
     }
@@ -425,23 +425,17 @@ fn recv_and_join(
     grace: Duration,
     stream: &str,
 ) -> Vec<u8> {
-    match rx.recv_timeout(grace) {
-        Ok(buf) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the reader already sent its bytes; a panic in it leaves nothing to keep"
-            )]
-            let _ = handle.join();
-            buf
-        }
-        Err(_) => {
-            tracing::warn!(
-                stream,
-                "headless reader still blocked after the tree-kill — this stream's captured \
-                 output was dropped"
-            );
-            Vec::new()
-        }
+    if let Ok(buf) = rx.recv_timeout(grace) {
+        // A panic in the reader leaves nothing to keep: its payload is dropped here.
+        let _reader_exit = handle.join();
+        buf
+    } else {
+        tracing::warn!(
+            stream,
+            "headless reader still blocked after the tree-kill — this stream's captured \
+             output was dropped"
+        );
+        Vec::new()
     }
 }
 

@@ -3,7 +3,7 @@
 //! of the daemon's secrets (`RALPHY_DAEMON_TOKEN`, `RALPHY_TELEGRAM_TOKEN`,
 //! `RALPHY_EVENTS_TOKEN`), yet DOES receive the dispatch-path
 //! `RALPHY_DAEMON_ID`. The test puts all three secrets in its own environment,
-//! dispatches the helper bin with a daemon_id, and asserts the dump reads
+//! dispatches the helper bin with a `daemon_id`, and asserts the dump reads
 //! `ABSENT` for each secret next to the injected `RALPHY_DAEMON_ID`.
 //!
 //! The spawn removes the secrets itself, so this holds whether or not the

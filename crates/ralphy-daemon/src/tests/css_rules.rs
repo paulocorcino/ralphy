@@ -135,15 +135,13 @@ fn the_write_and_discard_controls_are_not_hover_gated() {
 fn strip_css_comments(block: &str) -> String {
     let mut out = String::new();
     let mut rest = block;
-    while let Some(at) = rest.find("/*") {
-        out.push_str(&rest[..at]);
-        match rest[at + 2..].find("*/") {
-            Some(end_at) => rest = &rest[at + 2 + end_at + 2..],
-            None => {
-                rest = "";
-                break;
-            }
-        }
+    while let Some((before, after)) = rest.split_once("/*") {
+        out.push_str(before);
+        let Some((_, tail)) = after.split_once("*/") else {
+            rest = "";
+            break;
+        };
+        rest = tail;
     }
     out.push_str(rest);
     out
@@ -246,7 +244,7 @@ fn no_selector_sets_one_property_twice() {
                             let Some((prop, value)) = decl.split_once(':') else {
                                 continue;
                             };
-                            let prop = prop.trim().to_string();
+                            let prop = prop.trim().to_owned();
                             let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
                             if prop.is_empty() || prop.starts_with("--") {
                                 continue;

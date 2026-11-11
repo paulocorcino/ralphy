@@ -46,7 +46,7 @@ pub fn close_report(plan_md: &str) -> Option<String> {
 /// or blank.
 pub fn infeasible_reason(plan_md: &str) -> Option<String> {
     let reason = section(plan_md, r"(?im)^##\s+Feasible\b.*$");
-    (!reason.is_empty()).then(|| reason.to_string())
+    (!reason.is_empty()).then(|| reason.to_owned())
 }
 
 /// Whether an infeasible reason is a bundle verdict: the planner judged the
@@ -75,7 +75,7 @@ pub fn find_handoff_comment(comments: &[String]) -> Option<String> {
         .iter()
         .rev()
         .find(|c| re.is_match(c))
-        .map(|c| c.trim().to_string())
+        .map(|c| c.trim().to_owned())
 }
 
 /// Render `.ralphy/handoffs.md` from the collected `(issue number, handoff
@@ -145,7 +145,7 @@ pub fn knowledge_used(plan_md: &str) -> Option<Vec<String>> {
     let items: Vec<String> = block
         .lines()
         .filter_map(citation)
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect();
     if let [only] = items.as_slice() {
         if only
@@ -309,10 +309,10 @@ some note
     #[test]
     fn find_handoff_comment_picks_last_match() {
         let comments = vec![
-            "## Acceptance ledger\n- **[verified]** x".to_string(),
-            "## Handoff\n\n- **Delivered**: v1".to_string(),
-            "just chatter".to_string(),
-            "## Handoff\n\n- **Delivered**: v2 (re-run)".to_string(),
+            "## Acceptance ledger\n- **[verified]** x".to_owned(),
+            "## Handoff\n\n- **Delivered**: v1".to_owned(),
+            "just chatter".to_owned(),
+            "## Handoff\n\n- **Delivered**: v2 (re-run)".to_owned(),
         ];
         let found = find_handoff_comment(&comments).expect("handoff present");
         assert!(found.contains("v2 (re-run)"));
@@ -320,15 +320,15 @@ some note
 
     #[test]
     fn find_handoff_comment_none_when_absent() {
-        let comments = vec!["## Acceptance ledger\nstuff".to_string()];
+        let comments = vec!["## Acceptance ledger\nstuff".to_owned()];
         assert_eq!(find_handoff_comment(&comments), None);
     }
 
     #[test]
     fn render_handoffs_file_lists_each_dependency() {
         let entries = vec![
-            (2u64, "## Handoff\n\n- **Delivered**: lab".to_string()),
-            (5u64, "## Handoff\n\n- **Delivered**: schema".to_string()),
+            (2u64, "## Handoff\n\n- **Delivered**: lab".to_owned()),
+            (5u64, "## Handoff\n\n- **Delivered**: schema".to_owned()),
         ];
         let file = render_handoffs_file(&entries).expect("file content");
         assert!(file.contains("## From #2"));
@@ -427,7 +427,7 @@ curl http://localhost:8088/
         assert_eq!(
             knowledge_used(md),
             Some(vec![
-                "\"Host port 8080 is occupied\" bullet from KNOWLEDGE.md".to_string()
+                "\"Host port 8080 is occupied\" bullet from KNOWLEDGE.md".to_owned()
             ])
         );
     }
@@ -451,8 +451,8 @@ curl http://localhost:8088/
         assert_eq!(
             knowledge_used(md),
             Some(vec![
-                "\"Toolchain & platform\" — cargo test needs docker up first".to_string(),
-                "handoffs.md #5: schema rejects empty DEVICEID".to_string(),
+                "\"Toolchain & platform\" — cargo test needs docker up first".to_owned(),
+                "handoffs.md #5: schema rejects empty DEVICEID".to_owned(),
             ])
         );
     }

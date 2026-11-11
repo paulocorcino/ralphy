@@ -177,10 +177,10 @@ pub(crate) fn build_run_queue(
 /// The issues whose `stop-before` is ignored: `--issues` verbatim, else the
 /// single `--only-issue`, else none.
 fn forced_issue_set(args: &RunArgs) -> Vec<u64> {
-    if !args.issues.is_empty() {
-        args.issues.clone()
-    } else {
+    if args.issues.is_empty() {
         args.only_issue.into_iter().collect()
+    } else {
+        args.issues.clone()
     }
 }
 
@@ -212,7 +212,7 @@ fn label_queue(
 
 /// Order by dependency (Blocked-by edges + split-bundle children), ascending
 /// number as tie-break — the pending list shown to the user IS the sequence
-/// run_queue will work, and a dependency-consistent order lets one run drain
+/// `run_queue` will work, and a dependency-consistent order lets one run drain
 /// a graph whose numbering disagrees with its edges.
 ///
 /// Fetch the full open-issue set so a blocker that sits OUTSIDE the queue but is
@@ -405,7 +405,7 @@ pub(crate) fn operating_branch(
 ) -> String {
     match mode {
         BranchMode::New => format!("afk/run-{stamp}"),
-        BranchMode::Current => start_branch.unwrap_or_default().to_string(),
+        BranchMode::Current => start_branch.unwrap_or_default().to_owned(),
     }
 }
 

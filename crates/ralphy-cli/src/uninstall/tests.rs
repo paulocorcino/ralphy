@@ -95,7 +95,7 @@ fn the_binary_and_its_parked_copies_go_and_nothing_else() {
     for name in [
         format!("{}.old.2", binary_name()),
         format!("{}.older", binary_name()),
-        "ralphy-notes".to_string(),
+        "ralphy-notes".to_owned(),
     ] {
         std::fs::write(dir.path().join(name), "x").expect("seed");
     }
@@ -114,7 +114,7 @@ fn the_binary_and_its_parked_copies_go_and_nothing_else() {
     assert_eq!(
         left,
         [
-            "ralphy-notes".to_string(),
+            "ralphy-notes".to_owned(),
             format!("{}.older", binary_name())
         ]
     );

@@ -10,14 +10,14 @@ use crate::session::Agent;
 /// The files one console's hooks need, under `<store>/sessions/`: the
 /// settings file a Claude console is launched with, and the status file the
 /// hooks append to. A Codex console takes its hooks as arguments, so it has
-/// no settings file. An OpenCode console has the state plugin file instead.
+/// no settings file. An `OpenCode` console has the state plugin file instead.
 /// The files are the session's and go with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusFiles {
     pub vendor: HookVendor,
     pub settings: Option<PathBuf>,
     pub status: PathBuf,
-    /// The state plugin an OpenCode console loads.
+    /// The state plugin an `OpenCode` console loads.
     pub plugin: Option<PathBuf>,
 }
 

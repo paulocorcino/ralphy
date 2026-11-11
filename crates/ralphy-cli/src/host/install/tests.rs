@@ -17,8 +17,8 @@ const LINUX_PROBE: &str =
 fn local<'a>(store: &'a Path, build: &str, target: &'static str) -> Local<'a> {
     Local {
         store,
-        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FD0".to_string()),
-        name: Some("anvil".to_string()),
+        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FD0".to_owned()),
+        name: Some("anvil".to_owned()),
         port: 7401,
         build: Build::parse(build),
         target: Some(target),
@@ -34,7 +34,7 @@ struct Fixed {
 
 impl Fetch for Fixed {
     fn binary(&mut self, source: &Source, target: &str) -> Result<Vec<u8>> {
-        self.asked.push((source.clone(), target.to_string()));
+        self.asked.push((source.clone(), target.to_owned()));
         Ok(BINARY.to_vec())
     }
 }
@@ -82,7 +82,7 @@ fn no_keygen(_: &Path) -> Result<()> {
 
 fn run(fake: &mut FakeHost, local: &Local<'_>, fetch: &mut Fixed) -> (Result<()>, String) {
     let mut printed = Report::text(Vec::new());
-    let svrapp = pair::Destination {
+    let svrapp = Destination {
         dest: "svrapp",
         key_file: None,
     };
@@ -114,7 +114,7 @@ fn an_old_ralphy_gets_the_exact_bytes_and_its_daemon_moves_to_them() {
 
     assert_eq!(
         fetch.asked,
-        vec![(Source::ThisComputer, "linux-x64".to_string())]
+        vec![(Source::ThisComputer, "linux-x64".to_owned())]
     );
     let write = fake.index_of("cat > ").expect("the binary was written");
     assert_eq!(fake.calls[write].2, BINARY, "the bytes on stdin");
@@ -239,7 +239,7 @@ fn nothing_is_sent_when_the_install_must_not_happen() {
                 assert!(
                     result.is_ok() && printed.contains("Nothing was installed"),
                     "{why}"
-                )
+                );
             }
             _ => assert!(result.is_err(), "{why}"),
         }
@@ -267,9 +267,9 @@ fn a_development_build_sends_the_latest_release_to_another_target() {
     let store = tempfile::tempdir().unwrap();
     let facts = parse_facts(HostOs::Linux, LINUX_PROBE);
     let mut dev = local(store.path(), "v0.1.0-rc.30-4-gabc1234", "windows-x64");
-    dev.latest = Some("v0.1.0-rc.31".to_string());
+    dev.latest = Some("v0.1.0-rc.31".to_owned());
     let sent = offer(&facts, &dev).expect("the latest release");
-    assert_eq!(sent.source, Source::Release("v0.1.0-rc.31".to_string()));
+    assert_eq!(sent.source, Source::Release("v0.1.0-rc.31".to_owned()));
     assert_eq!(sent.version, "v0.1.0-rc.31");
     assert_eq!(sent.target, "linux-x64");
 
@@ -290,7 +290,7 @@ fn a_development_build_sends_the_latest_release_to_another_target() {
     assert_eq!(own.source, Source::ThisComputer);
     let release = local(store.path(), "v0.1.0-rc.30", "windows-x64");
     let other = offer(&facts, &release).expect("a release");
-    assert_eq!(other.source, Source::Release("v0.1.0-rc.30".to_string()));
+    assert_eq!(other.source, Source::Release("v0.1.0-rc.30".to_owned()));
     assert_eq!(other.target, "linux-x64");
 }
 
@@ -308,7 +308,7 @@ fn check_announces_what_install_would_send() {
     pair::check(
         &mut fake,
         &local(store.path(), "v0.1.0-rc.30", "windows-x64"),
-        pair::Destination {
+        Destination {
             dest: "svrapp",
             key_file: None,
         },
@@ -345,17 +345,17 @@ fn windows_release(payload: &[u8]) -> (Release, Vec<u8>, String) {
             zip::write::SimpleFileOptions::default(),
         )
         .expect("entry");
-        std::io::Write::write_all(&mut zip, payload).expect("write");
+        Write::write_all(&mut zip, payload).expect("write");
         zip.finish().expect("finish");
     }
     let name = "ralphy-v0.1.0-rc.30-windows-x64.zip";
     let asset = |name: &str, size: u64| Asset {
-        name: name.to_string(),
+        name: name.to_owned(),
         browser_download_url: format!("https://example.invalid/{name}"),
         size,
     };
     let release = Release {
-        tag_name: "v0.1.0-rc.30".to_string(),
+        tag_name: "v0.1.0-rc.30".to_owned(),
         name: None,
         published_at: None,
         html_url: String::new(),

@@ -152,7 +152,12 @@ mod tests {
     fn runs(ids: &[&str]) -> Vec<(String, u32)> {
         ids.iter()
             .enumerate()
-            .map(|(i, id)| ((*id).to_string(), 1000 + i as u32))
+            .map(|(i, id)| {
+                (
+                    (*id).to_owned(),
+                    1000 + u32::try_from(i).expect("a test lists few runs"),
+                )
+            })
             .collect()
     }
 
@@ -166,7 +171,7 @@ mod tests {
     #[test]
     fn a_single_live_run_needs_no_runid() {
         let got = choose_target(&runs(&["01A"]), None).expect("one run resolves");
-        assert_eq!(got, Some(("01A".to_string(), 1000)));
+        assert_eq!(got, Some(("01A".to_owned(), 1000)));
     }
 
     #[test]
@@ -184,7 +189,7 @@ mod tests {
     #[test]
     fn an_explicit_runid_picks_that_run_out_of_several() {
         let got = choose_target(&runs(&["01A", "01B"]), Some("01B")).expect("named run resolves");
-        assert_eq!(got, Some(("01B".to_string(), 1001)));
+        assert_eq!(got, Some(("01B".to_owned(), 1001)));
     }
 
     /// The negative control for the arm above: naming a run that is not live is

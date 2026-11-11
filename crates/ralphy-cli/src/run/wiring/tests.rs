@@ -20,7 +20,7 @@ fn effort_translation_preserves_each_resolved_phase() {
 
 /// Every `build_agent` arm hands the adapter the effort it resolved for each
 /// phase — through `effort_strings`, into the adapter's own setters (Copilot
-/// falls back to its persisted `copilot.*_effort`; OpenCode's dialect rides
+/// falls back to its persisted `copilot.*_effort`; `OpenCode`'s dialect rides
 /// `with_variant`). Read from production text with whitespace removed, one
 /// arm at a time, whatever the order of the arms.
 #[test]
@@ -246,8 +246,7 @@ fn resolve_copilot_models_per_phase() {
         ),
     ];
     for (case, plan, exec, settings, want_plan, want_exec) in rows {
-        let resolved =
-            resolve_copilot(plan.map(str::to_string), exec.map(str::to_string), settings);
+        let resolved = resolve_copilot(plan.map(str::to_owned), exec.map(str::to_owned), settings);
         assert_eq!(resolved.plan_model.as_deref(), want_plan, "{case}: plan");
         assert_eq!(resolved.exec_model.as_deref(), want_exec, "{case}: exec");
     }
@@ -303,8 +302,8 @@ fn resolve_cursor_takes_its_models_from_the_flags_only() {
     ];
     for (case, plan, exec) in rows {
         let resolved = resolve_cursor(
-            plan.map(str::to_string),
-            exec.map(str::to_string),
+            plan.map(str::to_owned),
+            exec.map(str::to_owned),
             &ralphy_agent_cursor::CursorSettings::default(),
         );
         assert_eq!(resolved.plan_model.as_deref(), plan, "{case}: plan");
@@ -439,5 +438,5 @@ fn the_issues_flag_is_the_forced_set_verbatim() {
         forced_issue_set(&run_args(&["--issues", "5,3,9"])),
         [5, 3, 9]
     );
-    assert!(forced_issue_set(&run_args(&[])).is_empty());
+    assert_eq!(forced_issue_set(&run_args(&[])), Vec::<u64>::new());
 }

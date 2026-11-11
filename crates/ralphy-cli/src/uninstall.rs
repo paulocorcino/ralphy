@@ -248,7 +248,7 @@ fn same_path_key(path: &Path) -> String {
     if cfg!(windows) {
         text.to_lowercase()
     } else {
-        text.to_string()
+        text.to_owned()
     }
 }
 

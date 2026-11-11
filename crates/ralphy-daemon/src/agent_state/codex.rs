@@ -22,7 +22,7 @@ const QUESTION_TOOL: &str = "request_user_input";
 /// and no human is asked, so with `auto_review` it is work, not a wait. Codex
 /// sends no event when the operator grants a permission: the wait ends at the
 /// tool's `PostToolUse`, when the tool ends.
-pub fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
+pub(super) fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
     let tool = line.tool_name.as_deref();
     let signal = match line.event.as_str() {
         "SessionStart" => Signal::SessionBoundary,
@@ -32,7 +32,7 @@ pub fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
             tool_use_id: line.tool_use_id.clone(),
             detail: match line.question.as_deref().map(str::trim) {
                 Some(q) if !q.is_empty() => format!("{QUESTION_TOOL}: {q}"),
-                _ => QUESTION_TOOL.to_string(),
+                _ => QUESTION_TOOL.to_owned(),
             },
         },
         "PreToolUse" => Signal::Work,
@@ -42,7 +42,7 @@ pub fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
             tool_use_id: line.tool_use_id.clone(),
             detail: match tool {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "PostToolUse" => Signal::WaitEnd {
@@ -58,7 +58,7 @@ pub fn codex_signal(line: &StatusLine, auto_review: bool) -> Option<Signal> {
 
 /// The map of a console's Codex, which the daemon launches without
 /// auto-review.
-pub fn launched(line: &StatusLine) -> Option<Signal> {
+pub(super) fn launched(line: &StatusLine) -> Option<Signal> {
     codex_signal(line, AUTO_REVIEW)
 }
 
@@ -98,7 +98,7 @@ mod tests {
                     serde_json::json!({
                         "state": o.state.as_str(),
                         "detail": o.detail,
-                        "cause": o.cause.map(|c| c.as_str()),
+                        "cause": o.cause.map(super::super::fold::Cause::as_str),
                         "ts": o.ts,
                     })
                 });

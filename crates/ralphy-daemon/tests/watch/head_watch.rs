@@ -76,7 +76,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 async fn send_head_watch(ws: &mut Ws, repo: &str, checkout: Option<&str>) {
@@ -86,7 +86,7 @@ async fn send_head_watch(ws: &mut Ws, repo: &str, checkout: Option<&str>) {
     }
     let frame = Frame::Command(Command {
         id: 0,
-        verb: "head.watch".to_string(),
+        verb: "head.watch".to_owned(),
         payload,
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))

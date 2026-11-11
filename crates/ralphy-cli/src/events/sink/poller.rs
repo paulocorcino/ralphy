@@ -75,8 +75,8 @@ mod tests {
     /// A test [`EventCtx`] with a stub emitter carrying a known `pid`.
     fn test_ctx() -> EventCtx {
         EventCtx {
-            source: "ralphy/o/r".to_string(),
-            runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
+            source: "ralphy/o/r".to_owned(),
+            runid: "01TESTRUNIDTESTRUNIDTE".to_owned(),
             emitter: serde_json::json!({ "version": "0.0.0", "pid": 4242 }),
             git: serde_json::json!({ "repository": "o/r", "branch": "afk/run-t" }),
         }
@@ -129,7 +129,7 @@ mod tests {
             "## Steps\n- [x] do a `thing`\n- [ ] do another\n",
         )
         .unwrap();
-        crate::plan_progress::testutil::advance_mtime(&plan_path);
+        plan_progress::testutil::advance_mtime(&plan_path);
         poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
 
         let delivered = sink.0.lock().unwrap();
@@ -171,8 +171,8 @@ mod tests {
 
         let mut poller = StepPoller::default();
         poller.reset_from_written(&[
-            ("do a **thing**".to_string(), "checked".to_string()),
-            ("surprised".to_string(), "noticed".to_string()),
+            ("do a **thing**".to_owned(), "checked".to_owned()),
+            ("surprised".to_owned(), "noticed".to_owned()),
         ]);
         poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
         assert!(

@@ -24,15 +24,15 @@ pub(crate) fn host_name(host: &str) -> &str {
 /// A wildcard bind (`0.0.0.0`/`::`) answers on interfaces we cannot enumerate
 /// without probing the OS; loopback is included and everything else must be
 /// declared. That is the `configured` list: an operator-supplied allowlist of
-/// names they reach the daemon by (MagicDNS, a reverse-proxy hostname). It is
+/// names they reach the daemon by (`MagicDNS`, a reverse-proxy hostname). It is
 /// also the DNS-rebinding boundary — an attacker domain that re-resolves to the
 /// daemon's IP is refused unless the operator named it.
 pub(super) fn allowed_host_set(bound_ip: IpAddr, configured: &[String]) -> Vec<String> {
     let mut hosts = Vec::new();
     if bound_ip.is_loopback() || bound_ip.is_unspecified() {
-        hosts.push("127.0.0.1".to_string());
-        hosts.push("localhost".to_string());
-        hosts.push("::1".to_string());
+        hosts.push("127.0.0.1".to_owned());
+        hosts.push("localhost".to_owned());
+        hosts.push("::1".to_owned());
     }
     if !bound_ip.is_loopback() && !bound_ip.is_unspecified() {
         hosts.push(bound_ip.to_string());
@@ -69,7 +69,7 @@ pub(super) fn normalize_declared(raw: &str) -> String {
 pub(super) fn origin_host(host: &str) -> String {
     match host.parse::<IpAddr>() {
         Ok(IpAddr::V6(ip)) => format!("[{ip}]"),
-        _ => host.to_string(),
+        _ => host.to_owned(),
     }
 }
 

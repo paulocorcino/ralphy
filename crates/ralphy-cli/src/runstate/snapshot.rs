@@ -3,7 +3,7 @@
 //!
 //! No process, no clock, no filesystem — everything time- or environment-derived
 //! arrives in [`SnapshotCtx`], minted once at run boot. That is what lets this be
-//! unit-tested like the CloudEvents envelope mapper and the fold itself; the
+//! unit-tested like the `CloudEvents` envelope mapper and the fold itself; the
 //! writing lives in `run::snapshot_engine`.
 
 use ralphy_run_snapshot::{
@@ -17,7 +17,7 @@ use crate::plan_progress::PlanProgress;
 /// The run facts the fold does not carry: identity, where it runs, and when it
 /// started. Constant for the life of a run.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SnapshotCtx {
+pub(crate) struct SnapshotCtx {
     pub runid: String,
     pub pid: u32,
     /// The repo slug (`owner/name`), matching the events `git.repository`.
@@ -39,7 +39,7 @@ pub struct SnapshotCtx {
 ///
 /// `plan` arrives as an argument rather than out of [`RunState`]: it is polled
 /// from the filesystem, and the fold is built from `tracing` events only (#330).
-pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunSnapshot {
+pub(crate) fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunSnapshot {
     RunSnapshot {
         v: ralphy_run_snapshot::SNAPSHOT_VERSION,
         runid: ctx.runid.clone(),
@@ -59,7 +59,7 @@ pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunS
         issues: trail(state),
         phase: PhaseBlock {
             active: state.active,
-            state: state.run_phase().to_string(),
+            state: state.run_phase().to_owned(),
             // Always `None` here, and that is the module's purity holding: the
             // phase clock's anchor is a wall-clock instant, and this function has
             // no clock. `run::snapshot_engine` stamps it, because only something
@@ -97,7 +97,7 @@ fn plan_block(plan: &PlanProgress, state: &RunState) -> PlanBlock {
             .iter()
             .map(|s| PlanStepBlock {
                 text: s.text.clone(),
-                status: s.status.wire().to_string(),
+                status: s.status.wire().to_owned(),
             })
             .collect(),
     }
@@ -136,8 +136,8 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
             } else {
                 e.title.clone()
             },
-            status: status_wire(&e.status).to_string(),
-            kind: e.kind.map(|k| k.skip_wire().to_string()),
+            status: status_wire(&e.status).to_owned(),
+            kind: e.kind.map(|k| k.skip_wire().to_owned()),
             blocked_by: e.blocked_by.clone(),
             model: e.model.clone(),
             effort: e.effort.clone(),
@@ -147,7 +147,7 @@ fn block(state: &RunState, number: u64) -> IssueBlock {
         None => IssueBlock {
             number,
             title: queue_title.unwrap_or_default(),
-            status: "pending".to_string(),
+            status: "pending".to_owned(),
             ..IssueBlock::default()
         },
     }
@@ -334,9 +334,9 @@ mod tests {
             steps: crate::plan_progress::parse_steps("- [x] previous issue's step\n"),
         };
         let snap = project(&ctx(), &two_of_three(), &plan);
-        assert_eq!(snap.plan, ralphy_run_snapshot::PlanBlock::default());
+        assert_eq!(snap.plan, PlanBlock::default());
         assert_eq!(snap.plan.issue, None);
-        assert!(snap.plan.steps.is_empty());
+        assert_eq!(snap.plan.steps, Vec::<PlanStepBlock>::new());
     }
 
     /// Whether the flat object table `name` of `panel` (a `name: {` line up

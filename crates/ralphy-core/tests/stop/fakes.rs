@@ -49,7 +49,7 @@ impl StoppingAgent {
     }
 
     pub(crate) fn littering(mut self, name: &str) -> Self {
-        self.litter = Some(name.to_string());
+        self.litter = Some(name.to_owned());
         self
     }
 }

@@ -24,7 +24,7 @@ pub(crate) mod tick;
 /// where it comes from and whether it may be dismissed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Kind {
+pub(crate) enum Kind {
     /// A console whose agent state is `waiting`.
     ConsoleWaiting,
     /// A console whose hooks sent nothing: Ralphy cannot see its agent.
@@ -44,7 +44,7 @@ impl Kind {
     /// Whether the operator may dismiss a request of this kind. A live
     /// source cannot be dismissed: an agent that still waits stays listed
     /// (docs/adr/0085 D12).
-    pub fn dismissable(self) -> bool {
+    pub(crate) fn dismissable(self) -> bool {
         match self {
             Kind::ConsoleWaiting | Kind::ConsoleSilent | Kind::RunWaiting => false,
             Kind::ConsoleDone | Kind::RunFinished => true,
@@ -58,7 +58,7 @@ impl Kind {
 /// `issue:<run stamp>:<issue>` for a finished run's issue; a peer's request reaches the page
 /// with `id`, `console` and `repo` prefixed `<daemon_id>/`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct AttentionRequest {
+pub(crate) struct AttentionRequest {
     pub id: String,
     pub kind: Kind,
     pub vendor: String,
@@ -126,7 +126,7 @@ pub(crate) fn from_peer(
 
 /// The live run snapshots of one registered repo, under its registry key.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RunSource {
+pub(crate) struct RunSource {
     pub repo: String,
     pub snapshot: RunSnapshot,
 }
@@ -134,7 +134,7 @@ pub struct RunSource {
 /// The final snapshot of a finished run of one registered repo, and the name
 /// of its run folder.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FinishedRun {
+pub(crate) struct FinishedRun {
     pub repo: String,
     /// The run folder's name: `<repo>/.ralphy/runs/<stamp>/`.
     pub stamp: String,
@@ -146,21 +146,21 @@ pub struct FinishedRun {
 /// What the attention tick read of the runs of every registered repo, and
 /// the done marks it fired.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct RunsRead {
+pub(crate) struct RunsRead {
     pub live: Vec<RunSource>,
     pub finished: Vec<FinishedRun>,
     pub done: Vec<done::DoneFired>,
 }
 
 /// The detail of a request for an issue whose agent the idle watchdog stopped.
-pub const IDLE_REAPED_DETAIL: &str = "the idle watchdog stopped the agent";
+pub(crate) const IDLE_REAPED_DETAIL: &str = "the idle watchdog stopped the agent";
 
 /// The requests the consoles open, in the order of `sessions`, then the
 /// finished turns of marked consoles, then the ones the live runs open, then
 /// the ones the finished runs open, in the order of `runs`. `sessions` is the
 /// list as `/api/sessions` shows it, already rendered at the time of the
 /// read. A request whose id `is_dismissed` is not listed.
-pub fn list(
+pub(crate) fn list(
     sessions: &[SessionInfo],
     runs: &RunsRead,
     is_dismissed: &dyn Fn(&str) -> bool,
@@ -250,7 +250,7 @@ fn finished_requests(runs: &RunsRead) -> impl Iterator<Item = AttentionRequest> 
 /// `non_green` and the other statuses ask nothing.
 fn finished_detail(issue: &IssueBlock) -> Option<String> {
     if issue.idle_reaped {
-        return Some(IDLE_REAPED_DETAIL.to_string());
+        return Some(IDLE_REAPED_DETAIL.to_owned());
     }
     matches!(issue.status.as_str(), "blocked" | "hitl" | "needs_split")
         .then(|| issue.status.clone())

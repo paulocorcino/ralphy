@@ -45,7 +45,7 @@ fn run_command(slug: &str) -> Message {
     Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: "run".to_string(),
+            verb: "run".to_owned(),
             payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
         }))
         .into(),
@@ -91,7 +91,12 @@ async fn next_changes_dirty(tree: &mut Channel) -> String {
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.verb == "changes.dirty" {
-                    return cmd.payload["repo"].as_str().unwrap_or_default().to_string();
+                    return cmd
+                        .payload
+                        .get("repo")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_owned();
                 }
             }
         }

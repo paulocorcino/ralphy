@@ -26,7 +26,7 @@ impl PeerWatchSet {
     pub(crate) fn new(rel: &str, runs: bool) -> Self {
         Self {
             paths: Arc::new(std::sync::Mutex::new(std::collections::BTreeSet::from([
-                rel.to_string(),
+                rel.to_owned(),
             ]))),
             runs: Arc::new(std::sync::atomic::AtomicBool::new(runs)),
             changed: Arc::new(tokio::sync::Notify::new()),
@@ -50,7 +50,7 @@ impl PeerWatchSet {
     /// Add `rel` (and optionally raise the runs flag), ringing the bell if either
     /// actually moved.
     pub(crate) fn add(&self, rel: &str, runs: bool) {
-        let added = self.lock().insert(rel.to_string());
+        let added = self.lock().insert(rel.to_owned());
         if runs {
             self.runs.store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -180,7 +180,7 @@ fn dirty_paths(bytes: &[u8]) -> Option<Vec<String>> {
     Some(
         dirty
             .iter()
-            .filter_map(|item| item["path"].as_str().map(str::to_string))
+            .filter_map(|item| item["path"].as_str().map(str::to_owned))
             .collect(),
     )
 }
@@ -263,7 +263,7 @@ fn send_nudges(
 ) -> bool {
     paths
         .into_iter()
-        .all(|path| nudge_tx.send((repo_ref.to_string(), path)).is_ok())
+        .all(|path| nudge_tx.send((repo_ref.to_owned(), path)).is_ok())
 }
 
 /// Post one poll. `None` when the watch set moved first.
@@ -292,7 +292,7 @@ async fn poll_until_set_moves(
     tokio::pin!(request);
     tokio::select! {
         answer = &mut request => Some(answer),
-        _ = set.changed.notified() => None,
+        () = set.changed.notified() => None,
     }
 }
 
@@ -428,7 +428,7 @@ mod tests {
     fn a_poll_with_no_dirs_is_quiet() {
         let got = reply(200, r#"{"dirty":[]}"#);
         assert_eq!(got.cycle, PollCycle::Quiet);
-        assert!(got.dirty.is_empty());
+        assert_eq!(got.dirty, Vec::<String>::new());
         assert_eq!(
             reply(200, r#"{"dirty":[{"nopath":1}]}"#).cycle,
             PollCycle::Quiet
@@ -450,7 +450,7 @@ mod tests {
         );
         let error = read_poll_reply(Err(anyhow::anyhow!("refused")), "repo", 3);
         assert_eq!(error.cycle, PollCycle::Failed);
-        assert!(error.dirty.is_empty());
+        assert_eq!(error.dirty, Vec::<String>::new());
     }
 
     #[test]

@@ -13,7 +13,7 @@ async fn the_list_joins_a_peer_and_names_one_that_did_not_answer() {
         &peer_home,
         Some(identity(PEER_ID, "peer")),
         AuthState::fixed(
-            AuthPolicy::Bearer(TOKEN.to_string()),
+            AuthPolicy::Bearer(TOKEN.to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )

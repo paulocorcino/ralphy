@@ -8,24 +8,24 @@ use futures_util::{SinkExt, StreamExt};
 use ralphy_daemon::protocol::{self, Command, Frame, Joiner};
 use tokio_tungstenite::tungstenite::Message;
 
-pub type Ws =
+pub(crate) type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// A daemon router served on `127.0.0.1:<port>`, with its store in a
 /// temporary directory. It runs until the test ends.
-pub struct Daemon {
+pub(crate) struct Daemon {
     pub port: u16,
     _store: tempfile::TempDir,
 }
 
 /// Serve a router whose store is a new temporary directory.
-pub async fn serve() -> Daemon {
+pub(crate) async fn serve() -> Daemon {
     serve_with(|_store| {}).await
 }
 
 /// Serve a router whose store is a new temporary directory, after `setup`
 /// wrote into that directory what the test needs (`repos.toml`, …).
-pub async fn serve_with(setup: impl FnOnce(&std::path::Path)) -> Daemon {
+pub(crate) async fn serve_with(setup: impl FnOnce(&std::path::Path)) -> Daemon {
     let dir = tempfile::tempdir().expect("create a temporary store");
     setup(dir.path());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -56,7 +56,7 @@ pub async fn serve_with(setup: impl FnOnce(&std::path::Path)) -> Daemon {
 }
 
 /// Connect a page socket to the daemon's `/ws`.
-pub async fn connect(daemon: &Daemon) -> Ws {
+pub(crate) async fn connect(daemon: &Daemon) -> Ws {
     let url = format!("ws://127.0.0.1:{}/ws", daemon.port);
     let (ws, _resp) = tokio_tungstenite::connect_async(url)
         .await
@@ -65,17 +65,17 @@ pub async fn connect(daemon: &Daemon) -> Ws {
 }
 
 /// Send one bare frame on channel 0.
-pub async fn send_bare(ws: &mut Ws, frame: &Frame) {
+pub(crate) async fn send_bare(ws: &mut Ws, frame: &Frame) {
     ws.send(Message::Binary(protocol::encode(frame).into()))
         .await
         .expect("send a frame on the page socket");
 }
 
 /// Send one control verb on channel 0.
-pub async fn send_control(ws: &mut Ws, verb: &str, payload: serde_json::Value) {
+pub(crate) async fn send_control(ws: &mut Ws, verb: &str, payload: serde_json::Value) {
     let command = Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     };
     send_bare(ws, &Frame::Command(command)).await;
@@ -83,7 +83,7 @@ pub async fn send_control(ws: &mut Ws, verb: &str, payload: serde_json::Value) {
 
 /// Send `channel.open` for `channel` of `kind`. The keys of `fields`, a JSON
 /// object, go into the open payload beside `channel` and `kind`.
-pub async fn open(ws: &mut Ws, channel: u32, kind: &str, fields: serde_json::Value) {
+pub(crate) async fn open(ws: &mut Ws, channel: u32, kind: &str, fields: serde_json::Value) {
     let mut payload = serde_json::json!({ "channel": channel, "kind": kind });
     if let (Some(all), serde_json::Value::Object(extra)) = (payload.as_object_mut(), fields) {
         all.extend(extra);
@@ -92,7 +92,7 @@ pub async fn open(ws: &mut Ws, channel: u32, kind: &str, fields: serde_json::Val
 }
 
 /// Send `channel.close` for `channel`.
-pub async fn close(ws: &mut Ws, channel: u32) {
+pub(crate) async fn close(ws: &mut Ws, channel: u32) {
     send_control(
         ws,
         "channel.close",
@@ -102,7 +102,7 @@ pub async fn close(ws: &mut Ws, channel: u32) {
 }
 
 /// Send one inner frame on `channel`, cut into channel frames.
-pub async fn send_on(ws: &mut Ws, channel: u32, inner: &[u8]) {
+pub(crate) async fn send_on(ws: &mut Ws, channel: u32, inner: &[u8]) {
     for piece in protocol::cut(channel, inner) {
         send_bare(ws, &piece).await;
     }
@@ -111,7 +111,7 @@ pub async fn send_on(ws: &mut Ws, channel: u32, inner: &[u8]) {
 /// The next whole inner frame of `channel` within `within`, or `None` when
 /// none arrives or the socket ends. On channel 0 an inner frame is a bare
 /// frame. The frames of every other channel are skipped.
-pub async fn next_inner(ws: &mut Ws, channel: u32, within: Duration) -> Option<Vec<u8>> {
+pub(crate) async fn next_inner(ws: &mut Ws, channel: u32, within: Duration) -> Option<Vec<u8>> {
     let mut joiner = Joiner::default();
     tokio::time::timeout(within, async {
         while let Some(Ok(message)) = ws.next().await {
@@ -143,13 +143,13 @@ pub async fn next_inner(ws: &mut Ws, channel: u32, within: Duration) -> Option<V
 
 /// A `channel.closed` the daemon sent.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Closed {
+pub(crate) struct Closed {
     pub channel: u64,
     pub reason: String,
 }
 
 /// The next `channel.closed` on channel 0 within `within`, or `None`.
-pub async fn next_closed(ws: &mut Ws, within: Duration) -> Option<Closed> {
+pub(crate) async fn next_closed(ws: &mut Ws, within: Duration) -> Option<Closed> {
     let deadline = tokio::time::Instant::now() + within;
     loop {
         let left = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -159,8 +159,8 @@ pub async fn next_closed(ws: &mut Ws, within: Duration) -> Option<Closed> {
         };
         if command.verb == "channel.closed" {
             return Some(Closed {
-                channel: command.payload["channel"].as_u64()?,
-                reason: command.payload["reason"].as_str()?.to_string(),
+                channel: command.payload.get("channel")?.as_u64()?,
+                reason: command.payload.get("reason")?.as_str()?.to_owned(),
             });
         }
     }
@@ -168,11 +168,11 @@ pub async fn next_closed(ws: &mut Ws, within: Duration) -> Option<Closed> {
 
 /// Whether the daemon ends the socket within `within`. The frames that come
 /// before the end are skipped.
-pub async fn ends_within(ws: &mut Ws, within: Duration) -> bool {
+pub(crate) async fn ends_within(ws: &mut Ws, within: Duration) -> bool {
     let ended = tokio::time::timeout(within, async {
         loop {
             match ws.next().await {
-                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return,
+                None | Some(Err(_) | Ok(Message::Close(_))) => return,
                 Some(Ok(_)) => {}
             }
         }

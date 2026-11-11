@@ -25,21 +25,21 @@ struct Daemon {
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("parse the peer id"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
 fn descriptor(id: &str, port: u16, token: &str) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: ENVIRONMENT.to_string(),
+        environment: ENVIRONMENT.to_owned(),
         os: String::new(),
-        token: token.to_string(),
+        token: token.to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -133,7 +133,7 @@ async fn usage_federates_and_names_missing_contributions() {
         peer_store.path().join("repos.toml"),
         peer_usage.path().to_path_buf(),
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-token".to_string()),
+            AuthPolicy::Bearer("peer-token".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -173,7 +173,7 @@ async fn usage_federates_and_names_missing_contributions() {
     assert_eq!(live["missing"], serde_json::json!([]));
 
     let mut old_peer = descriptor(OLD_PEER_ID, 1, "unused");
-    old_peer.environment = OLD_ENVIRONMENT.to_string();
+    old_peer.environment = OLD_ENVIRONMENT.to_owned();
     old_peer.protocol_version = PEER_PROTOCOL_VERSION - 1;
     peer::write_descriptor(local_store.path(), &old_peer).unwrap();
     let incompatible = usage(local.port).await;

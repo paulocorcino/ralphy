@@ -22,7 +22,7 @@ fn every_language_has_a_limit_of_500_code_lines() {
     let over: Vec<String> = report(root)
         .expect("report")
         .iter()
-        .map(|row| row.path().to_string())
+        .map(|row| row.path().to_owned())
         .collect();
     assert_eq!(
         over,
@@ -64,7 +64,7 @@ fn a_rust_file_with_a_wide_line_is_listed() {
     assert_eq!(
         report(root).expect("report"),
         [Row::Width {
-            path: "crates/a/src/wide.rs".to_string(),
+            path: "crates/a/src/wide.rs".to_owned(),
             line: 1,
             width: 111
         }]
@@ -113,7 +113,7 @@ fn tree(files: &[(&str, String)]) -> tempfile::TempDir {
 
 fn size_row(path: &str, lines: usize) -> Row {
     Row::Size {
-        path: path.to_string(),
+        path: path.to_owned(),
         lines,
     }
 }
@@ -176,7 +176,7 @@ const b = 2;
     assert_eq!(
         report(dir.path()).expect("report"),
         [Row::Width {
-            path: "crates/ui/a.ts".to_string(),
+            path: "crates/ui/a.ts".to_owned(),
             line: 3,
             width: 101
         }]

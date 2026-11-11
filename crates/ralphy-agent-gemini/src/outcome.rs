@@ -54,11 +54,10 @@ fn record_text(obj: &Value) -> String {
             .iter()
             .filter_map(|p| {
                 p.as_str()
-                    .map(str::to_string)
-                    .or_else(|| p.get("text").and_then(Value::as_str).map(str::to_string))
+                    .map(str::to_owned)
+                    .or_else(|| p.get("text").and_then(Value::as_str).map(str::to_owned))
             })
-            .collect::<Vec<_>>()
-            .join(""),
+            .collect::<String>(),
         _ => String::new(),
     }
 }
@@ -74,12 +73,12 @@ fn record_text(obj: &Value) -> String {
 fn record_error(obj: &Value) -> Option<String> {
     let e = obj.get("error")?;
     if let Some(s) = e.as_str() {
-        return Some(s.to_string());
+        return Some(s.to_owned());
     }
     let msg = e.get("message").and_then(Value::as_str)?;
     match e.get("type").and_then(Value::as_str) {
         Some(t) if !t.is_empty() => Some(format!("{t}: {msg}")),
-        _ => Some(msg.to_string()),
+        _ => Some(msg.to_owned()),
     }
 }
 
@@ -144,10 +143,10 @@ pub(crate) fn fold_gemini_stream(stdout: &str) -> GeminiFold {
 /// An `init` or `system` record: the session id and the announced model.
 fn fold_init(fold: &mut GeminiFold, obj: &Value) {
     if let Some(id) = obj.get("session_id").and_then(Value::as_str) {
-        fold.session_id = Some(id.to_string());
+        fold.session_id = Some(id.to_owned());
     }
     if let Some(m) = obj.get("model").and_then(Value::as_str) {
-        fold.model = Some(m.to_string());
+        fold.model = Some(m.to_owned());
     }
 }
 
@@ -156,10 +155,10 @@ fn fold_init(fold: &mut GeminiFold, obj: &Value) {
 fn fold_result(fold: &mut GeminiFold, obj: &Value) {
     fold.saw_result = true;
     if let Some(s) = obj.get("status").and_then(Value::as_str) {
-        fold.status = Some(s.to_string());
+        fold.status = Some(s.to_owned());
     }
     if let Some(m) = obj.get("model").and_then(Value::as_str) {
-        fold.model = Some(m.to_string());
+        fold.model = Some(m.to_owned());
     }
     if let Some(stats) = obj.get("stats") {
         fold.usage = Some(crate::usage::parse_stream_stats(stats));
@@ -326,7 +325,7 @@ pub(crate) fn classify_gemini_outcome(
                     let rev = crate::revocation::detect_revocation(log);
                     rev.filter(|r| r.is_hard_stop())
                         .map(|r| r.message(exit_code, log))
-                        .or_else(|| class.actionable_stop().map(str::to_string))
+                        .or_else(|| class.actionable_stop().map(str::to_owned))
                         // More specific than the exit code's generic sentence,
                         // but never ahead of a hard-stop revocation (#255).
                         .or_else(|| {

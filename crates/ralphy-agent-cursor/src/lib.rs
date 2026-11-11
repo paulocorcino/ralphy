@@ -3,7 +3,7 @@
 //! record-stream fold, and the signal→[`Outcome`] mapping — is confined here.
 //! See docs/adr/0042.
 //!
-//! Like Codex, Kimi, OpenCode and Copilot (and unlike Claude's live PTY session),
+//! Like Codex, Kimi, `OpenCode` and Copilot (and unlike Claude's live PTY session),
 //! Cursor needs no interactive session: `plan` and `execute` both pipe the charter
 //! on **stdin** (ADR-0042 D2).
 //!
@@ -220,7 +220,7 @@ impl Agent for CursorAgent {
         // bail carries no `(see <log>)` suffix.
         if let Some(msg) = auth::resume_requires_login(
             ralphy_adapter_support::plan_is_finalized_for(&plan_path, issue.number),
-            auth::probe_cursor_login,
+            probe_cursor_login,
         ) {
             anyhow::bail!("{msg}");
         }
@@ -250,7 +250,7 @@ impl Agent for CursorAgent {
             // and quota-stop shape (D13, #266).
             |log| {
                 model_refusal_stop(log, model).or_else(|| {
-                    outcome::cursor_limit_note(&outcome::fold_cursor_stream(log))
+                    outcome::cursor_limit_note(&fold_cursor_stream(log))
                         .map(|_| PlanLimit { reset: None }.into())
                 })
             },
@@ -258,12 +258,12 @@ impl Agent for CursorAgent {
 
         // A RESUMED plan (no child ran, `session` is `None`) must keep the
         // zero-token attributed value, never a stale one.
-        let plan_usage = session
-            .as_ref()
-            .map(|(r, _)| parse_cursor_usage(&r.stdout, model))
-            .unwrap_or_else(|| requested_model_usage(model));
+        let plan_usage = session.as_ref().map_or_else(
+            || requested_model_usage(model),
+            |(r, ())| parse_cursor_usage(&r.stdout, model),
+        );
 
-        if let Some((r, _)) = session.as_ref() {
+        if let Some((r, ())) = session.as_ref() {
             let fold = fold_cursor_stream(&r.stdout);
             Self::verify_session_adoption(&session_id, fold.session_id.as_deref())?;
             note_degraded(&fold);
@@ -428,9 +428,10 @@ fn note_vendor_error(fold: &outcome::CursorFold) {
 /// normal, not an error, and this never turns an `Err` return into a
 /// different outcome.
 fn note_usage_provenance(config_dir: &std::path::Path, session_id: &str) {
-    let store = usage::cursor_session_store(config_dir, session_id)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "no on-disk record".to_string());
+    let store = usage::cursor_session_store(config_dir, session_id).map_or_else(
+        || "no on-disk record".to_owned(),
+        |p| p.display().to_string(),
+    );
     tracing::warn!("{} (session store: {store})", usage::CURSOR_CREDIT_NOTE);
 }
 

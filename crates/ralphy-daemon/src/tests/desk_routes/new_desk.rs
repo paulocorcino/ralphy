@@ -144,5 +144,5 @@ async fn api_desk_new_refuses_a_readable_desk() {
     assert_eq!(res.status(), StatusCode::OK);
     let res = desk_new(dir.path()).await;
     assert_eq!(res.status(), StatusCode::CONFLICT);
-    assert!(unreadable_copies(dir.path()).is_empty());
+    assert_eq!(unreadable_copies(dir.path()), Vec::<PathBuf>::new());
 }

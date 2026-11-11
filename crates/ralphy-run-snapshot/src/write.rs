@@ -108,7 +108,7 @@ mod tests {
         write_atomic(dir.path(), &snap_with("01TEMP", 1)).unwrap();
         let leftovers: Vec<_> = std::fs::read_dir(snapshot_dir(dir.path()))
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .map(|e| e.file_name().to_string_lossy().to_string())
             .filter(|n| n.ends_with(".tmp"))
             .collect();

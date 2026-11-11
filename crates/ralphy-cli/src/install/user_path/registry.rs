@@ -47,7 +47,7 @@ pub(in crate::install) fn change(next: impl FnOnce(&str) -> Option<String>) -> R
             subkey.as_ptr(),
             0,
             KEY_READ | KEY_WRITE,
-            &mut raw,
+            &raw mut raw,
         )
     };
     if status != ERROR_SUCCESS {
@@ -75,9 +75,9 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
             key.0,
             name.as_ptr(),
             std::ptr::null(),
-            &mut kind,
+            &raw mut kind,
             std::ptr::null_mut(),
-            &mut bytes,
+            &raw mut bytes,
         )
     };
     match status {
@@ -96,9 +96,9 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
             key.0,
             name.as_ptr(),
             std::ptr::null(),
-            &mut kind,
+            &raw mut kind,
             buf.as_mut_ptr().cast(),
-            &mut size,
+            &raw mut size,
         )
     };
     if status != ERROR_SUCCESS {
@@ -149,7 +149,7 @@ fn broadcast() {
             area.as_ptr() as isize,
             SMTO_ABORTIFHUNG,
             5000,
-            &mut result,
+            &raw mut result,
         )
     };
 }

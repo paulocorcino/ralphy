@@ -104,7 +104,7 @@ pub(crate) fn vendor_line(log: &str, needle: &str) -> Option<String> {
     log.lines()
         .find(|l| l.to_ascii_lowercase().contains(needle))
         .map(strip_ansi)
-        .map(|l| l.trim().to_string())
+        .map(|l| l.trim().to_owned())
         .filter(|l| !l.is_empty())
 }
 
@@ -186,22 +186,22 @@ impl Revocation {
                 "gemini's autonomous mode is disabled by an enterprise \
                  control (`admin.secureModeEnabled` or `security.disableYoloMode`) — the run stops \
                  here and ralphy does not work around it"
-                    .to_string()
+                    .to_owned()
             }
             Revocation::UntrustedWorkspace => "gemini refused the workspace as untrusted — the \
                  folder-trust check outranks `--skip-trust`, so ralphy does not work around it"
-                .to_string(),
+                .to_owned(),
             Revocation::EnforcedAuth => "gemini's administrator enforces an authentication method \
                  (`security.auth.enforcedType`) this run does not satisfy — reported, never worked \
                  around"
-                .to_string(),
+                .to_owned(),
             Revocation::AdminToolServers => "gemini's tool servers are governed by your \
                  administrator — reported, never worked around"
-                .to_string(),
+                .to_owned(),
             Revocation::Demoted => "gemini overrode its approval mode back to the prompting \
                  default — the session is no longer autonomous and will stall on the first tool \
                  call"
-                .to_string(),
+                .to_owned(),
         };
         // The OBSERVED code wins over the canonical one — a substring guard here
         // would suppress a true `exit 5` against a hard-coded `exit 55`, and tell
@@ -299,7 +299,7 @@ fn push_settings_controls(v: &Value, out: &mut Vec<AdminControl>) {
         .and_then(|a| a.get("enforcedType"))
         .and_then(Value::as_str)
     {
-        out.push(AdminControl::EnforcedAuth(t.to_string()));
+        out.push(AdminControl::EnforcedAuth(t.to_owned()));
     }
     if let Some(servers) = v.get("mcpServers").and_then(Value::as_object) {
         let mut names: Vec<String> = servers.keys().cloned().collect();

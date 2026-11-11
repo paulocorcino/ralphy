@@ -149,7 +149,7 @@ pub(crate) struct ExecConfig {
     pub(crate) remote_control: bool,
     /// When true, use a `claude -p` loop instead of an interactive PTY session.
     pub(crate) headless_exec: bool,
-    /// Maximum number of `-p` calls before declaring MaxCalls (headless only).
+    /// Maximum number of `-p` calls before declaring `MaxCalls` (headless only).
     pub(crate) max_exec_calls: u32,
     /// The run's global wall-clock deadline, if any. Each issue's budget is
     /// clamped to `min(per-issue, run_deadline)` so an issue started near the
@@ -213,7 +213,7 @@ impl ClaudeAgent {
             return m.clone();
         }
         if let Some(m) = &plan.recommended_model {
-            return model_of_judgment(m).to_string();
+            return model_of_judgment(m).to_owned();
         }
         self.exec.default_exec_model.clone()
     }
@@ -228,7 +228,7 @@ impl ClaudeAgent {
             return Some(effort.clone());
         }
         if plan.recommended_model.as_deref() == Some("opus-high") {
-            return Some("high".to_string());
+            return Some("high".to_owned());
         }
         None
     }
@@ -280,7 +280,7 @@ impl SettingsFile {
         let unproven = hooks
             .into_iter()
             .find(|h| h.form() == HookForm::Shell)
-            .map(|h| h.reason().to_string());
+            .map(|h| h.reason().to_owned());
         Self { path, unproven }
     }
 }

@@ -9,7 +9,7 @@ async fn a_waiting_console_enters_and_leaves_the_route() {
     let port = serve(&home, None, AuthState::localhost()).await;
     let _console = claude_console(port, None).await;
 
-    let (_, reply) = wait_for(port, "/api/attention", |r| r.is_array()).await;
+    let (_, reply) = wait_for(port, "/api/attention", serde_json::Value::is_array).await;
     assert_eq!(reply["requests"], serde_json::json!([]), "{reply}");
 
     let status = store.join("sessions").join("1.agent-status.jsonl");
@@ -33,7 +33,7 @@ async fn a_waiting_console_enters_and_leaves_the_route() {
 
     append(&status, ANSWERED);
     let (_, reply) = wait_for(port, "/api/attention", |r| {
-        r.as_array().is_some_and(|a| a.is_empty())
+        r.as_array().is_some_and(Vec::is_empty)
     })
     .await;
     assert_eq!(reply["requests"], serde_json::json!([]), "{reply}");

@@ -120,7 +120,7 @@ pub(crate) fn tier_to_model_effort(tier: Option<&str>) -> (&'static str, &'stati
 /// `exec` when another one follows it.
 ///
 /// GUARD ASYMMETRY: `danger-full-access` runs with no equivalent of the Claude
-/// adapter's PreToolUse guard hook — Ralphy gives Codex the status hooks only
+/// adapter's `PreToolUse` guard hook — Ralphy gives Codex the status hooks only
 /// — so safety here rests on the isolated run branch and the prompt's hard
 /// rules.
 pub(crate) fn build_codex_command(
@@ -179,7 +179,7 @@ fn status_hook_args(root: &Path, hook_exe: &Path) -> Vec<String> {
 /// (ADR-0004, Amendment 2026-07-10). Init sessions have no plan tier to route,
 /// which is why they delegate where plan/execute fall back to the family table.
 pub(crate) fn resolve_init_model(model: Option<&str>) -> Option<String> {
-    model.map(str::to_string).or_else(codex_config_model)
+    model.map(str::to_owned).or_else(codex_config_model)
 }
 
 /// Build the headless `codex exec` command for an `init` one-shot session. Unlike

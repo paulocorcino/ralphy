@@ -12,7 +12,7 @@ use super::wizard::InitConfig;
 /// A gathered snapshot of what `ralphy init` produced: which artifacts exist,
 /// how many labels and skills were installed, what issues are queued, and who is
 /// logged in.
-pub struct VerifyReport {
+pub(crate) struct VerifyReport {
     pub ralphy_present: bool,
     pub docs: Vec<(&'static str, bool)>,
     pub ralphy_label_count: usize,
@@ -25,7 +25,7 @@ pub struct VerifyReport {
 /// The lowest-numbered queue issue is the suggested next run target (the queue
 /// from `github::build_queue` is ascending by number). Returns `None` when the
 /// queue is empty.
-pub fn suggested_issue(queue: &[u64]) -> Option<u64> {
+pub(crate) fn suggested_issue(queue: &[u64]) -> Option<u64> {
     queue.first().copied()
 }
 
@@ -37,16 +37,16 @@ fn next_step_command(n: u64) -> String {
 /// Returns `true` only for an explicit `y`/`yes` (case-insensitive, trimmed).
 /// Any other answer — including silence — declines, making the smoke test
 /// opt-in rather than automatic.
-pub fn smoke_test_decision(answer: &str) -> bool {
+pub(crate) fn smoke_test_decision(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
 /// Returns the relative paths of required artifacts that are missing from the
 /// report. The order is stable: `.ralphy/` first, then the doc files in order.
-pub fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
+pub(crate) fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
     let mut missing = Vec::new();
     if !r.ralphy_present {
-        missing.push(".ralphy/".to_string());
+        missing.push(".ralphy/".to_owned());
     }
 
     for (path, present) in &r.docs {
@@ -62,7 +62,7 @@ pub fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
 /// the queue is empty the literal `warning: no queue-labeled issue` is emitted
 /// and no next-step line is included; otherwise the `next step:` line names the
 /// lowest queue number.
-pub fn format_final_report(r: &VerifyReport) -> String {
+pub(crate) fn format_final_report(r: &VerifyReport) -> String {
     let mut out = String::new();
     out.push_str(&format!("agents logged in: {}\n", r.logged_in.join(", ")));
     out.push_str(&format!("branch: {}\n", r.branch));
@@ -137,14 +137,14 @@ fn print_final_report(r: &VerifyReport) {
 /// path), pure and subprocess-free so it can be asserted directly.
 fn smoke_test_args(repo: &Path, n: u64, agent: Agent) -> Vec<String> {
     vec![
-        "run".to_string(),
-        "--repo".to_string(),
+        "run".to_owned(),
+        "--repo".to_owned(),
         repo.display().to_string(),
-        "--only-issue".to_string(),
+        "--only-issue".to_owned(),
         n.to_string(),
-        "--dry-run".to_string(),
-        "--agent".to_string(),
-        agent.cli_name().to_string(),
+        "--dry-run".to_owned(),
+        "--agent".to_owned(),
+        agent.cli_name().to_owned(),
     ]
 }
 
@@ -202,14 +202,11 @@ pub(crate) fn finalize(
         .count();
 
     let skills_path = repo.join(skills_target(cfg.skills_dir.as_deref()));
-    let skill_count = std::fs::read_dir(&skills_path)
-        .ok()
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
-                .count()
-        })
-        .unwrap_or(0);
+    let skill_count = std::fs::read_dir(&skills_path).ok().map_or(0, |rd| {
+        rd.filter_map(Result::ok)
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .count()
+    });
 
     let queue_labels = github::resolve_queue_labels(&[], repo);
     // Whole-repo housekeeping — never assignee-scoped (ADR-0021).
@@ -218,7 +215,7 @@ pub(crate) fn finalize(
     queue.sort_unstable();
 
     let branch = git::current_branch(repo)?;
-    let logged_in_names: Vec<String> = logged_in.iter().map(|a| a.cli_name().to_string()).collect();
+    let logged_in_names: Vec<String> = logged_in.iter().map(|a| a.cli_name().to_owned()).collect();
 
     let r = VerifyReport {
         ralphy_present,
@@ -331,7 +328,7 @@ mod tests {
 
         assert_eq!(
             required_artifacts_missing(&r),
-            vec!["docs/agents/domain.md".to_string()]
+            vec!["docs/agents/domain.md".to_owned()]
         );
     }
     #[test]
@@ -339,11 +336,11 @@ mod tests {
         let args = smoke_test_args(Path::new("/tmp/x"), 7, Agent::Codex);
         assert!(
             args.windows(2)
-                .any(|w| w == ["--agent".to_string(), "codex".to_string()]),
+                .any(|w| w == ["--agent".to_owned(), "codex".to_owned()]),
             "expected --agent codex in {args:?}"
         );
-        assert!(args.contains(&"--dry-run".to_string()));
-        assert!(args.contains(&"--only-issue".to_string()));
+        assert!(args.contains(&"--dry-run".to_owned()));
+        assert!(args.contains(&"--only-issue".to_owned()));
     }
 
     #[test]

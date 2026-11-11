@@ -8,7 +8,7 @@ use crate::ui::UsageLite;
 
 /// UI-local mirror of `BranchMode` — the panel renderer never depends on a core type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanelBranchMode {
+pub(crate) enum PanelBranchMode {
     New,
     Current,
 }
@@ -16,7 +16,7 @@ pub enum PanelBranchMode {
 /// UI-local mirror of `StopReason`, with `outcome` pre-formatted as a string so the
 /// panel never imports a core enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PanelStop {
+pub(crate) enum PanelStop {
     Deadline,
     NonGreen {
         number: u64,
@@ -38,7 +38,7 @@ pub enum PanelStop {
 /// Input data for [`render_totals_panel`]. Derived from `QueueReport` in `main.rs`
 /// and passed to `PresenterHandle::print_panel`.
 #[derive(Debug, Clone)]
-pub struct PanelData {
+pub(crate) struct PanelData {
     pub branch: String,
     pub orig_branch: String,
     pub done: u64,
@@ -94,7 +94,7 @@ pub struct PanelData {
 /// mode when not `(dry_run && commits == 0)` — a `➜  git merge <branch>` next-step
 /// line. ANSI colour is applied only when `opts.color`; the non-TTY path is
 /// guaranteed to contain no `\u{1b}` byte.
-pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
+pub(crate) fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
     let mut lines = vec![counts_line(data, opts)];
     lines.extend(hitl_line(data, opts));
     lines.extend(review_debt_line(data, opts));
@@ -183,7 +183,7 @@ fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
         PanelStop::Deadline => {
             "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed \
              past it)."
-                .to_string()
+                .to_owned()
         }
         PanelStop::NonGreen { number, outcome } => {
             format!("Stopped: #{number} finished non-green ({outcome}). Branch handed back.")
@@ -221,7 +221,7 @@ fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
             )
         }
         PanelStop::Stopped { number: None } => {
-            "Stopped: you stopped the run between issues. Branch handed back.".to_string()
+            "Stopped: you stopped the run between issues. Branch handed back.".to_owned()
         }
     };
     paint(stop_raw, Style::new().yellow(), opts.color)

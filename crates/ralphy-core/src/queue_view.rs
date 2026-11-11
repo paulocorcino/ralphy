@@ -173,8 +173,8 @@ mod tests {
         Issue {
             number,
             title: format!("issue {number}"),
-            body: body.to_string(),
-            labels: labels.iter().map(|s| s.to_string()).collect(),
+            body: body.to_owned(),
+            labels: labels.iter().map(ToString::to_string).collect(),
             comments: Vec::new(),
         }
     }
@@ -182,7 +182,7 @@ mod tests {
     fn human_return() -> Vec<String> {
         ["needs-info", "wontfix", "ready-for-human"]
             .iter()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect()
     }
 

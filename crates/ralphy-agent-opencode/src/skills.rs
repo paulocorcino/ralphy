@@ -1,6 +1,6 @@
 //! Skills materialization (ADR-0005 D7): extracting the embedded skills tree to
 //! `<repo>/.ralphy/skills` and building the `OPENCODE_CONFIG_CONTENT` JSON that
-//! points OpenCode's `skills.paths` at it.
+//! points `OpenCode`'s `skills.paths` at it.
 
 use std::path::PathBuf;
 
@@ -10,12 +10,12 @@ use include_dir::{include_dir, Dir};
 use ralphy_core::Workspace;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
-/// OpenCode discovers skills via `skills.paths` in its config; we extract this
+/// `OpenCode` discovers skills via `skills.paths` in its config; we extract this
 /// tree to `.ralphy/skills` and inject the path via `OPENCODE_CONFIG_CONTENT`
 /// before every plan and execute call (ADR-0005 D7, mirrors Codex adapter).
 static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/skills");
 
-/// Materialize the embedded skills into `<repo>/.ralphy/skills/` so OpenCode can
+/// Materialize the embedded skills into `<repo>/.ralphy/skills/` so `OpenCode` can
 /// discover them via the injected `skills.paths` config. Clears any prior copy,
 /// re-extracts fresh, and writes `<repo>/.ralphy/.gitignore` (`*`) to keep the
 /// materialized tree out of executor commits. Returns the `.ralphy/skills` path.

@@ -46,7 +46,7 @@ pub fn prune_run_dirs(
         return out;
     };
     let mut stamps: Vec<(String, PathBuf)> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
@@ -142,7 +142,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         make(tmp.path(), &["20260101-000001", "20260101-000002"]);
         let out = prune(tmp.path(), 0, false);
-        assert!(out.removed.is_empty());
+        assert_eq!(out.removed, Vec::<PathBuf>::new());
         assert_eq!(names_left(tmp.path()).len(), 2);
     }
 
@@ -196,7 +196,7 @@ mod tests {
         make(tmp.path(), &["20260101-000001", "20260101-000002"]);
         let current = tmp.path().join("20260101-000001");
         let out = prune_run_dirs(tmp.path(), 1, &current, false, |p| fs::remove_dir_all(p));
-        assert!(out.removed.is_empty());
+        assert_eq!(out.removed, Vec::<PathBuf>::new());
         assert_eq!(names_left(tmp.path()).len(), 2);
     }
 

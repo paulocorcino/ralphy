@@ -17,7 +17,7 @@ fn roundtrip_issue_started() {
 #[test]
 fn roundtrip_plan_written() {
     let ev = one(|| {
-        ralphy_core::emit::plan_written(7, 3, &usage(), r#"[{"text":"a","status":"open"}]"#)
+        ralphy_core::emit::plan_written(7, 3, &usage(), r#"[{"text":"a","status":"open"}]"#);
     });
     assert_eq!(
         decode(&ev),

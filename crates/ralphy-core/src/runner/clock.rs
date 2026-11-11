@@ -15,7 +15,7 @@ use crate::types::ResetAt;
 /// cuts it, the operator stops the run (`ralphy stop`, docs/adr/0054), or a human
 /// interrupts (Ctrl-C) — which is the point: the operator, not a parseable reset,
 /// decides when to give up (ADR-0030).
-pub fn synthetic_reset() -> String {
+pub(crate) fn synthetic_reset() -> String {
     synthetic_instant(Local::now()).to_rfc3339()
 }
 
@@ -198,7 +198,7 @@ mod tests {
     fn a_reset_without_an_instant_wakes_at_the_synthetic_reset() {
         let now = at(2026, 6, 9, 10, 0);
         let reset = ResetAt {
-            text: "retry later".to_string(),
+            text: "retry later".to_owned(),
             at: None,
         };
         assert_eq!(
@@ -212,7 +212,7 @@ mod tests {
         let now = at(2026, 6, 9, 10, 0);
         let instant = DateTime::parse_from_rfc3339("2026-06-09T18:00:00-03:00").unwrap();
         let reset = ResetAt {
-            text: "6 PM".to_string(),
+            text: "6 PM".to_owned(),
             at: Some(instant),
         };
         assert_eq!(

@@ -55,7 +55,7 @@ pub(super) fn finish_border(
     }
 }
 
-/// Start both delivery workers (Telegram notifier + CloudEvents sink) over the
+/// Start both delivery workers (Telegram notifier + `CloudEvents` sink) over the
 /// already-installed rings. The CROSS-PATH INVARIANT this exists for: it is the ONLY
 /// place a worker is spawned, so every exit path of `run_cmd` — including the two
 /// no-work borders (#222) — can reach a STARTED worker and drain its ring rather than
@@ -87,7 +87,7 @@ pub(super) fn start_delivery(
         // The token captured before the env scrub: reading the env again here
         // would miss a token given only as `RALPHY_TELEGRAM_TOKEN`.
         if let (Some(chat_id), Some(token)) = (cfg.chat_id, obs.tg_token.clone()) {
-            let state = runstate::RunState::new(title.to_string(), queue_len);
+            let state = runstate::RunState::new(title.to_owned(), queue_len);
             let client =
                 telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
             notifier =
@@ -100,7 +100,7 @@ pub(super) fn start_delivery(
     if let (Some(queue), Some(url)) = (obs.event_sink_queue.as_ref(), obs.events_url.as_ref()) {
         let ctx = events::envelope::EventCtx {
             source: events::emitter::source(&obs.events_slug),
-            runid: runid.to_string(),
+            runid: runid.to_owned(),
             emitter: serde_json::to_value(events::emitter::detect(repo_root)).unwrap_or_default(),
             git: serde_json::json!({
                 "repository": obs.events_slug,
@@ -118,7 +118,7 @@ pub(super) fn start_delivery(
     let snapshot_handle = snapshot_ctx.and_then(|ctx| {
         snapshot_engine::try_start_snapshot(
             ctx,
-            runstate::RunState::new(title.to_string(), queue_len),
+            runstate::RunState::new(title.to_owned(), queue_len),
             repo_root.to_path_buf(),
             obs.snapshot_queue.clone(),
             ws.plan_path(),
@@ -148,7 +148,7 @@ pub(super) struct Observability {
 }
 
 /// Wire the run's observability stack — the Telegram notifier ring/Layer, the
-/// CloudEvents sink ring/Layer, the events-token env scrub, and the tracing
+/// `CloudEvents` sink ring/Layer, the events-token env scrub, and the tracing
 /// subscriber — and return the handles the later worker starts consume.
 ///
 /// ORDERING (load-bearing, ADR-0019): `strip_secret_tokens_from_env` runs HERE, before
@@ -241,7 +241,7 @@ pub(super) fn install_observability(
 /// Close out the run in the exact ADR-0006/-0007/-0019 order: finalize the presenter
 /// FIRST (clears the live region before any print), THEN consolidate loose knowledge
 /// notes, THEN emit `run finished` (only on a clean `Ok` — a crash is detected by
-/// heartbeat silence), THEN tear down the notifier, THEN the CloudEvents sink. Each
+/// heartbeat silence), THEN tear down the notifier, THEN the `CloudEvents` sink. Each
 /// teardown joins under a bounded timeout so a wedged network can't hold the process
 /// open. Borrows `result` so the caller can still `?`-propagate it afterwards.
 #[expect(

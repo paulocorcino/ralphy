@@ -143,10 +143,10 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
                         .trim()
                         .is_empty()
                     {
-                        "section absent or blank".to_string()
+                        "section absent or blank".to_owned()
                     } else {
                         "section present but no `- [verified]`/`- [review-only]` line parsed"
-                            .to_string()
+                            .to_owned()
                     }
                 }),
             },

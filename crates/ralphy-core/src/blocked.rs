@@ -268,7 +268,7 @@ fn body_lookup<'a>(open: &'a [Issue], queue: &'a [Issue]) -> BTreeMap<u64, &'a s
     body_of
 }
 
-/// children_of[n] = queue members declaring `## Parent` #n — the stand-ins for
+/// `children_of`[n] = queue members declaring `## Parent` #n — the stand-ins for
 /// a retired (closed) bundle #n that is absent from the open graph.
 fn children_by_parent(queue: &[Issue]) -> BTreeMap<u64, Vec<u64>> {
     let mut children_of: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
@@ -334,16 +334,13 @@ fn kahn(queue: Vec<Issue>, deps: &BTreeMap<u64, BTreeSet<u64>>) -> Vec<Issue> {
                 .iter()
                 .all(|d| placed.contains(d))
         });
-        match ready {
-            Some(n) => {
-                placed.insert(n);
-                out.push(by_number.remove(&n).expect("key present"));
-            }
-            None => {
-                // Cycle: emit the remainder ascending; the runtime gate decides.
-                out.extend(by_number.into_values());
-                break;
-            }
+        if let Some(n) = ready {
+            placed.insert(n);
+            out.push(by_number.remove(&n).expect("key present"));
+        } else {
+            // Cycle: emit the remainder ascending; the runtime gate decides.
+            out.extend(by_number.into_values());
+            break;
         }
     }
     out

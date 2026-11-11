@@ -32,9 +32,9 @@ fn peer_store(pairs: &[(&str, &str)]) -> PeerRepoStore {
         .iter()
         .map(|(slug, path)| {
             (
-                (*slug).to_string(),
+                (*slug).to_owned(),
                 PeerRepoRow {
-                    path: (*path).to_string(),
+                    path: (*path).to_owned(),
                     reachable: true,
                     branch: None,
                     dirty: false,
@@ -60,9 +60,9 @@ fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
     let local = store(&[("owner/local", "C:/Dev/local")]);
     let mut theirs = peer_store(&[("owner/forge", "/home/forge")]);
     let row = theirs.get_mut("owner/forge").expect("the seeded row");
-    row.remote = Some("https://github.com/owner/forge.git".to_string());
+    row.remote = Some("https://github.com/owner/forge.git".to_owned());
     row.dirty = true;
-    row.root = Some("/mnt/c/forge".to_string());
+    row.root = Some("/mnt/c/forge".to_owned());
     let d = peer("01XYZ", "wsl-box", "WSL: Ubuntu-22.04");
     let rows = aggregate(
         ("01ABC", "anvil", "Windows", &local),
@@ -131,7 +131,7 @@ fn same_slug_from_two_daemons_yields_two_entries() {
     let by_key = |k: &str| {
         rows.iter()
             .find(|r| r.key == k)
-            .unwrap_or_else(|| panic!("missing key {k}; got {:?}", rows))
+            .unwrap_or_else(|| panic!("missing key {k}; got {rows:?}"))
     };
     assert_eq!(by_key("01ABC/owner/repo").path, "C:/Dev/repo");
     assert_eq!(by_key("01XYZ/owner/repo").path, "/home/p/repo");
@@ -270,8 +270,8 @@ fn a_peers_former_slugs_map_to_the_federated_keys() {
     assert_eq!(
         map,
         BTreeMap::from([
-            ("peer1/path-abc".to_string(), "peer1/owner/repo".to_string()),
-            ("peer1/path-def".to_string(), "peer1/owner/repo".to_string()),
+            ("peer1/path-abc".to_owned(), "peer1/owner/repo".to_owned()),
+            ("peer1/path-def".to_owned(), "peer1/owner/repo".to_owned()),
         ])
     );
 }
@@ -322,7 +322,7 @@ fn a_peer_row_carries_the_owners_branch() {
     theirs
         .get_mut("owner/a")
         .expect("fixture has owner/a")
-        .branch = Some("ralphy/init".to_string());
+        .branch = Some("ralphy/init".to_owned());
     let d = peer("01XYZ", "wsl-box", "WSL: Ubuntu-22.04");
 
     let rows = aggregate(

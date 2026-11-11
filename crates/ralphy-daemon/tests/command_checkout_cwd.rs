@@ -44,7 +44,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -81,7 +81,7 @@ fn queried(reply: &serde_json::Value, field: &str) -> String {
     reply[field]
         .as_str()
         .unwrap_or_else(|| panic!("the child's echo under {field:?}; got {reply}"))
-        .to_string()
+        .to_owned()
 }
 
 /// The error message of a Mutate reply that relayed a non-zero exit.
@@ -93,7 +93,7 @@ fn relayed(reply: &serde_json::Value) -> String {
     reply["message"]
         .as_str()
         .unwrap_or_else(|| panic!("an error message string; got {reply}"))
-        .to_string()
+        .to_owned()
 }
 
 /// The `dispatch-cwd:` line of the child's echo.

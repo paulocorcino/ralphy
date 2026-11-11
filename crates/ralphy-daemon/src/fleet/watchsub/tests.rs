@@ -16,7 +16,7 @@ async fn create_emits_and_between_polls_stays_buffered() {
     assert_eq!(
         subs.wait("s", window()).await,
         (
-            vec![("owner/repo".to_string(), String::new())],
+            vec![("owner/repo".to_owned(), String::new())],
             WaitOutcome::Dirty
         )
     );
@@ -28,7 +28,7 @@ async fn create_emits_and_between_polls_stays_buffered() {
         !buffered.is_empty()
             && buffered
                 .iter()
-                .all(|item| item == &("owner/repo".to_string(), String::new())),
+                .all(|item| item == &("owner/repo".to_owned(), String::new())),
         "an event between polls must remain in the held receiver: {buffered:?}"
     );
 }
@@ -64,10 +64,10 @@ async fn traversal_is_refused_without_creating_a_sub() {
             "escape",
             "owner/repo",
             dir.path(),
-            &["../escape".to_string()]
+            &["../escape".to_owned()]
         )
         .is_err());
-    assert!(subs.take_buffered("escape").is_empty());
+    assert_eq!(subs.take_buffered("escape"), Vec::<(String, String)>::new());
     assert!(!watchers.repo_active("owner/repo"));
 }
 
@@ -87,7 +87,7 @@ async fn a_folder_that_links_out_of_the_root_is_not_watched() {
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let subs = WatchSubs::new(watchers.clone());
 
-    let paths = ["linked".to_string(), "inside".to_string()];
+    let paths = ["linked".to_owned(), "inside".to_owned()];
     subs.subscribe("s", "owner/repo", dir.path(), &paths)
         .unwrap();
 
@@ -116,7 +116,7 @@ async fn an_unmatched_nudge_does_not_end_the_wait() {
     let subs = WatchSubs::new(watchers);
     subs.subscribe("root", "owner/repo", dir.path(), &[String::new()])
         .unwrap();
-    subs.subscribe("docs", "owner/repo", dir.path(), &["docs".to_string()])
+    subs.subscribe("docs", "owner/repo", dir.path(), &["docs".to_owned()])
         .unwrap();
 
     std::fs::write(dir.path().join("at-root.txt"), b"x").unwrap();
@@ -130,7 +130,7 @@ async fn an_unmatched_nudge_does_not_end_the_wait() {
     );
     assert_eq!(outcome, WaitOutcome::Timeout);
     assert!(
-        started.elapsed() >= deadline - Duration::from_millis(50),
+        started.elapsed() >= deadline.checked_sub(Duration::from_millis(50)).unwrap(),
         "the wait must hold its deadline, not answer on another sub's nudge (held {:?})",
         started.elapsed()
     );
@@ -144,7 +144,7 @@ async fn a_matched_nudge_after_an_unmatched_one_is_delivered() {
     let subs = WatchSubs::new(watchers);
     subs.subscribe("root", "owner/repo", dir.path(), &[String::new()])
         .unwrap();
-    subs.subscribe("docs", "owner/repo", dir.path(), &["docs".to_string()])
+    subs.subscribe("docs", "owner/repo", dir.path(), &["docs".to_owned()])
         .unwrap();
 
     let root = dir.path().to_path_buf();
@@ -161,7 +161,7 @@ async fn a_matched_nudge_after_an_unmatched_one_is_delivered() {
         !dirty.is_empty()
             && dirty
                 .iter()
-                .all(|item| item == &("owner/repo".to_string(), "docs".to_string())),
+                .all(|item| item == &("owner/repo".to_owned(), "docs".to_owned())),
         "skipping the root nudge must not lose the docs one that followed: {dirty:?}"
     );
 }
@@ -177,10 +177,10 @@ async fn a_wait_on_an_unknown_sub_still_holds_its_deadline() {
     let started = Instant::now();
     let (dirty, outcome) = subs.wait("nobody", deadline).await;
 
-    assert!(dirty.is_empty());
+    assert_eq!(dirty, Vec::<(String, String)>::new());
     assert_eq!(outcome, WaitOutcome::NoSub);
     assert!(
-        started.elapsed() >= deadline - Duration::from_millis(50),
+        started.elapsed() >= deadline.checked_sub(Duration::from_millis(50)).unwrap(),
         "an unknown sub must not answer fast (held {:?})",
         started.elapsed()
     );
@@ -199,7 +199,7 @@ async fn a_missing_dir_is_skipped_and_the_rest_is_watched() {
         "s",
         "owner/repo",
         dir.path(),
-        &["docs".to_string(), "went-away".to_string()],
+        &["docs".to_owned(), "went-away".to_owned()],
     )
     .unwrap();
     assert_eq!(watchers.watch_refcount("owner/repo", "docs"), 1);
@@ -216,7 +216,7 @@ async fn a_missing_dir_is_skipped_and_the_rest_is_watched() {
         !dirty.is_empty()
             && dirty
                 .iter()
-                .all(|item| item == &("owner/repo".to_string(), "docs".to_string())),
+                .all(|item| item == &("owner/repo".to_owned(), "docs".to_owned())),
         "the surviving dir must still nudge: {dirty:?}"
     );
 }
@@ -251,7 +251,7 @@ async fn a_cancelled_wait_hands_its_receiver_back() {
         WaitOutcome::Dirty,
         "a cancelled wait must leave the subscription listening: {dirty:?}"
     );
-    assert!(!dirty.is_empty());
+    assert_ne!(dirty, Vec::<(String, String)>::new());
 }
 
 /// A second subscribe on the same id holds the set it sends: a path it adds
@@ -269,7 +269,7 @@ async fn a_resubscribe_holds_the_set_it_sends_and_keeps_its_repo() {
         "s",
         "owner/repo",
         dir.path(),
-        &[String::new(), "docs".to_string()],
+        &[String::new(), "docs".to_owned()],
     )
     .unwrap();
     assert_eq!(watchers.watch_refcount("owner/repo", ""), 1);
@@ -297,13 +297,13 @@ async fn a_set_that_empties_and_grows_again_still_sees_changes() {
     subs.subscribe("s", "owner/repo", dir.path(), &[]).unwrap();
     assert!(!watchers.repo_active("owner/repo"));
 
-    subs.subscribe("s", "owner/repo", dir.path(), &["docs".to_string()])
+    subs.subscribe("s", "owner/repo", dir.path(), &["docs".to_owned()])
         .unwrap();
     std::fs::write(dir.path().join("docs/after.txt"), b"x").unwrap();
     assert_eq!(
         subs.wait("s", window()).await,
         (
-            vec![("owner/repo".to_string(), "docs".to_string())],
+            vec![("owner/repo".to_owned(), "docs".to_owned())],
             WaitOutcome::Dirty
         )
     );
@@ -333,13 +333,13 @@ async fn a_set_emptied_during_a_wait_still_sees_changes_after_it_grows() {
     let ((), _waited) = tokio::join!(empty_it, held);
     assert!(!watchers.repo_active("owner/repo"));
 
-    subs.subscribe("s", "owner/repo", dir.path(), &["docs".to_string()])
+    subs.subscribe("s", "owner/repo", dir.path(), &["docs".to_owned()])
         .unwrap();
     std::fs::write(dir.path().join("docs/after.txt"), b"x").unwrap();
     assert_eq!(
         subs.wait("s", window()).await,
         (
-            vec![("owner/repo".to_string(), "docs".to_string())],
+            vec![("owner/repo".to_owned(), "docs".to_owned())],
             WaitOutcome::Dirty
         )
     );

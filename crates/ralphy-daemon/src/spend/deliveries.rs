@@ -331,14 +331,14 @@ fn median(costs: &[f64]) -> Option<f64> {
     match costs.len() {
         0 => None,
         n if n % 2 == 1 => Some(costs[n / 2]),
-        n => Some((costs[n / 2 - 1] + costs[n / 2]) / 2.0),
+        n => Some(f64::midpoint(*costs.get(n / 2 - 1)?, *costs.get(n / 2)?)),
     }
 }
 
 /// A percentage tile, or `—` when its denominator is empty — a share of nothing
 /// is not `0.0%`.
 fn fmt_pct(share: Option<f64>) -> String {
-    share.map_or_else(|| "—".to_string(), fmt_share)
+    share.map_or_else(|| "—".to_owned(), fmt_share)
 }
 
 #[cfg(test)]

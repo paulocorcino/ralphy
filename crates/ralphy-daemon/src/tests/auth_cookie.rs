@@ -28,7 +28,7 @@ async fn secure_cookie_follows_the_forwarded_scheme_on_login_slide_and_logout() 
             .get(header::SET_COOKIE)
             .and_then(|v| v.to_str().ok())
             .expect("a Set-Cookie header")
-            .to_string()
+            .to_owned()
     };
 
     // Plain http: no `Secure` (the loopback default).
@@ -130,7 +130,7 @@ async fn secure_cookie_follows_the_forwarded_scheme_on_login_slide_and_logout() 
 #[tokio::test]
 async fn logout_clears_cookie_and_needs_a_session() {
     let cookie = login_set_cookie("").await;
-    let cookie_pair = cookie.split(';').next().unwrap().to_string();
+    let cookie_pair = cookie.split(';').next().unwrap().to_owned();
     // ONE router: the epoch lives in its `AuthState`, and the claim is that
     // an unauthenticated POST did not move it.
     let app = session_router("tok");
@@ -212,8 +212,8 @@ async fn logout_clears_cookie_and_needs_a_session() {
 #[tokio::test]
 async fn the_guard_hands_the_login_id_to_the_request() {
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
-    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
-        token: "tok".to_string(),
+    let policy = auth::AuthPolicy::Session(Arc::new(auth::SessionAuth {
+        token: "tok".to_owned(),
         totp: rfc_seed(),
         password: None,
         epoch: session_epoch.clone(),
@@ -258,8 +258,8 @@ async fn the_guard_hands_the_login_id_to_the_request() {
 #[tokio::test]
 async fn a_revoked_login_is_refused_and_another_is_not() {
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
-    let policy = auth::AuthPolicy::Session(std::sync::Arc::new(auth::SessionAuth {
-        token: "tok".to_string(),
+    let policy = auth::AuthPolicy::Session(Arc::new(auth::SessionAuth {
+        token: "tok".to_owned(),
         totp: rfc_seed(),
         password: None,
         epoch: session_epoch.clone(),

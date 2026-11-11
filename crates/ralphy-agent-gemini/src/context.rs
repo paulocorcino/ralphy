@@ -65,7 +65,7 @@ pub(crate) fn exec_stdin(charter: &str, ws: &Workspace) -> String {
 /// when there is nothing to inline.
 fn assemble(charter: &str, files: &[(String, String)]) -> String {
     if files.is_empty() {
-        return charter.to_string();
+        return charter.to_owned();
     }
     let mut out = String::from(charter);
     out.push_str(PREAMBLE);
@@ -98,11 +98,8 @@ mod tests {
     #[test]
     fn each_present_artifact_is_fenced_under_its_ralphy_name() {
         let files = vec![
-            (".ralphy/plan.md".to_string(), "- [ ] step one".to_string()),
-            (
-                ".ralphy/issue.json".to_string(),
-                "{\"number\":7}".to_string(),
-            ),
+            (".ralphy/plan.md".to_owned(), "- [ ] step one".to_owned()),
+            (".ralphy/issue.json".to_owned(), "{\"number\":7}".to_owned()),
         ];
         let out = assemble("CHARTER", &files);
         assert!(out.starts_with("CHARTER"));
@@ -122,7 +119,7 @@ mod tests {
         // plan.md carries ```md blocks; a Markdown wrapper would break on them, so
         // the banner fence must survive an artifact that contains triple backticks.
         let body = "notes\n```rust\nfn x() {}\n```\ndone";
-        let files = vec![(".ralphy/plan.md".to_string(), body.to_string())];
+        let files = vec![(".ralphy/plan.md".to_owned(), body.to_owned())];
         let out = assemble("C", &files);
         assert!(out.contains("===== END .ralphy/plan.md ====="));
         assert!(out.contains("fn x() {}"));
@@ -132,7 +129,7 @@ mod tests {
     fn only_present_files_appear() {
         // The retry briefs are absent on a first attempt; their labels must not be
         // conjured when the file was never written.
-        let files = vec![(".ralphy/plan.md".to_string(), "p".to_string())];
+        let files = vec![(".ralphy/plan.md".to_owned(), "p".to_owned())];
         let out = assemble("C", &files);
         assert!(!out.contains("protocol-failure.md"));
         assert!(!out.contains("verify-failure.md"));

@@ -33,11 +33,8 @@ fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<()>) {
     let handle = std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut sink = [0u8; 1024];
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the test client may have closed the connection"
-            )]
-            let _ = std::io::Read::read(&mut stream, &mut sink);
+            // The test client may have closed the connection.
+            drop(Read::read(&mut stream, &mut sink));
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the test client may have closed the connection"
@@ -50,7 +47,7 @@ fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<()>) {
             let _ = stream.flush();
         }
     });
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(20));
     (port, handle)
 }
 

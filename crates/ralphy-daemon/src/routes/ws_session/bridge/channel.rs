@@ -92,7 +92,7 @@ pub(super) async fn bridge_attached(
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let labels = super::super::SessionLabels::default();
-    let (daemon, environment) = ("daemon".to_string(), "test".to_string());
+    let (daemon, environment) = ("daemon".to_owned(), "test".to_owned());
     let opening = Opening::new(id, daemon, environment, &labels, tab.gzip);
     let attached = Attached {
         attach,
@@ -190,7 +190,7 @@ impl Attached {
                 _ = shutdown.changed() => {
                     ControlFlow::Break(Some(session::EndReason::DaemonShutdown))
                 }
-                _ = &mut notified => ControlFlow::Break(Some(
+                () = &mut notified => ControlFlow::Break(Some(
                     evict.reason().unwrap_or(session::EndReason::ChildExited),
                 )),
                 changed = self.attach.size.changed(), if sizes => {

@@ -1,5 +1,5 @@
 //! The sink's delivery engine (ADR-0019, ADR-0024): a [`DeliveryEngine`] fold that
-//! maps each drained event into a CloudEvents envelope and POSTs it with retry, plus
+//! maps each drained event into a `CloudEvents` envelope and POSTs it with retry, plus
 //! the ~30s heartbeat and the plan-step poll on each tick. The ring, worker loop, and
 //! bounded-shutdown handle are the shared [`crate::delivery`] spine.
 
@@ -71,10 +71,10 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
         .count();
     // The active issue as `{number, title}` (the normalized `issue` shape, #96) or
     // `null` when no issue is active — replacing the bare active number.
-    let issue = state
-        .active_issue()
-        .map(|e| json!({ "number": e.number, "title": e.title }))
-        .unwrap_or(Value::Null);
+    let issue = state.active_issue().map_or(
+        Value::Null,
+        |e| json!({ "number": e.number, "title": e.title }),
+    );
     crate::events::envelope::run_envelope(
         "dev.ralphy.run.heartbeat",
         ctx,
@@ -91,9 +91,9 @@ fn heartbeat(ctx: &EventCtx, state: &RunState, tokens: Totals, elapsed_s: u64) -
     )
 }
 
-/// The CloudEvents sink fold (ADR-0019, ADR-0024): folds each drained event into a
+/// The `CloudEvents` sink fold (ADR-0019, ADR-0024): folds each drained event into a
 /// local [`RunState`] (so adapter events carrying issue `0` resolve to the active
-/// issue), maps it to a CloudEvents envelope, and POSTs it with retry; each tick
+/// issue), maps it to a `CloudEvents` envelope, and POSTs it with retry; each tick
 /// runs the plan-step poll and the ~30s heartbeat timer. Owns its own
 /// [`EventSink`] transport and the run's drop-guard `warned` flag.
 struct CloudEventsEngine<T: EventSink> {
@@ -133,14 +133,13 @@ impl<T: EventSink> DeliveryEngine for CloudEventsEngine<T> {
         // Fold first so the adapter events that carry issue `0` resolve to the
         // active issue when mapped.
         self.state.apply(event.clone());
-        if let Some(cloudevent) = runevent_to_cloudevent(&event, &self.ctx, &self.state) {
-            deliver(
-                &self.transport,
-                &cloudevent,
-                &self.warned,
-                RETRY_BASE_BACKOFF,
-            );
-        }
+        let cloudevent = runevent_to_cloudevent(&event, &self.ctx, &self.state);
+        deliver(
+            &self.transport,
+            &cloudevent,
+            &self.warned,
+            RETRY_BASE_BACKOFF,
+        );
     }
 
     fn on_tick(&mut self, _changed: bool) {
@@ -243,7 +242,7 @@ fn detach_warn() {
 /// shutdown signal and the worker's join handle; a spawn failure leaves the
 /// installed Layer inert (the ring just fills and drops) rather than aborting the
 /// run.
-pub fn try_start_sink<T: EventSink + Send + 'static>(
+pub(crate) fn try_start_sink<T: EventSink + Send + 'static>(
     transport: T,
     ctx: EventCtx,
     queue: Arc<EventQueue>,

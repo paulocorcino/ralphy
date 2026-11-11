@@ -196,7 +196,7 @@ impl TreeConn {
     async fn watch_dir(&mut self, root: &Path, repo: &str, rel: String, req: &Request) {
         // Idempotent per connection: a repeat watch must NOT take a second
         // manager refcount this teardown would never release.
-        let key = (repo.to_string(), rel.clone());
+        let key = (repo.to_owned(), rel.clone());
         if self.watched.contains(&key) {
             self.refresh_alias(key, req.alias.as_ref());
             return;
@@ -207,7 +207,7 @@ impl TreeConn {
                 // forwarder on the rx the manager just handed us.
                 let nudge_tx = &self.nudge_tx;
                 self.forwarders
-                    .entry(repo.to_string())
+                    .entry(repo.to_owned())
                     .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
                 self.refresh_alias(key.clone(), req.alias.as_ref());
                 self.watched.push(key);
@@ -284,7 +284,7 @@ fn start_peer_poller(
     let task = spawn_peer_tree_poller(
         peer.clone(),
         req.repo_ref.clone(),
-        slug.to_string(),
+        slug.to_owned(),
         sub.clone(),
         set.clone(),
         nudge_tx.clone(),

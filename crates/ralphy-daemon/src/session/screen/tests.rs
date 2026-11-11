@@ -55,7 +55,7 @@ fn dump_grid(grid: &Grid<Cell>) -> String {
                 cell.flags.bits(),
                 cell.underline_color(),
                 cell.zerowidth(),
-                cell.hyperlink().map(|link| link.uri().to_string()),
+                cell.hyperlink().map(|link| link.uri().to_owned()),
             ));
         }
         out.push('\n');

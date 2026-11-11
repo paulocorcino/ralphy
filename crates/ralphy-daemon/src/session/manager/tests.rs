@@ -90,9 +90,9 @@ async fn a_watcher_does_not_occupy_the_writer_slot() {
     let spec = console_spec(std::env::temp_dir(), 24, 80, None);
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -150,9 +150,9 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
     spec.status = Some(files);
     let (id, _att) = manager
         .spawn_attached(
-            "owner/r".to_string(),
-            "claude".to_string(),
-            "agent".to_string(),
+            "owner/r".to_owned(),
+            "claude".to_owned(),
+            "agent".to_owned(),
             None,
             None,
             None,
@@ -190,21 +190,21 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
     observe("UserPromptSubmit", seen);
     assert_eq!(
         state_at(seen + STALE_AFTER - std::time::Duration::from_secs(60)),
-        Some("working".to_string())
+        Some("working".to_owned())
     );
-    assert_eq!(state_at(now), Some("unknown".to_string()));
+    assert_eq!(state_at(now), Some("unknown".to_owned()));
     assert_eq!(
         manager
             .get(id)
             .and_then(|i| i.agent_state)
             .and_then(|a| a.state),
-        Some("unknown".to_string()),
+        Some("unknown".to_owned()),
         "`get` renders too"
     );
     observe("PermissionRequest", seen);
     assert_eq!(
         state_at(now),
-        Some("waiting".to_string()),
+        Some("waiting".to_owned()),
         "a question never goes stale"
     );
     manager.close(id);
@@ -220,11 +220,11 @@ async fn console_in_matches_only_the_repo_and_checkout_pair() {
     let spawn = |repo: &str, checkout: Option<&str>| {
         manager
             .spawn_attached(
-                repo.to_string(),
-                "claude".to_string(),
-                "agent".to_string(),
+                repo.to_owned(),
+                "claude".to_owned(),
+                "agent".to_owned(),
                 None,
-                checkout.map(str::to_string),
+                checkout.map(str::to_owned),
                 None,
                 console_spec(std::env::temp_dir(), 24, 80, None),
             )

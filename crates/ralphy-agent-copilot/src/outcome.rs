@@ -49,13 +49,13 @@ fn toolless_assistant_text(line: &str) -> Option<String> {
     let toolless = data
         .get("toolRequests")
         .and_then(Value::as_array)
-        .is_some_and(|a| a.is_empty());
+        .is_some_and(Vec::is_empty);
     if !toolless {
         return None;
     }
     data.get("content")
         .and_then(Value::as_str)
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// Extract Copilot's [`CompletionSignals`] from a call's raw end state and delegate
@@ -84,12 +84,12 @@ pub(crate) fn classify_copilot_outcome(
     final_text: &str,
     log: &str,
 ) -> Outcome {
-    let limit = if !exited_cleanly {
+    let limit = if exited_cleanly {
+        None
+    } else {
         // No reset hint: Copilot's limit surface is unobserved (D11), so the
         // ADR-0030 synthetic cadence handles the wait.
         ralphy_adapter_support::detect_limit(log, crate::auth::is_copilot_limit_text, |_| None)
-    } else {
-        None
     };
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(final_text),

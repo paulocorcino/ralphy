@@ -54,18 +54,18 @@ pub(crate) fn ssh_argv(
         "ServerAliveInterval=15",
         "ServerAliveCountMax=3",
     ] {
-        argv.push("-o".to_string());
-        argv.push(opt.to_string());
+        argv.push("-o".to_owned());
+        argv.push(opt.to_owned());
     }
     if let Some(id) = identity {
-        argv.push("-i".to_string());
+        argv.push("-i".to_owned());
         argv.push(id.display().to_string());
-        argv.push("-o".to_string());
-        argv.push("IdentitiesOnly=yes".to_string());
+        argv.push("-o".to_owned());
+        argv.push("IdentitiesOnly=yes".to_owned());
     }
-    argv.push("--".to_string());
-    argv.push(destination.to_string());
-    argv.push(command.to_string());
+    argv.push("--".to_owned());
+    argv.push(destination.to_owned());
+    argv.push(command.to_owned());
     argv
 }
 
@@ -84,12 +84,12 @@ pub(crate) fn ssh_password_argv(ssh: &Path, destination: &str, command: &str) ->
         "PreferredAuthentications=keyboard-interactive,password",
         "NumberOfPasswordPrompts=1",
     ] {
-        argv.push("-o".to_string());
-        argv.push(opt.to_string());
+        argv.push("-o".to_owned());
+        argv.push(opt.to_owned());
     }
-    argv.push("--".to_string());
-    argv.push(destination.to_string());
-    argv.push(command.to_string());
+    argv.push("--".to_owned());
+    argv.push(destination.to_owned());
+    argv.push(command.to_owned());
     argv
 }
 
@@ -106,7 +106,7 @@ impl Ssh {
             .context("no ssh program found: install OpenSSH")?;
         Ok(Ssh {
             program,
-            destination: destination.to_string(),
+            destination: destination.to_owned(),
             password: None,
         })
     }

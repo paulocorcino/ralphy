@@ -74,7 +74,7 @@ pub(super) async fn serve_repo() -> (u16, String) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string())
+    (port, slug.to_owned())
 }
 
 /// Bind a daemon over a temp *git* repo seeded with committed dot-folders
@@ -136,7 +136,7 @@ pub(super) async fn serve_git_repo() -> (u16, String) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string())
+    (port, slug.to_owned())
 }
 
 /// Send one `Command` on a `spawn` channel and collect every reply frame on
@@ -151,7 +151,7 @@ pub(super) async fn round_trip(
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -240,7 +240,7 @@ pub(super) async fn serve_checkout_repo() -> (u16, String, std::path::PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 fn entry_names(reply: &serde_json::Value) -> Vec<&str> {

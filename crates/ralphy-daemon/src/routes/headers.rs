@@ -9,7 +9,7 @@
 //! foreign or injected `<script>` — a script tag needs `'self'` or a hash of
 //! its exact bytes. What it does NOT buy: Alpine's standard build compiles
 //! `x-data`/`@click` expressions through `AsyncFunction`, so `'unsafe-eval'`
-//! stays and an injected Alpine attribute is still code — DOMPurify on every
+//! stays and an injected Alpine attribute is still code — `DOMPurify` on every
 //! rendered markdown is the control there, not this header.
 
 use std::sync::{Arc, OnceLock};
@@ -67,7 +67,7 @@ pub(crate) const ACCEPT_CH: &str = "Sec-CH-UA-Platform-Version, Sec-CH-UA-Model,
 /// `data:font/ttf` in its bundle). `connect-src` is `'self'` alone: every
 /// workbench socket is built from `location.host`, and `'self'` covers a
 /// same-origin `ws:`/`wss:` (measured 2026-10-01 in Playwright Chromium,
-/// Firefox and WebKit, on loopback, through ngrok and through dev tunnels:
+/// Firefox and `WebKit`, on loopback, through ngrok and through dev tunnels:
 /// `tests/browser/security/wb_csp_connect.py`; ADR-0072 D10). No
 /// `upgrade-insecure-requests` and no HSTS: the daemon never terminates TLS
 /// (ADR-0032 §4), a front does.
@@ -75,7 +75,7 @@ pub(crate) const ACCEPT_CH: &str = "Sec-CH-UA-Platform-Version, Sec-CH-UA-Model,
 /// `remote_images` adds `img-src https:` for web images in rendered markdown
 /// (ADR-0032 amendment §F, ADR-0049 §5). It is opt-in because it reopens a
 /// GET channel to any origin: an injected Alpine attribute could put data in
-/// an image URL. DOMPurify on every rendered markdown stays the control there.
+/// an image URL. `DOMPurify` on every rendered markdown stays the control there.
 pub(crate) fn content_security_policy(remote_images: bool) -> &'static HeaderValue {
     static STRICT: OnceLock<HeaderValue> = OnceLock::new();
     static REMOTE_IMAGES: OnceLock<HeaderValue> = OnceLock::new();

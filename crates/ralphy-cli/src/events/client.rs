@@ -1,4 +1,4 @@
-//! The HTTP transport for the CloudEvents sink (ADR-0019).
+//! The HTTP transport for the `CloudEvents` sink (ADR-0019).
 //!
 //! Delivery sits behind an [`EventSink`] trait so the worker's retry/drop policy is
 //! testable without a network: [`UreqEventTransport`] is the real blocking `ureq`
@@ -13,13 +13,13 @@ use std::time::Duration;
 use anyhow::Result;
 use serde_json::Value;
 
-/// The structured content type every event is POSTed as (CloudEvents 1.0).
+/// The structured content type every event is `POSTed` as (`CloudEvents` 1.0).
 const CONTENT_TYPE: &str = "application/cloudevents+json";
 
 /// How the endpoint (or the network) responded to one POST, mapped to the
 /// retry/drop policy the sink worker applies (docs/events.md transport contract).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PostOutcome {
+pub(crate) enum PostOutcome {
     /// A `2xx` — the event is acknowledged (body ignored).
     Delivered,
     /// A `5xx`, timeout, or network error — retry with backoff, then drop.
@@ -30,15 +30,15 @@ pub enum PostOutcome {
 
 /// The delivery transport the sink worker POSTs each envelope through. One call
 /// per event; the returned [`PostOutcome`] drives retry vs. drop.
-pub trait EventSink {
-    /// POST one CloudEvents envelope, classifying the response.
+pub(crate) trait EventSink {
+    /// POST one `CloudEvents` envelope, classifying the response.
     fn post(&self, body: &Value) -> Result<PostOutcome>;
 }
 
 /// The real blocking transport: POST each envelope to the configured `url` with
 /// `ureq`, carrying `Content-Type: application/cloudevents+json` and, when a token
 /// is configured, `Authorization: Bearer <token>`.
-pub struct UreqEventTransport {
+pub(crate) struct UreqEventTransport {
     url: String,
     token: Option<String>,
     agent: ureq::Agent,
@@ -48,7 +48,7 @@ impl UreqEventTransport {
     /// Build a transport for `url` with an optional bearer `token`. The agent
     /// carries connect/read timeouts so a wedged endpoint classifies as a
     /// [`PostOutcome::Transient`] instead of hanging the worker thread.
-    pub fn new(url: impl Into<String>, token: Option<String>) -> Self {
+    pub(crate) fn new(url: impl Into<String>, token: Option<String>) -> Self {
         let agent = ureq::Agent::config_builder()
             .timeout_connect(Some(Duration::from_secs(10)))
             .timeout_recv_response(Some(Duration::from_secs(20)))
@@ -91,7 +91,7 @@ impl EventSink for UreqEventTransport {
 /// Classify an HTTP status code into a [`PostOutcome`]: a `4xx` is a permanent
 /// configuration error (drop), everything else (`5xx` and any other non-2xx) is
 /// transient (retry). `2xx` never reaches here — `ureq` reports it as `Ok`.
-pub fn classify_status(code: u16) -> PostOutcome {
+pub(crate) fn classify_status(code: u16) -> PostOutcome {
     if (400..500).contains(&code) {
         PostOutcome::Permanent
     } else {

@@ -72,7 +72,7 @@ fn branch_list_reports_current_and_branches() {
         .as_array()
         .expect("branches array")
         .iter()
-        .map(|b| b.as_str().unwrap().to_string())
+        .map(|b| b.as_str().unwrap().to_owned())
         .collect();
     assert!(
         branches.contains(&current),
@@ -152,10 +152,10 @@ fn branch_switch_refused_by_local_changes_leads_with_gits_reason() {
     ]);
     assert!(!out.status.success(), "git must refuse the switch");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let reason = stderr
-        .split_once("cannot switch branch: ")
-        .map(|(_, rest)| rest)
-        .unwrap_or_else(|| panic!("the error must lead with the refusal, got: {stderr}"));
+    let reason = stderr.split_once("cannot switch branch: ").map_or_else(
+        || panic!("the error must lead with the refusal, got: {stderr}"),
+        |(_, rest)| rest,
+    );
     assert!(
         reason.contains("local changes"),
         "git's reason must follow the prefix, got: {stderr}"
@@ -175,10 +175,10 @@ pub(super) fn lock_rows() -> Vec<LockRow> {
         verb: "branch switch",
         lock_repo: switch_root.clone(),
         args: vec![
-            "branch".to_string(),
-            "switch".to_string(),
-            "other".to_string(),
-            "--repo".to_string(),
+            "branch".to_owned(),
+            "switch".to_owned(),
+            "other".to_owned(),
+            "--repo".to_owned(),
             switch_root.to_string_lossy().to_string(),
         ],
         state: Box::new(move || git_output(&switch_root, &["rev-parse", "--abbrev-ref", "HEAD"])),
@@ -206,11 +206,11 @@ pub(super) fn lock_rows() -> Vec<LockRow> {
         let settings = root.join(".ralphy").join("settings.json");
         assert!(settings.is_file(), "the free config set wrote settings");
         let mut full = vec![
-            "config".to_string(),
-            "--repo".to_string(),
+            "config".to_owned(),
+            "--repo".to_owned(),
             root.to_string_lossy().to_string(),
         ];
-        full.extend(args.iter().map(|a| a.to_string()));
+        full.extend(args.iter().map(ToString::to_string));
         rows.push(LockRow {
             verb,
             lock_repo: root,

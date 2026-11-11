@@ -44,7 +44,7 @@ async fn malformed_run_is_refused_without_spawning() {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: "run".to_string(),
+            verb: "run".to_owned(),
             payload: serde_json::json!({ "repo": slug, "agent": "bogus", "branchMode": "new" }),
         }))
         .into(),

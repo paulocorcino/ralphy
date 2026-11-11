@@ -40,13 +40,13 @@ fn skip_label(kind: SkipKind, label: Option<&str>, blockers: &[u64]) -> String {
                 .join(", ");
             format!("skipped (blocked by {by})")
         }
-        SkipKind::BlockedBy => "skipped (blocked)".to_string(),
-        SkipKind::StopBefore => "skipped (stop-before)".to_string(),
+        SkipKind::BlockedBy => "skipped (blocked)".to_owned(),
+        SkipKind::StopBefore => "skipped (stop-before)".to_owned(),
         SkipKind::HumanReturn => match label {
             Some(l) => format!("skipped ({l})"),
-            None => "skipped (human-return)".to_string(),
+            None => "skipped (human-return)".to_owned(),
         },
-        SkipKind::VerifyFailed => "skipped (verify failed)".to_string(),
+        SkipKind::VerifyFailed => "skipped (verify failed)".to_owned(),
     }
 }
 
@@ -55,7 +55,7 @@ fn skip_label(kind: SkipKind, label: Option<&str>, blockers: &[u64]) -> String {
 /// blocker list is empty (a label fetch the runner could not resolve).
 fn human_blocked_label(on: &[u64]) -> String {
     if on.is_empty() {
-        return "waiting on human".to_string();
+        return "waiting on human".to_owned();
     }
     let at = on
         .iter()
@@ -256,17 +256,17 @@ pub(crate) fn render_line(
         RunEvent::SleepEnded => (
             pick("🌙", "[limit]", opts.emoji),
             Style::new().yellow(),
-            "usage limit reset — resuming".to_string(),
+            "usage limit reset — resuming".to_owned(),
         ),
         RunEvent::ApiDegraded => (
             pick("🔄", "[api]", opts.emoji),
             Style::new().yellow(),
-            "API degraded — child retrying".to_string(),
+            "API degraded — child retrying".to_owned(),
         ),
         RunEvent::ApiRecovered => (
             pick("🔄", "[api]", opts.emoji),
             Style::new().green(),
-            "API recovered — resuming".to_string(),
+            "API recovered — resuming".to_owned(),
         ),
         RunEvent::IdleReaped { idle_minutes } => (
             pick("💤", "[idle]", opts.emoji),
@@ -298,7 +298,7 @@ pub(crate) fn render_line(
             pick("🛑", "[stop]", opts.emoji),
             Style::new().yellow(),
             match number {
-                0 => "stopped by the operator".to_string(),
+                0 => "stopped by the operator".to_owned(),
                 n => format!("stopped by the operator during #{n}"),
             },
         ),
@@ -331,7 +331,7 @@ pub(crate) fn render_line(
 fn model_effort_seg(model: Option<&str>, effort: Option<&str>) -> Option<String> {
     match (model, effort) {
         (Some(m), Some(e)) => Some(format!("{m} / {e}")),
-        (Some(m), None) => Some(m.to_string()),
+        (Some(m), None) => Some(m.to_owned()),
         _ => None,
     }
 }

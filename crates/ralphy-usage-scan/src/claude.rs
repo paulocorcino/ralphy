@@ -90,7 +90,7 @@ fn scan_workspace(
         let Some(session_id) = transcript
             .file_stem()
             .and_then(|s| s.to_str())
-            .map(str::to_string)
+            .map(str::to_owned)
         else {
             continue;
         };
@@ -132,9 +132,14 @@ fn read_usage_line(line: &str) -> Option<UsageLine> {
     let message = value.get("message")?;
     let model = message.get("model").and_then(|v| v.as_str())?;
     let usage = message.get("usage")?;
-    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |k: &str| {
+        usage
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     Some(UsageLine {
-        model: model.to_string(),
+        model: model.to_owned(),
         toks: [
             field("input_tokens"),
             field("output_tokens"),
@@ -145,7 +150,7 @@ fn read_usage_line(line: &str) -> Option<UsageLine> {
         ts: value
             .get("timestamp")
             .and_then(|v| v.as_str())
-            .map(str::to_string),
+            .map(str::to_owned),
     })
 }
 
@@ -185,10 +190,10 @@ impl Group {
     /// Widen the first/last timestamps to include `ts`.
     fn widen(&mut self, ts: &str) {
         if self.first_ts.as_deref().is_none_or(|cur| ts_lt(ts, cur)) {
-            self.first_ts = Some(ts.to_string());
+            self.first_ts = Some(ts.to_owned());
         }
         if self.last_ts.as_deref().is_none_or(|cur| ts_lt(cur, ts)) {
-            self.last_ts = Some(ts.to_string());
+            self.last_ts = Some(ts.to_owned());
         }
     }
 
@@ -225,9 +230,9 @@ fn parse_transcript(
         .map(|(model, group)| {
             let total = group.total();
             InteractiveRecord {
-                agent: "claude".to_string(),
+                agent: "claude".to_owned(),
                 model,
-                session_id: session_id.to_string(),
+                session_id: session_id.to_owned(),
                 project: project.clone(),
                 actor_email: actor_email.clone(),
                 tokens: Some(Tokens {
@@ -267,12 +272,12 @@ fn ts_lt(a: &str, b: &str) -> bool {
 fn cache_creation_tokens(usage: &serde_json::Value) -> u64 {
     if let Some(flat) = usage
         .get("cache_creation_input_tokens")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
     {
         return flat;
     }
     if let Some(obj) = usage.get("cache_creation").and_then(|v| v.as_object()) {
-        let tier = |k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let tier = |k: &str| obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         return tier("ephemeral_5m_input_tokens") + tier("ephemeral_1h_input_tokens");
     }
     0

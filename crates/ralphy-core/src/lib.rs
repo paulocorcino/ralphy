@@ -77,7 +77,7 @@ pub const DEFAULT_INTERACTIVE_IDLE_MINUTES: u64 = 45;
 /// real run, but finite so `Instant` arithmetic and subprocess timeouts stay
 /// well-defined. The issue is then bounded only by the run-level deadline
 /// (`--deadline-hours`), if one is set.
-pub const UNBOUNDED_ISSUE_HORIZON: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+pub const UNBOUNDED_ISSUE_HORIZON: Duration = Duration::from_hours(8760);
 
 mod agent;
 mod effort;

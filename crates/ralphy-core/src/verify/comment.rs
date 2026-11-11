@@ -20,8 +20,7 @@ fn status_line(cmd: &CommandOutcome) -> String {
     } else {
         let code = cmd
             .exit_code
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "killed".into());
+            .map_or_else(|| "killed".into(), |c| c.to_string());
         format!("\u{2717} {line}    exit {code}")
     }
 }

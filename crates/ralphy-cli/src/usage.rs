@@ -21,7 +21,7 @@ use crate::pricing::{pricing_cache_file, pricing_offline_from_file, PriceTable};
 
 /// `ralphy usage` arguments.
 #[derive(Args)]
-pub struct UsageArgs {
+pub(crate) struct UsageArgs {
     /// Find the model of the rows that have none, by reading the agents' own
     /// session files.
     #[arg(long)]
@@ -57,7 +57,7 @@ pub struct UsageArgs {
 
 /// The dimension `--by` groups on.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub enum GroupBy {
+pub(crate) enum GroupBy {
     Phase,
     Model,
     Actor,
@@ -66,7 +66,7 @@ pub enum GroupBy {
 
 /// The output format `--format` selects.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub enum Format {
+pub(crate) enum Format {
     Table,
     Csv,
     Json,
@@ -85,7 +85,7 @@ fn group_key(row: &UsageRow, by: GroupBy) -> String {
 /// Keep only rows whose `ts` date is on or after `since` (a `YYYY-MM-DD` string).
 /// The ledger writes RFC3339 timestamps, whose leading 10 chars are the ISO date,
 /// so a lexical compare of that prefix against `since` is a correct date filter.
-pub fn filter_since(rows: Vec<UsageRow>, since: &str) -> Vec<UsageRow> {
+pub(crate) fn filter_since(rows: Vec<UsageRow>, since: &str) -> Vec<UsageRow> {
     rows.into_iter()
         // `get(..10)` is char-boundary-safe: `read_rows` is tolerant of arbitrary
         // on-disk JSON, so a corrupt non-ASCII `ts` must not panic the slice.
@@ -95,7 +95,7 @@ pub fn filter_since(rows: Vec<UsageRow>, since: &str) -> Vec<UsageRow> {
 
 /// Group rows by `by`, returning `(key, summed tokens, row count)` per key,
 /// ordered by key. Pure over its inputs.
-pub fn group_by(rows: &[UsageRow], by: GroupBy) -> Vec<(String, Usage, usize)> {
+pub(crate) fn group_by(rows: &[UsageRow], by: GroupBy) -> Vec<(String, Usage, usize)> {
     let mut map: BTreeMap<String, (Usage, usize)> = BTreeMap::new();
     for row in rows {
         let entry = map.entry(group_key(row, by)).or_default();
@@ -130,10 +130,10 @@ fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (Option<f64>, bool) {
 /// `~$0.00` for an empty/zero-token set (nothing to price and nothing unpriced).
 fn fmt_usd(usd: Option<f64>, partial: bool) -> String {
     match (usd, partial) {
-        (None, true) => "~$?".to_string(),
+        (None, true) => "~$?".to_owned(),
         (Some(usd), true) => format!("~${usd:.2}+?"),
         (Some(usd), false) => format!("~${usd:.2}"),
-        (None, false) => "~$0.00".to_string(),
+        (None, false) => "~$0.00".to_owned(),
     }
 }
 
@@ -150,7 +150,11 @@ fn fmt_tokens(n: u64) -> String {
 
 /// Render the default (table) report as lines: a balance line (total tokens +
 /// read-time USD) and, when `by` is set, one line per group.
-pub fn render_table(rows: &[UsageRow], by: Option<GroupBy>, table: &PriceTable) -> Vec<String> {
+pub(crate) fn render_table(
+    rows: &[UsageRow],
+    by: Option<GroupBy>,
+    table: &PriceTable,
+) -> Vec<String> {
     let mut lines = Vec::new();
 
     let all: Vec<&UsageRow> = rows.iter().collect();
@@ -195,7 +199,7 @@ fn csv_field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_string()
+        s.to_owned()
     }
 }
 
@@ -208,7 +212,7 @@ outcome,input,output,cache_read,cache_creation,usd,ts";
 /// Excel opens it clean on double-click, a header row, the nested `tokens` object
 /// flattened into columns, a read-time `usd` column (empty when unpriced), and the
 /// ISO `ts` verbatim.
-pub fn export_csv(rows: &[UsageRow], table: &PriceTable) -> String {
+pub(crate) fn export_csv(rows: &[UsageRow], table: &PriceTable) -> String {
     let mut out = String::from("\u{FEFF}");
     out.push_str(CSV_HEADER);
     out.push('\n');
@@ -242,7 +246,7 @@ pub fn export_csv(rows: &[UsageRow], table: &PriceTable) -> String {
 /// Export the rows as a JSON array (for pipelines): one object per row carrying the
 /// row fields, the flattened token counts, and a read-time `usd` field (`null` when
 /// the model is unpriced — never `0`).
-pub fn export_json(rows: &[UsageRow], table: &PriceTable) -> Result<String> {
+pub(crate) fn export_json(rows: &[UsageRow], table: &PriceTable) -> Result<String> {
     let arr: Vec<serde_json::Value> = rows
         .iter()
         .map(|r| {
@@ -281,7 +285,7 @@ fn resolve_slug(project: Option<&str>, repo: &Path) -> Result<String> {
             let root = git::resolve_toplevel(Path::new(p))?;
             Ok(git::project_slug(&root))
         }
-        Some(p) => Ok(p.to_string()),
+        Some(p) => Ok(p.to_owned()),
         None => {
             let root = git::resolve_toplevel(repo)?;
             Ok(git::project_slug(&root))
@@ -291,9 +295,9 @@ fn resolve_slug(project: Option<&str>, repo: &Path) -> Result<String> {
 
 /// `ralphy usage`: read the project's ledger and print the balance / group-by cut
 /// or an export.
-pub fn usage_cmd(args: UsageArgs) -> Result<()> {
+pub(crate) fn usage_cmd(args: &UsageArgs) -> Result<()> {
     if args.recover_models {
-        return recover_models(&args);
+        return recover_models(args);
     }
     let slug = resolve_slug(args.project.as_deref(), &args.repo)?;
 
@@ -442,7 +446,7 @@ fn recovery_line(value: &serde_json::Value) -> Option<RecoveryLine> {
     let token = |name: &str| {
         tokens
             .and_then(|value| value.get(name))
-            .and_then(|value| value.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0)
     };
     let candidate = value

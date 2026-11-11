@@ -25,7 +25,7 @@ use ralphy_pty::{CURSOR_POSITION_REPLY, CURSOR_POSITION_REQUEST};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Accumulate output until it contains `needle`, bounded to 5s. Plays the
-/// terminal emulator, answering the ConPTY startup cursor-position request —
+/// terminal emulator, answering the `ConPTY` startup cursor-position request —
 /// without it the child blocks before running on Windows.
 async fn read_until(
     session: &mut Session,
@@ -69,7 +69,7 @@ async fn child_env(
     let out = read_until(session, rx, &format!("ENV:{name}=")).await;
     let marker = format!("ENV:{name}=");
     let tail = out.rsplit(&marker).next().unwrap_or_default();
-    tail.lines().next().unwrap_or_default().trim().to_string()
+    tail.lines().next().unwrap_or_default().trim().to_owned()
 }
 
 fn spec_at(cwd: PathBuf, env: Vec<(std::ffi::OsString, std::ffi::OsString)>) -> SessionSpec {

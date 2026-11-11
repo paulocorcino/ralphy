@@ -23,7 +23,8 @@ mod types;
 
 pub(crate) use branch::prepare_branch;
 pub use branch::BranchMode;
-pub use clock::{synthetic_reset, RunClock, WaitOutcome, WallClock};
+pub(crate) use clock::synthetic_reset;
+pub use clock::{RunClock, WaitOutcome, WallClock};
 pub(crate) use comments::no_gate_comment;
 pub(crate) use phases::{
     close_and_record, execute_phase, open_blockers, plan_phase, prepare_issue, protocol_gate,
@@ -49,7 +50,7 @@ pub const TRIAGE_AGENT_LABEL: &str = "triage-agent";
 /// to open the children (`## Parent: #N`) and close the bundle — the
 /// follow-the-split blocker gate handles the rest. Fixed-name like
 /// `stop-before`/`triage-agent`, never resolved through `triage-labels.md`.
-pub const NEEDS_SPLIT_LABEL: &str = "needs-split";
+pub(crate) const NEEDS_SPLIT_LABEL: &str = "needs-split";
 
 /// The label applied to an issue the runner closed **green** whose acceptance
 /// ledger still carried `[review-only]` criteria — delivered work whose evidence
@@ -57,14 +58,14 @@ pub const NEEDS_SPLIT_LABEL: &str = "needs-split";
 /// *attention* debt, not unfinished work, and deliberately sits outside
 /// [`HUMAN_GATE_LABELS`]: a closed issue must never re-enter the ADR-0014
 /// blocker path. Fixed-name, never resolved through `triage-labels.md`.
-pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "needs-human-review";
+pub(crate) const NEEDS_HUMAN_REVIEW_LABEL: &str = "needs-human-review";
 
 /// Labels that mark an issue as a human gate (ADR-0014): a blocker parked until a
 /// person acts, not agent work the queue will clear. The canonical
 /// `ready-for-human` triage role and its fixed `HITL` alias (ADR-0001). A human
 /// gate is never a queue member (it is never queried), so it only ever surfaces
 /// as a *blocker* in another issue's `## Blocked by`.
-pub const HUMAN_GATE_LABELS: [&str; 2] = ["ready-for-human", "HITL"];
+pub(crate) const HUMAN_GATE_LABELS: [&str; 2] = ["ready-for-human", "HITL"];
 
 /// The first queued issue carrying [`STOP_BEFORE_LABEL`] whose number is NOT in
 /// `forced` — the point the run halts before, or `None` when the queue has no

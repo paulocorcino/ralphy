@@ -5,7 +5,7 @@ use super::wizard::{InitConfig, Question};
 /// The display form of an optional text field: the value, or the literal `none`
 /// when absent — so a seeded default round-trips through [`resolve_text`].
 pub(crate) fn display_opt(value: Option<&str>) -> String {
-    value.unwrap_or("none").to_string()
+    value.unwrap_or("none").to_owned()
 }
 
 /// The display form of a [`RepoKind`] — the same token [`resolve_kind`] parses.
@@ -14,19 +14,19 @@ pub(crate) fn display_kind(kind: RepoKind) -> String {
         RepoKind::Empty => "empty",
         RepoKind::Existing => "existing",
     }
-    .to_string()
+    .to_owned()
 }
 
 /// The display form of a bool field — the same token [`resolve_bool`] parses.
 pub(crate) fn display_bool(value: bool) -> String {
-    if value { "yes" } else { "no" }.to_string()
+    if value { "yes" } else { "no" }.to_owned()
 }
 
 /// The display form of the milestone-docs list: comma-joined, or `none` when
 /// empty.
 pub(crate) fn display_list(items: &[String]) -> String {
     if items.is_empty() {
-        "none".to_string()
+        "none".to_owned()
     } else {
         items.join(", ")
     }
@@ -38,14 +38,14 @@ pub(crate) fn display_list(items: &[String]) -> String {
 pub(crate) fn resolve_text(default: Option<&str>, raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return default.map(str::to_string);
+        return default.map(str::to_owned);
     }
 
     if trimmed.eq_ignore_ascii_case("none") {
         return None;
     }
 
-    Some(trimmed.to_string())
+    Some(trimmed.to_owned())
 }
 
 /// Resolve a yes/no answer against a seeded default. Empty input keeps the
@@ -87,7 +87,7 @@ pub(crate) fn resolve_list(default: &[String], raw: &str) -> Vec<String> {
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -219,9 +219,9 @@ mod tests {
     #[test]
     fn resolve_text_empty_keeps_default_typed_overrides_none_clears() {
         // Empty input keeps the seeded default.
-        assert_eq!(resolve_text(Some("Rust"), "  "), Some("Rust".to_string()));
+        assert_eq!(resolve_text(Some("Rust"), "  "), Some("Rust".to_owned()));
         // A typed value overrides it.
-        assert_eq!(resolve_text(Some("Rust"), "Go"), Some("Go".to_string()));
+        assert_eq!(resolve_text(Some("Rust"), "Go"), Some("Go".to_owned()));
         // The literal `none` clears it.
         assert_eq!(resolve_text(Some("Rust"), "none"), None);
     }
@@ -247,15 +247,15 @@ mod tests {
 
     #[test]
     fn resolve_list_empty_keeps_default_none_clears_csv_splits() {
-        let default = vec!["a.md".to_string(), "b.md".to_string()];
+        let default = vec!["a.md".to_owned(), "b.md".to_owned()];
         // Empty input keeps the default.
         assert_eq!(resolve_list(&default, "  "), default);
         // The literal `none` clears it.
-        assert!(resolve_list(&default, "none").is_empty());
+        assert_eq!(resolve_list(&default, "none"), Vec::<String>::new());
         // A CSV override splits, trims, and drops blanks.
         assert_eq!(
             resolve_list(&default, " x.md , , y.md "),
-            vec!["x.md".to_string(), "y.md".to_string()]
+            vec!["x.md".to_owned(), "y.md".to_owned()]
         );
     }
 

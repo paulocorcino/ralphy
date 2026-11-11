@@ -67,13 +67,16 @@ fn parse_ledger_accepts_every_dash_spelling() {
 
 #[test]
 fn parse_ledger_absent_section_returns_empty() {
-    assert!(parse_ledger("# Plan\n\n## Steps\n- [ ] do\n").is_empty());
+    assert_eq!(
+        parse_ledger("# Plan\n\n## Steps\n- [ ] do\n"),
+        Vec::<Verdict>::new()
+    );
 }
 
 #[test]
 fn parse_ledger_empty_section_returns_empty() {
     let md = "## Acceptance ledger\n\n## Notes\nsome note\n";
-    assert!(parse_ledger(md).is_empty());
+    assert_eq!(parse_ledger(md), Vec::<Verdict>::new());
 }
 
 #[test]
@@ -109,7 +112,7 @@ fn apply_ledger_ticks_verified_and_leaves_review_only_untouched() {
         result.ticked,
         vec!["Parser returns typed verdicts", "Empty ledger is a no-op"]
     );
-    assert!(result.unmatched.is_empty());
+    assert_eq!(result.unmatched, Vec::<String>::new());
 }
 
 #[test]
@@ -296,7 +299,7 @@ fn apply_ledger_leaves_already_ticked_lines_untouched() {
     // The already-ticked one is unmatched because `- [ ] Parser…` was not found.
     assert!(result
         .unmatched
-        .contains(&"Parser returns typed verdicts".to_string()));
+        .contains(&"Parser returns typed verdicts".to_owned()));
     // The second one is ticked.
     assert!(result.new_body.contains("- [x] Empty ledger is a no-op"));
 }
@@ -311,7 +314,7 @@ fn apply_ledger_reports_unmatched_verified_criterion() {
     }];
     let result = apply_ledger(body, &verdicts);
     assert_eq!(result.unmatched, vec!["Not in body"]);
-    assert!(result.ticked.is_empty());
+    assert_eq!(result.ticked, Vec::<String>::new());
     // Body unchanged.
     assert_eq!(result.new_body, body);
 }
@@ -325,8 +328,8 @@ fn apply_ledger_review_only_is_never_ticked() {
         evidence: "manual".into(),
     }];
     let result = apply_ledger(body, &verdicts);
-    assert!(result.ticked.is_empty());
-    assert!(result.unmatched.is_empty());
+    assert_eq!(result.ticked, Vec::<String>::new());
+    assert_eq!(result.unmatched, Vec::<String>::new());
     // Body unchanged (review-only, not an error).
     assert_eq!(result.new_body, body);
 }
@@ -364,7 +367,7 @@ fn evidence_comment_flags_review_only_and_unmatched() {
             evidence: "test passes".into(),
         },
     ];
-    let unmatched = vec!["Verified but missing".to_string()];
+    let unmatched = vec!["Verified but missing".to_owned()];
     let comment = evidence_comment(&verdicts, &unmatched);
 
     // The exact tag format must appear for verified entries.
@@ -393,8 +396,7 @@ fn evidence_comment_flags_review_only_and_unmatched() {
         // The criterion line plus the next evidence line must not contain the flag.
         let two_lines_end = tail[line_end + 1..]
             .find('\n')
-            .map(|n| line_end + 1 + n)
-            .unwrap_or(tail.len());
+            .map_or(tail.len(), |n| line_end + 1 + n);
         assert!(
             !tail[..two_lines_end].contains("[NEEDS REVIEW"),
             "matched verified criterion must not be flagged: {}",

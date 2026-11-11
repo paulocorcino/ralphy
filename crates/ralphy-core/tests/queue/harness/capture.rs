@@ -31,25 +31,25 @@ impl CapturedFields {
 
 impl tracing::field::Visit for CapturedFields {
     fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_string());
     }
 
     fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_string());
     }
 
     fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_string());
     }
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_owned());
     }
 
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         // `%plan_md`/`%steps_json` (Display) and the event message all arrive here.
         let rendered = format!("{value:?}");
-        self.all.insert(field.name().to_string(), rendered.clone());
+        self.all.insert(field.name().to_owned(), rendered.clone());
         match field.name() {
             "message" => self.message = rendered,
             "plan_md" => self.plan_md = Some(rendered),

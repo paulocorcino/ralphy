@@ -81,15 +81,12 @@ pub(crate) fn revoke_totp_at(dir: &Path) -> Result<()> {
 /// return whether a password is now enrolled.
 pub(crate) fn set_password_at(dir: &Path, password: Option<&str>) -> Result<bool> {
     let path = password::password_path_in(dir);
-    match password.filter(|p| !p.is_empty()) {
-        Some(pw) => {
-            password::save_to(&password::Hash::hash_password(pw), &path)?;
-            Ok(true)
-        }
-        None => {
-            password::clear_at(&path)?;
-            Ok(false)
-        }
+    if let Some(pw) = password.filter(|p| !p.is_empty()) {
+        password::save_to(&password::Hash::hash_password(pw), &path)?;
+        Ok(true)
+    } else {
+        password::clear_at(&path)?;
+        Ok(false)
     }
 }
 

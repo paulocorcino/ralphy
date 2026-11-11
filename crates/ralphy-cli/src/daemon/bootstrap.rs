@@ -30,7 +30,7 @@ pub(crate) fn resolve_or_init_repo(path: &Path, force: bool, create: bool) -> Re
         if std::io::stdin().is_terminal() {
             crate::init::ask_yes_no("Initialize a git repository here?", true)
         } else {
-            Ok("n".to_string())
+            Ok("n".to_owned())
         }
     })
 }
@@ -167,7 +167,7 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        let err = resolve_or_init_repo_with(&dir, false, false, || Ok("n\n".to_string()))
+        let err = resolve_or_init_repo_with(&dir, false, false, || Ok("n\n".to_owned()))
             .expect_err("declined");
         assert!(
             err.to_string().starts_with("not a git repository:"),
@@ -185,7 +185,7 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        resolve_or_init_repo_with(&dir, false, false, || Ok("\n".to_string()))
+        resolve_or_init_repo_with(&dir, false, false, || Ok("\n".to_owned()))
             .expect("empty answer means yes");
         assert!(dir.join(".git").exists());
     }

@@ -193,7 +193,7 @@ fn render_summary(
 
 /// Each section heading with its group and its number of members.
 fn render_sections(o: &mut String, shell: &Shell) {
-    line(o, "\nsections:".to_string());
+    line(o, "\nsections:".to_owned());
     for (k, s) in shell.sections.iter().enumerate() {
         let count = shell.members.iter().filter(|m| m.section == k).count();
         line(

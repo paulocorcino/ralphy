@@ -343,7 +343,7 @@ fn secure_attr(secure: bool) -> &'static str {
 /// Extract the `ralphy_session` value from a `Cookie:` request header, or `None`
 /// when absent. Handles a multi-cookie header (`a=1; ralphy_session=…; b=2`).
 pub fn from_cookie_header(header: Option<&str>) -> Option<String> {
-    named_value(header, COOKIE_NAME).map(str::to_string)
+    named_value(header, COOKIE_NAME).map(str::to_owned)
 }
 
 /// The value of the cookie `name` in a `Cookie:` request header, or `None`.

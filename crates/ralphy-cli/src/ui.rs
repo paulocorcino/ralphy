@@ -15,13 +15,13 @@ mod notice;
 mod presenter;
 mod render;
 pub(crate) use notice::{EdgeNoticeLayer, EdgeNoticeState};
-pub use presenter::{Presenter, PresenterHandle};
-pub use render::{
+pub(crate) use presenter::{Presenter, PresenterHandle};
+pub(crate) use render::{
     normalize_remote_url, render_info_line, render_totals_panel, PanelBranchMode, PanelData,
     PanelStop, RenderOpts,
 };
 // Re-exported because it appears in `PanelData`'s public fields (constructed in `main`).
-pub use crate::runstate::UsageLite;
+pub(crate) use crate::runstate::UsageLite;
 use crate::runstate::{IssueStatus, RunState};
 #[cfg(test)]
 use std::time::Duration;
@@ -37,7 +37,7 @@ use render::{meter_for, render_active_line, render_line, sleep_label, LineExtra}
 
 /// Which phase the active issue is in, for the live active-line icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
+pub(crate) enum Phase {
     Planning,
     Executing,
 }
@@ -46,7 +46,7 @@ pub enum Phase {
 /// Mirrors `ralphy_core::Outcome` but kept UI-local so the presenter never
 /// depends on the core's type (ADR-0006: the UI is a pure CLI concern).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FinishOutcome {
+pub(crate) enum FinishOutcome {
     Done,
     Blocked,
     Timeout,
@@ -178,7 +178,7 @@ fn shrink_bar(filled: &str, empty: &str, counter: &str, width: usize) -> String 
             return candidate;
         }
     }
-    counter.to_string() // Even the bare counter overflows: return it, never empty.
+    counter.to_owned() // Even the bare counter overflows: return it, never empty.
 }
 
 #[cfg(test)]

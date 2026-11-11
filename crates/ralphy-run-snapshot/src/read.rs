@@ -83,7 +83,7 @@ fn visit(repo_root: &Path, path: &Path, is_alive: &impl Fn(u32) -> bool, listing
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or_default()
-        .to_string();
+        .to_owned();
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         // Listed, then gone: another reader's orphan sweep (the attention
@@ -151,8 +151,8 @@ fn parse(raw: &str) -> Result<RunSnapshot, &'static str> {
     // `v` is read before the struct so a document a newer ralphy retyped is
     // refused as such rather than misreported as malformed.
     let value: serde_json::Value = serde_json::from_str(raw).or(Err("malformed"))?;
-    match value.get("v").and_then(|v| v.as_u64()) {
-        Some(v) if v > SNAPSHOT_VERSION as u64 => return Err("unsupported version"),
+    match value.get("v").and_then(serde_json::Value::as_u64) {
+        Some(v) if v > u64::from(SNAPSHOT_VERSION) => return Err("unsupported version"),
         Some(_) => {}
         None => return Err("malformed"),
     }
@@ -221,7 +221,7 @@ mod tests {
             ["01LIVEB", "01LIVEA"],
             "live runs sort by started_at"
         );
-        assert!(listing.unreadable.is_empty());
+        assert_eq!(listing.unreadable, Vec::<UnreadableRun>::new());
     }
 
     #[test]
@@ -232,7 +232,7 @@ mod tests {
         let listing = list_runs(dir.path(), |pid| pid == 111);
         assert_eq!(listing.live.len(), 1);
         assert_eq!(listing.live[0].runid, "01ALIVE");
-        assert!(listing.unreadable.is_empty());
+        assert_eq!(listing.unreadable, Vec::<UnreadableRun>::new());
         assert!(!snapshot_path(dir.path(), "01DEAD").exists());
         assert!(snapshot_path(dir.path(), "01ALIVE").exists());
     }
@@ -242,7 +242,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         seed_raw(dir.path(), "bad.json", "not json");
         let listing = list_runs(dir.path(), |_| true);
-        assert!(listing.live.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
         assert_eq!(listing.unreadable.len(), 1);
         assert_eq!(listing.unreadable[0].runid, "bad");
         assert_eq!(listing.unreadable[0].reason, "malformed");
@@ -261,7 +261,7 @@ mod tests {
             &format!(r#"{{"v":{},"runid":"01FUTURE"}}"#, SNAPSHOT_VERSION + 1),
         );
         let listing = list_runs(dir.path(), |_| true);
-        assert!(listing.live.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
         assert_eq!(listing.unreadable.len(), 1);
         assert_eq!(listing.unreadable[0].runid, "01FUTURE");
         assert_eq!(listing.unreadable[0].reason, "unsupported version");
@@ -278,7 +278,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         seed_raw(dir.path(), "01NOVERSION.json", r#"{"runid":"01NOVERSION"}"#);
         let listing = list_runs(dir.path(), |_| true);
-        assert!(listing.live.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
         assert_eq!(listing.unreadable[0].reason, "malformed");
         assert!(snapshot_dir(dir.path()).join("01NOVERSION.json").exists());
     }
@@ -292,7 +292,7 @@ mod tests {
         let listing = list_runs(dir.path(), |pid| {
             panic!("pid {pid} must not reach the liveness predicate")
         });
-        assert!(listing.live.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
         assert_eq!(listing.unreadable[0].reason, "malformed");
     }
 
@@ -304,7 +304,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".ralphy")).unwrap();
         std::fs::write(snapshot_dir(dir.path()), b"not a directory").unwrap();
         let listing = list_runs(dir.path(), |_| true);
-        assert!(listing.live.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
         assert_eq!(listing.unreadable.len(), 1, "{:?}", listing.unreadable);
         assert!(
             listing.unreadable[0].reason.starts_with("unreadable"),
@@ -347,8 +347,8 @@ mod tests {
     fn list_runs_on_missing_dir_is_empty() {
         let dir = tempfile::tempdir().unwrap();
         let listing = list_runs(dir.path(), |_| true);
-        assert!(listing.live.is_empty());
-        assert!(listing.unreadable.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
+        assert_eq!(listing.unreadable, Vec::<UnreadableRun>::new());
     }
 
     /// Only `.json` entries are documents. The stop sentinel's `.stop` extension
@@ -389,7 +389,7 @@ mod tests {
         let sentinel = crate::stop_path(dir.path(), "01DEAD");
         std::fs::write(&sentinel, "{}").unwrap();
         let listing = list_runs(dir.path(), |_| false);
-        assert!(listing.live.is_empty());
+        assert_eq!(listing.live, Vec::<RunSnapshot>::new());
         assert!(!snapshot_path(dir.path(), "01DEAD").exists());
         assert!(!sentinel.exists(), "the sentinel outlived its run");
     }

@@ -63,7 +63,7 @@ async fn unwatched_and_noise_children_emit_nothing() {
     fs::write(dir.path().join("visible.txt"), b"v").unwrap();
     assert_eq!(
         recv_in(&mut rx, window()).await,
-        Some(("owner/repo".to_string(), String::new())),
+        Some(("owner/repo".to_owned(), String::new())),
         "a real child create nudges the root"
     );
 }
@@ -102,7 +102,7 @@ async fn listing_a_watched_dir_emits_nothing() {
     fs::write(dir.path().join("platform/new.yaml"), b"x").unwrap();
     assert_eq!(
         recv_in(&mut rx, window()).await,
-        Some(("owner/repo".to_string(), "platform".to_string())),
+        Some(("owner/repo".to_owned(), "platform".to_owned())),
         "a real write still nudges the dir it landed in"
     );
 }
@@ -122,7 +122,7 @@ async fn gitignored_dir_nudges_like_any_other() {
     fs::write(dir.path().join("ignored/y"), b"y").unwrap();
     assert_eq!(
         recv_in(&mut rx, window()).await,
-        Some(("owner/repo".to_string(), "ignored".to_string())),
+        Some(("owner/repo".to_owned(), "ignored".to_owned())),
     );
 }
 
@@ -139,7 +139,7 @@ async fn runstate_nudges_despite_gitignore() {
 
     assert_eq!(
         recv_in(&mut rx, window()).await,
-        Some(("owner/repo".to_string(), RUNSTATE_REL.to_string())),
+        Some(("owner/repo".to_owned(), RUNSTATE_REL.to_owned())),
         "the snapshot dir nudges even though `.ralphy/` is gitignored"
     );
 }
@@ -199,7 +199,7 @@ async fn a_head_rel_nudges_on_head_alone() {
     .unwrap();
     assert_eq!(
         recv_in(&mut rx, window()).await,
-        Some(("owner/repo".to_string(), ".git".to_string())),
+        Some(("owner/repo".to_owned(), ".git".to_owned())),
     );
     while recv_in(&mut rx, window()).await.is_some() {}
 
@@ -211,7 +211,7 @@ async fn a_head_rel_nudges_on_head_alone() {
     drop(log);
     assert_eq!(
         recv_in(&mut rx, window()).await,
-        Some(("owner/repo".to_string(), ".git/logs".to_string())),
+        Some(("owner/repo".to_owned(), ".git/logs".to_owned())),
     );
 }
 
@@ -271,7 +271,7 @@ async fn over_cap_degrades_to_poll() {
     let got = recv_in(&mut rx_b, POLL_INTERVAL + Duration::from_secs(2)).await;
     assert_eq!(
         got,
-        Some(("owner/repo".to_string(), "b".to_string())),
+        Some(("owner/repo".to_owned(), "b".to_owned())),
         "poll still emits on a create"
     );
 }

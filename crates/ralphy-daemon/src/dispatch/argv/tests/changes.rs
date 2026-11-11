@@ -131,9 +131,7 @@ fn changes_discard_refuses_a_malformed_path_with_no_argv() {
         ),
         Err(ArgvError::BadParam("paths"))
     );
-    let over: Vec<String> = (0..MAX_STAGE_PATHS + 1)
-        .map(|i| format!("f{i}.txt"))
-        .collect();
+    let over: Vec<String> = (0..=MAX_STAGE_PATHS).map(|i| format!("f{i}.txt")).collect();
     assert_eq!(
         changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": over })),
         Err(ArgvError::BadParam("paths")),
@@ -325,7 +323,7 @@ fn blob_read_argv_composes_exact_vector_and_refuses() {
         "json",
     ]
     .iter()
-    .map(|s| s.to_string())
+    .map(ToString::to_string)
     .collect();
 
     assert_eq!(

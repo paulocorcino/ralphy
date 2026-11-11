@@ -181,8 +181,8 @@ pub(crate) fn command() -> clap::Command {
         .get_subcommands()
         .filter(|sub| sub.is_hide_set())
         .map(|sub| {
-            let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
-            (sub.get_name().to_string(), about)
+            let about = sub.get_about().map(ToString::to_string).unwrap_or_default();
+            (sub.get_name().to_owned(), about)
         })
         .collect();
     let width = hidden.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
@@ -195,7 +195,7 @@ pub(crate) fn command() -> clap::Command {
     for (name, about) in &hidden {
         text.push_str(&format!("  {name:width$}  {about}\n"));
     }
-    cmd.after_help(text.trim_end().to_string())
+    cmd.after_help(text.trim_end().to_owned())
 }
 
 #[derive(Subcommand)]
@@ -248,7 +248,7 @@ pub(crate) struct RunArgs {
 
     /// The agent that writes the plan. Without it, `--agent` also plans. For
     /// example, `--agent opencode --plan-agent claude` means Claude plans and
-    /// OpenCode does the work. Any two agents can be paired.
+    /// `OpenCode` does the work. Any two agents can be paired.
     // ADR-0009.
     #[arg(long = "plan-agent", value_enum)]
     pub(crate) plan_agent: Option<CliAgent>,
@@ -313,8 +313,8 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) exec_model: Option<String>,
 
-    /// OpenCode only: a `--variant` value, passed to `opencode run` as it is.
-    /// `--plan-effort` and `--exec-effort` have no effect on OpenCode. When
+    /// `OpenCode` only: a `--variant` value, passed to `opencode run` as it is.
+    /// `--plan-effort` and `--exec-effort` have no effect on `OpenCode`. When
     /// unset, Ralphy sends no variant.
     // ADR-0005 D3 amendment, ADR-0044 D8.
     #[arg(long)]

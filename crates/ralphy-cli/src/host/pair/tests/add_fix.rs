@@ -3,9 +3,9 @@ use super::*;
 /// A ready Linux host with a socket: only `first`'s gaps need a fix.
 fn host_with_socket_and(first_gap: impl FnOnce(&mut DaemonDescription)) -> FakeHost {
     let mut first = description("linux");
-    first.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    first.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_owned());
     first_gap(&mut first);
-    linux_host(LINUX_PROBE, first)
+    linux_host(LINUX_PROBE, &first)
 }
 
 fn run_add(fake: &mut FakeHost, store: &Path) -> Result<PeerDescriptor> {
@@ -66,7 +66,7 @@ BUILTIN\\Users                          Alias            S-1-5-32-545 Mandatory 
 fn a_windows_host_with_nothing_to_fix_is_not_restarted() {
     let store = tempfile::tempdir().unwrap();
     let mut second = description("windows");
-    second.token = Some("host-tok".to_string());
+    second.token = Some("host-tok".to_owned());
     let mut fake = FakeHost::before_doctor()
         .answer(
             "uname -s",

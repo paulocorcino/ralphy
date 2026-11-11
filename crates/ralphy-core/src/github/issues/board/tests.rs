@@ -9,7 +9,7 @@ fn parse_issue_meta_list_reads_assignees_and_state_reason() {
     let meta = parse_issue_meta_list(json).unwrap();
     assert_eq!(
         meta[0].assignees,
-        vec!["alice".to_string(), "bob".to_string()]
+        vec!["alice".to_owned(), "bob".to_owned()]
     );
     assert_eq!(meta[0].state_reason, None);
     assert_eq!(meta[1].state_reason.as_deref(), Some("COMPLETED"));
@@ -31,8 +31,8 @@ fn parse_all_open_meta_reads_dates_and_assignees() {
     assert_eq!(r.title, "t7");
     assert_eq!(r.state, "open");
     assert_eq!(r.reason, None);
-    assert_eq!(r.labels, vec!["ready-for-agent".to_string()]);
-    assert_eq!(r.assignees, vec!["octo".to_string()]);
+    assert_eq!(r.labels, vec!["ready-for-agent".to_owned()]);
+    assert_eq!(r.assignees, vec!["octo".to_owned()]);
     assert_eq!(r.blocked_by, vec![3, 4]);
     assert_eq!(r.created, "2026-07-01T08:00:00Z");
     assert_eq!(r.updated, "2026-07-02T09:00:00Z");
@@ -52,6 +52,6 @@ fn parse_closed_board_lowercases_state_reason() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].state, "closed");
     assert_eq!(rows[0].reason.as_deref(), Some("completed"));
-    assert!(rows[0].blocked_by.is_empty());
+    assert_eq!(rows[0].blocked_by, Vec::<u64>::new());
     assert_eq!(rows[1].reason.as_deref(), Some("not_planned"));
 }

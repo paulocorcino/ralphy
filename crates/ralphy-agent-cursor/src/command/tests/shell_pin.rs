@@ -10,7 +10,7 @@ fn no_shell_and_git_bash_found_pins_it() {
 fn an_operator_set_shell_is_never_overridden() {
     let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
     assert_eq!(
-        git_bash_shell_pin(Some("/usr/bin/fish".into()), Some(bash)),
+        git_bash_shell_pin(Some(std::ffi::OsStr::new("/usr/bin/fish")), Some(bash)),
         None,
         "a deliberate operator SHELL must pass through untouched (D8 stance)"
     );
@@ -33,29 +33,26 @@ fn no_git_bash_located_sets_nothing() {
 fn build_cursor_command_applies_the_pin() {
     let cmd = build_cursor_command("s1", None, Path::new("."), Path::new("cfg"));
     let expected = git_bash_shell_pin(
-        std::env::var_os("SHELL"),
+        std::env::var_os("SHELL").as_deref(),
         ralphy_proc_util::locate_git_bash(),
     );
-    match expected {
-        Some(p) => {
-            assert_eq!(env_of(&cmd, "SHELL").map(PathBuf::from), Some(p));
-            // MSYSTEM must ride along, or git-bash returns "no exit status".
-            assert_eq!(
-                env_of(&cmd, "MSYSTEM").as_deref(),
-                Some("MINGW64"),
-                "pinning SHELL to git-bash without MSYSTEM breaks the shell"
-            );
-        }
-        None => {
-            assert!(
-                !cmd.get_envs().any(|(k, _)| k == "SHELL"),
-                "SHELL must not be set when the pin declines"
-            );
-            assert!(
-                !cmd.get_envs().any(|(k, _)| k == "MSYSTEM"),
-                "MSYSTEM must not be set when SHELL is not pinned"
-            );
-        }
+    if let Some(p) = expected {
+        assert_eq!(env_of(&cmd, "SHELL").map(PathBuf::from), Some(p));
+        // MSYSTEM must ride along, or git-bash returns "no exit status".
+        assert_eq!(
+            env_of(&cmd, "MSYSTEM").as_deref(),
+            Some("MINGW64"),
+            "pinning SHELL to git-bash without MSYSTEM breaks the shell"
+        );
+    } else {
+        assert!(
+            !cmd.get_envs().any(|(k, _)| k == "SHELL"),
+            "SHELL must not be set when the pin declines"
+        );
+        assert!(
+            !cmd.get_envs().any(|(k, _)| k == "MSYSTEM"),
+            "MSYSTEM must not be set when SHELL is not pinned"
+        );
     }
     // The one-shot builder delegates, so it inherits the same wiring.
     let init = build_cursor_init_command(None, Path::new("."), Path::new("cfg"));

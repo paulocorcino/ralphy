@@ -1,5 +1,5 @@
 //! The vendor-neutral **plan/execute shell** the headless adapters (Codex,
-//! OpenCode) share. Each adapter's `plan()`/`execute()` repeated the same
+//! `OpenCode`) share. Each adapter's `plan()`/`execute()` repeated the same
 //! mechanical front and back around the one vendor-specific step (build the
 //! command, snapshot usage, run headless): create the run/`.ralphy` dirs, write
 //! the plan charter, remove a stale plan, then — after the run — walk the no-plan
@@ -147,7 +147,7 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
     let Ok(md) = fs::read_to_string(plan_path) else {
         return;
     };
-    let mut out = md.trim_end().to_string();
+    let mut out = md.trim_end().to_owned();
     out.push_str("\n\n");
     out.push_str(&crate::resume::plan_trailer(issue_number));
     out.push('\n');

@@ -22,7 +22,7 @@ static DOTNET_DELETE: LazyLock<Regex> = LazyLock::new(|| {
 pub(super) fn dotnet_delete_target(cmd: &str, ctx: &GuardContext) -> Option<String> {
     DOTNET_DELETE
         .captures_iter(cmd)
-        .map(|c| c[1].trim().to_string())
+        .map(|c| c[1].trim().to_owned())
         .find(|path| !recursive_delete_target_allowed(path, ctx))
 }
 

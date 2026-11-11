@@ -46,7 +46,7 @@ pub(super) fn emit_queue_built(
     let applied_assignee = if !args.issues.is_empty() || args.only_issue.is_some() {
         None
     } else {
-        assignee.map(str::to_string)
+        assignee.map(str::to_owned)
     };
     let assignee_filter: Option<String> = match applied_assignee.as_deref() {
         Some(a) => match github::resolve_login(a, repo_root) {

@@ -44,7 +44,11 @@ fn no_production_string_literal_cites_an_adr() {
 
 #[test]
 fn a_literal_is_read_but_a_comment_a_char_and_a_lifetime_are_not() {
-    let src = r####"
+    #[expect(
+        clippy::needless_raw_string_hashes,
+        reason = "the literal holds a quote and a hash: one hash fewer ends it early"
+    )]
+    let src = r##"
 // "ADR-0001 in a comment"
 /* "ADR-0002" /* nested "ADR-0003" */ */
 fn f<'a>(x: &'a str) -> char {
@@ -53,14 +57,14 @@ fn f<'a>(x: &'a str) -> char {
     let _ = b"bytes";
     '"'
 }
-"####;
+"##;
     let literals: Vec<String> = string_literals(src).into_iter().map(|(_, s)| s).collect();
     assert_eq!(
         literals,
         vec![
-            r#"one \" ADR-0004"#.to_string(),
-            r#"raw "ADR-0005""#.to_string(),
-            "bytes".to_string()
+            r#"one \" ADR-0004"#.to_owned(),
+            r#"raw "ADR-0005""#.to_owned(),
+            "bytes".to_owned()
         ]
     );
     assert_eq!(string_literals(src)[0].0, 5);

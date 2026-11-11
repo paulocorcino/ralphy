@@ -44,7 +44,7 @@ pub(crate) fn init_tracing(
         || std::env::var_os("RUST_LOG").is_some()
         || std::env::var_os("RALPHY_LOG").is_some();
 
-    let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string());
+    let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_owned());
 
     // `ralphy.log` always carries the full uncoloured, local-time log.
     let file_layer = log_file.map(|file| {

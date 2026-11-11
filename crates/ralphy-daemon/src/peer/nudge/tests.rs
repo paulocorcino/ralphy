@@ -33,10 +33,10 @@ fn nudge_never_waits() {
     // redirected stdin — `spawn_detached` gives the child `Stdio::null()`, and a
     // child that exits instantly would let a `.wait()` implementation pass.
     let argv = vec![
-        "ping".to_string(),
-        "-n".to_string(),
-        "8".to_string(),
-        "127.0.0.1".to_string(),
+        "ping".to_owned(),
+        "-n".to_owned(),
+        "8".to_owned(),
+        "127.0.0.1".to_owned(),
     ];
     let t0 = std::time::Instant::now();
     spawn_detached(&argv).expect("ping is present on every Windows host");
@@ -302,12 +302,12 @@ fn a_pid_file_naming_no_keepalive_is_replaced() {
 #[test]
 fn a_distro_name_is_reduced_to_a_safe_file_name() {
     assert_eq!(
-        keepalive_pid_file(std::path::Path::new("store"), "Ubuntu-22.04"),
-        std::path::Path::new("store").join("keepalive-Ubuntu-22.04.pid")
+        keepalive_pid_file(Path::new("store"), "Ubuntu-22.04"),
+        Path::new("store").join("keepalive-Ubuntu-22.04.pid")
     );
     assert_eq!(
-        keepalive_pid_file(std::path::Path::new("store"), "../a b"),
-        std::path::Path::new("store").join("keepalive-.._a_b.pid")
+        keepalive_pid_file(Path::new("store"), "../a b"),
+        Path::new("store").join("keepalive-.._a_b.pid")
     );
 }
 

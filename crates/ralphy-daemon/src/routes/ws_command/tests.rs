@@ -3,7 +3,7 @@ use super::*;
 fn reply(id: u64, status: &str) -> Vec<u8> {
     protocol::encode(&Frame::Command(Command {
         id,
-        verb: "run".to_string(),
+        verb: "run".to_owned(),
         payload: serde_json::json!({ "status": status }),
     }))
 }
@@ -26,7 +26,7 @@ fn ctx(dir: &Path) -> CommandCtx {
     CommandCtx {
         registry_path: dir.join("registry.json"),
         peers_dir: dir.join("peers"),
-        daemon_id: Some("here".to_string()),
+        daemon_id: Some("here".to_owned()),
         sessions: Arc::new(session::SessionManager::new()),
         secret_ok: true,
     }
@@ -39,7 +39,7 @@ fn nobody() -> SocketAudit {
 fn command(verb: &str) -> Command {
     Command {
         id: 7,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload: serde_json::json!({ "repo": "demo", "agent": "claude" }),
     }
 }

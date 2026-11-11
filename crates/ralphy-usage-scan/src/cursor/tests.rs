@@ -60,7 +60,10 @@ fn chats_meta_yields_a_session_with_tokens_unavailable() {
 
 #[test]
 fn an_absent_store_returns_an_empty_vec() {
-    assert!(scan(Path::new("does-not-exist")).is_empty());
+    assert_eq!(
+        scan(Path::new("does-not-exist")),
+        Vec::<InteractiveRecord>::new()
+    );
 }
 
 fn seed_transcript(base: &Path, sid: &str) {
@@ -238,7 +241,7 @@ fn a_run_owned_session_id_is_excluded() {
         "11111111-1111-1111-1111-111111111111",
         "22222222-2222-2222-2222-222222222222",
     ] {
-        let owned: HashSet<String> = [owned_id.to_string()].into_iter().collect();
+        let owned: HashSet<String> = [owned_id.to_owned()].into_iter().collect();
         let records = scan_cursor(&CursorScan {
             cursor_dir: tmp.path(),
             run_session_ids: &owned,
@@ -259,11 +262,11 @@ fn a_chats_session_is_attributed_by_its_verbatim_cwd() {
         cursor_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "acme/fincal".to_string(),
+            slug: "acme/fincal".to_owned(),
             // `meta.json`'s cwd is the Windows `C:\Dev\FinCal`:
             // `attribution::find_repo` must match it across the separator
             // and case difference.
-            path: "c:/dev/fincal/".to_string(),
+            path: "c:/dev/fincal/".to_owned(),
         }],
         since: None,
     });
@@ -280,8 +283,8 @@ fn a_transcripts_only_session_is_attributed_by_its_project_slug() {
         cursor_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "acme/fincal".to_string(),
-            path: "C:\\Dev\\FinCal".to_string(),
+            slug: "acme/fincal".to_owned(),
+            path: "C:\\Dev\\FinCal".to_owned(),
         }],
         since: None,
     });
@@ -316,7 +319,7 @@ fn a_chats_session_in_a_linked_worktree_is_attributed_to_its_repo() {
         cursor_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "o/repo".to_string(),
+            slug: "o/repo".to_owned(),
             path: repo.to_string_lossy().to_string(),
         }],
         since: None,

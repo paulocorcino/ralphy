@@ -19,7 +19,7 @@ pub(crate) fn current_branch(repo: &Path) -> String {
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .expect("spawn git");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 /// Scratch directories under `prefix` that are more than an hour old. A test
@@ -40,7 +40,7 @@ pub(crate) fn sweep_stale(prefix: &str) {
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > std::time::Duration::from_secs(3600));
+            .is_some_and(|age| age > Duration::from_secs(3600));
         if old && entry.path().is_dir() {
             remove_scratch(&entry.path());
         }

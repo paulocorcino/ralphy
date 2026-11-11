@@ -29,7 +29,7 @@ impl LoginThrottle {
     }
 
     /// `Err(secs)` with the remaining lockout, or `Ok(())` when a try may proceed.
-    pub(super) fn check(&self, now: Instant) -> std::result::Result<(), u64> {
+    pub(super) fn check(&self, now: Instant) -> Result<(), u64> {
         match self.locked_until {
             Some(until) if until > now => Err((until - now).as_secs().max(1)),
             _ => Ok(()),

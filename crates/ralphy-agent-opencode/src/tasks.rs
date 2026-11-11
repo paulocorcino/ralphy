@@ -30,7 +30,7 @@ use crate::usage::opencode_usage;
 const NO_SKILLS: Option<&Path> = None;
 
 /// Run a one-shot headless `opencode run` repo-diagnosis session (ADR-0012 stage
-/// 2) from `neutral_cwd` — a directory OUTSIDE the target repo, so OpenCode never
+/// 2) from `neutral_cwd` — a directory OUTSIDE the target repo, so `OpenCode` never
 /// auto-loads the target's `AGENTS.md` as instructions. The target `repo` is
 /// passed as data in the prompt; the session writes its JSON report to
 /// `<neutral_cwd>/diagnosis.json`, which this function reads, validates against

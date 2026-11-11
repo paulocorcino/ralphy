@@ -152,7 +152,7 @@ fn zero_usage_stub_parses_to_empty() {
     \"input_cache_read\": 0, \"input_cache_creation\": 0}, \"message_id\": \"msg-empty\"}}}";
     write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", body);
     let records = scan_legacy_only(tmp.path());
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn excludes_run_owned_sessions() {
         &status_update(1770983420.0, 20, 2, 0, "m-int"),
     );
     let mut runs = HashSet::new();
-    runs.insert("RUN".to_string());
+    runs.insert("RUN".to_owned());
     let records = scan_kimi(&KimiScan {
         kimi_dir: tmp.path(),
         kimi_code_dir: Path::new("does-not-exist-kimi-code"),
@@ -190,7 +190,7 @@ fn kimi_missing_stores_contribute_zero() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]

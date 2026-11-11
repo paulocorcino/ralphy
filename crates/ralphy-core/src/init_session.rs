@@ -96,7 +96,7 @@ pub fn build_init_issues_prompt(
     out: &Path,
 ) -> String {
     let docs = if source_docs.is_empty() {
-        "(none named — scan the repo)".to_string()
+        "(none named — scan the repo)".to_owned()
     } else {
         source_docs
             .iter()
@@ -149,7 +149,7 @@ pub fn build_triage_prompt(
     out: &Path,
 ) -> String {
     let numbers = if issue_numbers.is_empty() {
-        "(none)".to_string()
+        "(none)".to_owned()
     } else {
         issue_numbers
             .iter()
@@ -200,10 +200,7 @@ mod tests {
     fn build_init_issues_prompt_names_mode_docs_label_and_output() {
         let repo = Path::new("/work/myrepo");
         let out = Path::new("/work/myrepo/.ralphy/issues-draft.json");
-        let docs = vec![
-            "docs/roadmap.md".to_string(),
-            "docs/prd/0001.md".to_string(),
-        ];
+        let docs = vec!["docs/roadmap.md".to_owned(), "docs/prd/0001.md".to_owned()];
         let prompt =
             build_init_issues_prompt(repo, IssuesMode::Milestone, &docs, "ready-for-agent", out);
         assert!(

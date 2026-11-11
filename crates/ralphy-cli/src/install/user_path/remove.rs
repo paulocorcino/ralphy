@@ -62,7 +62,7 @@ fn without_block(text: &str) -> Removal {
 /// when they do not have its shape.
 #[cfg(any(unix, test))]
 fn block_len(after: &[&str]) -> Option<usize> {
-    let line = |i: usize| after.get(i).map(|l| l.trim()).unwrap_or("");
+    let line = |i: usize| after.get(i).map_or("", |l| l.trim());
     let posix = line(0) == r#"case ":${PATH}:" in"#
         && line(1).starts_with("*:")
         && line(1).ends_with(":*) ;;")
@@ -163,7 +163,7 @@ pub(crate) fn remove_from_user_path(dir: &Path) -> Result<Vec<String>> {
     };
     Ok(
         if super::registry::change(|current| path_without(current, dir))? {
-            vec!["your user Path (HKEY_CURRENT_USER\\Environment)".to_string()]
+            vec!["your user Path (HKEY_CURRENT_USER\\Environment)".to_owned()]
         } else {
             Vec::new()
         },

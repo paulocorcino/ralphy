@@ -70,7 +70,7 @@ fn pump_until_ready(session: &mut PtySession, rx: &Receiver<Vec<u8>>, cap: Durat
 /// Pump (answering DSR) until `needle` appears in the accumulated output or
 /// `timeout` elapses. Returns the captured output and whether the needle was
 /// seen. Used to confirm a write reached the child *before* triggering teardown,
-/// so ConPTY can't close the output between the echo and the assertion.
+/// so `ConPTY` can't close the output between the echo and the assertion.
 fn pump_until_contains(
     session: &mut PtySession,
     rx: &Receiver<Vec<u8>>,

@@ -18,7 +18,7 @@ use crate::release;
 /// How often the daemon asks what has been published. Four reads a day notices a
 /// release cut this morning and cannot contribute to exhausting the
 /// unauthenticated rate limit (ADR-0056 §6).
-pub(crate) const RELEASE_POLL_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+pub(crate) const RELEASE_POLL_EVERY: Duration = Duration::from_hours(6);
 
 /// One pass of the release watch. Blocking (it is `ureq`), silent on failure by
 /// construction, and a no-op when the operator turned the watch off.

@@ -90,7 +90,7 @@ pub(crate) fn confirm_close(
 
 fn label(session: &OpenSession) -> String {
     match session.name.as_deref().filter(|n| !n.is_empty()) {
-        Some(name) => name.to_string(),
+        Some(name) => name.to_owned(),
         None => format!("{} ({})", session.repo, session.agent),
     }
 }
@@ -165,7 +165,7 @@ mod tests {
                 .map(|i| OpenSession {
                     repo: format!("repo{i}"),
                     agent: "claude".into(),
-                    name: (i == 0).then(|| "fincal #1".to_string()),
+                    name: (i == 0).then(|| "fincal #1".to_owned()),
                 })
                 .collect(),
         )
@@ -180,7 +180,7 @@ mod tests {
             tty,
             |_| {
                 asked = true;
-                Ok(answer.to_string())
+                Ok(answer.to_owned())
             },
             &mut out,
         );

@@ -256,10 +256,10 @@ pub(super) fn lock_rows() -> Vec<LockRow> {
 fn worktree_args(verb: &str, name: &str, root: &Path) -> Vec<String> {
     let inside = format!("{}/.ralphy/worktrees/wt-a", root.to_string_lossy());
     vec![
-        "worktree".to_string(),
-        verb.to_string(),
-        name.to_string(),
-        "--repo".to_string(),
+        "worktree".to_owned(),
+        verb.to_owned(),
+        name.to_owned(),
+        "--repo".to_owned(),
         inside,
     ]
 }

@@ -22,7 +22,7 @@ pub(crate) const PASSWORD: &str = "<password>";
 
 impl FakeHost {
     pub(crate) fn answer(mut self, needle: &str, out: HostOutput) -> Self {
-        self.answers.push((needle.to_string(), out));
+        self.answers.push((needle.to_owned(), out));
         self
     }
 
@@ -69,7 +69,7 @@ impl HostShell for FakeHost {
     fn run(&mut self, identity: Option<&Path>, command: &str, stdin: &[u8]) -> Result<HostOutput> {
         self.calls.push((
             identity.map(Path::to_path_buf),
-            command.to_string(),
+            command.to_owned(),
             stdin.to_vec(),
         ));
         let pos = self
@@ -109,8 +109,8 @@ impl HostShell for FakeHost {
 pub(crate) fn out(code: i32, stdout: &str, stderr: &str) -> HostOutput {
     HostOutput {
         code: Some(code),
-        stdout: stdout.to_string(),
-        stderr: stderr.to_string(),
+        stdout: stdout.to_owned(),
+        stderr: stderr.to_owned(),
     }
 }
 
@@ -220,8 +220,8 @@ fn ssh_password_argv_asks_once_and_keeps_the_host_key_check() {
 fn ssh_error_keeps_its_text() {
     let err = SshError {
         kind: SshFailure::Unreachable,
-        message: "could not reach 10.1.1.4".to_string(),
-        key_line: Some("ssh-ed25519 AAAA".to_string()),
+        message: "could not reach 10.1.1.4".to_owned(),
+        key_line: Some("ssh-ed25519 AAAA".to_owned()),
     };
     assert_eq!(err.to_string(), "could not reach 10.1.1.4");
 }

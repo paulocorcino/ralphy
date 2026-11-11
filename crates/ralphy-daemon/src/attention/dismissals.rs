@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use crate::owner_only;
 
 /// The file name, next to the repo registry in the daemon store.
-pub const FILE: &str = "attention-dismissed.jsonl";
+pub(crate) const FILE: &str = "attention-dismissed.jsonl";
 
 /// One line of the file.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -22,7 +22,7 @@ struct Line {
 
 /// The dismissed request ids, and the file they are kept in.
 #[derive(Debug, Default)]
-pub struct Dismissals {
+pub(crate) struct Dismissals {
     path: PathBuf,
     ids: HashSet<String>,
 }
@@ -31,7 +31,7 @@ impl Dismissals {
     /// The dismissals in `path`. A missing file is none; a line that is not
     /// a dismissal is skipped, so one bad line does not lose the others. A
     /// file that cannot be read is logged and read as none.
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -49,28 +49,28 @@ impl Dismissals {
     }
 
     /// The dismissals of the store whose repo registry is `registry_path`.
-    pub fn in_store_of(registry_path: &Path) -> Self {
+    pub(crate) fn in_store_of(registry_path: &Path) -> Self {
         Self::load(registry_path.with_file_name(FILE))
     }
 
-    pub fn contains(&self, id: &str) -> bool {
+    pub(crate) fn contains(&self, id: &str) -> bool {
         self.ids.contains(id)
     }
 
     /// Dismiss `id`: append its line, then keep it. An id already dismissed
     /// writes nothing. `Ok(false)` says so.
-    pub fn dismiss(&mut self, id: &str) -> Result<bool> {
+    pub(crate) fn dismiss(&mut self, id: &str) -> Result<bool> {
         if self.ids.contains(id) {
             return Ok(false);
         }
         let line = Line {
-            id: id.to_string(),
+            id: id.to_owned(),
             ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         };
         let mut bytes = serde_json::to_vec(&line).context("encoding a dismissal")?;
         bytes.push(b'\n');
         owner_only::append_owner_only(&self.path, &bytes)?;
-        self.ids.insert(id.to_string());
+        self.ids.insert(id.to_owned());
         Ok(true)
     }
 }

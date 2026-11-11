@@ -45,7 +45,7 @@ pub(super) async fn serve_repo() -> (u16, String, PathBuf) {
     let app = router(
         None,
         registry_path,
-        std::path::PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         ralphy_daemon::StorePaths::default(),
         Instant::now(),
         rx,
@@ -57,7 +57,7 @@ pub(super) async fn serve_repo() -> (u16, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 /// The longest encoded command frame a `spawn` channel opens with: a longer
@@ -76,7 +76,7 @@ pub(super) async fn round_trip(
 ) -> (Vec<serde_json::Value>, usize) {
     let command = Command {
         id,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     };
     let encoded = protocol::encode(&Frame::Command(command.clone()));
@@ -382,7 +382,7 @@ pub(super) async fn serve_worktree_repo() -> (u16, String, PathBuf) {
     let app = router(
         None,
         registry_path,
-        std::path::PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         ralphy_daemon::StorePaths::default(),
         Instant::now(),
         rx,
@@ -394,5 +394,5 @@ pub(super) async fn serve_worktree_repo() -> (u16, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }

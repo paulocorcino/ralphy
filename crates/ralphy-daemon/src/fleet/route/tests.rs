@@ -8,14 +8,14 @@ const PEER_B_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAX";
 
 fn peer(id: &str, environment: &str) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: environment.to_string(),
+        daemon_id: id.to_owned(),
+        name: environment.to_owned(),
         avatar: String::new(),
-        address: "127.0.0.1".to_string(),
+        address: "127.0.0.1".to_owned(),
         port: 7441,
-        environment: environment.to_string(),
+        environment: environment.to_owned(),
         os: String::new(),
-        token: "token".to_string(),
+        token: "token".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -95,9 +95,9 @@ fn unreachable_diagnosis_names_the_environment() {
 #[test]
 fn an_unknown_daemon_names_its_version_mismatch_or_the_missing_environment() {
     let rejects = [PeerReject::IncompatibleVersion {
-        file: "peer.toml".to_string(),
-        daemon_id: PEER_A_ID.to_string(),
-        environment: "WSL: Ubuntu-22.04".to_string(),
+        file: "peer.toml".to_owned(),
+        daemon_id: PEER_A_ID.to_owned(),
+        environment: "WSL: Ubuntu-22.04".to_owned(),
         theirs: 999,
     }];
     let mismatch = unknown_daemon(PEER_A_ID, &rejects);

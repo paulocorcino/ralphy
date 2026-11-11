@@ -187,7 +187,7 @@ fn row_violations(row: &Row, rules: &Rules) -> Vec<(String, String)> {
     }
     if let Some(words) = longest_sentence(&text).filter(|&n| n > rules.sentence_max_words) {
         out.push((
-            "sentence-length".to_string(),
+            "sentence-length".to_owned(),
             format!("{words} words; the limit is {}", rules.sentence_max_words),
         ));
     }
@@ -212,14 +212,14 @@ fn casing_violations(row: &Row, text: &str, rules: &Rules) -> Vec<(String, Strin
     let mut out = Vec::new();
     if !row.continues && starts_lowercase(text) {
         out.push((
-            "casing:first".to_string(),
-            "start with a capital letter".to_string(),
+            "casing:first".to_owned(),
+            "start with a capital letter".to_owned(),
         ));
     }
     let capitals = title_case_words(text, &rules.proper_nouns);
     if !capitals.is_empty() {
         out.push((
-            "casing:title".to_string(),
+            "casing:title".to_owned(),
             format!("lowercase {}", capitals.join(", ")),
         ));
     }
@@ -246,7 +246,7 @@ fn contraction_violation(text: &str, rules: &Rules) -> Option<(String, String)> 
         .collect();
     (!found.is_empty()).then(|| {
         (
-            "contraction".to_string(),
+            "contraction".to_owned(),
             format!("write the two full words ({})", found.join(", ")),
         )
     })
@@ -304,7 +304,7 @@ fn title_case_words(text: &str, proper_nouns: &[String]) -> Vec<String> {
             .split(|c: char| !c.is_alphabetic())
             .all(|run| run.chars().count() <= 1);
         if !starts && !proper && !chord && !letters && !out.iter().any(|w| w == core) {
-            out.push(core.to_string());
+            out.push(core.to_owned());
         }
         let ends = word.ends_with(['.', '!', '?', '…']);
         if ends || word == "·" || word.chars().any(char::is_alphanumeric) {
@@ -344,7 +344,7 @@ fn starts_upper(s: &str) -> bool {
 /// `.ralphy/settings.json` names a path, not the product.
 fn has_term(text: &str, term: &str, whole_word: bool, case_sensitive: bool) -> bool {
     let (hay, needle) = if case_sensitive {
-        (text.to_string(), term.to_string())
+        (text.to_owned(), term.to_owned())
     } else {
         (text.to_ascii_lowercase(), term.to_ascii_lowercase())
     };

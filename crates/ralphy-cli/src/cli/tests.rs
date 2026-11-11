@@ -305,7 +305,7 @@ fn internal_commands_are_listed_apart_and_still_parse() {
         text.lines()
             .filter_map(|l| l.strip_prefix("  "))
             .filter_map(|l| l.split_whitespace().next())
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect()
     };
     let internal = [
@@ -314,13 +314,13 @@ fn internal_commands_are_listed_apart_and_still_parse() {
     assert_eq!(names(footer), internal);
     for name in internal {
         assert!(
-            !names(main).contains(&name.to_string()),
+            !names(main).contains(&name.to_owned()),
             "{name} is in the main list"
         );
     }
     for visible in ["run", "daemon", "worktree", "update"] {
         assert!(
-            names(main).contains(&visible.to_string()),
+            names(main).contains(&visible.to_owned()),
             "{visible} is missing"
         );
     }

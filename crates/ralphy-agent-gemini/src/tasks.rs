@@ -51,15 +51,14 @@ pub(crate) fn one_shot_base(repo: &Path) -> PathBuf {
     if ralphy_core::git::is_repo(repo) {
         return repo.join(".ralphy");
     }
-    match ralphy_proc_util::home_dir() {
-        Some(home) => home.join(".ralphy"),
-        None => {
-            tracing::warn!(
-                "gemini: no home directory — the one-shot's configuration root falls back to \
-                 the system temp dir, so its installation identity will not persist"
-            );
-            std::env::temp_dir().join("ralphy")
-        }
+    if let Some(home) = ralphy_proc_util::home_dir() {
+        home.join(".ralphy")
+    } else {
+        tracing::warn!(
+            "gemini: no home directory — the one-shot's configuration root falls back to \
+             the system temp dir, so its installation identity will not persist"
+        );
+        std::env::temp_dir().join("ralphy")
     }
 }
 
@@ -125,13 +124,13 @@ pub(crate) fn one_shot_stop(log: &str, exit_code: Option<i32>, timed_out: bool) 
     let rev = revocation::detect_revocation(log);
     rev.filter(|r| r.is_hard_stop())
         .map(|r| r.message(exit_code, log))
-        .or_else(|| timed_out.then(|| "gemini session hit the wall timeout".to_string()))
+        .or_else(|| timed_out.then(|| "gemini session hit the wall timeout".to_owned()))
         .or_else(|| outcome::gemini_limit_note(log))
         .or_else(|| rev.map(|r| r.message(exit_code, log)))
         .or_else(|| {
             outcome::classify_exit(exit_code)
                 .actionable_stop()
-                .map(str::to_string)
+                .map(str::to_owned)
         })
 }
 
@@ -185,7 +184,7 @@ fn judge_one_shot(out: ralphy_adapter_support::HeadlessOutput, log_path: &Path) 
         // beats returning `Ok` and letting the caller report a missing artifact.
         None => bail!(
             "the gemini session failed (exit {}) — see {}",
-            code.map_or_else(|| "killed".to_string(), |c| c.to_string()),
+            code.map_or_else(|| "killed".to_owned(), |c| c.to_string()),
             log_path.display()
         ),
     }

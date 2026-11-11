@@ -173,7 +173,7 @@ fn check_mark(good: bool) -> String {
 /// `s` dimmed.
 fn dim(s: &str) -> String {
     forced(Style::new().dim())
-        .apply_to(s.to_string())
+        .apply_to(s.to_owned())
         .to_string()
 }
 
@@ -265,7 +265,7 @@ pub(crate) fn with_spinner<T>(message: &str, f: impl FnOnce() -> T) -> T {
         .expect("the template is a compile-time constant that always parses")
         .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", " "]);
     pb.set_style(style);
-    pb.set_message(message.to_string());
+    pb.set_message(message.to_owned());
     pb.enable_steady_tick(Duration::from_millis(90));
     let out = f();
     pb.finish_and_clear();
@@ -383,7 +383,7 @@ mod tests {
         // A single word wider than `width` lands on its own line, never split.
         let lines = wrap_text("short superlongunbreakableword end", 8);
         assert!(
-            lines.contains(&"superlongunbreakableword".to_string()),
+            lines.contains(&"superlongunbreakableword".to_owned()),
             "{lines:?}"
         );
     }

@@ -11,7 +11,7 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
     let launch = |checkout: Option<&str>| SessionQuery {
         repo: Some("x".into()),
         agent: Some("claude".into()),
-        checkout: checkout.map(str::to_string),
+        checkout: checkout.map(str::to_owned),
         ..SessionQuery::default()
     };
     assert_eq!(
@@ -39,7 +39,7 @@ fn peer_session_query_forwards_a_console_launch() {
     let console = |command: Option<&str>| SessionQuery {
         repo: Some("x".into()),
         console: Some(1),
-        command: command.map(str::to_string),
+        command: command.map(str::to_owned),
         holder: Some("tab-1".into()),
         ..SessionQuery::default()
     };
@@ -67,7 +67,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
     let reattach = |holder: &str| SessionQuery {
         repo: Some("x".into()),
         id: Some(7),
-        holder: Some(holder.to_string()),
+        holder: Some(holder.to_owned()),
         ..SessionQuery::default()
     };
     assert_eq!(
@@ -146,7 +146,7 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
     let console = |record: &str| SessionQuery {
         repo: Some("x".into()),
         console: Some(1),
-        record: Some(record.to_string()),
+        record: Some(record.to_owned()),
         ..SessionQuery::default()
     };
     assert_eq!(
@@ -243,7 +243,7 @@ fn peer_session_query_forwards_the_attempt_with_the_holder() {
     let reattach = |holder: Option<&str>| SessionQuery {
         repo: Some("x".into()),
         id: Some(7),
-        holder: holder.map(str::to_string),
+        holder: holder.map(str::to_owned),
         attempt: Some(12),
         ..SessionQuery::default()
     };

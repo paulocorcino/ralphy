@@ -6,7 +6,7 @@ use ralphy_adapter_support::resolve_program;
 use ralphy_core::git;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum Agent {
+pub(crate) enum Agent {
     Claude,
     Codex,
     Copilot,
@@ -27,7 +27,7 @@ impl Agent {
     /// A NEWCOMER GOES LAST, for the same reason: appending preserves every
     /// current no-flag choice, whereas inserting one before `Copilot` would change
     /// it on a machine already logged into that newcomer.
-    pub const ALL: [Agent; 7] = [
+    pub(crate) const ALL: [Agent; 7] = [
         Agent::Claude,
         Agent::Codex,
         Agent::Kimi,
@@ -37,7 +37,7 @@ impl Agent {
         Agent::Gemini,
     ];
 
-    pub fn cli_name(&self) -> &'static str {
+    pub(crate) fn cli_name(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
             Agent::Codex => "codex",
@@ -52,7 +52,7 @@ impl Agent {
     /// Whether this agent's adapter can consume image input. The VALUE lives as
     /// `ACCEPTS_IMAGES` in each adapter crate (ADR-0025 §4); this match only
     /// routes enum → crate, never hardcoding a capability here.
-    pub fn accepts_images(&self) -> bool {
+    pub(crate) fn accepts_images(self) -> bool {
         match self {
             Agent::Claude => ralphy_agent_claude::ACCEPTS_IMAGES,
             Agent::Codex => ralphy_agent_codex::ACCEPTS_IMAGES,
@@ -65,7 +65,11 @@ impl Agent {
     }
 }
 
-pub struct EnvFindings {
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent probe of the machine, not a state"
+)]
+pub(crate) struct EnvFindings {
     pub git: bool,
     pub python: bool,
     pub gh_authenticated: bool,
@@ -75,7 +79,7 @@ pub struct EnvFindings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HardFail {
+pub(crate) enum HardFail {
     MissingGit,
     MissingPython,
     GhNotAuthenticated,
@@ -86,7 +90,7 @@ pub enum HardFail {
 
 /// Pure gate evaluation: returns all hard failures given the environment findings.
 /// The agent-login rule fires only when ≥1 agent is present.
-pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
+pub(crate) fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
     let mut fails = Vec::new();
     // FIRST on purpose: git is a hard requirement whose absence otherwise
     // surfaces as `NoGithubRemote` (git::origin_url fails ⇒ github_remote() is
@@ -120,7 +124,7 @@ pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
 /// check and a summary. The substrings `"<name>: logged in"` and
 /// `"<name>: not logged in"` are guaranteed for present agents so tests can
 /// assert them literally.
-pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
+pub(crate) fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
     let mut out = tool_lines(f);
     out.push_str("agents:\n");
     for agent in &Agent::ALL {
@@ -193,15 +197,13 @@ fn notes(f: &EnvFindings) -> String {
 /// The last line of the report: all checks passed, or how many blockers.
 fn result_line(fails: &[HardFail]) -> String {
     match fails.len() {
-        0 => "result: all checks passed\n".to_string(),
+        0 => "result: all checks passed\n".to_owned(),
         blockers => format!("result: {blockers} blocker(s)\n"),
     }
 }
 
 pub(crate) fn github_remote(repo: &Path) -> bool {
-    git::origin_url(repo)
-        .map(|url| url.contains("github.com"))
-        .unwrap_or(false)
+    git::origin_url(repo).is_some_and(|url| url.contains("github.com"))
 }
 
 /// The tool findings come from `doctor`, which owns the tool list; the remote
@@ -301,13 +303,12 @@ pub(crate) fn agent_logged_in(a: &Agent) -> bool {
         Agent::Opencode => {
             cmd.args(["run", hello]);
         }
-    };
+    }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .is_ok_and(|s| s.success())
 }
 
 #[cfg(test)]

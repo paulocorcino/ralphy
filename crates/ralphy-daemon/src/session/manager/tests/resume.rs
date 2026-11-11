@@ -157,9 +157,9 @@ async fn an_attachment_says_its_offset_and_whether_it_resumed() {
     let manager = Arc::new(SessionManager::new());
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -187,9 +187,9 @@ async fn a_resync_after_a_lag_shows_the_session_screen() {
     let manager = Arc::new(SessionManager::new());
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,

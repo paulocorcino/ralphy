@@ -26,7 +26,7 @@ pub fn runs_elevated() -> bool {
     // SAFETY: `token` is a valid out pointer, checked before use and closed
     // once; `elevation` is a POD of the size passed.
     unsafe {
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) == 0 {
             return false;
         }
         let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
@@ -35,8 +35,8 @@ pub fn runs_elevated() -> bool {
             token,
             TokenElevation,
             std::ptr::from_mut(&mut elevation).cast(),
-            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
-            &mut len,
+            u32::try_from(size_of::<TOKEN_ELEVATION>()).expect("the struct size fits in u32"),
+            &raw mut len,
         );
         CloseHandle(token);
         read != 0 && elevation.TokenIsElevated != 0

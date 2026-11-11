@@ -1,10 +1,10 @@
-//! The OpenCode module of the usage scan (ADR-0033 §2/§6, ADR-0008 D5). Reads the
+//! The `OpenCode` module of the usage scan (ADR-0033 §2/§6, ADR-0008 D5). Reads the
 //! `opencode.db` SQLite `message` store read-only into per-session × model
 //! interactive records.
 //!
 //! Two OpenCode-specific rules, both proven live by the adapter
 //! (`ralphy-agent-opencode/src/usage.rs`, ADR-0008 D5): (1) `tokens.reasoning`
-//! is NOT added to `output` — OpenCode's own `total = input + output +
+//! is NOT added to `output` — `OpenCode`'s own `total = input + output +
 //! cache.read` reconciles without it, so reasoning already sits inside `output`;
 //! re-adding it double-counts. (2) The CLI `cost` field is never read (0 for the
 //! operator's un-priced custom providers).
@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{InteractiveRecord, OpenCodeScan, Tokens};
 
-/// Scan the OpenCode SQLite store into interactive records (one per session ×
+/// Scan the `OpenCode` SQLite store into interactive records (one per session ×
 /// model). Fully best-effort: any `rusqlite` error (missing db, lock, schema
 /// drift, corrupt file) yields an empty vec via the single `read_opencode`
 /// error funnel. `since` drops records whose `last_ts` is strictly before it
@@ -119,7 +119,7 @@ fn read_opencode(input: &OpenCodeScan) -> rusqlite::Result<Vec<InteractiveRecord
                 .cloned()
                 .unwrap_or((None, None));
             InteractiveRecord {
-                agent: "opencode".to_string(),
+                agent: "opencode".to_owned(),
                 model,
                 session_id,
                 project,
@@ -154,25 +154,27 @@ fn assistant_row(data: &str) -> Option<AssistantRow> {
         return None;
     }
     let tokens = val.get("tokens").filter(|t| t.is_object())?;
-    let field = |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |obj: &serde_json::Value, k: &str| {
+        obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0)
+    };
     let cache = tokens.get("cache");
     Some(AssistantRow {
         model: val
             .get("modelID")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
-            .to_string(),
+            .to_owned(),
         // reasoning NOT added — `output` already includes it (module doc / ADR-0008 D5).
         tokens: Tokens {
             input: field(tokens, "input"),
             output: field(tokens, "output"),
-            cache_read: cache.map(|c| field(c, "read")).unwrap_or(0),
-            cache_creation: cache.map(|c| field(c, "write")).unwrap_or(0),
+            cache_read: cache.map_or(0, |c| field(c, "read")),
+            cache_creation: cache.map_or(0, |c| field(c, "write")),
         },
         ts_ms: val
             .get("time")
             .and_then(|t| t.get("created"))
-            .and_then(|v| v.as_i64()),
+            .and_then(serde_json::Value::as_i64),
     })
 }
 
@@ -332,7 +334,7 @@ mod tests {
         let data = r#"{"role":"assistant","modelID":"m","tokens":{"input":10,"output":5}}"#;
         let db = seed_db(tmp.path(), &[("ses_run", data), ("ses_int", data)], &[]);
         let mut runs = HashSet::new();
-        runs.insert("ses_run".to_string());
+        runs.insert("ses_run".to_owned());
         let records = scan_opencode(&OpenCodeScan {
             db_path: &db,
             run_session_ids: &runs,
@@ -346,7 +348,7 @@ mod tests {
     #[test]
     fn opencode_missing_db_is_zero() {
         let records = scan(Path::new("does-not-exist-anywhere.db"), &[], None);
-        assert!(records.is_empty());
+        assert_eq!(records, Vec::<InteractiveRecord>::new());
     }
 
     #[test]
@@ -355,7 +357,7 @@ mod tests {
         let path = tmp.path().join("opencode.db");
         fs::write(&path, b"this is not a sqlite database at all").unwrap();
         let records = scan(&path, &[], None);
-        assert!(records.is_empty());
+        assert_eq!(records, Vec::<InteractiveRecord>::new());
     }
 
     #[test]

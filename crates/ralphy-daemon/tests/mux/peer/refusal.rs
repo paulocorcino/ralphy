@@ -10,7 +10,7 @@ fn console_events(store: &Path) -> Vec<String> {
     let log = std::fs::read_to_string(store.join("daemon-audit.jsonl")).unwrap_or_default();
     log.lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("the line is JSON"))
-        .filter_map(|line| line["event"].as_str().map(str::to_string))
+        .filter_map(|line| line.get("event")?.as_str().map(str::to_owned))
         .filter(|event| event.starts_with("console_"))
         .collect()
 }

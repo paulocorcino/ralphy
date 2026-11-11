@@ -60,12 +60,12 @@ impl Transport for RecordingTransport {
         self.calls
             .lock()
             .unwrap()
-            .push((method.to_string(), Value::Null));
+            .push((method.to_owned(), Value::Null));
         Ok(json!({ "ok": true, "result": { "username": "ralphy_bot" } }))
     }
 
     fn post(&self, method: &str, body: Value) -> Result<Value> {
-        self.calls.lock().unwrap().push((method.to_string(), body));
+        self.calls.lock().unwrap().push((method.to_owned(), body));
         match method {
             "sendMessage" => {
                 let id = self.next_id.fetch_add(1, Ordering::SeqCst);
@@ -160,7 +160,7 @@ fn worker_sends_one_card_then_edits_in_place_no_pushes() {
         .filter(|(method, _)| method == "editMessageText")
         .map(|(_, body)| body["message_id"].as_i64().unwrap())
         .collect();
-    assert!(!edit_ids.is_empty());
+    assert_ne!(edit_ids, Vec::<i64>::new());
     assert!(edit_ids.iter().all(|&id| id == 100));
 }
 
@@ -181,7 +181,7 @@ fn send_texts(calls: &[(String, Value)]) -> Vec<String> {
     calls
         .iter()
         .filter(|(m, _)| m == "sendMessage")
-        .map(|(_, b)| b["text"].as_str().unwrap_or("").to_string())
+        .map(|(_, b)| b["text"].as_str().unwrap_or("").to_owned())
         .collect()
 }
 
@@ -308,7 +308,8 @@ fn progress_edit_fires_ping_coalesces_then_expires_and_deletes() {
 
     // Age the ping past its TTL; the next tick deletes it and clears the slot.
     let (id, _) = engine.ping.expect("ping still pending");
-    engine.ping = Some((id, Instant::now() - PING_TTL - Duration::from_millis(1)));
+    let aged = Instant::now().checked_sub(PING_TTL + Duration::from_millis(1));
+    engine.ping = Some((id, aged.unwrap()));
     engine.on_tick(false);
     assert!(engine.ping.is_none(), "expired ping cleared");
     assert_eq!(

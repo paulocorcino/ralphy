@@ -141,7 +141,7 @@ pub fn view(
     ReleaseView {
         current: build.raw,
         channel: channel.to_string(),
-        standing: label.to_string(),
+        standing: label.to_owned(),
         severity: severity(&gap),
         latest: gap.first().map(|e| e.version.clone()),
         gap,
@@ -153,13 +153,13 @@ fn entry(release: &Release) -> GapEntry {
     let (kinds, highlights) = parse_body(release.body.as_deref().unwrap_or_default());
     GapEntry {
         version: release.tag_name.clone(),
-        title: release.title().to_string(),
+        title: release.title().to_owned(),
         date: release
             .published_at
             .as_deref()
             .and_then(|ts| ts.split('T').next())
             .unwrap_or_default()
-            .to_string(),
+            .to_owned(),
         url: release.html_url.clone(),
         kinds,
         highlights,
@@ -224,7 +224,7 @@ fn highlight(item: &str) -> Option<String> {
     // its asterisks.
     let text = text.replace("**", "");
     let text = text.trim();
-    (!text.is_empty()).then(|| text.to_string())
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 #[cfg(test)]
@@ -233,13 +233,13 @@ mod tests {
 
     fn release(tag: &str, body: &str) -> Release {
         Release {
-            tag_name: tag.to_string(),
+            tag_name: tag.to_owned(),
             name: None,
             published_at: Some(format!("2026-09-0{}T10:00:00Z", &tag[tag.len() - 1..])),
             html_url: format!("https://example.invalid/{tag}"),
             prerelease: true,
             draft: false,
-            body: Some(body.to_string()),
+            body: Some(body.to_owned()),
             assets: Vec::new(),
         }
     }
@@ -268,8 +268,8 @@ mod tests {
         // started: a commit list under a `## What's Changed` heading.
         let (kinds, highlights) =
             parse_body("## What's Changed\n* feat(workbench): a thing by @someone in #1\n");
-        assert!(kinds.is_empty());
-        assert!(highlights.is_empty());
+        assert_eq!(kinds, Vec::<String>::new());
+        assert_eq!(highlights, Vec::<String>::new());
     }
 
     #[test]

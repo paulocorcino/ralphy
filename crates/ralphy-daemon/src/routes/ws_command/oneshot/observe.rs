@@ -37,7 +37,7 @@ pub(super) async fn observe(
     let asked = payload_str(cmd, "path");
     let rel = checkout
         .as_ref()
-        .map_or_else(|| asked.to_string(), |c| c.prefix(asked));
+        .map_or_else(|| asked.to_owned(), |c| c.prefix(asked));
     match verb {
         dispatch::Verb::TreeList => tree_list(repo_path, checkout.as_ref(), asked).await,
         dispatch::Verb::TreeFind | dispatch::Verb::TreeGrep => {
@@ -84,7 +84,7 @@ async fn tree_search(
     repo_path: &Path,
     checkout: Option<&checkout::ConfinedCheckout>,
 ) -> serde_json::Value {
-    let query = payload_str(cmd, "query").to_string();
+    let query = payload_str(cmd, "query").to_owned();
     let (root, _) = walk_target(repo_path, checkout, "");
     let settings_root = repo_path.to_path_buf();
     let budget = tree::SearchBudget::default();
@@ -121,8 +121,8 @@ fn walk_target(
 ) -> (PathBuf, String) {
     match checkout {
         // `Checkout::prefix` trims the slashes; the checkout-rooted rel does too.
-        Some(c) => (c.root().to_path_buf(), asked.trim_matches('/').to_string()),
-        None => (repo_path.to_path_buf(), asked.to_string()),
+        Some(c) => (c.root().to_path_buf(), asked.trim_matches('/').to_owned()),
+        None => (repo_path.to_path_buf(), asked.to_owned()),
     }
 }
 
@@ -177,7 +177,7 @@ async fn file_read(cmd: &protocol::Command, repo_path: &Path, rel: &str) -> serd
         Ok(hint) => hint,
         Err(refusal) => return refusal,
     };
-    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+    let (root, path) = (repo_path.to_path_buf(), rel.to_owned());
     let read = blocking_read(move || {
         let fallback = textcodec::fallback_for(&root);
         tree::read_with(&root, &path, hint, fallback)
@@ -196,7 +196,7 @@ async fn file_read(cmd: &protocol::Command, repo_path: &Path, rel: &str) -> serd
 }
 
 async fn image_read(repo_path: &Path, rel: &str) -> serde_json::Value {
-    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+    let (root, path) = (repo_path.to_path_buf(), rel.to_owned());
     match blocking_read(move || tree::read_image(&root, &path)).await {
         Some(Ok(image)) => serde_json::json!({
             "status": "ok",
@@ -209,7 +209,7 @@ async fn image_read(repo_path: &Path, rel: &str) -> serde_json::Value {
 }
 
 async fn note_read(repo_path: &Path, rel: &str) -> serde_json::Value {
-    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+    let (root, path) = (repo_path.to_path_buf(), rel.to_owned());
     // The mtime rides along with the text, on the one trip the card already
     // makes: the footer says when the note was last saved, and after a reload
     // the card's own memory of that is gone (ADR-0064 §7 as amended).

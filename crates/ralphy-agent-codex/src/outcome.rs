@@ -48,10 +48,10 @@ pub(crate) fn classify_codex_outcome(
     out: &str,
     log: &str,
 ) -> Outcome {
-    let limit = if !exited_cleanly {
-        ralphy_adapter_support::detect_limit(log, is_codex_limit_text, codex_reset)
-    } else {
+    let limit = if exited_cleanly {
         None
+    } else {
+        ralphy_adapter_support::detect_limit(log, is_codex_limit_text, codex_reset)
     };
     ralphy_adapter_support::classify(CompletionSignals {
         done: ralphy_adapter_support::done_sentinel(out),

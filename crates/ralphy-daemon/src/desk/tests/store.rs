@@ -22,7 +22,7 @@ fn move_aside_never_overwrites() {
 fn missing_file_reads_as_empty_desk() {
     let dir = tempfile::tempdir().unwrap();
     let store = load_from(&dir.path().join("desk.toml")).expect("a missing desk reads");
-    assert!(store.windows.is_empty());
+    assert_eq!(store.windows, Vec::<DeskRecord>::new());
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn save_leaves_no_temp_file_behind() {
     .unwrap();
     let leftovers: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n != "desk.toml")
         .collect();

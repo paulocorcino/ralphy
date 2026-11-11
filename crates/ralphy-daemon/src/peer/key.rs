@@ -37,7 +37,7 @@ pub fn ensure_peer_key(
     let public_line = std::fs::read_to_string(&public)
         .with_context(|| format!("reading the peer key's public half {}", public.display()))?
         .trim()
-        .to_string();
+        .to_owned();
     Ok(PeerKey { path, public_line })
 }
 

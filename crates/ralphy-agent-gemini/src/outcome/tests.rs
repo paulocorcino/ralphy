@@ -45,7 +45,7 @@ fn a_missing_result_record_is_still_classified() {
     // Zero records at all — a rejection before the model was ever reached.
     let empty = fold_gemini_stream("Error: something went wrong\n");
     assert!(!empty.saw_result);
-    assert!(empty.final_text.is_empty());
+    assert_eq!(empty.final_text, "");
     // Neither is reported as a green run.
     for f in [&fold, &empty] {
         assert_ne!(

@@ -18,12 +18,12 @@ fn linger_check(facts: &HostFacts) -> HostCheck {
     use CheckStatus::{Fix, Pass, Warn};
     let base = crate::doctor::linger_text(facts.linger);
     let (status, text) = match facts.linger {
-        Some(true) => (Pass, base.to_string()),
+        Some(true) => (Pass, base.to_owned()),
         Some(false) => (
             Fix(HostOp::EnableLinger),
             format!("{base}. Ralphy turns it on"),
         ),
-        None => (Warn, base.to_string()),
+        None => (Warn, base.to_owned()),
     };
     HostCheck::new(CheckId::Linger, status, text)
 }
@@ -38,7 +38,7 @@ fn sign_in_check(facts: &HostFacts, os: HostOs) -> HostCheck {
         ),
         (_, _, Some(true)) => (
             Pass,
-            "the host signs in by itself after a restart".to_string(),
+            "the host signs in by itself after a restart".to_owned(),
         ),
         (HostOs::Windows, _, _) => (
             Warn,
@@ -63,7 +63,7 @@ fn sleep_check(facts: &HostFacts, os: HostOs) -> HostCheck {
                 } else {
                     "powercfg /change standby-timeout-ac 0"
                 }
-                .to_string(),
+                .to_owned(),
             ),
             "the host sleeps when idle, and a sleeping host does not answer",
         ),

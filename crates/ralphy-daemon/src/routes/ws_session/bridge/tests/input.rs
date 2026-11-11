@@ -15,9 +15,9 @@ async fn input_is_not_held_behind_output() {
     let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
     let (id, mut attach) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -46,7 +46,7 @@ async fn input_is_not_held_behind_output() {
 
     let resize = Frame::Command(Command {
         id: 0,
-        verb: "resize".to_string(),
+        verb: "resize".to_owned(),
         payload: serde_json::json!({ "rows": ASKED.0, "cols": ASKED.1 }),
     });
     for message in channel_messages(&resize) {

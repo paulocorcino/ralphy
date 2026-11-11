@@ -34,9 +34,9 @@ async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
     let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -104,9 +104,9 @@ async fn bridged_watcher(
     let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,

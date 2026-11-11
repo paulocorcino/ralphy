@@ -30,7 +30,7 @@ fn holds(fence: &DeskRect, (x, y): (f64, f64)) -> bool {
 }
 
 /// The id of the first fence that holds `rect`, or `None`.
-pub fn fence_of<'a>(fences: &'a [DeskFence], rect: &DeskRect) -> Option<&'a str> {
+pub(super) fn fence_of<'a>(fences: &'a [DeskFence], rect: &DeskRect) -> Option<&'a str> {
     let point = title_bar_point(rect);
     fences
         .iter()

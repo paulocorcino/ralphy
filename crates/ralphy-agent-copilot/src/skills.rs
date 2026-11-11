@@ -51,7 +51,7 @@ pub(crate) fn skill_list_violation(listing: &str, required: &[String]) -> Option
     };
     let enabled: Vec<&str> = entries
         .iter()
-        .filter(|e| e.get("enabled").and_then(|b| b.as_bool()) == Some(true))
+        .filter(|e| e.get("enabled").and_then(serde_json::Value::as_bool) == Some(true))
         .filter_map(|e| e.get("name").and_then(|n| n.as_str()))
         .collect();
     let missing = required.iter().find(|r| !enabled.contains(&r.as_str()))?;
@@ -121,7 +121,7 @@ mod tests {
     fn required() -> Vec<String> {
         ["reviewer", "setup-pocock", "staged-plan"]
             .iter()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect()
     }
 
@@ -148,7 +148,7 @@ mod tests {
             "reviewer/SKILL.md must resolve under .agents/skills"
         );
         assert!(
-            names.contains(&"staged-plan".to_string()),
+            names.contains(&"staged-plan".to_owned()),
             "the returned required set must name staged-plan: {names:?}"
         );
 
@@ -286,7 +286,7 @@ mod tests {
                 .find_map(|l| l.strip_prefix("name:"))
                 .unwrap_or_else(|| panic!("{dir_name}/SKILL.md frontmatter has no `name:`"))
                 .trim()
-                .to_string();
+                .to_owned();
             assert_eq!(
                 front, dir_name,
                 "skill directory `{dir_name}` declares frontmatter name `{front}`; the D9 \
@@ -304,7 +304,7 @@ mod tests {
     fn a_similarly_named_skill_does_not_satisfy_the_requirement() {
         let stream =
             r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"staged-plan-legacy"}]}}"#;
-        let req = vec!["staged-plan".to_string()];
+        let req = vec!["staged-plan".to_owned()];
         let msg = skills_load_violation(stream, &req)
             .expect("a near-miss name must not satisfy the requirement");
         assert!(msg.contains("staged-plan"), "{msg}");
@@ -362,7 +362,7 @@ mod tests {
 
     // ── skill_list_violation ──────────────────────────────────────────────
 
-    /// Real `copilot skill list --json` output (CLI 1.0.90, FinCal, 2026-10-01;
+    /// Real `copilot skill list --json` output (CLI 1.0.90, `FinCal`, 2026-10-01;
     /// descriptions shortened, paths made neutral).
     const LISTING: &str = include_str!("../fixtures/skill-list-2026-10-01.json");
 

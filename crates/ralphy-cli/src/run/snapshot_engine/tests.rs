@@ -21,7 +21,7 @@ fn doc_in(state: &str, active: Option<u64>, since: Option<&str>) -> RunSnapshot 
     };
     doc.phase.state = state.into();
     doc.phase.active = active;
-    doc.phase.since = since.map(str::to_string);
+    doc.phase.since = since.map(str::to_owned);
     doc
 }
 
@@ -221,7 +221,7 @@ fn plan_written(number: u64, md: &str) -> RunEvent {
         usage: UsageLite::default(),
         steps: plan_progress::parse_steps(md)
             .into_iter()
-            .map(|s| (s.text, s.status.wire().to_string()))
+            .map(|s| (s.text, s.status.wire().to_owned()))
             .collect(),
     }
 }
@@ -341,7 +341,9 @@ impl StopFlagGuard {
     fn acquire() -> Self {
         // A test that panicked while holding the lock poisons it; recover
         // rather than cascade, since the flag is reset right below anyway.
-        let lock = STOP_FLAG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = STOP_FLAG_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ralphy_core::stop::clear();
         Self(lock)
     }

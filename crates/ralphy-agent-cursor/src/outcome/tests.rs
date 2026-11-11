@@ -86,7 +86,7 @@ fn a_permission_denied_run_is_green_and_names_the_blocked_command() {
     assert!(!fold.is_error);
     assert_eq!(
         fold.denied_tool_calls,
-        vec!["git status --short".to_string()]
+        vec!["git status --short".to_owned()]
     );
     let note = fold
         .degraded_note()

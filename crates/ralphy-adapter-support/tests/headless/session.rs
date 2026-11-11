@@ -96,7 +96,7 @@ fn run_init_session_clears_a_stale_artifact_before_the_run() {
             missing_msg: "NO ARTIFACT",
         },
         |_log| false,
-        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+        |raw| Ok::<String, anyhow::Error>(raw.to_owned()),
     )
     .expect_err("the stale artifact was cleared, so the read must fail with missing_msg");
 
@@ -174,7 +174,7 @@ fn a_clean_json_session_with_auth_text_returns_its_artifact() {
             missing_msg: "NO ARTIFACT",
         },
         has_auth_text,
-        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+        |raw| Ok::<String, anyhow::Error>(raw.to_owned()),
     )
     .expect("a session that wrote its artifact and exited 0 keeps it");
     assert_eq!(artifact, ARTIFACT_TEXT);
@@ -218,7 +218,7 @@ const HELD_PROMPT: &str = "the held prompt";
 
 /// A `record-stdin` style child that records into `out` and announces its first
 /// hook event in `status`.
-fn recording_cmd(mode: &str, out: &Path, status: &Path) -> std::process::Command {
+fn recording_cmd(mode: &str, out: &Path, status: &Path) -> Command {
     let mut cmd = child_cmd(mode);
     cmd.arg(out).env("RALPHY_STATUS_FILE", status);
     cmd
@@ -362,7 +362,7 @@ fn a_held_session_returns_the_gate_error() {
         },
         refuse(),
         |_log| false,
-        |raw| Ok::<String, anyhow::Error>(raw.to_string()),
+        |raw| Ok::<String, anyhow::Error>(raw.to_owned()),
     )
     .expect_err("a refusing gate fails the json session");
     let chain = format!("{err:#}");
@@ -379,7 +379,7 @@ fn a_held_session_returns_the_gate_error() {
 #[test]
 fn a_refused_prompt_gets_no_spawn_context() {
     const SPAWN_ERR: &str = "failed to spawn the test child (is it on PATH?)";
-    let session = |cmd: std::process::Command, log: &Path| -> anyhow::Result<String> {
+    let session = |cmd: Command, log: &Path| -> anyhow::Result<String> {
         run_text_session_held(
             TextSession {
                 cmd,
@@ -405,11 +405,11 @@ fn a_refused_prompt_gets_no_spawn_context() {
     assert!(!chain.contains(SPAWN_ERR), "the child started: {chain}");
 
     // A child that never starts still gets the spawn context.
-    let mut missing = std::process::Command::new("ralphy-no-such-program-for-this-test");
+    let mut missing = Command::new("ralphy-no-such-program-for-this-test");
     missing
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     let err = session(missing, &log).expect_err("the program does not exist");
     assert!(
         format!("{err:#}").starts_with(SPAWN_ERR),

@@ -39,9 +39,7 @@ pub fn locate_cursor() -> Option<PathBuf> {
 /// What a `Command` is constructed with. Falls back to the bare name so the spawn
 /// failure names the vendor rather than an empty path.
 pub(crate) fn resolve_cursor_program() -> OsString {
-    locate_cursor()
-        .map(PathBuf::into_os_string)
-        .unwrap_or_else(|| NAMES[0].into())
+    locate_cursor().map_or_else(|| NAMES[0].into(), PathBuf::into_os_string)
 }
 
 /// The single configuration file that carries the operator's policy (D17). Their
@@ -118,7 +116,7 @@ pub(crate) fn seed_cursor_config_dir(operator_dir: Option<&Path>, scratch: &Path
 /// hundreds of invocations and the files name the operator's repositories.
 /// On **Windows only**, `SHELL` (plus `MSYSTEM`) is pinned to a located git-bash
 /// (D20) so the vendor runs shell tool calls under bash, not PowerShell — where a
-/// POSIX heredoc commit message (`-m "$(cat <<'EOF' … EOF)"`) ParserErrors. `MSYSTEM`
+/// POSIX heredoc commit message (`-m "$(cat <<'EOF' … EOF)"`) `ParserErrors`. `MSYSTEM`
 /// is required with it: without the MSYS runtime flag git-bash returns "no exit
 /// status" for every command. Both are left untouched when the operator already set
 /// `SHELL` or no git-bash is found (see [`git_bash_shell_pin`]).
@@ -154,7 +152,7 @@ pub(crate) fn build_cursor_command(
     // a worse break than the papercut it fixes, SHELL+MSYSTEM runs commands cleanly.
     #[cfg(windows)]
     if let Some(shell) = git_bash_shell_pin(
-        std::env::var_os("SHELL"),
+        std::env::var_os("SHELL").as_deref(),
         ralphy_proc_util::locate_git_bash(),
     ) {
         cmd.env("SHELL", shell).env("MSYSTEM", GIT_BASH_MSYSTEM);
@@ -172,7 +170,7 @@ const GIT_BASH_MSYSTEM: &str = "MINGW64";
 /// The `SHELL` a Windows run pins so `cursor-agent` runs its shell tool calls under
 /// git-bash, not PowerShell (ADR-0042 D20). The vendor's classifier reads `SHELL`;
 /// native `ralphy.exe` spawns the CLI with `MSYSTEM` absent and `SHELL` empty, so it
-/// falls through to PowerShell and a POSIX heredoc commit ParserErrors on the first
+/// falls through to PowerShell and a POSIX heredoc commit `ParserErrors` on the first
 /// try of every execute session.
 ///
 /// `Some(path)` says set it; `None` leaves `SHELL` exactly as the parent env has it,
@@ -185,7 +183,7 @@ const GIT_BASH_MSYSTEM: &str = "MINGW64";
 /// Pure over its inputs so every branch unit-tests without touching the real env.
 #[cfg(windows)]
 fn git_bash_shell_pin(
-    existing_shell: Option<std::ffi::OsString>,
+    existing_shell: Option<&std::ffi::OsStr>,
     located_git_bash: Option<PathBuf>,
 ) -> Option<PathBuf> {
     match existing_shell {

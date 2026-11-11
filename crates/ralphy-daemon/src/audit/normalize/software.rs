@@ -21,10 +21,10 @@ impl Hints {
                 .client_hints
                 .iter()
                 .find(|(n, _)| n == name)
-                .map(|(_, v)| v.trim().trim_matches('"').to_string())
+                .map(|(_, v)| v.trim().trim_matches('"').to_owned())
         };
         let data = client.ua_data.as_ref();
-        let text = |t: Option<&Text>| t.map(|t| t.as_str().to_string());
+        let text = |t: Option<&Text>| t.map(|t| t.as_str().to_owned());
         let brands = header("full-version-list")
             .or_else(|| header("brands"))
             .map(|v| brands_from_header(&v))
@@ -38,7 +38,7 @@ impl Hints {
                     };
                     list.0
                         .iter()
-                        .map(|b| (b.brand.as_str().to_string(), b.version.as_str().to_string()))
+                        .map(|b| (b.brand.as_str().to_owned(), b.version.as_str().to_owned()))
                         .collect()
                 })
             })
@@ -58,7 +58,7 @@ impl Hints {
                 .and_then(|v| {
                     v.split(',')
                         .next()
-                        .map(|f| f.trim().trim_matches('"').to_string())
+                        .map(|f| f.trim().trim_matches('"').to_owned())
                 })
                 .or_else(|| data.and_then(|d| text(d.form_factors.0.first()))),
             brands,
@@ -73,8 +73,8 @@ fn brands_from_header(value: &str) -> Vec<(String, String)> {
         .filter_map(|part| {
             let (name, version) = part.split_once(";v=")?;
             Some((
-                name.trim().trim_matches('"').to_string(),
-                version.trim().trim_matches('"').to_string(),
+                name.trim().trim_matches('"').to_owned(),
+                version.trim().trim_matches('"').to_owned(),
             ))
         })
         .collect()
@@ -256,7 +256,7 @@ pub(super) fn os_version(
                 1..=12 => "10",
                 0 => return None,
             };
-            field(name.to_string(), Source::Hint)
+            field(name.to_owned(), Source::Hint)
         }
         Os::Android => hinted
             .and_then(|v| field(major_minor(v), Source::Hint))
@@ -300,6 +300,6 @@ fn major_minor(version: &str) -> String {
     let major = parts.next().unwrap_or("");
     match parts.next() {
         Some(minor) if minor != "0" && !minor.is_empty() => format!("{major}.{minor}"),
-        _ => major.to_string(),
+        _ => major.to_owned(),
     }
 }

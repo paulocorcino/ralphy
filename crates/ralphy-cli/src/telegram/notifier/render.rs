@@ -127,7 +127,7 @@ fn render_sleep_line(sleep: &SleepState, now_epoch: i64) -> String {
 /// [`FULL_LIST_MAX`]) collapses to the counters plus the active issue and the
 /// most-recently-finished one (ADR-0007 D6). `now_epoch` (Unix seconds) anchors
 /// the live sleep countdown.
-pub fn render_card(state: &RunState, now_epoch: i64) -> String {
+pub(crate) fn render_card(state: &RunState, now_epoch: i64) -> String {
     // The card is one consolidated component: four groups separated by a blank
     // line (ADR-0007 D3). Each group is a section string; only non-empty sections
     // join, so a not-yet-started run (no issues) never leaves a stray blank line.
@@ -198,13 +198,13 @@ pub(super) fn render_final_push(state: &RunState) -> String {
         let head = state
             .final_summary
             .clone()
-            .unwrap_or_else(|| "stopped before any issue was processed".to_string());
+            .unwrap_or_else(|| "stopped before any issue was processed".to_owned());
         return truncate_chars(format!("🛑 {} — {head}", state.title), TELEGRAM_LIMIT);
     }
     let head = state
         .final_summary
         .clone()
-        .unwrap_or_else(|| "run finished".to_string());
+        .unwrap_or_else(|| "run finished".to_owned());
     // A bundle verdict parks the queue on a human split — the footer must say
     // so, or a run that ends "green" hides the pending human step.
     let split_part = if c.needs_split > 0 {
@@ -236,8 +236,8 @@ pub(super) fn render_final_push(state: &RunState) -> String {
 
 /// The push sent on entering a usage-limit sleep (a new message so the phone
 /// buzzes, ADR-0007 D3). Bounded like the other pushes.
-pub fn render_sleep_push(state: &RunState) -> String {
-    let reset = state.sleep.as_ref().map(|s| s.reset.as_str()).unwrap_or("");
+pub(crate) fn render_sleep_push(state: &RunState) -> String {
+    let reset = state.sleep.as_ref().map_or("", |s| s.reset.as_str());
     truncate_chars(
         format!(
             "🌙 {} — usage limit, waiting for reset ~{}",
@@ -249,7 +249,7 @@ pub fn render_sleep_push(state: &RunState) -> String {
 
 /// The push sent when the active child enters a sustained API-degraded state
 /// (issue #149). A new message so the phone buzzes, mirroring the sleep push.
-pub fn render_degraded_push(state: &RunState) -> String {
+pub(crate) fn render_degraded_push(state: &RunState) -> String {
     truncate_chars(
         format!("⚠️ {} — API degraded, child retrying", state.title),
         TELEGRAM_LIMIT,
@@ -259,7 +259,7 @@ pub fn render_degraded_push(state: &RunState) -> String {
 /// The push sent when the idle watchdog reaps the child. Closes a pending
 /// degraded push *without* claiming recovery — the episode ended because Ralphy
 /// killed the child, which is the opposite news.
-pub fn render_idle_reaped_push(state: &RunState, idle_minutes: u64) -> String {
+pub(crate) fn render_idle_reaped_push(state: &RunState, idle_minutes: u64) -> String {
     truncate_chars(
         format!(
             "💤 {} — no progress for {idle_minutes} min, child reaped",
@@ -271,7 +271,7 @@ pub fn render_idle_reaped_push(state: &RunState, idle_minutes: u64) -> String {
 
 /// The push sent when the agent asks for the operator (ADR-0059 §2): a
 /// `waiting` state is a buzz, with what it is asking when the hook said.
-pub fn render_waiting_push(state: &RunState, detail: Option<&str>) -> String {
+pub(crate) fn render_waiting_push(state: &RunState, detail: Option<&str>) -> String {
     truncate_chars(
         format!(
             "🙋 {} — agent is waiting: {}",
@@ -283,7 +283,7 @@ pub fn render_waiting_push(state: &RunState, detail: Option<&str>) -> String {
 }
 
 /// The push sent when the API recovers, matching a prior degraded push.
-pub fn render_recover_push(state: &RunState) -> String {
+pub(crate) fn render_recover_push(state: &RunState) -> String {
     truncate_chars(
         format!("✅ {} — API recovered, resuming", state.title),
         TELEGRAM_LIMIT,
@@ -295,14 +295,14 @@ fn truncate_chars(mut s: String, max: usize) -> String {
     if s.chars().count() <= max {
         return s;
     }
-    let idx = s.char_indices().nth(max).map(|(i, _)| i).unwrap_or(s.len());
+    let idx = s.char_indices().nth(max).map_or(s.len(), |(i, _)| i);
     s.truncate(idx);
     s
 }
 
 /// Derive the card title (ADR-0007 D3): `--title` wins; else the single issue's
 /// title with `--only-issue`; else `<repo> · N issues [labels]`.
-pub fn derive_title(
+pub(crate) fn derive_title(
     repo_name: &str,
     issue_count: usize,
     labels: &[String],
@@ -311,11 +311,11 @@ pub fn derive_title(
 ) -> String {
     if let Some(t) = title_override {
         if !t.trim().is_empty() {
-            return t.to_string();
+            return t.to_owned();
         }
     }
     if let Some(t) = only_issue_title {
-        return t.to_string();
+        return t.to_owned();
     }
     let label_part = if labels.is_empty() {
         String::new()

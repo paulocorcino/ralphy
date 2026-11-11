@@ -147,7 +147,7 @@ fn start(_store: &std::path::Path) -> Result<()> {
 #[cfg(windows)]
 fn start(store: &std::path::Path) -> Result<()> {
     let exe = ralphy_proc_util::exe::running_exe()?;
-    super::restart::spawn_detached(&exe, &["daemon".to_string()], store)?;
+    super::restart::spawn_detached(&exe, &["daemon".to_owned()], store)?;
     Ok(())
 }
 

@@ -4,7 +4,7 @@
 //! (each `<ralphy exe> hook status`), points the child at a per-session
 //! status file through `RALPHY_STATUS_FILE`, and tails that file from the
 //! session's own pump tick. A Codex console takes its hooks inline, as `-c`
-//! arguments, and gets no settings file. An OpenCode console gets a state
+//! arguments, and gets no settings file. An `OpenCode` console gets a state
 //! plugin file instead, named in `OPENCODE_CONFIG_CONTENT`, which appends to
 //! the same kind of status file (ADR-0085 D2). The fold from hook line to state
 //! (ADR-0085 D7) is **duplicated** here, in [`fold`] and the vendor maps —
@@ -42,7 +42,7 @@ use fold::{Fold, MapFn, StatusLine};
 /// (`DEFAULT_INTERACTIVE_IDLE_MINUTES`), restated here because the daemon
 /// does not import core. A console has no reaper; this is only how long a
 /// green dot is believed.
-pub const STALE_AFTER: Duration = Duration::from_secs(45 * 60);
+pub const STALE_AFTER: Duration = Duration::from_mins(45);
 
 /// The environment variable the hook reads the status path from.
 pub const STATUS_ENV: &str = "RALPHY_STATUS_FILE";
@@ -148,7 +148,7 @@ pub fn silence(
         ));
     }
     let waited = now.duration_since(first_input?).ok()?;
-    (waited > SILENT_AFTER).then(|| CLOCK_REASON.to_string())
+    (waited > SILENT_AFTER).then(|| CLOCK_REASON.to_owned())
 }
 
 /// The final bytes a terminal reply ends with: the cursor position (`R`),
@@ -190,7 +190,7 @@ pub fn render(obs: &Observed, now: SystemTime) -> AgentState {
             .duration_since(obs.seen)
             .is_ok_and(|age| age > STALE_AFTER);
     AgentState {
-        state: Some(if stale { "unknown" } else { obs.state }.to_string()),
+        state: Some(if stale { "unknown" } else { obs.state }.to_owned()),
         since: obs.since.clone(),
         detail: obs.detail.clone(),
         source: None,
@@ -288,7 +288,7 @@ pub fn state_source(agent: Agent) -> StateSource {
 pub enum HookVendor {
     Claude,
     Codex,
-    /// OpenCode, whose state plugin writes the lines (ADR-0085 D2).
+    /// `OpenCode`, whose state plugin writes the lines (ADR-0085 D2).
     OpenCode,
 }
 
@@ -357,7 +357,7 @@ impl HookVendor {
 
     /// Whether the vendor's hook runs the ralphy program (`ralphy hook
     /// status`), so that the daemon's start check of that program speaks for
-    /// it. OpenCode's plugin runs in OpenCode and never starts it.
+    /// it. `OpenCode`'s plugin runs in `OpenCode` and never starts it.
     pub(crate) fn runs_the_ralphy_program(self) -> bool {
         match self {
             HookVendor::Claude | HookVendor::Codex => true,
@@ -367,7 +367,7 @@ impl HookVendor {
 
     /// Whether the vendor sends an event when the operator grants a
     /// permission (ADR-0085 D7.5): Claude sends `PostToolUse` as the tool
-    /// runs, OpenCode sends `permission.replied`; Codex sends nothing until
+    /// runs, `OpenCode` sends `permission.replied`; Codex sends nothing until
     /// the tool ends.
     fn sends_a_grant(self) -> bool {
         match self {

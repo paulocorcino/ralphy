@@ -29,7 +29,7 @@ fn parse_codex_rollout_usage(jsonl: &str, model: Option<String>) -> Usage {
         ..Usage::default()
     };
     if let Some(ttu) = last {
-        let field = |k: &str| ttu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| ttu.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         let cached = field("cached_input_tokens");
         usage.input = field("input_tokens").saturating_sub(cached);
         usage.output = field("output_tokens");
@@ -91,7 +91,7 @@ pub(crate) fn fold_rollout_usage(
 }
 
 pub(crate) fn fold_plan_rollout_usage(before: &[PathBuf], after: &[PathBuf], model: &str) -> Usage {
-    fold_rollout_usage(before, after, Some(model.to_string()))
+    fold_rollout_usage(before, after, Some(model.to_owned()))
 }
 
 pub(crate) fn fold_execute_rollout_usage(
@@ -99,7 +99,7 @@ pub(crate) fn fold_execute_rollout_usage(
     after: &[PathBuf],
     model: &str,
 ) -> Usage {
-    fold_rollout_usage(before, after, Some(model.to_string()))
+    fold_rollout_usage(before, after, Some(model.to_owned()))
 }
 
 /// The vendor session identity of a Codex run (ADR-0033 §5): the first appeared
@@ -111,7 +111,7 @@ pub(crate) fn rollout_session_id(before: &[PathBuf], after: &[PathBuf]) -> Optio
         .first()
         .and_then(|p| p.file_stem())
         .and_then(|s| s.to_str())
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 #[cfg(test)]

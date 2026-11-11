@@ -43,7 +43,7 @@ fn classify(line: &str) -> Line<'_> {
 ///
 /// `files` holds every top-level `.html` file of `assets/ui/` by name, pages
 /// and parts. The result holds the pages only: a part is never served (D2).
-pub fn put_together(files: BTreeMap<String, String>) -> Result<BTreeMap<String, String>> {
+pub(crate) fn put_together(files: BTreeMap<String, String>) -> Result<BTreeMap<String, String>> {
     let (parts, pages): (BTreeMap<_, _>, BTreeMap<_, _>) = files
         .into_iter()
         .partition(|(name, _)| name.ends_with(PART_SUFFIX));

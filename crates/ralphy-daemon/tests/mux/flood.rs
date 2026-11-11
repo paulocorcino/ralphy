@@ -46,7 +46,7 @@ fn point_launcher_at_test_child() {
 
 /// Read the terminal frames of `channel` until their text holds `needle`.
 /// Returns the session id. A cursor position request is answered, as the
-/// terminal of the page answers it: ConPTY waits for the answer before the
+/// terminal of the page answers it: `ConPTY` waits for the answer before the
 /// child's output.
 async fn read_until(ws: &mut Ws, channel: u32, needle: &str) -> u64 {
     let mut shown = String::new();

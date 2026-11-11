@@ -115,7 +115,7 @@ impl Scan<'_> {
         }
         if !trimmed.starts_with("pub(crate) const ") {
             if let Some(page) = built_page_on(line) {
-                self.book_asset(trimmed, page.to_string());
+                self.book_asset(trimmed, page.to_owned());
             }
         }
     }
@@ -134,7 +134,7 @@ impl Scan<'_> {
     /// split: `styles.css` went from 129 claims to zero.
     fn note_assembled_css(&mut self, line: &str, trimmed: &str) {
         if line.contains("served_css()") {
-            self.book_asset(trimmed, ASSEMBLED_CSS.to_string());
+            self.book_asset(trimmed, ASSEMBLED_CSS.to_owned());
         }
     }
 
@@ -156,7 +156,7 @@ impl Scan<'_> {
         text: String,
     ) {
         self.out.push(Pin {
-            file: self.file.to_string(),
+            file: self.file.to_owned(),
             line: idx + 1,
             shape,
             asset,
@@ -287,7 +287,7 @@ fn asset_after(line: &str, marker: &str) -> Option<String> {
                 .strip_prefix(EMBEDDED_ASSET_DIR)?;
         }
         let named = &rest[..rest.find('"')?];
-        named.contains('.').then(|| named.to_string())
+        named.contains('.').then(|| named.to_owned())
     })
 }
 

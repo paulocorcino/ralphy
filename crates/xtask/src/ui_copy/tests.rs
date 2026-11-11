@@ -34,10 +34,11 @@ fn put(root: &Path, rel: &str, text: &str) {
 #[test]
 fn the_inventory_skips_vendor_and_cross_references_the_pins() {
     let root = scratch("inventory");
-    put(
-        &root,
-        "crates/ralphy-daemon/src/tests.rs",
-        r##"
+    #[expect(
+        clippy::needless_raw_string_hashes,
+        reason = "the literal holds a quote and a hash: one hash fewer ends it early"
+    )]
+    let tests_rs = r##"
     fn t() {
         let html = include_str!("../assets/ui/index.html");
         for pin in [r#"title="close""#, r#"data-act="stage""#] {
@@ -45,8 +46,8 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
         }
         assert!(html.contains("stage"), "the close button says close");
     }
-"##,
-    );
+"##;
+    put(&root, "crates/ralphy-daemon/src/tests.rs", tests_rs);
     put(
         &root,
         "crates/ralphy-daemon/assets/ui/index.html",
@@ -75,7 +76,7 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
         .iter()
         .map(|r| (r.file.as_str(), r.text.as_str(), r.pinned_by.as_slice()))
         .collect();
-    let pinned = vec!["crates/ralphy-daemon/src/tests.rs:4".to_string()];
+    let pinned = vec!["crates/ralphy-daemon/src/tests.rs:4".to_owned()];
     assert_eq!(
         got,
         vec![
@@ -101,11 +102,11 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
 #[test]
 fn the_markdown_has_a_section_per_file_and_a_table_per_area() {
     let row = |file: &str, area: &str, text: &str, concatenated: bool| Row {
-        text: text.to_string(),
-        file: file.to_string(),
+        text: text.to_owned(),
+        file: file.to_owned(),
         line: 7,
         kind: Kind::Text,
-        area: area.to_string(),
+        area: area.to_owned(),
         concatenated,
         pinned_by: Vec::new(),
         continues: false,

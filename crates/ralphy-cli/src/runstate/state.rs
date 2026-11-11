@@ -2,14 +2,15 @@
 //! the semantic [`RunEvent`] stream (ADR-0007 D6).
 
 use super::event::RunEvent;
-use super::UsageLite;
+use super::{SkipKind, UsageLite};
 
+mod queries;
 mod types;
-pub use types::{AgentState, Counts, IssueEntry, IssueStatus, QueueRef, SleepState};
+pub(crate) use types::{AgentState, Counts, IssueEntry, IssueStatus, QueueRef, SleepState};
 
 /// The transport-agnostic state of a run, folded from its event stream.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RunState {
+pub(crate) struct RunState {
     /// The card title (set by the caller, not from events).
     pub title: String,
     /// The queue size from `queue built`.
@@ -68,7 +69,7 @@ pub struct RunState {
 impl RunState {
     /// A fresh state with a known title and queue size (the worker seeds these
     /// since the card is sent before the first folded event).
-    pub fn new(title: impl Into<String>, total: usize) -> Self {
+    pub(crate) fn new(title: impl Into<String>, total: usize) -> Self {
         RunState {
             title: title.into(),
             total,
@@ -120,7 +121,7 @@ impl RunState {
     }
 
     /// Fold one event into the state. Pure over `(self, event)`.
-    pub fn apply(&mut self, event: RunEvent) {
+    pub(crate) fn apply(&mut self, event: RunEvent) {
         match event {
             RunEvent::QueueBuilt {
                 count,
@@ -158,25 +159,14 @@ impl RunState {
                 kind,
                 blockers,
                 ..
-            } => {
-                let e = self.entry_mut(number);
-                e.status = IssueStatus::Skipped;
-                e.kind = Some(kind);
-                e.blocked_by = blockers;
-            }
+            } => self.apply_skipped(number, kind, blockers),
             RunEvent::HumanBlocked { number, .. } => {
                 // Its own status so the card and counts surface "waiting on human"
                 // apart from a generic dependency skip (ADR-0014).
                 self.entry_mut(number).status = IssueStatus::Hitl;
                 self.agent = None;
             }
-            RunEvent::NeedsSplit { number } => {
-                let Some(n) = self.resolve(number) else {
-                    return;
-                };
-                self.entry_mut(n).status = IssueStatus::NeedsSplit;
-                self.agent = None;
-            }
+            RunEvent::NeedsSplit { number } => self.apply_needs_split(number),
             RunEvent::Notice { .. } => {}
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
@@ -185,13 +175,7 @@ impl RunState {
             // The operator's stop IS the card's terminal state. No issue changes
             // status: the one in flight keeps whatever the run last reported for
             // it, which is the truth — it was worked, it was not delivered.
-            RunEvent::RunStopped { number } => {
-                self.final_summary = Some(match number {
-                    0 => "stopped by the operator".to_string(),
-                    n => format!("stopped by the operator during #{n}"),
-                });
-                self.agent = None;
-            }
+            RunEvent::RunStopped { number } => self.apply_run_stopped(number),
             // The run declined to start (#222): the deferral sentence IS the card's
             // terminal state — no issue ever changed status.
             RunEvent::RunSkipped { reason } => {
@@ -200,14 +184,7 @@ impl RunState {
             RunEvent::SleepStarted {
                 reset,
                 target_epoch,
-            } => {
-                self.sleep = Some(SleepState {
-                    reset,
-                    target_epoch,
-                });
-                // A run in `sleeping` has no agent at all (ADR-0059 §1).
-                self.agent = None;
-            }
+            } => self.apply_sleep_started(reset, target_epoch),
             RunEvent::SleepEnded => {
                 self.sleep = None;
             }
@@ -232,13 +209,7 @@ impl RunState {
                 state,
                 since,
                 detail,
-            } => {
-                self.agent = Some(AgentState {
-                    state,
-                    since,
-                    detail,
-                });
-            }
+            } => self.apply_agent_state(state, since, detail),
             RunEvent::KnowledgeConsolidating { notes } => {
                 self.consolidating = Some(notes);
             }
@@ -261,7 +232,7 @@ impl RunState {
             // story: without a summary the card falls back to "stopped before any
             // issue was processed", which reads as an unexplained abort.
             RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
-                self.final_summary = Some("no open issues to process".to_string());
+                self.final_summary = Some("no open issues to process".to_owned());
             }
             RunEvent::RunFinished { .. } => {}
             // The raw plan snapshots carry no per-issue status change (the sink
@@ -294,7 +265,7 @@ impl RunState {
                         .get("title")
                         .and_then(|t| t.as_str())
                         .unwrap_or_default()
-                        .to_string();
+                        .to_owned();
                     Some(QueueRef { number, title })
                 })
                 .collect();
@@ -396,6 +367,46 @@ impl RunState {
         self.agent = None;
     }
 
+    fn apply_skipped(&mut self, number: u64, kind: SkipKind, blockers: Vec<u64>) {
+        let e = self.entry_mut(number);
+        e.status = IssueStatus::Skipped;
+        e.kind = Some(kind);
+        e.blocked_by = blockers;
+    }
+
+    fn apply_needs_split(&mut self, number: u64) {
+        let Some(n) = self.resolve(number) else {
+            return;
+        };
+        self.entry_mut(n).status = IssueStatus::NeedsSplit;
+        self.agent = None;
+    }
+
+    fn apply_run_stopped(&mut self, number: u64) {
+        self.final_summary = Some(match number {
+            0 => "stopped by the operator".to_owned(),
+            n => format!("stopped by the operator during #{n}"),
+        });
+        self.agent = None;
+    }
+
+    fn apply_sleep_started(&mut self, reset: String, target_epoch: i64) {
+        self.sleep = Some(SleepState {
+            reset,
+            target_epoch,
+        });
+        // A run in `sleeping` has no agent at all (ADR-0059 §1).
+        self.agent = None;
+    }
+
+    fn apply_agent_state(&mut self, state: String, since: String, detail: Option<String>) {
+        self.agent = Some(AgentState {
+            state,
+            since,
+            detail,
+        });
+    }
+
     fn apply_non_green(&mut self, number: u64, outcome: &str) {
         let Some(n) = self.resolve(number) else {
             return;
@@ -411,59 +422,6 @@ impl RunState {
         self.final_summary = Some(format!("stopped on #{n}: {outcome}"));
         self.agent = None;
     }
-
-    /// Tally the issues by status for the counter line.
-    pub fn counts(&self) -> Counts {
-        let mut c = Counts::default();
-        for e in &self.issues {
-            match e.status {
-                IssueStatus::Planned => c.planned += 1,
-                IssueStatus::Done => c.done += 1,
-                IssueStatus::Skipped => c.skipped += 1,
-                IssueStatus::Blocked => c.blocked += 1,
-                IssueStatus::Infeasible => c.infeasible += 1,
-                IssueStatus::NeedsSplit => c.needs_split += 1,
-                IssueStatus::NonGreen => c.non_green += 1,
-                IssueStatus::Planning => c.planning += 1,
-                IssueStatus::Executing => c.executing += 1,
-                IssueStatus::Hitl => c.hitl += 1,
-            }
-        }
-        c
-    }
-
-    /// The active issue entry, if any.
-    pub fn active_issue(&self) -> Option<&IssueEntry> {
-        let n = self.active?;
-        self.issues.iter().find(|e| e.number == n)
-    }
-
-    /// The most-recently-seen issue in a terminal status (for the collapsed card).
-    pub fn most_recent_finished(&self) -> Option<&IssueEntry> {
-        self.issues.iter().rev().find(|e| e.status.is_terminal())
-    }
-
-    /// The run's current phase — `starting|planning|executing|sleeping|
-    /// consolidating`: a usage-limit sleep wins, then an in-progress
-    /// consolidation, then the active issue's phase, else the initial
-    /// `starting`. A sleep reports `sleeping` even with an executing issue so a
-    /// long usage-limit pause is never mistaken for progress or for death.
-    ///
-    /// One vocabulary, read by the `run.heartbeat` envelope (ADR-0019) and by
-    /// the run snapshot's phase block (ADR-0047 §5).
-    pub fn run_phase(&self) -> &'static str {
-        if self.sleep.is_some() {
-            return "sleeping";
-        }
-        if self.consolidating.is_some() {
-            return "consolidating";
-        }
-        match self.active_issue().map(|e| &e.status) {
-            Some(IssueStatus::Executing) => "executing",
-            Some(IssueStatus::Planning) => "planning",
-            _ => "starting",
-        }
-    }
 }
 
 /// Fold a whole event stream into a [`RunState`], seeded with a title and size.
@@ -478,7 +436,7 @@ impl RunState {
         reason = "the binary applies events one at a time; tests use the fold"
     )
 )]
-pub fn fold(
+pub(crate) fn fold(
     title: impl Into<String>,
     total: usize,
     events: impl IntoIterator<Item = RunEvent>,

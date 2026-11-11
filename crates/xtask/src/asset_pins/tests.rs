@@ -75,19 +75,19 @@ fn assertion_prose_is_not_counted_as_a_pin() {
         r#"["function foo(", "max-height: 30vh", "index.html must link both favicon forms"]"#;
     assert_eq!(
         string_literals(block),
-        vec!["function foo(".to_string(), "max-height: 30vh".to_string()]
+        vec!["function foo(".to_owned(), "max-height: 30vh".to_owned()]
     );
 }
 
 #[test]
 fn a_pin_table_is_read_to_its_closing_bracket() {
     let lines = [
-        r#"        for pin in ["#,
+        r"        for pin in [",
         r#"            "a(","#,
         r#"            "b(","#,
-        r#"        ] {"#,
+        r"        ] {",
         r#"            assert!(js.contains(pin), "must keep it");"#,
-        r#"        }"#,
+        r"        }",
     ];
     let mut out = Vec::new();
     collect("x.rs", &lines.join("\n"), &mut out);
@@ -100,39 +100,44 @@ fn a_pin_table_is_read_to_its_closing_bracket() {
 /// inner quote and recorded as the pin `class=`.
 #[test]
 fn a_raw_string_pin_is_read_to_its_real_end() {
+    #[expect(
+        clippy::needless_raw_string_hashes,
+        reason = "the literal holds a quote and a hash: one hash fewer ends it early"
+    )]
+    let input = r##"["jumpFence(", r#"class="fence-item""#]"##;
     assert_eq!(
-        string_literals(r##"["jumpFence(", r#"class="fence-item""#]"##),
-        vec!["jumpFence(".to_string(), "class=\"fence-item\"".to_string()]
+        string_literals(input),
+        vec!["jumpFence(".to_owned(), "class=\"fence-item\"".to_owned()]
     );
     // Multiple hashes, and a `"#` that is not the terminator.
     assert_eq!(
         string_literals(r###"[r##"a"#b"##]"###),
-        vec!["a\"#b".to_string()]
+        vec!["a\"#b".to_owned()]
     );
 }
 
 /// A raw string with no `#` keeps its backslashes; a plain string decodes them.
 #[test]
 fn a_raw_string_with_no_hashes_keeps_its_backslashes() {
-    assert_eq!(raw_literals(r#"r"a\nb""#), vec![r"a\nb".to_string()]);
+    assert_eq!(raw_literals(r#"r"a\nb""#), vec![r"a\nb".to_owned()]);
 }
 
 /// An `r` that does not open a raw string is read as the plain text it is.
 #[test]
 fn an_r_hash_with_no_quote_is_not_a_raw_string() {
-    assert_eq!(raw_literals("r#x \"#y\""), vec!["#y".to_string()]);
+    assert_eq!(raw_literals("r#x \"#y\""), vec!["#y".to_owned()]);
 }
 
 /// A raw string that never closes falls back to the plain scanner, which ends
 /// the literal at the end of input.
 #[test]
 fn an_unterminated_raw_string_falls_back_to_a_plain_one() {
-    assert_eq!(raw_literals("r#\"abc"), vec!["abc".to_string()]);
+    assert_eq!(raw_literals("r#\"abc"), vec!["abc".to_owned()]);
 }
 
 #[test]
 fn an_unterminated_plain_string_ends_at_the_end_of_input() {
-    assert_eq!(raw_literals("\"abc"), vec!["abc".to_string()]);
+    assert_eq!(raw_literals("\"abc"), vec!["abc".to_owned()]);
 }
 
 /// The word count alone dropped real pins: a fragment of JS has spaces in it
@@ -151,7 +156,7 @@ fn a_wordy_pin_survives_when_it_carries_code() {
 fn an_asset_path_is_not_a_pin() {
     assert_eq!(
         string_literals(r#"[include_str!("../assets/ui/index.html"), "function foo("]"#),
-        vec!["function foo(".to_string()]
+        vec!["function foo(".to_owned()]
     );
 }
 
@@ -303,7 +308,7 @@ fn a_block_closes_on_its_balancing_line() {
     for (case, lines, block, next) in rows {
         assert_eq!(
             balanced(lines, 0, '[', ']'),
-            (block.to_string(), next),
+            (block.to_owned(), next),
             "{case}"
         );
     }
@@ -348,8 +353,8 @@ fn needles_keep_every_literal_of_a_long_assert_whole() {
     assert_eq!(
         out[0].needles,
         vec![
-            r#"create.title = "cut a new worktree and restart this console in it";"#.to_string(),
-            "the create button explains itself".to_string(),
+            r#"create.title = "cut a new worktree and restart this console in it";"#.to_owned(),
+            "the create button explains itself".to_owned(),
         ]
     );
 }
@@ -485,7 +490,7 @@ fn reads_x() {
 #[test]
 fn an_include_path_of_any_depth_is_not_a_claim() {
     let mut out = Vec::new();
-    keep(&mut out, "../../assets/ui/a.ts".to_string());
-    keep(&mut out, "../assets/ui/a.ts".to_string());
+    keep(&mut out, "../../assets/ui/a.ts".to_owned());
+    keep(&mut out, "../assets/ui/a.ts".to_owned());
     assert!(out.is_empty(), "{out:?}");
 }

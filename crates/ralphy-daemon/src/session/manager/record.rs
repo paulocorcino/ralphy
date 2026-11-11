@@ -56,13 +56,13 @@ impl SessionManager {
             .records
             .lock()
             .expect("records mutex")
-            .entry(record.to_string())
+            .entry(record.to_owned())
             .or_default()
             .clone();
         let guard = gate.clone().lock_owned().await;
         RecordClaim {
             manager: self.clone(),
-            record: record.to_string(),
+            record: record.to_owned(),
             gate,
             guard: Some(guard),
         }

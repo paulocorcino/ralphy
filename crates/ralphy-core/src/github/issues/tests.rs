@@ -17,10 +17,7 @@ fn label_bootstrap_spec_reads_the_canonical_roster() {
     }
     assert_eq!(
         label_bootstrap_spec("not-a-ralphy-label"),
-        (
-            "ededed".to_string(),
-            "Ralphy: not-a-ralphy-label".to_string()
-        )
+        ("ededed".to_owned(), "Ralphy: not-a-ralphy-label".to_owned())
     );
 }
 
@@ -36,7 +33,7 @@ fn resolve_login_passes_through_concrete_login() {
 
 /// The `@me` arm hits the live `gh api user`. Ignored by default (needs network
 /// + `gh` auth); mirrors the `e2e_references_for_bioledger_29` ignore pattern.
-///   cargo test -p ralphy-core resolve_login_at_me_hits_gh_api_user -- --ignored --nocapture
+///   cargo test -p ralphy-core `resolve_login_at_me_hits_gh_api_user` -- --ignored --nocapture
 #[test]
 #[ignore = "live network: gh api user"]
 fn resolve_login_at_me_hits_gh_api_user() {
@@ -72,10 +69,13 @@ fn parse_issue_labels_reads_names_and_tolerates_empty() {
     let json = r#"{"labels": [{"name": "ready-for-human"}, {"name": "needs-triage"}]}"#;
     assert_eq!(
         parse_issue_labels(json).unwrap(),
-        vec!["ready-for-human".to_string(), "needs-triage".to_string()]
+        vec!["ready-for-human".to_owned(), "needs-triage".to_owned()]
     );
     // No labels → empty, not an error.
-    assert!(parse_issue_labels(r#"{"labels": []}"#).unwrap().is_empty());
+    assert_eq!(
+        parse_issue_labels(r#"{"labels": []}"#).unwrap(),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn parses_issue_with_labels() {
 fn tolerates_missing_body_and_labels() {
     let issue = parse_issue(r#"{"number":1,"title":"t"}"#).unwrap();
     assert_eq!(issue.body, "");
-    assert!(issue.labels.is_empty());
+    assert_eq!(issue.labels, Vec::<String>::new());
 }
 
 fn issue(number: u64) -> Issue {

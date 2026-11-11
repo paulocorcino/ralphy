@@ -82,10 +82,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     )]
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir)?;
-    let name = db
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "session-store.db".to_string());
+    let name = db.file_name().map_or_else(
+        || "session-store.db".to_owned(),
+        |n| n.to_string_lossy().to_string(),
+    );
     // The guard exists BEFORE the first fallible copy, so the `?` below removes
     // the temp dir on its way out instead of leaking it.
     let copy = StoreCopy {
@@ -275,7 +275,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         if input.run_session_ids.contains(&session_id) {
             continue;
         }
-        let model = model.unwrap_or_else(|| "unknown".to_string());
+        let model = model.unwrap_or_else(|| "unknown".to_owned());
 
         attribution.entry(session_id.clone()).or_insert_with(|| {
             let matched = cwd
@@ -307,7 +307,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
                 .cloned()
                 .unwrap_or((None, None));
             InteractiveRecord {
-                agent: "copilot".to_string(),
+                agent: "copilot".to_owned(),
                 model,
                 session_id,
                 project,

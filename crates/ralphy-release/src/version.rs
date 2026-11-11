@@ -48,8 +48,8 @@ impl Build {
 
         let version = parse_tag(rest);
         Build {
-            raw: trimmed.to_string(),
-            tag: version.is_some().then(|| rest.to_string()),
+            raw: trimmed.to_owned(),
+            tag: version.is_some().then(|| rest.to_owned()),
             version,
             ahead,
         }
@@ -77,7 +77,7 @@ fn normalize_prerelease(core: &str) -> String {
         None => (core, None),
     };
     let Some((numbers, pre)) = versionish.split_once('-') else {
-        return core.to_string();
+        return core.to_owned();
     };
 
     let normalized: Vec<String> = pre.split('.').map(normalize_identifier).collect();
@@ -102,7 +102,7 @@ fn normalize_identifier(id: &str) -> String {
         .map_or(id.len(), |(index, _)| index);
     // All digits (already numeric) or no digits at all: nothing to split.
     if digits_start == 0 || digits_start == id.len() {
-        return id.to_string();
+        return id.to_owned();
     }
     let (alpha, digits) = id.split_at(digits_start);
     let trimmed = digits.trim_start_matches('0');
@@ -148,7 +148,7 @@ mod tests {
         // `0.1.0-rc19` ("rc" < "rc19"), so every user on rc19 would be told
         // they were up to date forever.
         assert!(v("v0.1.0-rc19") < v("v0.1.0-rc.20"));
-        assert!(v("v0.1.0-rc.19") == v("v0.1.0-rc19"));
+        assert_eq!(v("v0.1.0-rc.19"), v("v0.1.0-rc19"));
     }
 
     #[test]
@@ -161,7 +161,7 @@ mod tests {
     fn a_padded_candidate_still_parses_and_orders() {
         // A numeric semver identifier may not carry leading zeros, so rc019
         // must lose them rather than fail to parse.
-        assert!(v("v0.1.0-rc019") == v("v0.1.0-rc.19"));
+        assert_eq!(v("v0.1.0-rc019"), v("v0.1.0-rc.19"));
     }
 
     #[test]

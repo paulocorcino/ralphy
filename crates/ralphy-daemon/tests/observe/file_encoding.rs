@@ -26,7 +26,7 @@ const UTF16LE_BOM: &[u8] = b"\xFF\xFE\xA7\x00\x20\x00x\x00";
 const UTF16LE_BARE: &[u8] = b"b\x00a\x00r\x00e\x00 \x00l\x00e\x00";
 /// `olá` as UTF-8 with a BOM.
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBFol\xC3\xA1";
-/// `日本` as Shift_JIS.
+/// `日本` as `Shift_JIS`.
 const SJIS: &[u8] = b"\x93\xFA\x96\x7B";
 
 /// Bind a daemon over a temp repo seeded with one file per encoding; return the
@@ -62,7 +62,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
     let app = router(
         None,
         registry_path,
-        std::path::PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
         ralphy_daemon::StorePaths::default(),
         Instant::now(),
         rx,
@@ -74,7 +74,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 /// Send one `Command` and return the single reply on `id`.
@@ -83,7 +83,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),

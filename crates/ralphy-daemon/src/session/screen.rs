@@ -27,16 +27,16 @@ mod tests;
 /// The size range of a session (ADR-0079 D3). `alacritty_terminal` 0.26.0
 /// panics on a 0x0 resize; the upper bounds keep one hostile resize from
 /// allocating a grid of 65535x65535 cells.
-pub const ROWS: std::ops::RangeInclusive<u16> = 2..=300;
-pub const COLS: std::ops::RangeInclusive<u16> = 2..=500;
+pub(super) const ROWS: std::ops::RangeInclusive<u16> = 2..=300;
+pub(super) const COLS: std::ops::RangeInclusive<u16> = 2..=500;
 
 /// Lines of scrollback each screen keeps: the page's own xterm scrollback
 /// (ADR-0079 D4).
-pub const SCROLLBACK_LINES: usize = 1000;
+pub(super) const SCROLLBACK_LINES: usize = 1000;
 
 /// `(rows, cols)` clamped to [`ROWS`] and [`COLS`]. The PTY and the screen of
 /// a session take the same clamped size, so the two never differ.
-pub fn clamp_size(rows: u16, cols: u16) -> (u16, u16) {
+pub(super) fn clamp_size(rows: u16, cols: u16) -> (u16, u16) {
     (
         rows.clamp(*ROWS.start(), *ROWS.end()),
         cols.clamp(*COLS.start(), *COLS.end()),
@@ -45,7 +45,7 @@ pub fn clamp_size(rows: u16, cols: u16) -> (u16, u16) {
 
 /// The screen of one session: the emulator, the state it keeps private that
 /// the snapshot needs (the scroll region, the title), and the string cap.
-pub struct Screen {
+pub(super) struct Screen {
     term: Term<Listener>,
     processor: Processor<NoSync>,
     title: Listener,
@@ -64,7 +64,7 @@ const FILTERED_KEEP: usize = 64 * 1024;
 impl Screen {
     /// An empty screen of `rows` x `cols` (clamped) that keeps
     /// `scrollback_lines` lines above the visible rows.
-    pub fn new(rows: u16, cols: u16, scrollback_lines: usize) -> Self {
+    pub(super) fn new(rows: u16, cols: u16, scrollback_lines: usize) -> Self {
         let (rows, cols) = clamp_size(rows, cols);
         let title = Listener::default();
         let config = Config {
@@ -91,7 +91,7 @@ impl Screen {
 
     /// Applies output bytes of the session. Every byte is applied at once:
     /// a synchronized update (mode 2026) is never held back (ADR-0079 D2).
-    pub fn feed(&mut self, bytes: &[u8]) {
+    pub(super) fn feed(&mut self, bytes: &[u8]) {
         let mut filtered = std::mem::take(&mut self.filtered);
         filtered.clear();
         self.cap.filter(bytes, &mut filtered);
@@ -108,7 +108,7 @@ impl Screen {
     /// emulator. A resize to the size it has changes nothing: the emulator
     /// then keeps its scroll region (`alacritty_terminal` 0.26.0
     /// `Term::resize` returns early), so the tracker keeps it too.
-    pub fn resize(&mut self, rows: u16, cols: u16) {
+    pub(super) fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = clamp_size(rows, cols);
         if (rows, cols) == (self.rows, self.cols) {
             return;
@@ -124,7 +124,7 @@ impl Screen {
         not(test),
         expect(dead_code, reason = "only tests read the size today")
     )]
-    pub fn size(&self) -> (u16, u16) {
+    pub(super) fn size(&self) -> (u16, u16) {
         (self.rows, self.cols)
     }
 
@@ -135,7 +135,7 @@ impl Screen {
     /// It takes `&mut self` because the emulator keeps the primary screen
     /// private while the alternate screen is on; reading it swaps the two
     /// screens and swaps them back. The screen is the same after the call.
-    pub fn snapshot(&mut self) -> Vec<u8> {
+    pub(super) fn snapshot(&mut self) -> Vec<u8> {
         let title = self
             .title
             .title
@@ -155,7 +155,7 @@ impl Screen {
             reason = "only tests read the text until `read_screen` calls it"
         )
     )]
-    pub fn text(&self) -> String {
+    pub(super) fn text(&self) -> String {
         let grid = self.term.grid();
         let last = grid.columns() - 1;
         let mut lines: Vec<String> = Vec::new();
@@ -164,12 +164,12 @@ impl Screen {
             let row = &grid[Line(l)];
             push_cells(&mut line, row, last);
             if !row[Column(last)].flags.contains(Flags::WRAPLINE) {
-                lines.push(line.trim_end().to_string());
+                lines.push(line.trim_end().to_owned());
                 line.clear();
             }
         }
         if !line.is_empty() {
-            lines.push(line.trim_end().to_string());
+            lines.push(line.trim_end().to_owned());
         }
         lines.join("\n")
     }

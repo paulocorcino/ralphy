@@ -66,14 +66,14 @@ pub fn blob_read_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvEr
         .ok_or(ArgvError::BadParam("path"))?;
 
     Ok(vec![
-        "blob".to_string(),
-        "read".to_string(),
-        "--revision".to_string(),
-        revision.to_string(),
-        "--path".to_string(),
+        "blob".to_owned(),
+        "read".to_owned(),
+        "--revision".to_owned(),
+        revision.to_owned(),
+        "--path".to_owned(),
         path,
-        "--format".to_string(),
-        "json".to_string(),
+        "--format".to_owned(),
+        "json".to_owned(),
     ])
 }
 
@@ -124,7 +124,7 @@ pub fn changes_paths_argv(
         .filter(|list| !list.is_empty() && list.len() <= MAX_STAGE_PATHS)
         .ok_or(ArgvError::BadParam("paths"))?;
 
-    let mut argv = vec!["changes".to_string(), sub.to_string()];
+    let mut argv = vec!["changes".to_owned(), sub.to_owned()];
     for value in paths {
         let path = value
             .as_str()
@@ -151,8 +151,8 @@ pub fn changes_commit_argv(payload: &serde_json::Value) -> Result<Vec<String>, A
         .filter(|m| !m.trim().is_empty() && m.chars().count() <= MAX_COMMIT_MESSAGE)
         .ok_or(ArgvError::BadParam("message"))?;
     Ok(vec![
-        "changes".to_string(),
-        "commit".to_string(),
+        "changes".to_owned(),
+        "commit".to_owned(),
         format!("--message={message}"),
     ])
 }

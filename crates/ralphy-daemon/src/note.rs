@@ -169,7 +169,11 @@ pub fn decode(bytes: &[u8]) -> Result<String, NoteError> {
     if &head[..MAGIC.len()] != MAGIC || head[MAGIC.len()] != VERSION {
         return Err(NoteError::NotNote);
     }
-    let len = u32::from_le_bytes([head[5], head[6], head[7], head[8]]) as u64;
+    let length = *head
+        .get(5..)
+        .and_then(<[u8]>::first_chunk::<4>)
+        .expect("a note header is HEADER bytes: a 4-byte length follows the magic and version");
+    let len = u64::from(u32::from_le_bytes(length));
     if len > MAX_READ_BYTES {
         return Err(NoteError::TooLarge);
     }

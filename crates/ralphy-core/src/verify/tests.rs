@@ -8,7 +8,7 @@ fn tail_keeps_whole_last_lines() {
 
 /// Regression: the byte cut at `len - TAIL_BYTES` can land inside a multi-byte
 /// char (box-drawing '└' in vitest output). `tail` must nudge to a char boundary
-/// instead of panicking. Each '└' is 3 bytes on 0/3/6… boundaries; TAIL_BYTES is
+/// instead of panicking. Each '└' is 3 bytes on 0/3/6… boundaries; `TAIL_BYTES` is
 /// not a multiple of 3, so a pure run of '└' guarantees the cut lands mid-char.
 #[test]
 fn tail_does_not_split_multibyte_char() {
@@ -54,7 +54,7 @@ fn run_all_pass() {
     let report = run(&[ok_cmd(), ok_cmd()], &dir, Duration::from_secs(30));
     assert!(report.passed, "both ok commands pass");
     assert_eq!(report.commands.len(), 2);
-    assert!(report.commands.iter().all(|c| c.passed()));
+    assert!(report.commands.iter().all(CommandOutcome::passed));
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn run_spawn_failure_after_a_pass_is_still_a_spawn_failure() {
     assert!(report.spawn_failed());
     assert_eq!(
         report.first_failure().map(|c| c.argv.as_slice()),
-        Some(["definitely-not-a-real-binary-xyz".to_string()].as_slice())
+        Some(["definitely-not-a-real-binary-xyz".to_owned()].as_slice())
     );
 }
 

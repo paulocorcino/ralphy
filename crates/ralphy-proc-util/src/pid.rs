@@ -55,7 +55,8 @@ pub fn pid_is_alive(pid: u32) -> bool {
         // An exited process can still be opened while a handle to it is held
         // elsewhere; STILL_ACTIVE separates the two.
         let mut code: u32 = 0;
-        let alive = GetExitCodeProcess(handle, &mut code) != 0 && code == STILL_ACTIVE as u32;
+        let alive =
+            GetExitCodeProcess(handle, &raw mut code) != 0 && code == STILL_ACTIVE.cast_unsigned();
         CloseHandle(handle);
         alive
     }
@@ -125,13 +126,46 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
         }
         let mut buf = vec![0u16; 32_768];
         let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len) != 0;
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &raw mut len) != 0;
         CloseHandle(handle);
         if !ok {
             return None;
         }
         buf.truncate(len as usize);
         Some(std::path::PathBuf::from(String::from_utf16_lossy(&buf)))
+    }
+}
+
+/// When `pid` was created, as a `FILETIME`, or `None` when it cannot be opened.
+#[cfg(windows)]
+#[expect(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
+pub(crate) fn process_created(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is checked for null before use and closed once; the
+    // four FILETIMEs are valid out pointers.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        let ok = GetProcessTimes(
+            handle,
+            &raw mut created,
+            &raw mut exited,
+            &raw mut kernel,
+            &raw mut user,
+        );
+        CloseHandle(handle);
+        (ok != 0)
+            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
     }
 }
 

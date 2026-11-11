@@ -52,13 +52,13 @@ fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> Stri
 
     let slug = ralphy_core::git::project_slug(&repo);
     let file = usage_dir.join(format!("{}.jsonl", slug.replace('/', "-")));
-    let content = std::fs::read_to_string(&file)
+    let content = fs::read_to_string(&file)
         .unwrap_or_else(|e| panic!("ledger file {} unreadable: {e}", file.display()));
     let line = content
         .lines()
         .find(|l| l.contains("\"phase\":\"execute\""))
         .unwrap_or_else(|| panic!("no execute line: {content}"))
-        .to_string();
+        .to_owned();
 
     remove_scratch(&repo);
     line
@@ -70,7 +70,7 @@ fn the_last_non_empty_session_of_the_resume_loop_reaches_the_ledger() {
     // reports none.
     let line = execute_line_after_resume(
         "stamp-session-ledger",
-        [Some("sess-first".to_string()), None],
+        [Some("sess-first".to_owned()), None],
     );
     assert!(
         line.contains("\"session_id\":\"sess-first\""),
@@ -82,7 +82,7 @@ fn the_last_non_empty_session_of_the_resume_loop_reaches_the_ledger() {
 fn an_empty_session_of_the_resume_loop_does_not_replace_the_earlier_one() {
     let line = execute_line_after_resume(
         "stamp-session-ledger-empty",
-        [Some("sess-first".to_string()), Some(String::new())],
+        [Some("sess-first".to_owned()), Some(String::new())],
     );
     assert!(
         line.contains("\"session_id\":\"sess-first\""),

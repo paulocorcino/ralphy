@@ -2,8 +2,8 @@ use super::*;
 
 fn ctx() -> EventCtx {
     EventCtx {
-        source: "ralphy/o/r".to_string(),
-        runid: "01RUNIDRUNIDRUNIDRUNID".to_string(),
+        source: "ralphy/o/r".to_owned(),
+        runid: "01RUNIDRUNIDRUNIDRUNID".to_owned(),
         emitter: json!({}),
         git: json!({}),
     }
@@ -24,7 +24,7 @@ fn finished(rollup: Value, state: &RunState) -> Value {
         out: 0,
         duration_s: 0,
     };
-    runevent_to_cloudevent(&ev, &ctx(), state).expect("mapped")
+    runevent_to_cloudevent(&ev, &ctx(), state)
 }
 
 /// A skipped entry of the run's own rollup keeps its `kind` and `blocked_by`;

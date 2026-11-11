@@ -17,7 +17,7 @@ fn a_status_that_is_not_200_or_a_refusal_is_unreachable() {
     assert_eq!(
         http_verdict(500, false),
         Some(PeerStatus::Unreachable {
-            why: "peer answered HTTP 500 to the handshake".to_string()
+            why: "peer answered HTTP 500 to the handshake".to_owned()
         })
     );
     assert_eq!(http_verdict(200, false), None);
@@ -32,7 +32,7 @@ fn a_protocol_version_that_does_not_fit_in_u32_is_not_reachable() {
     assert_eq!(
         protocol_verdict(Some(&wrapped)),
         PeerStatus::Unreachable {
-            why: "the handshake answered without a protocol_version".to_string()
+            why: "the handshake answered without a protocol_version".to_owned()
         }
     );
 }
@@ -43,13 +43,13 @@ fn a_hello_without_a_protocol_version_is_not_reachable() {
     assert_eq!(
         protocol_verdict(Some(&hello)),
         PeerStatus::Unreachable {
-            why: "the handshake answered without a protocol_version".to_string()
+            why: "the handshake answered without a protocol_version".to_owned()
         }
     );
     assert_eq!(
         protocol_verdict(None),
         PeerStatus::Unreachable {
-            why: "the handshake answered without a protocol_version".to_string()
+            why: "the handshake answered without a protocol_version".to_owned()
         }
     );
 }
