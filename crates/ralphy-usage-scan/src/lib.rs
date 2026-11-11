@@ -10,6 +10,8 @@
 //! module carries a tokscale-derived (`junhoyeo/tokscale`, MIT) parser — that
 //! attribution lives in `kimi.rs`, not here; this file owns only the shared
 //! record contract.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::collections::HashSet;
 use std::path::Path;

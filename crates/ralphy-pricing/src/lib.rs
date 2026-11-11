@@ -4,6 +4,8 @@
 //! plus a bare-id slug overlay; an optional disk cache and `pricing.toml`
 //! override both. A model absent from every layer reports **unknown** cost
 //! (`None`) — never `0`, which would hide spend.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 #![cfg_attr(
     test,
     expect(

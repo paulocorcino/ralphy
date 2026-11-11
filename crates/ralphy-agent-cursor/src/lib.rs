@@ -19,6 +19,8 @@
 //! `Agent` contract entirely. Token usage is captured in `usage` from the
 //! stream's terminal `result` record and summed per invocation — records are
 //! incremental, not cumulative (ADR-0042 D11).
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::PathBuf;

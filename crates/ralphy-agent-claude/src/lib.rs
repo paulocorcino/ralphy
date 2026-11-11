@@ -14,6 +14,8 @@
 //! live PTY session), and `tasks` (the one-shot consolidate/diagnose/draft/
 //! triage sessions). This module keeps the [`ClaudeAgent`] type, its
 //! constructors, and the [`Agent`] impl that delegates into those modules.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::{Path, PathBuf};

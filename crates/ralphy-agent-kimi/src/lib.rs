@@ -13,6 +13,8 @@
 //! This is the walking-skeleton slice (ADR-0028): exit 75 maps to
 //! `Outcome::Limit(None)` and `--stop-on-limit` is forced for Kimi (D9, #153);
 //! the one-shot init flows (diagnose/draft-issues/triage) go through `tasks.rs`.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::PathBuf;

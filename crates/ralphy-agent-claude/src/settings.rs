@@ -31,6 +31,14 @@ fn base_settings(guard: &serde_json::Value) -> serde_json::Value {
     })
 }
 
+/// The `hooks` object of a document [`base_settings`] built.
+fn base_hooks(settings: &mut serde_json::Value) -> &mut serde_json::Map<String, serde_json::Value> {
+    settings
+        .get_mut("hooks")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("base_settings always builds a hooks object")
+}
+
 /// Claude-specific run defaults persisted under the [`ClaudeSettings::SECTION`]
 /// section of `.ralphy/settings.json` (ADR-0010). The core stores the section as
 /// opaque JSON; this adapter owns the schema (ADR-0002 amendment, #79). Each
@@ -313,7 +321,10 @@ fn matcher_entry(matcher: &str, hook: &serde_json::Value) -> serde_json::Value {
 /// so the session proves its hooks run.
 fn task_settings_json(guard: &serde_json::Value, status: &serde_json::Value) -> String {
     let mut settings = base_settings(guard);
-    settings["hooks"]["SessionStart"] = serde_json::json!([matcher_entry("", status)]);
+    base_hooks(&mut settings).insert(
+        "SessionStart".into(),
+        serde_json::json!([matcher_entry("", status)]),
+    );
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
@@ -382,9 +393,7 @@ fn with_status_hooks(
 /// hooks.
 fn plan_settings_json(guard: &serde_json::Value, status: &serde_json::Value) -> String {
     let mut settings = base_settings(guard);
-    if let Some(hooks) = settings["hooks"].as_object_mut() {
-        with_status_hooks(hooks, status);
-    }
+    with_status_hooks(base_hooks(&mut settings), status);
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
@@ -400,11 +409,13 @@ fn exec_settings_json(
     status: &serde_json::Value,
 ) -> String {
     let mut settings = base_settings(guard);
-    settings["hooks"]["Stop"] = serde_json::json!([matcher_entry("", stop)]);
-    settings["hooks"]["PostToolUse"] = serde_json::json!([matcher_entry("Bash", post)]);
-    if let Some(hooks) = settings["hooks"].as_object_mut() {
-        with_status_hooks(hooks, status);
-    }
+    let hooks = base_hooks(&mut settings);
+    hooks.insert("Stop".into(), serde_json::json!([matcher_entry("", stop)]));
+    hooks.insert(
+        "PostToolUse".into(),
+        serde_json::json!([matcher_entry("Bash", post)]),
+    );
+    with_status_hooks(hooks, status);
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 

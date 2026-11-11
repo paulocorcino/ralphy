@@ -9,7 +9,8 @@
 //! Codex-native signals — the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels
 //! in the `-o` final-message file, the process exit code, and a HEAD-diff commit
 //! check — mapped onto the same core [`ralphy_core::Outcome`].
-
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 #![cfg_attr(
     test,
     expect(

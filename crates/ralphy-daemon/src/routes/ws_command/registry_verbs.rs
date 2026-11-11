@@ -48,7 +48,10 @@ async fn dir_list_reply(payload: &serde_json::Value, registry_path: &Path) -> se
     match listed {
         Ok(Ok(Ok(listing))) => {
             let mut reply = serde_json::to_value(&listing).expect("a listing always serializes");
-            reply["status"] = serde_json::json!("ok");
+            reply
+                .as_object_mut()
+                .expect("a listing serializes as an object")
+                .insert("status".into(), serde_json::json!("ok"));
             reply
         }
         Ok(Ok(Err(refusal))) => {
