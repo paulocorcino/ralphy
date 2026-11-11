@@ -144,7 +144,10 @@ fn rewrite_imports(name: &str, code: String) -> Result<String> {
         let (lo, hi) = span_of(src, base);
         // The literal with its quotes: `"./wb-hosts.ts"`.
         let literal = std::str::from_utf8(&out[lo..hi]).context("an import path is not UTF-8")?;
-        let path = &literal[1..literal.len() - 1];
+        let path = literal
+            .strip_prefix(['"', '\''])
+            .and_then(|l| l.strip_suffix(['"', '\'']))
+            .context("an import path is not a quoted literal")?;
         if !(path.starts_with("./") || path.starts_with("../")) {
             continue;
         }

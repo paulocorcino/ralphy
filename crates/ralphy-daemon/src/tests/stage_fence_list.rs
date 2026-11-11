@@ -36,7 +36,11 @@ fn shell_lists_the_fences() {
             .split_once(name)
             .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
     // The issue's own rule: the jump REUSES a shared fold, it does not
     // re-derive the arithmetic. Both halves are load-bearing — the call
@@ -121,7 +125,11 @@ fn shell_lists_the_fences() {
         .expect("wb-desk-folds.ts must keep fenceCycle")
         .1;
     assert!(
-        cycle[..cycle.find("\n}").expect("the function must close")].contains("fenceOrder("),
+        cycle
+            .split_once("\n}")
+            .expect("the function must close")
+            .0
+            .contains("fenceOrder("),
         "the walk must step through the reading-order fold, not the desk array (§7)"
     );
     assert!(
@@ -174,7 +182,11 @@ fn shell_lists_the_fences() {
             .split_once(name)
             .unwrap_or_else(|| panic!("wb-geometry.ts must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
     for (_owner, what, found) in [
         (
@@ -231,7 +243,11 @@ fn shell_lists_the_fences() {
             .split_once(head)
             .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
             .1;
-        after[..after.find('}').expect("the rule must close")].to_string()
+        after
+            .split_once('}')
+            .expect("the rule must close")
+            .0
+            .to_owned()
     };
     // A DEFINED token: an `outline` shorthand naming an undefined custom
     // property is invalid as a whole, so the ring silently never renders —

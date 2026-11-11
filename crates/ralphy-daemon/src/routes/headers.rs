@@ -125,20 +125,17 @@ pub(crate) fn script_hash(body: &str) -> String {
 pub(crate) fn inline_script_bodies(html: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = html;
-    while let Some(at) = rest.find("<script") {
-        rest = &rest[at + "<script".len()..];
-        let Some(open_end) = rest.find('>') else {
+    while let Some((_, tag)) = rest.split_once("<script") {
+        let Some((attrs, after_open)) = tag.split_once('>') else {
             break;
         };
-        let attrs = &rest[..open_end];
-        let after_open = &rest[open_end + 1..];
-        let Some(close) = after_open.find("</script>") else {
+        let Some((body, after_close)) = after_open.split_once("</script>") else {
             break;
         };
-        if !attrs.contains("src=") && !inside_comment(html, rest) {
-            out.push(&after_open[..close]);
+        if !attrs.contains("src=") && !inside_comment(html, tag) {
+            out.push(body);
         }
-        rest = &after_open[close + "</script>".len()..];
+        rest = after_close;
     }
     out
 }
@@ -147,9 +144,9 @@ pub(crate) fn inline_script_bodies(html: &str) -> Vec<&str> {
 /// unclosed `<!-- … -->`.
 fn inside_comment(html: &str, rest: &str) -> bool {
     let pos = html.len() - rest.len();
-    let before = &html[..pos];
+    let before = html.split_at(pos).0;
     match before.rfind("<!--") {
-        Some(open) => !before[open..].contains("-->"),
+        Some(open) => !before.split_at(open).1.contains("-->"),
         None => false,
     }
 }

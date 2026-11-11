@@ -103,7 +103,8 @@ fn window_days(window: Window, since: Option<&str>) -> Vec<String> {
     let (Some(days), Some(since)) = (window.days(), since) else {
         return Vec::new();
     };
-    let Ok(start) = NaiveDate::parse_from_str(&since[..since.len().min(10)], "%Y-%m-%d") else {
+    let Ok(start) = NaiveDate::parse_from_str(since.split_at(since.len().min(10)).0, "%Y-%m-%d")
+    else {
         return Vec::new();
     };
     start

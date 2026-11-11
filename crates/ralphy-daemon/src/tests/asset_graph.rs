@@ -279,7 +279,12 @@ fn the_narrow_pane_criterion_is_the_panes_own_width() {
         let at = css
             .find(pane)
             .unwrap_or_else(|| panic!("{pane} must be styled"));
-        let block = &css[at..at + css[at..].find('}').expect("a rule block closes")];
+        let block = css
+            .split_at(at)
+            .1
+            .split_once('}')
+            .expect("a rule block closes")
+            .0;
         assert!(
             block.contains("container-type: inline-size")
                 && block.contains(&format!("container-name: {name}")),

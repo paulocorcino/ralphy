@@ -449,10 +449,12 @@ mod tests {
         let start = doc
             .find("\n## Worktrees")
             .expect("docs/daemon.md has a Worktrees section");
-        let end = doc[start + 3..]
-            .find("\n## ")
-            .map_or(doc.len(), |i| start + 3 + i);
-        let section = &doc[start..end];
+        let tail = doc.split_at(start).1;
+        let end = tail
+            .match_indices("\n## ")
+            .nth(1)
+            .map_or(tail.len(), |(i, _)| i);
+        let section = tail.split_at(end).0;
 
         // The names an operator types or looks for; the section's sentences are
         // the doc's own wording.

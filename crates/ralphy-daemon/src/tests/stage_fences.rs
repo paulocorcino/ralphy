@@ -58,7 +58,11 @@ fn shell_draws_fences_below_the_windows() {
             .split_once(head)
             .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
             .1;
-        after[..after.find('}').expect("the rule must close")].to_string()
+        after
+            .split_once('}')
+            .expect("the rule must close")
+            .0
+            .to_owned()
     };
     let fence = rule("\n.fence {");
     assert!(
@@ -219,7 +223,11 @@ fn shell_locks_consoles_and_fences() {
             .split_once(name)
             .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
     // `heldFast()` defaults to `isLocked(win)` and is the note card's own
     // lock when a card is dragging (ADR-0064 §8); the refusal is the same.
@@ -315,7 +323,11 @@ fn shell_fences_are_a_group() {
         .expect("wb-console.ts must keep recordOf")
         .1;
     assert!(
-        !record[..record.find("\n  }").expect("recordOf must close")].contains("fence"),
+        !record
+            .split_once("\n  }")
+            .expect("recordOf must close")
+            .0
+            .contains("fence"),
         "no window record may carry a stored fence id (#341)"
     );
     let css = served_css();
@@ -324,7 +336,11 @@ fn shell_fences_are_a_group() {
             .split_once(head)
             .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
             .1;
-        after[..after.find('}').expect("the rule must close")].to_string()
+        after
+            .split_once('}')
+            .expect("the rule must close")
+            .0
+            .to_owned()
     };
     // Both handles opt back IN, against a `.fence`/`.fence-head` that stay
     // inert — that pair is the whole hit-test contract of this slice. The
@@ -403,18 +419,16 @@ fn shell_arranges_into_the_fence() {
     // The EXPRESSION, not the bare word: `"maximized"` alone is satisfied by
     // the comment that explains the rule, so deleting the filter leaves this
     // green — measured. A pin a comment can satisfy is not a pin.
+    let arrange_body = fence_arrange
+        .split_once("\n  }")
+        .expect("arrangeFence must close")
+        .0;
     assert!(
-        fence_arrange[..fence_arrange
-            .find("\n  }")
-            .expect("arrangeFence must close")]
-            .contains(r#"!m.el.classList.contains("maximized")"#),
+        arrange_body.contains(r#"!m.el.classList.contains("maximized")"#),
         "arrangeFence must exclude a maximized member from the grid (#338/#342)"
     );
     assert!(
-        fence_arrange[..fence_arrange
-            .find("\n  }")
-            .expect("arrangeFence must close")]
-            .contains("minWidth"),
+        arrange_body.contains("minWidth"),
         "arrangeFence must relax the CSS floor for a tile below it (#342)"
     );
     let app = shell_family();
@@ -436,7 +450,11 @@ fn shell_arranges_into_the_fence() {
             .split_once(head)
             .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
             .1;
-        after[..after.find('}').expect("the rule must close")].to_string()
+        after
+            .split_once('}')
+            .expect("the rule must close")
+            .0
+            .to_owned()
     };
     assert!(
         rule("\n.fence-arrange {").contains("pointer-events: auto"),

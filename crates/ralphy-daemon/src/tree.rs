@@ -292,11 +292,11 @@ fn svg_root_element(src: &str) -> bool {
             // Not a prologue construct: this is the root element (or not an SVG).
             return rest.starts_with("<svg");
         };
-        let after = &rest[open.len()..];
-        let Some(i) = after.find(close) else {
+        let after = rest.split_at(open.len()).1;
+        let Some((_, after_close)) = after.split_once(close) else {
             return false;
         };
-        rest = after[i + close.len()..].trim_start();
+        rest = after_close.trim_start();
     }
 }
 

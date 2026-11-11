@@ -179,7 +179,7 @@ fn encode_legacy(text: &str, encoding: &'static Encoding) -> Result<Vec<u8>, usi
         }
         // `read` counts the unmappable char as consumed (encoding_rs docs), so
         // the offender is the last char before `read`, not the first after it.
-        encoding_rs::EncoderResult::Unmappable(_) => Err(text[..read].chars().count() - 1),
+        encoding_rs::EncoderResult::Unmappable(_) => Err(text.split_at(read).0.chars().count() - 1),
         // The buffer was sized by `max_buffer_length_*` for the whole input:
         // running out is a violated invariant of encoding_rs, not a data case.
         encoding_rs::EncoderResult::OutputFull => {

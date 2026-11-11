@@ -27,7 +27,11 @@ fn shell_drags_only_past_a_threshold() {
             .split_once(name)
             .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
     for handler in [
         "function makeDraggable(",
@@ -106,7 +110,10 @@ fn titlebar_touch_double_taps_and_holds() {
         .split_once("function wireTitleTouch(")
         .expect("the console must keep wireTitleTouch")
         .1;
-    let b = &after[..after.find("\n  }").expect("the function must close")];
+    let b = after
+        .split_once("\n  }")
+        .expect("the function must close")
+        .0;
     for pin in [
         // Each `dblclick` listener needs the press's input type.
         "win._lastPointerType = e.pointerType;",
@@ -220,7 +227,12 @@ fn shell_navigates_the_plane() {
             .split_once(name)
             .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
-        squeeze(&after[..after.find("\n  }").expect("the function must close")])
+        squeeze(
+            after
+                .split_once("\n  }")
+                .expect("the function must close")
+                .0,
+        )
     };
     // The auto-pan loop's teardown: an uncancelled rAF pans forever after
     // the button is released. One loop cancels it, and each gesture stops it.
@@ -273,7 +285,10 @@ fn shell_navigates_the_plane() {
         .expect("styles.css must keep the #stage rule")
         .1;
     assert!(
-        stage_rule[..stage_rule.find('}').expect("the #stage rule must close")]
+        stage_rule
+            .split_once('}')
+            .expect("the #stage rule must close")
+            .0
             .contains("cursor: grab"),
         "the stage itself must advertise the grab cursor (#337)"
     );
@@ -317,7 +332,9 @@ fn shell_pins_the_frame_chrome() {
     // The section's OWN close, not a later landmark: bounding by `#viewers`
     // would still pass for chrome that escaped the tab entirely.
     let close = tab
-        + html[tab..]
+        + html
+            .split_at(tab)
+            .1
             .find("</section>")
             .expect("the consoles tab must close (#338)");
     // The viewport as a CLOSED element: an offset past its `</div>` cannot be
@@ -401,7 +418,10 @@ fn shell_pins_the_frame_chrome() {
         .split_once("\n.canvas-foot {")
         .expect("styles.css must keep the .canvas-foot rule (#338)")
         .1;
-    let foot = &foot[..foot.find('}').expect("the .canvas-foot rule must close")];
+    let foot = foot
+        .split_once('}')
+        .expect("the .canvas-foot rule must close")
+        .0;
     for pin in ["pointer-events: none", "z-index: 130"] {
         assert!(
             foot.contains(pin),

@@ -140,7 +140,7 @@ const MAX_DETAIL_CHARS: usize = 300;
 /// `detail`, cut to [`MAX_DETAIL_CHARS`].
 fn short(detail: &str) -> String {
     match detail.char_indices().nth(MAX_DETAIL_CHARS) {
-        Some((at, _)) => format!("{}...", &detail[..at]),
+        Some((at, _)) => format!("{}...", detail.split_at(at).0),
         None => detail.to_owned(),
     }
 }

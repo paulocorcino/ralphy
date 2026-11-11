@@ -167,17 +167,15 @@ fn app_js_holds_no_vendor_list() {
         1,
         "the store `projects` must declare exactly one `agents: [` literal"
     );
-    let start = store
-        .find(" agents: [")
+    let (_, rest) = store
+        .split_once(" agents: [")
         .expect("the store `projects` no longer declares `agents: [`");
-    let rest = &store[start + " agents: [".len()..];
-    let end = rest
-        .find(']')
+    let (agents, _) = rest
+        .split_once(']')
         .expect("the store's `agents: [` is never closed");
     assert!(
-        rest[..end].trim().is_empty(),
-        "the store's `agents:` must stay an empty literal; found: {:?}",
-        &rest[..end]
+        agents.trim().is_empty(),
+        "the store's `agents:` must stay an empty literal; found: {agents:?}"
     );
 
     // The accelerator map keyed by vendor is gone; digits come from the rows.

@@ -74,7 +74,11 @@ fn shell_detaches_a_fence() {
             .split_once(name)
             .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
     // THE SINK SEAM. The persistence call sites must reach the desk through
     // the injected sink and carry NO `detached` branch of their own —
@@ -247,7 +251,11 @@ fn shell_detaches_a_fence() {
             .split_once(head)
             .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
             .1;
-        after[..after.find('}').expect("the rule must close")].to_string()
+        after
+            .split_once('}')
+            .expect("the rule must close")
+            .0
+            .to_owned()
     };
     for head in ["\n.fence-detach {", "\n.fence-detached {"] {
         assert!(
@@ -288,7 +296,11 @@ fn shell_survives_a_reload_with_its_detach() {
             .split_once(name)
             .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
-        after[..after.find("\n  }").expect("the function must close")].to_string()
+        after
+            .split_once("\n  }")
+            .expect("the function must close")
+            .0
+            .to_owned()
     };
 
     // The shell reaches storage and channel only through the injected link.

@@ -138,7 +138,7 @@ impl SessionQuery {
         let name = self.name.as_deref().filter(|n| !n.is_empty())?;
         Some(
             match name.char_indices().nth(crate::desk::CONSOLE_NAME_MAX) {
-                Some((cut, _)) => &name[..cut],
+                Some((cut, _)) => name.split_at(cut).0,
                 None => name,
             },
         )
