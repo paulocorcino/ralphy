@@ -17,7 +17,7 @@ import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { sendDocument } from "./wb-events.ts";
 import { inTab } from "./wb-console-place.ts";
-import { required } from "./wb-dom-need.ts";
+import { required, targetClosest } from "./wb-dom-need.ts";
 import { createWindowGestures } from "./wb-stage-window-gestures.ts";
 import type { Gestures } from "./wb-stage-stack.ts";
 import type {
@@ -188,6 +188,7 @@ export function createChrome(deps: ChromeDeps) {
     kind: string | null | undefined,
     consoleName: string,
   ) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- initWindow sets its fields
     const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
     initWindow(win, {
@@ -371,10 +372,7 @@ export function createChrome(deps: ChromeDeps) {
       // Fullscreen hides the maximize control; a double-click must not toggle
       // it unseen underneath.
       // Nor may a double-click on the name, which renames (ADR-0066 §3).
-      if (
-        (e.target as HTMLElement).closest("button, .session-name, .session-name-input") ||
-        isFull(win)
-      ) {
+      if (targetClosest(e, "button, .session-name, .session-name-input") || isFull(win)) {
         return;
       }
       // A finger's double tap is `wireTitleTouch`'s.

@@ -3,11 +3,12 @@
 // saves.
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBFail } from "./wb-fail.ts";
-import { need, required } from "./wb-dom-need.ts";
+import { canFocus, isElement, need, required } from "./wb-dom-need.ts";
 import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
+import { diffEditor } from "./wb-file-viewer-records.ts";
 
 /** What `createViewer` hands the read-only panes. */
 export type ViewerReadOnlyDeps = {
@@ -93,7 +94,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     holder().append(el);
 
     need(el, '[data-act="find"]').onclick = () => {
-      const mod = (rec.ed as MonacoDiffEditor | undefined)?.getModifiedEditor();
+      const mod = diffEditor(rec.ed)?.getModifiedEditor();
       mod?.focus();
       mod
         ?.getAction("actions.find")
@@ -132,7 +133,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
     setPathLabel(el, rec);
     holder().append(el);
 
-    const img = need<HTMLImageElement>(el, ".img-canvas");
+    const img = required(
+      el.querySelector<HTMLImageElement>(".img-canvas"),
+      "the element .img-canvas",
+    );
     const meta = need(el, ".img-meta");
     // The intrinsic size is only known once the bytes decode, and a decode
     // failure is worth saying out loud: the daemon verified the type, so a
@@ -145,8 +149,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
+      const btn = ev.currentTarget;
+      if (!isElement(btn) || !canFocus(btn)) return;
       setCaption(
-        ev.currentTarget as HTMLElement,
+        btn,
         actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand",
         actual ? "Fit" : "Actual size",
       );

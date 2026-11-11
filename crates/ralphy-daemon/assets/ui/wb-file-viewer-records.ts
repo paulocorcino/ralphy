@@ -49,6 +49,16 @@ export type BytesRecord = PaneRecord & { content: string; refused: null };
 export type RefusedRecord = PaneRecord & { refused: string };
 export type ViewerRecord = BytesRecord | RefusedRecord;
 
+/** The code editor of a pane; undefined before it mounts and on a diff pane. */
+export function codeEditor(ed: PaneRecord["ed"]): MonacoEditor | undefined {
+  return ed && !("getModifiedEditor" in ed) ? ed : undefined;
+}
+
+/** The diff editor of a `diff` pane; undefined before it mounts and on any other. */
+export function diffEditor(ed: PaneRecord["ed"]): MonacoDiffEditor | undefined {
+  return ed && "getModifiedEditor" in ed ? ed : undefined;
+}
+
 /** What `open` takes: the fields of a `FileDescriptor`, or the reason a pane has no bytes. */
 export type OpenSpec = {
   id: string;

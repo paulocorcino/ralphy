@@ -436,7 +436,7 @@ export function createDetach(deps: DetachDeps) {
     const m: unknown = e.data;
     if (!isFencePopupMessage(m)) return;
     if (m.type === "wb-fence-ready") {
-      greetPopup(owner, e.source as Window);
+      greetPopup(owner);
     } else if (m.type === "wb-emit") {
       forwardAction(WB, m.action, m.detail);
     } else if (m.type === "wb-note-named") {
@@ -460,8 +460,8 @@ export function createDetach(deps: DetachDeps) {
   }
 
   // The popup of the fence `owner` is ready: its rescue stops, and it is
-  // handed the fence and its members.
-  function greetPopup(owner: string, source: Window) {
+  // handed the fence and its members, through the handle that sent the message.
+  function greetPopup(owner: string) {
     const entry = popups.entry(owner);
     if (!entry) return;
     entry.greeted = true;
@@ -471,7 +471,7 @@ export function createDetach(deps: DetachDeps) {
     }
     // `tab` rides the handover, never the popup's own storage: `window.open` gave
     // it a COPY of ours.
-    source.postMessage(
+    entry.handle?.postMessage(
       {
         type: "wb-fence-open",
         fence: entry.fence,

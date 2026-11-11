@@ -9,6 +9,7 @@
 --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { touchInput } from "./wb-viewport.ts";
+import { targetClosest } from "./wb-dom-need.ts";
 import type { WBView } from "./wb-client-view.ts";
 import type { TerminalDeps } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
@@ -262,7 +263,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     }
 
     bar.addEventListener("click", (e: MouseEvent) => {
-      const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-key]");
+      const btn = targetClosest(e, "button[data-key]");
       if (!btn) return;
       e.stopPropagation();
       const name = btn.dataset["key"];

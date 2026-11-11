@@ -28,7 +28,6 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
 import { need } from "./wb-dom-need.ts";
-import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import { isRendered } from "./wb-viewer-render.ts";
 import { createViewerEncoding, encodingLabel, refreshEncodingPill } from "./wb-viewer-encoding.ts";
@@ -49,6 +48,7 @@ import type {
   RefusedRecord,
   ViewerRecord,
 } from "./wb-file-viewer-records.ts";
+import { codeEditor, diffEditor } from "./wb-file-viewer-records.ts";
 
 export { isFileDescriptor, isOpenRequest } from "./wb-file-viewer-records.ts";
 export type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer-records.ts";
@@ -169,12 +169,12 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       // path — disposing the editor does NOT (the leak is only visible in
       // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
       // goes first: a model disposed while attached raises a page error (#407).
-      const m = (ed as MonacoDiffEditor).getModel();
+      const m = diffEditor(ed)?.getModel();
       ed.dispose();
       m?.original.dispose();
       m?.modified.dispose();
     } else {
-      (ed as MonacoEditor).getModel()?.dispose();
+      codeEditor(ed)?.getModel()?.dispose();
       ed.dispose();
     }
   }

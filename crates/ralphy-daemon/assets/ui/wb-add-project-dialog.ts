@@ -137,7 +137,10 @@ export function addProjectDialog() {
       try {
         reply = await window.WBDaemon.observe("project.add", payload);
       } catch (e) {
-        reply = { status: "error", message: String((e as Error).message || e) };
+        reply = {
+          status: "error",
+          message: e instanceof Error && e.message ? e.message : String(e),
+        };
       }
       if (reply.status !== "ok") {
         this.addProjectStep({
@@ -158,10 +161,11 @@ export function addProjectDialog() {
       }
     },
     selectAddedProject(ref: string | undefined) {
+      if (ref === undefined) return;
       if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) {
         return;
       }
-      if (this.$store.projects.openSlug !== ref) this.toggle(ref as string);
+      if (this.$store.projects.openSlug !== ref) this.toggle(ref);
       void this.$nextTick(() => {
         const head = document.querySelector<HTMLElement>("li.project.open .project-head");
         if (!head) return;

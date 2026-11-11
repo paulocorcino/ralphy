@@ -27,6 +27,7 @@ export function feed(
     // The one unchecked step: the daemon runs its own `ralphy` executable,
     // so a line is an event of the same build, as a reply of `apiFetch` is.
     if (isRecord(parsed) && typeof parsed["event"] === "string") {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a line of the same build
       events.push(parsed as Progress);
     }
   }

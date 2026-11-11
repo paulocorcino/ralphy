@@ -34,6 +34,7 @@ import type { DbmlColumn, DbmlEndpoint, DbmlRef, DbmlSchema, DbmlTable } from ".
 import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 import { openZoom } from "./wb-zoom-overlay.ts";
+import { isElement } from "./wb-dom-need.ts";
 
 type Ctx = {
   doc: Document;
@@ -55,7 +56,12 @@ function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-function el(doc: Document, tag: string, className: string, text?: string) {
+function el<K extends keyof HTMLElementTagNameMap>(
+  doc: Document,
+  tag: K,
+  className: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
   const node = doc.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
@@ -63,7 +69,7 @@ function el(doc: Document, tag: string, className: string, text?: string) {
 }
 
 function button(doc: Document, className: string, text: string) {
-  const node = el(doc, "button", className, text) as HTMLButtonElement;
+  const node = el(doc, "button", className, text);
   node.type = "button";
   return node;
 }
@@ -82,7 +88,7 @@ function tagsOf(column: DbmlColumn) {
 function refNode(ctx: Ctx, ep: DbmlEndpoint, arrow: string): HTMLElement {
   const text = `${arrow}${ep.table}.${ep.column}`;
   if (!ctx.names.has(ep.table)) return el(ctx.doc, "span", "dbml-ref", text);
-  const link = el(ctx.doc, "a", "dbml-ref", text) as HTMLAnchorElement;
+  const link = el(ctx.doc, "a", "dbml-ref", text);
   link.href = `#${slugOf(ep.table)}`;
   link.title = text;
   return link;
@@ -157,7 +163,8 @@ function toggleMark(ctx: Ctx, row: HTMLElement) {
 }
 
 function onCardClick(ctx: Ctx, card: HTMLElement, ev: Event) {
-  const target = ev.target as Element;
+  const target = ev.target;
+  if (!isElement(target)) return;
   if (target.closest("a")) return;
   if (target.closest("button.dbml-more")) {
     setOpen(card, !card.classList.contains("dbml-open"));
@@ -170,7 +177,7 @@ function onCardClick(ctx: Ctx, card: HTMLElement, ev: Event) {
 // The heading of a card: the table name, behind the checkbox that selects it.
 function cardHead(ctx: Ctx, table: DbmlTable) {
   const head = el(ctx.doc, "h3", "");
-  const pick = el(ctx.doc, "input", "dbml-pick") as HTMLInputElement;
+  const pick = el(ctx.doc, "input", "dbml-pick");
   pick.type = "checkbox";
   pick.setAttribute("aria-label", `Select ${table.name}`);
   pick.addEventListener("change", () => {

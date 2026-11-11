@@ -3,13 +3,14 @@
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument } from "./wb-events.ts";
-import { need } from "./wb-dom-need.ts";
+import { need, targetClosest } from "./wb-dom-need.ts";
 import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
 import { isRendered } from "./wb-viewer-render.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 
 /** The mirror: a second editor over a pane's model, in a `.viewer` of its own. */
 type Mirror = {
@@ -112,7 +113,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     if (slot.mirror === true) ensureMirror(slotRec, box);
     else closeMirror();
     if (slot.focus === true) {
-      const target = focusTarget(slot, mirror, slotRec.ed as MonacoEditor | undefined);
+      const target = focusTarget(slot, mirror, codeEditor(slotRec.ed));
       setTimeout(() => target?.focus(), 0);
     }
   }
@@ -126,7 +127,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       return;
     }
     closeMirror();
-    const model = (rec.ed as MonacoEditor).getModel();
+    const model = codeEditor(rec.ed)?.getModel();
     if (!model) return;
     const el = document.createElement("div");
     el.className = "viewer code-viewer mirror-viewer";
@@ -188,7 +189,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       window.Alpine.store("tabs").clearSlot();
     });
     divider.addEventListener("pointerdown", (e: PointerEvent) => {
-      if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;
+      if (e.button !== 0 || !e.isPrimary || targetClosest(e, ".slot-close")) return;
       e.preventDefault();
       const pointerId = e.pointerId;
       const bounds = box.getBoundingClientRect();

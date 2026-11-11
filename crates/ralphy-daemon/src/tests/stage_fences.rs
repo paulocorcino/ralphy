@@ -236,7 +236,7 @@ fn shell_locks_consoles_and_fences() {
         let b = body(handler);
         assert!(
             b.contains("if (heldFast()) return")
-                && b.contains("opts?.locked || (() => isLocked(win as ConsoleWin))"),
+                && b.contains("opts?.locked || (() => isLocked(consoleWin(win)))"),
             "{handler} must refuse a locked console"
         );
     }

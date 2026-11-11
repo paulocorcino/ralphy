@@ -26,6 +26,7 @@ import {
   ZOOM_STEP,
 } from "./wb-diagram-zoom.ts";
 import type { Pair, Point, Size, View } from "./wb-diagram-zoom.ts";
+import { targetClosest } from "./wb-dom-need.ts";
 
 type Picture = HTMLImageElement | SVGSVGElement;
 
@@ -117,6 +118,7 @@ function copyOf(doc: Document, src: Picture, size: Size) {
     img.draggable = false;
     return img;
   }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- lib.dom types any clone as Node
   const svg = src.cloneNode(true) as SVGSVGElement;
   svg.style.maxWidth = "none";
   svg.setAttribute("width", String(size.w));
@@ -388,8 +390,8 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
     close,
   };
   bar.addEventListener("click", (ev) => {
-    const act = (ev.target as Element).closest("[data-zoom]")?.getAttribute("data-zoom");
-    if (act !== null && act !== undefined && act !== "") actions[act]?.();
+    const act = targetClosest(ev, "[data-zoom]")?.dataset["zoom"];
+    if (act !== undefined && act !== "") actions[act]?.();
   });
   attachGestures(surface, ctl, local, close);
   attachKeys(overlay, bar, actions);
@@ -402,11 +404,10 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
 /** Open the view when an "Enlarge" button is pressed, on any article of the page. */
 export function wireDiagramZoom(win: Window, doc: Document) {
   doc.addEventListener("click", (ev) => {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a document target has none
-    const button = (ev.target as Element | null)?.closest?.(".zoom-btn");
+    const button = targetClosest(ev, ".zoom-btn");
     const picture = button?.parentElement?.querySelector<Picture>("svg, img");
     if (!button || !picture) return;
     ev.preventDefault();
-    openZoom(win, doc, picture, button as HTMLElement);
+    openZoom(win, doc, picture, button);
   });
 }

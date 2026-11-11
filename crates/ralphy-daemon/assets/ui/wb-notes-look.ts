@@ -76,19 +76,19 @@ export const NEW_NOTE_STYLE = { tone: "ochre", fill: "solid", ink: "dark" };
 // The tone a record/document names, defaulted. Never throws on a tone from a
 // hand-edited file: an unknown name is sand.
 export function toneOf(name: string | null | undefined): string {
-  return TONES.includes(name as string) ? (name as string) : DEFAULT_TONE;
+  return typeof name === "string" && TONES.includes(name) ? name : DEFAULT_TONE;
 }
 export function fillOf(name: string | null | undefined): string {
-  return FILLS.includes(name as string) ? (name as string) : DEFAULT_FILL;
+  return typeof name === "string" && FILLS.includes(name) ? name : DEFAULT_FILL;
 }
 export function inkOf(name: string | null | undefined): string {
-  return INKS.includes(name as string) ? (name as string) : DEFAULT_INK;
+  return typeof name === "string" && INKS.includes(name) ? name : DEFAULT_INK;
 }
 export function fontOf(name: string | null | undefined): string {
-  return FONTS.includes(name as string) ? (name as string) : DEFAULT_FONT;
+  return typeof name === "string" && FONTS.includes(name) ? name : DEFAULT_FONT;
 }
 export function sizeOf(name: string | null | undefined): string {
-  return SIZES.includes(name as string) ? (name as string) : DEFAULT_SIZE;
+  return typeof name === "string" && SIZES.includes(name) ? name : DEFAULT_SIZE;
 }
 
 // The look a card is WEARING, in the two places it has to be: the fields the

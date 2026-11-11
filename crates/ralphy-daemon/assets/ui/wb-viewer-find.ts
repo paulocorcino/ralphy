@@ -1,9 +1,9 @@
 // The viewer's find: the find bar of a rendered pane, and the find a code
 // editor opens seeded with a term (a content-search open).
-import { inPane } from "./wb-dom-need.ts";
+import { inPane, needInput, required } from "./wb-dom-need.ts";
 import { prepareFind } from "./wb-viewer-render.ts";
-import type { MonacoEditor } from "./wb-monaco.ts";
 import type { ViewerRecord } from "./wb-file-viewer.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 
 /** What `createViewer` hands the find. */
 export type ViewerFindDeps = {
@@ -43,7 +43,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
   // search's "jump to line", done with what Monaco already has. Literal and
   // case-insensitive, like the search that produced the hit.
   function findInEditor(rec: ViewerRecord, term: string) {
-    const ed = rec.ed as MonacoEditor | undefined;
+    const ed = codeEditor(rec.ed);
     if (!ed || !term) return;
     // The pane must be laid out BEFORE the widget opens: Monaco keeps the
     // widest "N of M" measurement in a module-wide maximum, and one taken in a
@@ -103,6 +103,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
     });
     const targets: Text[] = [];
     let node;
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SHOW_TEXT: every node is Text
     while ((node = walker.nextNode())) targets.push(node as Text);
     const needle = term.toLowerCase();
     const hits: HTMLElement[] = [];
@@ -149,7 +150,7 @@ export function createViewerFind(deps: ViewerFindDeps) {
   function mdSearchClose(rec: ViewerRecord) {
     mdSearch(rec, "");
     inPane(rec, ".md-find").classList.remove("open");
-    inPane<HTMLInputElement>(rec, ".md-find-input").value = "";
+    needInput(required(rec.el, "the pane element"), ".md-find-input").value = "";
   }
 
   return { findInEditor, findInMarkdown, mdSearch, mdSearchStep, mdSearchClose };

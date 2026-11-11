@@ -327,11 +327,13 @@ export function apiFetch<K extends ApiRoute>(
  * unchecked step for a command reply, as `socketFrame` is for a frame: the
  * daemon of the same build writes the reply, and `ReplyOf<V>` follows its verb. */
 export function commandReply<V extends string>(r: ApiOk<DaemonReply>): Promise<ReplyOf<V>> {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the one unchecked step
   return r.json() as Promise<ReplyOf<V>>;
 }
 
 /** The JSON after the tag byte of a `[tag][JSON]` frame on a socket of this
  * daemon (`src/protocol.rs`). It throws on bytes that are not JSON. */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- the caller names the frame
 export function socketFrame<T>(bytes: Uint8Array): T {
   // The one unchecked step for a frame, as the `fetch` above is for a reply.
   // The daemon of the same build writes the frame. A frame or a reply that a
@@ -341,6 +343,7 @@ export function socketFrame<T>(bytes: Uint8Array): T {
   // that reads a peer's reply fails `peer_reply_types_are_pinned_to_the_protocol_version`
   // (crates/xtask/tests/ratchets/) until the version is raised, or until
   // each change is a new field declared optional (#653).
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the one unchecked step
   return JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as T;
 }
 

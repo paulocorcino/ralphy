@@ -135,23 +135,30 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   // handle to this window.
   window.addEventListener("message", (e) => {
     if (e.origin !== window.location.origin) return;
-    if (!detachedWindows.has(e.source as Window)) return;
+    const source = heldWindow(e.source);
+    if (!source) return;
     const m: unknown = e.data;
     if (!isFilePopupMessage(m)) return;
-    popupMessage(m, e);
+    popupMessage(m, source);
   });
 
+  // The detached window that sent a message; null for any other source.
+  function heldWindow(source: MessageEventSource | null) {
+    for (const win of detachedWindows.keys()) if (win === source) return win;
+    return null;
+  }
+
   // One message of a detached file window this page opened.
-  function popupMessage(m: FilePopupMessage, e: MessageEvent) {
+  function popupMessage(m: FilePopupMessage, source: Window) {
     if (m.type === "wb-detach-ready") {
       // The popup booted and is asking for its file.
-      (e.source as Window).postMessage(
-        { type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) },
+      source.postMessage(
+        { type: "wb-detach-open", desc: detachedWindows.get(source) },
         window.location.origin,
       );
     } else if (m.type === "wb-emit") {
       // `fromWindow` lets a save's answer reach the pane that sent it.
-      forwardAction(window.WB, m.action, m.detail, e.source as Window);
+      forwardAction(window.WB, m.action, m.detail, source);
     } else if (m.type === "wb-open-request" && m.detail) {
       // A link clicked inside a detached pane; `openLink` re-classifies, so the
       // popup decides nothing about what opens.
@@ -164,7 +171,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     } else if (m.type === "wb-reattach" && m.desc) {
       // A second `wb-reattach` from the same popup (the button, then its own
       // unload) never gets here: the guard above drops a window no longer held.
-      reattachFile(e.source as Window, m.desc);
+      reattachFile(source, m.desc);
     }
   }
 

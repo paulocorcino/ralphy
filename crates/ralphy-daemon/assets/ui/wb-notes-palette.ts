@@ -14,6 +14,7 @@ import {
   withStyle,
 } from "./wb-notes-folds.ts";
 import type { NoteCard, NoteLook } from "./wb-types.d.ts";
+import { isNode, targetClosest } from "./wb-dom-need.ts";
 
 /** What `createNotes` hands the palette: the card's and the editor's names. */
 export type NotePaletteDeps = {
@@ -66,9 +67,8 @@ export function createNotePalette(deps: NotePaletteDeps) {
   function closePaletteOutside(ev: PointerEvent) {
     if (
       openPalette &&
-      !openPalette.contains(ev.target as Node | null) &&
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
-      !(ev.target as Element | null)?.closest(".note-tone")
+      !(isNode(ev.target) && openPalette.contains(ev.target)) &&
+      !targetClosest(ev, ".note-tone")
     ) {
       closePalette();
     }

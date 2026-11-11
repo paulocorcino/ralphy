@@ -11,7 +11,7 @@
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { inTab } from "./wb-console-place.ts";
-import { required } from "./wb-dom-need.ts";
+import { required, targetClosest } from "./wb-dom-need.ts";
 import type { Gestures } from "./wb-stage-stack.ts";
 import type { ConsoleWin, DeskWindowFields, Point, Rect, Size } from "./wb-types.d.ts";
 
@@ -72,6 +72,13 @@ export function createWindowGestures(deps: WindowGestureDeps) {
     setWin,
   } = deps;
 
+  // The element a gesture without `opts` moves: a console window, as every
+  // caller but a note card passes.
+  function consoleWin(win: HTMLElement) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
+    return win as ConsoleWin;
+  }
+
   // Drag by the titlebar, clamped to the STAGE (control buttons still click).
   // Coordinates are plane pixels: the stage's client rect carries the viewport's
   // scroll shift. The origin is pinned at 0, so no drag writes a negative
@@ -86,17 +93,16 @@ export function createWindowGestures(deps: WindowGestureDeps) {
   function makeDraggable(win: HTMLElement, handle: HTMLElement, opts?: GestureHooks) {
     // Without `opts` the element is a console window.
     // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
-    const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
+    const heldFast = opts?.locked || (() => isLocked(consoleWin(win)));
     // The rect at the end of the drag, computed at the act.
     const persist =
       // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
       opts?.onDrop ||
       (() => {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
-        setWin(win as ConsoleWin, { rect: restoreRect(win) });
+        setWin(consoleWin(win), { rect: restoreRect(win) });
       });
     handle.addEventListener("pointerdown", (e) => {
-      if ((e.target as HTMLElement).closest("button, .session-name-input")) return;
+      if (targetClosest(e, "button, .session-name-input")) return;
       // Primary button only: a right/middle press is followed by `contextmenu`
       // (or no `pointerup`), stranding `onMove` on the document. `isPrimary` is
       // the touch half: a second finger opens its own stream.
@@ -207,23 +213,21 @@ export function createWindowGestures(deps: WindowGestureDeps) {
     titlebar.addEventListener(
       "touchend",
       (e) => {
-        if (!(e.target as HTMLElement).closest("button, .session-name-input")) e.preventDefault();
+        if (!targetClosest(e, "button, .session-name-input")) e.preventDefault();
       },
       { passive: false },
     );
     titlebar.addEventListener("pointerdown", (e) => {
       win._lastPointerType = e.pointerType;
       if (e.pointerType === "mouse" || !e.isPrimary) return;
-      if ((e.target as HTMLElement).closest("button, .session-name-input")) return;
+      if (targetClosest(e, "button, .session-name-input")) return;
       // No compatibility mouse events: a `mousedown` after the release would
       // take focus from the new name input, and its `blur` ends the edit.
       e.preventDefault();
       const pointerId = e.pointerId;
       const pressed = { x: e.clientX, y: e.clientY };
       const threshold = dragThreshold(e.pointerType);
-      const span = canRename()
-        ? (e.target as HTMLElement).closest<HTMLElement>(".session-name")
-        : null;
+      const span = canRename() ? targetClosest(e, ".session-name") : null;
       let moved = false;
       let held = false;
       let timer: ReturnType<typeof setTimeout> | null = span
@@ -297,13 +301,12 @@ export function createWindowGestures(deps: WindowGestureDeps) {
   function startResize(win: HTMLElement, dir: string, opts?: ResizeHooks) {
     // Without `opts` the element is a console window.
     // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
-    const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
+    const heldFast = opts?.locked || (() => isLocked(consoleWin(win)));
     const persist =
       // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
       opts?.onDrop ||
       (() => {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
-        setWin(win as ConsoleWin, { rect: restoreRect(win) });
+        setWin(consoleWin(win), { rect: restoreRect(win) });
       });
     const min = opts?.min ?? RESIZE_MIN;
     return (e: PointerEvent) => {

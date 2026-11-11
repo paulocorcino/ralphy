@@ -152,9 +152,9 @@ function readFold(prev: Read | null | undefined, outcome: Outcome): Read {
   const { ok, value, reason, at } = outcome;
   if (ok) return { value, goodAt: at, error: "", current: true };
   if (prev !== null && prev !== undefined && prev.goodAt !== 0) {
-    return { value: prev.value, goodAt: prev.goodAt, error: reason as string, current: false };
+    return { value: prev.value, goodAt: prev.goodAt, error: reason ?? "", current: false };
   }
-  return { value: null, goodAt: 0, error: reason as string, current: false };
+  return { value: null, goodAt: 0, error: reason ?? "", current: false };
 }
 
 // A time of day, `14:02`, for "Read at …".

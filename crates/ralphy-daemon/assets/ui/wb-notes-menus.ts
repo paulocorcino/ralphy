@@ -4,6 +4,7 @@
 // the one it had in `wb-notes.ts`.
 import { anchorsOf, veiledOf } from "./wb-notes-folds.ts";
 import type { NoteCard, NoteSource } from "./wb-types.d.ts";
+import { isNode, targetClosest } from "./wb-dom-need.ts";
 
 /** What `createNotes` hands the menus: the card's and the editor's names. */
 export type NoteMenusDeps = {
@@ -137,9 +138,8 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   function closeOnOutside(ev: PointerEvent) {
     if (
       openMenu &&
-      !openMenu.contains(ev.target as Node | null) &&
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
-      !(ev.target as Element | null)?.closest(openMenuTrigger)
+      !(isNode(ev.target) && openMenu.contains(ev.target)) &&
+      !targetClosest(ev, openMenuTrigger)
     ) {
       closeMenu();
     }

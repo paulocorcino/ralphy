@@ -2,18 +2,18 @@
 // toolbar, links, images, outline and the edit/preview toggle. The rendered
 // body itself is `wb-viewer-render.ts`.
 import { sendDocument } from "./wb-events.ts";
-import { inPane, need, required } from "./wb-dom-need.ts";
+import { inPane, isElement, need, needInput, required, targetClosest } from "./wb-dom-need.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import { drawDiagram, slugOf } from "./wb-dbml-draw.ts";
 import { isRendered, renderBody } from "./wb-viewer-render.ts";
 import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
-import type { MonacoEditor } from "./wb-monaco.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import type { ViewerFind } from "./wb-viewer-find.ts";
 import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 
 // The words of that notice, from the image's `src` and `alt` alone: a short
 // `text` that keeps a row of badges one row, and the `reason` for its
@@ -180,7 +180,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     const split = need(el, ".md-split");
     need(el, '[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
     need(el, ".md-outline").addEventListener("click", (ev) => {
-      if ((ev.target as Element).closest(".outline-item")) split.classList.remove("toc-open");
+      if (targetClosest(ev, ".outline-item")) split.classList.remove("toc-open");
     });
     need(el, ".md-scroll").addEventListener("pointerdown", () => {
       split.classList.remove("toc-open");
@@ -188,7 +188,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     wireFileButtons(el, rec, { ...deps.saver, detachClick });
     // in-page find over the rendered article
     const find = need(el, ".md-find");
-    const input = need<HTMLInputElement>(el, ".md-find-input");
+    const input = needInput(el, ".md-find-input");
     need(el, '[data-act="find"]').onclick = () => {
       find.classList.add("open");
       input.focus();
@@ -286,8 +286,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   // window. A repo file becomes an open REQUEST to the shell; external links
   // open in a new tab so the workbench is not what gets replaced.
   function linkClick(rec: ViewerRecord, ev: Event) {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a text node has no closest
-    const a = (ev.target as Element).closest?.<HTMLAnchorElement>("a[href]");
+    const a = isElement(ev.target) ? ev.target.closest<HTMLAnchorElement>("a[href]") : null;
     if (!a || rec.el?.contains(a) !== true) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
     const target = linkTarget(dir, a.getAttribute("href"));
@@ -388,14 +387,14 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       if (!rec.ed) {
         mountEditor(rec, editor, { wordWrap: "on" });
       } else {
-        (rec.ed as MonacoEditor).setValue(rec.content);
+        codeEditor(rec.ed)?.setValue(rec.content);
       }
       setCaption(toggle, "bi-eye", "Preview");
       setTimeout(() => rec.ed?.layout(), 0);
     } else {
       // `rec.editing` is already false here, so read the editor directly —
       // contentOf() would hand back the pre-edit bytes.
-      if (rec.ed) rec.content = (rec.ed as MonacoEditor).getValue();
+      rec.content = codeEditor(rec.ed)?.getValue() ?? rec.content;
       split.classList.remove("editing");
       editor.style.display = "none";
       setCaption(toggle, "bi-pencil", "Edit");

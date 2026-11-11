@@ -197,7 +197,7 @@ function listGroups(
   const groups: ColumnGroup[] = [];
   if (loose.length > 0) groups.push(group(null, loose));
   for (const f of fences ?? []) {
-    const members = byFence.get(f.id) as ColumnRow[];
+    const members = byFence.get(f.id) ?? [];
     if (members.length > 0) groups.push(group({ id: f.id, name: f.name }, members));
   }
   return groups;

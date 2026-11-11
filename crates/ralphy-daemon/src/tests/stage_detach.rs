@@ -24,7 +24,7 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     for pin in [
         "detached.watch(win, desc);",
         "window.setInterval(pollDetached, 500)",
-        "reattachFile(e.source as Window, m.desc);",
+        "reattachFile(source, m.desc);",
     ] {
         assert!(
             app.contains(pin),

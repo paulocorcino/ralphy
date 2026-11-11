@@ -115,6 +115,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // The card's chrome for one record. Mirrors `buildFence`'s construction
   // order, including its hit-test rule; `assembleCard` does the rest.
   function buildCard(record: NoteSource) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- assembleCard sets its fields
     const el = document.createElement("div") as HTMLElement as NoteCard;
     return assembleCard(el, record);
   }

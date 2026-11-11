@@ -6,6 +6,7 @@ import { encodingBtnHtml } from "./wb-viewer-encoding.ts";
 import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer-records.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
 import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
@@ -180,8 +181,8 @@ export function createViewerCode(deps: ViewerCodeDeps) {
 
     const saveBtn = need(el, '[data-act="save"]');
     need(el, '[data-act="find"]').onclick = () => {
-      (rec.ed as MonacoEditor | undefined)?.focus();
-      (rec.ed as MonacoEditor | undefined)
+      codeEditor(rec.ed)?.focus();
+      codeEditor(rec.ed)
         ?.getAction("actions.find")
         ?.run()
         .catch((err: unknown) => {
