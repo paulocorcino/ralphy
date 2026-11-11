@@ -344,6 +344,7 @@ Not on stdout. In the session's `wire.jsonl`, in `StatusUpdate` events:
 **stderr** (`To resume this session: kimi -r <id>`) and from
 `~/.kimi/kimi.json` → `work_dirs[].last_session_id`. Session dir:
 `~/.kimi/sessions/<workdir-hash>/<session-id>/` (`wire.jsonl` + `context.jsonl`
+
 - `state.json`). Stdout stream-json is used only for the **final text / sentinel
 / tool-call** view, not tokens.
 

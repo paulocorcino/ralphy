@@ -120,6 +120,6 @@ feasibility read, not a platform divergence. `permissionMode` is `default` on bo
 
 ## Follow-ups filed
 
-# 268 verify-gate nested-quote tokenizer (fixed `ce54f92`) · #269 per-issue under-count
+\#268 verify-gate nested-quote tokenizer (fixed `ce54f92`) · #269 per-issue under-count
 (consolidate pass dropped) · #270 harvest-aware budget (ADR-0038) · #271 logged-out
 stale-plan masks the auth stop.

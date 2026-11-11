@@ -150,11 +150,11 @@ No `model_reasoning_effort` analog; the adapter discards the parameter
 1. ~~**Cursor `[effort=high]` bracket**~~ — **RESOLVED** (§5): probed live via WSL.
    Bracket is help-documented, suffix confirmed via `--list-models`, and Cursor
    turns out to publish a **free per-model effort catalog**.
-3. ~~**Claude per-model clamp**~~ — **RESOLVED, bounded** (§2): Claude accepts a
+2. ~~**Claude per-model clamp**~~ — **RESOLVED, bounded** (§2): Claude accepts a
    valid level on any model with no per-model signal and publishes no catalog, so
    a per-model clamp is not buildable. Direct map + value-enum validation is the
    ceiling; a silent per-model degrade, if it exists, is unobservable and
    uncorrectable.
-2. **Gemini `thinkingBudget` mapping** — still open, but it is a **design
+3. **Gemini `thinkingBudget` mapping** — still open, but it is a **design
    decision, not a probe**: mapping five level rungs onto numeric budgets has no
    empirical answer to find. Gemini stays *No-op* until the mapping is designed.

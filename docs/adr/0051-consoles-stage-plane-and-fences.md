@@ -297,7 +297,7 @@ anchors, without zoom. It takes the toolbar slot Arrange vacates; promoting it
 to a sidebar view waits for measured use. No minimap (§3 removed the need) and
 no roll-up (collapsing a fence is comfort, not foundation).
 
-*(Amended after shipping #343, on the operator's own reading of it:)*
+*Amended after shipping #343, on the operator's own reading of it:*
 
 - **The list and the create button are ONE toolbar control.** `Fence` opens a
   menu whose first row draws a new fence and whose remaining rows are the map.
@@ -340,7 +340,7 @@ cross-repo task) and two fences for one repo ("planning", "executing") are both
 legitimate. The chrome *shows* the repos it contains. A console opened while a
 fence is focused is born inside it.
 
-*(Amended for fence detach (#344):)*
+*Amended for fence detach (#344):*
 
 - **`detach` joins arrange and close** in that same top-right corner, for the
   reason this section already gives: a fence verb whose position is a function
@@ -703,7 +703,7 @@ and for a fence opened as columns, 2026-09-30.)*
   ADR-0050). Still rejected, and now moot: the plane removes the problem they
   were solving.
 
-*(Added for fence detach (#344):)*
+*Added for fence detach (#344):*
 
 - **An in-page overlay instead of a real popup window.** Rejected: it never
   reaches the second monitor, and §3 already rules out the zoom that would
@@ -722,7 +722,7 @@ and for a fence opened as columns, 2026-09-30.)*
 - **A popup that outlives its opener tab.** Rejected: an orphan drives sessions
   that a fresh tab simultaneously renders inside the fence.
 
-*(Added for columns, 2026-09-26:)*
+*Added for columns, 2026-09-26:*
 
 - **Columns in the desk.** Rejected: a phone would restore columns it has no
   room for.
@@ -743,7 +743,7 @@ and for a fence opened as columns, 2026-09-30.)*
   for measured use. *(2026-09-29: rows inside a column are now decided, §5. The
   divider and the drag still wait.)*
 
-*(Added for rows, 2026-09-29:)*
+*Added for rows, 2026-09-29:*
 
 - **A free tree of splits, where any row can split into columns again.**
   Rejected: two levels cover the layouts asked for, and a tree needs a divider
@@ -754,7 +754,7 @@ and for a fence opened as columns, 2026-09-30.)*
 - **A second title bar button for Down.** Rejected: the title bar of a column
   is already narrow, and both buttons would open the same list.
 
-*(Added for a fence opened as columns, 2026-09-30:)*
+*Added for a fence opened as columns, 2026-09-30:*
 
 - **A "restore all" button.** Rejected by the operator: the restore of each row
   already exists, and each console goes back to its own place.
@@ -787,7 +787,7 @@ and for a fence opened as columns, 2026-09-30.)*
   no machine-wide store", is corrected: ADR-0050 already moved the desk into the
   daemon.
 
-*(Added for fence detach (#344):)*
+*Added for fence detach (#344):*
 
 - **The second monitor is answered without touching the daemon.** The whole
   feature is per-client presentation over machinery that already exists.
@@ -811,7 +811,7 @@ and for a fence opened as columns, 2026-09-30.)*
   band's reserve widens with it. Same density question as the third, same
   answer.
 
-*(Added for columns, 2026-09-26:)*
+*Added for columns, 2026-09-26:*
 
 - **A narrow column narrows the terminal for every client.** Each attached
   client sends `resize`, and the daemon applies the last one
@@ -827,7 +827,7 @@ and for a fence opened as columns, 2026-09-30.)*
   over the maximize that already exists.
 - CONTEXT.md gains **Columns**.
 
-*(Added for the 2026-09-28 amendment, no column limit:)*
+*Added for the 2026-09-28 amendment, no column limit:*
 
 - **A column can be too narrow to use.** Many columns on a small screen send a
   terminal only a few characters wide, and an agent CLI draws its screen badly
@@ -839,7 +839,7 @@ and for a fence opened as columns, 2026-09-30.)*
   no longer starts one pixel smaller: that default existed only so two 80-cell
   columns fit a landscape iPad.
 
-*(Added for rows, 2026-09-29:)*
+*Added for rows, 2026-09-29:*
 
 - **A short row makes the terminal shorter for every client**, for the same
   reason a narrow column makes it narrower: the daemon applies the last

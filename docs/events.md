@@ -136,9 +136,7 @@ agent context without folding the whole stream:
 Types mirror the canonical `RunEvent` decoder
 ([runstate.rs](../crates/ralphy-cli/src/runstate.rs)) plus three emissions
 introduced by ADR-0019 (`run.started`, `run.finished`, `run.heartbeat`), one
-by ADR-0020 (`queue.snapshot`), and three raw/step plan events added by the
-# 96 normalization (`plan.step`, `plan.opened`, `plan.closed`), and one by the
-# 222 run-borders amendment (`run.skipped`). Token
+by ADR-0020 (`queue.snapshot`), and three raw/step plan events added by the #96 normalization (`plan.step`, `plan.opened`, `plan.closed`), and one by the #222 run-borders amendment (`run.skipped`). Token
 breakdowns use the ledger's four counters: `up` input, `cr` cache-read, `cw`
 cache-write, `out` output (ADR-0008).
 

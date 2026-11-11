@@ -539,13 +539,13 @@ Skipnoise.Keeponlyactionablefindings.
 
 _Step three: add a state file._ Do not leave results in the chat window. Write every finding, and how far it has been handled, into a markdown file (or a Linear board). The agent forgets; the repo does not.
 
-|`# ./state/triage.md`<br>`(the loop’s memory)`|`# ./state/triage.md`<br>`(the loop’s memory)`|
-|---|---|
-|`| finding`<br>`| source`<br>`| status`|`|`|
-|`|----------------|----------|----------|`||
-|`| auth test flaky| CI #4821 | fixing`|`|`|
-|`| null deref`<br>`| issue 92 | PR open`|`|`|
-|`| stale dep`<br>`| commit a3| inbox`|`|`|
+`# ./state/triage.md` (the loop’s memory)
+
+| finding | source | status |
+|---|---|---|
+| auth test flaky | CI #4821 | fixing |
+| null deref | issue 92 | PR open |
+| stale dep | commit a3 | inbox |
 
 _Step four: add an evaluator._ The most critical step and the easiest to skip. Claude Code’s `/goal` (after v2.1.139) runs until a condition is met, with a different model judging whether it holds.
 

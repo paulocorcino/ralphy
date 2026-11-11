@@ -275,6 +275,7 @@ setup script (ADR-0042's reason for "never" on `.cursor/worktrees.json`).
 temp repo (spawn-bound: one fixture per test file, per
 `docs/BUILDING.md`); (2) daemon verbs + `checkout` resolution at the two
 `execute_oneshot` sites; (3) `SessionQuery.checkout` + `SessionInfo.checkout`
+
 - `spec_for` signature + `console_worktree` retirement + Gemini/Cursor
 path fixes; (4) picker section + desk field + console title, with a
 `wb-project` fold test and one `wb_worktree_*.py`; (5) usage-scan

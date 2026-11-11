@@ -1695,7 +1695,7 @@ Ripgrep is not available. Falling back to GrepTool.
 Note the YOLO line is printed **twice**. A `stderr.is_empty()` health check
 would report every run as degraded.
 
-### Reproduction
+### Raw captures
 
 Raw captures live in `%TEMP%\gemini-probe\` for this session only. Live runs
 will use `C:\Dev\FinCal` on branch `afk/run-20260720-143515`; the probe

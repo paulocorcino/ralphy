@@ -218,8 +218,7 @@ tags keep them separate:
 - **Run** — owned by the run, not the daemon (a Spawn child outlives the daemon).
 
 For Phase 1 the Runs panel is fed by the **raw merged output** a daemon-spawned
-run already streams over `/ws/command` (`status:"output"`, ADR-0032 §5 / issue
-# 180). The mock's **structured** run feed (issue trail, plan viewer, phase glyphs
+run already streams over `/ws/command` (`status:"output"`, ADR-0032 §5 / issue #180). The mock's **structured** run feed (issue trail, plan viewer, phase glyphs
 from `ralphy:run-event`) is **deferred to the events platform** (ADR-0019, Phase
 2); no daemon-side CloudEvents relay is built now, so ADR-0032 §5 is not stretched.
 
@@ -882,7 +881,7 @@ the "reopen with…" and "save with…" affordance.
   a file reopened from a peer, and two tabs on one file under different
   encodings all break it; the wire carrying it both ways has none of those.
 
-### Consequences
+### Consequences of the encoding amendment
 
 - `tree::text_of` returns the text, its encoding and the BOM fact; `ReadError`
   is unchanged in shape and `binary` narrows to "NUL-bearing and not UTF-16".
@@ -1142,7 +1141,7 @@ operator asks for it:
 - A peer that runs an older Ralphy does not know `--create`. Its refusal is
   shown as it is.
 
-### Consequences
+### Consequences of the registry verbs amendment
 
 - The verb count grows from 49 to 51.
 - The `dir.list` limits in §3 are the security boundary of this exception.
@@ -1344,7 +1343,7 @@ verbs (see the amendment of ADR-0052 of 2026-10-10), and
 - **Hiding `.git`, `node_modules` and `target` from the size.** The number
   would differ from the one every other program shows.
 
-### Consequences of the amendment
+### Consequences of the file.stat amendment
 
 - The verb count grows from 51 to 53.
 - The workbench shows the facts when the Properties dialog opens, and reads
@@ -1447,7 +1446,7 @@ not change.
   daemon would have to put parts back in order.
 - **A list of allowed kinds of file.** See "Any kind of file" above.
 
-### Consequences of the amendment
+### Consequences of the file.upload amendment
 
 - The verb count grows from 53 to 54.
 - `.ralphy/uploads/` is a new folder that the daemon owns, like
