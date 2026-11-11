@@ -64,7 +64,8 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
         acc
     })
     .await
-    .unwrap_or_else(|_| panic!("timed out (10s) waiting for {needle:?}"))
+    .map_err(|elapsed| format!("timed out (10s) waiting for {needle:?} ({elapsed})"))
+    .expect("this test needs the call to succeed")
 }
 
 /// A raw HTTP/1.1 request over a fresh `TcpStream` against the live
@@ -107,24 +108,30 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
 /// `session-open`, which is read here; a refused one ends the channel with no
 /// frame.
 async fn reattach(port: u16, id: u64) -> Ws {
-    for _ in 0..40 {
-        let mut channel = page::console(port, serde_json::json!({ "id": id })).await;
-        while let Some(Ok(message)) = channel.next().await {
-            if let Message::Binary(bytes) = message {
-                let open = protocol::decode(&bytes).expect("a well-formed frame");
-                assert!(
-                    matches!(&open, Frame::Command(c) if c.verb == "session-open"),
-                    "the first frame of a reattach is session-open: {open:?}"
-                );
-                return channel;
+    let found = async {
+        for _ in 0..40 {
+            let mut channel = page::console(port, serde_json::json!({ "id": id })).await;
+            while let Some(Ok(message)) = channel.next().await {
+                if let Message::Binary(bytes) = message {
+                    let open = protocol::decode(&bytes).expect("a well-formed frame");
+                    assert!(
+                        matches!(&open, Frame::Command(c) if c.verb == "session-open"),
+                        "the first frame of a reattach is session-open: {open:?}"
+                    );
+                    return Some(channel);
+                }
+                if matches!(message, Message::Close(_)) {
+                    break;
+                }
             }
-            if matches!(message, Message::Close(_)) {
-                break;
-            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        None
     }
-    panic!("reattach to session {id} never succeeded within 2s");
+    .await;
+    found
+        .ok_or_else(|| format!("reattach to session {id} never succeeded within 2s"))
+        .expect("this test needs the value")
 }
 
 #[tokio::test]

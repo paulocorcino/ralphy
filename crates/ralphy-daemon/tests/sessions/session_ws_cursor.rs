@@ -42,9 +42,12 @@ async fn launch_cursor(port: u16) -> Channel {
         .expect("a first frame within 10s")
         .expect("the channel stays open")
         .expect("read the first frame");
-    let Message::Binary(bytes) = first else {
-        panic!("the first message is a frame; got {first:?}");
-    };
+    let bytes = if let Message::Binary(bytes) = first {
+        Ok(bytes)
+    } else {
+        Err(format!("the first message is a frame; got {first:?}"))
+    }
+    .expect("this test needs a binary message");
     let open = protocol::decode(&bytes).expect("a well-formed frame");
     assert!(
         matches!(&open, Frame::Command(c) if c.verb == "session-open"),

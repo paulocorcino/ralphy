@@ -124,7 +124,8 @@ async fn over_http(
         .split_whitespace()
         .nth(1)
         .and_then(|code| code.parse().ok())
-        .unwrap_or_else(|| panic!("a status line in {reply}"));
+        .ok_or_else(|| format!("a status line in {reply}"))
+        .expect("this test needs the value");
     let json = reply.split_once("\r\n\r\n").map_or("", |(_, body)| body);
     let value = serde_json::from_str(json).unwrap_or(serde_json::Value::Null);
     (status, value)
@@ -162,13 +163,14 @@ async fn over_socket(
                 continue;
             };
             if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
-                return reply.payload;
+                return Some(reply.payload);
             }
         }
-        panic!("the socket closed with no reply")
+        None
     })
     .await
     .expect("a reply within 20s")
+    .expect("the socket closed with no reply")
 }
 
 #[tokio::test]

@@ -77,7 +77,8 @@ fn relayed(reply: &serde_json::Value) -> String {
     );
     reply["message"]
         .as_str()
-        .unwrap_or_else(|| panic!("an error message string; got {reply}"))
+        .ok_or_else(|| format!("an error message string; got {reply}"))
+        .expect("this test needs the value")
         .to_owned()
 }
 

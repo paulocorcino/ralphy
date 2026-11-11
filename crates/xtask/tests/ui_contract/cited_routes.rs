@@ -132,11 +132,13 @@ fn scanned_files(root: &Path) -> Vec<(String, PathBuf)> {
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed");
     for entry in entries {
         let path = entry
-            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+            .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+            .expect("this test needs the call to succeed")
             .path();
         let rel = path
             .strip_prefix(root)

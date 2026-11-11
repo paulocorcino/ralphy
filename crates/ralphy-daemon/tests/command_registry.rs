@@ -127,7 +127,8 @@ async fn ask_one(port: u16, verb: &str, payload: serde_json::Value) -> serde_jso
 fn names(reply: &serde_json::Value) -> Vec<String> {
     reply["entries"]
         .as_array()
-        .unwrap_or_else(|| panic!("entries in {reply}"))
+        .ok_or_else(|| format!("entries in {reply}"))
+        .expect("this test needs the value")
         .iter()
         .filter_map(|e| e["name"].as_str().map(str::to_owned))
         .collect()

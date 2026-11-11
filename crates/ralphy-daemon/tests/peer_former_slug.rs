@@ -44,7 +44,8 @@ async fn poll(registry_path: std::path::PathBuf, repo: &str) -> serde_json::Valu
         .expect("read the response body")
         .to_bytes();
     serde_json::from_slice(&bytes)
-        .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&bytes)))
+        .map_err(|e| format!("{e}: {}", String::from_utf8_lossy(&bytes)))
+        .expect("this test needs the call to succeed")
 }
 
 #[tokio::test]

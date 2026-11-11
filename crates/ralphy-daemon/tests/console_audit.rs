@@ -90,7 +90,8 @@ async fn device_cookie(port: u16) -> String {
         .filter(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
         .map(|(_, value)| value.trim())
         .find(|value| value.starts_with("ralphy_device="))
-        .unwrap_or_else(|| panic!("a device cookie in {reply}"))
+        .ok_or_else(|| format!("a device cookie in {reply}"))
+        .expect("this test needs the value")
         .split(';')
         .next()
         .expect("the reply sets a device cookie")
@@ -113,15 +114,18 @@ async fn open(port: u16, fields: serde_json::Value, cookie: &str) -> Option<Ws> 
     let first = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             match channel.next().await {
-                Some(Ok(Message::Binary(_))) => return true,
-                Some(Ok(Message::Close(_))) | None => return false,
+                Some(Ok(Message::Binary(_))) => return Ok(true),
+                Some(Ok(Message::Close(_))) | None => return Ok(false),
                 Some(Ok(_)) => continue,
-                Some(Err(error)) => panic!("the channel failed on the socket: {error:?}"),
+                Some(Err(error)) => {
+                    return Err(format!("the channel failed on the socket: {error:?}"))
+                }
             }
         }
     })
     .await
-    .expect("the daemon answers a console open within 10s");
+    .expect("the daemon answers a console open within 10s")
+    .expect("this test needs the socket to read");
     if first {
         return Some(channel);
     }

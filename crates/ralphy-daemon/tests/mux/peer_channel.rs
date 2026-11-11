@@ -133,11 +133,13 @@ async fn peer() -> Peer {
 
 /// Open a channel of `kind` on the peer, or fail the test with why not.
 async fn open(peer: &Peer, kind: &str, fields: serde_json::Value) -> PeerChannel {
-    match open_channel(&descriptor(peer.port), ME, kind, fields).await {
-        Ok(channel) => channel,
-        Err(SocketError::Peer(status)) => panic!("the peer refused the dial: {status:?}"),
-        Err(SocketError::Http { status, body }) => panic!("the peer answered {status}: {body}"),
-    }
+    open_channel(&descriptor(peer.port), ME, kind, fields)
+        .await
+        .map_err(|error| match error {
+            SocketError::Peer(status) => format!("the peer refused the dial: {status:?}"),
+            SocketError::Http { status, body } => format!("the peer answered {status}: {body}"),
+        })
+        .expect("this test needs the peer to open the channel")
 }
 
 /// Open a free console of `SLUG` on the peer.
@@ -182,11 +184,13 @@ impl Screen {
 
     async fn take(&mut self, channel: &mut PeerChannel, event: PeerEvent) {
         let bytes = match event {
-            PeerEvent::Frame(bytes) => bytes,
-            other @ (PeerEvent::Closed { .. } | PeerEvent::Gone) => {
-                panic!("the channel ended: {other:?}; it showed {}", self.shown())
-            }
-        };
+            PeerEvent::Frame(bytes) => Ok(bytes),
+            other @ (PeerEvent::Closed { .. } | PeerEvent::Gone) => Err(format!(
+                "the channel ended: {other:?}; it showed {}",
+                self.shown()
+            )),
+        }
+        .expect("this test needs the channel to stay open");
         let Ok(Frame::Terminal { session, data }) = protocol::decode(&bytes) else {
             return;
         };
@@ -211,14 +215,18 @@ impl Screen {
 /// then its terminal read until the child is ready.
 async fn ready(channel: &mut PeerChannel) -> (Command, Screen) {
     let opened = match next(channel).await {
-        PeerEvent::Frame(bytes) => protocol::decode(&bytes).expect("a well-formed inner frame"),
+        PeerEvent::Frame(bytes) => Ok(protocol::decode(&bytes).expect("a well-formed inner frame")),
         other @ (PeerEvent::Closed { .. } | PeerEvent::Gone) => {
-            panic!("expected session-open, got {other:?}")
+            Err(format!("expected session-open, got {other:?}"))
         }
-    };
-    let Frame::Command(opened) = opened else {
-        panic!("expected session-open, got {opened:?}");
-    };
+    }
+    .expect("this test needs a frame");
+    let opened = if let Frame::Command(opened) = opened {
+        Ok(opened)
+    } else {
+        Err(format!("expected session-open, got {opened:?}"))
+    }
+    .expect("this test needs a command");
     assert_eq!(opened.verb, "session-open", "{opened:?}");
     let mut screen = Screen { text: Vec::new() };
     screen.until(channel, "READY").await;

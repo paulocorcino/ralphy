@@ -175,10 +175,12 @@ fn covered(root: &Path) -> BTreeSet<String> {
 fn ui_test_text(root: &Path) -> String {
     let dir = root.join("crates/ralphy-daemon/ui-tests");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed")
         .map(|entry| {
             entry
-                .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+                .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+                .expect("this test needs the call to succeed")
                 .path()
         })
         .filter(|p| p.to_string_lossy().ends_with(".test.mjs"))

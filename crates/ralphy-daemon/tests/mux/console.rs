@@ -46,21 +46,23 @@ async fn daemon() -> (super::support::Daemon, std::path::PathBuf) {
 async fn next_frame(ws: &mut Ws, channel: u32) -> Frame {
     let inner = next_inner(ws, channel, WITHIN)
         .await
-        .unwrap_or_else(|| panic!("a frame on channel {channel}"));
+        .ok_or_else(|| format!("a frame on channel {channel}"))
+        .expect("this test needs the value");
     protocol::decode(&inner).expect("a well-formed inner frame")
 }
 
 /// The next frame of `channel`, which must be the command `verb`.
 async fn next_command(ws: &mut Ws, channel: u32, verb: &str) -> Command {
-    match next_frame(ws, channel).await {
-        Frame::Command(command) if command.verb == verb => command,
+    let found = match next_frame(ws, channel).await {
+        Frame::Command(command) if command.verb == verb => Ok(command),
         other @ (Frame::Terminal { .. }
         | Frame::Command(_)
         | Frame::Presence(_)
-        | Frame::Channel { .. }) => {
-            panic!("expected {verb} on channel {channel}, got {other:?}")
-        }
-    }
+        | Frame::Channel { .. }) => Err(format!(
+            "expected {verb} on channel {channel}, got {other:?}"
+        )),
+    };
+    found.expect("this test needs the command")
 }
 
 /// What a console channel showed: the byte count of its first byte, and
@@ -139,12 +141,13 @@ async fn type_line(ws: &mut Ws, channel: u32, id: u64, line: &str) {
 
 /// The replay frame that follows `session-open` and `session-size`.
 async fn replay(ws: &mut Ws, channel: u32) -> Vec<u8> {
-    match next_frame(ws, channel).await {
-        Frame::Terminal { data, .. } => data,
-        other @ (Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. }) => {
-            panic!("expected the replay on channel {channel}, got {other:?}")
-        }
-    }
+    let found = match next_frame(ws, channel).await {
+        Frame::Terminal { data, .. } => Ok(data),
+        other @ (Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. }) => Err(format!(
+            "expected the replay on channel {channel}, got {other:?}"
+        )),
+    };
+    found.expect("this test needs the replay")
 }
 
 #[tokio::test]

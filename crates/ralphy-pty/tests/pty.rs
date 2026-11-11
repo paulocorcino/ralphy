@@ -219,13 +219,17 @@ fn run_to_args_end(cmd: PtyCommand) -> String {
 /// The refusal error of spawning `shim` with `arg`, rendered with its chain.
 #[cfg(windows)]
 fn refusal(shim: &std::path::Path, arg: &str) -> String {
-    match PtySession::spawn(PtyCommand::new(shim).arg(arg)) {
+    let refused = match PtySession::spawn(PtyCommand::new(shim).arg(arg)) {
         Ok(mut session) => {
             let killed = session.kill();
-            panic!("spawn of {shim:?} with {arg:?} should be refused (kill: {killed:?})");
+            Err(format!(
+                "spawn of {} with {arg:?} should be refused (kill: {killed:?})",
+                shim.display()
+            ))
         }
-        Err(e) => format!("{e:#}"),
-    }
+        Err(e) => Ok(format!("{e:#}")),
+    };
+    refused.expect("this test needs the spawn to be refused")
 }
 
 #[cfg(windows)]

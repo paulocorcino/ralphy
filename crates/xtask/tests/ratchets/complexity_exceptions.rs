@@ -47,7 +47,9 @@ fn oxlint_config() -> serde_json::Value {
         .filter(|line| !line.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
         .join("\n");
-    serde_json::from_str(&json).unwrap_or_else(|e| panic!("parsing .oxlintrc.json: {e}"))
+    serde_json::from_str(&json)
+        .map_err(|e| format!("parsing .oxlintrc.json: {e}"))
+        .expect("this test needs the call to succeed")
 }
 
 /// The TypeScript limit lives only in `.oxlintrc.json`: the same 10 as the
@@ -73,11 +75,13 @@ fn the_typescript_limit_is_ten() {
 
 /// Every file under `dir`, but not the vendored libraries or build output.
 fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed");
     for entry in entries {
         let path = entry
-            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+            .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+            .expect("this test needs the call to succeed")
             .path();
         let skipped = path
             .file_name()

@@ -280,9 +280,12 @@ pub async fn refused(port: u16, fields: serde_json::Value) -> serde_json::Value 
             match message.expect("the page socket reads") {
                 Message::Binary(bytes) => {
                     let frame = protocol::decode(&bytes).expect("a well-formed frame");
-                    let Frame::Command(end) = frame else {
-                        panic!("a refusal carries no other frame; got {frame:?}");
-                    };
+                    let end = if let Frame::Command(end) = frame {
+                        Ok(end)
+                    } else {
+                        Err(format!("a refusal carries no other frame; got {frame:?}"))
+                    }
+                    .expect("this test needs a command frame");
                     assert_eq!(end.verb, "session-end", "the only frame is the end");
                     assert_eq!(end.payload["reason"], "refused", "{end:?}");
                     assert!(end.payload["message"].is_string(), "{end:?}");

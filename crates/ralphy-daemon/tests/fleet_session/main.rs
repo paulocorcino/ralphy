@@ -196,17 +196,18 @@ async fn attach(port: u16, id: u64) -> Ws {
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
                 Some(Ok(first)) => {
-                    return Ws {
+                    return Ok(Ws {
                         channel,
                         ahead: Some(first),
-                    }
+                    })
                 }
-                Some(Err(error)) => panic!("reattach failed: {error}"),
+                Some(Err(error)) => return Err(format!("reattach failed: {error}")),
             }
         }
     })
     .await
     .expect("reattach timed out")
+    .expect("this test needs the socket to read")
 }
 
 #[derive(Default)]
@@ -260,7 +261,8 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> Seen {
         seen
     })
     .await
-    .unwrap_or_else(|_| panic!("timed out waiting for {needle:?}"))
+    .map_err(|elapsed| format!("timed out waiting for {needle:?} ({elapsed})"))
+    .expect("this test needs the call to succeed")
 }
 
 async fn http_request(port: u16, method: &str, path: &str, bearer: Option<&str>) -> (u16, String) {

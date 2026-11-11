@@ -28,10 +28,12 @@ const FIXTURES: &str = "crates/ralphy-daemon/ui-tests/fixtures";
 fn fixture_names(root: &Path) -> BTreeSet<String> {
     let dir = root.join(FIXTURES);
     std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed")
         .map(|entry| {
             entry
-                .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+                .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+                .expect("this test needs the call to succeed")
                 .file_name()
                 .to_string_lossy()
                 .into_owned()
@@ -45,7 +47,9 @@ fn workspace_root() -> PathBuf {
 }
 
 fn read(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+    std::fs::read_to_string(path)
+        .map_err(|e| format!("reading {}: {e}", path.display()))
+        .expect("this test needs the call to succeed")
 }
 
 /// The part of a file above its first inline test module, the same cut the
@@ -72,11 +76,13 @@ fn opens_inline_mod(line: &str) -> bool {
 
 /// Production `.rs` files: no `tests/` dir, no `tests.rs`, no test child.
 fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
-    let entries =
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed");
     for entry in entries {
         let path = entry
-            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+            .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+            .expect("this test needs the call to succeed")
             .path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if path.is_dir() {
