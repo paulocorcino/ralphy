@@ -30,6 +30,7 @@ unsafe_code = "deny"
 non_ascii_idents = "deny"
 unreachable_pub = "deny"
 unused_qualifications = "deny"
+let_underscore_drop = "deny"
 # The lint gate: `rust_2018_idioms` is on. A lint `allow` below is debt that
 # docs/lint/lint-transition.md turns on (this list only shrinks).
 rust_2018_idioms = { level = "deny", priority = -1 }
@@ -40,6 +41,8 @@ elided_lifetimes_in_paths = "allow"
 # `disallowed_methods` and `too_many_arguments` are in `clippy.toml`.
 [workspace.lints.clippy]
 let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+mem_forget = "deny"
 unused_result_ok = "deny"
 map_err_ignore = "deny"
 wildcard_enum_match_arm = "deny"
