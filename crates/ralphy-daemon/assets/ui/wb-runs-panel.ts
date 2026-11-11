@@ -22,6 +22,9 @@ import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
+const at = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["runsOpen", "toggleRuns", "nowMs", "kanbanOpen", "toggleKanban", "toggle"], {
@@ -111,8 +114,6 @@ export function wbRuns() {
     clockTitle(run: Run | null) {
       if (!run) return "";
       const parts: string[] = [];
-      const at = (iso: string) =>
-        new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       if (run.since) parts.push(`phase since ${at(run.since)}`);
       if (run.startedAt) {
         const ms = Math.max(0, this.nowMs - Date.parse(run.startedAt));

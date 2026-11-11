@@ -181,8 +181,9 @@ test("the console text size is saved to the view store, held to the key bar's ra
     setItem: (k, v) => map.set(k, String(v)),
   };
   try {
+    const font = () => JSON.parse(map.get("wb.view.v1") || "{}").font;
+
     await withDialog(async (s, calls) => {
-      const font = () => JSON.parse(map.get("wb.view.v1") || "{}").font;
       await s.saveSetting("consoles.font_size", "12");
       assert.equal(font(), 12);
       assert.equal(s.settings["consoles.font_size"], 12);

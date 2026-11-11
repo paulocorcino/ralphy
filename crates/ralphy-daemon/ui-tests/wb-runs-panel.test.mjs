@@ -164,6 +164,8 @@ test("a run card shows its agent state", () => {
   assert.match(markup, /x-text="runAgentDot\(\$store\.runs\.currentRun\(\)\)\.detail"/u);
 });
 
+const run = (runid) => WBRun.fromSnapshot({ v: 1, runid });
+
 test("open the run selects the run in the Runs panel of its project", () => {
   const { shell } = page();
   const { projects, runs, checkouts } = shell.$store;
@@ -173,7 +175,6 @@ test("open the run selects the run in the Runs panel of its project", () => {
   // The store hears the project change, as Alpine starts it: it then picks the
   // first run of the project it opens.
   runs.init();
-  const run = (runid) => WBRun.fromSnapshot({ v: 1, runid });
   runs.runsByProject = { "owner/a": [run("01A"), run("01B")], "owner/b": [run("01C")] };
   projects.setOpen("owner/b");
   const attention = wbAttention();

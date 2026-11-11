@@ -42,6 +42,9 @@ export type ViewerSlotDeps = {
   bindSave: (ed: MonacoEditor, rec: ViewerRecord) => MonacoDisposable;
 };
 
+const ratioPct = (ratio: number | null) =>
+  `${((typeof ratio === "number" && Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
+
 export function createViewerSlot(deps: ViewerSlotDeps) {
   const { window, document, viewers, map, alive, findInEditor, drawMermaid } = deps;
   const { setPathLabel, setCaption, isNarrow, watchNarrow, bindSave } = deps;
@@ -117,9 +120,6 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       setTimeout(() => target?.focus(), 0);
     }
   }
-
-  const ratioPct = (ratio: number | null) =>
-    `${((typeof ratio === "number" && Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
 
   function ensureMirror(rec: ViewerRecord, box: HTMLElement) {
     if (mirror?.rec === rec) {

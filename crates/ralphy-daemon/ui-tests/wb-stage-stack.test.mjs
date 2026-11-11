@@ -21,10 +21,11 @@ function surface(kind) {
   };
 }
 
+const matches = (el, part) => part.split(".").filter(Boolean).every((c) => el.classList.contains(c));
+
 // A document whose `#workspace` answers the two selectors the stack uses:
 // `.a, .b` and `.a.focused, .b.focused`.
 function page(surfaces) {
-  const matches = (el, part) => part.split(".").filter(Boolean).every((c) => el.classList.contains(c));
   const workspace = {
     querySelectorAll: (sel) => surfaces.filter((el) => sel.split(",").some((p) => matches(el, p.trim()))),
   };

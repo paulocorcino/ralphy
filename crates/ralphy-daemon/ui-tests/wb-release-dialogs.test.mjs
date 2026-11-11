@@ -109,9 +109,10 @@ test("a refused update keeps the question open and says why", async () => {
   assert.equal(state.relUpdate.error, "Error: checksum mismatch", "the update's own words reach the page");
 });
 
+const view = (current) => ({ ...WBRelease.EMPTY, current });
+
 test("the same build after a gap is a rollback, and a new build reloads the page", async () => {
   const { state, window } = dialogs();
-  const view = (current) => ({ ...WBRelease.EMPTY, current });
   let reads = [null, view("v0.1.0-rc.30")];
   WBRelease.read = () => Promise.resolve(reads.shift());
   let reloaded = false;

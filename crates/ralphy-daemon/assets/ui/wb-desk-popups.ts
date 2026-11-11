@@ -80,6 +80,28 @@ export type PopupRegistryDeps = {
   stopBeat: () => void;
 };
 
+// A popup entry with no popup behind it yet — the shape both the boot restore
+// and an unheralded `popup-here` start from.
+function newPopupEntry(memberIds?: string[]): PopupEntry {
+  return {
+    handle: null,
+    members: [],
+    memberIds: memberIds ?? [],
+    fence: null,
+    poll: null,
+    greeted: false,
+    rescue: null,
+    // Whether the POPUP has told us its member set. Until it has, an empty
+    // `members` means "not asked yet" and the restored ids stand in; after it
+    // has, an empty one means EMPTY — the operator closed them all in there.
+    adopted: false,
+    peer: { seen: Date.now(), lost: false },
+    // Whether a silent window has already been probed: one unanswered probe
+    // is death, not one quiet window (`stillThere`).
+    probed: false,
+  };
+}
+
 export function createPopupRegistry(deps: PopupRegistryDeps) {
   const { link, startBeat, stopBeat } = deps;
 
@@ -127,28 +149,6 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
 
   function remove(id: string) {
     fencePopups.delete(id);
-  }
-
-  // A popup entry with no popup behind it yet — the shape both the boot restore
-  // and an unheralded `popup-here` start from.
-  function newPopupEntry(memberIds?: string[]): PopupEntry {
-    return {
-      handle: null,
-      members: [],
-      memberIds: memberIds ?? [],
-      fence: null,
-      poll: null,
-      greeted: false,
-      rescue: null,
-      // Whether the POPUP has told us its member set. Until it has, an empty
-      // `members` means "not asked yet" and the restored ids stand in; after it
-      // has, an empty one means EMPTY — the operator closed them all in there.
-      adopted: false,
-      peer: { seen: Date.now(), lost: false },
-      // Whether a silent window has already been probed: one unanswered probe
-      // is death, not one quiet window (`stillThere`).
-      probed: false,
-    };
   }
 
   // The member ids each detached fence holds, for the registry: the live

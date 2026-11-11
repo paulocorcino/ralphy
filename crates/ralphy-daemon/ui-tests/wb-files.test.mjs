@@ -305,6 +305,11 @@ test("isFolder reads Wunderbaum's data bag, a lazy flag or a child list", () => 
   for (const [why, node, want] of rows) assert.equal(s.isFolder(node), want, why);
 });
 
+const treeNode = (rel) =>
+  rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
+    title: "root",
+  });
+
 test("the Move item is withheld inside .git and .ralphy, except for a note in the notes directory", () => {
   // The context menu is where the UI's mirror of the daemon's carve-out
   // (`fswrite::is_note_in_notes_dir`) decides what to offer: exactly
@@ -314,12 +319,8 @@ test("the Move item is withheld inside .git and .ralphy, except for a note in th
   shell.$store.tabs.renderMenu = (_x, _y, list) => {
     items = list;
   };
-  const node = (rel) =>
-    rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
-      title: "root",
-    });
   const offersMove = (rel) => {
-    own.showMenu(0, 0, node(rel));
+    own.showMenu(0, 0, treeNode(rel));
     return items.some((i) => i.label?.startsWith("Move"));
   };
   const rows = [
@@ -511,6 +512,8 @@ function mountedTreeOptions(s, window, document) {
   return options;
 }
 
+function Wunderbaum() {}
+
 // The one files host outlives every mount: a project switch, a checkout
 // change and a woken peer each mount the tree again on the same element.
 test("a right-click on the tree opens the menu once, however often the tree was mounted", () => {
@@ -525,7 +528,6 @@ test("a right-click on the tree opens the menu once, however often the tree was 
   const menus = [];
   state.showMenu = (x, y, node) => menus.push([x, y, node]);
   const realMar10 = globalThis.mar10;
-  function Wunderbaum() {}
   globalThis.mar10 = { Wunderbaum: Object.assign(Wunderbaum, { getNode: () => null }) };
   const rightClick = () => listeners.forEach((fn) => fn({ clientX: 7, clientY: 9, preventDefault() {} }));
   try {
@@ -562,17 +564,18 @@ test("a tree level that fails to load draws no error row, closes, and asks the f
   assert.ok(state.treeStale.endsWith("The list shown is the last one read."), state.treeStale);
 });
 
+const folderNode = (rel) => ({ rel, children: null });
+
 test("while the peer is down, only a folder read before opens", () => {
   const { state, shell, window, document } = peerFilesShell("unreachable");
   const options = mountedTreeOptions(state, window, document);
   state.relPath = (n) => n.rel;
   state._treeCache.set(state.treeKey("read"), []);
-  const folder = (rel) => ({ rel, children: null });
-  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), false);
-  assert.equal(options.beforeExpand({ flag: true, node: folder("read") }), undefined);
-  assert.equal(options.beforeExpand({ flag: false, node: folder("never") }), undefined);
+  assert.equal(options.beforeExpand({ flag: true, node: folderNode("never") }), false);
+  assert.equal(options.beforeExpand({ flag: true, node: folderNode("read") }), undefined);
+  assert.equal(options.beforeExpand({ flag: false, node: folderNode("never") }), undefined);
   shell.fleetPeers[0].state = "reachable";
-  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), undefined);
+  assert.equal(options.beforeExpand({ flag: true, node: folderNode("never") }), undefined);
 });
 
 test("FILES names the down peer from the fleet, and the read that calls it back re-reads the tree", () => {

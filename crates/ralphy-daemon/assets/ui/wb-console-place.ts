@@ -129,6 +129,11 @@ function slotsOf(held: readonly string[], grid: Grid | null, width: number) {
   return { slot, head: painted[0]?.id ?? null };
 }
 
+function dropShadow(win: ConsoleWin) {
+  win._tabShadow?.remove();
+  win._tabShadow = null;
+}
+
 export function createPlace(deps: PlaceDeps) {
   const { document, stage, tabsPane, pageWindows, focusWin, moved } = deps;
 
@@ -173,11 +178,6 @@ export function createPlace(deps: PlaceDeps) {
     if (sh.parentElement !== st) st.append(sh);
     paintTabShadow(win);
     return sh;
-  }
-
-  function dropShadow(win: ConsoleWin) {
-    win._tabShadow?.remove();
-    win._tabShadow = null;
   }
 
   // Whether the window went into the pane, and whether it is shown now and

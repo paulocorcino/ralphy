@@ -87,11 +87,12 @@ test("the title shows the count of open requests", async (t) => {
   assert.equal(document.title, "Ralphy");
 });
 
+const repoSession = (repo, record) => ({ id: 1, repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record });
+
 test("go to the console focuses its window", (t) => {
   const one = fixture("api-attention").requests[0];
-  const session = (repo, record) => ({ id: 1, repo, agent: "claude", kind: "agent", started_at: 1, daemon_id: "", environment: "", record });
   const { data, reveals, activated } = page(t, {
-    sessions: [session(one.repo, "w-local"), session(`${PEER}/${one.repo}`, "w-peer")],
+    sessions: [repoSession(one.repo, "w-local"), repoSession(`${PEER}/${one.repo}`, "w-peer")],
   });
   data.open = true;
   data.goTo(fromPeer(one));
@@ -330,6 +331,8 @@ test("what is on the page at load is not new", async (t) => {
   assert.deepEqual(shown, []);
 });
 
+const inside = (record) => ({ closest: () => ({ _deskId: record }) });
+
 test("opening the console of a done request dismisses it", async (t) => {
   const waiting = waitingRow();
   const done = { ...waiting, id: "done:1:1", kind: "console-done", detail: undefined, dismissable: true };
@@ -343,7 +346,6 @@ test("opening the console of a done request dismisses it", async (t) => {
     sent.push([init.method, url, init.body]);
     return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ requests: [] }) });
   };
-  const inside = (record) => ({ closest: () => ({ _deskId: record }) });
   data.requests = [done, waiting];
 
   await data.focused(inside("w-other"));
@@ -356,10 +358,11 @@ test("opening the console of a done request dismisses it", async (t) => {
   assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "done:1:1" })]]);
 });
 
+const peerSession = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });
+
 test("a console url focuses the console after load and leaves the url", (t) => {
-  const session = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });
   const { data, reveals, activated } = page(t, {
-    sessions: [session(7, "01OTHER", "w-other"), session(7, PEER, "w-linked")],
+    sessions: [peerSession(7, "01OTHER", "w-other"), peerSession(7, PEER, "w-linked")],
   });
   let beat = null;
   const urls = [];

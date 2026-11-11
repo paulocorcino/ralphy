@@ -65,6 +65,12 @@ export function detachSocket(ws: WebSocket | null) {
   } catch {}
 }
 
+const greet = (user: SocketUser, state: { opened: boolean }, layer: PageChannels) => {
+  const reopened = state.opened;
+  state.opened = true;
+  user.onOpen(layer, reopened);
+};
+
 // The page's ONE socket on `/ws` (ADR-0082): presence and the daemon's
 // pushes are channel 0, and each subscription has a channel of its own
 // (wb-channels.ts). The first user opens it, and it closes when the last
@@ -94,11 +100,6 @@ export function createPageSocket({
   // for the handshake deadline. `null` once the wait began.
   let sessionRead: Promise<unknown> | null = null;
   let waitingForSession = false;
-  const greet = (user: SocketUser, state: { opened: boolean }, layer: PageChannels) => {
-    const reopened = state.opened;
-    state.opened = true;
-    user.onOpen(layer, reopened);
-  };
   const bare = (bytes: Uint8Array) => {
     for (const user of [...users.keys()]) user.onBare?.(bytes);
   };

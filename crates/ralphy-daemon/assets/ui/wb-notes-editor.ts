@@ -59,6 +59,36 @@ export type NoteEditorDeps = {
   fragment: () => boolean;
 };
 
+function paintPath(el: NoteCard, path: string | null | undefined) {
+  const field = el.querySelector<HTMLElement>(".note-path");
+  if (field) {
+    field.textContent = path ?? "";
+    field.title =
+      path === null || path === undefined || path === "" ? "This note is not saved yet" : path;
+  }
+  const dir = el.querySelector<HTMLInputElement>(".note-dir");
+  if (dir) dir.hidden = (path ?? "") !== "";
+}
+
+// `text` is the momentary word — "…", "Saved", a refusal. EMPTY means idle,
+// and idle is where the last-save stamp lives: the footer is the one place
+// that can answer "when did this land" without opening the file's
+// properties (asked 2026-09-22).
+function paintState(el: NoteCard, text?: string) {
+  const state = el.querySelector<HTMLElement>(".note-state");
+  if (!state) return;
+  if (text !== undefined && text !== "") {
+    state.textContent = text;
+    state.title = "";
+    return;
+  }
+  state.textContent = savedLabel(el._noteSavedAt);
+  state.title =
+    el._noteSavedAt !== null && el._noteSavedAt !== 0
+      ? new Date(el._noteSavedAt).toLocaleString()
+      : "";
+}
+
 export function createNoteEditor(deps: NoteEditorDeps) {
   const { window, document, consoleHost, recordOf, render, paintIndex, veilPanel, paintVeil } =
     deps;
@@ -251,36 +281,6 @@ export function createNoteEditor(deps: NoteEditorDeps) {
     const title = el.querySelector<HTMLElement>(".note-title");
     if (title) title.textContent = titleOf(el._noteMarkdown, "Untitled note");
     paintIndex(el);
-  }
-
-  // `text` is the momentary word — "…", "Saved", a refusal. EMPTY means idle,
-  // and idle is where the last-save stamp lives: the footer is the one place
-  // that can answer "when did this land" without opening the file's
-  // properties (asked 2026-09-22).
-  function paintState(el: NoteCard, text?: string) {
-    const state = el.querySelector<HTMLElement>(".note-state");
-    if (!state) return;
-    if (text !== undefined && text !== "") {
-      state.textContent = text;
-      state.title = "";
-      return;
-    }
-    state.textContent = savedLabel(el._noteSavedAt);
-    state.title =
-      el._noteSavedAt !== null && el._noteSavedAt !== 0
-        ? new Date(el._noteSavedAt).toLocaleString()
-        : "";
-  }
-
-  function paintPath(el: NoteCard, path: string | null | undefined) {
-    const field = el.querySelector<HTMLElement>(".note-path");
-    if (field) {
-      field.textContent = path ?? "";
-      field.title =
-        path === null || path === undefined || path === "" ? "This note is not saved yet" : path;
-    }
-    const dir = el.querySelector<HTMLInputElement>(".note-dir");
-    if (dir) dir.hidden = (path ?? "") !== "";
   }
 
   return {

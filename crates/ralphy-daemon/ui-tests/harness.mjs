@@ -383,14 +383,15 @@ function unwrapView(value) {
   return value;
 }
 
+const wrappable = (v) => {
+  if (v === null || typeof v !== "object") return false;
+  if (Array.isArray(v)) return true;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
+
 function storeView(alpineName, stores) {
   const views = new WeakMap();
-  const wrappable = (v) => {
-    if (v === null || typeof v !== "object") return false;
-    if (Array.isArray(v)) return true;
-    const proto = Object.getPrototypeOf(v);
-    return proto === Object.prototype || proto === null;
-  };
   // `depth` 0 is the map of stores, 1 a store, 2 and more a value inside one.
   const wrap = (value, path, depth) => {
     if (!wrappable(value)) return value;

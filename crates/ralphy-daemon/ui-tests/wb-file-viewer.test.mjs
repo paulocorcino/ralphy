@@ -19,20 +19,21 @@ function load() {
 
 const DIR = "docs/analise";
 
+const fileTarget = (path, fragment = "") => ({ kind: "file", path, fragment });
+
 test("linkTarget folds a markdown link against the document's own directory", () => {
   const { linkTarget } = load();
-  const file = (path, fragment = "") => ({ kind: "file", path, fragment });
   // [case, document directory, href, expected target; null is refused]
   const rows = [
-    ["a relative link", DIR, "../backlog/TASKS.md", file("docs/backlog/TASKS.md")],
-    ["a dot-relative link", DIR, "./server.py", file("docs/analise/server.py")],
-    ["a link from the repo root", "", "README.md", file("README.md")],
+    ["a relative link", DIR, "../backlog/TASKS.md", fileTarget("docs/backlog/TASKS.md")],
+    ["a dot-relative link", DIR, "./server.py", fileTarget("docs/analise/server.py")],
+    ["a link from the repo root", "", "README.md", fileTarget("README.md")],
     // A fragment on a file link survives the fold; the path loses it.
     [
       "a fragment on a file link",
       DIR,
       "../backlog/TASKS.md#fase-2",
-      file("docs/backlog/TASKS.md", "fase-2"),
+      fileTarget("docs/backlog/TASKS.md", "fase-2"),
     ],
     // A bare fragment is a jump inside the same document.
     ["a bare fragment", DIR, "#achados", { kind: "fragment", fragment: "achados" }],
@@ -45,7 +46,7 @@ test("linkTarget folds a markdown link against the document's own directory", ()
     ["a climb out of the root", "", "../x.md", null],
     ["an empty href", DIR, "", null],
     // Percent-escapes decode into the filename the markdown spelled.
-    ["percent-escapes", "", "notas/plano%20final.md", file("notas/plano final.md")],
+    ["percent-escapes", "", "notas/plano%20final.md", fileTarget("notas/plano final.md")],
   ];
   for (const [name, dir, href, want] of rows) {
     assert.deepEqual(linkTarget(dir, href), want, name);

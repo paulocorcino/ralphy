@@ -185,14 +185,15 @@ test("stageExtent mutates neither argument", () => {
   assert.deepEqual(viewport, viewportBefore);
 });
 
+const overlaps = (a, b) =>
+  a.left < b.left + b.width &&
+  a.left + a.width > b.left &&
+  a.top < b.top + b.height &&
+  a.top + a.height > b.top;
+
 test("fenceSpawnRect: the first six spawn rects are pairwise disjoint", () => {
   const wb = load();
   const rects = [0, 1, 2, 3, 4, 5].map((i) => wb.fenceSpawnRect(ORIGIN, FENCE_VIEW, i));
-  const overlaps = (a, b) =>
-    a.left < b.left + b.width &&
-    a.left + a.width > b.left &&
-    a.top < b.top + b.height &&
-    a.top + a.height > b.top;
   for (let i = 0; i < rects.length; i++) {
     for (let j = i + 1; j < rects.length; j++) {
       assert.ok(

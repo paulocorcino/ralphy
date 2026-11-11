@@ -47,6 +47,19 @@ function isOpenedFence(fence: unknown) {
   );
 }
 
+const capNow = () => WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
+
+// Both mean "are you there": one broadcast at the opener's boot, one aimed
+// by a glyph click.
+function heardHere(m: DetachMessage) {
+  return m.type === "origin-here" || m.type === "origin-ping";
+}
+
+const paintGrid = (g: Grid, opts?: { unmax?: string | null; raise?: boolean }) => {
+  const cap = WBColumns.flat(g).length >= 2 ? capNow() : 1;
+  WBConsole.applyColumns(WBColumns.painted(g, cap), { unmax: null, raise: false, ...opts });
+};
+
 export function wireDetachedFence(window: Window, document: Document) {
   // Where this window will talk: the concrete origin, never `"*"`, as in the
   // page's own script that builds the console options.
@@ -123,11 +136,6 @@ export function wireDetachedFence(window: Window, document: Document) {
   // popup's layout is throwaway. `wb-console.ts` paints it.
   let grid: Grid = [];
   const consoles = () => [...stageEl().querySelectorAll<ConsoleWin>(".session-window")];
-  const capNow = () => WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
-  const paintGrid = (g: Grid, opts?: { unmax?: string | null; raise?: boolean }) => {
-    const cap = WBColumns.flat(g).length >= 2 ? capNow() : 1;
-    WBConsole.applyColumns(WBColumns.painted(g, cap), { unmax: null, raise: false, ...opts });
-  };
   function openColumns() {
     const all = WBColumns.fromRects(
       consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })),
@@ -209,6 +217,23 @@ export function wireDetachedFence(window: Window, document: Document) {
     };
     new MutationObserver(paint).observe(stageEl(), { childList: true });
     paint();
+  }
+
+  // A message of the opener's tab. The channel is browser-wide: a message
+  // of another tab, or of a malformed sender, is dropped.
+  function fromOurTab(m: DetachMessage | null | undefined) {
+    if (!m || typeof m.type !== "string") return false;
+    return TAB != null && m.tab === TAB;
+  }
+
+  // An order with no `pid` comes from an opener that reloaded and has
+  // not adopted this window yet, and it is still for this window.
+  const mine = (m: DetachMessage) => m.pid == null || m.pid === PID;
+
+  const openerGone = () => opener()?.closed ?? true;
+
+  function forThisFence(m: DetachMessage) {
+    return m.fenceId === fenceId && mine(m);
   }
 
   // ---- the lifecycle link (issue #347) --------------------------------
@@ -304,7 +329,6 @@ export function wireDetachedFence(window: Window, document: Document) {
     // Message delivery is not timer-throttled, so a merely slow opener
     // still answers.
     let probed = false;
-    const openerGone = () => opener()?.closed ?? true;
     const silent = () => {
       // When the handle says the tab is open, the only way it is really
       // gone is that it navigated somewhere else. Ask once; a workbench
@@ -345,18 +369,6 @@ export function wireDetachedFence(window: Window, document: Document) {
       window.close();
     };
 
-    // An order with no `pid` comes from an opener that reloaded and has
-    // not adopted this window yet, and it is still for this window.
-    const mine = (m: DetachMessage) => m.pid == null || m.pid === PID;
-    // Both mean "are you there": one broadcast at the opener's boot, one aimed
-    // by a glyph click.
-    function heardHere(m: DetachMessage) {
-      return m.type === "origin-here" || m.type === "origin-ping";
-    }
-    function forThisFence(m: DetachMessage) {
-      return m.fenceId === fenceId && mine(m);
-    }
-
     // Declared before the listener below: a channel may deliver a message
     // while the listener is set, and the listener reads both.
     const timer = setInterval(() => {
@@ -367,12 +379,6 @@ export function wireDetachedFence(window: Window, document: Document) {
     }, LINK.HEARTBEAT_MS);
     let leaving = false;
 
-    // A message of the opener's tab. The channel is browser-wide: a message
-    // of another tab, or of a malformed sender, is dropped.
-    function fromOurTab(m: DetachMessage | null | undefined) {
-      if (!m || typeof m.type !== "string") return false;
-      return TAB != null && m.tab === TAB;
-    }
     LINK.onMessage((m) => {
       if (!fromOurTab(m)) return;
       // A window that is unloading answers nothing: its `popup-here`

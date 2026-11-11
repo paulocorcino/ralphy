@@ -147,6 +147,8 @@ test("a refused switch shows git's words after the act", async () => {
   assert.match(note, /^Could not switch branch: error: Your local changes/u);
 });
 
+const tick = () => new Promise((r) => { setTimeout(r, 0); });
+
 // ---- deleting a worktree --------------------------------------------------------
 
 // A dialog on `o/r` with worktrees `wt-a` and `wt-b`. `worktree.remove` waits
@@ -169,7 +171,6 @@ function deleter() {
   shell.$store.modals.askConfirm = () => Promise.resolve(true);
   shell.$store.modals.flash = (msg) => flashed.push(msg);
   const shown = () => (store.worktreeListings["o/r"]?.worktrees || []).map((w) => w.name);
-  const tick = () => new Promise((r) => { setTimeout(r, 0); });
   return {
     dialog,
     store,

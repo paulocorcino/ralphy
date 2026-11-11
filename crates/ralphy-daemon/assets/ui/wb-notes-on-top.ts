@@ -37,6 +37,10 @@ export type NoteOnTopDeps = {
   fragment: () => boolean;
 };
 
+function onTop(el: NoteCard) {
+  return el.classList.contains("on-top");
+}
+
 export function createNoteOnTop(deps: NoteOnTopDeps) {
   const { window, document, consoleHost, stack, stage, cardEl, recordOf, isAway, wakeCard } = deps;
   const fragment = deps.fragment;
@@ -45,10 +49,6 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // per-client view and a reload never see it, so a reload finds the card in
   // its place.
   let onTopId: string | null = null;
-
-  function onTop(el: NoteCard) {
-    return el.classList.contains("on-top");
-  }
 
   function viewportSize() {
     const ws = document.getElementById("workspace");

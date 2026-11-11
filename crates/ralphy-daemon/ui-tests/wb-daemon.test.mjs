@@ -368,6 +368,18 @@ const sentOn = (s, kind = "tree") => {
   return s.sent.filter((f) => f.channel === id).map((f) => [f.verb, f.payload.path]);
 };
 
+// A push of the daemon: bare on channel 0, or on the channel of `kind`.
+const pushFrame = (s, kind, verb, payload) => {
+  const inner = commandBytes({ id: 0, verb, payload });
+  const bytes = kind ? onChannel(channelOf(s, kind), inner) : inner;
+  s.onmessage({ data: bytes.buffer });
+};
+
+const openSocket = (s) => {
+  s.readyState = 1;
+  s.onopen();
+};
+
 // The daemon door with fake sockets and timers. Timers are captured, never
 // run: the handshake deadline and the 3s retry are fired by hand, so no test
 // waits on a real clock.
@@ -422,16 +434,6 @@ function pageSockets(d = load()) {
       restore();
     }
   };
-  const open = (s) => {
-    s.readyState = 1;
-    s.onopen();
-  };
-  // A push of the daemon: bare on channel 0, or on the channel of `kind`.
-  const push = (s, kind, verb, payload) => {
-    const inner = commandBytes({ id: 0, verb, payload });
-    const bytes = kind ? onChannel(channelOf(s, kind), inner) : inner;
-    s.onmessage({ data: bytes.buffer });
-  };
   // Drop the socket the way the browser does, then run whatever retry it armed.
   const drop = (s) =>
     withFakes(() => {
@@ -442,14 +444,15 @@ function pageSockets(d = load()) {
     withFakes(() => {
       for (const t of timers.splice(0)) if (t.ms === 3000) t.fn();
     });
-  return { d, sockets, timers, open, push, drop, runRetries, withFakes, withFakesAsync };
+  return { d, sockets, timers, open: openSocket, push: pushFrame, drop, runRetries, withFakes, withFakesAsync };
 }
+
+const on = (bag) => (type, fn) => (bag[type] ||= []).push(fn);
 
 // `pageSockets` on a window and a document that keep their listeners, so a
 // test fires the page's own events. `deps` is added to the door's deps.
 function eventPage(deps = {}) {
   const listeners = { window: {}, document: {} };
-  const on = (bag) => (type, fn) => (bag[type] ||= []).push(fn);
   const window = { addEventListener: on(listeners.window) };
   const document = { visibilityState: "visible", addEventListener: on(listeners.document) };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
@@ -792,6 +795,14 @@ test("after a page resume the tree sends its watches again on the new socket", (
   assert.deepEqual(dirty, ["src"], "the held dir is read once, after the reopen");
 });
 
+const frame = (tag, obj) => {
+  const body = new TextEncoder().encode(JSON.stringify(obj));
+  const out = new Uint8Array(1 + body.length);
+  out[0] = tag;
+  out.set(body, 1);
+  return { data: out.buffer };
+};
+
 // --- subscribePresence: the presence socket also carries the daemon's pushes
 
 test("subscribePresence hands a command frame to onPush and each open to onOpen", () => {
@@ -819,13 +830,6 @@ test("subscribePresence hands a command frame to onPush and each open to onOpen"
   }
   const ws = sockets[0];
   ws.onopen();
-  const frame = (tag, obj) => {
-    const body = new TextEncoder().encode(JSON.stringify(obj));
-    const out = new Uint8Array(1 + body.length);
-    out[0] = tag;
-    out.set(body, 1);
-    return { data: out.buffer };
-  };
   ws.onmessage(frame(0x02, { id: 0, verb: "sessions.dirty", payload: {} }));
   ws.onmessage(frame(0x02, { id: 0, verb: "desk.dirty", payload: { tab: "t1" } }));
   // A heartbeat starts the watch for the next one: no real timer.

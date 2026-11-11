@@ -130,6 +130,17 @@ export type SpawnDeps = {
   markRelaunch: (deskId: string, takeDown: () => void) => void;
 };
 
+// The state `sleepWindow` leaves. `_visible` is false until the observer
+// reports: a window not yet reported reads as visible, and any
+// `applyDormancy` before the report would wake it.
+function markDormant(win: ConsoleWin, termOpts: TerminalOpts) {
+  win._dormantSession = termOpts.id ?? null;
+  win._dormantWatch = termOpts.watch;
+  win._dormant = true;
+  win._visible = false;
+  win.classList.add("dormant");
+}
+
 export function createSpawn(deps: SpawnDeps) {
   const {
     document,
@@ -171,17 +182,6 @@ export function createSpawn(deps: SpawnDeps) {
     recordLeft,
     restoreRect,
   });
-
-  // The state `sleepWindow` leaves. `_visible` is false until the observer
-  // reports: a window not yet reported reads as visible, and any
-  // `applyDormancy` before the report would wake it.
-  function markDormant(win: ConsoleWin, termOpts: TerminalOpts) {
-    win._dormantSession = termOpts.id ?? null;
-    win._dormantWatch = termOpts.watch;
-    win._dormant = true;
-    win._visible = false;
-    win.classList.add("dormant");
-  }
 
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the

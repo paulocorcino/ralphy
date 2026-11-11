@@ -14,14 +14,16 @@ import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 // The store alone. It calls the door for nothing: the door ends here.
 const storeOnly = () => modalsStore({ messages: {} });
 
+const field = (tagName, extra = {}) => ({ tagName, closest: () => null, ...extra });
+
+const focus = (el) => (globalThis.document.activeElement = el);
+
 // The accelerators of the page stay out of a typing field. Inside the terminal
 // (xterm's input is a TEXTAREA) only a key that asks for it gets through.
 test("a focused input blocks the shortcuts, and inside xterm only an allowed terminal key passes", () => {
   const { state } = loadShell();
   state.$store.connection.authChanged(true);
   const modals = state.$store.modals;
-  const focus = (el) => (globalThis.document.activeElement = el);
-  const field = (tagName, extra = {}) => ({ tagName, closest: () => null, ...extra });
   focus(null);
   assert.equal(modals.consoleShortcutsBlocked(), false, "nothing focused");
   focus(field("DIV"));

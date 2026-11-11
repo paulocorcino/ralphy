@@ -53,6 +53,12 @@ type SwapResult = { ok: false } | { ok: true; columns: Grid; ended: boolean; unm
 /** A console at its stage rect, for `fromRects`. */
 type StageItem = { id: string; rect?: Partial<Rect> | null };
 
+const box = (r: Partial<Rect> | null | undefined) => ({
+  left: Number(r?.left) || 0,
+  top: Number(r?.top) || 0,
+  width: Math.max(0, Number(r?.width) || 0),
+});
+
 export const WBColumns = (function () {
   // From this many rows, the list opens with a filter box.
   const FILTER_MIN = 8;
@@ -224,11 +230,6 @@ export const WBColumns = (function () {
   }
 
   function fromRects(items: StageItem[] | null | undefined): Grid {
-    const box = (r: Partial<Rect> | null | undefined) => ({
-      left: Number(r?.left) || 0,
-      top: Number(r?.top) || 0,
-      width: Math.max(0, Number(r?.width) || 0),
-    });
     const list = (items ?? [])
       .map((it) => ({ id: it.id, ...box(it.rect) }))
       .sort((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));

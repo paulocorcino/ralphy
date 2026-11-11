@@ -80,9 +80,10 @@ test("an unknown key goes to the identity step; cancel goes back with no keys", 
   assert.equal(H.next(s, { type: "trusted" }).step, "checks");
 });
 
+const ev = (event) => ({ type: "event", event });
+
 test("check events upsert by id, fixed turns a fix into a pass, ready follows", () => {
   const H = load();
-  const ev = (event) => ({ type: "event", event });
   let s = H.next(H.initial(), ev({ event: "check", id: "ralphy", status: "copy", text: "old", command: "ralphy update" }));
   assert.equal(s.checks.length, 1);
   assert.equal(s.checks[0].command, "ralphy update");
@@ -196,21 +197,22 @@ test("an exit with no code says the command stopped before it finished", () => {
   }
 });
 
+const hostEvent = (e) => ({ type: "event", event: e });
+
 test("the password is dropped once signed in, on a refusal and on close", () => {
   const H = load();
   const typed = Object.assign(H.initial(), { open: true, step: "checks", password: "s3cret" });
-  const event = (e) => ({ type: "event", event: e });
-  assert.equal(H.next(typed, event({ event: "connected", os: "Linux" })).password, "");
-  const refused = H.next(typed, event({ event: "failed", kind: "password_refused", message: "the host h refused the password" }));
+  assert.equal(H.next(typed, hostEvent({ event: "connected", os: "Linux" })).password, "");
+  const refused = H.next(typed, hostEvent({ event: "failed", kind: "password_refused", message: "the host h refused the password" }));
   assert.equal(refused.password, "");
   assert.equal(refused.step, "connection", "back to the field where it is typed again");
   assert.equal(refused.failure.message, "The host h refused the password");
-  const keys = H.next(typed, event({ event: "failed", kind: "auth_refused", message: "m" }));
+  const keys = H.next(typed, hostEvent({ event: "failed", kind: "auth_refused", message: "m" }));
   assert.equal(keys.step, "connection", "a refused key asks for the password");
   const closed = H.next(typed, { type: "close" });
   assert.equal(closed.open, false);
   assert.equal(closed.password, "");
-  assert.equal(H.next(typed, event({ event: "failed", kind: "other", message: "m" })).step, "checks");
+  assert.equal(H.next(typed, hostEvent({ event: "failed", kind: "other", message: "m" })).step, "checks");
 });
 
 test("the help panel has a tab per system with the commands that work", () => {
@@ -355,9 +357,10 @@ test("typing in the Host field leaves the SSH config host", () => {
   assert.equal(H.destination(s), "ssh://deploy@10.1.1.4:2222", "user and port stay");
 });
 
+const checkEv = (event) => ({ type: "event", event: Object.assign({ event: "check" }, event) });
+
 test("the checks view shows the one blocking check first, and hides waiting checks", () => {
   const H = load();
-  const ev = (event) => ({ type: "event", event: Object.assign({ event: "check" }, event) });
   let s = H.initial();
   for (const c of [
     { id: "ralphy", label: "Ralphy", status: "warn", text: "ralphy is not installed on the host. Build it there" },
@@ -365,7 +368,7 @@ test("the checks view shows the one blocking check first, and hides waiting chec
     { id: "sleep", label: "Sleep", status: "copy", text: "the host sleeps", command: "sudo pmset -a sleep 0" },
     { id: "user", label: "User", status: "pass", text: "signed in as a normal user" },
   ]) {
-    s = H.next(s, ev(c));
+    s = H.next(s, checkEv(c));
   }
   let v = H.view(s);
   assert.deepEqual(v.blocker, {
@@ -378,9 +381,9 @@ test("the checks view shows the one blocking check first, and hides waiting chec
   assert.equal(v.passedText, "1 check passed");
   assert.equal(H.primary(Object.assign({}, s, { step: "checks" })), "check");
 
-  s = H.next(s, ev({ id: "ralphy", label: "Ralphy", status: "pass", text: "installed" }));
-  s = H.next(s, ev({ id: "name", label: "Name", status: "fix", text: "Ralphy names it mac" }));
-  s = H.next(s, ev({ id: "autostart", label: "Start at boot", status: "fix", text: "installs autostart" }));
+  s = H.next(s, checkEv({ id: "ralphy", label: "Ralphy", status: "pass", text: "installed" }));
+  s = H.next(s, checkEv({ id: "name", label: "Name", status: "fix", text: "Ralphy names it mac" }));
+  s = H.next(s, checkEv({ id: "autostart", label: "Start at boot", status: "fix", text: "installs autostart" }));
   v = H.view(s);
   assert.equal(v.blocker, null);
   assert.deepEqual(v.advice.map((c) => c.id), ["sleep"]);

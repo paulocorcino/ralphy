@@ -102,9 +102,10 @@ test("restore: a row leaves its column; an emptied column goes; the next in read
   assert.equal(head.unmax, "a");
 });
 
+const one = (id, index, count) => ({ id, index, count, row: 0, rows: 1 });
+
 test("painted: only as many as the cap, the grid is kept", () => {
   const C = load();
-  const one = (id, index, count) => ({ id, index, count, row: 0, rows: 1 });
   assert.deepEqual(C.painted(cols("a", "b", "c"), 3), [one("a", 0, 3), one("b", 1, 3), one("c", 2, 3)]);
   const kept = cols("a", "b", "c");
   assert.deepEqual(C.painted(kept, 2), [one("a", 0, 2), one("b", 1, 2)]);
@@ -130,23 +131,24 @@ test("keep: dead ids drop, and a column left empty goes", () => {
   assert.deepEqual(C.keep([["a", "b"], ["c"]], new Set(["b", "c"])), cols("b", "c"));
 });
 
+const columnRow = (id, extra = {}) => ({
+  id,
+  agent: "claude",
+  repo: "C:/r",
+  kind: "agent",
+  running: true,
+  state: null,
+  ...extra,
+});
+
 function roster() {
-  const row = (id, extra = {}) => ({
-    id,
-    agent: "claude",
-    repo: "C:/r",
-    kind: "agent",
-    running: true,
-    state: null,
-    ...extra,
-  });
   return {
     rows: [
-      row("L1"),
-      row("F1a"),
-      row("L2", { running: false, name: "backend" }),
-      row("F2a", { state: "working" }),
-      row("W", { state: "working", name: "W name", detail: "No hook event came" }),
+      columnRow("L1"),
+      columnRow("F1a"),
+      columnRow("L2", { running: false, name: "backend" }),
+      columnRow("F2a", { state: "working" }),
+      columnRow("W", { state: "working", name: "W name", detail: "No hook event came" }),
     ],
     // f2 is listed FIRST, though f1 comes first in `membership`.
     fences: [
@@ -237,13 +239,15 @@ test("rowLabel: the console label builder, as in the title", () => {
   assert.equal(C.rowLabel({ name: "home #2", agent: "console", repo: null }, N.consoleLabel), "home #2 (console)");
 });
 
+const ids = (gs) => gs.flatMap((g) => g.rows.map((r) => r.id));
+
+const label = (ref) => (ref === "C:/r" ? "owner/ralphy · WSL: Ubuntu" : ref);
+
 test("filterGroups: console name, agent, repo text and fence name match; empty groups drop", () => {
   const C = load();
-  const label = (ref) => (ref === "C:/r" ? "owner/ralphy · WSL: Ubuntu" : ref);
   const groups = C.listFold(roster());
   assert.equal(C.filterGroups(groups, "", label), groups, "no query: the same list");
   assert.equal(C.filterGroups(groups, "   ", label), groups);
-  const ids = (gs) => gs.flatMap((g) => g.rows.map((r) => r.id));
   assert.deepEqual(ids(C.filterGroups(groups, "CODEX", label)), ["D1"], "agent, case-insensitive");
   assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L1", "L2", "W"], "repo text");
   const byName = C.filterGroups(groups, "two", label);

@@ -24,6 +24,20 @@ function takesText(n: Node) {
   );
 }
 
+function mdSearchStep(rec: ViewerRecord, dir: number) {
+  const hits = rec.hits;
+  if (!hits || hits.length === 0) return;
+  const before = rec.hitIdx ?? -1;
+  if (before >= 0) hits[before]?.classList.remove("current");
+  const idx = (before + dir + hits.length) % hits.length;
+  rec.hitIdx = idx;
+  const mk = hits[idx];
+  if (!mk) return;
+  mk.classList.add("current");
+  mk.scrollIntoView({ block: "center", behavior: "smooth" });
+  inPane(rec, ".md-find-count").textContent = `${idx + 1}/${hits.length}`;
+}
+
 export function createViewerFind(deps: ViewerFindDeps) {
   const { document, alive } = deps;
 
@@ -131,20 +145,6 @@ export function createViewerFind(deps: ViewerFindDeps) {
     rec.hitIdx = -1;
     count.textContent = hits.length > 0 ? `0/${hits.length}` : "No matches";
     if (hits.length > 0) mdSearchStep(rec, 1);
-  }
-
-  function mdSearchStep(rec: ViewerRecord, dir: number) {
-    const hits = rec.hits;
-    if (!hits || hits.length === 0) return;
-    const before = rec.hitIdx ?? -1;
-    if (before >= 0) hits[before]?.classList.remove("current");
-    const idx = (before + dir + hits.length) % hits.length;
-    rec.hitIdx = idx;
-    const mk = hits[idx];
-    if (!mk) return;
-    mk.classList.add("current");
-    mk.scrollIntoView({ block: "center", behavior: "smooth" });
-    inPane(rec, ".md-find-count").textContent = `${idx + 1}/${hits.length}`;
   }
 
   function mdSearchClose(rec: ViewerRecord) {

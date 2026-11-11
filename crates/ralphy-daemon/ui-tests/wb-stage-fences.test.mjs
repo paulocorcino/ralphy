@@ -319,14 +319,15 @@ test("tiling skips a maximized, a column and a locked console, and places the ot
   }
 });
 
+const make = (id, cls) => {
+  const w = fakeElement();
+  w._deskId = id;
+  if (cls) w.classList.add(cls);
+  return w;
+};
+
 test("after tiling, a maximized console and a column are raised over the tiles", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const make = (id, cls) => {
-    const w = fakeElement();
-    w._deskId = id;
-    if (cls) w.classList.add(cls);
-    return w;
-  };
   const wins = [make("max", "maximized"), make("a"), make("col", "column")];
   const focused = [];
   const { deps } = fakeDeps({ wins: new Set(wins), focusWin: (w) => focused.push(w._deskId) }, { fenceEl: () => fakeElement() });

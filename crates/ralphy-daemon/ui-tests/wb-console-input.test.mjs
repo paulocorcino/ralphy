@@ -352,13 +352,14 @@ test("holdMoveReport holds only button-less moves over a selection under a TUI",
   assert.equal(holdMoveReport(undefined, true, 0), false);
 });
 
+const item = (parts) => ({
+  types: Object.keys(parts),
+  getType: (t) => Promise.resolve(parts[t]),
+});
+
 // --- clipboardContent: what the paste key pastes ---------------------------
 
 test("clipboardContent prefers an image, then text, then nothing", async () => {
-  const item = (parts) => ({
-    types: Object.keys(parts),
-    getType: (t) => Promise.resolve(parts[t]),
-  });
   const png = { type: "image/png", size: 3 };
   const text = { text: () => Promise.resolve("hello") };
   // An iOS screenshot: image only — `readText()` would have resolved "".
@@ -373,13 +374,14 @@ test("clipboardContent prefers an image, then text, then nothing", async () => {
   assert.deepEqual(await clipboardContent([]), { text: "" });
 });
 
+const fakeTerm = (log) => ({
+  pasteImage: (blob) => log.push(["image", blob.type]),
+  term: { paste: (text) => log.push(["text", text]), focus: () => log.push(["focus"]) },
+});
+
 // --- pasteAfterRead: the paste key once its clipboard read settles ---------
 
 test("pasteAfterRead pastes only into the terminal still attached when the read settles", async () => {
-  const fakeTerm = (log) => ({
-    pasteImage: (blob) => log.push(["image", blob.type]),
-    term: { paste: (text) => log.push(["text", text]), focus: () => log.push(["focus"]) },
-  });
   const png = { type: "image/png" };
   // [case, what the read gives, what happens to `_term` while it waits,
   //  what the pressed terminal gets, what a new terminal gets]

@@ -6,6 +6,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFit } from "../assets/ui/wb-console-fit.ts";
 
+let onResize = () => {};
+
 // The page globals `createFit` reaches, and a console built on them. `fit`
 // of the fake addon grows the grid by one column, as a new body size would.
 function fakeConsole({ covered = false, focused = false, watching = false, width = 800, height = 600 } = {}) {
@@ -29,7 +31,6 @@ function fakeConsole({ covered = false, focused = false, watching = false, width
   const state = { covered, focused, watching };
   const sent = [];
   const socket = { readyState: 1, send: (data) => sent.push(data) };
-  let onResize = () => {};
   // Each `term.resize(cols, rows)` call, as `[cols, rows]`.
   const termResizes = [];
   const term = {

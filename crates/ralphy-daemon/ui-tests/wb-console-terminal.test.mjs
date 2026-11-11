@@ -317,30 +317,31 @@ test("a deps member left out fails the call that needs it", () => {
   }
 });
 
+const fakeChannel = (readyState) => ({
+  readyState,
+  sent: [],
+  closes: 0,
+  send(data) {
+    this.sent.push(data);
+    return true;
+  },
+  close() {
+    this.closes += 1;
+  },
+});
+
 test("detachSocket retires a channel: an open channel says why, and it closes", () => {
   const page = fakePage();
   try {
     const { detachSocket } = createTerminal(fakeDeps(page).deps);
-    const channel = (readyState) => ({
-      readyState,
-      sent: [],
-      closes: 0,
-      send(data) {
-        this.sent.push(data);
-        return true;
-      },
-      close() {
-        this.closes += 1;
-      },
-    });
 
-    const opened = channel(1);
+    const opened = fakeChannel(1);
     detachSocket(opened, "reconnect");
     assert.deepEqual(opened.sent, [encodeDetach("reconnect")]);
     assert.equal(opened.closes, 1);
 
     // A channel that waits for the page socket cannot send: it only closes.
-    const waiting = channel(0);
+    const waiting = fakeChannel(0);
     detachSocket(waiting, "reconnect");
     assert.deepEqual(waiting.sent, []);
     assert.equal(waiting.closes, 1);
@@ -666,9 +667,10 @@ test("notePage tells an open channel that the page went hidden or came back, and
   }
 });
 
+const navigatorWith = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
+
 test("the channel open names the network the browser reports, and nothing when it reports none", () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-  const navigatorWith = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
   const page = fakePage();
   try {
     navigatorWith({ connection: { effectiveType: "3g", rtt: 300, downlink: 0.7 } });

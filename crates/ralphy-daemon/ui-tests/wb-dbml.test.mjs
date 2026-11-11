@@ -74,9 +74,10 @@ test("parseDbml skips the blocks it does not show", () => {
   assert.deepEqual(schema.groups, [{ name: "shop", tables: ["users", "orders"] }]);
 });
 
+const ep = (table, column) => ({ table, column });
+
 test("parseDbml reads refs and never throws", () => {
   const schema = parseDbml(fixture("mixed.dbml"));
-  const ep = (table, column) => ({ table, column });
   assert.deepEqual(schema.refs, [
     { from: ep("order items", "user_id"), to: ep("users", "id"), kind: "many-to-one" },
     { from: ep("orders", "user_id"), to: ep("users", "id"), kind: "many-to-one" },
@@ -164,8 +165,9 @@ Table audit {
 }
 `);
 
+const keysOf = (...pairs) => new Set(pairs.map(([t, c]) => colKey(t, c)));
+
 test("matchSchema finds tables by table name and by column name", () => {
-  const keys = (...pairs) => new Set(pairs.map(([t, c]) => colKey(t, c)));
   // A table-name term: the tables only, no column.
   let m = matchSchema(NAV, "shop");
   assert.deepEqual(m.tables, new Set(["shop_orders", "shop_items"]));
@@ -173,11 +175,11 @@ test("matchSchema finds tables by table name and by column name", () => {
   // A column-name term: the table holding the column, and the column.
   m = matchSchema(NAV, "buyer");
   assert.deepEqual(m.tables, new Set(["shop_orders"]));
-  assert.deepEqual(m.columns, keys(["shop_orders", "buyer"]));
+  assert.deepEqual(m.columns, keysOf(["shop_orders", "buyer"]));
   // A different case matches (`Total` is written with a capital).
   m = matchSchema(NAV, "TOTAL");
   assert.deepEqual(m.tables, new Set(["shop_items"]));
-  assert.deepEqual(m.columns, keys(["shop_items", "Total"]));
+  assert.deepEqual(m.columns, keysOf(["shop_items", "Total"]));
   // An empty term matches every table and no column.
   m = matchSchema(NAV, "");
   assert.deepEqual(m.tables, new Set(["shop_orders", "shop_items", "audit"]));
@@ -186,8 +188,10 @@ test("matchSchema finds tables by table name and by column name", () => {
   m = matchSchema(NAV, "zzz");
   assert.deepEqual(m, { tables: new Set(), columns: new Set() });
   // A column in two tables marks both columns.
-  assert.deepEqual(matchSchema(NAV, "id").columns, keys(["shop_orders", "id"], ["shop_items", "id"], ["shop_items", "order_id"], ["audit", "id"]));
+  assert.deepEqual(matchSchema(NAV, "id").columns, keysOf(["shop_orders", "id"], ["shop_items", "id"], ["shop_items", "order_id"], ["audit", "id"]));
 });
+
+const set = (...pairs) => new Set(pairs.map(([t, c]) => colKey(t, c)));
 
 test("sameColumns matches the exact name and the name without its prefix", () => {
   const schema = parseDbml(`
@@ -206,7 +210,6 @@ Table t3 { ab_nb_owner int
 Table t4 { y_ int
   ef_nb_owner int [pk] }
 `);
-  const set = (...pairs) => new Set(pairs.map(([t, c]) => colKey(t, c)));
   // The same name under another prefix, and the exact name in another table.
   assert.deepEqual(sameColumns(schema, "t1", "ab_nb_owner"), set(["t2", "cd_nb_owner"], ["t3", "ab_nb_owner"]));
   // A pk never matches by its name without the prefix, on either side (`t4.ef_nb_owner`
@@ -221,35 +224,38 @@ Table t4 { y_ int
   assert.equal(sameColumns(schema, "t1", "plain").has(colKey("t1", "plain")), false);
 });
 
+const table = (lines) => parseDbml(["Table t {", ...lines, "}"].join("\n")).tables[0];
+
+const shownNames = (t, open) => shownColumns(t, open).map((c) => c.name);
+
 test("shownColumns keeps the key columns and the first 8 columns of a closed card", () => {
-  const names = (t, open) => shownColumns(t, open).map((c) => c.name);
   const cols = Array.from({ length: 12 }, (_, i) => `c${i + 1}`);
-  const table = (lines) => parseDbml(["Table t {", ...lines, "}"].join("\n")).tables[0];
   const text = (n, pkAt) => cols.slice(0, n).map((c, i) => `  ${c} int${i + 1 === pkAt ? " [pk]" : ""}`);
   const twelve = table(text(12, 5));
-  assert.deepEqual(names(twelve, false), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"]);
+  assert.deepEqual(shownNames(twelve, false), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"]);
   // A key past the eighth column stays, and a non-key column leaves room for it.
   const late = table(text(12, 11));
-  assert.deepEqual(names(late, false), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c11"]);
-  assert.equal(names(twelve, true).length, 12);
+  assert.deepEqual(shownNames(late, false), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c11"]);
+  assert.equal(shownNames(twelve, true).length, 12);
   const five = table(text(5, 0));
-  assert.equal(names(five, false).length, 5);
+  assert.equal(shownNames(five, false).length, 5);
   // Every key column is kept, even over 8 of them.
   const keys = table([...cols.slice(0, 10).map((c) => `  ${c} int [pk]`), "  extra int"]);
-  assert.equal(names(keys, false).length, 10);
+  assert.equal(shownNames(keys, false).length, 10);
 });
+
+const refFrom = (r) => `${r.from.table}.${r.from.column}`;
 
 test("refsOf lists the links out of a table and into it", () => {
   const schema = parseDbml(
     ["Table a { id int }", "Table b { a_id int [ref: > a.id] }", "Table c { a_id int }", "Ref: c.a_id > a.id", "Ref: a.id - c.a_id"].join("\n"),
   );
-  const from = (r) => `${r.from.table}.${r.from.column}`;
-  assert.deepEqual(refsOf(schema, "a").out.map(from), ["a.id"]);
-  assert.deepEqual(refsOf(schema, "a").in.map(from), ["b.a_id", "c.a_id"]);
-  assert.deepEqual(refsOf(schema, "b").out.map(from), ["b.a_id"]);
+  assert.deepEqual(refsOf(schema, "a").out.map(refFrom), ["a.id"]);
+  assert.deepEqual(refsOf(schema, "a").in.map(refFrom), ["b.a_id", "c.a_id"]);
+  assert.deepEqual(refsOf(schema, "b").out.map(refFrom), ["b.a_id"]);
   assert.deepEqual(refsOf(schema, "b").in, []);
-  assert.deepEqual(refsOf(schema, "c").out.map(from), ["c.a_id"]);
-  assert.deepEqual(refsOf(schema, "c").in.map(from), ["a.id"]);
+  assert.deepEqual(refsOf(schema, "c").out.map(refFrom), ["c.a_id"]);
+  assert.deepEqual(refsOf(schema, "c").in.map(refFrom), ["a.id"]);
   assert.deepEqual(refsOf(schema, "nothing"), { out: [], in: [] });
 });
 
@@ -307,13 +313,14 @@ test("toMermaidEr keeps only the refs inside the selection", () => {
   assert.equal(toMermaidEr(schema, []), "erDiagram");
 });
 
+const schemaTable = (name, columns) => ({ name, note: null, columns });
+
 test("toMermaidEr makes names and types safe for Mermaid", () => {
-  const table = (name, columns) => ({ name, note: null, columns });
   const schema = {
     tables: [
-      table("order items", [col("1st col", "DECIMAL(10, 2)")]),
-      table('say "hi"', [col("naïve", "double precision")]),
-      table("<img src=x onerror=alert(1)>", [col("a-b", "int[]")]),
+      schemaTable("order items", [col("1st col", "DECIMAL(10, 2)")]),
+      schemaTable('say "hi"', [col("naïve", "double precision")]),
+      schemaTable("<img src=x onerror=alert(1)>", [col("a-b", "int[]")]),
     ],
     refs: [{ from: { table: "order items", column: "1st col" }, to: { table: 'say "hi"', column: "x y" }, kind: "many-to-one" }],
     groups: [],

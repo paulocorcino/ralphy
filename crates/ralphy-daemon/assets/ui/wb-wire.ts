@@ -175,28 +175,30 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     }
   }
 
+  const flash = (msg: string) => {
+    messages.flash(msg);
+  };
+
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
+  const daemonBacked = () => window.WBDaemon?.write !== undefined;
+
+  const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
+    WBDaemon.write(verb, payload)
+      .then((reply) => {
+        if (WBFail.isError(reply)) {
+          flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+        } else if (okMsg !== undefined) flash(okMsg);
+        return null;
+      })
+      .catch(() => {
+        flash("Could not rename: the daemon did not answer.");
+      });
+  };
+
   // --- Write byte-ops (#197): the workspace-mutating seam actions go to the
   // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
   // the full rel path.
   (function wireWriteVerbs() {
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
-    const daemonBacked = () => window.WBDaemon?.write !== undefined;
-    const flash = (msg: string) => {
-      messages.flash(msg);
-    };
-    const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
-      WBDaemon.write(verb, payload)
-        .then((reply) => {
-          if (WBFail.isError(reply)) {
-            flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-          } else if (okMsg !== undefined) flash(okMsg);
-          return null;
-        })
-        .catch(() => {
-          flash("Could not rename: the daemon did not answer.");
-        });
-    };
-
     // Where a write is aimed: the project, and the checkout it carries.
     type Aim = {
       repo: string;

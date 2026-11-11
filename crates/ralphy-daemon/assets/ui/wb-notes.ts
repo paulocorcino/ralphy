@@ -52,6 +52,16 @@ export type NotesDeps = {
   gestures: Gestures | null;
 };
 
+// The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
+function cardNodes(st: HTMLElement): CardNodes {
+  const nodes: CardNodes = new Map();
+  for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
+    const id = el.dataset["noteId"];
+    if (id !== undefined) nodes.set(id, el);
+  }
+  return nodes;
+}
+
 export function createNotes(window: NotesWindow, document: Document, deps: NotesDeps) {
   const consoleHost = deps.console;
   const messages = deps.messages;
@@ -331,16 +341,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       paint(el, record, fences);
     }
     dropUnseen(nodes, seen);
-  }
-
-  // The cards on the stage, by id. `buildCard` sets every card's `data-note-id`.
-  function cardNodes(st: HTMLElement): CardNodes {
-    const nodes: CardNodes = new Map();
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      const id = el.dataset["noteId"];
-      if (id !== undefined) nodes.set(id, el);
-    }
-    return nodes;
   }
 
   // Is this record's card this window's to show? Not when its fence is in a

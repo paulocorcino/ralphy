@@ -67,10 +67,11 @@ test("a peer that contributed no rows is still a group", () => {
   assert.equal(peerGroup.state, "unauthorized");
 });
 
+const group = (state, extra) =>
+  Object.assign({ daemon: "01XYZ", local: false, nudgeable: true, state: state }, extra);
+
 test("only the states a nudge can answer offer to wake", () => {
   const { wakeable } = load();
-  const group = (state, extra) =>
-    Object.assign({ daemon: "01XYZ", local: false, nudgeable: true, state: state }, extra);
   for (const state of ["asleep", "unreachable"]) {
     assert.equal(wakeable(group(state)), true, `${state} must be wakeable`);
   }
@@ -89,14 +90,15 @@ test("only the states a nudge can answer offer to wake", () => {
   assert.equal(wakeable(null), false);
 });
 
+const reachableGroup = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, state: state }, extra);
+
 test("only a reachable peer, or one not yet heard of, has projects that open", () => {
   const { available } = load();
-  const group = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, state: state }, extra);
-  assert.equal(available(group("reachable")), true);
-  assert.equal(available(group("")), true, "the fleet list has not arrived yet");
-  assert.equal(available(group("", { local: true })), true, "this daemon always answers its own rows");
+  assert.equal(available(reachableGroup("reachable")), true);
+  assert.equal(available(reachableGroup("")), true, "the fleet list has not arrived yet");
+  assert.equal(available(reachableGroup("", { local: true })), true, "this daemon always answers its own rows");
   for (const state of ["asleep", "unreachable", "unauthorized", "version-mismatch", "refused", "malformed", "tunnel-closed", "tunnel-silent"]) {
-    assert.equal(available(group(state)), false, `${state} must not open`);
+    assert.equal(available(reachableGroup(state)), false, `${state} must not open`);
   }
 });
 
@@ -156,19 +158,20 @@ test("a daemon's name shows only when two groups share an environment", () => {
   );
 });
 
+const glyphGroup = (state, extra) => Object.assign({ local: false, state: state }, extra);
+
 test("the state glyph: none for local, plugged for reachable, unplug for the rest", () => {
   const { stateIcon, stateFault } = load();
-  const group = (state, extra) => Object.assign({ local: false, state: state }, extra);
-  assert.equal(stateIcon(group("local", { local: true })), "", "the local group is the machine you are at");
-  assert.equal(stateIcon(group("reachable")), "plugged");
-  assert.equal(stateFault(group("reachable")), false);
-  assert.equal(stateIcon(group("asleep")), "unplug");
-  assert.equal(stateFault(group("asleep")), false, "an idle distro is not a fault");
+  assert.equal(stateIcon(glyphGroup("local", { local: true })), "", "the local group is the machine you are at");
+  assert.equal(stateIcon(glyphGroup("reachable")), "plugged");
+  assert.equal(stateFault(glyphGroup("reachable")), false);
+  assert.equal(stateIcon(glyphGroup("asleep")), "unplug");
+  assert.equal(stateFault(glyphGroup("asleep")), false, "an idle distro is not a fault");
   for (const state of ["unreachable", "unauthorized", "version-mismatch", "refused", "malformed", ""]) {
-    assert.equal(stateIcon(group(state)), "unplug", `${state || "(none)"} is disconnected`);
-    assert.equal(stateFault(group(state)), true, `${state || "(none)"} is a fault`);
+    assert.equal(stateIcon(glyphGroup(state)), "unplug", `${state || "(none)"} is disconnected`);
+    assert.equal(stateFault(glyphGroup(state)), true, `${state || "(none)"} is a fault`);
   }
-  assert.equal(stateFault(group("local", { local: true })), false);
+  assert.equal(stateFault(glyphGroup("local", { local: true })), false);
   assert.equal(stateIcon(null), "");
   assert.equal(stateFault(null), false);
 });
@@ -311,15 +314,16 @@ test("a group takes its OS from its rows, and the peer list wins", () => {
   assert.equal(groups.find((g) => g.daemon === PEER.daemon_id).os, "linux");
 });
 
+const hostGroup = (state) => ({ local: false, state: state, name: "svrapp", tunnel: true, diagnosis: "" });
+
 test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a fault", () => {
   const { stateIcon, stateFault, groupTitle } = load();
-  const group = (state) => ({ local: false, state: state, name: "svrapp", tunnel: true, diagnosis: "" });
-  assert.equal(stateIcon(group("tunnel-closed")), "unplug");
-  assert.equal(stateIcon(group("tunnel-silent")), "unplug");
-  assert.equal(stateFault(group("tunnel-closed")), false, "a VPN drop is not a fault");
-  assert.equal(stateFault(group("tunnel-silent")), true);
-  assert.ok(groupTitle(group("tunnel-closed")).includes("reconnecting"));
-  assert.ok(groupTitle(group("tunnel-silent")).includes("not answering"));
+  assert.equal(stateIcon(hostGroup("tunnel-closed")), "unplug");
+  assert.equal(stateIcon(hostGroup("tunnel-silent")), "unplug");
+  assert.equal(stateFault(hostGroup("tunnel-closed")), false, "a VPN drop is not a fault");
+  assert.equal(stateFault(hostGroup("tunnel-silent")), true);
+  assert.ok(groupTitle(hostGroup("tunnel-closed")).includes("reconnecting"));
+  assert.ok(groupTitle(hostGroup("tunnel-silent")).includes("not answering"));
 });
 
 test("every group header shows its system's icon and the group label, and has no menu", () => {
@@ -362,14 +366,15 @@ test("a descriptor without an OS falls back to its older environment label", () 
   assert.equal(system("freebsd", "FreeBSD 14.1"), "other", "no icon for an OS Ralphy does not ship");
 });
 
+const sshGroup = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, tunnel: true, state: state }, extra);
+
 test("only an SSH host on another protocol offers to update", () => {
   const { updatable } = load();
-  const group = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, tunnel: true, state: state }, extra);
-  assert.equal(updatable(group("version-mismatch")), true);
+  assert.equal(updatable(sshGroup("version-mismatch")), true);
   // A WSL peer is updated with the workbench; other states need no install.
-  assert.equal(updatable(group("version-mismatch", { tunnel: false })), false);
+  assert.equal(updatable(sshGroup("version-mismatch", { tunnel: false })), false);
   for (const state of ["reachable", "unreachable", "unauthorized", "tunnel-closed", "malformed"]) {
-    assert.equal(updatable(group(state)), false, `${state} must not offer an update`);
+    assert.equal(updatable(sshGroup(state)), false, `${state} must not offer an update`);
   }
   assert.equal(updatable(null), false);
 });
@@ -380,11 +385,12 @@ test("a peer's project root is the peer's own root, else its path", () => {
   assert.equal(WBFleet.peerRoot({}), "");
 });
 
+const seed = (g) => ({ environment: g.environment, os: g.os, daemon: g.daemon, name: g.name, state: g.state, local: g.local });
+
 // A row may come with no environment, OS or daemon name: each reads "" in its
 // group, the local group's state is "local", and a peer's is "" until the
 // peer list says more.
 test("a row with no environment, OS or daemon name gives a group of empty words", () => {
-  const seed = (g) => ({ environment: g.environment, os: g.os, daemon: g.daemon, name: g.name, state: g.state, local: g.local });
   const peerRow = { key: "01XYZ/owner/repo", slug: "owner/repo", daemon: "01XYZ" };
   const [local, peer] = load().fleetGroups([LOCAL_ROW, peerRow], []);
   assert.deepEqual(seed(local), { environment: "", os: "", daemon: "", name: "", state: "local", local: true });

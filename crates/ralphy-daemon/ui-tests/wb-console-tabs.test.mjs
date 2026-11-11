@@ -525,18 +525,20 @@ test("the + and Go-to show the tab of a console that has one", () => {
   }
 });
 
+const matches = (el, sel) =>
+  sel.split(",").some((p) =>
+    p
+      .trim()
+      .split(".")
+      .filter(Boolean)
+      .every((c) => el.classList.contains(c)),
+  );
+
+const root = (els) => ({ querySelectorAll: (sel) => els.filter((el) => matches(el, sel)) });
+
 // A document whose `#workspace` and `#console-tabs-pane` answer the selector
 // of the focus mark.
 function stackPage(onStage, inPane) {
-  const matches = (el, sel) =>
-    sel.split(",").some((p) =>
-      p
-        .trim()
-        .split(".")
-        .filter(Boolean)
-        .every((c) => el.classList.contains(c)),
-    );
-  const root = (els) => ({ querySelectorAll: (sel) => els.filter((el) => matches(el, sel)) });
   const ids = { workspace: root(onStage), "console-tabs-pane": root(inPane) };
   return { getElementById: (id) => ids[id] ?? null };
 }
@@ -623,20 +625,21 @@ test("Alt+Shift+arrows walk the grid of the active console tab", () => {
   }
 });
 
+const keep = (selectorHit) => {
+  let handler = null;
+  wirePress({
+    term: { attachCustomKeyEventHandler: (h) => (handler = h) },
+    body: { closest: (sel) => (selectorHit(sel) ? {} : null), addEventListener() {} },
+    window: {},
+    writeClipboard() {},
+  });
+  return handler({ type: "keydown", altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: "ArrowLeft" });
+};
+
 // The terminal's key handler: it gives Alt+Shift+arrows to the page in a
 // column of the stage and in the grid of a console tab, and keeps them in a
 // lone window.
 test("a terminal in a tab's grid lets Alt+Shift+arrows go to the page", () => {
-  const keep = (selectorHit) => {
-    let handler = null;
-    wirePress({
-      term: { attachCustomKeyEventHandler: (h) => (handler = h) },
-      body: { closest: (sel) => (selectorHit(sel) ? {} : null), addEventListener() {} },
-      window: {},
-      writeClipboard() {},
-    });
-    return handler({ type: "keydown", altKey: true, shiftKey: true, ctrlKey: false, metaKey: false, code: "ArrowLeft" });
-  };
   assert.equal(keep((sel) => sel.includes(".session-window.tab-grid")), false);
   assert.equal(keep((sel) => sel.includes(".session-window.column")), false);
   assert.equal(keep(() => false), true, "a lone window keeps the chord for its child");

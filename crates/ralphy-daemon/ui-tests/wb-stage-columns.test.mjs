@@ -18,11 +18,12 @@ function fakeButton() {
   };
 }
 
+const noop = () => {};
+
 // A maximized window with that button, on a viewport `width` px wide.
 function paint({ width, autoBoot = true }) {
   const btn = fakeButton();
   const win = { _deskId: "a", _colBtn: btn, classList: { contains: (c) => c === "maximized" } };
-  const noop = () => {};
   const cols = createStageColumns({
     OPTS: { autoBoot },
     wins: new Set([win]),
@@ -87,9 +88,9 @@ function fakeWindow(id, classes = []) {
   };
 }
 
+
 // The columns `wins`, painted with `painted`, each window found by its id.
 function paintWindows(wins, painted) {
-  const noop = () => {};
   const byId = new Map(wins.map((w) => [w._deskId, w]));
   const setMax = [];
   const cols = createStageColumns({
@@ -158,10 +159,10 @@ test("a window the paint no longer names leaves the columns and drops its variab
   assert.deepEqual([...stale.vars.keys()], [], "a window that is not maximized drops its maximize box too");
 });
 
+
 // The columns `wins` painted with `raise`, each window found by its id; the
 // windows `focusWin` raised are answered in order.
 function raiseWindows(wins, painted, raise) {
-  const noop = () => {};
   const byId = new Map(wins.map((w) => [w._deskId, w]));
   const raised = [];
   const cols = createStageColumns({

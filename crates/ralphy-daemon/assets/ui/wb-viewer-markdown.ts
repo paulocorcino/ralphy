@@ -105,6 +105,29 @@ export type ViewerMarkdownDeps = {
 
 export type ViewerMarkdown = ReturnType<typeof createViewerMarkdown>;
 
+// Scroll a rendered document to the heading a `#fragment` names, matched
+// by the slug of the heading text (`slugOf`).
+function jumpTo(rec: ViewerRecord, fragment: string) {
+  if (!fragment) return;
+  let want = fragment;
+  try {
+    want = decodeURIComponent(fragment);
+  } catch {
+    // A malformed escape still names SOMETHING; match it as written.
+  }
+  want = want.toLowerCase();
+  const heads =
+    rec.el?.querySelectorAll(
+      ".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6",
+    ) ?? [];
+  for (const h of heads) {
+    if (slugOf(h.textContent) === want) {
+      h.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+  }
+}
+
 export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   const {
     window,
@@ -311,29 +334,6 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       fragment: target.fragment,
       checkout: rec.checkout ?? null,
     });
-  }
-
-  // Scroll a rendered document to the heading a `#fragment` names, matched
-  // by the slug of the heading text (`slugOf`).
-  function jumpTo(rec: ViewerRecord, fragment: string) {
-    if (!fragment) return;
-    let want = fragment;
-    try {
-      want = decodeURIComponent(fragment);
-    } catch {
-      // A malformed escape still names SOMETHING; match it as written.
-    }
-    want = want.toLowerCase();
-    const heads =
-      rec.el?.querySelectorAll(
-        ".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6",
-      ) ?? [];
-    for (const h of heads) {
-      if (slugOf(h.textContent) === want) {
-        h.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
-      }
-    }
   }
 
   function drawMermaid(rec: ViewerRecord) {

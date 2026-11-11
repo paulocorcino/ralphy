@@ -29,6 +29,15 @@ export type NoteFileDeps = {
   loadInto: (el: NoteCard, record: NoteSource) => unknown;
 };
 
+function endRename(el: NoteCard) {
+  const field = el.querySelector<HTMLInputElement>(".note-rename");
+  if (!field || field.hidden !== false) return;
+  field.hidden = true;
+  el._notePointing = false;
+  const path = el.querySelector<HTMLElement>(".note-path");
+  if (path) path.hidden = false;
+}
+
 export function createNoteFile(deps: NoteFileDeps) {
   const {
     window,
@@ -76,14 +85,6 @@ export function createNoteFile(deps: NoteFileDeps) {
     if (path) path.hidden = true;
     field.focus();
     field.select();
-  }
-  function endRename(el: NoteCard) {
-    const field = el.querySelector<HTMLInputElement>(".note-rename");
-    if (!field || field.hidden !== false) return;
-    field.hidden = true;
-    el._notePointing = false;
-    const path = el.querySelector<HTMLElement>(".note-path");
-    if (path) path.hidden = false;
   }
   function commitRename(el: NoteCard) {
     const record = recordOf(el.dataset["noteId"]);

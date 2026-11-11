@@ -20,6 +20,14 @@ export type NoteMenusDeps = {
   closePalette: () => void;
 };
 
+// Show the index button only when there is an index. A card whose note has
+// no `##` would otherwise offer a control that opens onto nothing.
+function paintIndex(el: NoteCard) {
+  const btn = el.querySelector<HTMLElement>(".note-index");
+  if (!btn) return;
+  btn.hidden = anchorsOf(el._noteMarkdown).length === 0;
+}
+
 export function createNoteMenus(deps: NoteMenusDeps) {
   const { window, document, recordOf, syncFromEditor, closePalette } = deps;
 
@@ -101,14 +109,6 @@ export function createNoteMenus(deps: NoteMenusDeps) {
       }
       return true;
     });
-  }
-
-  // Show the index button only when there is an index. A card whose note has
-  // no `##` would otherwise offer a control that opens onto nothing.
-  function paintIndex(el: NoteCard) {
-    const btn = el.querySelector<HTMLElement>(".note-index");
-    if (!btn) return;
-    btn.hidden = anchorsOf(el._noteMarkdown).length === 0;
   }
 
   // Scroll this card's body to its `index`-th `##`. By ORDINAL and not by

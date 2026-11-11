@@ -78,6 +78,8 @@ test("the opener's answer mounts a fence only when it names one", () => {
   }
 });
 
+const tool = () => ({ append() {}, addEventListener() {} });
+
 // The window after the opener's answer, on a stubbed `BroadcastChannel`. `hear`
 // delivers a message of the channel; `closes` counts `window.close()`. An
 // `early` message is delivered at once, when the channel's listener is set.
@@ -114,7 +116,6 @@ function openedFence(t, { tab = "t1", pid = "p1", early = null } = {}) {
   const handlers = {};
   const opener = { postMessage() {}, closed: false };
   const stage = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] };
-  const tool = () => ({ append() {}, addEventListener() {} });
   const closes = { count: 0, focus: 0 };
   const window = {
     location: { origin: ORIGIN },

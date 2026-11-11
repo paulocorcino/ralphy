@@ -218,9 +218,10 @@ test("a conflict groups under Changes, never under Staged (#315)", () => {
   assert.equal(folded.unstaged[0].mark, "!");
 });
 
+const dirty = (repo) => ({ verb: "changes.dirty", payload: { repo } });
+
 test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", () => {
   const shouldReload = load().shouldReload;
-  const dirty = (repo) => ({ verb: "changes.dirty", payload: { repo } });
   assert.equal(shouldReload(dirty("owner/a"), "owner/a"), true);
   assert.equal(shouldReload(dirty("owner/b"), "owner/a"), false);
   // The socket carries the watcher's pushes too — only OUR verb reloads.
@@ -418,9 +419,10 @@ test("headOf gives the project row the head a sync read saw, in the /api/repos s
   assert.equal(headOf(foldSync(null, NOW)), null);
 });
 
+const at = (ms) => new Date(NOW - ms).toISOString();
+
 test("foldSync labels how stale the counts are (#316)", () => {
   const foldSync = load().foldSync;
-  const at = (ms) => new Date(NOW - ms).toISOString();
   const cases = [
     [null, "Never fetched"],
     ["not-a-date", "Fetch time unknown"],

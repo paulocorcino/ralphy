@@ -78,6 +78,82 @@ export type CheckoutDeps = {
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
 };
 
+// The shell is told the worktree exists; it reads the listing again.
+function announceWorktree(repo: string, name: string, reply: { message?: unknown }) {
+  WB.emit("worktree-created", {
+    project: repo,
+    name,
+    message: typeof reply.message === "string" ? reply.message : "",
+  });
+}
+
+// The branches the prompt offers and the one it starts from; unreadable
+// gives no list and no base.
+async function readBranches(daemon: NonNullable<Window["WBDaemon"]>, repo: string) {
+  let branches: string[] = [];
+  let base = "";
+  try {
+    const reply = await daemon.observe("branch.list", { repo });
+    const data = (reply.status === "ok" ? reply.branches : null) ?? {};
+    if (Array.isArray(data.branches)) branches = data.branches;
+    const current = data.current ?? "";
+    if (current !== "" && current !== "HEAD") base = current;
+  } catch {}
+  return { branches, base };
+}
+
+// The words of a `worktree.add` refusal for the prompt, or "" when the
+// worktree was added.
+function addRefusal(reply: ReplyOf<"worktree.add">) {
+  if (reply.status === "ok") return "";
+  return WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
+}
+
+// End this window's session on the daemon if it is still running, then `go`.
+// A DORMANT console still holds its session and must still close it.
+function endLiveThen(win: ConsoleWin, go: () => void) {
+  const id = sessionIdOf(win);
+  const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
+  if (live) {
+    fetch(WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
+  } else {
+    go();
+  }
+}
+
+function checkoutGlyph(row: CheckoutRow) {
+  if (row.current) return "bi bi-check2";
+  return row.primary ? "bi bi-house-door" : "bi bi-folder2";
+}
+
+// The switcher's rows: `primary` first, then the worktrees in listing order,
+// each with its dirty flag; the current one marked. With `sessions` (rows with
+// `checkout` and `agent_state`) each row also carries the agent's state in
+// that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primary` (its branch
+// and dirty flag) when the caller knows them (the shell does).
+function checkoutMenuRows(
+  listing: Listing | null | undefined,
+  current: string | null | undefined,
+  sessions: HostedSession[] | null | undefined,
+  primary?: { branch: string; dirty: boolean },
+): CheckoutRow[] {
+  const rows: TreeRow[] = [
+    {
+      name: "primary",
+      branch: primary?.branch ?? "",
+      dirty: primary?.dirty ?? false,
+      primary: true,
+    },
+  ];
+  for (const w of listing?.worktrees ?? []) rows.push(worktreeRow(w));
+  const states = sessions ? WBProject.worktreeStates(rows, sessions) : {};
+  return rows.map((r) => ({
+    ...r,
+    current: (current ?? "primary") === r.name,
+    state: states[r.name] ?? null,
+  }));
+}
+
 export function createCheckoutSwitcher(deps: CheckoutDeps) {
   const {
     window,
@@ -113,33 +189,6 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   function ensureListing(ref: string | null | undefined, force = false) {
     if (OPTS.canLaunch === false) return;
     void window.Alpine.store("checkouts").ensureWorktreeListing(ref, force);
-  }
-  // The switcher's rows: `primary` first, then the worktrees in listing order,
-  // each with its dirty flag; the current one marked. With `sessions` (rows with
-  // `checkout` and `agent_state`) each row also carries the agent's state in
-  // that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primary` (its branch
-  // and dirty flag) when the caller knows them (the shell does).
-  function checkoutMenuRows(
-    listing: Listing | null | undefined,
-    current: string | null | undefined,
-    sessions: HostedSession[] | null | undefined,
-    primary?: { branch: string; dirty: boolean },
-  ): CheckoutRow[] {
-    const rows: TreeRow[] = [
-      {
-        name: "primary",
-        branch: primary?.branch ?? "",
-        dirty: primary?.dirty ?? false,
-        primary: true,
-      },
-    ];
-    for (const w of listing?.worktrees ?? []) rows.push(worktreeRow(w));
-    const states = sessions ? WBProject.worktreeStates(rows, sessions) : {};
-    return rows.map((r) => ({
-      ...r,
-      current: (current ?? "primary") === r.name,
-      state: states[r.name] ?? null,
-    }));
   }
   function sessionsOfRepo(ref: string) {
     return lastSessions().filter((s) => WBSessionRoute.matchesRepo(s, ref));
@@ -206,10 +255,6 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     document.addEventListener("keydown", key, true);
     openMenu = { anchor, el: menu, away, key };
     return menu;
-  }
-  function checkoutGlyph(row: CheckoutRow) {
-    if (row.current) return "bi bi-check2";
-    return row.primary ? "bi bi-house-door" : "bi bi-folder2";
   }
   // The menu's row for one tree: its glyph, name, branch, agent state and
   // dirty flag, and a trash action when `onRemove` is given.
@@ -336,17 +381,6 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
     });
   }
-  // End this window's session on the daemon if it is still running, then `go`.
-  // A DORMANT console still holds its session and must still close it.
-  function endLiveThen(win: ConsoleWin, go: () => void) {
-    const id = sessionIdOf(win);
-    const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
-    if (live) {
-      fetch(WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
-    } else {
-      go();
-    }
-  }
 
   // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
   // shell, and move THIS console into it (the prompt already said it restarts).
@@ -387,34 +421,6 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       moveTo(win, name);
       return;
     }
-  }
-  // The words of a `worktree.add` refusal for the prompt, or "" when the
-  // worktree was added.
-  function addRefusal(reply: ReplyOf<"worktree.add">) {
-    if (reply.status === "ok") return "";
-    return WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
-  }
-  // The branches the prompt offers and the one it starts from; unreadable
-  // gives no list and no base.
-  async function readBranches(daemon: NonNullable<Window["WBDaemon"]>, repo: string) {
-    let branches: string[] = [];
-    let base = "";
-    try {
-      const reply = await daemon.observe("branch.list", { repo });
-      const data = (reply.status === "ok" ? reply.branches : null) ?? {};
-      if (Array.isArray(data.branches)) branches = data.branches;
-      const current = data.current ?? "";
-      if (current !== "" && current !== "HEAD") base = current;
-    } catch {}
-    return { branches, base };
-  }
-  // The shell is told the worktree exists; it reads the listing again.
-  function announceWorktree(repo: string, name: string, reply: { message?: unknown }) {
-    WB.emit("worktree-created", {
-      project: repo,
-      name,
-      message: typeof reply.message === "string" ? reply.message : "",
-    });
   }
 
   return {

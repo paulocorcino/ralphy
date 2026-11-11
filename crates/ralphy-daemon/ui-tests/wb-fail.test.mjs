@@ -178,9 +178,10 @@ test("readFold before any good read has no value", () => {
   assert.equal(first.current, false);
 });
 
+const fmt = () => "14:02";
+
 test("notCurrent names the time of the good read and the reason", () => {
   const F = load();
-  const fmt = () => "14:02";
   const good = F.readFold(null, { ok: true, value: 1, at: 5 });
   assert.equal(F.notCurrent(good, fmt), "");
   const stale = F.readFold(good, { ok: false, reason: "the daemon did not answer", at: 6 });

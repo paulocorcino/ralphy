@@ -99,6 +99,11 @@ export type DetachDeps = {
   fenceFloor: FenceList;
 };
 
+function stopPoll(entry: PopupEntry | undefined) {
+  if (entry?.poll != null) clearInterval(entry.poll);
+  if (entry?.rescue != null) clearTimeout(entry.rescue);
+}
+
 export function createDetach(deps: DetachDeps) {
   const {
     window,
@@ -344,11 +349,6 @@ export function createDetach(deps: DetachDeps) {
     budget.untrackDormancy(win);
     wins.delete(win);
     changed();
-  }
-
-  function stopPoll(entry: PopupEntry | undefined) {
-    if (entry?.poll != null) clearInterval(entry.poll);
-    if (entry?.rescue != null) clearTimeout(entry.rescue);
   }
 
   // Closes the popup of fence `id`, by its handle when this document has one.

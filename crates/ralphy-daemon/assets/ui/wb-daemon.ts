@@ -46,6 +46,19 @@ export type DaemonDeps = {
   resumeDebounceMs?: number;
 };
 
+// The optional `checkout` argument of a repo-scoped verb (#406, ADR-0063
+// §2): a worktree NAME the daemon resolves under the repo's own root. Added
+// ONLY for a real name — with no selection the payload is byte-identical to
+// the pre-#406 one, so an older daemon never sees a key it does not know.
+function withCheckout(
+  payload: CommandPayload,
+  checkout: string | null | undefined,
+): CommandPayload {
+  const out = { ...payload };
+  if (checkout !== null && checkout !== undefined && checkout !== "") out.checkout = checkout;
+  return out;
+}
+
 export function createDaemon(
   window: Window,
   document: Document,
@@ -91,19 +104,6 @@ export function createDaemon(
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
     out.set(body, 1);
-    return out;
-  }
-
-  // The optional `checkout` argument of a repo-scoped verb (#406, ADR-0063
-  // §2): a worktree NAME the daemon resolves under the repo's own root. Added
-  // ONLY for a real name — with no selection the payload is byte-identical to
-  // the pre-#406 one, so an older daemon never sees a key it does not know.
-  function withCheckout(
-    payload: CommandPayload,
-    checkout: string | null | undefined,
-  ): CommandPayload {
-    const out = { ...payload };
-    if (checkout !== null && checkout !== undefined && checkout !== "") out.checkout = checkout;
     return out;
   }
 

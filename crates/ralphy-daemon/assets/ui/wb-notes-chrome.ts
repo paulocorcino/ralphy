@@ -51,6 +51,14 @@ export type NoteChromeDeps = {
   floatGesture: (el: NoteCard, dir: string | null) => (e: PointerEvent) => void;
 };
 
+function endTitle(el: NoteCard) {
+  const label = el.querySelector<HTMLElement>(".note-title");
+  const field = el.querySelector<HTMLInputElement>(".note-title-edit");
+  if (!label || !field) return;
+  field.hidden = true;
+  label.hidden = false;
+}
+
 export function createNoteChrome(deps: NoteChromeDeps) {
   const { document, consoleHost, recordOf, patch, render, persistCards, closeCard } = deps;
   const { veiledNow, toggleReveal, setMarked, mountEditor, syncFromEditor, markDirty, paintTitle } =
@@ -374,13 +382,6 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     field.hidden = false;
     field.focus();
     field.select();
-  }
-  function endTitle(el: NoteCard) {
-    const label = el.querySelector<HTMLElement>(".note-title");
-    const field = el.querySelector<HTMLInputElement>(".note-title-edit");
-    if (!label || !field) return;
-    field.hidden = true;
-    label.hidden = false;
   }
   function commitTitle(el: NoteCard) {
     const field = el.querySelector<HTMLInputElement>(".note-title-edit");

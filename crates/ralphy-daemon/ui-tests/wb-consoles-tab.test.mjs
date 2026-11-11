@@ -132,6 +132,8 @@ test("checkColumnDesk takes the consoles that left the desk out of the columns, 
   assert.deepEqual(order, ["columns", "drop x", "drop loose"]);
 });
 
+const grid = () => [["a"], ["b"], ["c"]];
+
 // ADR-0051 §5: when the shell's columns move the maximize, the move is written
 // to the desk. The torn-off fence window paints without `persist`.
 test("every shell path that paints the columns asks to write the maximize", () => {
@@ -150,7 +152,6 @@ test("every shell path that paints the columns asks to write the maximize", () =
     focusColumn() {},
     focusedId: () => null,
   };
-  const grid = () => [["a"], ["b"], ["c"]];
   state.columnCap = () => 3;
   const realAll = document.querySelectorAll;
   // The stage holds only "b": the first console left, and one is left.

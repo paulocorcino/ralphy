@@ -181,10 +181,11 @@ export function noteSlug(title: string | null | undefined) {
     .replaceAll(/-+$/gu, "");
 }
 
+const p = (n: number) => String(n).padStart(2, "0");
+
 // `note-<UTC yyyymmdd-hhmmss>` — the name a note with no heading yet takes.
 export function stampName(now?: Date | number) {
   const d = now instanceof Date ? now : new Date(now ?? Date.now());
-  const p = (n: number) => String(n).padStart(2, "0");
   return (
     "note-" +
     d.getUTCFullYear() +

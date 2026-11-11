@@ -34,8 +34,9 @@ function buildConsole() {
   }
 }
 
+const noop = () => {};
+
 function buildNotes() {
-  const noop = () => {};
   const window = { addEventListener: noop, removeEventListener: noop, setTimeout, clearTimeout, setInterval, clearInterval };
   const document = { readyState: "loading", addEventListener: noop, removeEventListener: noop };
   return createNotes(window, document, { console: null });

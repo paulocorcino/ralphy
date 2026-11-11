@@ -26,15 +26,15 @@ function markedTitle(shown: boolean) {
   return shown ? "Hide this note again" : "Show this note";
 }
 
+// Is this card showing nothing RIGHT NOW? The mark is the file's and the
+// reveal is the session's; a card is veiled when it carries the first and
+// has not been given the second.
+function veiledNow(el: NoteCard) {
+  return veiledOf(el._noteMarkdown) && !el._noteRevealed;
+}
+
 export function createNoteVeil(deps: NoteVeilDeps) {
   const { document, recordOf, loadInto, syncFromEditor, markDirty, flush } = deps;
-
-  // Is this card showing nothing RIGHT NOW? The mark is the file's and the
-  // reveal is the session's; a card is veiled when it carries the first and
-  // has not been given the second.
-  function veiledNow(el: NoteCard) {
-    return veiledOf(el._noteMarkdown) && !el._noteRevealed;
-  }
 
   // What the body holds instead of an editor. Says what it is and what opens
   // it — a card that is simply blank reads as one that failed to load.

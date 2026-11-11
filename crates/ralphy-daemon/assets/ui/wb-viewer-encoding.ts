@@ -80,6 +80,12 @@ export type ViewerEncodingDeps = {
 
 export type ViewerEncoding = ReturnType<typeof createViewerEncoding>;
 
+const group = (head: string, act: string) =>
+  `<div class="dropdown-head">${head}</div>` +
+  ENCODINGS.map(
+    ([label], i) => `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
+  ).join("");
+
 export function createViewerEncoding(deps: ViewerEncodingDeps) {
   const { window, document, messages, saver, reopenRefused } = deps;
   const { readWith, showSaveError, applyFresh, save } = saver;
@@ -90,12 +96,6 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     const menu = document.createElement("div");
     menu.className = "enc-menu";
     menu.style.display = "none";
-    const group = (head: string, act: string) =>
-      `<div class="dropdown-head">${head}</div>` +
-      ENCODINGS.map(
-        ([label], i) =>
-          `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
-      ).join("");
     menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
     el.append(menu);
     rec.encMenu = menu;

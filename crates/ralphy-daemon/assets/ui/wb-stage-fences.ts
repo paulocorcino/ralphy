@@ -84,6 +84,8 @@ export type FenceDeps = {
   tearDownMember: (win: ConsoleWin, reason: DetachReason) => void;
 };
 
+const dialogName = (f: DeskFence) => (f.name ?? "") || "this fence";
+
 export function createFences(deps: FenceDeps) {
   const {
     window,
@@ -149,7 +151,6 @@ export function createFences(deps: FenceDeps) {
     fenceLocked,
     refreshFenceChrome,
   });
-  const dialogName = (f: DeskFence) => (f.name ?? "") || "this fence";
   async function tileOnConfirm(f: DeskFence) {
     // A detached fence has nothing here to tile; `arrangeFence` says so.
     if (popups.isDetached(f.id)) {

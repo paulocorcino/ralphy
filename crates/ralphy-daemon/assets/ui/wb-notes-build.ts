@@ -42,6 +42,25 @@ export type NoteBuildDeps = {
   floatGesture: ReturnType<typeof createNoteOnTop>["floatGesture"];
 };
 
+// Paint the lock. A locked card cannot be MOVED or RESIZED, and that is the
+// whole of it (the operator's words, 2026-09-22: "o cadeado no notes não é
+// impedir de editar é impedir de mover"). The note is still written, renamed,
+// recoloured and hidden — a pin through the card, not a read-only file. The
+// JS guards in `makeDraggable`/`startResize` are the truth for the gestures;
+// this is the glyph.
+function applyLock(el: NoteCard, locked: boolean) {
+  el._noteLocked = locked;
+  el.classList.toggle("locked", locked);
+  const btn = el.querySelector<HTMLElement>(".note-lock");
+  if (btn) {
+    // The console's own two glyphs, verbatim (`wb-console.ts`'s `applyLock`):
+    // one lock on the plane, not one per surface.
+    // oxlint-disable-next-line no-restricted-properties -- a fixed icon, no outside text
+    btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+    btn.title = locked ? "Unlock this note" : "Lock this note in place";
+  }
+}
+
 export function createNoteBuild(deps: NoteBuildDeps) {
   const {
     document,
@@ -56,24 +75,6 @@ export function createNoteBuild(deps: NoteBuildDeps) {
     onTop,
     floatGesture,
   } = deps;
-
-  // Paint the lock. A locked card cannot be MOVED or RESIZED, and that is the
-  // whole of it (the operator's words, 2026-09-22: "o cadeado no notes não é
-  // impedir de editar é impedir de mover"). The note is still written, renamed,
-  // recoloured and hidden — a pin through the card, not a read-only file. The
-  // JS guards in `makeDraggable`/`startResize` are the truth for the gestures;
-  // this is the glyph.
-  function applyLock(el: NoteCard, locked: boolean) {
-    el._noteLocked = locked;
-    el.classList.toggle("locked", locked);
-    const btn = el.querySelector<HTMLElement>(".note-lock");
-    if (btn) {
-      // The console's own two glyphs, verbatim (`wb-console.ts`'s `applyLock`):
-      // one lock on the plane, not one per surface.
-      btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-      btn.title = locked ? "Unlock this note" : "Lock this note in place";
-    }
-  }
 
   // The card's chrome for one record. Mirrors `buildFence`'s construction
   // order, including its hit-test rule.

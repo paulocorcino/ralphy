@@ -469,8 +469,9 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
+const coarse = (q) => ({ matches: q.includes("coarse"), addEventListener() {} });
+
 test("a touch surface with no stored preference starts at the same size", () => {
-  const coarse = (q) => ({ matches: q.includes("coarse"), addEventListener() {} });
   const c = load({ matchMedia: coarse });
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
@@ -704,14 +705,15 @@ function deskWin(id, extra = {}) {
 }
 const SAVED = { id: "w-1", repo: "o/r", agent: "console", kind: "console", rect: { left: 100, top: 100, width: 600, height: 400 }, max: false, sessionId: 7, checkout: "wt-a", consoleName: "r #1" };
 
+const match = (w, sel) =>
+  sel.split(",").some((one) =>
+    one.trim().split(".").filter(Boolean).every((c) => w.classList.contains(c)),
+  );
+
 // The DOM that `applyColumns` paints: a stage whose windows match the few
 // selectors it queries, and a workspace with no scroll. The stage measures 0
 // wide, so the fence refresh after a write returns early.
 function columnDom(wins) {
-  const match = (w, sel) =>
-    sel.split(",").some((one) =>
-      one.trim().split(".").filter(Boolean).every((c) => w.classList.contains(c)),
-    );
   const all = (sel) => wins.filter((w) => match(w, sel));
   const one = (sel) => all(sel)[0] ?? null;
   const stageEl = { offsetWidth: 0, offsetHeight: 0, style: {}, querySelectorAll: all, querySelector: one };
@@ -1134,27 +1136,28 @@ test("a desk read that fails in transport sets no desk failure", async () => {
   }
 });
 
+const deskOfSize = (n) => ({
+  windows: Array.from({ length: n }, (_, i) => ({
+    id: `w${i}`,
+    repo: "o/r",
+    agent: "console",
+    kind: "console",
+    consoleName: `r #${i + 1}`,
+    ts: i,
+  })),
+  fences: [],
+});
+
 // A full desk refuses a NEW console instead of cutting one in silence.
 test("atDeskCap is true once the desk holds the cap", async () => {
   const realFetch = globalThis.fetch;
-  const desk = (n) => ({
-    windows: Array.from({ length: n }, (_, i) => ({
-      id: `w${i}`,
-      repo: "o/r",
-      agent: "console",
-      kind: "console",
-      consoleName: `r #${i + 1}`,
-      ts: i,
-    })),
-    fences: [],
-  });
   try {
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(desk(29)) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(29)) });
     const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
     await wb.whenDeskLoaded();
     assert.equal(wb.DESK_MAX, 30);
     assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");
-    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(desk(30)) });
+    globalThis.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve(deskOfSize(30)) });
     await wb.reloadDesk();
     assert.equal(wb.atDeskCap(), true, "30 records are a full desk");
   } finally {

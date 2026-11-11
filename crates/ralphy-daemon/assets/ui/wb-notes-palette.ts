@@ -30,6 +30,25 @@ export type NotePaletteDeps = {
   markDirty: (el: NoteCard) => void;
 };
 
+// Which swatch is the card's now — read off the card, so a palette opened on
+// a note whose file was hand-edited shows what the file says.
+function paintPalette(el: NoteCard) {
+  const pop = el.querySelector<HTMLElement>(".note-palette");
+  if (!pop) return;
+  const have: NoteLook = lookOf(el);
+  for (const [key, cls] of [
+    ["tone", "note-swatch-tone"],
+    ["fill", "note-swatch-fill"],
+    ["ink", "note-swatch-ink"],
+    ["font", "note-swatch-font"],
+    ["size", "note-swatch-size"],
+  ] as const) {
+    for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
+      b.classList.toggle("is-on", b.dataset["name"] === have[key]);
+    }
+  }
+}
+
 export function createNotePalette(deps: NotePaletteDeps) {
   const { document, veiledNow, closeMenu, syncFromEditor, markDirty } = deps;
 
@@ -128,25 +147,6 @@ export function createNotePalette(deps: NotePaletteDeps) {
       n.toUpperCase(),
     );
     return pop;
-  }
-
-  // Which swatch is the card's now — read off the card, so a palette opened on
-  // a note whose file was hand-edited shows what the file says.
-  function paintPalette(el: NoteCard) {
-    const pop = el.querySelector<HTMLElement>(".note-palette");
-    if (!pop) return;
-    const have: NoteLook = lookOf(el);
-    for (const [key, cls] of [
-      ["tone", "note-swatch-tone"],
-      ["fill", "note-swatch-fill"],
-      ["ink", "note-swatch-ink"],
-      ["font", "note-swatch-font"],
-      ["size", "note-swatch-size"],
-    ] as const) {
-      for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
-        b.classList.toggle("is-on", b.dataset["name"] === have[key]);
-      }
-    }
   }
 
   // One restyle: the card repaints at once and the DOCUMENT is what carries
