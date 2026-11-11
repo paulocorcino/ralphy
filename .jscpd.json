@@ -1,6 +1,6 @@
 {
-  "minTokens": 100,
-  "minLines": 10,
+  "minTokens": 75,
+  "minLines": 5,
   "format": ["rust", "javascript", "typescript"],
   "ignore": [
     "**/tests/**",
