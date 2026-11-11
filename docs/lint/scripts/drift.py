@@ -197,7 +197,7 @@ REGISTRY = {  # tool name in an `As of` line -> where its latest stable release 
     "actionlint": "github:rhysd/actionlint", "cargo-machete": "github:bnjbvr/cargo-machete",
     "typos": "github:crate-ci/typos", "oxfmt": "npm:oxfmt", "shellcheck": "github:koalaman/shellcheck",
     "markdownlint-cli2": "npm:markdownlint-cli2", "gitleaks": "github:gitleaks/gitleaks",
-    "PSScriptAnalyzer": "github:PowerShell/PSScriptAnalyzer",
+    "PSScriptAnalyzer": "github:PowerShell/PSScriptAnalyzer", "yamllint": "pypi:yamllint",
 }
 _ASOF = re.compile(r"^As of (\d{4}-\d{2}-\d{2}): (.*?\.)(?:\s|$)", re.M)
 _PAIR = re.compile(r"([A-Za-z][\w.-]*) v?(\d+(?:\.\d+)*)\b")

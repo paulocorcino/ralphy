@@ -141,6 +141,14 @@ pub const STEPS: &[Step] = &[
         "npx",
         &["-y", "markdownlint-cli2@0.18.1"],
     ),
+    // The module installed on the machine, as for PSScriptAnalyzer:
+    // `ci.yml` installs `YAMLLINT_VERSION`.
+    step(
+        "yamllint",
+        &["YAML (yamllint)"],
+        "python",
+        &["-m", "yamllint", "-s", "."],
+    ),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
         "gitleaks",

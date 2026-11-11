@@ -59,6 +59,9 @@ env:
   # `xtask gate` runs the same version through npx, and
   # `ci_installs_the_pinned_markdownlint` fails when the two differ.
   MARKDOWNLINT_VERSION: "0.18.1"
+  # The yamllint of the `checks` job. The yamllint step of `xtask gate`
+  # runs the module installed on the machine.
+  YAMLLINT_VERSION: "1.38.0"
 
 jobs:
   lint:
@@ -147,6 +150,11 @@ jobs:
       # off there and has a debt line.
       - name: Markdown (markdownlint)
         run: npx -y "markdownlint-cli2@${MARKDOWNLINT_VERSION}"
+
+      # The rules are in .yamllint.yml; a rule with sites left is off there
+      # and has a debt line.
+      - name: YAML (yamllint)
+        run: pipx run "yamllint==${YAMLLINT_VERSION}" -s .
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.
