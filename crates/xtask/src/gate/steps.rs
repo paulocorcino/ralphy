@@ -141,6 +141,72 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &["-y", "markdownlint-cli2@0.18.1"],
     ),
+    // The module installed on the machine, as for PSScriptAnalyzer:
+    // `ci.yml` installs `YAMLLINT_VERSION`.
+    step(
+        "yamllint",
+        &["YAML (yamllint)"],
+        "python",
+        &["-m", "yamllint", "-s", "."],
+    ),
+    // Rules off in .htmlvalidate.json (JSON has no comments). Noise:
+    // void-style (both forms are valid), text-content, empty-heading and
+    // attribute-misuse (Alpine fills text and binds :href at run time).
+    // Debt: no-implicit-button-type 170 sites, no-inline-style 11,
+    // prefer-native-element 4, autocomplete-password 2,
+    // element-permitted-content 1.
+    step(
+        "html-validate",
+        &["HTML (html-validate)"],
+        "npx",
+        &[
+            "-y",
+            "html-validate@11.21.0",
+            "crates/ralphy-daemon/assets/ui",
+        ],
+    ),
+    // .stylelintrc.json lists the core rules of stylelint-config-recommended
+    // 19.0.0, with no `extends`, so npx needs no second package. Rules off
+    // (JSON has no comments). Debt: no-descending-specificity 64 sites,
+    // no-duplicate-selectors 4, declaration-property-value-keyword-no-deprecated
+    // 2, property-no-deprecated 1.
+    step(
+        "stylelint",
+        &["CSS (stylelint)"],
+        "npx",
+        &[
+            "-y",
+            "stylelint@18.0.0",
+            "crates/ralphy-daemon/assets/ui/styles/*.css",
+        ],
+    ),
+    // taplo.toml holds the files; `ci.yml` fetches the release binary at
+    // `TAPLO_VERSION`. `.gitattributes` checks every TOML file out with LF.
+    step("taplo", &["TOML (taplo)"], "taplo", &["check"]),
+    step(
+        "taplo-fmt",
+        &["TOML format (taplo)"],
+        "taplo",
+        &["fmt", "--check"],
+    ),
+    // .editorconfig holds the rules, .editorconfig-checker.json the settings;
+    // `ci.yml` fetches the release binary at `EDITORCONFIGCHECKER_VERSION`.
+    // Debt: 16 sites in the files the settings exclude by name (trailing
+    // whitespace in prompts, a missing final newline, a test with raw bytes).
+    step(
+        "editorconfig-checker",
+        &["Text files (editorconfig-checker)"],
+        "editorconfig-checker",
+        &["-no-color"],
+    ),
+    // lychee.toml holds the settings (offline); `ci.yml` fetches the release
+    // binary at `LYCHEE_VERSION`.
+    step(
+        "lychee",
+        &["Local links (lychee)"],
+        "lychee",
+        &["--offline", "--no-progress", "."],
+    ),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
         "gitleaks",

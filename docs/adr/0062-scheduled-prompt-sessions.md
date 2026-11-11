@@ -37,7 +37,7 @@ outside the guard, outside the run lock.
 
 New subcommand:
 
-```
+```sh
 ralphy prompt run --file <path> --agent <a> [--model M] [--effort E]
                   [--max-minutes N] [--repo <path>] [--precheck "<cmd>"]
 ```
@@ -68,7 +68,7 @@ docs say so.
 
 ### 2. `schedule install prompt`: the third blessed target
 
-```
+```sh
 ralphy schedule install prompt --file <path> --agent <a> --every 1d
                                [--name <n>] [--precheck "<cmd>"] [--repo]
 ```

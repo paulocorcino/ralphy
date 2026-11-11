@@ -6,7 +6,7 @@ foreground until Ctrl+C.
 
 ## Setup and status
 
-```
+```sh
 ralphy daemon setup    # baptize: pick a name, an avatar, mint an access token
 ralphy daemon status   # identity, access token state, listener, autostart
 ```
@@ -21,7 +21,7 @@ encrypts — a dev tunnel, ngrok, or the tailnet (docs/adr/0032 §4).
 
 ## Restart
 
-```
+```sh
 ralphy daemon restart   # end the running daemon, start this binary in its place
 ```
 
@@ -68,7 +68,7 @@ The result is TTL-cached to
 `<store>/releases.json`, and a failed fetch is silent: the workbench shows what
 was last known. Turn it off by creating the marker file, and on by removing it:
 
-```
+```text
 touch ~/.ralphy/daemon-release-watch-off
 ```
 
@@ -146,7 +146,7 @@ primary's `node_modules` and delete it — measured), but a `rm -rf
 node_modules` typed inside the worktree deletes the primary's. Treat a shared
 directory as the primary's, because it is.
 
-```
+```sh
 ralphy worktree list [--format json] [--repo <path>]
 ralphy worktree add <name> [--base <ref>] [--repo <path>]
 ralphy worktree remove <name> [--repo <path>]
@@ -163,8 +163,8 @@ line):
 - `worktree '<name>' is locked: unlock it first` — you locked it with
   `worktree lock`.
 - `worktree '<name>' has uncommitted changes: commit or discard them first`
-- `removed worktree '<name>'; branch '<name>' kept: it has commits not on
-  <base>` — the directory is gone; the branch is deleted only when git agrees
+- `removed worktree '<name>'; branch '<name>' kept: it has commits not on <base>`
+  — the directory is gone; the branch is deleted only when git agrees
   it is fully merged (`branch -d`, never `-D`) — otherwise it stays and the
   message says why.
 
@@ -175,7 +175,7 @@ A worktree adds `.ralphy/worktrees/<name>/` to every path inside it, so a deep
 characters) there; git fails with `Filename too long` and it is not a Ralphy
 bug.
 
-```
+```sh
 git config --global core.longpaths true
 ```
 
@@ -216,7 +216,7 @@ All three registrations run the daemon with its DEFAULTS (loopback bind, the
 default port) — no `--bind`/`--port` passthrough in this slice; edit the
 value, unit or plist by hand for a non-default listener.
 
-```
+```sh
 ralphy daemon install     # register autostart
 ralphy daemon status      # …prints an `autostart: registered` / `not registered` line
 ralphy daemon uninstall   # remove autostart (idempotent — a second call is a no-op)
@@ -271,14 +271,14 @@ Set this up once, from *inside* the distro:
    last login shell unless lingering is on. No nudge can substitute for this —
    without it the daemon stops the moment you close the WSL terminal:
 
-   ```
+   ```text
    loginctl enable-linger $USER
    ```
 
 2. **Baptize the daemon.** A daemon announces its identity, so it must have one
    first:
 
-   ```
+   ```sh
    ralphy daemon setup
    ```
 
@@ -292,7 +292,7 @@ Set this up once, from *inside* the distro:
    both flags to its `ExecStart` — the store pointing at the *Windows* profile's
    global store:
 
-   ```
+   ```sh
    ralphy daemon install
    # then, in ~/.config/systemd/user/ralphy-daemon.service:
    #   ExecStart=/home/<user>/.cargo/bin/ralphy daemon --port 7357 --peer-store /mnt/c/Users/<user>/.ralphy
@@ -333,7 +333,7 @@ Set this up once, from *inside* the distro:
 
 4. **Start it, and start it at boot.**
 
-   ```
+   ```text
    systemctl --user enable --now ralphy-daemon.service
    ```
 
@@ -379,7 +379,7 @@ peer — what has run out is the **dialling host's ephemeral ports**.
 
 Check it from the host that dials (the Windows side, for a WSL peer):
 
-```
+```text
 netstat -ano -p tcp | grep -c ":<peer-port>.*TIME_WAIT"
 netsh int ipv4 show dynamicport tcp
 ```
@@ -394,7 +394,7 @@ means something is polling in a loop again.
 To see which, the daemon logs every poll with the reason it came back — a
 healthy one reads `reason=timeout` after its full 25 s window, or `reason=dirty`:
 
-```
+```text
 # in the WSL unit: systemctl --user edit ralphy-daemon.service
 [Service]
 Environment="RUST_LOG=ralphy_daemon=debug"

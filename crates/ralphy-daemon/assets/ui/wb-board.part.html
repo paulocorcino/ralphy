@@ -7,7 +7,7 @@
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
             <svg x-icon="'search'"></svg>
-            <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
+            <input type="text" x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
           </div>
           <select class="kanban-select" x-model="kanbanLabel" title="Filter by label">
             <option value="__all">All labels</option>

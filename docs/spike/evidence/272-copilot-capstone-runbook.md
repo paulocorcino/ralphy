@@ -11,14 +11,14 @@ captured numbers, commands and log lines move into
 `251-cursor-capstone-live.md` and `265-gemini-capstone-live.md`), raw per-command
 logs go to `docs/live/copilot-272-<probe>.log`, and the verdict-per-phase plus a
 back-link land in
-[docs/adr/0041-copilot-validation.md](../adr/0041-copilot-validation.md) — which
+[docs/adr/0041-copilot-validation.md](../../adr/0041-copilot-validation.md) — which
 is itself rewritten from a plan into a note, with ADR-0041's Status flipped to
 accepted and its D11 "unobserved" caveats replaced by the captured strings. The
 decisions each phase exercises are D2–D12 in
-[docs/adr/0041-copilot-adapter.md](../adr/0041-copilot-adapter.md).
+[docs/adr/0041-copilot-adapter.md](../../adr/0041-copilot-adapter.md).
 
 **The plan file is the contract.** Its
-[*What fails the whole exercise outright*](../adr/0041-copilot-validation.md)
+[*What fails the whole exercise outright*](../../adr/0041-copilot-validation.md)
 section governs; those five stop conditions are reproduced in the ledger below.
 
 ---

@@ -1,8 +1,7 @@
 # The run publishes a run snapshot on disk; the daemon reads it
 
 Status: **accepted** (2026-07-24, issue #298, under PRD #296) — decided and
-implemented. This ADR gates the run-state track: the implementation issues under
-# 296 build what is written here.
+implemented. This ADR gates the run-state track: the implementation issues under #296 build what is written here
 
 Extended by ADR-0077 (proposed: the snapshot phase state `reviewing`).
 
@@ -178,8 +177,7 @@ its holder's pid and start time — and it is the wrong one, because the lock ha
 one slot and this channel has N documents. The lock is a _signal, not a mutex_
 by design: `acquire` overwrites it, so with two runs in flight in one repo it
 names only the newer one, and the older run's snapshot would classify as dead
-while that run is working. Concurrent runs in a repo are a supported case (PRD
-# 296, user story 9), so the carrier must be per-document.
+while that run is working. Concurrent runs in a repo are a supported case (PRD #296, user story 9), so the carrier must be per-document
 
 This does not weaken §7. What §7 forbids is a _liveness assertion_ — a flag or a
 timestamp the document maintains about itself. A pid is an identity fact, exactly

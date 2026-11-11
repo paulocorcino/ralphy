@@ -38,7 +38,7 @@ child file a maintainer guesses, instead of the file #111 already targets.
 
 ## Verification of "no production change" (acceptance criterion 4)
 
-```
+```sh
 $ git diff --name-only main..HEAD -- '*.rs'
 (empty)
 ```

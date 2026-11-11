@@ -12,8 +12,7 @@ the resumable reattach) and ADR-0076 D14 (the output an agent reads).
 The operator drives two or more agent consoles from an iPad through dev
 tunnels. After a switch to another console and back, the text the agent wrote
 in the meantime is narrow, and a later wide redraw paints over it (#689). The
-text in the agent is correct. Only the screen is wrong. The causes, checked in
-# 689:
+text in the agent is correct. Only the screen is wrong. The causes, checked in #689:
 
 - A covered console still set the size of its PTY (F1). Fixed in the page on
   2026-10-12: a covered console without the focus sends no size.
@@ -200,8 +199,7 @@ reads the handshake of that socket: 750 ms or more is a slow link and a covered
 console waits 120 s, less than 750 ms (or no socket yet) is 15 s.
 
 **D11. #581 item 5 is decided by the size of the compressed snapshot on
-wake.** If the compressed snapshot on wake, measured by the closing stage of
-# 689, is at most 64 KiB, item 5 is dropped: a dormant console keeps no bytes
+wake.** If the compressed snapshot on wake, measured by the closing stage of #689, is at most 64 KiB, item 5 is dropped: a dormant console keeps no bytes
 and wakes with the snapshot. 64 KiB fits in the first three round trips of TCP
 slow start (initial window of 10 segments: about 14 + 28 + 57 KiB), which is
 under 1 s at the p90 round trip of remote sockets (256 ms). If it is larger,

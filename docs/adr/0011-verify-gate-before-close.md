@@ -89,7 +89,7 @@ pub enum VerifySpec {
 
 ### Resolution precedence
 
-```
+```text
 ## Verify in plan.md        (per-issue, planner-emitted)   → strongest
 settings.json verify.command (per-repo default)            → middle
 (nothing resolves)          → close on self-report + loud warn → weakest
@@ -160,7 +160,7 @@ artifacts.
 On a gate run (pass or fail) the runner posts a comment on the issue recording
 **each command, its exit code, and (on failure) a tail of its output**:
 
-```
+```text
 ## Verify (Ralphy run 2026-06-17-…)
 ✓ cargo fmt --check            exit 0
 ✓ cargo clippy … -D warnings   exit 0

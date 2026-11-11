@@ -33,7 +33,7 @@ The Claude adapter detects completion from a Stop-hook flag file over a live PTY
 session. Codex has no such hook and does not need an interactive session, so the
 Codex adapter runs headless:
 
-```
+```text
 codex exec -C <root> -m <model> -c model_reasoning_effort="<effort>" \
   -s danger-full-access -a never -o .ralphy/codex-last.txt -
 ```

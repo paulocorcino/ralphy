@@ -137,7 +137,7 @@ text deltas.
 
 `agent ls` under piped stdio **crashes and still exits 0**:
 
-```
+```text
 ERROR Raw mode is not supported on the current process.stdin, which Ink uses
       as input stream by default.
 ```
@@ -323,7 +323,7 @@ userId, `authId: "github|user_…"`) and `privacyCache: {"ghostMode": true, "pri
 
 ### Topology — two local stores, plus a server copy
 
-```
+```text
 ~/.cursor/chats/<cwd-hash>/<session-id>/meta.json      # 137 B
 ~/.cursor/chats/<cwd-hash>/<session-id>/store.db       # 148 KB, SQLite
 ~/.cursor/projects/<cwd-slug>/agent-transcripts/<sid>/<sid>.jsonl
@@ -475,7 +475,7 @@ The first `-p` run (cwd `C:\Dev\FinCal\.cursor-probe`, task explicitly forbidden
 from reading files or running commands) produced
 `~/.cursor/projects/C-Dev-FinCal/worker.log`, 86 KB:
 
-```
+```text
 [info] runServer socketPath=\\.\pipe\anysphere-Corcino-c--users-pichau-cursor-projects-c-dev-fincal
 [debug] Starting typescript-language-server npxPath=C:\WINDOWS\System32\cmd.exe
 [info] Getting tree structure for workspacePath=C:\Dev\FinCal

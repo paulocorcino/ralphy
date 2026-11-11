@@ -1,7 +1,7 @@
 # Live capstone — `ralphy run --agent gemini` end-to-end (#265)
 
 Raw-evidence companion to the accepted note
-[docs/adr/0043-gemini-validation.md](../adr/0043-gemini-validation.md). Where that
+[docs/adr/0043-gemini-validation.md](../../adr/0043-gemini-validation.md). Where that
 file records the verdict per phase, this one carries the numbers, commands and log
 lines behind it. The runbook that drove it is
 [265-gemini-capstone-runbook.md](./265-gemini-capstone-runbook.md).
@@ -82,7 +82,7 @@ mirroring the Cursor capstone's #117.
 
 Execute-turn terminal envelope (`result.stats`), pinned `gemini-3.5-flash`:
 
-```
+```text
 total_tokens 569377 · input_tokens 565088 · output_tokens 1342 · cached 448012 · input 117076
 models: {"gemini-3.5-flash": {…}}   # single key — pinning removed the router
 ```

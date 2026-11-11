@@ -21,7 +21,7 @@ from these results.
 
 ### Phase 1 — dry-run / plan-only (`--only-issue 5 --agent opencode --dry-run`)
 
-```
+```text
 ralphy.exe run --repo C:\Dev\OCS\appusage --only-issue 5 --agent opencode --dry-run --verbose
 ```
 
@@ -37,7 +37,7 @@ Issue #5 is already implemented, so a non-dry-run on it would re-plan to 0 steps
 and never reach `execute()`. To exercise execute→classify→close-on-green, the
 target was the feasible, unblocked issue **#6** (chosen with the operator).
 
-```
+```text
 ralphy.exe run --repo C:\Dev\OCS\appusage --only-issue 6 --agent opencode --verbose
 ```
 
