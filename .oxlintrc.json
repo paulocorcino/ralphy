@@ -81,28 +81,24 @@
     "unicorn/prefer-node-protocol": "error",
     "unicorn/throw-new-error": "error",
     "curly": ["error", "multi-line"],
-    // debt: 1089 sites
-    "typescript/strict-boolean-expressions": "off",
-    // debt: 648 sites
-    "typescript/prefer-nullish-coalescing": "off",
+    "typescript/strict-boolean-expressions": "error",
+    "typescript/prefer-nullish-coalescing": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "no-implicit-coercion": "error",
+    "typescript/no-unnecessary-type-conversion": "error",
+    "unicorn/explicit-length-check": "error",
+    "unicorn/prefer-number-coercion": "error",
+    "typescript/no-unnecessary-boolean-literal-compare": "error",
     // debt: 461 sites
     "require-unicode-regexp": "off",
-    // debt: 429 sites
-    "typescript/no-unnecessary-condition": "off",
     // debt: 242 sites
     "typescript/no-confusing-void-expression": "off",
-    // debt: 191 sites
-    "no-implicit-coercion": "off",
     // debt: 179 sites
     "require-await": "off",
     // debt: 133 sites
     "unicorn/consistent-function-scoping": "off",
-    // debt: 117 sites
-    "typescript/no-unnecessary-type-conversion": "off",
     // debt: 102 sites
     "typescript/no-unsafe-type-assertion": "off",
-    // debt: 75 sites
-    "unicorn/explicit-length-check": "off",
     // debt: 65 sites
     "no-promise-executor-return": "off",
     // debt: 46 sites
@@ -123,8 +119,6 @@
     "typescript/strict-void-return": "off",
     // debt: 16 sites
     "unicorn/no-array-callback-reference": "off",
-    // debt: 15 sites
-    "unicorn/prefer-number-coercion": "off",
     // debt: 14 sites
     "max-params": "off",
     // debt: 13 sites
@@ -134,8 +128,6 @@
     "no-param-reassign": "off",
     // debt: 10 sites
     "typescript/consistent-return": "off",
-    // debt: 10 sites
-    "typescript/no-unnecessary-boolean-literal-compare": "off",
     // debt: 6 sites
     "max-classes-per-file": "off",
     // debt: 6 sites
@@ -196,43 +188,6 @@
   },
   "overrides": [
     // Test code is not measured for complexity (ADR-0081 D3).
-    { "files": ["**/ui-tests/**"], "env": { "node": true }, "rules": { "complexity": "off" } },
-    // Phase 9: truth and null, on by module group.
-    {
-      "files": [
-        "**/ui/wb-kanban*.ts",
-        "**/ui/wb-columns*.ts",
-        "**/ui/wb-uploads-store.ts",
-        "**/ui/wb-notes*.ts",
-        "**/ui/wb-console*.ts",
-        "**/ui/wb-spend*.ts",
-        "**/ui/wb-fleet*.ts",
-        "**/ui/wb-runs*.ts",
-        "**/ui/wb-desk*.ts",
-        "**/ui/wb-tabs*.ts",
-        "**/ui/wb-board*.ts",
-        "**/ui/wb-file*.ts",
-        "**/ui/wb-viewer*.ts",
-        "**/ui/wb-stage*.ts",
-        "**/ui/wb-geometry*.ts",
-        "**/ui/wb-project*.ts",
-        "**/ui/wb-add-project*.ts",
-        "**/ui/wb-hosts*.ts",
-        "**/ui/wb-changes*.ts",
-        "**/ui/wb-device*.ts",
-        "**/ui/*.ts",
-        "**/ui-tests/**"
-      ],
-      "rules": {
-        "typescript/strict-boolean-expressions": "error",
-        "typescript/prefer-nullish-coalescing": "error",
-        "typescript/no-unnecessary-condition": "error",
-        "no-implicit-coercion": "error",
-        "typescript/no-unnecessary-type-conversion": "error",
-        "unicorn/explicit-length-check": "error",
-        "unicorn/prefer-number-coercion": "error",
-        "typescript/no-unnecessary-boolean-literal-compare": "error"
-      }
-    }
+    { "files": ["**/ui-tests/**"], "env": { "node": true }, "rules": { "complexity": "off" } }
   ]
 }
