@@ -166,7 +166,7 @@ impl Agent for KimiAgent {
             );
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "".
-            let _ = self.plan_effort.as_deref();
+            let _: Option<&str> = self.plan_effort.as_deref();
             ralphy_core::emit::planning("kimi", &model, "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
@@ -255,7 +255,7 @@ impl Agent for KimiAgent {
             );
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "".
-            let _ = self.exec_effort.as_deref();
+            let _: Option<&str> = self.exec_effort.as_deref();
             ralphy_core::emit::executing("kimi", 0, &model, "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();

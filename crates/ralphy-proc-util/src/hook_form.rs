@@ -206,11 +206,9 @@ fn spawn_version(bin: &Path, limit: Duration) -> Option<String> {
         let mut text = String::new();
         let read = stdout.read_to_string(&mut text).map(|_| text);
         // The receiver is gone after a timeout; nothing reads the text then.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver is gone after a timeout, and nothing reads the text then"
-        )]
-        let _ = tx.send(read);
+        if let Err(e) = tx.send(read) {
+            tracing::debug!("hook output not sent: {e}");
+        }
     });
     let Ok(Ok(text)) = rx.recv_timeout(limit) else {
         crate::kill_tree(&mut child);

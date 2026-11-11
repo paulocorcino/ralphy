@@ -52,11 +52,12 @@ struct StoreCopy {
 
 impl Drop for StoreCopy {
     fn drop(&mut self) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a drop cannot return the error, and the temp directory may be gone already"
-        )]
-        let _ = std::fs::remove_dir_all(&self.dir);
+        // A drop cannot return the error, and this crate has no logger. A
+        // directory that stays is a temp copy that `copy_store` clears before it
+        // reuses the name.
+        match std::fs::remove_dir_all(&self.dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }
 
@@ -76,11 +77,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     ));
     // A process killed before `Drop` ran leaves a directory this pid+seq can name
     // again; a stale `-wal` there would be replayed over the fresh `.db` snapshot.
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the directory is usually absent, and create_dir_all below reports a real failure"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    match std::fs::remove_dir_all(&dir) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
     std::fs::create_dir_all(&dir)?;
     let name = db.file_name().map_or_else(
         || "session-store.db".to_owned(),
@@ -96,11 +96,12 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     for suffix in ["-wal", "-shm"] {
         let side = db.with_file_name(format!("{name}{suffix}"));
         if side.exists() {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a sidecar is best-effort; the snapshot of the .db alone is still read"
-            )]
-            let _ = std::fs::copy(&side, copy.dir.join(format!("{name}{suffix}")));
+            // A checkpoint may remove the sidecar after `exists`; any other failure
+            // would leave a snapshot without the newest rows, so it is returned.
+            match std::fs::copy(&side, copy.dir.join(format!("{name}{suffix}"))) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            }
         }
     }
     Ok(copy)

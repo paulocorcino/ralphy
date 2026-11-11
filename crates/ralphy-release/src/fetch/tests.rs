@@ -99,26 +99,22 @@ fn serve_n(
         {
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "a failure shows in the read that follows"
-                    )]
-                    let _ = stream.set_nonblocking(false);
+                    // A failure shows in the read that follows.
+                    if let Err(e) = stream.set_nonblocking(false) {
+                        tracing::debug!("set_nonblocking failed: {e}");
+                    }
                     accepts_bg.fetch_add(1, Ordering::SeqCst);
                     let head = read_request(&mut stream);
                     if let Ok(mut seen) = requests_bg.lock() {
                         seen.push(head);
                     }
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the test client may have closed its end before the reply"
-                    )]
-                    let _ = stream.write_all(&response);
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the test client may have closed its end before the reply"
-                    )]
-                    let _ = stream.flush();
+                    // The test client may have closed its end before the reply.
+                    if let Err(e) = stream.write_all(&response) {
+                        tracing::debug!("reply not written: {e}");
+                    }
+                    if let Err(e) = stream.flush() {
+                        tracing::debug!("reply not flushed: {e}");
+                    }
                 }
                 Err(e)
                     if e.kind() == std::io::ErrorKind::WouldBlock
@@ -143,11 +139,9 @@ fn temp_cache_path(tag: &str) -> std::path::PathBuf {
 }
 
 fn remove_cache(cache: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of a test file that may not exist, and no test reads it after"
-    )]
-    let _ = std::fs::remove_file(cache);
+    if let Err(e) = std::fs::remove_file(cache) {
+        tracing::debug!("could not remove test file {}: {e}", cache.display());
+    }
 }
 
 fn opts<'a>(url: &'a str, cache: &'a Path) -> RefreshOpts<'a> {

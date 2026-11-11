@@ -80,7 +80,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let config_dir = neutral_cwd.join(CONFIG_DIR_NAME);
     one_shot_preflight(neutral_cwd, repo, &config_dir)?;
 
@@ -128,7 +128,7 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let config_dir = repo.join(".ralphy").join(CONFIG_DIR_NAME);
     one_shot_preflight(repo, repo, &config_dir)?;
 
@@ -180,7 +180,7 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let config_dir = repo.join(".ralphy").join(CONFIG_DIR_NAME);
     one_shot_preflight(repo, repo, &config_dir)?;
 
@@ -235,7 +235,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let config_dir = run_dir.join(CONFIG_DIR_NAME);
     one_shot_preflight(ws.repo_root(), ws.repo_root(), &config_dir)?;
 

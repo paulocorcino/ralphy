@@ -94,24 +94,20 @@ fn serve_n(response: Vec<u8>, max_accepts: u32) -> (u16, Arc<AtomicU32>, thread:
             match listener.accept() {
                 Ok((mut stream, _)) => {
                     // Blocking reads for the request body are fine once connected.
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "a failure shows in the read that follows"
-                    )]
-                    let _ = stream.set_nonblocking(false);
+                    // A failure shows in the read that follows.
+                    if let Err(e) = stream.set_nonblocking(false) {
+                        tracing::debug!("set_nonblocking failed: {e}");
+                    }
                     accepts_bg.fetch_add(1, Ordering::SeqCst);
                     let line = read_request_line(&mut stream);
                     assert!(line.starts_with("GET "), "expected GET, got: {line:?}");
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the test client may have closed its end before the reply"
-                    )]
-                    let _ = stream.write_all(&response);
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the test client may have closed its end before the reply"
-                    )]
-                    let _ = stream.flush();
+                    // The test client may have closed its end before the reply.
+                    if let Err(e) = stream.write_all(&response) {
+                        tracing::debug!("reply not written: {e}");
+                    }
+                    if let Err(e) = stream.flush() {
+                        tracing::debug!("reply not flushed: {e}");
+                    }
                 }
                 Err(e)
                     if e.kind() == std::io::ErrorKind::WouldBlock
