@@ -28,12 +28,11 @@ src/
     labels.rs
 ```
 
-`mod.rs` is **not** used for new splits: a tree full of identically-named
-`mod.rs` tabs is hostile to editors and to grep. The two pre-existing
-`mod.rs` directories (`ralphy-cli/src/events/mod.rs`,
-`ralphy-cli/src/telegram/mod.rs`) migrate to `events.rs` / `telegram.rs`
-**opportunistically** — when a split PR already touches that module — not as a
-forced standalone task. A `git mv foo/mod.rs foo.rs` is the whole migration.
+`mod.rs` is **not** used: a tree full of identically-named
+`mod.rs` tabs is hostile to editors and to grep. The two older
+`mod.rs` directories (`ralphy-cli/src/events/`, `ralphy-cli/src/telegram/`)
+have migrated to `events.rs` / `telegram.rs`. A `git mv foo/mod.rs foo.rs` was
+the whole migration.
 
 ### 2. Public API is unchanged; splits are internal reorganization
 
@@ -231,9 +230,8 @@ In force since 2026-11-02, when issue #853 closed.
   API, tests carried along, the CI gate of §4 green, no new abstraction.
 - "Convention divergence between PRs" is designed out — the failure mode this
   anchor exists to prevent.
-- The legacy `mod.rs` dirs are the one accepted inconsistency until a PR
-  naturally retires them; §1 records the intent so it is not mistaken for a
-  counter-example. `telegram.rs` has migrated; `events/mod.rs` remains.
+- The legacy `mod.rs` dirs were the one accepted inconsistency; both have
+  migrated (`events.rs`, `telegram.rs`), and no `mod.rs` remains.
 
 ## Compliance
 
@@ -243,8 +241,7 @@ In force since 2026-11-02, when issue #853 closed.
   `oversized` job runs on every push; tested in
   `crates/xtask/src/oversized/tests.rs`.
 
-- §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
-  (`crates/ralphy-cli/src/events/mod.rs`).
+- §1: not checked by code: reviewed in the PR. No `mod.rs` remains.
 - §2: not checked by code: reviewed in the PR.
 - §3: not checked by code: reviewed in the PR.
 - §4: checked by the CI gate in `.github/workflows/ci.yml` (`cargo fmt --all
