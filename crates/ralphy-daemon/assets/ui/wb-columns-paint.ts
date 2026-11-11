@@ -11,7 +11,7 @@ import type { ConsoleWin } from "./wb-types.d.ts";
 // no modal. Read at call time.
 function keysFree() {
   const el = document.activeElement;
-  return !el || el === document.body || !!el.closest?.(".session-window");
+  return !el || el === document.body || el.closest(".session-window") !== null;
 }
 
 // The console the columns grow from: the first column, else the console that
@@ -37,14 +37,14 @@ export function headGap(
   ) {
     return "restore";
   }
-  if (head && !headWin && relaunching(head)) return "wait";
+  if (head !== undefined && head !== "" && !headWin && relaunching(head)) return "wait";
   return null;
 }
 
 // A paint raises the windows when the caller asks or when the painted columns
 // changed.
 export function shouldRaise(opts: { raise?: boolean } | undefined, moved: boolean) {
-  return !!opts?.raise || moved;
+  return opts?.raise === true || moved;
 }
 
 // After a paint, the focus goes back to the column that had it, or to the
@@ -58,17 +58,17 @@ export function refocusAfterPaint(
 ) {
   if (!tabActive || !keysFree() || !columnIds.includes(before)) return;
   const want = WBColumns.focusAfter(ids, before);
-  if (want && (want !== before || moved)) WBConsole.focusColumn(want);
+  if (want !== null && want !== "" && (want !== before || moved)) WBConsole.focusColumn(want);
 }
 
 // `setColumns` writes only a change, and an ignored grid meets an empty one:
 // the restored grid `next` is written back when it differs from the stored
 // `raw`. A flat list stored before rows is written back as a grid.
 export function writeBackColumns(raw: unknown, next: Grid) {
-  if (next.length && JSON.stringify(raw) !== JSON.stringify(next)) {
-    window.WBView?.patch({ columns: WBColumns.toStored(next) });
+  if (next.length > 0 && JSON.stringify(raw) !== JSON.stringify(next)) {
+    window.WBView.patch({ columns: WBColumns.toStored(next) });
   }
-  if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
+  if (next.length === 0 && raw !== null) window.WBView.patch({ columns: null });
 }
 
 // The number of columns a paint shows: the measured cap when a console leads
@@ -76,6 +76,7 @@ export function writeBackColumns(raw: unknown, next: Grid) {
 // wide, which reads as a cap of 1, so the painted columns stay as they are
 // until the tab shows again.
 export function paintCap(lead: string | undefined, columnCap: () => number) {
-  if (lead && !WBConsole.columnMeasure().viewport) return null;
-  return lead ? columnCap() : 1;
+  const led = lead !== undefined && lead !== "";
+  if (led && !WBConsole.columnMeasure().viewport) return null;
+  return led ? columnCap() : 1;
 }

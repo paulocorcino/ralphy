@@ -78,21 +78,21 @@ type ListFoldInput = {
 // the first one.
 function fenceOfWindow(membership: Record<string, string[]> | null | undefined) {
   const fenceOfWin = new Map<string, string>();
-  for (const [fenceId, ids] of Object.entries(membership || {})) {
-    for (const wid of ids || []) if (!fenceOfWin.has(wid)) fenceOfWin.set(wid, fenceId);
+  for (const [fenceId, ids] of Object.entries(membership ?? {})) {
+    for (const wid of ids) if (!fenceOfWin.has(wid)) fenceOfWin.set(wid, fenceId);
   }
   return fenceOfWin;
 }
 
 function idSet(ids: readonly string[] | null | undefined) {
-  return new Set(ids || []);
+  return new Set(ids ?? []);
 }
 
 // The reason a console on this page cannot be opened as a column, or null.
 function rowReason(inGrid: boolean, full: boolean | undefined, tabbed: boolean) {
   if (tabbed) return REASON_TAB;
   if (inGrid) return REASON_OPEN;
-  return full ? REASON_FULL : null;
+  return full === true ? REASON_FULL : null;
 }
 
 // The row of a console on this page. `inGrid`: it is in the grid already.
@@ -160,14 +160,14 @@ export function listFold({
   const inColumns = idSet(columns);
   const inTabs = idSet(tabbed);
   // A console in no fence looks up `undefined`.
-  const byFence = new Map<string | undefined, ColumnRow[]>((fences || []).map((f) => [f.id, []]));
+  const byFence = new Map<string | undefined, ColumnRow[]>((fences ?? []).map((f) => [f.id, []]));
   const fenceOfWin = fenceOfWindow(membership);
   const loose: ColumnRow[] = [];
-  for (const r of rows || []) {
+  for (const r of rows ?? []) {
     const into = byFence.get(fenceOfWin.get(r.id));
     const row =
       r.id === from ? selfRow(r) : liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id));
-    (into || loose).push(row);
+    (into ?? loose).push(row);
   }
   addDetached(byFence, detached);
   return listGroups(loose, fences, byFence);
@@ -179,7 +179,7 @@ function addDetached(
   byFence: Map<string | undefined, ColumnRow[]>,
   detached: ListFoldInput["detached"],
 ) {
-  for (const [fenceId, members] of Object.entries(detached || {})) {
+  for (const [fenceId, members] of Object.entries(detached ?? {})) {
     const into = byFence.get(fenceId);
     if (!into) continue;
     for (const m of members) into.push(detachedRow(m));
@@ -195,10 +195,10 @@ function listGroups(
 ) {
   const group = (fence: ColumnFence | null, rows: ColumnRow[]): ColumnGroup => ({ fence, rows });
   const groups: ColumnGroup[] = [];
-  if (loose.length) groups.push(group(null, loose));
-  for (const f of fences || []) {
+  if (loose.length > 0) groups.push(group(null, loose));
+  for (const f of fences ?? []) {
     const members = byFence.get(f.id) as ColumnRow[];
-    if (members.length) groups.push(group({ id: f.id, name: f.name }, members));
+    if (members.length > 0) groups.push(group({ id: f.id, name: f.name }, members));
   }
   return groups;
 }
@@ -206,7 +206,7 @@ function listGroups(
 // A row's text: the console name and its label, from the one builder the
 // title uses (`labelOf` is `WBConsoleName.consoleLabel`).
 export function rowLabel(row: ColumnRow, labelOf: (name: string, agent: string | null) => string) {
-  return labelOf(row.name || "", row.agent);
+  return labelOf(row.name ?? "", row.agent);
 }
 
 // The list with only the rows that match `query`, case-insensitive, against
@@ -217,20 +217,16 @@ export function filterGroups(
   query: string | null | undefined,
   repoText: (ref: string) => string,
 ) {
-  const q = String(query || "")
-    .trim()
-    .toLowerCase();
+  const q = (query ?? "").trim().toLowerCase();
   if (!q) return groups;
-  const has = (text: string | null | undefined) =>
-    String(text || "")
-      .toLowerCase()
-      .includes(q);
+  const has = (text: string | null | undefined) => (text ?? "").toLowerCase().includes(q);
+  const repoHas = (repo: string | null) => repo !== null && repo !== "" && has(repoText(repo));
   const out = [];
   for (const g of groups) {
     const rows = has(g.fence?.name)
       ? g.rows
-      : g.rows.filter((r) => has(r.name) || has(r.agent) || has(r.repo ? repoText(r.repo) : ""));
-    if (rows.length) out.push({ ...g, rows });
+      : g.rows.filter((r) => has(r.name) || has(r.agent) || repoHas(r.repo));
+    if (rows.length > 0) out.push({ ...g, rows });
   }
   return out;
 }

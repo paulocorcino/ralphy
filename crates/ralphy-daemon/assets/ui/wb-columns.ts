@@ -99,7 +99,7 @@ export const WBColumns = (function () {
     capValue: number,
     dir: string,
   ): OpenResult {
-    const list = grid.length ? grid : [[callerId]];
+    const list = grid.length > 0 ? grid : [[callerId]];
     const ids = flat(list);
     if (ids.includes(id)) return { ok: false, reason: REASON_OPEN };
     if (ids.length >= capValue) return { ok: false, reason: REASON_FULL };
@@ -126,7 +126,7 @@ export const WBColumns = (function () {
   // as in `open`. `unmax` names the old first console when it leaves the grid;
   // one that moves to another row is repainted, as a column.
   function swap(grid: Grid, atId: string, id: string): SwapResult {
-    const list = grid.length ? grid : [[atId]];
+    const list = grid.length > 0 ? grid : [[atId]];
     const at = where(list, atId);
     if (!at || id === atId) return { ok: false };
     const from = where(list, id);
@@ -190,7 +190,7 @@ export const WBColumns = (function () {
       changed: false,
     };
     if (event?.type !== "closed" && event?.type !== "detached") return same;
-    const ids = event.ids || [];
+    const ids = event.ids ?? [];
     if (!flat(grid).some((id) => ids.includes(id))) return same;
     return {
       ...without(grid, ids),
@@ -232,7 +232,7 @@ export const WBColumns = (function () {
       top: Number(r?.top) || 0,
       width: Math.max(0, Number(r?.width) || 0),
     });
-    const list = (items || [])
+    const list = (items ?? [])
       .map((it) => ({ id: it.id, ...box(it.rect) }))
       .sort((a, b) => a.left - b.left || a.top - b.top || compareIds(a.id, b.id));
     const cols = [];
@@ -277,7 +277,11 @@ export const WBColumns = (function () {
     step: number,
   ): string | null {
     const cols: Grid = [];
-    for (const p of paintedList) (cols[p.index] ||= []).push(p.id);
+    for (const p of paintedList) {
+      const col: string[] | undefined = cols[p.index];
+      if (col === undefined) cols[p.index] = [p.id];
+      else col.push(p.id);
+    }
     const at = where(cols, focusedId);
     if (!at) return paintedList.at(step > 0 ? 0 : -1)?.id ?? null;
     const [c, r] = at;
@@ -311,7 +315,7 @@ export const WBColumns = (function () {
   ): Grid {
     if (!Array.isArray(stored)) return [];
     const cols = storedColumns(stored);
-    const records = desk || [];
+    const records = desk ?? [];
     if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
     const next = keep(cols, new Set(records.map((r) => r.id)));
     return flat(next).length >= 2 ? next : [];
@@ -330,7 +334,7 @@ export const WBColumns = (function () {
           col.push(id);
         }
       }
-      if (col.length) cols.push(col);
+      if (col.length > 0) cols.push(col);
     }
     return cols;
   }

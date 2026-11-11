@@ -148,7 +148,7 @@ function resendFrom(reply: PartReply | null, seen: { expected: number }): number
 export function uploadsStore(deps: UploadsStoreDeps) {
   const { messages } = deps;
   const send =
-    deps.send || ((payload: CommandPayload) => window.WBDaemon.write("file.upload", payload));
+    deps.send ?? ((payload: CommandPayload) => window.WBDaemon.write("file.upload", payload));
   // The `File` of each item, by key: kept out of `items`, which Alpine wraps.
   const files = new Map<number, Blob & { name: string }>();
   let nextKey = 1;
@@ -253,9 +253,10 @@ export function uploadsStore(deps: UploadsStoreDeps) {
       item.state = "sending";
       // An offset the daemon names twice in a row is not progress.
       const seen = { expected: -1 };
-      while (item.state === "sending") {
+      const stateNow = (): UploadState => item.state;
+      while (stateNow() === "sending") {
         const reply = await send(await partOf(item, file)).catch(() => null);
-        if ((item.state as UploadState) === "cancelled") return;
+        if (stateNow() === "cancelled") return;
         this.applyReply(item, reply, seen);
       }
     },
