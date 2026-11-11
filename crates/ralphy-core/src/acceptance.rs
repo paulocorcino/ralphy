@@ -2,6 +2,7 @@
 //! issue body. Pure functions over markdown strings — no I/O, no `gh` calls.
 
 use regex::Regex;
+use std::fmt::Write as _;
 
 /// Whether a ledger verdict was automatically verified or requires human review.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -243,7 +244,7 @@ pub fn evidence_comment(verdicts: &[Verdict], unmatched: &[String]) -> String {
              because their verbatim text was not found as an unchecked line in the issue body:\n\n",
         );
         for c in unmatched {
-            out.push_str(&format!("- {c}\n"));
+            writeln!(out, "- {c}").expect(crate::WRITE_TO_STRING);
         }
     }
 

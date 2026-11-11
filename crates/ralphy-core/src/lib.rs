@@ -79,6 +79,9 @@ pub const DEFAULT_INTERACTIVE_IDLE_MINUTES: u64 = 45;
 /// (`--deadline-hours`), if one is set.
 pub const UNBOUNDED_ISSUE_HORIZON: Duration = Duration::from_hours(8760);
 
+// Writing to a String cannot fail, so a failed write is a broken invariant.
+pub(crate) const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
 mod agent;
 mod effort;
 pub(crate) mod markdown;

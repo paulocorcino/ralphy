@@ -154,46 +154,7 @@ fn list_reports_only_the_workbench_worktrees() {
 /// each a warning, none a failure; the new worktree stays clean.
 #[test]
 fn carry_over_copies_and_links_only_gitignored_paths_and_warns_on_the_rest() {
-    let root = tmp("carry");
-    git(&root, &["init", "-q", "-b", "main"]).unwrap();
-    configure(&root);
-    commit_file(
-        &root,
-        "README.md",
-        "hello
-",
-        "init",
-    );
-    commit_file(
-        &root,
-        ".gitignore",
-        ".ralphy/
-.env
-.vscode/
-node_modules/
-",
-        "ignore",
-    );
-    std::fs::write(
-        root.join(".env"),
-        "SECRET=1
-",
-    )
-    .unwrap();
-    std::fs::create_dir_all(root.join(".vscode")).unwrap();
-    std::fs::write(
-        root.join(".vscode").join("settings.json"),
-        "{}
-",
-    )
-    .unwrap();
-    std::fs::create_dir_all(root.join("node_modules").join("pkg")).unwrap();
-    std::fs::write(
-        root.join("node_modules").join("pkg").join("index.js"),
-        "1
-",
-    )
-    .unwrap();
+    let root = carry_fixture();
 
     let c = add(&root, "wt-c", None).unwrap();
     let dest = Path::new(&c.path);
@@ -221,50 +182,7 @@ node_modules/
         "{warnings:?}"
     );
 
-    assert_eq!(
-        std::fs::read_to_string(dest.join(".env")).unwrap(),
-        "SECRET=1
-"
-    );
-    assert!(
-        !dest
-            .join(".env")
-            .symlink_metadata()
-            .unwrap()
-            .file_type()
-            .is_symlink(),
-        "copy is a real file"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dest.join(".vscode").join("settings.json")).unwrap(),
-        "{}
-"
-    );
-    let shared = dest.join("node_modules");
-    assert_eq!(
-        std::fs::read_to_string(shared.join("pkg").join("index.js")).unwrap(),
-        "1
-",
-        "the link resolves into the primary's tree"
-    );
-    let meta = shared.symlink_metadata().unwrap();
-    assert!(
-        meta.file_type().is_symlink() || (cfg!(windows) && meta.file_type().is_dir()),
-        "share is a link (junction on Windows), not a copy"
-    );
-    // A junction reports as a directory reparse point; prove it is not a
-    // copy by writing through it.
-    std::fs::write(
-        shared.join("pkg").join("added.js"),
-        "2
-",
-    )
-    .unwrap();
-    assert!(root
-        .join("node_modules")
-        .join("pkg")
-        .join("added.js")
-        .exists());
+    assert_copied_and_shared(&root, dest);
     // Everything carried is ignored in the worktree too (same committed
     // .gitignore), so the new tree is still clean.
     let listing = list(&root).unwrap();
@@ -298,6 +216,104 @@ node_modules/
         .join("added.js")
         .exists());
     remove_scratch(&root);
+}
+
+/// A repo with an ignored `.env`, `.vscode/` and `node_modules/pkg` to carry.
+fn carry_fixture() -> PathBuf {
+    let root = tmp("carry");
+    git(&root, &["init", "-q", "-b", "main"]).expect("the scratch fixture is writable");
+    configure(&root);
+    commit_file(
+        &root,
+        "README.md",
+        "hello
+",
+        "init",
+    );
+    commit_file(
+        &root,
+        ".gitignore",
+        ".ralphy/
+.env
+.vscode/
+node_modules/
+",
+        "ignore",
+    );
+    std::fs::write(
+        root.join(".env"),
+        "SECRET=1
+",
+    )
+    .expect("the scratch fixture is writable");
+    std::fs::create_dir_all(root.join(".vscode")).expect("the scratch fixture is writable");
+    std::fs::write(
+        root.join(".vscode").join("settings.json"),
+        "{}
+",
+    )
+    .expect("the scratch fixture is writable");
+    std::fs::create_dir_all(root.join("node_modules").join("pkg"))
+        .expect("the scratch fixture is writable");
+    std::fs::write(
+        root.join("node_modules").join("pkg").join("index.js"),
+        "1
+",
+    )
+    .expect("the scratch fixture is writable");
+    root
+}
+
+/// The copies are real files and the share is a link into the primary's tree.
+fn assert_copied_and_shared(root: &Path, dest: &Path) {
+    assert_eq!(
+        std::fs::read_to_string(dest.join(".env")).expect("the carried paths are readable"),
+        "SECRET=1
+"
+    );
+    assert!(
+        !dest
+            .join(".env")
+            .symlink_metadata()
+            .expect("the carried paths are readable")
+            .file_type()
+            .is_symlink(),
+        "copy is a real file"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.join(".vscode").join("settings.json"))
+            .expect("the carried paths are readable"),
+        "{}
+"
+    );
+    let shared = dest.join("node_modules");
+    assert_eq!(
+        std::fs::read_to_string(shared.join("pkg").join("index.js"))
+            .expect("the carried paths are readable"),
+        "1
+",
+        "the link resolves into the primary's tree"
+    );
+    let meta = shared
+        .symlink_metadata()
+        .expect("the carried paths are readable");
+    assert!(
+        meta.file_type().is_symlink() || (cfg!(windows) && meta.file_type().is_dir()),
+        "share is a link (junction on Windows), not a copy"
+    );
+    // A junction reports as a directory reparse point; prove it is not a
+    // copy by writing through it.
+    std::fs::write(
+        shared.join("pkg").join("added.js"),
+        "2
+",
+    )
+    .expect("the carried paths are readable");
+    assert!(root
+        .join("node_modules")
+        .join("pkg")
+        .join("added.js")
+        .exists());
 }
 
 /// ONE fixture: `wt-c` from the default base, `wt-d` from an explicit

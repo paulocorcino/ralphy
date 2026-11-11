@@ -16,6 +16,10 @@ use crate::{Outcome, ResetAt, Usage};
 /// (model and effort are adapter concerns, set when the adapter is built). The
 /// issues come from the caller (built via [`crate::github::list_queue`]) so the
 /// loop itself stays `gh`-free and testable.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent run option the caller sets, not a state"
+)]
 pub struct QueueConfig {
     pub repo_root: std::path::PathBuf,
     pub base_branch: String,
@@ -244,6 +248,13 @@ pub(crate) struct RunLedger<'a> {
     pub(crate) invocations: u64,
 }
 
+/// The tokens one phase spent and the vendor session it ran in.
+#[derive(Clone, Copy)]
+pub(crate) struct PhaseSpend<'a> {
+    pub(crate) usage: &'a Usage,
+    pub(crate) session_id: Option<&'a str>,
+}
+
 impl RunLedger<'_> {
     /// Append one phase line (best-effort — a write failure warns, never stops
     /// the run, D9) and fold the usage into the run totals.
@@ -252,9 +263,9 @@ impl RunLedger<'_> {
         issue: u64,
         phase: &str,
         outcome: &str,
-        usage: &Usage,
-        session_id: Option<&str>,
+        spend: PhaseSpend<'_>,
     ) {
+        let PhaseSpend { usage, session_id } = spend;
         let rec = LedgerRecord {
             project: self.project.clone(),
             actor_email: self.actor_email.clone(),
@@ -286,11 +297,10 @@ impl RunLedger<'_> {
         issue: u64,
         phase: &str,
         outcome: &str,
-        usage: &Usage,
-        session_id: Option<&str>,
+        spend: PhaseSpend<'_>,
     ) {
-        if usage.total() > 0 {
-            self.record_phase(issue, phase, outcome, usage, session_id);
+        if spend.usage.total() > 0 {
+            self.record_phase(issue, phase, outcome, spend);
         }
     }
 }

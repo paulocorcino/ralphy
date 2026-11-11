@@ -1,6 +1,7 @@
 //! Issue comment CRUD: fetching, posting, editing, and marker-based upsert of
 //! comments on GitHub issues via the `gh` CLI.
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -376,9 +377,9 @@ pub fn render_triage_threads(threads: &[IssueThread]) -> String {
     }
     let mut out = String::new();
     for t in threads {
-        out.push_str(&format!("\n## Thread (issue #{})\n", t.number));
+        writeln!(out, "\n## Thread (issue #{})", t.number).expect(crate::WRITE_TO_STRING);
         if let Some(reason) = &t.not_fetched {
-            out.push_str(&format!("thread not fetched: {reason}\n"));
+            writeln!(out, "thread not fetched: {reason}").expect(crate::WRITE_TO_STRING);
             continue;
         }
         let doc = ThreadOut {
@@ -398,7 +399,7 @@ pub fn render_triage_threads(threads: &[IssueThread]) -> String {
                 .collect(),
         };
         let json = serde_json::to_string_pretty(&doc).expect("a thread of strings serializes");
-        out.push_str(&format!("```json\n{json}\n```\n"));
+        writeln!(out, "```json\n{json}\n```").expect(crate::WRITE_TO_STRING);
     }
     out
 }

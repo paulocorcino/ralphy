@@ -12,8 +12,8 @@ fn per_phase_limit_plans_resume_but_execute_stops() {
     let repo = init_repo("split-limit");
     let queue = vec![issue(8)];
     // One plan-time limit (resolves via resume), then an execute-time limit (stops).
-    let agent = ScriptedAgent::new(vec![Outcome::Limit(reset_text("15:00"))])
-        .with_plan_scripts(vec![PlanScript::Limit(reset_text("12:00"))]);
+    let agent = ScriptedAgent::new(vec![Outcome::Limit(Some(reset_text("15:00")))])
+        .with_plan_scripts(vec![PlanScript::Limit(Some(reset_text("12:00")))]);
     let tracker = RecordingTracker::default();
     let clock = ScriptedClock::never();
 
@@ -48,7 +48,7 @@ fn per_phase_limit_plans_resume_but_execute_stops() {
     match report.stop {
         Some(StopReason::Limit { number, reset }) => {
             assert_eq!(number, 8);
-            assert_eq!(reset, reset_text("15:00"));
+            assert_eq!(reset, Some(reset_text("15:00")));
         }
         other => panic!("expected Limit stop from the execute phase, got {other:?}"),
     }
@@ -67,7 +67,7 @@ fn plan_limit_auto_resumes_by_replanning() {
     let repo = init_repo("plan-limit-resume");
     let queue = vec![issue(7)];
     let agent = ScriptedAgent::new(vec![Outcome::Done])
-        .with_plan_scripts(vec![PlanScript::Limit(reset_text("15:00"))]);
+        .with_plan_scripts(vec![PlanScript::Limit(Some(reset_text("15:00")))]);
     let tracker = RecordingTracker::default();
     let clock = ScriptedClock::never();
 
@@ -102,9 +102,9 @@ fn repeated_plan_limits_hit_the_cap_and_stop() {
     let repo = init_repo("plan-limit-cap");
     let queue = vec![issue(3)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]).with_plan_scripts(vec![
-        PlanScript::Limit(reset_text("09:00")),
-        PlanScript::Limit(reset_text("09:00")),
-        PlanScript::Limit(reset_text("09:00")),
+        PlanScript::Limit(Some(reset_text("09:00"))),
+        PlanScript::Limit(Some(reset_text("09:00"))),
+        PlanScript::Limit(Some(reset_text("09:00"))),
     ]);
     let tracker = RecordingTracker::default();
     let clock = ScriptedClock::never();
@@ -132,7 +132,7 @@ fn repeated_plan_limits_hit_the_cap_and_stop() {
     match report.stop {
         Some(StopReason::Limit { number, reset }) => {
             assert_eq!(number, 3);
-            assert_eq!(reset, reset_text("09:00"));
+            assert_eq!(reset, Some(reset_text("09:00")));
         }
         other => panic!("expected Limit stop, got {other:?}"),
     }
@@ -147,7 +147,7 @@ fn plan_limit_deadline_beats_resume() {
     let repo = init_repo("plan-limit-deadline");
     let queue = vec![issue(4)];
     let agent = ScriptedAgent::new(vec![Outcome::Done])
-        .with_plan_scripts(vec![PlanScript::Limit(reset_text("15:00"))]);
+        .with_plan_scripts(vec![PlanScript::Limit(Some(reset_text("15:00")))]);
     let tracker = RecordingTracker::default();
     let clock = ScriptedClock::deadline_on_wait();
 

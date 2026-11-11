@@ -8,7 +8,7 @@ use crate::{handoff, Issue, Plan, PlanLimit, ResetAt};
 
 use super::IssueCtx;
 use crate::runner::comments::{bundle_comment, infeasible_comment};
-use crate::runner::{synthetic_reset, RunLedger, WaitOutcome, NEEDS_SPLIT_LABEL};
+use crate::runner::{synthetic_reset, PhaseSpend, RunLedger, WaitOutcome, NEEDS_SPLIT_LABEL};
 
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
@@ -118,8 +118,10 @@ pub(crate) fn plan_phase(
         issue.number,
         "plan",
         "ok",
-        &plan.usage,
-        plan.session_id.as_deref(),
+        PhaseSpend {
+            usage: &plan.usage,
+            session_id: plan.session_id.as_deref(),
+        },
     );
 
     // A planner refusal has no steps at all; a plan whose steps are all checked

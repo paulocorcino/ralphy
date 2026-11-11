@@ -7,7 +7,7 @@ use crate::{protocol, Execution, Issue, Outcome, Plan, ResetAt, Usage};
 
 use super::IssueCtx;
 use crate::runner::artifacts::{clear_protocol_failure, write_protocol_failure};
-use crate::runner::RunLedger;
+use crate::runner::{PhaseSpend, RunLedger};
 
 /// How the protocol lint settled for a `Done` issue.
 pub(crate) enum ProtocolGate {
@@ -85,8 +85,10 @@ pub(crate) fn protocol_gate(
         } else {
             "protocol-failed"
         },
-        &protocol_usage,
-        protocol_session_id.as_deref(),
+        PhaseSpend {
+            usage: &protocol_usage,
+            session_id: protocol_session_id.as_deref(),
+        },
     );
 
     // A usage limit mid-bounce is the run's limit — no tokens are left

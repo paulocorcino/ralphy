@@ -10,6 +10,7 @@
 //! I/O, no `gh` calls.
 
 use regex::Regex;
+use std::fmt::Write as _;
 
 use crate::acceptance;
 
@@ -189,8 +190,10 @@ fn render_checks(report: &ProtocolReport) -> String {
     for c in &report.checks {
         let mark = if c.passed { '\u{2713}' } else { '\u{2717}' };
         match (&c.detail, c.passed) {
-            (Some(d), false) => out.push_str(&format!("{mark} {}    {d}\n", c.label)),
-            _ => out.push_str(&format!("{mark} {}\n", c.label)),
+            (Some(d), false) => {
+                writeln!(out, "{mark} {}    {d}", c.label).expect(crate::WRITE_TO_STRING);
+            }
+            _ => writeln!(out, "{mark} {}", c.label).expect(crate::WRITE_TO_STRING),
         }
     }
     out.push_str("```\n");
@@ -223,13 +226,16 @@ pub fn comment_block(report: &ProtocolReport) -> String {
 pub fn failure_brief(stamp: &str, report: &ProtocolReport, done_signal: &str) -> String {
     let mut out =
         format!("# Protocol lint failed — completion artifacts required (Ralphy run {stamp})\n\n");
-    out.push_str(&format!(
+    writeln!(
+        out,
         "You emitted `{done_signal}`, but the runner's structural lint over \
          `.ralphy/plan.md` found the charter's completion protocol unfinished. The \
-         session is handed back ONCE to complete it.\n\nFailed checks (\u{2717}):\n\n",
-    ));
+         session is handed back ONCE to complete it.\n\nFailed checks (\u{2717}):\n",
+    )
+    .expect(crate::WRITE_TO_STRING);
     out.push_str(&render_checks(report));
-    out.push_str(&format!(
+    writeln!(
+        out,
         "\nFix each failed check HONESTLY, then emit `{done_signal}` again:\n\
          - Tick a step `- [x]` ONLY when its work is genuinely done and committed; if \
            work remains, finish it (or split the step and finish the rest) first.\n\
@@ -247,8 +253,9 @@ pub fn failure_brief(stamp: &str, report: &ProtocolReport, done_signal: &str) ->
            that criterion.\n\n\
          The lint checks structure only, so completing the protocol satisfies it in \
          minutes. The runner re-runs the SAME checks; a second violation closes the \
-         issue with this failure report published for the human reviewer.\n",
-    ));
+         issue with this failure report published for the human reviewer.",
+    )
+    .expect(crate::WRITE_TO_STRING);
     out
 }
 

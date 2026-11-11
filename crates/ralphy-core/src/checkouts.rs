@@ -87,10 +87,10 @@ fn read_attribute(entry: &mut Entry, line: &str) {
     if let Some(path) = line.strip_prefix("worktree ") {
         path.clone_into(&mut entry.path);
     } else if let Some(branch) = line.strip_prefix("branch ") {
-        entry.branch = branch
+        branch
             .strip_prefix("refs/heads/")
             .unwrap_or(branch)
-            .to_owned();
+            .clone_into(&mut entry.branch);
     } else if line == "detached" {
         entry.detached = true;
     } else if line == "prunable" || line.starts_with("prunable ") {

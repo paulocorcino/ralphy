@@ -14,7 +14,7 @@ use crate::runner::artifacts::{
     clear_verify_failure, verify_failure_summary, verify_spawn_failure_summary,
     write_verify_failure,
 };
-use crate::runner::RunLedger;
+use crate::runner::{PhaseSpend, RunLedger};
 
 /// How many times a failed verify gate is handed back to the agent to repair
 /// before the runner gives up and stops the run (ADR-0011 amendment). The gate
@@ -45,7 +45,7 @@ enum VerifyPlan {
 /// `## Verify: none` is the explicit opt-out; an absent/empty section falls back
 /// to the per-repo `settings.json` `verify.command`, and if that is unset too the
 /// issue closes on the self-report with a loud warning.
-fn resolve_verify(plan_md: &str, fallback: &Option<Vec<Vec<String>>>) -> VerifyPlan {
+fn resolve_verify(plan_md: &str, fallback: Option<&Vec<Vec<String>>>) -> VerifyPlan {
     match verify::parse_verify(plan_md) {
         VerifySpec::Commands(commands) => VerifyPlan::Run(commands),
         VerifySpec::None => VerifyPlan::OptedOut,
@@ -108,7 +108,7 @@ pub(crate) fn verify_gate(
     ledger: &mut RunLedger,
 ) -> Result<VerifyGate> {
     let mut repairs = Repairs::default();
-    let gate: GateDecision = match resolve_verify(plan_md, &cx.cfg.verify_fallback) {
+    let gate: GateDecision = match resolve_verify(plan_md, cx.cfg.verify_fallback.as_ref()) {
         VerifyPlan::Run(commands) => run_with_repairs(cx, issue, plan, &commands, &mut repairs)?,
         VerifyPlan::OptedOut => {
             info!(
@@ -154,8 +154,10 @@ pub(crate) fn verify_gate(
         } else {
             "done"
         },
-        &repair_usage,
-        repairs.session_id.as_deref(),
+        PhaseSpend {
+            usage: &repair_usage,
+            session_id: repairs.session_id.as_deref(),
+        },
     );
 
     Ok(match gate {

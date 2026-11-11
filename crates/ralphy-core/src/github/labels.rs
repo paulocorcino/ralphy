@@ -237,9 +237,6 @@ pub fn list_repo_labels(repo_root: &Path) -> Result<Vec<(String, String)>> {
 
 /// Render a human-readable plan of label actions: one tagged line per action
 /// plus a summary.
-// Writing to a String cannot fail, so a failed write is a broken invariant.
-const WRITE_TO_STRING: &str = "a write to a String does not fail";
-
 pub fn format_label_plan(actions: &[LabelAction]) -> String {
     let mut out = String::new();
     let mut n_create = 0usize;
@@ -249,15 +246,15 @@ pub fn format_label_plan(actions: &[LabelAction]) -> String {
         match action {
             LabelAction::Create(spec) => {
                 n_create += 1;
-                writeln!(out, "  create  {}", spec.name).expect(WRITE_TO_STRING);
+                writeln!(out, "  create  {}", spec.name).expect(crate::WRITE_TO_STRING);
             }
             LabelAction::UpdateColor { name, from, to } => {
                 n_update += 1;
-                writeln!(out, "  update  {name} ({from} → {to})").expect(WRITE_TO_STRING);
+                writeln!(out, "  update  {name} ({from} → {to})").expect(crate::WRITE_TO_STRING);
             }
             LabelAction::Skip(name) => {
                 n_skip += 1;
-                writeln!(out, "  skip    {name}").expect(WRITE_TO_STRING);
+                writeln!(out, "  skip    {name}").expect(crate::WRITE_TO_STRING);
             }
         }
     }
@@ -265,7 +262,7 @@ pub fn format_label_plan(actions: &[LabelAction]) -> String {
         out,
         "labels: {n_create} to create, {n_update} to update, {n_skip} unchanged"
     )
-    .expect(WRITE_TO_STRING);
+    .expect(crate::WRITE_TO_STRING);
     out
 }
 
