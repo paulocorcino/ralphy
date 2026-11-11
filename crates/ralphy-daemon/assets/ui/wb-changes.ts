@@ -49,7 +49,7 @@ const MARKS: Record<string, string> = {
 
 function marker(status: string) {
   const mark = MARKS[status];
-  return mark ? { mark, cls: "st-" + status } : { mark: "?", cls: "st-unknown" };
+  return mark === undefined ? { mark: "?", cls: "st-unknown" } : { mark, cls: "st-" + status };
 }
 
 // The row's two halves: the base name, and the directory that carries it.
@@ -68,20 +68,21 @@ function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
   const rows = reply.changes && reply.changes.changes;
   if (!Array.isArray(rows)) return empty;
   const entries = rows
-    .filter((r) => r && typeof r.path === "string")
+    .filter((r: ChangeRow | null | undefined) => typeof r?.path === "string")
     .map((r) => {
-      const status = r.status || "modified";
+      const status = (r.status ?? "") || "modified";
+      const original = r.original_path ?? "";
       const { mark, cls } = marker(status);
       const { name, dir } = splitPath(r.path);
       return {
         path: r.path,
-        originalPath: r.original_path || null,
+        originalPath: original || null,
         status,
         mark,
         cls,
-        title: r.original_path ? r.original_path + " → " + r.path : r.path,
-        indexStatus: r.index_status || null,
-        worktreeStatus: r.worktree_status || null,
+        title: original ? original + " → " + r.path : r.path,
+        indexStatus: (r.index_status ?? "") || null,
+        worktreeStatus: (r.worktree_status ?? "") || null,
         name,
         dir,
       };
@@ -90,7 +91,7 @@ function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
   // a "Changes" headline an `AM` path is a modification, and printing the
   // derived `A` there would assert something false about the worktree.
   const sided = (e: ChangeEntry, status: string | null | undefined) => {
-    if (!status || status === e.status) return e;
+    if (status === null || status === undefined || status === "" || status === e.status) return e;
     const { mark, cls } = marker(status);
     return { ...e, mark, cls };
   };
@@ -100,9 +101,9 @@ function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
   return {
     count: entries.length,
     entries,
-    staged: entries.filter((e) => e.indexStatus).map((e) => sided(e, e.indexStatus)),
+    staged: entries.filter((e) => (e.indexStatus ?? "") !== "").map((e) => sided(e, e.indexStatus)),
     unstaged: entries
-      .filter((e) => e.worktreeStatus || !e.indexStatus)
+      .filter((e) => (e.worktreeStatus ?? "") !== "" || (e.indexStatus ?? "") === "")
       .map((e) => sided(e, e.worktreeStatus)),
   };
 }
@@ -112,14 +113,8 @@ function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
 // verb, so the repo match happens HERE — a nudge for a repo this browser does
 // not have open must change nothing on screen.
 function shouldReload(frame: PushFrame | null | undefined, openSlug: string | null | undefined) {
-  return !!(
-    frame &&
-    frame.verb === "changes.dirty" &&
-    frame.payload &&
-    frame.payload.repo &&
-    openSlug &&
-    frame.payload.repo === openSlug
-  );
+  const repo = frame?.payload?.repo ?? "";
+  return frame?.verb === "changes.dirty" && repo !== "" && repo === openSlug;
 }
 
 // What a diff tab needs to resolve both of its sides from one changes entry.
@@ -131,11 +126,12 @@ function shouldReload(frame: PushFrame | null | undefined, openSlug: string | nu
 // path are two tabs) and both sides read from the pin, never the live
 // selection.
 function diffTarget(entry: ChangeEntry, project: string, checkout: string | null | undefined) {
+  const pin = checkout ?? "";
   return {
-    id: "diff:" + project + (checkout ? "@" + checkout : "") + ":" + entry.path,
-    checkout: checkout || null,
+    id: "diff:" + project + (pin ? "@" + pin : "") + ":" + entry.path,
+    checkout: pin || null,
     title: entry.path.split("/").pop() + " ↔ HEAD",
-    headPath: entry.originalPath || entry.path,
+    headPath: (entry.originalPath ?? "") || entry.path,
     workingPath: entry.path,
     headAbsent: entry.status === "added" || entry.status === "untracked",
     workingAbsent: entry.status === "deleted",
@@ -154,7 +150,7 @@ function foldSync(reply: ReplyOf<"sync.status"> | null | undefined, now?: number
   const body = syncBody(reply);
   if (!body) return unknownSync();
 
-  const lastFetch = body.last_fetch || null;
+  const lastFetch = (body.last_fetch ?? "") || null;
   const base = {
     branch: "",
     upstream: "",
@@ -166,9 +162,9 @@ function foldSync(reply: ReplyOf<"sync.status"> | null | undefined, now?: number
     fetched: staleness(lastFetch, now),
   };
   if (body.head.kind === "detached") {
-    return { ...base, state: "detached", branch: body.head.sha || "", note: "Detached HEAD" };
+    return { ...base, state: "detached", branch: body.head.sha ?? "", note: "Detached HEAD" };
   }
-  const branch = body.head.name || "";
+  const branch = body.head.name ?? "";
   const t = body.tracking;
   if (!t || typeof t !== "object") {
     return { ...base, state: "no-upstream", branch, note: "No upstream" };
@@ -213,7 +209,7 @@ function trackingSync(
     ...base,
     state: "tracking",
     branch,
-    upstream: t.upstream || "",
+    upstream: t.upstream ?? "",
     ahead,
     behind,
     counts: "↑" + ahead + " ↓" + behind,
@@ -242,8 +238,9 @@ function headOf(sync: Sync | null | undefined) {
 // How stale the counts are, as a locale-free RELATIVE string: a formatted date
 // would follow the browser locale and could carry no exact-string oracle.
 function staleness(lastFetch: string | null | undefined, now?: number) {
-  if (!lastFetch) return "Never fetched";
-  const then = Date.parse(lastFetch);
+  const at = lastFetch ?? "";
+  if (!at) return "Never fetched";
+  const then = Date.parse(at);
   if (isNaN(then)) return "Fetch time unknown";
   const d = (typeof now === "number" ? now : Date.now()) - then;
   if (d < 60000) return "Fetched a moment ago";
@@ -259,8 +256,11 @@ function staleness(lastFetch: string | null | undefined, now?: number) {
 // and a failed read all render nothing: a `0` would claim a clean tree nobody
 // looked at, and a failed read has no count to show. Its reason stays in the
 // Changes view's title (`changesReadError`).
-function projectBadge(counts: Record<string, number | null | undefined>, slug: string) {
-  const count = counts && counts[slug];
+function projectBadge(
+  counts: Record<string, number | null | undefined> | null | undefined,
+  slug: string,
+) {
+  const count = counts?.[slug];
   // `text` is empty rather than absent: Alpine's `x-text` assigns whatever it
   // gets straight to `textContent`, so `undefined` here would put the literal
   // word "undefined" inside every hidden badge.
@@ -283,11 +283,11 @@ function projectBadge(counts: Record<string, number | null | undefined>, slug: s
 //
 // De-duplicated because one path can sit in both groups (an `AM` entry) and
 // because a rename's old path can also be another entry's.
-function groupPaths(entries: ChangeEntry[], withOriginal: boolean) {
+function groupPaths(entries: (ChangeEntry | null | undefined)[], withOriginal: boolean) {
   const out = [];
   const seen = new Set();
   for (const e of Array.isArray(entries) ? entries : []) {
-    for (const p of [e && e.path, withOriginal ? e && e.originalPath : null]) {
+    for (const p of [e?.path, withOriginal ? e?.originalPath : null]) {
       if (typeof p === "string" && p && !seen.has(p)) {
         seen.add(p);
         out.push(p);
@@ -365,9 +365,9 @@ function writeLockReason(
 // The name falls back to the whole path because git reports an untracked
 // DIRECTORY as one entry ending in `/` — `splitPath("newdir/").name` is `""`,
 // and a dialog asking to delete “” names nothing.
-function discardConfirm(entry: ChangeEntry) {
-  const e = entry || {};
-  const name = e.name || e.path || "";
+function discardConfirm(entry: ChangeEntry | null | undefined) {
+  const e: Partial<ChangeEntry> = entry ?? {};
+  const name = (e.name ?? "") || (e.path ?? "");
   if (e.status === "untracked") {
     return {
       title: "Delete untracked file",

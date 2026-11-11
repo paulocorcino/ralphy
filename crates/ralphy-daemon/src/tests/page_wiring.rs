@@ -15,7 +15,7 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
         "wb-daemon.ts must EXPORT subscribeChanges — app.ts guards on it (#310)"
     );
     assert!(
-        shell_family().contains("WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)"),
+        shell_family().contains("WBChanges.shouldReload(frame, this.$store.projects.openSlug)"),
         "the shell must filter each nudge through shouldReload (#310)"
     );
 }

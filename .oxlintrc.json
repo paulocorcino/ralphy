@@ -216,7 +216,10 @@
         "**/ui/wb-stage*.ts",
         "**/ui/wb-geometry*.ts",
         "**/ui/wb-project*.ts",
-        "**/ui/wb-add-project*.ts"
+        "**/ui/wb-add-project*.ts",
+        "**/ui/wb-hosts*.ts",
+        "**/ui/wb-changes*.ts",
+        "**/ui/wb-device*.ts"
       ],
       "rules": {
         "typescript/strict-boolean-expressions": "error",

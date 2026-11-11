@@ -158,10 +158,10 @@ export function initial(): State {
 // `user@address`, or the `ssh://` form when the port is not 22.
 export function destination(s: State): string {
   if (s.alias) return s.alias;
-  const address = String(s.address || "").trim();
+  const address = s.address.trim();
   if (!address) return "";
-  const user = String(s.user || "").trim();
-  const port = String(s.port || "").trim();
+  const user = s.user.trim();
+  const port = s.port.trim();
   const who = user ? user + "@" + address : address;
   if (port && port !== "22") return "ssh://" + who + ":" + port;
   return who;
@@ -175,7 +175,7 @@ export function fields(dest: string | null | undefined): {
   address: string;
   port: string;
 } {
-  let d = String(dest || "").trim();
+  let d = (dest ?? "").trim();
   let port = "";
   if (d.indexOf("ssh://") === 0) {
     d = d.slice("ssh://".length);
@@ -200,7 +200,7 @@ function editState(s: State, h: PeerHost): State {
   const keyFile = typeof h.identity_file === "string" ? h.identity_file : "";
   return Object.assign(
     fresh(s, "add"),
-    { editing: { daemon: String(h.daemon_id || ""), name: String(h.name || "") } },
+    { editing: { daemon: h.daemon_id ?? "", name: h.name ?? "" } },
     fields(h.destination),
     keyFile ? { signIn: "key" as const, keyFile: keyFile } : {},
   );
@@ -213,9 +213,9 @@ function pickState(s: State, alias: string): State {
   if (!found) return Object.assign({}, s, { alias: "", user: "", port: "" });
   return Object.assign({}, s, {
     alias: found.alias,
-    address: found.hostname || "",
-    user: found.user || "",
-    port: found.port ? String(found.port) : "",
+    address: found.hostname ?? "",
+    user: found.user ?? "",
+    port: found.port === undefined || found.port === 0 ? "" : String(found.port),
   });
 }
 
@@ -223,7 +223,7 @@ function pickState(s: State, alias: string): State {
 // known key, which goes on to the checks.
 function keyState(s: State, key: KeyReply): State {
   if (key.state === "unknown") {
-    return Object.assign({}, s, { step: "identity" as const, keys: key.keys || [] });
+    return Object.assign({}, s, { step: "identity" as const, keys: key.keys ?? [] });
   }
   if (key.state === "unreachable") {
     return Object.assign({}, s, {
@@ -249,7 +249,7 @@ function exitState(s: State, ev: Extract<Action, { type: "exit" }>): State {
       ? fresh(s, "hosts")
       : Object.assign({}, s, { step: "done" as const, busy: false });
   }
-  const failure = s.failure || {
+  const failure = s.failure ?? {
     kind: "other",
     message:
       ev.code === null || ev.code === undefined
@@ -264,7 +264,7 @@ export function next(s: State, ev: Action): State {
     case "tab":
       return fresh(s, ev.tab === "add" ? "add" : "hosts");
     case "edit":
-      return editState(s, ev.host || {});
+      return editState(s, ev.host ?? {});
     case "aliases":
       return Object.assign({}, s, { aliases: Array.isArray(ev.aliases) ? ev.aliases : [] });
     case "pick":
@@ -276,9 +276,9 @@ export function next(s: State, ev: Action): State {
     case "host":
       return Object.assign({}, s, { alias: "", address: ev.value });
     case "busy":
-      return Object.assign({}, s, { busy: !!ev.value });
+      return Object.assign({}, s, { busy: ev.value });
     case "key":
-      return keyState(s, ev.key || {});
+      return keyState(s, ev.key ?? {});
     case "close":
       return Object.assign({}, s, { open: false, password: "" });
     case "cancel-trust":
@@ -330,7 +330,7 @@ function blocks(c: Check): boolean {
 // Add host is possible once the checks ran, Ralphy is ready on the host, and
 // the daemon has a name or gets one.
 export function ready(s: State): boolean {
-  if (!s.checks.length || s.failure) return false;
+  if (s.checks.length === 0 || s.failure) return false;
   return !s.checks.some(blocks);
 }
 
@@ -349,7 +349,7 @@ export function view(s: State) {
       id: found.id,
       title: cut < 0 ? text : text.slice(0, cut),
       detail: cut < 0 ? "" : text.slice(cut + 2),
-      command: found.command || null,
+      command: (found.command ?? "") || null,
     };
   }
   const passed = s.checks.filter((c) => c.status === "pass");
@@ -359,11 +359,12 @@ export function view(s: State) {
     blocker: blocker,
     passed: passed.map((c) => Object.assign({}, c, { text: sentence(c.text) })),
     passedText: passed.length === 1 ? "1 check passed" : passed.length + " checks passed",
-    fixText: fixes.length
-      ? "In the next step, Ralphy also sets up: " +
-        fixes.map((c) => String(c.label || c.id).toLowerCase()).join(", ") +
-        "."
-      : "",
+    fixText:
+      fixes.length > 0
+        ? "In the next step, Ralphy also sets up: " +
+          fixes.map((c) => (c.label || c.id).toLowerCase()).join(", ") +
+          "."
+        : "",
     advice: advice.map((c) => Object.assign({}, c, { text: sentence(c.text) })),
   };
 }
@@ -379,8 +380,8 @@ export function primary(s: State): "" | "connect" | "install" | "check" {
 // The host daemon has no name, and a name given here would fix it.
 export function needsName(s: State): boolean {
   const name = s.checks.find((c) => c.id === "name");
-  return !!(
-    name &&
+  return (
+    name !== undefined &&
     name.status === "copy" &&
     typeof name.command === "string" &&
     name.command.indexOf("ralphy host add ") === 0
@@ -390,7 +391,7 @@ export function needsName(s: State): boolean {
 // Ralphy on the host must be installed, and this computer can send it.
 export function needsInstall(s: State): boolean {
   const ralphy = s.checks.find((c) => c.id === "ralphy");
-  return !!(s.install && ralphy && ralphy.status !== "pass");
+  return s.install !== null && ralphy !== undefined && ralphy.status !== "pass";
 }
 
 // The last step of a new host.
@@ -402,7 +403,7 @@ export function addedText(s: State): string {
 // The operator asked for the install, the checks offer one, and it has not
 // run yet for this Connect. No offer comes when the host has a newer Ralphy.
 export function wantsAutoInstall(s: State): boolean {
-  return !!(s.autoInstall && !s.autoTried && needsInstall(s));
+  return s.autoInstall && !s.autoTried && needsInstall(s);
 }
 
 // What the install button sends, in one sentence.
