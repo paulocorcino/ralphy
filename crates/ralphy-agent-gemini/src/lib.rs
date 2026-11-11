@@ -295,7 +295,7 @@ impl Agent for GeminiAgent {
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". Numeric
             // `thinkingBudget` mapping deliberately deferred.
-            let _ = self.plan_effort.as_deref();
+            let _: Option<&str> = self.plan_effort.as_deref();
             ralphy_core::emit::planning("gemini", model.unwrap_or(DEFAULT_MODEL), "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding root setup.
@@ -404,7 +404,7 @@ impl Agent for GeminiAgent {
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". Numeric
             // `thinkingBudget` mapping deliberately deferred.
-            let _ = self.exec_effort.as_deref();
+            let _: Option<&str> = self.exec_effort.as_deref();
             ralphy_core::emit::executing("gemini", 0, model.unwrap_or(DEFAULT_MODEL), "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_gemini(cmd, &exec_prompt, timeout)?;

@@ -241,12 +241,12 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the rename error is the one reported; a temp file that stays is harmless"
-            )]
-            let _ = std::fs::remove_file(&tmp);
-            Err(e).with_context(|| format!("replacing {}", path.display()))
+            // The rename error is the one reported; a temp file that stays is named in it.
+            let kept = std::fs::remove_file(&tmp)
+                .err()
+                .map(|c| format!(" (temp file {} stays: {c})", tmp.display()))
+                .unwrap_or_default();
+            Err(e).with_context(|| format!("replacing {}{kept}", path.display()))
         }
     }
 }

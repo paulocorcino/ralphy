@@ -164,7 +164,7 @@ async fn serve_worktree_repo() -> (u16, tempfile::TempDir) {
         ralphy_daemon::auth::AuthState::localhost(),
     );
     // The shutdown sender lives as long as the server.
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await

@@ -31,5 +31,6 @@
 {"date": "2026-11-10", "kind": "note", "text": "curly end state is multi-line (user, 2026-11-10): all would push 17 modules past 500 lines"}
 {"date": "2026-11-10", "kind": "note", "text": "Phase 8: eslint(no-var), eslint(prefer-const), eslint(no-useless-concat), eslint(no-useless-return), typescript(no-unnecessary-template-expression), unicorn(new-for-builtins), unicorn(no-useless-switch-case), unicorn(prefer-single-call), unicorn(prefer-dom-node-append), unicorn(prefer-code-point), unicorn(prefer-at), unicorn(prefer-import-meta-properties), unicorn(prefer-string-replace-all), unicorn(no-useless-undefined), unicorn(no-hex-escape) and unicorn(escape-case) are errors"}
 {"date": "2026-11-10", "kind": "note", "text": "Phase 8: eslint(curly) is an error with the option multi-line"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 2: let_underscore_untyped, let_underscore_drop and mem_forget are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 15: markdownlint MD001, MD022, MD024, MD025, MD026, MD028, MD029, MD032, MD033, MD036, MD040, MD041 and MD056 are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 15: yamllint, html-validate, stylelint, taplo, lychee and editorconfig-checker are errors in the gate"}

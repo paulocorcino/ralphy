@@ -112,7 +112,7 @@ async fn ws_loop_stops_on_shutdown() {
     let (mut ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
         .await
         .expect("connecting to /ws");
-    let _ = next_presence(&mut ws).await;
+    drop(next_presence(&mut ws).await);
 
     // Signal shutdown; the server's presence loop must break and drop the
     // socket, so the client's stream ends (no task keeps sending). Bounded so a

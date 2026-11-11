@@ -29,7 +29,7 @@ async fn daemon(dir: &std::path::Path) -> u16 {
     let (tx, rx) = tokio::sync::watch::channel(false);
     // The sender lives as long as the test process: a dropped sender reads as
     // a shutdown to every bridge.
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     let app = router(
         None,
         registry_path,

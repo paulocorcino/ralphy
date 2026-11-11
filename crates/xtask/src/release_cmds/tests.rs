@@ -7,11 +7,9 @@ fn fragment(kind: &str, prose: &str) -> String {
 /// Removes a scratch directory of a test. It may not exist, and a failed
 /// cleanup leaves only a temporary directory behind.
 fn remove_scratch(path: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the directory may not exist, and a failed cleanup must not fail the test"
-    )]
-    let _ = std::fs::remove_dir_all(path);
+    if let Err(e) = std::fs::remove_dir_all(path) {
+        eprintln!("could not remove scratch dir {}: {e}", path.display());
+    }
 }
 
 fn scratch(tag: &str) -> PathBuf {

@@ -221,11 +221,10 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
     // byte-identical to the returned `log` the detectors scan (and deterministic for
     // tests). A mid-run crash leaves the interleaved partial, which is fine for
     // forensics — the canonical rewrite only matters once the run completed.
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the file is a diagnostic copy; the caller gets the same text in the return value"
-    )]
-    let _ = fs::write(log_path, &log);
+    // the file is a diagnostic copy; the caller gets the same text in the return value
+    if let Err(e) = fs::write(log_path, &log) {
+        tracing::warn!("could not write the run log: {e}");
+    }
     let exit = r.exit;
     Ok(HeadlessRun {
         stdout,

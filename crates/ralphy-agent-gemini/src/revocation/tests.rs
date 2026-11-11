@@ -192,5 +192,5 @@ fn the_system_settings_path_is_the_os_default_never_the_env_override() {
         "the child never sees that variable; honouring it would split the oracle"
     );
     // `read_admin_tier` on this host must not panic, whatever is (not) there.
-    let _ = read_admin_tier();
+    drop(read_admin_tier());
 }

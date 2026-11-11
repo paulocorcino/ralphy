@@ -45,11 +45,9 @@ mod tests {
 
     /// A scratch directory may not exist, and a failed cleanup must not fail a test.
     fn remove_scratch(path: &std::path::Path) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the directory may not exist, and a failed cleanup is harmless"
-        )]
-        let _ = fs::remove_dir_all(path);
+        if let Err(e) = fs::remove_dir_all(path) {
+            tracing::debug!("could not remove scratch dir {}: {e}", path.display());
+        }
     }
 
     /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter

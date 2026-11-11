@@ -27,7 +27,7 @@ const OTHER: &str = "fedcba9876543210fedcba9876543210";
 /// A router over `auth` whose store is `dir`.
 fn app(auth: &Arc<AuthState>, dir: &Path) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         dir.join("repos.toml"),

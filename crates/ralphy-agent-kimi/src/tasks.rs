@@ -36,7 +36,7 @@ pub fn diagnose_repo(
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let model = resolve_init_kimi_model(model);
     let prompt = build_diagnose_prompt(repo, &out_path);
@@ -83,7 +83,7 @@ pub fn draft_issues(
     timeout: Duration,
 ) -> Result<IssuesDraft> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let model = resolve_init_kimi_model(model);
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
@@ -136,7 +136,7 @@ pub fn consolidate_knowledge(
     timeout: Duration,
 ) -> Result<Usage> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     std::fs::create_dir_all(run_dir).context("creating the run directory")?;
     let model = resolve_init_kimi_model(model);
 
@@ -203,7 +203,7 @@ pub fn triage_issues(
     timeout: Duration,
 ) -> Result<TriageDraft> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let model = resolve_init_kimi_model(model);
     let threads = thread_file_pointer(out_path, req.thread_block)?;
     let prompt = format!(

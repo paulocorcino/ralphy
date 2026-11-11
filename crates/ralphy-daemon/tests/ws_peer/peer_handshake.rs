@@ -81,11 +81,10 @@ async fn spawn_daemon(policy: AuthPolicy, announced_token: &str) -> PeerDescript
         AuthState::fixed(policy, SessionEpoch::in_memory_detached()),
     );
     tokio::spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the server runs until the test ends, so its error has no reader"
-        )]
-        let _ = axum::serve(listener, app).await;
+        // The server runs until the test ends, so its error has no reader.
+        match axum::serve(listener, app).await {
+            Ok(()) | Err(_) => {}
+        }
     });
     descriptor(port, announced_token)
 }
@@ -157,11 +156,10 @@ async fn a_hello_from_another_daemon_is_refused_and_names_both_ids() {
         }),
     );
     tokio::spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the server runs until the test ends, so its error has no reader"
-        )]
-        let _ = axum::serve(listener, app).await;
+        // The server runs until the test ends, so its error has no reader.
+        match axum::serve(listener, app).await {
+            Ok(()) | Err(_) => {}
+        }
     });
 
     let mut d = descriptor(port, "tok");
@@ -206,11 +204,10 @@ async fn a_hello_with_no_daemon_id_is_still_reachable() {
         get(|| async { Json(serde_json::json!({"protocol_version": PEER_PROTOCOL_VERSION})) }),
     );
     tokio::spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the server runs until the test ends, so its error has no reader"
-        )]
-        let _ = axum::serve(listener, app).await;
+        // The server runs until the test ends, so its error has no reader.
+        match axum::serve(listener, app).await {
+            Ok(()) | Err(_) => {}
+        }
     });
     let d = descriptor(port, "tok");
     assert_eq!(probe(&d, me()).await, PeerStatus::Reachable);
@@ -227,11 +224,10 @@ async fn a_version_mismatch_is_a_legible_rejection() {
         get(|| async { Json(serde_json::json!({"protocol_version": 1})) }),
     );
     tokio::spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the server runs until the test ends, so its error has no reader"
-        )]
-        let _ = axum::serve(listener, app).await;
+        // The server runs until the test ends, so its error has no reader.
+        match axum::serve(listener, app).await {
+            Ok(()) | Err(_) => {}
+        }
     });
 
     let d = descriptor(port, "tok");

@@ -18,7 +18,7 @@ pub trait IssueTracker {
     /// Tick verified AC checkboxes in the issue body and post an evidence
     /// comment. Called only when the parsed verdict list is non-empty.
     fn write_evidence(&self, number: u64, body: &str, verdicts: &[Verdict]) -> Result<()> {
-        let _ = (number, body, verdicts);
+        let _: (u64, &str, &[Verdict]) = (number, body, verdicts);
         Ok(())
     }
 
@@ -31,21 +31,21 @@ pub trait IssueTracker {
     /// on an infeasible plan). Default no-op so non-`gh` implementations do
     /// not need to override it.
     fn comment(&self, number: u64, body: &str) -> Result<()> {
-        let _ = (number, body);
+        let _: (u64, &str) = (number, body);
         Ok(())
     }
 
     /// Add a label to an issue (e.g. `needs-split` on a bundle verdict).
     /// Default no-op so non-`gh` implementations never touch labels.
     fn add_label(&self, number: u64, label: &str) -> Result<()> {
-        let _ = (number, label);
+        let _: (u64, &str) = (number, label);
         Ok(())
     }
 
     /// Remove a label from an issue — the label swaps `ralphy triage` performs
     /// (ADR-0017). Default no-op so non-`gh` implementations never touch labels.
     fn remove_label(&self, number: u64, label: &str) -> Result<()> {
-        let _ = (number, label);
+        let _: (u64, &str) = (number, label);
         Ok(())
     }
 
@@ -60,7 +60,7 @@ pub trait IssueTracker {
     /// construction so re-triage edits its own comment rather than stacking a
     /// second one. Default no-op so non-`gh` implementations never comment.
     fn upsert_marked_comment(&self, number: u64, marker: &str, body: &str) -> Result<()> {
-        let _ = (number, marker, body);
+        let _: (u64, &str, &str) = (number, marker, body);
         Ok(())
     }
 
@@ -68,7 +68,7 @@ pub trait IssueTracker {
     /// a `## Handoff` heading), or `None` when it left none. Default `None` so
     /// non-`gh` implementations never feed handoffs.
     fn handoff_comment(&self, number: u64) -> Result<Option<String>> {
-        let _ = number;
+        let _: u64 = number;
         Ok(None)
     }
 
@@ -77,7 +77,7 @@ pub trait IssueTracker {
     /// and executor read it alongside the body. Default empty so non-`gh`
     /// implementations never feed comments.
     fn issue_comments(&self, number: u64) -> Result<Vec<String>> {
-        let _ = number;
+        let _: u64 = number;
         Ok(Vec::new())
     }
 
@@ -87,7 +87,7 @@ pub trait IssueTracker {
     /// paraphrasing a `#N` mention into a child issue. Default `None` so non-`gh`
     /// implementations feed no references.
     fn reference(&self, number: u64) -> Result<Option<crate::references::Reference>> {
-        let _ = number;
+        let _: u64 = number;
         Ok(None)
     }
 
@@ -97,7 +97,7 @@ pub trait IssueTracker {
     /// wait for them. Default empty so non-`gh` implementations keep the
     /// plain closed-means-done gate.
     fn open_children(&self, number: u64) -> Result<Vec<u64>> {
-        let _ = number;
+        let _: u64 = number;
         Ok(Vec::new())
     }
 
@@ -106,7 +106,7 @@ pub trait IssueTracker {
     /// apart from ordinary agent work the queue will clear on its own. Default
     /// empty so non-`gh` implementations classify every blocker as agent work.
     fn issue_labels(&self, number: u64) -> Result<Vec<String>> {
-        let _ = number;
+        let _: u64 = number;
         Ok(Vec::new())
     }
 }

@@ -189,11 +189,10 @@ async fn usage_federates_and_names_missing_contributions() {
     );
 
     peer.task.abort();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the task was aborted above, so its join error is expected"
-    )]
-    let _ = peer.task.await;
+    // The task was aborted above, so its join error is expected.
+    match peer.task.await {
+        Ok(()) | Err(_) => {}
+    }
     let partial = usage(local.port).await;
     assert_eq!(partial["records"].as_array().unwrap().len(), 1);
     assert_eq!(partial["records"][0]["session_id"], "local-usage-352");

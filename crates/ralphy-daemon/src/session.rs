@@ -162,11 +162,10 @@ impl Session {
             if let Some(pid) = pty.process_id() {
                 ralphy_proc_util::kill_tree_by_pid(pid);
             }
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the child may already be gone; its tree was killed above"
-            )]
-            let _ = pty.kill();
+            // The child may already be gone; its tree was killed above.
+            match pty.kill() {
+                Ok(()) | Err(_) => {}
+            }
             // Explicit for intent; the drop at scope end closes the master.
             drop(pty);
         }

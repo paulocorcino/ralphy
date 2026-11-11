@@ -121,12 +121,11 @@ fn scratch(tag: &str) -> PathBuf {
     dir
 }
 
-#[expect(
-    clippy::let_underscore_must_use,
-    reason = "the scratch directory may be gone"
-)]
 fn remove_scratch(dir: &Path) {
-    let _ = std::fs::remove_dir_all(dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 fn ours() -> PathBuf {

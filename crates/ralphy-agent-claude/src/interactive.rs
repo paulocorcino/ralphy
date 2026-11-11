@@ -199,11 +199,10 @@ impl ClaudeAgent {
                 proof,
             );
             // Kill the tree and drop the session (closes the ConPTY), on every path.
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the child may have exited already, and the tree is reclaimed"
-            )]
-            let _ = session.kill();
+            // The child may have exited already, and the tree is reclaimed.
+            if let Err(e) = session.kill() {
+                info!("killing the claude session failed: {e:#}");
+            }
             match respawn_step(end?, &mut respawned) {
                 RespawnStep::Done(o) => break o,
                 RespawnStep::Again => {
@@ -351,21 +350,14 @@ impl<'a> SessionPump<'a> {
     fn drain(&mut self, session: &mut PtySession) {
         while let Ok(chunk) = self.rx.try_recv() {
             if scan_dsr_request(&mut self.dsr_carry, &chunk) {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "a closed terminal ends the session on the next poll"
-                )]
-                let _ = session.write_all(CURSOR_POSITION_REPLY);
+                // A closed terminal ends the session on the next poll.
+                if let Err(e) = session.write_all(CURSOR_POSITION_REPLY) {
+                    info!("cursor-position reply not written: {e:#}");
+                }
             }
             self.login_watch.feed(&chunk);
             self.api_watch.feed(&chunk);
-            if let Some(f) = self.log.as_mut() {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the transcript log is a copy for the operator, not the run"
-                )]
-                let _ = f.write_all(&chunk);
-            }
+            tee_to_log(self.log.as_mut(), &chunk);
         }
     }
 
@@ -482,6 +474,17 @@ fn ended_transcript(
 /// can never disagree about where (or whether) `claude` is installed.
 pub(crate) fn resolve_claude_binary() -> std::ffi::OsString {
     ralphy_adapter_support::resolve_program("claude")
+}
+
+/// Copies a chunk of console output to the transcript log, when there is one.
+///
+/// The log is a copy for the operator, not the run, so a failed write is only logged.
+fn tee_to_log(log: Option<&mut std::fs::File>, chunk: &[u8]) {
+    if let Some(f) = log {
+        if let Err(e) = f.write_all(chunk) {
+            info!("transcript log write failed: {e}");
+        }
+    }
 }
 
 #[cfg(test)]

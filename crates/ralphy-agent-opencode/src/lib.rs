@@ -232,7 +232,7 @@ impl Agent for OpenCodeAgent {
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". `--variant`
             // stays `--exec-variant`-only (D8).
-            let _ = self.plan_effort.as_deref();
+            let _: Option<&str> = self.plan_effort.as_deref();
             ralphy_core::emit::planning(
                 "opencode run",
                 self.model.as_deref().unwrap_or(""),
@@ -311,7 +311,7 @@ impl Agent for OpenCodeAgent {
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". `--variant`
             // stays `--exec-variant`-only (D8).
-            let _ = self.exec_effort.as_deref();
+            let _: Option<&str> = self.exec_effort.as_deref();
             ralphy_core::emit::executing(
                 "opencode run",
                 0,

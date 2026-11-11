@@ -268,12 +268,10 @@ fn copy_permissions(from: Option<&Path>, to: &Path) {
     let mode = from
         .and_then(|p| std::fs::metadata(p).ok())
         .map_or(0o755, |m| m.permissions().mode());
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the copy is already in place, and a mode that cannot be set leaves the \
-                  file as copied"
-    )]
-    let _ = std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode | 0o111));
+    // the copy is already in place, and a mode that cannot be set leaves the file as copied
+    if let Err(e) = std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode | 0o111)) {
+        tracing::debug!("could not set the mode of {}: {e}", to.display());
+    }
 }
 
 #[cfg(not(unix))]

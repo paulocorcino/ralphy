@@ -220,16 +220,14 @@ fn drain<R: Read + Send + 'static>(
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buf = Vec::new();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a read error ends the output, and the bytes read so far are still sent"
-        )]
-        let _ = pipe.read_to_end(&mut buf);
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver is gone once the collect grace has passed"
-        )]
-        let _ = tx.send(buf);
+        // A read error ends the output, and the bytes read so far are still sent.
+        if let Err(error) = pipe.read_to_end(&mut buf) {
+            tracing::debug!(%error, "reading child output ended");
+        }
+        // The receiver is gone once the collect grace has passed.
+        match tx.send(buf) {
+            Ok(()) | Err(_) => {}
+        }
     })
 }
 

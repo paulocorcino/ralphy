@@ -69,7 +69,7 @@ pub(crate) fn init_repo(name: &str) -> PathBuf {
         std::env::set_var("RALPHY_USAGE_DIR", &dir);
         dir
     });
-    let _ = usage;
+    let _: &PathBuf = usage;
 
     static N: AtomicU32 = AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(

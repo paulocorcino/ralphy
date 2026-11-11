@@ -43,8 +43,8 @@ async fn serve(
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(_tx);
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    let _kept = Box::leak(Box::new(tx));
     let app = router(
         Some(identity),
         registry_path,

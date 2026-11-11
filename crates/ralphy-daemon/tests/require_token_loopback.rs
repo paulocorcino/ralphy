@@ -38,7 +38,7 @@ fn boot() -> anyhow::Result<Arc<AuthState>> {
 
 fn app(id: &str, registry_path: PathBuf, auth: Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         Some(Identity {
             id: id.parse().expect("a valid ULID"),

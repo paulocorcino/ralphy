@@ -34,7 +34,7 @@ fn command(id: u64, verb: &str, payload: serde_json::Value) -> Message {
 
 fn app(registry_path: std::path::PathBuf) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         registry_path,

@@ -235,7 +235,7 @@ async fn search_with_a_symlinked_checkout_is_refused_like_a_listing() {
         eprintln!("SKIPPED: cannot create a directory symlink here: {e}");
         return;
     }
-    std::mem::forget(outside);
+    let _kept = outside.keep();
 
     for (id, verb) in [(20u64, "tree.find"), (21, "tree.grep"), (22, "tree.list")] {
         let payload = if verb == "tree.list" {

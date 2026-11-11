@@ -233,11 +233,10 @@ fn text_session(
     let facts = RunFacts::from(&r);
     let mut log = r.stdout;
     log.push_str(&r.stderr);
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the log is a diagnostic copy; the caller gets the text in the return value"
-    )]
-    let _ = fs::write(log_path, &log);
+    // the log is a diagnostic copy; the caller gets the text in the return value
+    if let Err(e) = fs::write(log_path, &log) {
+        tracing::warn!("could not write the session log: {e}");
+    }
 
     match failed_run_stop(&facts, &log, auth_error) {
         Some(RunStop::Auth) => bail!("{} (see {})", auth_msg, log_path.display()),

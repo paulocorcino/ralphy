@@ -342,11 +342,10 @@ fn spawn_backend(
     // the pump do the tokio-side work. A closed mpsc (pump gone) just drops it.
     let handler = move |res: DebounceEventResult| {
         if let Ok(events) = res {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a closed channel means the pump is gone, and the batch has no reader"
-            )]
-            let _ = evt_tx.send(events);
+            // A closed channel means the pump is gone, and the batch has no reader.
+            match evt_tx.send(events) {
+                Ok(()) | Err(_) => {}
+            }
         }
     };
     let deb = match mode {
@@ -381,11 +380,10 @@ async fn pump(
     while let Some(batch) = evt_rx.recv().await {
         for rel in touched_dirs(&batch, &root, &watch_set) {
             // No subscribers → Err; ignored (a nudge with no listener is a no-op).
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a broadcast with no subscriber is an error, and a nudge to no one is fine"
-            )]
-            let _ = tx.send((repo.clone(), rel));
+            // A broadcast with no subscriber is an error, and a nudge to no one is fine.
+            match tx.send((repo.clone(), rel)) {
+                Ok(_) | Err(_) => {}
+            }
         }
     }
 }

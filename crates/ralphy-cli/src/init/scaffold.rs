@@ -248,11 +248,10 @@ mod tests {
     #[test]
     fn write_scaffold_prd_opt_in_controls_prd_docs() {
         let dir = std::env::temp_dir().join(format!("ralphy-scaffold-prd-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).unwrap();
 
         let mut cfg = block_cfg();
@@ -264,11 +263,10 @@ mod tests {
 
         let dir2 =
             std::env::temp_dir().join(format!("ralphy-scaffold-noprd-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir2);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir2) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir2).unwrap();
         let mut cfg2 = block_cfg();
         cfg2.adopt_prd_roadmap = false;
@@ -276,15 +274,13 @@ mod tests {
         assert!(!dir2.join("docs/roadmap.md").exists());
         assert!(!dir2.join("docs/prd").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir2);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir2) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }

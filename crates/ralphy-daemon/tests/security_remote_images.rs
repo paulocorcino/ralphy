@@ -35,7 +35,7 @@ const REMOTE_IMG: &str = "img-src 'self' data: blob: https:;";
 /// flag the route re-reads is the one the header layer sees.
 fn app(state: &Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         PathBuf::from("does-not-exist"),

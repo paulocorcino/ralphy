@@ -135,11 +135,10 @@ mod tests {
     }
 
     fn remove_scratch(dir: &Path) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
-        )]
-        let _ = std::fs::remove_dir_all(dir);
+        // The scratch directory may be absent, and a failed cleanup is no test failure.
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]

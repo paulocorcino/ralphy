@@ -189,11 +189,10 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the rename error is the one to return; a failed cleanup would mask it"
-            )]
-            let _ = std::fs::remove_file(&tmp);
+            // The rename error is the one to return; a failed cleanup would mask it.
+            if let Err(e) = std::fs::remove_file(&tmp) {
+                tracing::warn!("could not remove temp file {}: {e}", tmp.display());
+            }
             Err(e)
         }
     }

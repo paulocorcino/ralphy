@@ -36,20 +36,18 @@ fn run_capture(mut cmd: Command, prompt: &str) -> String {
     let mut err = child.stderr.take().expect("piped stderr");
     let ho = thread::spawn(move || {
         let mut s = String::new();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a read error leaves the partial output, which the test prints"
-        )]
-        let _ = out.read_to_string(&mut s);
+        // A read error leaves the partial output, which the test prints.
+        if let Err(e) = out.read_to_string(&mut s) {
+            tracing::debug!("stdout read stopped: {e}");
+        }
         s
     });
     let he = thread::spawn(move || {
         let mut s = String::new();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a read error leaves the partial output, which the test prints"
-        )]
-        let _ = err.read_to_string(&mut s);
+        // A read error leaves the partial output, which the test prints.
+        if let Err(e) = err.read_to_string(&mut s) {
+            tracing::debug!("stderr read stopped: {e}");
+        }
         s
     });
     let start = Instant::now();
@@ -59,11 +57,10 @@ fn run_capture(mut cmd: Command, prompt: &str) -> String {
         }
         if start.elapsed() > Duration::from_secs(180) {
             ralphy_proc_util::kill_tree_by_pid(pid);
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the process tree was killed, and a failed wait only delays the reap"
-            )]
-            let _ = child.wait();
+            // The process tree was killed; a failed wait only delays the reap.
+            if let Err(e) = child.wait() {
+                tracing::debug!("wait after the tree kill failed: {e}");
+            }
             break;
         }
         thread::sleep(Duration::from_millis(200));

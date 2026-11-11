@@ -8,11 +8,9 @@ pub(super) static ENV_LOCK: Mutex<()> = Mutex::new(());
 /// Remove a scratch directory a test made. It may be gone already, and a
 /// leftover directory in the temp dir fails nothing.
 pub(super) fn remove_scratch(dir: &std::path::Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of a test directory that may be gone, and no test reads it after"
-    )]
-    let _ = std::fs::remove_dir_all(dir);
+    if let Err(e) = std::fs::remove_dir_all(dir) {
+        tracing::debug!("could not remove test dir {}: {e}", dir.display());
+    }
 }
 
 pub(super) fn one_million_each() -> TokenCounts {

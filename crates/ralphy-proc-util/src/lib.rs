@@ -21,7 +21,7 @@ pub fn own_process_group(cmd: &mut Command) {
         cmd.process_group(0);
     }
     #[cfg(not(unix))]
-    let _ = cmd;
+    let _: &mut Command = cmd;
 }
 
 /// Prepend `dir` to a `PATH` value, or `None` when it is already there.
@@ -66,7 +66,7 @@ pub fn no_window(cmd: &mut Command) {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     #[cfg(not(windows))]
-    let _ = cmd;
+    let _: &mut Command = cmd;
 }
 
 /// Keep this process's standard handles out of the children it starts from now
@@ -111,16 +111,14 @@ pub fn keep_std_handles_from_children() {
 /// when `child` has already exited. Best-effort.
 pub fn kill_tree(child: &mut Child) {
     kill_tree_by_pid(child.id());
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the child may have exited already, and the tree kill above is the one that counts"
-    )]
-    let _ = child.kill();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the child may have been reaped already; this call only prevents a zombie"
-    )]
-    let _ = child.wait();
+    // The child may have exited already; the tree kill above is the one that counts.
+    if let Err(e) = child.kill() {
+        tracing::debug!("kill of the child failed: {e}");
+    }
+    // The child may have been reaped already; this call only prevents a zombie.
+    if let Err(e) = child.wait() {
+        tracing::debug!("reap of the child failed: {e}");
+    }
 }
 
 /// Kill the process tree rooted at `pid`, a child not owned as a [`Child`].

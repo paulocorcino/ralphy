@@ -45,16 +45,13 @@ fn a_group_kill_spares_the_callers_own_group() {
         .expect("polling the bystander should succeed")
         .is_some();
 
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of the witness, which may have died already"
-    )]
-    let _ = bystander.kill();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of the witness, which may have died already"
-    )]
-    let _ = bystander.wait();
+    // Cleanup of the witness, which may have died already.
+    if let Err(e) = bystander.kill() {
+        tracing::debug!("kill of the witness failed: {e}");
+    }
+    if let Err(e) = bystander.wait() {
+        tracing::debug!("reap of the witness failed: {e}");
+    }
 
     assert!(
         !died,

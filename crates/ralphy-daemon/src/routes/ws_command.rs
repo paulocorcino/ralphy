@@ -195,11 +195,10 @@ pub(crate) async fn serve_command(
     // catch-up read covers that one). A send with no `changes` channel to hear it is
     // `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
     stream::stream_child(wire, cmd.id, &cmd.verb, child, move || {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a nudge nobody hears is a no-op"
-        )]
-        let _ = run_exits.send(slug);
+        // A nudge nobody hears is a no-op.
+        match run_exits.send(slug) {
+            Ok(_) | Err(_) => {}
+        }
     })
     .await;
 }

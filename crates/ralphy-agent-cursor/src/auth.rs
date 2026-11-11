@@ -192,7 +192,7 @@ mod tests {
             None
         );
         let probed = std::cell::Cell::new(false);
-        let _ = resume_requires_login(true, || {
+        let _: Option<&str> = resume_requires_login(true, || {
             probed.set(true);
             true
         });
