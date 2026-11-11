@@ -105,7 +105,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
   // the card would then show text the file does not hold, with nothing
   // scheduled to fix it. `wb-desk-sink.ts` chains its writes for exactly
   // this reason and this is the same shape.
-  function flush(el: NoteCard): Promise<void> {
+  function flush(el: NoteCard): Promise<unknown> {
     clearTimeout(el._noteTimer);
     el._noteTimer = null;
     syncFromEditor(el);
@@ -132,7 +132,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
       : (found ?? orphan);
   }
 
-  function writeNow(el: NoteCard): Promise<void> {
+  function writeNow(el: NoteCard): Promise<unknown> {
     // Re-read EVERYTHING here: this runs at the tail of the chain, and the card
     // may have been saved, closed or emptied while it waited.
     if (!el._noteDirty) return Promise.resolve();
@@ -144,9 +144,9 @@ export function createNoteSave(deps: NoteSaveDeps) {
     if (!record) return Promise.resolve();
     const markdown = el._noteMarkdown;
     return namePath(el, record, markdown).then((path) => {
-      if (path === null || path === "") return;
+      if (path === null || path === "") return null;
       // Handed off while the name probe was running: see above.
-      if (el._noteHandedOff === true) return;
+      if (el._noteHandedOff === true) return null;
       // A popup tells the opener the name BEFORE the write. If the popup
       // closes with this write in flight, the file exists but no name report
       // follows, and the opener must write to this same name on re-attach.
@@ -166,7 +166,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
             // keystroke schedules another attempt, and nothing was lost.
             el.classList.add("danger");
             paintState(el, WBFail.failed(reply, "Could not save: the daemon gave no reason."));
-            return;
+            return null;
           }
           // The file exists NOW — including the case where it had gone and
           // this write is what brought it back, which is why the missing state
@@ -198,6 +198,7 @@ export function createNoteSave(deps: NoteSaveDeps) {
           setTimeout(() => {
             if (!el._noteDirty) paintState(el, "");
           }, 1200);
+          return null;
         })
         .catch((err: unknown) => {
           el._noteInFlight = false;

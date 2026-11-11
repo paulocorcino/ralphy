@@ -16,6 +16,7 @@ fn shell_draws_fences_below_the_windows() {
         include_str!("../../assets/ui/wb-stage-window.ts"),
         include_str!("../../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../../assets/ui/wb-console-title.ts"),
     ]
@@ -297,6 +298,7 @@ fn shell_fences_are_a_group() {
     let js = &[
         include_str!("../../assets/ui/wb-console.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../../assets/ui/wb-desk-records.ts"),
     ]
@@ -372,6 +374,7 @@ fn shell_arranges_into_the_fence() {
         include_str!("../../assets/ui/wb-console.ts"),
         include_str!("../../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
     ]
     .concat();

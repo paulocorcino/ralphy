@@ -130,7 +130,9 @@ export function askWorktree(
       }
     };
     document.addEventListener("keydown", onKey, true);
-    cancel.addEventListener("click", () => done(null));
+    cancel.addEventListener("click", () => {
+      done(null);
+    });
     go.addEventListener("click", submit);
   });
 }

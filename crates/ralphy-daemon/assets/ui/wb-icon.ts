@@ -19,7 +19,7 @@ export function iconDirective(
   const read = evaluateLater(expression);
   const authored = new Set(el.getAttributeNames());
   let drawn: string | null = null;
-  effect(() =>
+  effect(() => {
     read((name) => {
       if (name === drawn) return;
       if (drawn !== null && drawn !== "") el.classList.remove(`lucide-${drawn}`);
@@ -39,6 +39,6 @@ export function iconDirective(
       el.setAttribute("data-lucide", name);
       el.classList.add("lucide", `lucide-${name}`);
       el.replaceChildren(...children.map((child) => window.lucide.createElement(child)));
-    }),
-  );
+    });
+  });
 }

@@ -83,9 +83,13 @@ export function hostsDialog() {
       window.WBDaemon.observe("host.aliases", {})
         .then((reply) => {
           if (reply.status === "ok") this.addHostStep({ type: "aliases", aliases: reply.aliases });
+          return null;
         })
         // Without the list the operator types the address.
-        .catch((e: unknown) => console.warn("host aliases:", e));
+        .catch((e: unknown) => {
+          // oxlint-disable-next-line no-console -- the failure is for a developer
+          console.warn("host aliases:", e);
+        });
     },
     closeAddHost() {
       this.addHostStep({ type: "close" });

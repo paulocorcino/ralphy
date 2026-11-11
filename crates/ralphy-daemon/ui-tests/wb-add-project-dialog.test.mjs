@@ -39,13 +39,13 @@ function dialog(opts = {}) {
   );
   const calls = [];
   const replies = {};
-  window.WBDaemon.observe = async (verb, payload) => {
+  window.WBDaemon.observe = (verb, payload) => {
     calls.push([verb, payload]);
-    return replies[verb];
+    return Promise.resolve(replies[verb]);
   };
   const reloads = [];
-  shell.$store.projects.loadRepos = async () => reloads.push("repos");
-  shell.$store.projects.loadFleet = async () => reloads.push("fleet");
+  shell.$store.projects.loadRepos = () => Promise.resolve(reloads.push("repos"));
+  shell.$store.projects.loadFleet = () => Promise.resolve(reloads.push("fleet"));
   const toggled = [];
   shell.toggle = (ref) => {
     toggled.push(ref);

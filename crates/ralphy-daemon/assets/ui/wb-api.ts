@@ -254,6 +254,7 @@ function beforeDeadline<T>(
       (v) => {
         clearTimeout(timer);
         resolve(v);
+        return null;
       },
       (e: unknown) => {
         clearTimeout(timer);
@@ -290,7 +291,9 @@ export function apiFetch<K extends ApiRoute>(
   const { method, url } = apiRequest(route, query);
   const ms = deadlineMs ?? ROUTE_DEADLINE_MS[route] ?? READ_DEADLINE_MS;
   const controller = new AbortController();
-  const abort = () => controller.abort();
+  const abort = () => {
+    controller.abort();
+  };
   const stalled = () => {
     abort();
     void reportStall("read-deadline", what, ms);

@@ -7,6 +7,7 @@ import type { MonacoDiffEditor, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, ViewerRecord } from "./wb-file-viewer-records.ts";
 import type { ViewerEncoding } from "./wb-viewer-encoding.ts";
+import { wireFileButtons } from "./wb-viewer-save.ts";
 import type { ViewerSave } from "./wb-viewer-save.ts";
 import type { MermaidWindow } from "./wb-dbml-draw.ts";
 
@@ -34,7 +35,7 @@ export type ViewerCodeDeps = {
 export function createViewerCode(deps: ViewerCodeDeps) {
   const { window, document, viewers, messages, alive, findInEditor, mirrors, refresh } = deps;
   const { setPathLabel, detachBtnHtml, mirrorBtnHtml, detachClick } = deps;
-  const { save, reloadFile, applyFresh, hideDiskBadge } = deps.saver;
+  const { save } = deps.saver;
   const { wireEncodingMenu } = deps.encoding;
 
   // The pane-width criterion, the SAME number as the stylesheet's
@@ -74,7 +75,9 @@ export function createViewerCode(deps: ViewerCodeDeps) {
       id: "wb.save",
       label: "Save",
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => save(rec),
+      run: () => {
+        save(rec);
+      },
     });
   }
 
@@ -105,7 +108,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
       })
       .then((monaco) => {
         rec.mounting = false;
-        if (!monaco || !alive(rec)) return;
+        if (!monaco || !alive(rec)) return null;
         const ed = WBMonaco.create(container, {
           value: rec.content,
           path,
@@ -134,6 +137,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
         // A mirror asked for before there was an editor to mirror (a reload
         // restores the slot while the bytes are still in flight): paint now.
         if (mirrors(rec.id)) refresh();
+        return null;
       })
       .catch((err: unknown) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
@@ -180,19 +184,16 @@ export function createViewerCode(deps: ViewerCodeDeps) {
       (rec.ed as MonacoEditor | undefined)
         ?.getAction("actions.find")
         ?.run()
-        .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
+        .catch((err: unknown) => {
+          // oxlint-disable-next-line no-console -- the failure is for a developer
+          console.error("[workbench] monaco find failed", err);
+        });
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     mirrorBtn?.addEventListener("click", () => {
       window.Alpine.store("tabs").toggleMirror();
     });
-    saveBtn.onclick = () => save(rec);
-    need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
-    need(el, '[data-act="disk"]').onclick = () => {
-      if (rec.pendingDisk !== undefined) applyFresh(rec, rec.pendingDisk);
-      hideDiskBadge(rec);
-    };
-    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
+    wireFileButtons(el, rec, { ...deps.saver, detachClick });
     rec.el = el;
     rec.saveBtn = saveBtn;
     rec.mirrorBtn = mirrorBtn;

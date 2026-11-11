@@ -24,16 +24,16 @@ const section = () => {
 async function withDaemon(replies, run) {
   const sent = [];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init = {}) => {
+  globalThis.fetch = (url, init = {}) => {
     // The harness's own shell reads the desk; only the Telegram routes count.
-    if (!String(url).startsWith("/api/telegram")) return { ok: false, status: 404, json: async () => ({}) };
+    if (!String(url).startsWith("/api/telegram")) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
     sent.push({ url: String(url), method: init.method, body: init.body });
     const [status, body] = replies.shift();
-    return { ok: status < 300, status, json: async () => body };
+    return Promise.resolve({ ok: status < 300, status, json: () => Promise.resolve(body) });
   };
   try {
     const { scope } = loadComponent("wbTelegramSetup", {
-      magics: { $store: { modals: { askConfirm: async () => true } } },
+      magics: { $store: { modals: { askConfirm: () => Promise.resolve(true) } } },
     });
     await run(scope, sent);
   } finally {

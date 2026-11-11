@@ -108,7 +108,7 @@ function fakeDeps(more = {}, floor = {}) {
     },
     stage: () => plane,
     applyExtent() {},
-    askConfirm: async () => true,
+    askConfirm: () => Promise.resolve(true),
     autoPan: () => ({ follow() {}, stop() {} }),
     fenceSnapshot: () => [{ id: "w1", repo: "r" }],
     focusWin() {},

@@ -24,10 +24,10 @@ function picker(listing = {}) {
   });
   const calls = [];
   window.WBDaemon = {
-    observe: async (verb, payload) => {
+    observe: (verb, payload) => {
       calls.push({ verb, payload });
       const entries = listing[payload.path];
-      return entries ? { status: "ok", entries } : { status: "error", reason: "not found" };
+      return Promise.resolve(entries ? { status: "ok", entries } : { status: "error", reason: "not found" });
     },
     withCheckout: (payload, checkout) => (checkout ? { ...payload, checkout: String(checkout) } : { ...payload }),
   };
@@ -36,7 +36,7 @@ function picker(listing = {}) {
   return { state, shell, calls, sent };
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = () => new Promise((r) => { setImmediate(r); });
 
 test("wbMoveDialog lists only shell() names in uses, and its members left shell()", () => {
   const { data, shell } = loadComponent("wbMoveDialog");

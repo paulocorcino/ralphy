@@ -382,30 +382,35 @@ export function wbRuns() {
 
     // The listeners, added once when Alpine builds the panel.
     init() {
-      window.addEventListener("workbench:project-changed", () => this.runsPanelFollowProject());
+      window.addEventListener("workbench:project-changed", () => {
+        this.runsPanelFollowProject();
+      });
       // A read of the open project's runs was kept. Only while showing: a
       // whole-plan `file.read` nobody can see is cost.
       window.addEventListener("workbench:runs-read", () => {
         if (this.runsOpen) void this.loadRunPlan();
       });
       // The panel closed (`toggleRuns`): the board-arrival marker goes.
-      window.addEventListener("workbench:runs-closed", () => (this.trailFocus = null));
+      window.addEventListener("workbench:runs-closed", () => {
+        this.trailFocus = null;
+      });
       // The run pill of a board card (#301).
-      window.addEventListener("workbench:run-open", (e) => this.openRunFor(e.detail.issue));
+      window.addEventListener("workbench:run-open", (e) => {
+        this.openRunFor(e.detail.issue);
+      });
       // "Open the run" in the attention list.
-      window.addEventListener("workbench:run-select", (e) =>
-        this.openRun(e.detail.repo, e.detail.runid),
-      );
+      window.addEventListener("workbench:run-select", (e) => {
+        this.openRun(e.detail.repo, e.detail.runid);
+      });
       // A raw output chunk (`window.WBRuns.output`), capped so the DOM never
       // grows unbounded.
-      window.addEventListener(
-        "workbench:run-output",
-        (e) => (this.rawFeed = (this.rawFeed + e.detail.text).slice(-8000)),
-      );
+      window.addEventListener("workbench:run-output", (e) => {
+        this.rawFeed = (this.rawFeed + e.detail.text).slice(-8000);
+      });
       // A terminal verb frame (wb-daemon.ts).
-      window.addEventListener("workbench:run-verb-failed", (e) =>
-        this.runVerbFailed(e.detail.message),
-      );
+      window.addEventListener("workbench:run-verb-failed", (e) => {
+        this.runVerbFailed(e.detail.message);
+      });
     },
   });
 }

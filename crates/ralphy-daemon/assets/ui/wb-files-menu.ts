@@ -32,15 +32,29 @@ export function treeMenu(tree: MenuTree, node: WunderbaumNode | null): MenuItem[
     { sep: true as const },
     // Creating targets the folder itself, or the folder CONTAINING the
     // clicked file.
-    { label: "New file…", icon: "bi-file-earmark-plus", run: () => tree.emitCreate(node, "file") },
-    { label: "New folder…", icon: "bi-folder-plus", run: () => tree.emitCreate(node, "folder") },
+    {
+      label: "New file…",
+      icon: "bi-file-earmark-plus",
+      run: () => {
+        tree.emitCreate(node, "file");
+      },
+    },
+    {
+      label: "New folder…",
+      icon: "bi-folder-plus",
+      run: () => {
+        tree.emitCreate(node, "folder");
+      },
+    },
     uploadRow(tree, node),
     node && { sep: true as const },
     node && {
       label: "Delete",
       icon: "bi-trash",
       danger: true,
-      run: () => window.WB.emit("delete", tree.nodeDetail(node)),
+      run: () => {
+        window.WB.emit("delete", tree.nodeDetail(node));
+      },
     },
   ].filter(Boolean);
 }
@@ -50,25 +64,57 @@ export function treeMenu(tree: MenuTree, node: WunderbaumNode | null): MenuItem[
 function uploadRow(tree: MenuTree, node: WunderbaumNode | null): MenuItem | false {
   if (node && !tree.isFolder(node)) return false;
   if (underProtectedDir(tree.relPath(node))) return false;
-  return { label: "Upload…", icon: "bi-cloud-upload", run: () => pickFiles(tree, node) };
+  return {
+    label: "Upload…",
+    icon: "bi-cloud-upload",
+    run: () => {
+      pickFiles(tree, node);
+    },
+  };
 }
 
 /** The rows that act on one row of the tree, above Properties. */
 function nodeRows(tree: MenuTree, node: WunderbaumNode): MenuItem[] {
   const isFolder = tree.isFolder(node);
   return [
-    !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => tree.openFile(node) },
-    { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
+    !isFolder && {
+      label: "Open",
+      icon: "bi-box-arrow-up-right",
+      run: () => {
+        tree.openFile(node);
+      },
+    },
+    {
+      label: "Rename…",
+      icon: "bi-pencil",
+      run: () => {
+        node.startEditTitle();
+      },
+    },
     // FLAT rows, not a submenu, for a two-item choice made constantly.
-    { label: "Copy full path", icon: "bi-clipboard", run: () => tree.copyPath(node, true) },
-    { label: "Copy relative path", icon: "bi-clipboard", run: () => tree.copyPath(node, false) },
+    {
+      label: "Copy full path",
+      icon: "bi-clipboard",
+      run: () => {
+        tree.copyPath(node, true);
+      },
+    },
+    {
+      label: "Copy relative path",
+      icon: "bi-clipboard",
+      run: () => {
+        tree.copyPath(node, false);
+      },
+    },
     !isFolder && { label: "Duplicate", icon: "bi-files", run: () => tree.duplicateNode(node) },
     // Folders too. Dropped for a node inside `.git`/`.ralphy`, whose every
     // move the daemon refuses on the SOURCE.
     !underProtectedDir(tree.relPath(node)) && {
       label: "Move to…",
       icon: "bi-arrow-right-square",
-      run: () => tree.moveNode(node),
+      run: () => {
+        tree.moveNode(node);
+      },
     },
   ].filter(Boolean);
 }

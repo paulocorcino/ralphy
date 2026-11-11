@@ -84,7 +84,11 @@ function considerPicture(el: Picture) {
   }
   // The image resolves its bytes after the article is built, so its size is
   // known only when it loads.
-  if (isRaster(el)) el.addEventListener("load", () => considerPicture(el));
+  if (isRaster(el)) {
+    el.addEventListener("load", () => {
+      considerPicture(el);
+    });
+  }
 }
 
 /**
@@ -205,15 +209,29 @@ function createController(
     fitted = true;
     show(fitView(size, box(), cap));
   };
-  const zoom = (factor: number, at: Point) => change(zoomAt(view, factor, at, minScale(fitNow())));
+  const zoom = (factor: number, at: Point) => {
+    change(zoomAt(view, factor, at, minScale(fitNow())));
+  };
   return {
     fit,
     zoom,
-    actual: (at) => zoom(1 / view.scale, at),
-    toggle: (at) => (Math.abs(view.scale - fitNow()) < 1e-6 ? zoom(1 / view.scale, at) : fit()),
-    pan: (dx, dy) => change(panBy(view, dx, dy)),
-    pinch: (prev, next) => change(pinchView(view, prev, next, minScale(fitNow()))),
-    resize: () => (fitted ? fit() : show(view)),
+    actual: (at) => {
+      zoom(1 / view.scale, at);
+    },
+    toggle: (at) => {
+      if (Math.abs(view.scale - fitNow()) < 1e-6) zoom(1 / view.scale, at);
+      else fit();
+    },
+    pan: (dx, dy) => {
+      change(panBy(view, dx, dy));
+    },
+    pinch: (prev, next) => {
+      change(pinchView(view, prev, next, minScale(fitNow())));
+    },
+    resize: () => {
+      if (fitted) fit();
+      else show(view);
+    },
   };
 }
 
@@ -240,7 +258,10 @@ function attachGestures(
     return a && b ? [a, b] : null;
   };
   const tap = (ev: PointerEvent) => {
-    if (onGround) return close();
+    if (onGround) {
+      close();
+      return;
+    }
     if (ev.timeStamp - tapAt < DOUBLE_TAP_MS) ctl.toggle(local(ev));
     tapAt = ev.timeStamp;
   };
@@ -314,7 +335,10 @@ function attachKeys(overlay: HTMLElement, bar: HTMLElement, actions: Record<stri
     "0": "fit",
   };
   overlay.addEventListener("keydown", (ev) => {
-    if (ev.key === "Tab") return trapTab(ev, overlay, bar);
+    if (ev.key === "Tab") {
+      trapTab(ev, overlay, bar);
+      return;
+    }
     const act = keys[ev.key];
     if (act === undefined) return;
     ev.preventDefault();
@@ -340,17 +364,27 @@ export function openZoom(win: Window, doc: Document, src: Picture, opener: HTMLE
     return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
   };
   const middle = (): Point => ({ x: surface.clientWidth / 2, y: surface.clientHeight / 2 });
-  const onResize = () => ctl.resize();
+  const onResize = () => {
+    ctl.resize();
+  };
   const close = () => {
     win.removeEventListener("resize", onResize);
     overlay.remove();
     opener?.focus();
   };
   const actions: Record<string, () => void> = {
-    out: () => ctl.zoom(1 / ZOOM_STEP, middle()),
-    in: () => ctl.zoom(ZOOM_STEP, middle()),
-    fit: () => ctl.fit(),
-    actual: () => ctl.actual(middle()),
+    out: () => {
+      ctl.zoom(1 / ZOOM_STEP, middle());
+    },
+    in: () => {
+      ctl.zoom(ZOOM_STEP, middle());
+    },
+    fit: () => {
+      ctl.fit();
+    },
+    actual: () => {
+      ctl.actual(middle());
+    },
     close,
   };
   bar.addEventListener("click", (ev) => {

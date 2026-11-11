@@ -183,7 +183,9 @@ export function releaseDialogs() {
       const deadline = Date.now() + 120000;
       let sawGap = false;
       while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, pause));
+        await new Promise((resolve) => {
+          setTimeout(resolve, pause);
+        });
         const view = await WBRelease.read();
         if (!view) {
           sawGap = true;

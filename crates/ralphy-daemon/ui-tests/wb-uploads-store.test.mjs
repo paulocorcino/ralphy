@@ -13,10 +13,11 @@ function store(answer = daemon()) {
   const flashed = [];
   const s = uploadsStore({
     messages: { flash: (m) => flashed.push(m) },
-    send: async (payload) => {
-      sent.push(payload);
-      return answer(payload, sent);
-    },
+    send: (payload) =>
+      new Promise((resolve) => {
+        sent.push(payload);
+        resolve(answer(payload, sent));
+      }),
   });
   return { s, sent, flashed };
 }

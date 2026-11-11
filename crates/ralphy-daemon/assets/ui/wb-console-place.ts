@@ -18,7 +18,27 @@ import { WBColumns } from "./wb-columns.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import { PHONE_MAX_WIDTH } from "./wb-viewport.ts";
 import type { Grid, Painted } from "./wb-columns.ts";
+import type { TabsStore } from "./wb-tabs-store.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
+
+// Show the console window of the desk record `id`: its own tab when it has one,
+// else the Consoles tab, panned to it once the tab is laid out (`afterLayout`):
+// a `display:none` tab measures 0.
+export function showConsoleWindow(
+  tabs: TabsStore,
+  afterLayout: (reveal: () => void) => void,
+  id: string,
+) {
+  const tab = tabs.tabOf(id);
+  if (tab) {
+    tabs.activate(tab.id);
+    return;
+  }
+  if (tabs.active !== "consoles") tabs.activate("consoles");
+  afterLayout(() => {
+    WBConsole.reveal(id);
+  });
+}
 
 // Whether the window is in the pane of the console tabs.
 export function inTab(win: Element) {
@@ -46,9 +66,9 @@ function buildShadow(document: Document, win: ConsoleWin) {
   const name = document.createElement("span");
   name.className = "console-shadow-name";
   sh.append(icon, name);
-  sh.addEventListener("click", () =>
-    sendDocument(document, "workbench:console-tab-show", { id: win._deskId }),
-  );
+  sh.addEventListener("click", () => {
+    sendDocument(document, "workbench:console-tab-show", { id: win._deskId });
+  });
   return sh;
 }
 

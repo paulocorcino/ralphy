@@ -138,7 +138,9 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // The strip refuses focus: on iOS losing the textarea's caret dismisses
     // the keyboard. `pointerdown` + `mousedown`; `touchstart` is NOT
     // prevented — that would suppress the synthesized click.
-    const holdFocus = (e: Event) => e.preventDefault();
+    const holdFocus = (e: Event) => {
+      e.preventDefault();
+    };
     bar.addEventListener("pointerdown", holdFocus);
     bar.addEventListener("mousedown", holdFocus);
 

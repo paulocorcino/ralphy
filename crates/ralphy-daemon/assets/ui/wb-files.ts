@@ -42,13 +42,11 @@ import { treeMenu } from "./wb-files-menu.ts";
 import { duplicateNode } from "./wb-files-duplicate.ts";
 import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-search.ts";
 import { typedSearch } from "./wb-files-typing.ts";
+import { listenFiles, logFailure } from "./wb-files-events.ts";
 import type { TreeSub } from "./wb-files-mount.ts";
 import type { TreeMemory } from "./wb-files-levels.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
-
-// Where a Promise nobody awaits reports its failure: the console, tagged.
-const logFailure = (what: string) => (err: unknown) => console.error(`[workbench] ${what}`, err);
 
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -269,18 +267,18 @@ export function wbFiles() {
     },
 
     // Narrow the tree to `hits` (wb-files-search.ts).
-    async applyFileSearch(hits: Hit[], truncated: boolean, seq: number) {
+    applyFileSearch(hits: Hit[], truncated: boolean, seq: number) {
       return applySearch(this, hits, truncated, seq);
     },
 
     // Take the filter off and fold back what the search opened.
-    async clearFileSearch() {
+    clearFileSearch() {
       return clearSearch(this).catch(logFailure("the file search did not clear"));
     },
 
     // The search's memory of a tree that no longer exists (see `destroyTree`).
     resetFileSearch() {
-      return resetSearch(this);
+      resetSearch(this);
     },
 
     // A `head.dirty` push: the open checkout's HEAD moved (wb-files-nudges.ts).
@@ -304,11 +302,11 @@ export function wbFiles() {
     _reconciling: null as Set<string> | null,
     _reconcilePending: null as Set<string> | null,
     _reconcileWaiters: null as Map<string, (() => void)[]> | null,
-    async reconcileLevel(node: WunderbaumNode, rel: string): Promise<void> {
+    reconcileLevel(node: WunderbaumNode, rel: string): Promise<void> {
       return reconcileLevel(this, node, rel);
     },
 
-    async _reconcileOnce(nodeAtCall: WunderbaumNode, rel: string) {
+    _reconcileOnce(nodeAtCall: WunderbaumNode, rel: string) {
       return reconcileOnce(this, nodeAtCall, rel);
     },
 
@@ -331,7 +329,7 @@ export function wbFiles() {
     // its restore as newer than the reveal it undoes.
     _revealSeq: 0,
     _revealedRel: null as string | null,
-    async revealRel(rel: string, opts: { restore?: boolean } = {}) {
+    revealRel(rel: string, opts: { restore?: boolean } = {}) {
       return reveal(this, rel, opts);
     },
 
@@ -414,7 +412,7 @@ export function wbFiles() {
     },
 
     // Duplicate a file beside itself, NO prompt (wb-files-duplicate.ts).
-    async duplicateNode(node: WunderbaumNode) {
+    duplicateNode(node: WunderbaumNode) {
       return duplicateNode(this, node);
     },
 
@@ -428,7 +426,7 @@ export function wbFiles() {
     },
 
     // The rename goes through the write seam (wb-files-move.ts).
-    async performMove(from: string, to: string) {
+    performMove(from: string, to: string) {
       return moveEntry(this, from, to);
     },
 
@@ -468,32 +466,9 @@ export function wbFiles() {
       };
     },
 
-    // The listeners, added once when Alpine builds the files.
+    // The listeners, added once when Alpine builds the files (wb-files-events.ts).
     init() {
-      window.addEventListener("workbench:project-changed", () => this.filesFollowProject());
-      window.addEventListener("workbench:fleet-read", () => this.filesFollowFleet());
-      window.addEventListener("workbench:peer-woken", (e) => this.filesFollowWake(e.detail.daemon));
-      window.addEventListener("workbench:checkout-changed", () => this.filesFollowCheckout());
-      // The tab became visible, or a login: the socket sends what it missed.
-      window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay());
-      // `/` and Ctrl/Cmd+Shift+F (`wire()` in app.ts).
-      window.addEventListener("workbench:file-search-open", () => this.openFileSearch());
-      window.addEventListener(
-        "workbench:move-confirmed",
-        (e) => void this.performMove(e.detail.from, e.detail.to),
-      );
-      // A create or a delete of the write seam (`wire()` in app.ts): re-list the
-      // level, THEN reveal, so `setActive()` is the last write. `revealRel`
-      // expands the ancestors: a nudge for a COLLAPSED dir is dropped, so a
-      // nudge alone would leave a new entry invisible.
-      window.addEventListener("workbench:tree-dirty", (e) => {
-        Promise.resolve(this.onTreeDirty(e.detail.rel))
-          .then(() => {
-            const rel = e.detail.reveal ?? "";
-            return rel === "" ? null : this.revealRel(rel);
-          })
-          .catch(logFailure("the tree did not refresh"));
-      });
+      listenFiles(this);
     },
   });
 }

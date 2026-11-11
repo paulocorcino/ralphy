@@ -306,11 +306,12 @@ export function createDesk(deps: DeskDeps) {
         throw new Error("desk unavailable");
       })
       .then((payload) => {
-        if (!payload) return;
+        if (!payload) return null;
         deskFailure = "";
         ingestDesk(payload);
         // Changes kept while the daemon could not be reached go now.
         if (sync.hasPending()) scheduleDeskFlush();
+        return null;
       })
       .catch(() => {});
   }
@@ -334,12 +335,13 @@ export function createDesk(deps: DeskDeps) {
       })
       .then(() => reloadDesk())
       .then(() => {
-        if (!deskLoaded) return;
+        if (!deskLoaded) return null;
         // Consoles opened over the unreadable desk queued their records: they
         // go on this flush. With none up, the boot restore never ran, so it
         // runs now.
         if (wins.size > 0) scheduleDeskFlush();
         else restoreDesk();
+        return null;
       });
   }
   // `restoreDesk` awaits this before reconciling, so the layout is never
@@ -412,14 +414,15 @@ export function createDesk(deps: DeskDeps) {
       // drives `wins.size` to 0, and a `restoreDesk` would respawn the members.
       if (isDeskLoaded() && wins.size === 0 && popups.size() === 0) {
         restoreDesk();
-        return;
+        return null;
       }
       // Windows already up: nothing else would put the just-loaded fences on
       // the stage. A REFUSED load leaves `fences` as this page drew them.
-      if (!isDeskLoaded()) return;
+      if (!isDeskLoaded()) return null;
       renderFences();
       renderNotes();
       applyExtent();
+      return null;
     });
   }
 

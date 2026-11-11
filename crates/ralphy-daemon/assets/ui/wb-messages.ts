@@ -118,8 +118,12 @@ export function createMessages(window: MessagesWindow, document: Document) {
       // CAPTURE: a console's terminal swallows keystrokes, and Escape is one it
       // forwards to the child — the dialog must hear it first.
       document.addEventListener("keydown", onKey, true);
-      cancel.addEventListener("click", () => done(false));
-      go.addEventListener("click", () => done(true));
+      cancel.addEventListener("click", () => {
+        done(false);
+      });
+      go.addEventListener("click", () => {
+        done(true);
+      });
     });
   }
 

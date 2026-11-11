@@ -103,7 +103,9 @@ export function createTerminal(deps: TerminalDeps) {
     showScrollbarWhileNeeded(term);
     // The GPU addon: `terminalGpu`, wb-console-gpu.ts. A change of renderer
     // refits; the page changes it only after this function returns.
-    const { useGpu, dropGpu } = terminalGpu(term, () => sizing.fit.fit());
+    const { useGpu, dropGpu } = terminalGpu(term, () => {
+      sizing.fit.fit();
+    });
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
     // The touch gesture and the line selection: wb-console-touch.ts.
@@ -111,10 +113,16 @@ export function createTerminal(deps: TerminalDeps) {
     // A wheel the page made for a touch (`wheelToApp`) is not trusted. In the
     // capture phase: xterm stops the wheel events it takes.
     if (probe) {
-      body.addEventListener("wheel", (e) => e.isTrusted && probe.moved("wheel"), {
-        passive: true,
-        capture: true,
-      });
+      body.addEventListener(
+        "wheel",
+        (e) => {
+          if (e.isTrusted) probe.moved("wheel");
+        },
+        {
+          passive: true,
+          capture: true,
+        },
+      );
     }
     const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts, probe });
     const { setSelecting, stopFling, stopScroll } = touch;

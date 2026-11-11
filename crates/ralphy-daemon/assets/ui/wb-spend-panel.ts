@@ -218,7 +218,9 @@ export function wbSpend() {
     init() {
       // The sidebar button opens the tab (`workbench:spend-open`, in the markup).
       // The open project changed or the accordion moved: read the tab again.
-      window.addEventListener("workbench:spend-refresh", () => this.refreshSpend());
+      window.addEventListener("workbench:spend-refresh", () => {
+        this.refreshSpend();
+      });
       // The tab came to the front: its subject can change while it sits in the
       // background.
       window.addEventListener("workbench:spend-shown", () => {

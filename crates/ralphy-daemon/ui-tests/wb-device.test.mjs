@@ -22,7 +22,7 @@ function load() {
 // stub window has no real I/O), so every send it started has run its course
 // when this resolves.
 function settle() {
-  return new Promise((r) => setImmediate(r));
+  return new Promise((r) => { setImmediate(r); });
 }
 
 // Waits for `cond`, bounded, so a broken `report` fails instead of hanging.
@@ -68,9 +68,9 @@ test("report: a 401 before login waits for the login action, then sends once", a
         if (type === "workbench:action") onAction = fn;
       },
     },
-    fetch: async (url, init) => {
+    fetch: (url, init) => {
       bodies.push(JSON.parse(init.body));
-      return { ok: statuses.shift() < 300 };
+      return Promise.resolve({ ok: statuses.shift() < 300 });
     },
   };
   D.report(win);
@@ -101,10 +101,10 @@ test("report: a 409 before the device cookie sends again later, a few times at m
   D.report({
     document: { addEventListener() {} },
     setTimeout: (fn) => timers.push(fn),
-    fetch: async () => {
+    fetch: () => {
       sends += 1;
       const status = statuses.shift();
-      return { ok: status < 300, status };
+      return Promise.resolve({ ok: status < 300, status });
     },
   });
   for (let n = 1; n <= 2; n++) {
@@ -120,9 +120,9 @@ test("report: a 409 before the device cookie sends again later, a few times at m
   D.report({
     document: { addEventListener() {} },
     setTimeout: (fn) => held.push(fn),
-    fetch: async () => {
+    fetch: () => {
       refused += 1;
-      return { ok: false, status: 409 };
+      return Promise.resolve({ ok: false, status: 409 });
     },
   });
   for (let n = 1; n <= 5; n++) {

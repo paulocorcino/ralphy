@@ -359,6 +359,9 @@ export function createFenceList(deps: FenceListDeps) {
     // a gap the operator never chose.
     if (slot < 0) {
       flashBlockingFence(offset, viewport);
+      // `undefined` (a full plane) is not `false` (the cap) for the caller and its tests,
+      // and `return undefined` breaks no-useless-undefined.
+      // oxlint-disable-next-line typescript/consistent-return -- see the two lines above
       return;
     }
     const spawn = fenceSpawnRect(offset, viewport, slot);

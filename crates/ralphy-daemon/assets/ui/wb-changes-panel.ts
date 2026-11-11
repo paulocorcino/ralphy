@@ -197,13 +197,13 @@ export function wbChanges() {
     },
 
     // The remote acts (wb-changes-sync.ts).
-    async syncFetch(slug: string) {
+    syncFetch(slug: string) {
       return syncFetch(this, slug);
     },
-    async syncPull(slug: string) {
+    syncPull(slug: string) {
       return syncPull(this, slug);
     },
-    async syncPush(slug: string) {
+    syncPush(slug: string) {
       return syncPush(this, slug);
     },
 
@@ -449,11 +449,13 @@ export function wbChanges() {
 
     init() {
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
-      window.addEventListener("workbench:project-changed", (e) =>
-        this.gitFollowProject(e.detail.slug),
-      );
+      window.addEventListener("workbench:project-changed", (e) => {
+        this.gitFollowProject(e.detail.slug);
+      });
       // The open checkout's HEAD moved (the files' `tree` channel says so).
-      window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
+      window.addEventListener("workbench:head-moved", (e) => {
+        this.gitFollowHead(e.detail.ref);
+      });
       // The page asks for a read of one project's change set and branch: the
       // sidebar refresh, a branch act, a new or restored checkout.
       window.addEventListener("workbench:changes-read", (e) => {
@@ -468,9 +470,13 @@ export function wbChanges() {
         this._reportCurrent(e.detail.ref);
       });
       // Opening the Changes view is a read trigger.
-      window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
+      window.addEventListener("workbench:changes-refresh", () => {
+        this.refreshChanges();
+      });
       // Registered once; the tick asks whether the panel is open.
-      this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
+      this._changesBackstop = setInterval(() => {
+        this.refreshChanges();
+      }, this.CHANGES_POLL_MS);
     },
   });
 }

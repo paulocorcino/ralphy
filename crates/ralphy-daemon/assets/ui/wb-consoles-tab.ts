@@ -382,7 +382,9 @@ export function wbColumns() {
 
     // The listeners, added once when Alpine builds the consoles tab.
     init() {
-      window.addEventListener("workbench:menus-close", () => this.closeOwnMenus());
+      window.addEventListener("workbench:menus-close", () => {
+        this.closeOwnMenus();
+      });
       // A console whose record another client removed leaves the columns
       // before it leaves the stage.
       window.WBConsole.setDeskGoneHook((ids: string[]) => {

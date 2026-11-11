@@ -117,7 +117,7 @@ function recorder() {
 }
 
 // Every pending decode and drain has run.
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+const settle = () => new Promise((resolve) => { setTimeout(resolve, 50); });
 
 test("live frames that arrive while a gzip replay decodes are applied after it, in order", async () => {
   const { seen, apply } = recorder();
@@ -131,7 +131,7 @@ test("live frames that arrive while a gzip replay decodes are applied after it, 
   assert.deepEqual(seen, ["open", "size", "the screen", "live 1", "live 2"]);
 });
 
-test("a raw replay is applied at once, and only the frame after a gzip open is decoded", async () => {
+test("a raw replay is applied at once, and only the frame after a gzip open is decoded", () => {
   const { seen, apply } = recorder();
   const { take } = frameQueue(apply);
   take(commandFrame("session-open", { session: 1 }));
@@ -251,7 +251,7 @@ test("a decode that ends after its deadline writes nothing", async () => {
   try {
     const { seen, apply } = recorder();
     let finish = () => {};
-    const { take } = frameQueue(apply, () => new Promise((resolve) => (finish = () => resolve(new Uint8Array([65])))));
+    const { take } = frameQueue(apply, () => new Promise((resolve) => { finish = () => resolve(new Uint8Array([65])); }));
     gzipOpen(take);
     mock.timers.tick(DECODE_DEADLINE_MS);
     finish();

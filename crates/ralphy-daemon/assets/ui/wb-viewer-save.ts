@@ -1,6 +1,7 @@
 // The pane's bytes and what happens to them: Save, Reload, an external write,
 // and the "changed on disk" badge. A pane over a diff or an image never saves.
 import { WBFail } from "./wb-fail.ts";
+import { need } from "./wb-dom-need.ts";
 import { refreshEncodingPill } from "./wb-viewer-encoding.ts";
 import { isRendered } from "./wb-viewer-render.ts";
 import type { MonacoEditor } from "./wb-monaco.ts";
@@ -26,6 +27,28 @@ export type ViewerSaveDeps = {
 };
 
 export type ViewerSave = ReturnType<typeof createViewerSave>;
+
+/** What the buttons of an editable file pane call. */
+type FileActs = Pick<ViewerSave, "save" | "reloadFile" | "applyFresh" | "hideDiskBadge"> & {
+  detachClick: (rec: BytesRecord) => void;
+};
+
+/** The Save, Reload, "changed on disk" and Detach buttons of an editable file pane. */
+export function wireFileButtons(el: HTMLElement, rec: BytesRecord, acts: FileActs) {
+  need(el, '[data-act="save"]').addEventListener("click", () => {
+    acts.save(rec);
+  });
+  need(el, '[data-act="reload"]').addEventListener("click", () => {
+    acts.reloadFile(rec);
+  });
+  need(el, '[data-act="disk"]').addEventListener("click", () => {
+    if (rec.pendingDisk !== undefined) acts.applyFresh(rec, rec.pendingDisk);
+    acts.hideDiskBadge(rec);
+  });
+  need(el, '[data-act="detach"]').addEventListener("click", () => {
+    acts.detachClick(rec);
+  });
+}
 
 export function createViewerSave(deps: ViewerSaveDeps) {
   const { window, messages, reopenRefused, renderMarkdown, drawMermaid } = deps;
@@ -120,23 +143,31 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       // "reload failed".
       if (rec.kind === "image") {
         WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
-          .then((url) => settleImage(rec, url, fail))
-          .catch(() => fail());
+          .then((url) => {
+            settleImage(rec, url, fail);
+            return null;
+          })
+          .catch(() => {
+            fail();
+          });
         return;
       }
       readWith(rec, rec.encoding)
         .then((reply) => {
           if (reply.status !== "ok") {
             fail(reply);
-            return;
+            return null;
           }
           rec.bom = reply.bom;
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);
-          if (rec.refused !== null) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content);
+          if (rec.refused === null) applyFresh(rec, reply.content);
+          else reopenRefused(rec, reply);
+          return null;
         })
-        .catch(() => fail());
+        .catch(() => {
+          fail();
+        });
     }
   }
 
@@ -146,8 +177,8 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       fail();
       return;
     }
-    if (rec.refused !== null) return reopenRefused(rec, { content: url });
-    return applyFresh(rec, url);
+    if (rec.refused === null) applyFresh(rec, url);
+    else reopenRefused(rec, { content: url });
   }
 
   // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is

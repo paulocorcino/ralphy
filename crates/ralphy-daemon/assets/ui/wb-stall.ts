@@ -34,7 +34,9 @@ export async function reportStall(kind: StallKind, what: string, waitedMs: numbe
   if (last !== undefined && now - last < STALL_REPEAT_MS) return;
   lastSent.set(key, now);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), STALL_SEND_DEADLINE_MS);
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, STALL_SEND_DEADLINE_MS);
   try {
     const body = JSON.stringify({
       kind,

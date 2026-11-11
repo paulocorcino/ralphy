@@ -94,7 +94,9 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
       const name = document.createElement("span");
       name.className = "note-shadow-title";
       sh.append(name);
-      sh.addEventListener("click", () => putBack());
+      sh.addEventListener("click", () => {
+        putBack();
+      });
       stage()?.append(sh);
       el._noteShadow = sh;
     }

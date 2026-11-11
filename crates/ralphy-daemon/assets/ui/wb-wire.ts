@@ -31,14 +31,14 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   };
 
   // A viewer asked to detach → open the popup and close the tab.
-  document.addEventListener("workbench:detach-request", (e) =>
-    window.Alpine.store("tabs").detachFile(e.detail),
-  );
+  document.addEventListener("workbench:detach-request", (e) => {
+    window.Alpine.store("tabs").detachFile(e.detail);
+  });
 
   // A rendered markdown link asked for a repo file → open (or focus) its tab.
-  document.addEventListener("workbench:open-request", (e) =>
-    window.Alpine.store("tabs").openLink(e.detail),
-  );
+  document.addEventListener("workbench:open-request", (e) => {
+    window.Alpine.store("tabs").openLink(e.detail);
+  });
 
   // The divider between the two panes was dragged: the ratio is view state.
   document.addEventListener("workbench:split-ratio", (e) => {
@@ -174,15 +174,20 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   (function wireWriteVerbs() {
     // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page with no daemon door
     const daemonBacked = () => window.WBDaemon?.write !== undefined;
-    const flash = (msg: string) => messages.flash(msg);
+    const flash = (msg: string) => {
+      messages.flash(msg);
+    };
     const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
       WBDaemon.write(verb, payload)
         .then((reply) => {
           if (WBFail.isError(reply)) {
             flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           } else if (okMsg !== undefined) flash(okMsg);
+          return null;
         })
-        .catch(() => flash("Could not rename: the daemon did not answer."));
+        .catch(() => {
+          flash("Could not rename: the daemon did not answer.");
+        });
     };
 
     // Where a write is aimed: the project, and the checkout it carries.
@@ -222,10 +227,13 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
       if (d.encoding !== undefined && d.encoding !== "") payload.encoding = d.encoding;
       if (d.bom) payload.bom = true;
-      const send = (p: SavePayload): Promise<void> =>
+      const send = (p: SavePayload): Promise<unknown> =>
         WBDaemon.write("file.write", aimed(p))
           .then((reply) => {
-            if (!WBFail.isError(reply)) return viewer()?.saveDone?.(id);
+            if (!WBFail.isError(reply)) {
+              viewer()?.saveDone?.(id);
+              return null;
+            }
             const reason = WBFail.message(reply, "the daemon gave no reason");
             viewer()?.saveFailed?.(id, reason, reply);
             // UTF-8 represents everything; a refusal under it is not a
@@ -234,6 +242,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
               return offerUtf8(p, reply);
             }
             flash(WBFail.failed(reply, "Could not save: the daemon gave no reason."));
+            return null;
           })
           .catch(() => {
             viewer()?.saveFailed?.(id, "the daemon did not answer");
@@ -252,9 +261,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
           confirmLabel: "Save as UTF-8",
         });
         // No shell, no dialog: the pane already says "Could not save" and why.
-        if (!ask) return;
+        if (!ask) return null;
         return ask.then((ok) => {
-          if (ok !== true) return;
+          if (ok !== true) return null;
           viewer()?.setEncoding?.(id, "UTF-8", false);
           const { bom: _bom, ...rest } = p;
           return send({ ...rest, encoding: "utf-8" });
@@ -272,8 +281,10 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
 
     // The name of a new entry: the prompt dialog where the page has a shell,
     // else the browser's prompt.
-    async function askEntryName(shellPage: boolean, folder: boolean, dir: string) {
-      if (!shellPage) return window.prompt(folder ? "New folder name" : "New file name");
+    function askEntryName(shellPage: boolean, folder: boolean, dir: string) {
+      if (!shellPage) {
+        return Promise.resolve(window.prompt(folder ? "New folder name" : "New file name"));
+      }
       return window.Alpine.store("modals").askPrompt({
         // No placeholder: a plausible filename in an empty field reads as
         // a name already chosen, and operators pressed Enter on it.
@@ -294,9 +305,13 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(
         () => null,
       );
-      if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-      if (WBFail.isError(reply)) {
-        return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
+      if (!reply || WBFail.isError(reply)) {
+        flash(
+          reply
+            ? WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`)
+            : `Could not create ${name}: the daemon did not answer.`,
+        );
+        return;
       }
       flash(`${name} created.`);
       if (!folder && c) {
@@ -328,8 +343,14 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(
         () => null,
       );
-      if (!reply) return flash("Could not delete: the daemon did not answer.");
-      if (!WBFail.isError(reply)) return flash(`${name} deleted.`);
+      if (!reply) {
+        flash("Could not delete: the daemon did not answer.");
+        return;
+      }
+      if (!WBFail.isError(reply)) {
+        flash(`${name} deleted.`);
+        return;
+      }
       const reason = WBFail.message(reply, "the daemon gave no reason");
       flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
       // "not found" on a delete says the ROW is the lie: re-list the parent
@@ -394,7 +415,9 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     }
 
     document.addEventListener("workbench:action", (e) => {
-      runAction(e.detail).catch(() => flash("Could not finish that action."));
+      runAction(e.detail).catch(() => {
+        flash("Could not finish that action.");
+      });
     });
   })();
 

@@ -74,7 +74,11 @@ export function wirePaste(deps: PasteDeps) {
       return true;
     }
     const reader = new FileReader();
-    reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
+    // The one handler of a new object, and the ui-tests' fakes have no addEventListener.
+    // oxlint-disable-next-line unicorn/prefer-add-event-listener -- see the line above
+    reader.onerror = () => {
+      term.write("\r\n[paste refused — unreadable]\r\n");
+    };
     reader.onload = () => {
       const base64 = (typeof reader.result === "string" ? reader.result : "").replace(
         /^data:[^,]*,/,
@@ -87,10 +91,11 @@ export function wirePaste(deps: PasteDeps) {
           if (path === "") {
             const why = WBFail.why(reply, "the daemon refused it");
             term.write(`\r\n[paste refused — ${why}]\r\n`);
-            return;
+            return null;
           }
           term.paste(path);
           term.focus();
+          return null;
         })
         // The socket closed with no reply: say what the browser saw.
         .catch((err: unknown) => {
@@ -172,6 +177,7 @@ export function wirePaste(deps: PasteDeps) {
           .then(({ image, text }) => {
             if (image) dropImage([image.type], image);
             else if (text !== undefined && text !== "") term.paste(text);
+            return null;
           })
           .catch(() => {});
       }

@@ -88,7 +88,7 @@ function slotShell(width = 1280, seed = null) {
   // The opens resolve their bytes on a microtask, so the fake stays until
   // those landed; restoring it under them would read `open` off `undefined`.
   const restore = async () => {
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => { setImmediate(r); });
     globalThis.WBViewer = real;
   };
   return { state, window, painted, open, stored: () => stored, restore };
@@ -123,7 +123,7 @@ test("a tab opened from the tree while pinned becomes the left the pin returns t
     // `openTab` sets `active` without `activate`: the fold is where lastLeft
     // lives. Its paint comes after the bytes resolve (a microtask here).
     sh.open("c.js");
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => { setImmediate(r); });
     assert.deepEqual(sh.painted.at(-1), ["file:o/r:c.js", { id: B, mirror: false, focus: false, ratio: null }]);
     sh.state.$store.tabs.activate(B);
     assert.equal(sh.painted.at(-1)[0], "file:o/r:c.js", "the pane the operator was reading, not an earlier one");

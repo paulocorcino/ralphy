@@ -414,11 +414,11 @@ test("a file that is not a note leaves the stage and opens as bytes", async () =
   const record = { id: "x", repo: "r", checkout: null, path: "a.note", rect: RECT };
   const saved = [];
   const { notes, desk, document } = withHost({ saveNotes: (next) => saved.push(next) }, () =>
-    onStage({ records: [record], WBDaemon: { observe: async () => ({ status: "error", message: "not a note" }) } }),
+    onStage({ records: [record], WBDaemon: { observe: () => Promise.resolve({ status: "error", message: "not a note" }) } }),
   );
   desk.records = [record];
   notes.render();
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); });
   assert.deepEqual(saved.at(-1), []);
   assert.deepEqual(document.events, [["workbench:open-request", { project: "r", path: "a.note", checkout: null, as: "bytes" }]]);
 });
@@ -427,10 +427,10 @@ test("a note whose file cannot be read stays on the stage and says why beside it
   const record = { id: "m", repo: "r", path: "gone.note", rect: RECT };
   const { notes, document } = onStage({
     records: [record],
-    WBDaemon: { observe: async () => ({ status: "error", message: "not found" }) },
+    WBDaemon: { observe: () => Promise.resolve({ status: "error", message: "not found" }) },
   });
   notes.render();
-  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); });
   const card = notes.cardEl("m");
   assert.equal(card.classList.contains("missing"), true);
   assert.match(card.querySelector(".note-state").title, /^gone\.note — /);

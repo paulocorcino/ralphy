@@ -34,7 +34,7 @@ export type NoteBuildDeps = {
   /** Persist the placement of one or more cards. */
   persistCards: (els: NoteCard | NoteCard[]) => void;
   /** Write what the card holds now. */
-  flush: (el: NoteCard) => Promise<void>;
+  flush: (el: NoteCard) => Promise<unknown>;
   /** True while the card floats on top. */
   onTop: ReturnType<typeof createNoteOnTop>["onTop"];
   /** The pointer gesture of a card on top. */
@@ -112,7 +112,9 @@ export function createNoteBuild(deps: NoteBuildDeps) {
     // card on top moves its floating box instead, through `floatGesture`.
     consoleHost?.makeDraggable(el, head, {
       locked: () => el._noteLocked === true || onTop(el),
-      onDrop: () => persistCards(el),
+      onDrop: () => {
+        persistCards(el);
+      },
     });
     head.addEventListener("pointerdown", floatGesture(el, null));
     // A press on the body that misses the editor still means "type here".

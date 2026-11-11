@@ -166,15 +166,16 @@ export function createDeskConverge(deps: ConvergeDeps) {
       .catch(() => null)
       .then((read) => {
         recordChecks.delete(win);
-        if (!win.isConnected || currentDesk().some((r) => r.id === win._deskId)) return;
+        if (!win.isConnected || currentDesk().some((r) => r.id === win._deskId)) return null;
         const sessions = read?.sessions;
         // Not known: the next desk this page takes asks again. A list that
         // did not hear from this window's peer does not know either.
-        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read?.unheard)) return;
+        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read?.unheard)) return null;
         const live =
           sessions.some((s) => s.record === win._deskId) || sessionRowFor(win, sessions) !== null;
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);
+        return null;
       });
   }
 

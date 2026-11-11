@@ -177,7 +177,9 @@ export const WBDevice = (function () {
     if (now.count || !listen) return Promise.resolve(now);
     // Chromium fills the list a moment after the first call.
     return new Promise<ReturnType<typeof read>>((resolve) => {
-      const done = () => resolve(read());
+      const done = () => {
+        resolve(read());
+      };
       listen("voiceschanged", done, { once: true });
       setTimeout(done, 800);
     });

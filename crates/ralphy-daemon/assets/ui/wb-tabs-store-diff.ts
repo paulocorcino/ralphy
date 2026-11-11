@@ -76,10 +76,10 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
     Promise.all([diffHeadSide(project, t, refuse), diffWorkSide(project, t, refuse)])
       .then(([head, work]) => {
         // A refusal on EITHER side aborts: half a diff reads as "no changes".
-        if (head == null || work == null) return;
+        if (head == null || work == null) return null;
         // Closed during the round trips: mounting now would leak a pane
         // with no tab to close it.
-        if (!store.tabs.some((x) => x.id === t.id)) return;
+        if (!store.tabs.some((x) => x.id === t.id)) return null;
         WBViewer.open({
           id: t.id,
           project,
@@ -92,6 +92,7 @@ export function openDiff(store: DiffTabs, messages: Messages, project: string, e
         });
         // As `openTab`: the pane follows the CURRENT active tab.
         store.syncViewer();
+        return null;
       })
       .catch(() => refuse("transport"));
   });

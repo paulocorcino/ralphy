@@ -60,13 +60,16 @@ export function shell() {
         void window.WBConsole?.afterLogin()?.then(() => {
           this.$store.checkouts.adoptDeskCheckouts();
           this.syncDeskFailure();
+          return null;
         });
         // Only now is `file.read` allowed (#339).
         this.$store.tabs.restoreView();
       });
       // A push, a reopened socket or the tab coming back (the store
       // `connection`) asks to read these facts again.
-      window.addEventListener("workbench:desk-reread", () => this.rereadDesk());
+      window.addEventListener("workbench:desk-reread", () => {
+        this.rereadDesk();
+      });
       // The runs socket said the snapshots changed (the Alpine store `runs`).
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
@@ -80,10 +83,13 @@ export function shell() {
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
       void window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.syncDeskFailure();
+        return null;
       });
       // A flush can be the read that finds the desk unreadable; no push says so.
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
-      window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
+      window.WBConsole?.setDeskFailureHook?.(() => {
+        this.syncDeskFailure();
+      });
       // The phase clock's tick: one assignment a second while the panel is
       // open; the run document is NOT re-read. The presence half of the clock
       // is the store `connection`'s.
@@ -100,6 +106,7 @@ export function shell() {
       void read.then(() => {
         this.syncDeskFailure();
         this.$store.checkouts.adoptDeskCheckouts();
+        return null;
       });
     },
     syncDeskFailure() {
@@ -108,7 +115,10 @@ export function shell() {
     // The desk failure's one action (ADR-0070 D4).
     startNewDesk() {
       window.WBConsole.startNewDesk()
-        .then(() => this.syncDeskFailure())
+        .then(() => {
+          this.syncDeskFailure();
+          return null;
+        })
         .catch((e: unknown) => {
           const message = e instanceof Error ? e.message : "";
           const why = message.startsWith("the daemon") ? message : "the daemon did not answer";

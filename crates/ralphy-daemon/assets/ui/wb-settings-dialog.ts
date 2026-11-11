@@ -152,6 +152,7 @@ export function settingsDialog() {
               );
             }
             if (cfg && typeof cfg === "object") copyProjectConfig(this.settings, cfg);
+            return null;
           })
           .catch(() => {
             this.settingsError = "Could not read the settings: the daemon did not answer";
@@ -249,7 +250,9 @@ export function settingsDialog() {
         document.body.append(a);
         a.click();
         a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+        }, 1000);
       } catch {
         this.deskHistory.error = "Could not download the desk layout: the daemon did not answer.";
       }

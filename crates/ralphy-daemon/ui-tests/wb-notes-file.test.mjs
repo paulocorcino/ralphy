@@ -26,9 +26,9 @@ function noteFile(records, reply = { status: "ok" }) {
   const deps = {
     window: {
       WBDaemon: {
-        write: async (verb, payload) => {
+        write: (verb, payload) => {
           calls.push(["write", verb, payload]);
-          return reply;
+          return Promise.resolve(reply);
         },
       },
     },
@@ -44,7 +44,7 @@ function noteFile(records, reply = { status: "ok" }) {
   return { file: createNoteFile(deps), calls };
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = () => new Promise((r) => { setImmediate(r); });
 
 test("pointing a card at a file another card of the same checkout shows is refused", () => {
   const records = [

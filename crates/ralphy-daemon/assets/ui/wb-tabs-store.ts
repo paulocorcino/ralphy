@@ -132,9 +132,8 @@ export function tabsStore(deps: TabsStoreDeps) {
     // A console that has a tab shows that tab; any other gets a new one.
     openConsoleTab(deskId: string, title: string) {
       const held = this.tabOf(deskId);
-      if (held) return this.activate(held.id);
-      const id = freshTabId(deskId, (x) => this.tabs.some((t) => t.id === x));
-      this.tabs.push(consoleTab(id, deskId, title, [[deskId]]));
+      const id = held?.id ?? freshTabId(deskId, (x) => this.tabs.some((t) => t.id === x));
+      if (!held) this.tabs.push(consoleTab(id, deskId, title, [[deskId]]));
       this.activate(id);
     },
     // The one writer of a console tab's grid. A tab with no console left
@@ -243,7 +242,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (this.active !== "consoles") this.activate("consoles");
       const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
       const ws = document.querySelector("#workspace");
-      void window.Alpine.nextTick(() =>
+      void window.Alpine.nextTick(() => {
         window.WBNotes.openFromExplorer({
           repo,
           checkout: tree,
@@ -256,8 +255,8 @@ export function tabsStore(deps: TabsStoreDeps) {
             left: ws?.scrollLeft ?? 0,
             top: ws?.scrollTop ?? 0,
           },
-        }),
-      );
+        });
+      });
     },
 
     // `file.read`, resolving to what the pane opens with (wb-tabs-store-open.ts).
@@ -301,7 +300,9 @@ export function tabsStore(deps: TabsStoreDeps) {
         t.id = newId;
       }
       // The viewer's own "what is shown" is keyed by id too.
-      void window.Alpine.nextTick(() => this.syncViewer());
+      void window.Alpine.nextTick(() => {
+        this.syncViewer();
+      });
       this.persistView();
     },
 
@@ -399,7 +400,9 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.syncLater();
     },
     syncLater() {
-      void window.Alpine.nextTick(() => this.syncViewer());
+      void window.Alpine.nextTick(() => {
+        this.syncViewer();
+      });
       this.persistView();
     },
     // Whether the canvas is wide enough for two panes right now: the tab menu
@@ -430,7 +433,9 @@ export function tabsStore(deps: TabsStoreDeps) {
         if (next) this.activate(next.id);
       } else {
         // A background close can still be the slot's pane: repaint.
-        void window.Alpine.nextTick(() => this.syncViewer());
+        void window.Alpine.nextTick(() => {
+          this.syncViewer();
+        });
       }
       this.persistView();
     },

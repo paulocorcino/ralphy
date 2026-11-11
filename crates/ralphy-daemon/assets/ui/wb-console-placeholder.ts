@@ -288,12 +288,13 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // The box says why it waits: the list did not hear from the peer. "Try
     // again" asks the list again, and launches only when the list heard from
     // the peer and the console does not run there.
-    const showUnheard = () =>
+    const showUnheard = () => {
       show({
         text: `${peerHost(peerGroups.get(daemon), record.environment)} does not answer.`,
         detail: "",
         action: "retry",
       });
+    };
     if (unheard) showUnheard();
     // One question at a time: fleet reads arrive every 30 s and on every
     // `peers.dirty`, and an answer must be acted on once.
@@ -337,6 +338,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     else if ((record.checkout ?? "") !== "") {
       void checkoutStillThere(window, record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
+        return null;
       });
     }
 
@@ -424,7 +426,9 @@ export function createPlaceholders(deps: PlaceholderDeps) {
     // always did.
     function relaunchHere() {
       const carry = deskOf(win);
-      markRelaunch(carry.id, () => drop(true));
+      markRelaunch(carry.id, () => {
+        drop(true);
+      });
       if (missing) carry.checkout = null;
       void spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),

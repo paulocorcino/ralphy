@@ -395,7 +395,7 @@ fn the_runs_feed_is_contained_in_the_markup() {
     assert!(
         squeeze(&app_js).contains(concat!(
             r#"addEventListener("workbench:run-verb-failed","#,
-            r#"(e)=>this.runVerbFailed(e.detail.message),);"#
+            r#"(e)=>{this.runVerbFailed(e.detail.message);});"#
         )),
         "the Runs panel must hear a terminal verb frame (#331)"
     );

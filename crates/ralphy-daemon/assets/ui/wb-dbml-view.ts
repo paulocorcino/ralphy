@@ -173,7 +173,9 @@ function cardHead(ctx: Ctx, table: DbmlTable) {
   const pick = el(ctx.doc, "input", "dbml-pick") as HTMLInputElement;
   pick.type = "checkbox";
   pick.setAttribute("aria-label", `Select ${table.name}`);
-  pick.addEventListener("change", () => onPick(ctx));
+  pick.addEventListener("change", () => {
+    onPick(ctx);
+  });
   head.append(pick, table.name);
   return head;
 }
@@ -196,7 +198,9 @@ function buildCard(ctx: Ctx, table: DbmlTable) {
     box.append(button(doc, "dbml-btn dbml-more", ""));
     setOpen(box, false);
   }
-  box.addEventListener("click", (ev) => onCardClick(ctx, box, ev));
+  box.addEventListener("click", (ev) => {
+    onCardClick(ctx, box, ev);
+  });
   return box;
 }
 
@@ -209,9 +213,13 @@ function summaryBar(ctx: Ctx, text: string) {
   const { doc } = ctx;
   const bar = el(doc, "div", "dbml-bar");
   const expand = button(doc, "dbml-btn", "Expand all");
-  expand.addEventListener("click", () => setAll(ctx, true));
+  expand.addEventListener("click", () => {
+    setAll(ctx, true);
+  });
   const collapse = button(doc, "dbml-btn", "Collapse all");
-  collapse.addEventListener("click", () => setAll(ctx, false));
+  collapse.addEventListener("click", () => {
+    setAll(ctx, false);
+  });
   bar.append(
     el(doc, "div", "dbml-summary", text),
     ctx.status,
@@ -311,7 +319,9 @@ function newCtx(doc: Document, article: Element, schema: DbmlSchema) {
   const names = new Set(schema.tables.map((t) => t.name));
   const ctx: Ctx = { doc, article, schema, names, draw, clear, status, busy: false };
   draw.addEventListener("click", () => void drawSelection(ctx));
-  clear.addEventListener("click", () => clearSelection(ctx));
+  clear.addEventListener("click", () => {
+    clearSelection(ctx);
+  });
   refreshDraw(ctx);
   return ctx;
 }
@@ -345,7 +355,9 @@ function groupSection(ctx: Ctx, group: { label: string; tables: DbmlTable[] }) {
   const section = el(doc, "section", "dbml-group");
   const pickAll = button(doc, "dbml-btn", "Select group");
   pickAll.setAttribute("aria-label", `Select group ${group.label}`);
-  pickAll.addEventListener("click", () => selectGroup(ctx, section));
+  pickAll.addEventListener("click", () => {
+    selectGroup(ctx, section);
+  });
   const head = el(doc, "div", "dbml-group-head");
   head.append(el(doc, "h2", "", group.label), pickAll);
   const grid = el(doc, "div", "dbml-grid");

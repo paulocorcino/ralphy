@@ -60,7 +60,7 @@ function page(t, { replies = [], sessions = [], projects = [], tabOf = () => {} 
   };
   globalThis.document = { title: "Ralphy", hidden: false, addEventListener() {} };
   globalThis.WBConsole = { reveal: (id) => reveals.push(id) };
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => replies.shift() });
+  globalThis.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(replies.shift()) });
   const tabs = {
     active: "files",
     tabOf,
@@ -201,9 +201,9 @@ test("only a finished run can be dismissed", async (t) => {
   // "Dismiss" posts the id, then reads the list again.
   const sent = [];
   const replies = { POST: fixture("api-attention-dismiss"), GET: { requests: [finished[1]] } };
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = (url, init) => {
     sent.push([init.method, url, init.body]);
-    return { ok: true, status: 200, json: async () => replies[init.method] };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(replies[init.method]) });
   };
   data.$store.modals = { flash: (m) => assert.fail(`flashed ${m}`) };
   await data.dismiss(finished[0]);
@@ -245,10 +245,10 @@ function notifications(permission, answer = permission) {
   const stored = new Map();
   globalThis.Notification = class {
     static permission = permission;
-    static async requestPermission() {
+    static requestPermission() {
       asked.push(true);
       this.permission = answer;
-      return answer;
+      return Promise.resolve(answer);
     }
     constructor(title, options) {
       shown.push({ title, ...options });
@@ -339,9 +339,9 @@ test("opening the console of a done request dismisses it", async (t) => {
   assert.equal(data.actionOf(done), "console");
   assert.equal(data.canDismiss(done), true);
   const sent = [];
-  globalThis.fetch = async (url, init) => {
+  globalThis.fetch = (url, init) => {
     sent.push([init.method, url, init.body]);
-    return { ok: true, status: 200, json: async () => ({ requests: [] }) };
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ requests: [] }) });
   };
   const inside = (record) => ({ closest: () => ({ _deskId: record }) });
   data.requests = [done, waiting];
@@ -351,12 +351,12 @@ test("opening the console of a done request dismisses it", async (t) => {
   assert.deepEqual(sent, [], "another window, or none, dismisses nothing");
 
   data.focused(inside("w-local"));
-  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => { setImmediate(resolve); });
   const posts = sent.filter(([method]) => method === "POST");
   assert.deepEqual(posts, [["POST", "/api/attention/dismiss", JSON.stringify({ id: "done:1:1" })]]);
 });
 
-test("a console url focuses the console after load and leaves the url", async (t) => {
+test("a console url focuses the console after load and leaves the url", (t) => {
   const session = (id, daemon_id, record) => ({ id, repo: "owner/app", agent: "claude", kind: "agent", started_at: 1, daemon_id, environment: "", record });
   const { data, reveals, activated } = page(t, {
     sessions: [session(7, "01OTHER", "w-other"), session(7, PEER, "w-linked")],
@@ -384,7 +384,7 @@ test("a console url focuses the console after load and leaves the url", async (t
   assert.deepEqual(reveals, ["w-linked"], "once");
 });
 
-test("a console url names a console that is not there: the url is cleaned at the end", async (t) => {
+test("a console url names a console that is not there: the url is cleaned at the end", (t) => {
   const { data, reveals } = page(t);
   let beat = null;
   const urls = [];

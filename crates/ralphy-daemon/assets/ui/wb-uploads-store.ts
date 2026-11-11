@@ -190,7 +190,7 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     retry(key: number) {
       const item = this.items.find((i) => i.key === key);
       if (!item || item.state !== "failed") {
-        return;
+        return Promise.resolve();
       }
       item.state = "waiting";
       item.error = "";
@@ -265,7 +265,8 @@ export function uploadsStore(deps: UploadsStoreDeps) {
     // stopped with a reason.
     applyReply(item: UploadItem, reply: PartReply | null, seen: { expected: number }) {
       if (reply?.status === "ok" && typeof reply.path === "string") {
-        return this.finished(item, reply.path);
+        this.finished(item, reply.path);
+        return;
       }
       if (reply?.status === "ok" && typeof reply.received === "number") {
         item.sent = reply.received;

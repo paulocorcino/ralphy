@@ -27,17 +27,19 @@ function dialog({ names = [], limit = 25 } = {}) {
   const { scope: state, window } = loadComponent("wbUploadDialog");
   const written = [];
   window.WBDaemon = {
-    observe: async (verb) =>
-      verb === "config.get"
-        ? { status: "ok", config: { "files.upload_max_mb": limit } }
-        : { status: "ok", entries: names.map((name) => ({ name, dir: false })) },
-    write: async (verb, payload) => (written.push({ verb, payload }), { status: "ok", path: payload.path }),
+    observe: (verb) =>
+      Promise.resolve(
+        verb === "config.get"
+          ? { status: "ok", config: { "files.upload_max_mb": limit } }
+          : { status: "ok", entries: names.map((name) => ({ name, dir: false })) },
+      ),
+    write: (verb, payload) => Promise.resolve((written.push({ verb, payload }), { status: "ok", path: payload.path })),
   };
   globalThis.WBDaemon = window.WBDaemon;
   return { state, written };
 }
 
-const tick = () => new Promise((r) => setImmediate(r));
+const tick = () => new Promise((r) => { setImmediate(r); });
 
 test("every name the markup of wbUploadDialog reads is its own", () => {
   const { scope: state, data } = loadComponent("wbUploadDialog");

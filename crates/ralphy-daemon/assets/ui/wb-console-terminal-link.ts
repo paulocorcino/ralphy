@@ -303,7 +303,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
           return;
         default: {
           const unreachable: never = event;
-          return unreachable;
+          void unreachable;
         }
       }
     });
@@ -348,9 +348,17 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     // The close is read after the frames that wait behind a replay decode:
     // a `session-end` among them names the reason it is read with.
     channel = openConsole(fields, {
-      onFrame: (inner) => frames.take(inner),
-      onClosed: (reason) => frames.whenIdle(() => closed(reason)),
-      onResume: () => announceDetach(channel, "reconnect"),
+      onFrame: (inner) => {
+        frames.take(inner);
+      },
+      onClosed: (reason) => {
+        frames.whenIdle(() => {
+          closed(reason);
+        });
+      },
+      onResume: () => {
+        announceDetach(channel, "reconnect");
+      },
     });
     s.ws = channel;
     armOpenDeadline(channel);

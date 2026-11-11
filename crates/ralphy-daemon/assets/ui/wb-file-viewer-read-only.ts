@@ -98,7 +98,10 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       mod
         ?.getAction("actions.find")
         ?.run()
-        .catch((err: unknown) => console.error("[workbench] monaco find failed", err));
+        .catch((err: unknown) => {
+          // oxlint-disable-next-line no-console -- the failure is for a developer
+          console.error("[workbench] monaco find failed", err);
+        });
     };
     rec.el = el;
     void mountDiff(rec, need(el, ".viewer-body"));
@@ -149,7 +152,9 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
       );
     };
     need(el, '[data-act="reload"]').onclick = () => reloadFile(rec);
-    need(el, '[data-act="detach"]').onclick = () => detachClick(rec);
+    need(el, '[data-act="detach"]').addEventListener("click", () => {
+      detachClick(rec);
+    });
     rec.el = el;
   }
 

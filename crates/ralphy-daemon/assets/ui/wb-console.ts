@@ -94,30 +94,32 @@ export function createConsole(
     fences: () => currentFences(),
     notes: () => currentNotes(),
     checkouts: () => currentCheckouts(),
-    refreshView: () => refreshView(),
-    emitDesk: (change: DeskChange) => emitDesk(change),
-    scheduleDeskFlush: () => scheduleDeskFlush(),
+    refreshView: () => {
+      refreshView();
+    },
+    emitDesk: (change: DeskChange) => {
+      emitDesk(change);
+    },
+    scheduleDeskFlush: () => {
+      scheduleDeskFlush();
+    },
     restoreRect: (win: HTMLElement) => restoreRect(win),
-    refreshFenceChrome: () => refreshFenceChrome(),
+    refreshFenceChrome: () => {
+      refreshFenceChrome();
+    },
     consolePrefix: (repo: string | null | undefined) => consolePrefix(repo),
   });
-  const {
-    createRecord,
-    setWin,
-    forgetRecord,
-    saveFences,
-    saveNotes,
-    nameUnnamed,
-    loadDesk,
-    atDeskCap,
-  } = records;
+  const { createRecord, setWin, forgetRecord, saveFences, saveNotes, nameUnnamed } = records;
+  const { loadDesk, atDeskCap } = records;
 
   // ---- the feeds: `wb-console-feeds.ts` ----------------------------------------
   // Built before the title, which takes the project names and the session list.
   const feeds = createFeeds({
     wins,
     pageWindows,
-    renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
+    renderTitle: (win, title, presentation) => {
+      renderTitle(win, title, presentation);
+    },
   });
   const {
     newDeskId,
@@ -147,25 +149,20 @@ export function createConsole(
     projectTitleOf,
     setWin,
   });
-  const {
-    consolePrefix,
-    takenNames,
-    sessionPresentation,
-    ensureListing,
-    renderTitle,
-    canRename,
-    startRename,
-    closeCheckoutMenu,
-    restartWin,
-  } = title;
+  const { consolePrefix, takenNames, sessionPresentation, ensureListing, renderTitle } = title;
+  const { canRename, startRename, closeCheckoutMenu, restartWin } = title;
 
   // ---- the popup registry: `wb-desk-popups.ts` ---------------------------------
   // The one owner of the detached fences: everything else reads and changes
   // them through it. The heartbeat is the detach's, built later: lazy arrows.
   const popups = createPopupRegistry({
     link,
-    startBeat: () => detach.startBeat(),
-    stopBeat: () => detach.stopBeat(),
+    startBeat: () => {
+      detach.startBeat();
+    },
+    stopBeat: () => {
+      detach.stopBeat();
+    },
   });
   // The detached popup and the node harness have no tabs store: their
   // consoles are always on screen. A console in a tab is on screen while
@@ -184,13 +181,17 @@ export function createConsole(
     wins,
     stack,
     sync,
-    applyKeyBar: (win: ConsoleWin) => applyKeyBar(win),
+    applyKeyBar: (win: ConsoleWin) => {
+      applyKeyBar(win);
+    },
     budget: () => budget,
     fillsViewport: (win: ConsoleWin) => fillsViewport(win),
     isFull: (win: HTMLElement) => isFull(win),
     windowShown,
     attachTerminal: (body: HTMLElement, termOpts: TerminalOpts) => attachTerminal(body, termOpts),
-    scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
+    scheduleDeskFlush: (ms?: number) => {
+      scheduleDeskFlush(ms);
+    },
     revivePlaceholders: () => revivePlaceholders(),
   });
   const { isCovered, applyDormancy, refreshCover, changed } = dormancy;
@@ -220,7 +221,9 @@ export function createConsole(
     currentFences: () => currentFences(),
     currentNotes: () => currentNotes(),
     isDeskSettled: () => isDeskSettled(),
-    tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
+    tearDownMember: (win: ConsoleWin, reason: DetachReason) => {
+      tearDownMember(win, reason);
+    },
     buildFence: (f: DeskFence) => buildFence(f),
     canRename,
     consolePrefix,
@@ -229,15 +232,8 @@ export function createConsole(
     startRename,
     takenNames,
   });
-  const {
-    fillsViewport,
-    restoreRect,
-    isFull,
-    applyLock,
-    paintMaxButton,
-    raiseMaximized,
-    applyExtent,
-  } = stageWindow;
+  const { fillsViewport, restoreRect, isFull, applyLock, paintMaxButton } = stageWindow;
+  const { raiseMaximized, applyExtent } = stageWindow;
   const { dropClosedElsewhere } = columns;
   const { refreshFenceChrome, renderNotes, renderFences, showDetachGlyph } = fenceFloor;
   const { applyLanding, flushPendingOffset, cancelSlide, autoPan, wireStage } = view;
@@ -252,7 +248,9 @@ export function createConsole(
     applyDormancy,
     IntersectionObserver:
       typeof IntersectionObserver === "function" ? IntersectionObserver : undefined,
-    queueMicrotask: (task) => queueMicrotask(task),
+    queueMicrotask: (task) => {
+      queueMicrotask(task);
+    },
   });
 
   // ---- the console tabs: `wb-console-place.ts` (ADR-0037 §3d) -----------------
@@ -425,7 +423,7 @@ export function createConsole(
     attachTerminal,
     budget,
     askConfirm,
-    toast,
+    toast: (note: { text: string }) => void toast(note),
     createRecord,
     atDeskCap,
     setWin,
@@ -438,7 +436,9 @@ export function createConsole(
     changed,
     spawnPlaceholder: (...args: Parameters<SpawnPlaceholder>) => spawnPlaceholder(...args),
     spawnOrMissing: (...args: Parameters<SpawnOrMissing>) => spawnOrMissing(...args),
-    markRelaunch: (deskId: string, takeDown: () => void) => markRelaunch(deskId, takeDown),
+    markRelaunch: (deskId: string, takeDown: () => void) => {
+      markRelaunch(deskId, takeDown);
+    },
   });
   const { spawnWindow, recordBirth, deskOf } = spawn;
   type SpawnWindow = typeof spawnWindow;
