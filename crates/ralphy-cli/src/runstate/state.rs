@@ -167,7 +167,6 @@ impl RunState {
                 self.agent = None;
             }
             RunEvent::NeedsSplit { number } => self.apply_needs_split(number),
-            RunEvent::Notice { .. } => {}
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
                 self.agent = None;
@@ -234,12 +233,14 @@ impl RunState {
             RunEvent::RunFinished { outcome, .. } if outcome == "no_work" => {
                 self.final_summary = Some("no open issues to process".to_owned());
             }
-            RunEvent::RunFinished { .. } => {}
             // The raw plan snapshots carry no per-issue status change (the sink
             // resets its plan-step poll snapshot on `PlanWritten`, not these).
-            RunEvent::PlanOpened { .. } | RunEvent::PlanClosed { .. } => {}
-            // A warning line, not a state: the session goes on as before.
-            RunEvent::HooksUnprovenAllowed { .. } => {}
+            // A notice and a warning line are not a state: the session goes on as before.
+            RunEvent::RunFinished { .. }
+            | RunEvent::PlanOpened { .. }
+            | RunEvent::PlanClosed { .. }
+            | RunEvent::Notice { .. }
+            | RunEvent::HooksUnprovenAllowed { .. } => {}
         }
     }
 
@@ -298,8 +299,8 @@ impl RunState {
 
     fn apply_planning(&mut self, model: Option<String>, effort: Option<String>) {
         self.cur_agent = Some(self.plan_agent.clone());
-        self.cur_model = model.clone();
-        self.cur_effort = effort.clone();
+        self.cur_model.clone_from(&model);
+        self.cur_effort.clone_from(&effort);
         // The planner's labels land on the active issue only when present:
         // an absent field must not blank what a previous event set.
         if let Some(n) = self.active {
@@ -335,7 +336,7 @@ impl RunState {
     ) {
         self.cur_agent = Some(self.exec_agent.clone());
         self.cur_model = (!model.is_empty()).then(|| model.clone());
-        self.cur_effort = effort.clone();
+        self.cur_effort.clone_from(&effort);
         let Some(n) = self.resolve(number) else {
             return;
         };

@@ -80,16 +80,16 @@ pub(crate) struct ChangesCommitArgs {
 /// `ralphy changes list|stage|unstage|commit|discard`.
 pub(crate) fn changes(cmd: ChangesCommand) -> anyhow::Result<()> {
     match cmd {
-        ChangesCommand::List(args) => changes_list(args),
-        ChangesCommand::Stage(args) => changes_stage(args),
-        ChangesCommand::Unstage(args) => changes_unstage(args),
-        ChangesCommand::Commit(args) => changes_commit(args),
-        ChangesCommand::Discard(args) => changes_discard(args),
+        ChangesCommand::List(args) => changes_list(&args),
+        ChangesCommand::Stage(args) => changes_stage(&args),
+        ChangesCommand::Unstage(args) => changes_unstage(&args),
+        ChangesCommand::Commit(args) => changes_commit(&args),
+        ChangesCommand::Discard(args) => changes_discard(&args),
     }
 }
 
 /// `ralphy changes list [--format json]`. Read-only: no run-lock guard.
-fn changes_list(args: ChangesListArgs) -> anyhow::Result<()> {
+fn changes_list(args: &ChangesListArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let list = ralphy_core::changes::changes(&repo_root)?;
 
@@ -117,7 +117,7 @@ fn guarded_root(repo: &Path, verb: &str) -> anyhow::Result<PathBuf> {
 }
 
 /// `ralphy changes stage --path <p> [--path <p>…]`.
-fn changes_stage(args: ChangesPathArgs) -> anyhow::Result<()> {
+fn changes_stage(args: &ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes stage")?;
     match ralphy_core::worktree::stage(&repo_root, &args.path)? {
         StageOutcome::Staged { paths } => println!("Staged {paths} path(s)."),
@@ -132,7 +132,7 @@ fn changes_stage(args: ChangesPathArgs) -> anyhow::Result<()> {
 }
 
 /// `ralphy changes unstage --path <p> [--path <p>…]`.
-fn changes_unstage(args: ChangesPathArgs) -> anyhow::Result<()> {
+fn changes_unstage(args: &ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes unstage")?;
     match ralphy_core::worktree::unstage(&repo_root, &args.path)? {
         UnstageOutcome::Unstaged { paths } => println!("Unstaged {paths} path(s)."),
@@ -147,7 +147,7 @@ fn changes_unstage(args: ChangesPathArgs) -> anyhow::Result<()> {
 }
 
 /// `ralphy changes commit --message=<msg>`.
-fn changes_commit(args: ChangesCommitArgs) -> anyhow::Result<()> {
+fn changes_commit(args: &ChangesCommitArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes commit")?;
     match ralphy_core::worktree::commit(&repo_root, &args.message)? {
         CommitOutcome::Committed { sha } => println!("Committed {sha}."),
@@ -162,7 +162,7 @@ fn changes_commit(args: ChangesCommitArgs) -> anyhow::Result<()> {
 }
 
 /// `ralphy changes discard --path <p> [--path <p>…]`.
-fn changes_discard(args: ChangesPathArgs) -> anyhow::Result<()> {
+fn changes_discard(args: &ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes discard")?;
     match ralphy_core::worktree::discard(&repo_root, &args.path)? {
         DiscardOutcome::Discarded { restored, deleted } => {

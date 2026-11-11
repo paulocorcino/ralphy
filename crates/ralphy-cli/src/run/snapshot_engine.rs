@@ -139,8 +139,7 @@ impl DeliveryEngine for SnapshotEngine {
             Some((issue, None)) if self.plan.issue.is_none() => {
                 self.plan.issue = issue;
             }
-            Some((_, None)) => {}
-            None => {}
+            Some((_, None)) | None => {}
         }
     }
 

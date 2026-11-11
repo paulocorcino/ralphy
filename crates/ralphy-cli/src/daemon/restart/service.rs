@@ -75,16 +75,32 @@ enum LaunchdPlan {
     StopThenKickstart,
 }
 
-/// `agent` is `None` when no agent is loaded, else the pid it runs, if any.
+/// What launchd reports for the agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LaunchdAgent {
+    NotLoaded,
+    /// Loaded; `pid` is `None` while the agent is not running.
+    #[cfg_attr(
+        not(any(target_os = "macos", test)),
+        expect(dead_code, reason = "only launchctl on macOS reports a loaded agent")
+    )]
+    Loaded {
+        pid: Option<u32>,
+    },
+}
+
 /// With no record, a running agent is still the daemon to restart; an agent
 /// that runs nothing is not, so a restart of "a running daemon" starts none.
-fn launchd_plan(recorded: Option<u32>, agent: Option<Option<u32>>) -> LaunchdPlan {
+fn launchd_plan(recorded: Option<u32>, agent: LaunchdAgent) -> LaunchdPlan {
     match (recorded, agent) {
-        (_, None) => LaunchdPlan::NotTheAgent,
-        (None, Some(Some(_))) => LaunchdPlan::Kickstart,
-        (None, Some(None)) => LaunchdPlan::NotTheAgent,
-        (Some(pid), Some(Some(running))) if pid == running => LaunchdPlan::Kickstart,
-        (Some(_), Some(_)) => LaunchdPlan::StopThenKickstart,
+        (_, LaunchdAgent::NotLoaded) | (None, LaunchdAgent::Loaded { pid: None }) => {
+            LaunchdPlan::NotTheAgent
+        }
+        (None, LaunchdAgent::Loaded { pid: Some(_) }) => LaunchdPlan::Kickstart,
+        (Some(pid), LaunchdAgent::Loaded { pid: Some(running) }) if pid == running => {
+            LaunchdPlan::Kickstart
+        }
+        (Some(_), LaunchdAgent::Loaded { .. }) => LaunchdPlan::StopThenKickstart,
     }
 }
 
@@ -102,7 +118,7 @@ fn kickstart_argv(uid: &str) -> Vec<String> {
 
 #[cfg(not(any(target_os = "macos", test)))]
 fn kickstart_argv(_uid: &str) -> Vec<String> {
-    unreachable!("launchd_agent() is None off macOS, so nothing asks for a kickstart")
+    unreachable!("no launchd agent is loaded off macOS, so nothing asks for a kickstart")
 }
 
 /// The uid of the `gui/<uid>` domain the agent is loaded in: this user's.
@@ -124,10 +140,9 @@ fn current_uid() -> Result<String> {
     bail!("a launchd agent exists only on macOS")
 }
 
-/// `None` when the agent is not loaded, else the pid launchd reports for it,
-/// which is `None` while it is not running.
+/// The agent's state, as `launchctl list` reports it.
 #[cfg(target_os = "macos")]
-fn launchd_agent() -> Option<Option<u32>> {
+fn launchd_agent() -> LaunchdAgent {
     let out = match std::process::Command::new("launchctl")
         .args(["list", LAUNCHD_LABEL])
         .output()
@@ -135,18 +150,20 @@ fn launchd_agent() -> Option<Option<u32>> {
         Ok(out) => out,
         Err(e) => {
             tracing::debug!(error = %e, "launchctl is not available");
-            return None;
+            return LaunchdAgent::NotLoaded;
         }
     };
     if !out.status.success() {
-        return None;
+        return LaunchdAgent::NotLoaded;
     }
-    Some(parse_launchd_pid(&String::from_utf8_lossy(&out.stdout)))
+    LaunchdAgent::Loaded {
+        pid: parse_launchd_pid(&String::from_utf8_lossy(&out.stdout)),
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn launchd_agent() -> Option<Option<u32>> {
-    None
+fn launchd_agent() -> LaunchdAgent {
+    LaunchdAgent::NotLoaded
 }
 
 /// `launchctl list <label>` prints a plist-like dictionary with a

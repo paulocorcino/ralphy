@@ -12,7 +12,7 @@ fn worker_pushes_on_sleep_enter_and_resume() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
 
     // Enter a sleep, then wait for the worker to fold it and buzz the phone.
     queue.push(RunEvent::SleepStarted {
@@ -71,7 +71,7 @@ fn worker_fires_notice_and_delete_when_sleep_events_co_batch() {
     });
     queue.push(RunEvent::SleepEnded);
 
-    drive_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+    drive_worker(client, 7, RunState::new("t", 1), &queue, &shutdown);
 
     let calls = calls.lock().unwrap();
     let texts = send_texts(&calls);
@@ -101,7 +101,7 @@ fn worker_pushes_on_api_degraded_and_recover_edges() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
 
     queue.push(RunEvent::ApiDegraded);
     queue.wake();
@@ -157,7 +157,7 @@ fn worker_reap_after_degraded_never_claims_recovery() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
 
     queue.push(RunEvent::ApiDegraded);
     queue.wake();
@@ -205,7 +205,7 @@ fn worker_lone_api_recover_pushes_nothing() {
 
     queue.push(RunEvent::ApiRecovered);
 
-    drive_worker(client, 7, RunState::new("t", 1), queue.clone(), shutdown);
+    drive_worker(client, 7, RunState::new("t", 1), &queue, &shutdown);
 
     let calls = calls.lock().unwrap();
     let texts = send_texts(&calls);
@@ -231,7 +231,7 @@ fn worker_pushes_on_a_waiting_agent_state_only() {
     let worker_shutdown = shutdown.clone();
     let state = RunState::new("title", 1);
     let handle =
-        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+        std::thread::spawn(move || drive_worker(client, 7, state, &worker_queue, &worker_shutdown));
 
     let agent = |state: &str, detail: Option<&str>| RunEvent::AgentState {
         state: state.into(),

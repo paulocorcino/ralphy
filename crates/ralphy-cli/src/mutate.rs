@@ -144,7 +144,7 @@ pub(crate) fn branch(cmd: BranchCommand) -> anyhow::Result<()> {
         BranchCommand::Switch(a) => (a, "branch switch", false),
         BranchCommand::Create(a) => (a, "branch create", true),
         // A read never blocks on the run lock, so `List` skips `guard_run_lock`.
-        BranchCommand::List(a) => return branch_list(a),
+        BranchCommand::List(a) => return branch_list(&a),
     };
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let ws = ralphy_core::Workspace::new(&repo_root);
@@ -161,7 +161,7 @@ pub(crate) fn branch(cmd: BranchCommand) -> anyhow::Result<()> {
 }
 
 /// `ralphy branch list [--format json]`. Read-only: no run-lock guard.
-fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
+fn branch_list(args: &BranchListArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let current = ralphy_core::git::current_branch(&repo_root)?;
     let held = ralphy_core::git::local_branches_held(&repo_root)?;
@@ -195,9 +195,9 @@ fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
 pub(crate) fn worktree(cmd: WorktreeCommand) -> anyhow::Result<()> {
     match cmd {
         // A read never blocks on the run lock, so `List` skips `guard_run_lock`.
-        WorktreeCommand::List(args) => worktree_list(args),
-        WorktreeCommand::Add(args) => worktree_add(args),
-        WorktreeCommand::Remove(args) => worktree_remove(args),
+        WorktreeCommand::List(args) => worktree_list(&args),
+        WorktreeCommand::Add(args) => worktree_add(&args),
+        WorktreeCommand::Remove(args) => worktree_remove(&args),
     }
 }
 
@@ -205,7 +205,7 @@ pub(crate) fn worktree(cmd: WorktreeCommand) -> anyhow::Result<()> {
 /// guard runs against the primary; then ADR-0063 §1's gates in `remove` —
 /// locked, dirty, no `--force`, `branch -d` never `-D`. A refusal is returned
 /// bare (no `.context`), so stderr is the one line the daemon relays verbatim.
-fn worktree_remove(args: WorktreeRemoveArgs) -> anyhow::Result<()> {
+fn worktree_remove(args: &WorktreeRemoveArgs) -> anyhow::Result<()> {
     let start = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let primary = ralphy_core::checkouts::primary(&start)?;
     let ws = ralphy_core::Workspace::new(&primary);
@@ -221,7 +221,7 @@ fn worktree_remove(args: WorktreeRemoveArgs) -> anyhow::Result<()> {
 /// `ralphy worktree add <name> [--base <ref>]`. The run lock is the primary
 /// tree's, so the guard runs against the primary — before `add`, the only
 /// writer.
-fn worktree_add(args: WorktreeAddArgs) -> anyhow::Result<()> {
+fn worktree_add(args: &WorktreeAddArgs) -> anyhow::Result<()> {
     let start = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let primary = ralphy_core::checkouts::primary(&start)?;
     let ws = ralphy_core::Workspace::new(&primary);
@@ -254,7 +254,7 @@ fn worktree_add(args: WorktreeAddArgs) -> anyhow::Result<()> {
 }
 
 /// `ralphy worktree list [--format json]`. Read-only: no run-lock guard.
-fn worktree_list(args: WorktreeListArgs) -> anyhow::Result<()> {
+fn worktree_list(args: &WorktreeListArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let listing = ralphy_core::checkouts::list(&repo_root)?;
 

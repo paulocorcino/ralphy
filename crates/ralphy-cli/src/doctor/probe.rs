@@ -10,7 +10,7 @@ use ralphy_daemon::agent_state::StateSource;
 use ralphy_daemon::telegram_state::{self, FleetTelegram};
 use ralphy_proc_util::hook_form::{self, HookCheck};
 
-use super::{gh_signed_in, source_of, MachineFacts};
+use super::{gh_signed_in, source_of, LingerRead, MachineFacts};
 use crate::init::Agent;
 
 /// Run every probe on this computer. The probes are independent and each one
@@ -24,7 +24,7 @@ pub(crate) fn probe() -> MachineFacts {
         let python = scope.spawn(|| version(on_path("python").or_else(|| on_path("python3"))));
         let agents: Vec<_> = Agent::ALL
             .iter()
-            .map(|a| scope.spawn(move || agent_program(a).map(|p| (*a, version_of(&p)))))
+            .map(|a| scope.spawn(move || agent_program(*a).map(|p| (*a, version_of(&p)))))
             .collect();
         let hooks: Vec<_> = Agent::ALL
             .iter()
@@ -120,7 +120,7 @@ fn read_daemon_telegram(port: u16) -> Result<FleetTelegram> {
 /// so the check answers for the command a console gets. `None` when the
 /// agent is not installed or gives no state through hooks.
 fn hook_probe(agent: Agent) -> Option<(Agent, HookCheck)> {
-    let cli = agent_program(&agent)?;
+    let cli = agent_program(agent)?;
     let hook = hook_command(agent, &cli)?;
     // A `disableAllHooks` file of Claude Code says nothing about Codex.
     let home = (agent == Agent::Claude)
@@ -191,7 +191,7 @@ fn version_of(program: &Path) -> String {
 
 // Each CLI resolves through the same locator the adapters spawn through, so a
 // CLI under `~/.local/bin` but off `PATH` is found, as a run would find it.
-pub(crate) fn agent_program(a: &Agent) -> Option<PathBuf> {
+pub(crate) fn agent_program(a: Agent) -> Option<PathBuf> {
     match a {
         // Cursor installs as `cursor-agent` or `agent`, not as its selector
         // (ADR-0042 D14).
@@ -206,26 +206,26 @@ pub(crate) fn agent_program(a: &Agent) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
-fn linger() -> Option<Option<bool>> {
+fn linger() -> Option<LingerRead> {
     let Some(user) = std::env::var("USER").ok().filter(|u| !u.is_empty()) else {
-        return Some(None);
+        return Some(LingerRead(None));
     };
     let out = std::process::Command::new("loginctl")
         .args(["show-user", &user, "--property=Linger"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output();
-    Some(match out {
+    Some(LingerRead(match out {
         Ok(o) => parse_linger(&String::from_utf8_lossy(&o.stdout)),
         Err(e) => {
             tracing::debug!(error = %e, "loginctl is not available");
             None
         }
-    })
+    }))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn linger() -> Option<Option<bool>> {
+fn linger() -> Option<LingerRead> {
     None
 }
 

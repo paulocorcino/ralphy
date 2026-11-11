@@ -261,6 +261,11 @@ fn every_argv_the_daemon_spawns_parses() {
         d::config_argv(Verb::ConfigUnset, &json!({"key": "queue.label"})),
     );
 
+    each_parses(built);
+}
+
+/// Each argv, after the program name, parses as a `ralphy` command line.
+fn each_parses(built: Vec<Vec<String>>) {
     for argv in built {
         let full: Vec<&str> = std::iter::once("ralphy")
             .chain(argv.iter().map(String::as_str))

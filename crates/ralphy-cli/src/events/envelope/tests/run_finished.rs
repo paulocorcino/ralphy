@@ -34,7 +34,7 @@ fn run_finished_maps_outcome_totals_without_subject() {
         blockers: vec![],
     });
     let v = map(
-        RunEvent::RunFinished {
+        &RunEvent::RunFinished {
             outcome: "completed".into(),
             issues_done: 3,
             issues_skipped: 1,
@@ -109,7 +109,7 @@ fn run_finished_rollup_stays_coherent_under_a_starved_fold() {
         &crate::run::summary::tests::fixture_report(),
         7,
     );
-    let v = map(decode_run_finished(&summary), &RunState::default());
+    let v = map(&decode_run_finished(&summary), &RunState::default());
 
     let issues = v["data"]["issues"].as_array().expect("an issues array");
     assert_eq!(issues.len(), 6, "the starved fold does not truncate: {v}");
@@ -144,7 +144,7 @@ fn run_finished_rollup_carries_the_review_only_count() {
         &crate::run::summary::tests::fixture_report(),
         7,
     );
-    let v = map(decode_run_finished(&summary), &RunState::default());
+    let v = map(&decode_run_finished(&summary), &RunState::default());
 
     assert_eq!(v["data"]["issues"][0]["number"], 1, "{v}");
     assert_eq!(v["data"]["issues"][0]["review_only"], 2, "{v}");
@@ -173,7 +173,7 @@ fn run_finished_falls_back_to_the_fold_without_a_rollup() {
         usage: UsageLite::default(),
     });
     let v = map(
-        RunEvent::RunFinished {
+        &RunEvent::RunFinished {
             outcome: "completed".into(),
             issues_done: 1,
             issues_skipped: 0,

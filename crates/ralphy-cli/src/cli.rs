@@ -4,6 +4,8 @@
 //! composition root (`main.rs`) and the run orchestrator (`run.rs`); the enums map
 //! into the core's own types at the boundary (docs/adr/0004, docs/adr/0002).
 
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -193,7 +195,7 @@ pub(crate) fn command() -> clap::Command {
         header.render_reset()
     );
     for (name, about) in &hidden {
-        text.push_str(&format!("  {name:width$}  {about}\n"));
+        writeln!(text, "  {name:width$}  {about}").expect(WRITE_TO_STRING);
     }
     cmd.after_help(text.trim_end().to_owned())
 }
@@ -235,6 +237,10 @@ pub(crate) enum HookVendor {
 }
 
 #[derive(Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent flag of `ralphy run`, not a state"
+)]
 pub(crate) struct RunArgs {
     /// Any folder inside the repo.
     #[arg(long, default_value = ".")]

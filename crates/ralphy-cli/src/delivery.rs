@@ -169,8 +169,8 @@ pub(crate) trait DeliveryEngine {
 /// work runs on every exit path.
 pub(crate) fn run_delivery_worker<E: DeliveryEngine>(
     mut engine: E,
-    queue: Arc<EventQueue>,
-    shutdown: Arc<AtomicBool>,
+    queue: &EventQueue,
+    shutdown: &AtomicBool,
 ) {
     engine.on_start();
     loop {
@@ -266,7 +266,7 @@ pub(crate) fn spawn_worker<E: DeliveryEngine + Send + 'static>(
     let worker_shutdown = shutdown.clone();
     let join = std::thread::Builder::new()
         .name(name.into())
-        .spawn(move || run_delivery_worker(engine, worker_queue, worker_shutdown))
+        .spawn(move || run_delivery_worker(engine, &worker_queue, &worker_shutdown))
         .ok()?;
     Some(WorkerHandle {
         queue,

@@ -154,24 +154,27 @@ pub(crate) fn issues_cmd(args: &IssuesArgs) -> Result<()> {
     if args.push {
         return push_queue(&repo_root, &tracker, &human_return, assignee.as_deref());
     }
+    let output = Output {
+        fields: fields.as_deref(),
+        format: args.format,
+    };
     match show {
-        Some(number) => print_show(
-            number,
-            &repo_root,
-            &tracker,
-            &human_return,
-            fields.as_deref(),
-            args.format,
-        ),
+        Some(number) => print_show(number, &repo_root, &tracker, &human_return, output),
         None => print_list(
             &repo_root,
             &tracker,
             &human_return,
             assignee.as_deref(),
-            fields.as_deref(),
-            args.format,
+            output,
         ),
     }
+}
+
+/// How a listing prints: its format, and the JSON fields to keep.
+#[derive(Clone, Copy)]
+struct Output<'a> {
+    fields: Option<&'a [String]>,
+    format: Format,
 }
 
 /// `--board` and `--push` are queue-level modes: neither combines with
@@ -251,8 +254,7 @@ fn print_show(
     repo_root: &std::path::Path,
     tracker: &GhTracker,
     human_return: &[String],
-    fields: Option<&[String]>,
-    format: Format,
+    output: Output<'_>,
 ) -> Result<()> {
     let issue = github::fetch_issue(number, repo_root)?;
     // Best-effort: a comment-fetch failure degrades to body-only, never a stop
@@ -261,8 +263,8 @@ fn print_show(
     let slug = git::project_slug(repo_root);
     let history = issue_history(&slug, number);
     let view = show_view(&issue, &comments, &history, human_return, tracker)?;
-    let out = match format {
-        Format::Json => render_show_json(&view, fields)?,
+    let out = match output.format {
+        Format::Json => render_show_json(&view, output.fields)?,
         Format::Text => render_show_text(&view),
     };
     println!("{out}");
@@ -275,14 +277,13 @@ fn print_list(
     tracker: &GhTracker,
     human_return: &[String],
     assignee: Option<&str>,
-    fields: Option<&[String]>,
-    format: Format,
+    output: Output<'_>,
 ) -> Result<()> {
     let queue = build_list_queue(repo_root, assignee)?;
     // The list is never a forced selection, so `stop-before` is honoured.
     let view = resolve_queue_view(&queue, &[], human_return, tracker)?;
-    let out = match format {
-        Format::Json => render_json(&view, fields)?,
+    let out = match output.format {
+        Format::Json => render_json(&view, output.fields)?,
         Format::Text => render_text(&view, assignee),
     };
     println!("{out}");

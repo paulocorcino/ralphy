@@ -60,6 +60,9 @@ use cli::{Cli, Command, ConsolidateArgs, HookCommand};
 // `cli.rs`.
 pub(crate) use cli::CliAgent;
 
+/// The `expect` message of a `write!` to a `String`.
+pub(crate) const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
 fn main() -> Result<ExitCode> {
     if let Some(code) = askpass_exit_code() {
         return Ok(code);
@@ -69,7 +72,7 @@ fn main() -> Result<ExitCode> {
         run::strip_secret_tokens_from_env();
     }
     let outcome = match cli.command {
-        Command::Run(args) => run::run_cmd(*args),
+        Command::Run(args) => run::run_cmd(&args),
         Command::Consolidate(args) => consolidate_cmd(args),
         Command::Models(args) => models::run(&args),
         Command::Config(args) => config::run(args),
@@ -104,7 +107,7 @@ fn main() -> Result<ExitCode> {
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
         Command::Gemini(cmd) => gemini::gemini(cmd),
-        Command::Stop(args) => stop::stop(args),
+        Command::Stop(args) => stop::stop(&args),
         Command::Update(args) => update::run(&args),
     };
     outcome.map(|()| ExitCode::SUCCESS)
@@ -158,6 +161,15 @@ pub(crate) fn consolidate_defaults(
     }
 }
 
+/// The agent that runs a consolidation session, and its model and effort
+/// (`None` = the adapter's default).
+#[derive(Clone, Copy)]
+pub(crate) struct Consolidator<'a> {
+    pub agent: CliAgent,
+    pub model: Option<&'a str>,
+    pub effort: Option<&'a str>,
+}
+
 /// Dispatch the one-shot knowledge-consolidation session to the selected agent's
 /// adapter (docs/adr/0031). Each adapter drives the SAME vendor-neutral charter
 /// (`ralphy_core::PROMPT_CONSOLIDATE`); only the CLI invocation differs. Mirrors
@@ -169,13 +181,16 @@ pub(crate) fn consolidate_defaults(
 /// rather than dropped. Only Cursor parses a live token count today; the other
 /// adapters report `Usage::default()` until their own parser is wired.
 fn consolidate_with_agent(
-    agent: CliAgent,
+    consolidator: Consolidator<'_>,
     ws: &Workspace,
     run_dir: &Path,
-    model: Option<&str>,
-    effort: Option<&str>,
     timeout: std::time::Duration,
 ) -> Result<Usage> {
+    let Consolidator {
+        agent,
+        model,
+        effort,
+    } = consolidator;
     match agent {
         CliAgent::Claude => ralphy_agent_claude::consolidate_knowledge(
             ws,
@@ -223,18 +238,10 @@ fn consolidate_with_agent(
 /// Callers are responsible for clearing `ANTHROPIC_API_KEY` (the subscription-quota
 /// sentinel) before this runs — `run` and `consolidate` both do so as their first
 /// statement.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the agent, the workspace, the run folder, the model, the effort, the time \
-              limit and the notes are seven separate facts, and the end-of-run caller is \
-              in another module"
-)]
 fn run_consolidation(
-    agent: CliAgent,
+    consolidator: Consolidator<'_>,
     ws: &Workspace,
     run_dir: &Path,
-    model: Option<&str>,
-    effort: Option<&str>,
     max_minutes: u64,
     notes: &[PathBuf],
 ) -> Result<(usize, Usage)> {
@@ -248,11 +255,9 @@ fn run_consolidation(
     let before = std::fs::read_to_string(ws.knowledge_file()).ok();
 
     let usage = consolidate_with_agent(
-        agent,
+        consolidator,
         ws,
         run_dir,
-        model,
-        effort,
         std::time::Duration::from_secs(max_minutes * 60),
     )?;
 
@@ -353,15 +358,13 @@ fn consolidate_cmd(args: ConsolidateArgs) -> Result<()> {
     let model = args.model.and_then(non_empty);
     let effort = args.effort.and_then(non_empty);
 
-    let (archived, _usage) = run_consolidation(
-        args.agent,
-        &ws,
-        &run_dir,
-        model.as_deref().or(def_model),
-        effort.as_deref().or(def_effort),
-        args.max_minutes,
-        &notes,
-    )?;
+    let consolidator = Consolidator {
+        agent: args.agent,
+        model: model.as_deref().or(def_model),
+        effort: effort.as_deref().or(def_effort),
+    };
+    let (archived, _usage) =
+        run_consolidation(consolidator, &ws, &run_dir, args.max_minutes, &notes)?;
     println!(
         "Done: KNOWLEDGE.md updated, {archived} note(s) archived into .ralphy/knowledge/raw/."
     );

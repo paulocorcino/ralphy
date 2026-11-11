@@ -1,3 +1,5 @@
+use crate::WRITE_TO_STRING;
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
@@ -64,29 +66,31 @@ pub(crate) fn required_artifacts_missing(r: &VerifyReport) -> Vec<String> {
 /// lowest queue number.
 pub(crate) fn format_final_report(r: &VerifyReport) -> String {
     let mut out = String::new();
-    out.push_str(&format!("agents logged in: {}\n", r.logged_in.join(", ")));
-    out.push_str(&format!("branch: {}\n", r.branch));
+    writeln!(out, "agents logged in: {}", r.logged_in.join(", ")).expect(WRITE_TO_STRING);
+    writeln!(out, "branch: {}", r.branch).expect(WRITE_TO_STRING);
 
     let ralphy_status = if r.ralphy_present {
         "present"
     } else {
         "MISSING"
     };
-    out.push_str(&format!(".ralphy/:              {ralphy_status}\n"));
+    writeln!(out, ".ralphy/:              {ralphy_status}").expect(WRITE_TO_STRING);
     for (path, present) in &r.docs {
         let status = if *present { "present" } else { "MISSING" };
-        out.push_str(&format!("{path}:  {status}\n"));
+        writeln!(out, "{path}:  {status}").expect(WRITE_TO_STRING);
     }
 
-    out.push_str(&format!(
-        "labels: {}  skills: {}  queue issues: {}\n",
+    writeln!(
+        out,
+        "labels: {}  skills: {}  queue issues: {}",
         r.ralphy_label_count,
         r.skill_count,
         r.queue.len()
-    ));
+    )
+    .expect(WRITE_TO_STRING);
 
     if let Some(n) = suggested_issue(&r.queue) {
-        out.push_str(&format!("next step: {}\n", next_step_command(n)));
+        writeln!(out, "next step: {}", next_step_command(n)).expect(WRITE_TO_STRING);
     } else {
         out.push_str("warning: no queue-labeled issue\n");
     }

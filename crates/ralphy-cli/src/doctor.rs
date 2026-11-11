@@ -83,14 +83,18 @@ pub(crate) struct MachineFacts {
     pub python: Option<String>,
     /// The agent CLIs found, in `Agent::ALL` order, with their versions.
     pub agents: Vec<(Agent, String)>,
-    /// `None` off Linux; on Linux, `None` inside when it could not be read.
-    pub linger: Option<Option<bool>>,
+    /// `None` off Linux.
+    pub linger: Option<LingerRead>,
     /// The hook check of each installed agent whose state comes from hooks.
     pub hooks: Vec<(Agent, HookCheck)>,
     /// The Telegram state of the daemon on this machine and of its peers;
     /// `None` when its config path could not be found.
     pub telegram: Option<FleetTelegram>,
 }
+
+/// The lingering state read on Linux: `None` when it could not be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LingerRead(pub Option<bool>);
 
 /// The lingering line, shared with the host check so both say the same thing.
 pub(crate) fn linger_text(linger: Option<bool>) -> &'static str {
@@ -325,7 +329,7 @@ pub(crate) fn evaluate(facts: &MachineFacts, windows: bool) -> DoctorReport {
             .iter()
             .map(|(agent, _)| hook_line(facts, *agent)),
     );
-    if let Some(linger) = facts.linger {
+    if let Some(LingerRead(linger)) = facts.linger {
         tools.push(linger_line(linger));
     }
     tools.extend(facts.telegram.iter().flat_map(telegram_lines));

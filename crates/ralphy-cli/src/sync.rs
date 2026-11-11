@@ -60,15 +60,15 @@ pub(crate) struct SyncArgs {
 /// `ralphy sync status|fetch|pull`.
 pub(crate) fn sync(cmd: SyncCommand) -> anyhow::Result<()> {
     match cmd {
-        SyncCommand::Status(args) => sync_status(args),
-        SyncCommand::Fetch(args) => sync_fetch(args),
-        SyncCommand::Pull(args) => sync_pull(args),
-        SyncCommand::Push(args) => sync_push(args),
+        SyncCommand::Status(args) => sync_status(&args),
+        SyncCommand::Fetch(args) => sync_fetch(&args),
+        SyncCommand::Pull(args) => sync_pull(&args),
+        SyncCommand::Push(args) => sync_push(&args),
     }
 }
 
 /// `ralphy sync status [--format json]`. Read-only: no run-lock guard.
-fn sync_status(args: SyncStatusArgs) -> anyhow::Result<()> {
+fn sync_status(args: &SyncStatusArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let st = ralphy_core::sync::status(&repo_root)?;
 
@@ -108,11 +108,11 @@ fn guarded_root(repo: &Path, verb: &str) -> anyhow::Result<PathBuf> {
 }
 
 /// `ralphy sync fetch`. A refusal is a non-zero exit carrying the core's prose.
-fn sync_fetch(args: SyncArgs) -> anyhow::Result<()> {
+fn sync_fetch(args: &SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync fetch")?;
     match ralphy_core::sync::fetch(&repo_root)? {
         FetchOutcome::Fetched { remote } => println!("Fetched {remote}."),
-        refused => anyhow::bail!(
+        refused @ FetchOutcome::NoRemote => anyhow::bail!(
             "{}",
             refused.reason().unwrap_or_else(|| format!("{refused:?}"))
         ),
@@ -121,7 +121,7 @@ fn sync_fetch(args: SyncArgs) -> anyhow::Result<()> {
 }
 
 /// `ralphy sync pull`. Fast-forward only; anything else refuses by value.
-fn sync_pull(args: SyncArgs) -> anyhow::Result<()> {
+fn sync_pull(args: &SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync pull")?;
     match ralphy_core::sync::pull(&repo_root)? {
         PullOutcome::UpToDate => println!("Already up to date."),
@@ -142,7 +142,7 @@ fn sync_pull(args: SyncArgs) -> anyhow::Result<()> {
 /// opt-in flag here and why the agent's own `git push` deny rule is untouched.
 /// Every refusal, a remote that moved on and a failed credential included, is
 /// a non-zero exit carrying the core's prose.
-fn sync_push(args: SyncArgs) -> anyhow::Result<()> {
+fn sync_push(args: &SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync push")?;
     match ralphy_core::sync::push(&repo_root)? {
         PushOutcome::UpToDate => println!("Already published."),

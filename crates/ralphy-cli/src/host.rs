@@ -166,9 +166,9 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
                 pair::Destination {
                     dest: destination,
                     key_file: identity.as_deref(),
+                    keygen,
                 },
                 name.as_deref(),
-                keygen,
                 out,
             )
             .map(|_| ())
@@ -187,8 +187,8 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
                 pair::Destination {
                     dest: destination,
                     key_file: identity.as_deref(),
+                    keygen,
                 },
-                keygen,
                 &mut install::Releases { store: local.store },
                 out,
             )

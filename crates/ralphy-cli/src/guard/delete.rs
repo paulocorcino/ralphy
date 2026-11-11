@@ -81,8 +81,8 @@ pub(super) fn classify_delete(words: &[String], shell: Shell) -> Option<(DeleteK
 /// `-re`; in PowerShell `rm -r` is `Remove-Item -Recurse`.
 fn powershell_delete(cmd: &str, args: &[String], shell: Shell) -> Option<DeleteKind> {
     let shortest = match (cmd, shell) {
-        ("remove-item" | "ri", _) => 2,
-        ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::PowerShell) => 2,
+        ("remove-item" | "ri", _)
+        | ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::PowerShell) => 2,
         ("rm" | "del" | "erase" | "rd" | "rmdir", Shell::Posix) => 3,
         _ => return None,
     };

@@ -138,6 +138,10 @@ fn start(_store: &std::path::Path) -> Result<()> {
 /// `launchctl bootstrap` in the registration already started the agent: its
 /// plist has `RunAtLoad`.
 #[cfg(target_os = "macos")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the start of each system has one signature, and the others can fail"
+)]
 fn start(_store: &std::path::Path) -> Result<()> {
     Ok(())
 }

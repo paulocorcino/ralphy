@@ -8,14 +8,14 @@ fn parse_u64_list_reads_debug_vec_and_tolerates_empty() {
     assert_eq!(parse_u64_list(None), Vec::<u64>::new());
 }
 
-fn decode(fields: EventFields) -> Option<RunEvent> {
-    event_to_runevent("ralphy_core::runner", &fields.message.clone(), &fields)
+fn decode(fields: &EventFields) -> Option<RunEvent> {
+    event_to_runevent("ralphy_core::runner", &fields.message, fields)
 }
 
 #[test]
 fn decoder_maps_each_consumed_info_shape() {
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "queue built".into(),
             count: Some(3),
             order: Some("#1 -> #2 -> #3".into()),
@@ -34,7 +34,7 @@ fn decoder_maps_each_consumed_info_shape() {
     );
     // A legacy `queue built` with no snapshot decodes with `issues: Null`.
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "queue built".into(),
             count: Some(1),
             order: Some("#1".into()),
@@ -50,7 +50,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "issue started".into(),
             number: Some(7),
             title: Some("hello".into()),
@@ -62,7 +62,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "plan written".into(),
             number: Some(7),
             open_steps: Some(0),
@@ -89,9 +89,13 @@ fn decoder_maps_each_consumed_info_shape() {
             steps: vec![("a".into(), "open".into()), ("b".into(), "checked".into()),],
         })
     );
+}
+
+#[test]
+fn decoder_maps_each_consumed_phase_shape() {
     // The adapter's planning event seeds the planning spinner's model/effort.
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: ralphy_core::emit::PLANNING_MSG.into(),
             model: Some("opus".into()),
             effort: Some("high".into()),
@@ -103,7 +107,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: ralphy_core::emit::EXECUTING_MSG.into(),
             budget_min: Some(45),
             model: Some("claude-sonnet-4".into()),
@@ -118,7 +122,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: ralphy_core::emit::EXECUTING_MSG.into(),
             budget_min: Some(30),
             ..Default::default()
@@ -131,7 +135,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "green — issue closed".into(),
             number: Some(7),
             tokens: Some(1_200_000),
@@ -156,8 +160,12 @@ fn decoder_maps_each_consumed_info_shape() {
             },
         })
     );
+}
+
+#[test]
+fn decoder_maps_each_consumed_stop_and_skip_shape() {
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "non-green — stopping run".into(),
             number: Some(7),
             outcome: Some("Stuck".into()),
@@ -169,7 +177,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "blocked by open issue(s) — skipping".into(),
             number: Some(7),
             ..Default::default()
@@ -182,7 +190,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "stop-before label — halting run before this issue".into(),
             number: Some(8),
             ..Default::default()
@@ -195,7 +203,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "human-return label — skipping issue".into(),
             number: Some(9),
             label: Some("needs-info".into()),
@@ -209,7 +217,7 @@ fn decoder_maps_each_consumed_info_shape() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "blocked — waiting on human".into(),
             number: Some(16),
             human_blockers: Some("[30]".into()),
@@ -227,7 +235,7 @@ fn decoder_reads_blocked_by_blockers_and_tolerates_absence() {
     // A dependency skip carrying the open-blocker list decodes it onto
     // `Skipped.blockers`; an absent `blockers` field decodes to an empty vec.
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "blocked by open issue(s) — skipping".into(),
             number: Some(140),
             blockers: Some("[139]".into()),
@@ -241,7 +249,7 @@ fn decoder_reads_blocked_by_blockers_and_tolerates_absence() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "blocked by open issue(s) — skipping".into(),
             number: Some(140),
             ..Default::default()
@@ -258,14 +266,14 @@ fn decoder_reads_blocked_by_blockers_and_tolerates_absence() {
 #[test]
 fn decoder_maps_api_degraded_events() {
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: ralphy_adapter_support::API_DEGRADED_MSG.into(),
             ..Default::default()
         }),
         Some(RunEvent::ApiDegraded)
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: ralphy_adapter_support::API_RECOVERED_MSG.into(),
             ..Default::default()
         }),
@@ -277,7 +285,7 @@ fn decoder_maps_plan_snapshot_events_and_apply_is_noop() {
     // `plan opened`/`plan closed` decode into the raw-snapshot variants carrying
     // the plan_md field (arriving via record_str here).
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "plan opened".into(),
             number: Some(7),
             plan_md: Some("# Plan\n## Steps\n- [ ] a\n".into()),
@@ -289,7 +297,7 @@ fn decoder_maps_plan_snapshot_events_and_apply_is_noop() {
         })
     );
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "plan closed".into(),
             number: Some(7),
             plan_md: Some("# Plan\n- [x] a\n".into()),
@@ -336,7 +344,7 @@ fn parse_steps_json_maps_array_and_tolerates_absence() {
 #[test]
 fn decoder_unknown_info_message_returns_none() {
     assert_eq!(
-        decode(EventFields {
+        decode(&EventFields {
             message: "some unrelated log line".into(),
             ..Default::default()
         }),
