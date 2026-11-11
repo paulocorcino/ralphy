@@ -144,11 +144,10 @@ fn live_logged_out_interactive_session_is_detected() {
     let detected = loop {
         while let Ok(chunk) = rx.try_recv() {
             if scan_dsr_request(&mut dsr_carry, &chunk) {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "a closed terminal ends the wait at the deadline"
-                )]
-                let _ = session.write_all(CURSOR_POSITION_REPLY);
+                // A closed terminal ends the wait at the deadline.
+                if let Err(e) = session.write_all(CURSOR_POSITION_REPLY) {
+                    tracing::debug!("cursor reply not written: {e}");
+                }
             }
             watch.feed(&chunk);
         }
@@ -160,11 +159,10 @@ fn live_logged_out_interactive_session_is_detected() {
         }
         thread::sleep(Duration::from_millis(500));
     };
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the child may have exited already"
-    )]
-    let _ = session.kill();
+    // The child may have exited already.
+    if let Err(e) = session.kill() {
+        tracing::debug!("kill of the login child failed: {e}");
+    }
     remove_scratch(&base);
     assert!(
         detected,
