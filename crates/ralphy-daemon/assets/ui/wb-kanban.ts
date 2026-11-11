@@ -132,18 +132,25 @@ function walkDeps(self: number, g: IssueGraph) {
   const acc = new Set<number>();
   const seen = new Set<number>();
   const stack = [self];
+  const walk = { self, acc, stack };
   while (stack.length > 0) {
     const node = stack.pop();
     if (node === undefined || seen.has(node)) continue; // already expanded — also breaks cycles
     seen.add(node);
-    for (const n of g.blockedOf.get(node) ?? []) addNeighbour(n, self, g, acc, stack);
+    for (const n of g.blockedOf.get(node) ?? []) {
+      addNeighbour(n, g, walk);
+    }
   }
   return acc;
 }
 
+/** The state of one `walkDeps`: its start, the predecessors found, and the nodes to expand. */
+type DepsWalk = { self: number; acc: Set<number>; stack: number[] };
+
 // One blocker `n` of a node `walkDeps` expands: a predecessor of `self`, a
 // node to walk through, or a closed bundle whose children stand in.
-function addNeighbour(n: number, self: number, g: IssueGraph, acc: Set<number>, stack: number[]) {
+function addNeighbour(n: number, g: IssueGraph, walk: DepsWalk) {
+  const { self, acc, stack } = walk;
   if (n === self) return;
   if (g.inQueue.has(n)) acc.add(n); // terminal in-queue predecessor
   else if (g.openNums.has(n)) stack.push(n); // transparent: keep walking

@@ -153,8 +153,7 @@ export function wbBranchDialog() {
           listing,
           this.$store.checkouts.checkoutOf(ref),
           mine,
-          p.branch,
-          p.dirty,
+          { branch: p.branch, dirty: p.dirty },
         ),
         onPick: (row) => {
           this.$store.checkouts.setCheckout(ref, row.primary ? null : row.name);

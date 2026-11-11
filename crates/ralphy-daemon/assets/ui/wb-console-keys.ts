@@ -147,12 +147,12 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
 
     // `icon` (a Bootstrap Icons class) draws the key as that glyph; without
     // it the key shows `text`.
-    const key = (name: string, text: string, title: string, cls?: string, icon?: string) => {
+    const key = (name: string, text: string, title: string, icon?: string) => {
       const b = document.createElement("button");
       b.type = "button";
       // Not in the tab order: a keyboard user already has these keys.
       b.tabIndex = -1;
-      b.className = "session-key" + (cls !== undefined && cls !== "" ? " " + cls : "");
+      b.className = "session-key";
       b.dataset["key"] = name;
       b.title = title;
       if (icon !== undefined && icon !== "") {
@@ -171,7 +171,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // taking focus, the page going to the background.
     let keyboardOpen = false;
     let refocusing = false;
-    const kbBtn = key("keyboard", "", "Show or hide the keyboard", "", "bi-keyboard");
+    const kbBtn = key("keyboard", "", "Show or hide the keyboard", "bi-keyboard");
     kbBtn.setAttribute("aria-pressed", "false");
     const applyInputMode = () => {
       kbBtn.setAttribute("aria-pressed", keyboardOpen ? "true" : "false");
@@ -198,12 +198,12 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     const shiftBtn = key("shift", "shift", "Shift: applies to the next key");
     shiftBtn.setAttribute("aria-pressed", "false");
     key("tab", "tab", "Tab");
-    key("enter", "", "Enter", "", "bi-arrow-return-left");
+    key("enter", "", "Enter", "bi-arrow-return-left");
     key("slash", "/", "Slash");
-    key("up", "", "Up", "", "bi-arrow-up");
-    key("down", "", "Down", "", "bi-arrow-down");
-    key("left", "", "Left", "", "bi-arrow-left");
-    key("right", "", "Right", "", "bi-arrow-right");
+    key("up", "", "Up", "bi-arrow-up");
+    key("down", "", "Down", "bi-arrow-down");
+    key("left", "", "Left", "bi-arrow-left");
+    key("right", "", "Right", "bi-arrow-right");
     const ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
     ctrlBtn.setAttribute("aria-pressed", "false");
     key("ctrl-c", "^C", "Ctrl-C: interrupt");
@@ -218,7 +218,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // `writeClipboard`'s textarea fallback runs inside this click (a user
     // gesture), which is what makes it work on an insecure LAN origin.
     // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the PASTE icon.
-    const copyBtn = key("copy", "", "Copy selection", "", "bi-copy");
+    const copyBtn = key("copy", "", "Copy selection", "bi-copy");
     copyBtn.disabled = true;
     const syncCopy = () => {
       copyBtn.disabled = win._term?.term.hasSelection() !== true;
@@ -241,7 +241,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     // Paste. The read has no `execCommand` fallback, so on an insecure origin
     // the button is disabled (`pasteOffered`). An image becomes the same
     // `image.write` drop as a keyboard paste (ADR-0055).
-    const pasteBtn = key("paste", "", "Paste", "", "bi-clipboard");
+    const pasteBtn = key("paste", "", "Paste", "bi-clipboard");
     pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
     key("font-down", "A−", "Smaller text");

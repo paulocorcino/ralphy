@@ -42,6 +42,8 @@ export type Painted = { id: string; index: number; count: number; row: number; r
 /** A change that came from outside this client. */
 type ExternalEvent = { type?: string; ids?: string[] } | null | undefined;
 
+/** Where `open` puts a console: the most consoles the grid holds, and "right" or "down". */
+type OpenPlace = { cap: number; dir: string };
 /** The answer of `open`: the new grid, or why there is none (`null`: no reason to show). */
 type OpenResult = { ok: false; reason: string | null } | { ok: true; columns: Grid };
 
@@ -92,13 +94,8 @@ export const WBColumns = (function () {
   // Open `id` next to `callerId`: "right" as a new column directly right of
   // the caller's column, "down" as a new row directly below the caller. An
   // empty grid is a lone maximized console: the caller is then the only one.
-  function open(
-    grid: Grid,
-    callerId: string,
-    id: string,
-    capValue: number,
-    dir: string,
-  ): OpenResult {
+  function open(grid: Grid, callerId: string, id: string, place: OpenPlace): OpenResult {
+    const { cap: capValue, dir } = place;
     const list = grid.length > 0 ? grid : [[callerId]];
     const ids = flat(list);
     if (ids.includes(id)) return { ok: false, reason: REASON_OPEN };

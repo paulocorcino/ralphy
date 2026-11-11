@@ -252,12 +252,16 @@ export const WBSessionRoute = (function () {
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
   // `since` is sent only on a reattach: a launch opens a new terminal.
+  /** The facts of one connect: a gzipped replay, the try number, and the reattach point. */
+  interface ConnectFacts {
+    gzip?: boolean;
+    attempt?: number | undefined;
+    since?: number | undefined;
+  }
   function requestOpts(
     req: SessionRequest,
     holderId: string,
-    gzip = false,
-    attempt?: number,
-    since?: number,
+    { gzip = false, attempt, since }: ConnectFacts = {},
   ): SessionOpenOpts {
     const repo = req.repo ?? undefined;
     if (req.id != null) {

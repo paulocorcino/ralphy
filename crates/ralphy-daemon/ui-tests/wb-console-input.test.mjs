@@ -434,30 +434,30 @@ test("phoneBleed is maximize AND a phone-width viewport", () => {
 
 test("selectionRow maps a touch to a buffer-absolute row", () => {
   // Screen at y=100, 20px rows, 24 rows on screen, scrolled 50 lines in.
-  assert.equal(selectionRow(100, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(119, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(120, 100, 20, 24, 50), 51);
-  assert.equal(selectionRow(345, 100, 20, 24, 50), 62);
+  assert.equal(selectionRow(100, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(119, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(120, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 51);
+  assert.equal(selectionRow(345, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 62);
   // Unscrolled: the row IS the buffer line.
-  assert.equal(selectionRow(140, 100, 20, 24, 0), 2);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 0 }), 2);
 });
 
 test("selectionRow clamps to the screen", () => {
   // Above the screen: the top row. Below it: the last row, never a line that
   // is not on screen.
-  assert.equal(selectionRow(0, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(9999, 100, 20, 24, 50), 73);
-  assert.equal(selectionRow(9999, 100, 20, 1, 0), 0);
+  assert.equal(selectionRow(0, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(9999, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 73);
+  assert.equal(selectionRow(9999, { screenTop: 100, cellHeight: 20, rows: 1, viewportY: 0 }), 0);
 });
 
 test("selectionRow never answers NaN", () => {
   // A terminal that has not laid out has a zero cell height; a missing
   // viewportY is 0. Either way the answer is a row `selectLines` accepts.
-  assert.equal(selectionRow(140, 100, 0, 24, 50), 50);
-  assert.equal(selectionRow(140, 100, NaN, 24, 50), 50);
-  assert.equal(selectionRow(NaN, 100, 20, 24, 50), 50);
-  assert.equal(selectionRow(140, 100, 20, 24), 2);
-  assert.equal(selectionRow(140, undefined, 20, 24, 0), 7);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: 0, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: NaN, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(NaN, { screenTop: 100, cellHeight: 20, rows: 24, viewportY: 50 }), 50);
+  assert.equal(selectionRow(140, { screenTop: 100, cellHeight: 20, rows: 24 }), 2);
+  assert.equal(selectionRow(140, { screenTop: undefined, cellHeight: 20, rows: 24, viewportY: 0 }), 7);
 });
 
 // --- stepFont: the A− / A+ range ------------------------------------------

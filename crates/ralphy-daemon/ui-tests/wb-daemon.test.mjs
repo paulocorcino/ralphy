@@ -498,7 +498,7 @@ function treeSocket(checkout, onHead, onFailed) {
   const page = pageSockets();
   const dirty = [];
   const sub = page.withFakes(() =>
-    page.d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead, onFailed),
+    page.d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, { onHead, onFailed }),
   );
   const ws = page.sockets[0];
   page.open(ws);

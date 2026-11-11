@@ -29,19 +29,22 @@ type OpenTabs = {
   ): Promise<TabBody>;
 };
 
+/** The file one `fetchContent` reads: where it is, its kind, and its pinned checkout. */
+type FileToRead = {
+  project: string;
+  path: string;
+  ftype: string;
+  checkout: string | null | undefined;
+};
+
 // `file.read`, resolving to what the pane opens with: `{content, encoding,
 // bom}` (ADR-0036 amendment 2026-09-22), or `{refused: reason}` when the
 // daemon served nothing for a reason the pane can state (`binary`, `too
 // large`, …) — the tab KEEPS its place and says so — or `null` when there
 // is nothing to hold a tab open for (`not found`, a transport drop): the
 // tab closes. `checkout` is the tab's PINNED checkout (#406).
-export function fetchContent(
-  store: OpenTabs,
-  project: string,
-  path: string,
-  ftype: string,
-  checkout: string | null | undefined,
-): Promise<TabBody> {
+export function fetchContent(store: OpenTabs, file: FileToRead): Promise<TabBody> {
+  const { project, path, ftype, checkout } = file;
   const refuse = (reason: string) => {
     window.WB.emit("open-refused", { project, path, reason });
     window.Alpine.store("modals").flash(

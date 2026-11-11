@@ -190,11 +190,15 @@ export function mountTree(files: MountFiles) {
         if (!files.$store.connection.tabHidden()) files.onTreeDirty(rel);
       },
       files._treeCheckout,
-      () => {
-        if (!files.$store.connection.tabHidden()) files.onHeadMoved();
-      },
-      (reason: string | null) => {
-        files.treeWatchFailed(reason);
+      {
+        onHead: () => {
+          if (!files.$store.connection.tabHidden()) {
+            files.onHeadMoved();
+          }
+        },
+        onFailed: (reason: string | null) => {
+          files.treeWatchFailed(reason);
+        },
       },
     );
     files._treeSub.watch("");

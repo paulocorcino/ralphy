@@ -179,17 +179,15 @@ export function createChrome(deps: ChromeDeps) {
   // by the module that declares them (wb-window-state.ts): a field nothing
   // seeds reads as its declared default, not `undefined`.
   function seedWindow(
-    label: string | null | undefined,
-    repo: string | null | undefined,
+    identity: ReturnType<typeof identityFields>,
     desk: ChromeRecord,
-    kind: string | null | undefined,
     consoleName: string,
   ) {
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- initWindow sets its fields
     const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
     initWindow(win, {
-      ...identityFields(label, repo, desk, kind),
+      ...identity,
       ...carriedFields(desk, consoleName),
     });
     return win;
@@ -408,7 +406,7 @@ export function createChrome(deps: ChromeDeps) {
     // console takes the lowest free number of its prefix.
     const consoleName =
       (desk?.consoleName ?? "") || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
-    const win = seedWindow(label, repo, desk, kind, consoleName);
+    const win = seedWindow(identityFields(label, repo, desk, kind), desk, consoleName);
     const rect = desk?.rect;
     const spawnMoved = placeWindow(win, rect);
     const bar = buildTitlebar(win, label, repo, desk);

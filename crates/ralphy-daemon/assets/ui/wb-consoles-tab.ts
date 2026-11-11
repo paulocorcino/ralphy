@@ -157,13 +157,13 @@ export function wbColumns() {
         raise: shouldRaise(opts, moved),
         persist: true,
       });
-      refocusAfterPaint(
-        this.$store.tabs.active === "consoles",
-        this.columnIds(),
+      refocusAfterPaint({
+        tabActive: this.$store.tabs.active === "consoles",
+        columnIds: this.columnIds(),
         ids,
         before,
         moved,
-      );
+      });
     },
     // A fence detached to a popup takes its consoles out of the columns.
     leaveColumns(ids: string[]) {
@@ -273,7 +273,7 @@ export function wbColumns() {
       const from = this.columnFrom;
       if (from === null || from === "") return;
       const { tab, grid } = this.menuGrid(from);
-      const out = WBColumns.open(grid, from, id, this.columnCap(), this.columnDir);
+      const out = WBColumns.open(grid, from, id, { cap: this.columnCap(), dir: this.columnDir });
       if (!out.ok) {
         if (out.reason !== null && out.reason !== "") this.$store.modals.flash(out.reason);
         return;

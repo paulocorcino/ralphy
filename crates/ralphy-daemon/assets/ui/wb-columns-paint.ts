@@ -49,13 +49,15 @@ export function shouldRaise(opts: { raise?: boolean } | undefined, moved: boolea
 
 // After a paint, the focus goes back to the column that had it, or to the
 // last painted one, while the keys are free on the Consoles tab.
-export function refocusAfterPaint(
-  tabActive: boolean,
-  columnIds: readonly (string | null)[],
-  ids: string[],
-  before: string | null,
-  moved: boolean,
-) {
+export interface Refocus {
+  tabActive: boolean;
+  columnIds: readonly (string | null)[];
+  ids: string[];
+  before: string | null;
+  moved: boolean;
+}
+
+export function refocusAfterPaint({ tabActive, columnIds, ids, before, moved }: Refocus) {
   if (!tabActive || !keysFree() || !columnIds.includes(before)) return;
   const want = WBColumns.focusAfter(ids, before);
   if (want !== null && want !== "" && (want !== before || moved)) WBConsole.focusColumn(want);

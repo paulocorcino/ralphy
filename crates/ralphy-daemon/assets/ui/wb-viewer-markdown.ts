@@ -222,7 +222,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   function renderMarkdown(rec: BytesRecord) {
     if (!isRendered(rec.kind)) return;
     const article = inPane(rec, ".md-body");
-    rec.mermaidPending = renderBody(rec.kind, article, rec.content, rec.uid, document);
+    const file = { kind: rec.kind, content: rec.content, uid: rec.uid };
+    rec.mermaidPending = renderBody(file, article, document);
     resolveImages(rec, article);
     decorateZoomable(article);
     buildOutline(rec, article);

@@ -18,18 +18,16 @@ export function isRendered(kind: string): kind is RenderedKind {
   return kind === "markdown" || kind === "mermaid" || kind === "dbml";
 }
 
+/** A file `renderBody` draws: its kind, its text, and the number that makes its ids unique. */
+export type RenderedFile = { kind: RenderedKind; content: string; uid: number };
+
 /**
  * Fill `article` with the body of a file of `kind` whose text is `content`,
  * and return the Mermaid holders still to draw. `uid` makes the holder ids
  * unique on the page.
  */
-export function renderBody(
-  kind: RenderedKind,
-  article: Element,
-  content: string,
-  uid: number,
-  doc: Document,
-): HTMLElement[] {
+export function renderBody(file: RenderedFile, article: Element, doc: Document): HTMLElement[] {
+  const { kind, content, uid } = file;
   switch (kind) {
     case "markdown":
       return markdownBody(article, content, uid, doc);

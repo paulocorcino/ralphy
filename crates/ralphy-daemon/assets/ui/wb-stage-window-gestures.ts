@@ -352,8 +352,7 @@ export function createWindowGestures(deps: WindowGestureDeps) {
           dir,
           rect,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
-          min,
-          bounds,
+          { min, bounds },
         );
         win.style.left = out.left + "px";
         win.style.top = out.top + "px";

@@ -266,7 +266,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       ftype: string,
       checkout: string | null | undefined,
     ): Promise<TabBody> {
-      return fetchContent(this, project, path, ftype, checkout);
+      return fetchContent(this, { project, path, ftype, checkout });
     },
 
     // --- opening a file into a tab ----------------------------------------

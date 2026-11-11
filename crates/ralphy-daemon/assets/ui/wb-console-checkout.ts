@@ -117,20 +117,19 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // The switcher's rows: `primary` first, then the worktrees in listing order,
   // each with its dirty flag; the current one marked. With `sessions` (rows with
   // `checkout` and `agent_state`) each row also carries the agent's state in
-  // that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primaryBranch`/
-  // `primaryDirty` when the caller knows them (the shell does).
+  // that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primary` (its branch
+  // and dirty flag) when the caller knows them (the shell does).
   function checkoutMenuRows(
     listing: Listing | null | undefined,
     current: string | null | undefined,
     sessions: HostedSession[] | null | undefined,
-    primaryBranch = "",
-    primaryDirty = false,
+    primary?: { branch: string; dirty: boolean },
   ): CheckoutRow[] {
     const rows: TreeRow[] = [
       {
         name: "primary",
-        branch: primaryBranch,
-        dirty: primaryDirty,
+        branch: primary?.branch ?? "",
+        dirty: primary?.dirty ?? false,
         primary: true,
       },
     ];

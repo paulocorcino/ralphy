@@ -127,12 +127,16 @@ export function createSubscriptions({
   // the socket was down was never pushed (#484).
   // A `tree.failed` push says the daemon could not watch a dir of this tree:
   // `onFailed(reason)`. A reopen holds every dir again: `onFailed(null)`.
+  /** The optional handlers of a tree watch: a moved HEAD, and a dir it could not watch. */
+  interface TreeHandlers {
+    onHead?: (() => void) | undefined;
+    onFailed?: ((reason: string | null) => void) | undefined;
+  }
   function subscribeTree(
     repo: string,
     onDirty: (path: string) => void,
     checkout: string | null | undefined,
-    onHead: (() => void) | undefined,
-    onFailed: ((reason: string | null) => void) | undefined,
+    { onHead, onFailed }: TreeHandlers = {},
   ) {
     const held = new Set<string>();
     const frame = (verb: string, path: string) =>

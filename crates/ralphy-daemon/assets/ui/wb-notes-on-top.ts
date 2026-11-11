@@ -224,7 +224,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
         }
         const delta = { dx: at.x - from.x, dy: at.y - from.y };
         const box = resizing
-          ? WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
+          ? WBGeometry.resizeRect(dir, start, delta, { min: NOTE_MIN, bounds: vp })
           : onTopClamp({ ...start, left: start.left + delta.dx, top: start.top + delta.dy }, vp);
         placeOnTop(el, box);
       };

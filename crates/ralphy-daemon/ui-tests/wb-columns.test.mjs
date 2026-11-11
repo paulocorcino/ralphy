@@ -24,43 +24,43 @@ test("cap: no limit wider than a phone, one console at a phone width", () => {
   // With no limit, every console in the grid is painted.
   const many = cols("a", "b", "c", "d", "e", "f", "g", "h", "i");
   assert.equal(C.painted(many, C.cap(1366, 560)).length, 9);
-  assert.equal(C.open(many, "i", "x", C.cap(1366, 560), "right").ok, true);
+  assert.equal(C.open(many, "i", "x", { cap: C.cap(1366, 560), dir: "right" }).ok, true);
 });
 
 test("open right: a new column right of the caller's column, the others keep order", () => {
   const C = load();
   const mid = cols("a", "b", "c");
-  assert.deepEqual(C.open(mid, "b", "x", 4, "right"), { ok: true, columns: cols("a", "b", "x", "c") });
+  assert.deepEqual(C.open(mid, "b", "x", { cap: 4, dir: "right" }), { ok: true, columns: cols("a", "b", "x", "c") });
   assert.deepEqual(mid, cols("a", "b", "c"), "input untouched");
-  assert.deepEqual(C.open(cols("a", "b"), "b", "x", 3, "right").columns, cols("a", "b", "x"));
+  assert.deepEqual(C.open(cols("a", "b"), "b", "x", { cap: 3, dir: "right" }).columns, cols("a", "b", "x"));
   const none = [];
-  assert.deepEqual(C.open(none, "a", "x", 2, "right").columns, cols("a", "x"), "from a lone maximize");
+  assert.deepEqual(C.open(none, "a", "x", { cap: 2, dir: "right" }).columns, cols("a", "x"), "from a lone maximize");
   assert.deepEqual(none, []);
   // From a lower row, the new column still goes right of the whole column.
-  assert.deepEqual(C.open([["a", "b"], ["c"]], "b", "x", 9, "right").columns, [["a", "b"], ["x"], ["c"]]);
+  assert.deepEqual(C.open([["a", "b"], ["c"]], "b", "x", { cap: 9, dir: "right" }).columns, [["a", "b"], ["x"], ["c"]]);
 });
 
 test("open down: a new row directly below the caller, in its column", () => {
   const C = load();
   const g = [["a", "b"], ["c"]];
-  assert.deepEqual(C.open(g, "a", "x", 9, "down").columns, [["a", "x", "b"], ["c"]]);
+  assert.deepEqual(C.open(g, "a", "x", { cap: 9, dir: "down" }).columns, [["a", "x", "b"], ["c"]]);
   assert.deepEqual(g, [["a", "b"], ["c"]], "input untouched");
-  assert.deepEqual(C.open(g, "c", "x", 9, "down").columns, [["a", "b"], ["c", "x"]]);
-  assert.deepEqual(C.open([], "a", "x", 2, "down").columns, [["a", "x"]], "from a lone maximize");
+  assert.deepEqual(C.open(g, "c", "x", { cap: 9, dir: "down" }).columns, [["a", "b"], ["c", "x"]]);
+  assert.deepEqual(C.open([], "a", "x", { cap: 2, dir: "down" }).columns, [["a", "x"]], "from a lone maximize");
 });
 
 test("open: refusals carry a reason", () => {
   const C = load();
-  assert.deepEqual(C.open(cols("a", "b"), "a", "x", 2, "right"), {
+  assert.deepEqual(C.open(cols("a", "b"), "a", "x", { cap: 2, dir: "right" }), {
     ok: false,
     reason: "No room for another console",
   });
-  assert.deepEqual(C.open([["a", "b"]], "a", "b", 3, "right"), {
+  assert.deepEqual(C.open([["a", "b"]], "a", "b", { cap: 3, dir: "right" }), {
     ok: false,
     reason: "Already in a column",
   });
-  assert.deepEqual(C.open([], "a", "x", 1, "down"), { ok: false, reason: "No room for another console" });
-  assert.equal(C.open(cols("a", "b"), "z", "x", 3, "right").ok, false, "caller not in the grid");
+  assert.deepEqual(C.open([], "a", "x", { cap: 1, dir: "down" }), { ok: false, reason: "No room for another console" });
+  assert.equal(C.open(cols("a", "b"), "z", "x", { cap: 3, dir: "right" }).ok, false, "caller not in the grid");
 });
 
 test("restore: middle, first, last-but-one", () => {
