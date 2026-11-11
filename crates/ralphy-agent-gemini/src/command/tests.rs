@@ -215,21 +215,39 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
 
     // Asserting "the operator's root is absent" against THIS function would be
     // tautological — it never sees `operator_root()`. What can go wrong is one
-    // level up, at the only place the `home` argument is chosen: a call site
-    // that passed the operator's root, or `root::operator_root()` directly,
-    // would isolate nothing. Pin that instead, on the source.
+    // level up, at the only place the `home` argument is chosen: the run
+    // path's one helper, `prepared_command`. A call site that passed the
+    // operator's root, or `root::operator_root()` directly, would isolate
+    // nothing. Pin that instead, on the source.
     let lib = crate::tests::production_text(include_str!("../lib.rs"));
     assert_eq!(
         lib.matches(concat!("build_gemini_", "command(")).count(),
-        2,
-        "exactly two call sites (plan, execute) — a third would need its own \
-             root argument audited"
+        1,
+        "one builder call — a second would need its own root argument audited"
     );
-    // Both pass the root `prepare_root` just ensured, and nothing else.
+    let helper = lib
+        .split_once("fn prepared_command(")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(body, _)| body)
+        .expect("the helper body ends with a closing brace at column 0");
+    assert!(
+        helper.contains(concat!("build_gemini_", "command(")),
+        "the one builder call must be the one inside `prepared_command`"
+    );
+    assert_eq!(
+        lib.matches("= prepared_command(").count(),
+        2,
+        "exactly two callers (plan, execute) — a third would need its own audit"
+    );
+    // The helper passes the root `prepare_root` just ensured, and nothing else.
+    assert!(
+        helper.contains("home: &root.home,"),
+        "the helper must point the child at the root ralphy just ensured"
+    );
     assert_eq!(
         lib.matches("&root.home,").count(),
-        2,
-        "both call sites must point the child at the root ralphy just ensured"
+        1,
+        "the only borrow of the owned home handed on is the helper's"
     );
     // The operator's root IS read there — for the non-secret auth pointer and
     // their deny rules — but it must never become a child's `home`.
@@ -239,11 +257,8 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
         "one read of the operator's root, bound once"
     );
     for handed_to_child in [
-        concat!(
-            "build_gemini_",
-            "command(\n                &session_id,\n                model,\n",
-            "                ws.repo_root(),\n                &operator"
-        ),
+        "home: &operator",
+        "home: operator",
         concat!("root::operator_", "root()?,"),
     ] {
         assert!(

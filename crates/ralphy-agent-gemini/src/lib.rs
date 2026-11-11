@@ -264,8 +264,8 @@ fn report_skill_discovery(
     materialized: &[String],
 ) {
     // Bound, not passed inline: `command.rs`'s D4 pin counts the borrows of the
-    // root's home in this file to prove the only ones handed to a CHILD are the
-    // two the run path just ensured, and this receipt is not one of them.
+    // root's home in this file to prove the only one handed to a CHILD is
+    // `prepared_command`'s, and this receipt is not one of them.
     let owned_home = &root.home;
     match skills::probe_skill_discovery(owned_home, auth_type, materialized) {
         Some(found) => {

@@ -329,7 +329,8 @@ fn every_session_installs_the_forge_rules() {
         ("lib.rs", include_str!("lib.rs")),
         ("tasks.rs", include_str!("tasks.rs")),
     ] {
-        let builds = src.matches("let cmd = build_codex_").count();
+        let builds = src.matches("let cmd = build_codex_").count()
+            + src.matches("self.watched_command(").count();
         let installs = src.matches("install_forge_rules(").count();
         assert!(builds > 0, "{name}: no session found");
         assert_eq!(
