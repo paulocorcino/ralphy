@@ -162,19 +162,17 @@ impl Renderer {
             match msg {
                 PresenterMsg::Event(event) => self.apply(event),
                 PresenterMsg::Flush(prev) => {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the caller waiting for the answer may have stopped waiting"
-                    )]
-                    let _ = prev.send(());
+                    // the caller waiting for the answer may have stopped waiting
+                    match prev.send(()) {
+                        Ok(()) | Err(_) => {}
+                    }
                 }
             }
         }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the caller waiting for the answer may have stopped waiting"
-        )]
-        let _ = ack.send(());
+        // the caller waiting for the answer may have stopped waiting
+        match ack.send(()) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     /// The idle tick: advance the elapsed clock between events (ADR-0006 D4).
@@ -210,11 +208,10 @@ impl Renderer {
         let line = render_line(&event, &ts, &extra, self.opts);
         if let Some(line) = line {
             if self.opts.color {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the console is the only place to report a failed write to it"
-                )]
-                let _ = self.multi.println(line);
+                // the console is the only place to report a failed write to it
+                match self.multi.println(line) {
+                    Ok(()) | Err(_) => {}
+                }
             } else {
                 eprintln!("{line}");
             }
@@ -475,11 +472,10 @@ impl<S: Subscriber> Layer<S> for Presenter {
         // thread that emitted this log line. A closed channel (render thread gone at
         // shutdown) drops the line rather than erroring.
         if let Ok(tx) = self.tx.lock() {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the render thread is gone at shutdown, and the line is dropped"
-            )]
-            let _ = tx.send(PresenterMsg::Event(run_event));
+            // the render thread is gone at shutdown, and the line is dropped
+            match tx.send(PresenterMsg::Event(run_event)) {
+                Ok(()) | Err(_) => {}
+            }
         }
     }
 }

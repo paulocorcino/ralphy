@@ -135,11 +135,10 @@ mod tests {
     fn persist_report_round_trips_through_ralphy_dir() {
         // Mirror gitignore.rs/queue.rs: no tempfile dep, manual temp dir.
         let dir = std::env::temp_dir().join(format!("ralphy-init-persist-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).unwrap();
         let ws = Workspace::new(&dir);
         let report = sample_report();
@@ -149,22 +148,20 @@ mod tests {
         let back: DiagnosisReport = serde_json::from_str(&raw).unwrap();
         assert_eq!(back, report);
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
     fn init_state_round_trips_through_ralphy_dir() {
         // Mirror persist_report_round_trips: no tempfile dep, manual temp dir.
         let dir = std::env::temp_dir().join(format!("ralphy-init-state-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).unwrap();
         let ws = Workspace::new(&dir);
 
@@ -179,22 +176,20 @@ mod tests {
         let back = InitState::load(&ws).unwrap();
         assert_eq!(back, state);
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
     fn init_state_load_defaults_when_absent() {
         let dir =
             std::env::temp_dir().join(format!("ralphy-init-state-absent-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         let ws = Workspace::new(&dir);
         // No file on disk → a fresh default, not an error.
         assert_eq!(InitState::load(&ws).unwrap(), InitState::default());

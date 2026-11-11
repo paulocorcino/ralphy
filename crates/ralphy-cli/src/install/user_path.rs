@@ -259,11 +259,10 @@ mod tests {
     fn scratch(tag: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("ralphy-user-path-{}-{tag}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
     }
@@ -409,11 +408,10 @@ mod tests {
             format!("export EDITOR=vi\n\n{block}"),
             "a second install must not add a second block"
         );
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&home);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&home) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     /// The block is real shell code: `sh` runs it, puts the folder first, and a
@@ -439,11 +437,10 @@ mod tests {
             "stderr: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&home);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&home) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]

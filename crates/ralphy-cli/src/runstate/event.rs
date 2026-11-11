@@ -220,7 +220,7 @@ pub(crate) fn event_to_runevent(
     message: &str,
     fields: &EventFields,
 ) -> Option<RunEvent> {
-    let _ = target;
+    let _: &str = target;
     // Level wins: WARN and ERROR always surface as Notice.
     if fields.level == Level::WARN || fields.level == Level::ERROR {
         return Some(RunEvent::Notice {

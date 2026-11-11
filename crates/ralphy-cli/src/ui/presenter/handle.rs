@@ -69,13 +69,13 @@ impl PresenterHandle {
     pub(crate) fn print_header(&self, seed: &str) {
         let header = crate::runstate::ralphy_header(seed);
         if self.color {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the console is the only place to report a failed write to it"
-            )]
-            let _ = self
+            // the console is the only place to report a failed write to it
+            match self
                 .multi
-                .println(Style::new().cyan().bold().apply_to(&header).to_string());
+                .println(Style::new().cyan().bold().apply_to(&header).to_string())
+            {
+                Ok(()) | Err(_) => {}
+            }
         } else {
             println!("{header}");
         }
@@ -90,11 +90,10 @@ impl PresenterHandle {
         };
         let line = render_info_line(project, branch, url, opts);
         if self.color {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the console is the only place to report a failed write to it"
-            )]
-            let _ = self.multi.println(line);
+            // the console is the only place to report a failed write to it
+            match self.multi.println(line) {
+                Ok(()) | Err(_) => {}
+            }
         } else {
             println!("{line}");
         }
@@ -153,11 +152,10 @@ impl PresenterHandle {
         if let Some(bar) = s.queue_bar.take() {
             bar.finish_and_clear();
         }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the console is the only place to report a failed write to it"
-        )]
-        let _ = self.multi.clear();
+        // the console is the only place to report a failed write to it
+        match self.multi.clear() {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     /// Acquire the live state without blocking teardown forever: on a wedged render

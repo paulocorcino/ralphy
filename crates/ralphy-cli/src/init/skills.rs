@@ -126,11 +126,13 @@ pub(crate) fn install_skills_from(src: &Path, dst: &Path) -> Result<usize> {
         let name = entry.file_name();
         let dst_skill = dst.join(&name);
         // Remove only this managed skill; sibling user dirs are untouched.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dst_skill);
+        // A new skill has no directory yet.
+        if let Err(rm_err) = std::fs::remove_dir_all(&dst_skill) {
+            tracing::debug!(
+                "could not remove the directory {}: {rm_err}",
+                dst_skill.display()
+            );
+        }
         copy_dir_all(&entry.path(), &dst_skill)?;
         count += 1;
     }
@@ -157,11 +159,13 @@ pub(crate) fn install_skills_step(
     fetch: impl FnOnce(&Path) -> Result<PathBuf>,
 ) -> Outcome {
     let scratch = std::env::temp_dir().join(format!("ralphy-skills-fetch-{}", std::process::id()));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&scratch);
+    // the scratch directory may be gone
+    if let Err(rm_err) = std::fs::remove_dir_all(&scratch) {
+        tracing::debug!(
+            "could not remove the directory {}: {rm_err}",
+            scratch.display()
+        );
+    }
     if let Err(e) = std::fs::create_dir_all(&scratch) {
         return Outcome::Failed(format!("creating scratch dir: {e}"));
     }
@@ -169,11 +173,13 @@ pub(crate) fn install_skills_step(
     let src = match fetch(&scratch) {
         Ok(p) => p,
         Err(e) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the scratch directory may be gone"
-            )]
-            let _ = std::fs::remove_dir_all(&scratch);
+            // the scratch directory may be gone
+            if let Err(rm_err) = std::fs::remove_dir_all(&scratch) {
+                tracing::debug!(
+                    "could not remove the directory {}: {rm_err}",
+                    scratch.display()
+                );
+            }
             return Outcome::Failed(e.to_string());
         }
     };
@@ -181,11 +187,13 @@ pub(crate) fn install_skills_step(
         Ok(n) => Outcome::Installed(n),
         Err(e) => Outcome::Failed(e.to_string()),
     };
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&scratch);
+    // the scratch directory may be gone
+    if let Err(rm_err) = std::fs::remove_dir_all(&scratch) {
+        tracing::debug!(
+            "could not remove the directory {}: {rm_err}",
+            scratch.display()
+        );
+    }
     outcome
 }
 
@@ -248,11 +256,10 @@ mod tests {
     #[test]
     fn install_skills_from_idempotent_and_preserves_sibling() {
         let base = std::env::temp_dir().join(format!("ralphy-skills-test-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
 
         // Build source fixture with two skill dirs.
         let src = base.join("src");
@@ -290,22 +297,20 @@ mod tests {
         assert!(dst.join("skill-a").join("skill.md").exists());
         assert!(dst.join("user-skill").join("keep.md").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
     fn install_skills_step_returns_failed_on_fetch_error() {
         let dst =
             std::env::temp_dir().join(format!("ralphy-skills-step-err-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dst);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dst) {
+            Ok(()) | Err(_) => {}
+        }
         let result = install_skills_step(&dst, |_scratch| Err(anyhow::anyhow!("boom")));
         match result {
             Outcome::Failed(msg) => assert!(msg.contains("boom"), "expected 'boom' in {msg}"),
@@ -314,22 +319,20 @@ mod tests {
             }
         }
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dst);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dst) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
     fn install_skills_step_returns_installed_on_success() {
         let base =
             std::env::temp_dir().join(format!("ralphy-skills-step-ok-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
 
         // Build a fixture source with one skill.
         let src = base.join("src");
@@ -348,11 +351,10 @@ mod tests {
 
         assert!(dst.join("my-skill").join("skill.md").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
@@ -362,11 +364,10 @@ mod tests {
             "ralphy-skills-step-installfail-{}",
             std::process::id()
         ));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
         // Build a fixture source — but point the fetch closure at a *file*, not a dir,
         // so install_skills_from's read_dir fails.
         let bad_src = base.join("not-a-dir.txt");
@@ -382,10 +383,9 @@ mod tests {
             }
         }
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }
