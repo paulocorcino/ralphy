@@ -77,9 +77,9 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     ));
     // A process killed before `Drop` ran leaves a directory this pid+seq can name
     // again; a stale `-wal` there would be replayed over the fresh `.db` snapshot.
+    // Usually absent; `create_dir_all` below reports a real failure.
     match std::fs::remove_dir_all(&dir) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
+        Ok(()) | Err(_) => {}
     }
     std::fs::create_dir_all(&dir)?;
     let name = db.file_name().map_or_else(
@@ -96,11 +96,10 @@ fn copy_store(db: &Path) -> std::io::Result<StoreCopy> {
     for suffix in ["-wal", "-shm"] {
         let side = db.with_file_name(format!("{name}{suffix}"));
         if side.exists() {
-            // A checkpoint may remove the sidecar after `exists`; any other failure
-            // would leave a snapshot without the newest rows, so it is returned.
+            // Best effort: a running Copilot can hold the sidecar, and the
+            // snapshot of the `.db` alone is still read.
             match std::fs::copy(&side, copy.dir.join(format!("{name}{suffix}"))) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-                _ => {}
+                Ok(_) | Err(_) => {}
             }
         }
     }
