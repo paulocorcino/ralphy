@@ -109,7 +109,7 @@ export const WBDetachLink = (function () {
   function readRecord(): DetachRecord | null {
     try {
       const raw = sessionStorage.getItem(KEY);
-      if (!raw) return null;
+      if (raw === null) return null;
       const rec: unknown = JSON.parse(raw);
       if (!isRecord(rec) || rec.v !== 1) return null;
       const members: Record<string, string[]> = {};
@@ -207,7 +207,7 @@ export const WBDetachLink = (function () {
     // `writeRegistry` — never at load. A tab that detaches nothing must leave
     // the store untouched: the key's very presence is the fact "this tab has a
     // detach", and a boot-time write would make every tab claim one.
-    const tab = rec?.tab || newTabId();
+    const tab = (rec?.tab ?? "") || newTabId();
     const chan = makeChannel();
 
     return {
@@ -219,7 +219,7 @@ export const WBDetachLink = (function () {
       // second document of the same tab (the popup's copy) must never be able
       // to hand this one a stale registry.
       readRegistry() {
-        return readRecord()?.fences || [];
+        return readRecord()?.fences ?? [];
       },
       // The member ids each detached fence held, `{ fenceId: [windowId] }`.
       // Stored rather than re-derived from geometry at boot: a detached fence
@@ -228,14 +228,14 @@ export const WBDetachLink = (function () {
       // after a reload would answer "no members" and put them back on the plane
       // under a live popup.
       readMembers() {
-        return readRecord()?.members || {};
+        return readRecord()?.members ?? {};
       },
       writeRegistry(ids: string[], members: Record<string, string[]>) {
         writeRecord({
           v: 1,
           tab,
           fences: Array.isArray(ids) ? ids.slice() : [],
-          members: members && typeof members === "object" ? members : {},
+          members: typeof members === "object" ? members : {},
         });
       },
     };

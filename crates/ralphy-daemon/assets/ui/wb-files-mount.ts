@@ -124,7 +124,7 @@ export function mountTree(files: MountFiles) {
     // A level (re)loaded while a search is on carries no match marks, and
     // in `hide` mode an unmarked row is not painted.
     load: (e: WunderbaumEvent) => {
-      if (e.tree.isFilterActive?.()) e.tree.updateFilter();
+      if (e.tree.isFilterActive()) e.tree.updateFilter();
     },
     // The content-search badge: hit count beside the title; nothing once
     // the filter is gone (the map is empty by then).
@@ -135,7 +135,7 @@ export function mountTree(files: MountFiles) {
         old?.remove();
         return;
       }
-      const badge = old || document.createElement("span");
+      const badge = old ?? document.createElement("span");
       badge.className = "wb-hits";
       badge.textContent = String(count);
       if (!old) e.nodeElem.querySelector(".wb-title")?.after(badge);
@@ -181,7 +181,7 @@ export function mountTree(files: MountFiles) {
   // One `tree` channel of the page socket per open project; the root is always
   // watched. A `tree.dirty` push refetches only the affected subtree; a
   // `head.dirty` push re-reads the branch.
-  if (files.useDaemonTree() && window.WBDaemon?.subscribeTree) {
+  if (files.useDaemonTree() && typeof window.WBDaemon.subscribeTree === "function") {
     files._treeSub = window.WBDaemon.subscribeTree(
       files.$store.projects.repoRef(project),
       (rel: string) => {
@@ -207,7 +207,7 @@ export function mountTree(files: MountFiles) {
       const node = mar10.Wunderbaum.getNode(ev);
       ev.preventDefault();
       node?.setActive();
-      files.showMenu(ev.clientX, ev.clientY, node || null);
+      files.showMenu(ev.clientX, ev.clientY, node ?? null);
     });
     guardEmptySpace(host, files);
   }
@@ -218,13 +218,19 @@ export function mountTree(files: MountFiles) {
 function rememberExpansion(files: MountFiles) {
   // A restore expands nodes itself; recording a half-restored tree would
   // truncate the list being replayed.
-  if (files._restoringExpansion || !files._tree || !files.$store.projects.openSlug) return;
+  const slug = files.$store.projects.openSlug;
+  if (files._restoringExpansion || !files._tree || slug == null || slug === "") return;
   const { expanded } = files.treeMem();
   const rels: string[] = [];
   files.rawTree()?.root.visit((n: WunderbaumNode) => {
     if (files.isFolder(n) && n.expanded) rels.push(files.relPath(n));
   });
-  expanded.set(files.$store.projects.openSlug, rels);
+  expanded.set(slug, rels);
+}
+
+// The folders a project was left with open.
+function savedRels(expanded: Map<string, string[]>, slug: string | null | undefined) {
+  return (slug != null && slug !== "" ? expanded.get(slug) : undefined) ?? [];
 }
 
 // Re-expand the folders this project was left with, shallow-first (a
@@ -232,10 +238,9 @@ function rememberExpansion(files: MountFiles) {
 // `_treeCache`; every expand still re-registers the daemon watch.
 async function restoreExpansion(files: MountFiles) {
   const slug = files.$store.projects.openSlug;
-  const { expanded } = files.treeMem();
-  const rels = (slug && expanded.get(slug)) || [];
+  const rels = savedRels(files.treeMem().expanded, slug);
   const tree = files.rawTree();
-  if (!rels.length || !tree) return;
+  if (rels.length === 0 || !tree) return;
   files._restoringExpansion = true;
   try {
     for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
@@ -256,7 +261,7 @@ export function destroyTree(files: MountFiles) {
   files._treeSub = null;
   files._treeCheckout = null;
   try {
-    files._tree?.destroy?.();
+    files._tree?.destroy();
   } catch {}
   files._tree = null;
   document.querySelectorAll(".wb-host").forEach((h) => (h.innerHTML = ""));

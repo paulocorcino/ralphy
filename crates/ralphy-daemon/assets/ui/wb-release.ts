@@ -41,10 +41,11 @@ async function read(): Promise<ReleaseView | null> {
   try {
     const resp = await apiFetch("GET /api/release", { headers: { Accept: "application/json" } });
     if (!resp.ok) return null;
-    const view = await resp.json();
+    const view: unknown = await resp.json();
     // A daemon that answers something unexpected is treated as no answer
     // rather than rendered half-way.
-    if (!view || typeof view !== "object" || !Array.isArray(view.gap)) return null;
+    if (typeof view !== "object" || view === null) return null;
+    if (!("gap" in view) || !Array.isArray(view.gap)) return null;
     return Object.assign({}, EMPTY, view);
   } catch (_e) {
     // No daemon, no network, a page served from file:// — all the same thing:
@@ -56,19 +57,19 @@ async function read(): Promise<ReleaseView | null> {
 /* Whether the shell should draw anything at all. `none` covers being level,
  * being ahead of the tag (a development build), and knowing nothing. */
 function hasNews(view: ReleaseView | null): boolean {
-  return !!view && view.severity !== "none" && (view.gap || []).length > 0;
+  return view !== null && view.severity !== "none" && view.gap.length > 0;
 }
 
 /* Only `urgent` survives a dismissal: a breaking change or a security fix is
  * not something the operator gets to forget by clicking once. */
 function isSticky(view: ReleaseView | null): boolean {
-  return !!view && view.severity === "urgent";
+  return view !== null && view.severity === "urgent";
 }
 
 /* The line under the title: how many releases, and how far back. */
 function gapSummary(view: ReleaseView | null): string {
-  const gap = (view && view.gap) || [];
-  if (!gap.length) return "";
+  const gap = view === null ? [] : view.gap;
+  if (gap.length === 0) return "";
   const n = gap.length;
   return n === 1 ? "1 new release" : n + " new releases";
 }
@@ -89,7 +90,7 @@ async function setWatch(enable: boolean) {
  * daemon's text, which for a failed download is the update's last lines. */
 async function update(code?: string) {
   const body = new URLSearchParams();
-  if (code) body.set("code", code);
+  if (code !== undefined && code !== "") body.set("code", code);
   const resp = await fetch("/api/release/update", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

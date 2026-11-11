@@ -129,7 +129,7 @@ test("every CAUSE value fits after `Could not <act>: ` and follows the rules fil
       assert.ok(!plain.toLowerCase().includes(c), `${code}: contraction ${c}`);
     }
     for (const t of [...RULES.banned, ...RULES.plain]) {
-      assert.ok(!hasTerm(plain, t.term, !!t.whole_word, !!t.case_sensitive), `${code}: ${t.term}`);
+      assert.ok(!hasTerm(plain, t.term, Boolean(t.whole_word), Boolean(t.case_sensitive)), `${code}: ${t.term}`);
     }
     const words = cause.split(/\s+/).length + "Could not act:".split(" ").length;
     assert.ok(words <= RULES.sentence_max_words, `${code}: ${words} words`);

@@ -292,7 +292,8 @@ export const WBMonaco = (function () {
   function ready() {
     if (booting) return booting;
     booting = new Promise<Monaco>((resolve, reject) => {
-      if (typeof window.require !== "function" || !window.require.config) {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- another AMD loader has none
+      if (typeof window.require !== "function" || window.require.config === undefined) {
         reject(new Error("monaco AMD loader is not on the page"));
         return;
       }
@@ -347,7 +348,7 @@ export const WBMonaco = (function () {
       minimap: { enabled: false },
       wordBasedSuggestions: "off",
       quickSuggestions: false,
-      wordWrap: wordWrap || "off",
+      wordWrap: wordWrap ?? "off",
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
       fontSize: 13,
       lineNumbers: "on",

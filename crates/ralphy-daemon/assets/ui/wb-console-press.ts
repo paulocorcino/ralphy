@@ -35,7 +35,7 @@ function pageTakesChord(e: KeyboardEvent, body: HTMLElement, win: PressDeps["win
   // (wb-consoles-tab.ts) takes them.
   if (
     /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
-    !!body.closest(".session-window.column, .session-window.tab-grid")
+    body.closest(".session-window.column, .session-window.tab-grid") !== null
   ) {
     return true;
   }
@@ -91,7 +91,7 @@ export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
   body.addEventListener(
     "mousedown",
     (e: MouseEvent) => {
-      if (replayed.has(e) || !term.element?.contains(e.target as Node)) return;
+      if (replayed.has(e) || !(e.target instanceof Node && term.element.contains(e.target))) return;
       const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
       if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
       e.stopPropagation();

@@ -29,6 +29,7 @@ export const WBDeskSink = (function () {
   // One id per document. The daemon echoes it in the `desk.dirty` push its
   // PUT causes, so this tab does not read its own write again.
   const TAB =
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on plain http
     globalThis.crypto?.randomUUID?.() || "t" + Math.random().toString(36).slice(2) + Date.now();
   function tabId() {
     return TAB;
@@ -37,7 +38,7 @@ export const WBDeskSink = (function () {
   // (ADR-0070 D6): its JavaScript may not know the daemon's records.
   let hold = false;
   function setHold(on: boolean) {
-    hold = !!on;
+    hold = on;
   }
 
   // The daemon-backed write. Both entry points take an already-serialised body:
@@ -63,6 +64,7 @@ export const WBDeskSink = (function () {
             body,
           }).then(
             async (r) => {
+              // oxlint-disable-next-line typescript/no-unnecessary-condition -- stubs lack json
               const reply = (await r.json?.().catch(() => null)) ?? null;
               return r.ok ? { kind: "ok", reply } : { kind: "refused", status: r.status, reply };
             },

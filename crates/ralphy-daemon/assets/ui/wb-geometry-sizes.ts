@@ -26,14 +26,14 @@ export const STAGE_MARGIN = 200;
 
 // The viewport's size; a missing viewport or side reads 0.
 function viewSize(viewport: Partial<Size> | null | undefined) {
-  return { width: viewport?.width || 0, height: viewport?.height || 0 };
+  return { width: viewport?.width ?? 0, height: viewport?.height ?? 0 };
 }
 
 // The right and bottom edge of the farthest rect, from the origin.
 function farCorner(rects: readonly Rect[] | null | undefined) {
   let right = 0;
   let bottom = 0;
-  for (const r of rects || []) {
+  for (const r of rects ?? []) {
     right = Math.max(right, (r.left || 0) + (r.width || 0));
     bottom = Math.max(bottom, (r.top || 0) + (r.height || 0));
   }
@@ -41,7 +41,7 @@ function farCorner(rects: readonly Rect[] | null | undefined) {
 }
 
 export function stageExtent(rects: readonly Rect[], viewport: Size, margin?: number | null) {
-  const m = margin == null ? STAGE_MARGIN : margin;
+  const m = margin ?? STAGE_MARGIN;
   const view = viewSize(viewport);
   const far = farCorner(rects);
   return {
@@ -62,21 +62,25 @@ export const FENCE_INSET = 40;
 export const FENCE_GAP = 24;
 export const FENCE_COLS = 2;
 
-export function fenceSpawnRect(offset: Offset, viewport: Size, index: number) {
+export function fenceSpawnRect(
+  offset: Offset | null | undefined,
+  viewport: Size | null | undefined,
+  index: number,
+) {
   const width = Math.max(
     FENCE_MIN.width,
-    Math.min(FENCE_SIZE.width, (viewport?.width || 0) - 2 * FENCE_INSET),
+    Math.min(FENCE_SIZE.width, (viewport?.width ?? 0) - 2 * FENCE_INSET),
   );
   const height = Math.max(
     FENCE_MIN.height,
-    Math.min(FENCE_SIZE.height, (viewport?.height || 0) - 2 * FENCE_INSET),
+    Math.min(FENCE_SIZE.height, (viewport?.height ?? 0) - 2 * FENCE_INSET),
   );
   const i = index || 0;
   const col = i % FENCE_COLS;
   const row = Math.floor(i / FENCE_COLS);
   return {
-    left: Math.max(0, offset?.left || 0) + FENCE_INSET + col * (width + FENCE_GAP),
-    top: Math.max(0, offset?.top || 0) + FENCE_INSET + row * (height + FENCE_GAP),
+    left: Math.max(0, offset?.left ?? 0) + FENCE_INSET + col * (width + FENCE_GAP),
+    top: Math.max(0, offset?.top ?? 0) + FENCE_INSET + row * (height + FENCE_GAP),
     width,
     height,
   };
@@ -98,22 +102,27 @@ export const TILE_PAD = 12;
 export const TILE_GAP = 10;
 export const TILE_MIN = 24;
 
+// One axis of the tile grid: `k` cells over `extent`.
+function tileAxis(extent: number, k: number) {
+  const size = (extent - TILE_PAD * 2 - TILE_GAP * (k - 1)) / k;
+  if (size >= TILE_MIN) return { pad: TILE_PAD, gap: TILE_GAP, size };
+  return { pad: 0, gap: 0, size: extent / k };
+}
+
 // `members` is only counted: no item of it is read.
-export function tileIntoRect(rect: Rect, members: readonly unknown[]) {
-  const n = (members || []).length;
+export function tileIntoRect(
+  rect: Rect | null | undefined,
+  members: readonly unknown[] | null | undefined,
+) {
+  const n = (members ?? []).length;
   if (!n) return [];
   const cols = Math.ceil(Math.sqrt(n));
   const rows = Math.ceil(n / cols);
-  const axis = (extent: number, k: number) => {
-    const size = (extent - TILE_PAD * 2 - TILE_GAP * (k - 1)) / k;
-    if (size >= TILE_MIN) return { pad: TILE_PAD, gap: TILE_GAP, size };
-    return { pad: 0, gap: 0, size: extent / k };
-  };
-  const x = axis(rect?.width || 0, cols);
-  const y = axis(rect?.height || 0, rows);
-  return (members || []).map((_, i) => ({
-    left: (rect?.left || 0) + x.pad + (i % cols) * (x.size + x.gap),
-    top: (rect?.top || 0) + y.pad + Math.floor(i / cols) * (y.size + y.gap),
+  const x = tileAxis(rect?.width ?? 0, cols);
+  const y = tileAxis(rect?.height ?? 0, rows);
+  return (members ?? []).map((_, i) => ({
+    left: (rect?.left ?? 0) + x.pad + (i % cols) * (x.size + x.gap),
+    top: (rect?.top ?? 0) + y.pad + Math.floor(i / cols) * (y.size + y.gap),
     width: x.size,
     height: y.size,
   }));

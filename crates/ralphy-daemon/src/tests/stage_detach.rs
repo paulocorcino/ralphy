@@ -13,7 +13,7 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     for pin in [
         r#"window.addEventListener("beforeunload", sendHome)"#,
         r#"window.addEventListener("pagehide", sendHome)"#,
-        r#"window.WBViewer?.descOf("detached")"#,
+        r#"window.WBViewer.descOf("detached")"#,
     ] {
         assert!(
             popup.contains(pin),
@@ -440,7 +440,7 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
         "the popup's verdict is the opener HANDLE, which owes nothing to a timer"
     );
     assert!(
-        popup.contains(r#"==="peer-lost"))silent();"#),
+        popup.contains("out.effects.length>0)silent();"),
         "a lost peer must reach `silent`, which probes, and never `lost` directly"
     );
 }

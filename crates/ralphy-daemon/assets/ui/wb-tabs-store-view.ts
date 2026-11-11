@@ -27,13 +27,16 @@ type ViewTabs = {
 };
 
 // The stored file tabs that can open again: each needs a project and a path.
-function storedFileTabs(tabs: StoredTab[] | undefined) {
-  return (tabs || []).filter((t) => !!t && !!t.project && !!t.path);
+// A test seeds tabs that miss a field, and null.
+function storedFileTabs(tabs: readonly (Partial<StoredTab> | null)[] | undefined) {
+  return (tabs ?? []).filter(
+    (t): t is StoredTab => t !== null && (t.project ?? "") !== "" && (t.path ?? "") !== "",
+  );
 }
 
 // The stored active tab while this store carries it, else Consoles.
 function restoredActive(want: string | null | undefined, tabs: CanvasTab[]) {
-  return want && tabs.some((t) => t.id === want) ? want : "consoles";
+  return want != null && want !== "" && tabs.some((t) => t.id === want) ? want : "consoles";
 }
 
 // The tabs half of `wb.view.v1` (`wb-console.ts` owns the offset half;
@@ -53,9 +56,9 @@ export function persistView(store: ViewTabs) {
     }));
   const consoleTabs = store.consoleTabs().map((t) => ({
     id: t.id,
-    deskId: t.deskId || "",
+    deskId: t.deskId ?? "",
     title: t.title,
-    grid: t.grid || [],
+    grid: t.grid ?? [],
   }));
   // A stored `active` naming a tab this store does not carry would leave
   // the canvas blank: degrade to Consoles.
@@ -68,7 +71,7 @@ export function persistView(store: ViewTabs) {
         f.path !== undefined &&
         fileTabId(f.project, f.path, f.checkout) === store.active,
     );
-  window.WBView?.patch({
+  window.WBView.patch({
     tabs: files,
     consoleTabs,
     active: alive ? store.active : "consoles",
@@ -84,7 +87,7 @@ export function restoreView(store: ViewTabs) {
   if (store._viewRestored) return;
   store._viewRestored = true;
   store.restoreConsoleTabs();
-  const stored = window.WBView?.read();
+  const stored = window.WBView.read();
   if (!stored) return;
   // Set while the stored tabs open: `fetchContent` closes a tab whose read
   // fails, and those closes would otherwise REWRITE the store.
@@ -94,7 +97,7 @@ export function restoreView(store: ViewTabs) {
       store.openTab({
         project: t.project,
         path: t.path,
-        title: t.title || t.path,
+        title: (t.title ?? "") || t.path,
         ftype: t.kind,
         checkout: t.checkout ?? null,
       });

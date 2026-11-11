@@ -28,7 +28,7 @@ export async function loadIssueDetail(board: DetailBoard, number: number) {
   // NEWEST fetch, and only while its project+issue is still the open
   // drawer. The number alone is not enough: the board fold re-fires this
   // on every refresh, and two projects routinely carry the same number.
-  const gen = (board._issueDetailGen = (board._issueDetailGen || 0) + 1);
+  const gen = (board._issueDetailGen = (board._issueDetailGen ?? 0) + 1);
   const stale = () =>
     gen !== board._issueDetailGen ||
     board.$store.projects.openSlug !== slug ||
@@ -49,7 +49,7 @@ export async function loadIssueDetail(board: DetailBoard, number: number) {
       fail("Could not load the issue.");
       return;
     }
-    if (stale() || !slug) return;
+    if (stale() || slug === null || slug === "") return;
     if (!board.$store.board.issueDetailRead(slug, number, detail)) return;
     // Success owns the banner too: this one may land second.
     board.issueError = null;

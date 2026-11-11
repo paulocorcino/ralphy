@@ -32,16 +32,7 @@ export type ReleaseStoreDeps = {
 export function releaseStore(_deps: ReleaseStoreDeps) {
   return {
     // The release view the daemon computed (ADR-0056 §7), seeded empty.
-    release: (WBRelease && WBRelease.EMPTY) || {
-      current: "",
-      channel: "rc",
-      standing: "unknown",
-      severity: "none",
-      latest: null,
-      gap: [],
-      disabled: false,
-      can_update: false,
-    },
+    release: WBRelease.EMPTY,
     // Dismissed by opening the panel — except urgent news.
     releaseSeen: false,
 
@@ -55,7 +46,7 @@ export function releaseStore(_deps: ReleaseStoreDeps) {
     },
 
     get releaseHasNews() {
-      return !!WBRelease && WBRelease.hasNews(this.release);
+      return WBRelease.hasNews(this.release);
     },
     // What the rail draws: an urgent release ignores the dismissal.
     get releaseUnread() {
@@ -63,7 +54,7 @@ export function releaseStore(_deps: ReleaseStoreDeps) {
       return !this.releaseSeen || WBRelease.isSticky(this.release);
     },
     get releaseSummary() {
-      return WBRelease ? WBRelease.gapSummary(this.release) : "";
+      return WBRelease.gapSummary(this.release);
     },
 
     releaseRead: null as ReadState,
@@ -73,12 +64,11 @@ export function releaseStore(_deps: ReleaseStoreDeps) {
       );
     },
     async loadRelease() {
-      if (!WBRelease) return;
       const view = await WBRelease.read();
       // A failed read keeps what the page last knew (ADR-0056 §6), marked
       // not current (ADR-0070 D3).
       this.releaseRead = WBFail.readFold(this.releaseRead, {
-        ok: !!view,
+        ok: view !== null,
         value: true,
         reason: "the daemon did not answer",
         at: Date.now(),

@@ -153,11 +153,15 @@ export function createChrome(deps: ChromeDeps) {
     kind: string | null | undefined,
   ) {
     return {
-      _deskId: desk?.id || newDeskId(),
-      _deskRepo: repo || "~",
-      _deskAgent: label || "",
-      _deskKind: desk?.kind || kind || "",
+      _deskId: (desk?.id ?? "") || newDeskId(),
+      _deskRepo: (repo ?? "") || "~",
+      _deskAgent: label ?? "",
+      _deskKind: deskKindOf(desk, kind),
     };
+  }
+  // The record's kind wins over the caller's.
+  function deskKindOf(desk: ChromeRecord, kind: string | null | undefined) {
+    return (desk?.kind ?? "") || (kind ?? "");
   }
 
   // What a carried record hands the window: where it runs and how it is kept.
@@ -169,7 +173,7 @@ export function createChrome(deps: ChromeDeps) {
       // then the daemon's `session-open` overwrite it.
       _deskCheckout: desk?.checkout ?? null,
       // Locked in place (ADR-0050 lock amendment), seeded from the record.
-      _deskLocked: !!desk?.locked,
+      _deskLocked: Boolean(desk?.locked),
       _deskConsoleName: consoleName,
     };
   }
@@ -202,7 +206,7 @@ export function createChrome(deps: ChromeDeps) {
 
   // A console born INTO a fence (#343), below the fence's head band.
   function spawnInFence(win: ConsoleWin, host: HTMLElement) {
-    const headH = host.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
+    const headH = (host.querySelector<HTMLElement>(".fence-head")?.offsetHeight ?? 0) || 28;
     const box = spawnRectIn(restoreRect(host), cascade, headH);
     setBox(win, box);
     // The CSS floor outranks the inline size (#342); relax it for exactly
@@ -218,10 +222,10 @@ export function createChrome(deps: ChromeDeps) {
   function spawnFree(win: ConsoleWin) {
     const ws = workspace();
     const view = {
-      left: ws?.scrollLeft || 0,
-      top: ws?.scrollTop || 0,
-      width: ws?.clientWidth || 0,
-      height: ws?.clientHeight || 0,
+      left: ws?.scrollLeft ?? 0,
+      top: ws?.scrollTop ?? 0,
+      width: ws?.clientWidth ?? 0,
+      height: ws?.clientHeight ?? 0,
     };
     // The popup gets no fences: its members' rects are measured from a new origin, so the
     // fold would match the wrong fence (`fenceHolds`).
@@ -247,8 +251,9 @@ export function createChrome(deps: ChromeDeps) {
     // survives for the next spawn.
     // A LOCKED focused fence is not a host: the console would be born held
     // by its lock. It takes the free cascade instead.
-    const el = focusedFence() && !fenceLocked(focusedFence()) && fenceEl(focusedFence());
-    const host = el && el.offsetWidth && el.offsetHeight ? el : null;
+    const id = focusedFence();
+    const el = id !== null && id !== "" && !fenceLocked(id) ? fenceEl(id) : null;
+    const host = el && el.offsetWidth !== 0 && el.offsetHeight !== 0 ? el : null;
     if (!host) return spawnFree(win);
     spawnInFence(win, host);
     return false;
@@ -405,7 +410,7 @@ export function createChrome(deps: ChromeDeps) {
     // The console name (ADR-0066 §2): a carried record keeps its own; a new
     // console takes the lowest free number of its prefix.
     const consoleName =
-      desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
+      (desk?.consoleName ?? "") || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
     const win = seedWindow(label, repo, desk, kind, consoleName);
     const rect = desk?.rect;
     const spawnMoved = placeWindow(win, rect);
@@ -414,10 +419,10 @@ export function createChrome(deps: ChromeDeps) {
     required(stage(), "the stage").append(win);
     applyExtent();
     wireChromeEvents(win, bar);
-    applyLock(win, !!desk?.locked);
+    applyLock(win, Boolean(desk?.locked));
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
-    if (rect && desk.max) setMax(win, true);
+    if (rect && desk.max === true) setMax(win, true);
     // A console pushed past a locked fence may be out of view: slide to it.
     if (spawnMoved) reveal(win._deskId);
     else focusWin(win);

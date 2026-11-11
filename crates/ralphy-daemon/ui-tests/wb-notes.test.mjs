@@ -235,7 +235,7 @@ function fakeEl(tag) {
       add: (...cs) => cs.forEach((c) => classes.add(c)),
       remove: (...cs) => cs.forEach((c) => classes.delete(c)),
       toggle: (c, force) => {
-        const on = force === undefined ? !classes.has(c) : !!force;
+        const on = force === undefined ? !classes.has(c) : Boolean(force);
         if (on) classes.add(c);
         else classes.delete(c);
         return on;
@@ -246,7 +246,7 @@ function fakeEl(tag) {
       return el.children[0] || null;
     },
     get isConnected() {
-      return !!el.parent;
+      return Boolean(el.parent);
     },
     append(...kids) {
       for (const k of kids) {

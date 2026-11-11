@@ -52,7 +52,7 @@ export function askWorktree(
   const note = document.createElement("p");
   note.className = "wb-worktree-note";
   note.textContent =
-    `${WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. ` +
+    `${WBProject.CARRY_OVER_NOTE} The console restarts in the new worktree. ` +
     "You lose the text in this console.";
   const err = document.createElement("p");
   err.className = "prompt-error";
@@ -86,10 +86,10 @@ export function askWorktree(
       resolve(value);
     };
     const problem = () =>
-      WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
+      WBProject.worktreeNameProblem(listing ?? { worktrees: [] }, nameInput.value);
     const submit = () => {
-      const row = WBProject?.worktreeCreateRow?.(
-        listing || { worktrees: [] },
+      const row = WBProject.worktreeCreateRow(
+        listing ?? { worktrees: [] },
         baseInput.value,
         nameInput.value,
       );
@@ -105,7 +105,7 @@ export function askWorktree(
     // never shows, and there is no message. The caret stays after the
     // last kept character. The create stays disabled, without a message,
     // while the name is still one the daemon would refuse.
-    const mask = WBProject?.maskWorktreeName || ((s: string) => s);
+    const mask = WBProject.maskWorktreeName;
     nameInput.addEventListener("input", () => {
       const raw = nameInput.value;
       const masked = mask(raw);
@@ -116,9 +116,9 @@ export function askWorktree(
       }
       err.textContent = "";
       err.hidden = true;
-      go.disabled = !!problem();
+      go.disabled = problem() !== "";
     });
-    go.disabled = !!problem();
+    go.disabled = problem() !== "";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -138,7 +138,7 @@ export function askWorktree(
 // The prompt's base branch field: a list of the known branches with `base`
 // chosen, or free text when no branch could be read.
 function baseField(document: Document, base: string, branches: string[]) {
-  if (!branches?.length) {
+  if (branches.length === 0) {
     const input = document.createElement("input");
     input.className = "prompt-input";
     input.value = base || "";

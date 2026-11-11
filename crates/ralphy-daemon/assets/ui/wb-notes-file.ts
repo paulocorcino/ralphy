@@ -52,7 +52,7 @@ export function createNoteFile(deps: NoteFileDeps) {
     const field = el.querySelector<HTMLInputElement>(".note-rename");
     if (!field) return;
     el._notePointing = true;
-    field.value = record.path || "";
+    field.value = record.path ?? "";
     field.hidden = false;
     const path = el.querySelector<HTMLElement>(".note-path");
     if (path) path.hidden = true;
@@ -65,7 +65,9 @@ export function createNoteFile(deps: NoteFileDeps) {
   // `file.rename` is what reaches it, through the denylist's one carve-out.
   function renameNote(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
-    if (!record?.path || record.checkout) return;
+    if (record?.path === undefined || record.path === "" || (record.checkout ?? "") !== "") {
+      return;
+    }
     const field = el.querySelector<HTMLInputElement>(".note-rename");
     const path = el.querySelector<HTMLElement>(".note-path");
     if (!field) return;
@@ -77,7 +79,7 @@ export function createNoteFile(deps: NoteFileDeps) {
   }
   function endRename(el: NoteCard) {
     const field = el.querySelector<HTMLInputElement>(".note-rename");
-    if (!field || field.hidden) return;
+    if (!field || field.hidden !== false) return;
     field.hidden = true;
     el._notePointing = false;
     const path = el.querySelector<HTMLElement>(".note-path");
@@ -86,8 +88,8 @@ export function createNoteFile(deps: NoteFileDeps) {
   function commitRename(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
     const field = el.querySelector<HTMLInputElement>(".note-rename");
-    const next = String(field?.value || "").trim();
-    const pointing = !!el._notePointing;
+    const next = (field?.value ?? "").trim();
+    const pointing = el._notePointing === true;
     endRename(el);
     if (!record || !next) return;
     if (pointing) pointAt(el, record, next);
@@ -101,7 +103,7 @@ export function createNoteFile(deps: NoteFileDeps) {
   // two editors autosaving it, each overwriting the other with stale text
   // and neither told.
   function pointAt(el: NoteCard, record: NoteSource, next: string) {
-    const taken = (consoleHost?.notes?.() || []).find(
+    const taken = (consoleHost?.notes() ?? []).find(
       (n) =>
         n.id !== record.id &&
         n.repo === record.repo &&
@@ -120,7 +122,9 @@ export function createNoteFile(deps: NoteFileDeps) {
 
   // A new file name for the note, in the same directory.
   function renameFile(el: NoteCard, record: NoteSource, next: string) {
-    if (!record.path || next === baseName(record.path)) return;
+    if (record.path === undefined || record.path === "" || next === baseName(record.path)) {
+      return;
+    }
     // Always a `.note`: the verbs refuse anything else, and a note renamed out
     // of its extension would be a file nothing can open (ADR-0064 §5).
     const name = next.endsWith(".note") ? next : next + ".note";
@@ -151,7 +155,9 @@ export function createNoteFile(deps: NoteFileDeps) {
   // and it takes the card with it because there is nothing left to show.
   function deleteNote(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
-    if (!record?.path || record.checkout) return;
+    if (record?.path === undefined || record.path === "" || (record.checkout ?? "") !== "") {
+      return;
+    }
     void messages
       ?.askConfirm({
         title: "Delete this note's file?",
@@ -170,7 +176,7 @@ export function createNoteFile(deps: NoteFileDeps) {
             // The record goes without a toast: an undo that cannot put the file
             // back would be a lie.
             el._noteDirty = false;
-            consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
+            consoleHost?.saveNotes(removeNote(consoleHost.notes(), record.id));
             render();
           })
           .catch((err: unknown) =>

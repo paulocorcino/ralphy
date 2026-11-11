@@ -48,7 +48,7 @@ export function createNotePalette(deps: NotePaletteDeps) {
     // document from here would save that header OVER the note. A LOCKED one is
     // not — the lock pins the card, it does not freeze the note.
     if (!pop || veiledNow(el)) return;
-    const wasOpen = !pop.hidden;
+    const wasOpen = pop.hidden === false;
     closePalette();
     closeMenu();
     if (wasOpen) return;
@@ -67,7 +67,8 @@ export function createNotePalette(deps: NotePaletteDeps) {
     if (
       openPalette &&
       !openPalette.contains(ev.target as Node | null) &&
-      !(ev.target as Element | null)?.closest?.(".note-tone")
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
+      !(ev.target as Element | null)?.closest(".note-tone")
     ) {
       closePalette();
     }
@@ -102,9 +103,9 @@ export function createNotePalette(deps: NotePaletteDeps) {
         b.className = cls;
         b.type = "button";
         b.dataset.name = name;
-        b.title = SWATCH_NAME[name] || name;
+        b.title = SWATCH_NAME[name] ?? name;
         if (text) b.textContent = text(name);
-        b.setAttribute("aria-label", label + ": " + (SWATCH_NAME[name] || name));
+        b.setAttribute("aria-label", label + ": " + (SWATCH_NAME[name] ?? name));
         b.addEventListener("click", (ev) => {
           ev.stopPropagation();
           pick(el, name);
@@ -157,7 +158,7 @@ export function createNotePalette(deps: NotePaletteDeps) {
     // reach it — without this, restyling a note left every diagram in it
     // wearing the tone the card used to be.
     try {
-      el._noteEditor?.redrawDiagrams?.();
+      el._noteEditor?.redrawDiagrams();
     } catch {}
     paintPalette(el);
     markDirty(el);

@@ -54,12 +54,12 @@ export type ConnectionStoreDeps = {
 // save. A detached file window is: it saves through this tab, and a reloaded
 // tab no longer hears it.
 function unsavedWork(detached: DetachedWindows) {
-  return !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.() || detached.dirty());
+  return window.WBViewer.anyDirty() || window.WBNotes.anyDirty() || detached.dirty();
 }
 
 // Hold the desk changes of this tab, or let them go out.
 function holdDesk(on: boolean) {
-  WBDeskSink?.setHold?.(on);
+  WBDeskSink.setHold(on);
 }
 
 // `deps` is the shape every store takes; the connection tells the operator
@@ -69,7 +69,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
   return {
     // The build this page was served with (`<meta name="ralphy-build">`);
     // "" with no such tag, and then the page never reloads for a build.
-    pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content || "",
+    pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content ?? "",
     // Live presence + identity (#204): uptime from the `/ws` heartbeat,
     // name/avatar from `/api/identity`.
     uptimeText: "",
@@ -90,7 +90,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     init() {
       // The first page socket opens after this read: it mints the device
       // cookie, which the socket's console lines name.
-      window.WBDaemon?.afterSessionRead?.(this.probeSession());
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's daemon has none
+      window.WBDaemon.afterSessionRead?.(this.probeSession());
       this.subscribePresence();
       void this.loadIdentity();
       // The board's two time-driven refresh triggers (#301), registered ONCE;
@@ -127,7 +128,7 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // Whether this page's heartbeat is lost: the daemon door's verdict
     // (`heartbeatStale`), which the browser checks read here too.
     socketsAreStale() {
-      return window.WBDaemon?.heartbeatStale?.() ?? true;
+      return window.WBDaemon.heartbeatStale();
     },
 
     // The `/ws` presence heartbeat (daemon mode). Each tick refreshes the
@@ -135,13 +136,17 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // baptized. It reads nothing: the shown facts are read again on the
     // daemon's pushes, which ride the same socket (ADR-0070 D2).
     subscribePresence() {
-      if (!window.WBDaemon?.subscribePresence) return;
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's daemon has none
+      if (window.WBDaemon.subscribePresence === undefined) return;
       this._presenceSub = window.WBDaemon.subscribePresence(
         (p) => {
           this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
-          if (p.name) this.identityName = p.name;
-          if (p.avatar) this.identityAvatar = p.avatar;
-          if (p.build && this.pageBuild && p.build !== this.pageBuild) this.onBuildSkew();
+          const name = p.name ?? "";
+          const avatar = p.avatar ?? "";
+          const build = p.build ?? "";
+          if (name !== "") this.identityName = name;
+          if (avatar !== "") this.identityAvatar = avatar;
+          if (build !== "" && this.pageBuild !== "" && build !== this.pageBuild) this.onBuildSkew();
         },
         {
           onPush: (verb, payload) => this.onPresencePush(verb, payload),
@@ -170,7 +175,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
         }, this.LIVE_SETTLE_MS);
       } else if (verb === "desk.dirty") {
         // This tab's own write: it already holds the result.
-        if (payload?.tab && payload.tab === WBDeskSink?.tabId?.()) return;
+        const tab = payload.tab ?? "";
+        if (tab !== "" && tab === WBDeskSink.tabId()) return;
         sendWindow(window, "workbench:desk-reread");
       } else {
         this.onFactPush(verb);
@@ -198,12 +204,14 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       sendWindow(window, "workbench:attention-reread");
       sendWindow(window, "workbench:logins-reread");
       sendWindow(window, "workbench:board-refresh", { trigger: "reopen" });
-      if (window.Alpine.store("projects").openSlug) void window.Alpine.store("runs").hydrateRuns();
+      if ((window.Alpine.store("projects").openSlug ?? "") !== "") {
+        void window.Alpine.store("runs").hydrateRuns();
+      }
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
     fmtUptime(secs: number | undefined) {
-      const s = Math.max(0, Math.floor(secs || 0));
+      const s = Math.max(0, Math.floor(secs === undefined || Number.isNaN(secs) ? 0 : secs));
       const d = Math.floor(s / 86400);
       const h = Math.floor((s % 86400) / 3600);
       const m = Math.floor((s % 3600) / 60);
@@ -227,7 +235,8 @@ export function connectionStore(deps: ConnectionStoreDeps) {
           this.authed = s.authed;
           // The login card's mark: `/api/identity` is gated, so this pre-login
           // leg is the only source. `loadIdentity` overwrites it after login.
-          if (s.avatar) this.identityAvatar = s.avatar;
+          const avatar = s.avatar ?? "";
+          if (avatar !== "") this.identityAvatar = avatar;
           this.securityChanged({ policy: s.policy });
           // The login gate (wb-login.ts) and the restored view (app.ts) are
           // not the store's.
@@ -321,13 +330,13 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // (ADR-0070 D3): a failed read after a good one, or a failed first read.
     // A fact never read yet is not "not current": the panel is loading.
     writeLocked() {
-      return !!this.writeLockReason();
+      return this.writeLockReason() !== "";
     },
     writeLockReason() {
       const slug = window.Alpine.store("projects").openKey();
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
       // The Changes view (wb-changes-panel.ts) says whether its reads are current.
-      if (this.changesNotCurrent[slug]) {
+      if (this.changesNotCurrent[slug] === true) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
       }
       if (window.Alpine.store("runs").runsRead[slug]?.current === false) {

@@ -11,7 +11,7 @@ export function feed(
   buf: string | null | undefined,
   chunk: string | null | undefined,
 ): { rest: string; events: Progress[] } {
-  const parts = (String(buf || "") + String(chunk || "")).split("\n");
+  const parts = ((buf ?? "") + (chunk ?? "")).split("\n");
   // `split` always returns at least one part.
   const rest = parts.pop() ?? "";
   const events: Progress[] = [];
@@ -36,7 +36,7 @@ export function feed(
 // The CLI's errors are chained, so they start lowercase; shown alone they
 // start a sentence.
 export function sentence(text: string | null | undefined): string {
-  const t = String(text || "");
+  const t = text ?? "";
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
@@ -52,27 +52,27 @@ function upsert(checks: Check[], check: Check): Check[] {
 function checkOf(ev: Extract<Progress, { event: "check" }>): Check {
   return {
     id: ev.id,
-    label: ev.label || ev.id,
+    label: (ev.label ?? "") || ev.id,
     status: ev.status,
-    text: ev.text || "",
-    command: ev.command || null,
+    text: ev.text ?? "",
+    command: (ev.command ?? "") || null,
   };
 }
 
 // What `ralphy host install` would send, from an `install` event.
 function installOf(ev: Extract<Progress, { event: "install" }>): Install {
   return {
-    version: String(ev.version || ""),
-    target: String(ev.target || ""),
+    version: ev.version ?? "",
+    target: ev.target ?? "",
     source: ev.source === "release" ? ("release" as const) : ("this-computer" as const),
-    folder: String(ev.folder || ""),
+    folder: ev.folder ?? "",
   };
 }
 
 // The state after a `failed` event.
 function failedState(s: State, ev: Extract<Progress, { event: "failed" }>): State {
   const failure = {
-    kind: ev.kind || "other",
+    kind: (ev.kind ?? "") || "other",
     message: sentence(ev.message),
     keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
   };
@@ -89,7 +89,7 @@ export function progress(s: State, ev: Progress | undefined): State {
   switch (ev.event) {
     // Signed in: a key works now, so the password is not kept.
     case "connected":
-      return Object.assign({}, s, { os: ev.os || "", password: "" });
+      return Object.assign({}, s, { os: ev.os ?? "", password: "" });
     case "check":
       return Object.assign({}, s, { checks: upsert(s.checks, checkOf(ev)) });
     case "fixed":
@@ -101,11 +101,11 @@ export function progress(s: State, ev: Progress | undefined): State {
     case "install":
       return Object.assign({}, s, { install: installOf(ev) });
     case "note":
-      return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
+      return Object.assign({}, s, { lines: s.lines.concat([ev.text ?? ""]) });
     case "failed":
       return failedState(s, ev);
     case "added":
-      return Object.assign({}, s, { done: true, addedName: String(ev.name || "") });
+      return Object.assign({}, s, { done: true, addedName: ev.name ?? "" });
     default:
       return s;
   }

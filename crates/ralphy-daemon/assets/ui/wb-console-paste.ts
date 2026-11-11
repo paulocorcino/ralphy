@@ -68,11 +68,6 @@ export function wirePaste(deps: PasteDeps) {
       return true;
     }
     const daemon = window.WBDaemon;
-    if (!daemon) {
-      // The popup forgot its bridge: say so rather than swallow the paste.
-      term.write("\r\n[paste refused — daemon not connected]\r\n");
-      return true;
-    }
     // "drop" means the size was read from a file, so `file` is set here.
     if (!file) {
       term.write("\r\n[paste refused — unreadable]\r\n");
@@ -88,12 +83,13 @@ export function wirePaste(deps: PasteDeps) {
       daemon
         .write("image.write", { repo: currentRepoNow(), base64 })
         .then((reply) => {
-          if (WBFail.isError(reply) || !reply.path) {
+          const path = WBFail.isError(reply) ? "" : (reply.path ?? "");
+          if (path === "") {
             const why = WBFail.why(reply, "the daemon refused it");
             term.write(`\r\n[paste refused — ${why}]\r\n`);
             return;
           }
-          term.paste(reply.path);
+          term.paste(path);
           term.focus();
         })
         // The socket closed with no reply: say what the browser saw.
@@ -175,7 +171,7 @@ export function wirePaste(deps: PasteDeps) {
         readClipboard()
           .then(({ image, text }) => {
             if (image) dropImage([image.type], image);
-            else if (text) term.paste(text);
+            else if (text !== undefined && text !== "") term.paste(text);
           })
           .catch(() => {});
       }

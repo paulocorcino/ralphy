@@ -60,10 +60,11 @@ export function createStageWindow(deps: StageWindowDeps) {
   // the CSS floor 240×150 at the origin and stored THAT). The inline rect is
   // untouched by all three; it is what `buildChrome` wrote from the record.
   function measurable(win: HTMLElement) {
-    return !!(win.offsetWidth || win.offsetHeight);
+    return Boolean(win.offsetWidth || win.offsetHeight);
   }
   function restoreRect(win: HTMLElement) {
     const inline = (prop: "left" | "top" | "width" | "height", fallback: number) =>
+      // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
       parseInt(win.style[prop], 10) || fallback;
     const fromInline = () => ({
       left: inline("left", win.offsetLeft),
@@ -170,8 +171,8 @@ export function createStageWindow(deps: StageWindowDeps) {
   }
   // The one place a window's own lock is set: flag, class, glyph.
   function applyLock(win: ConsoleWin, locked: boolean) {
-    win._deskLocked = !!locked;
-    win.classList.toggle("locked", !!locked);
+    win._deskLocked = locked;
+    win.classList.toggle("locked", locked);
     paintLockGlyph(win);
   }
   // The glyph shows the EFFECTIVE lock: a console held by a locked fence reads
@@ -181,7 +182,7 @@ export function createStageWindow(deps: StageWindowDeps) {
   function paintLockGlyph(win: ConsoleWin) {
     const btn = win.querySelector<HTMLButtonElement>(".session-lock");
     if (!btn) return;
-    const own = !!win._deskLocked;
+    const own = win._deskLocked;
     const held = !own && heldByFence(win);
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
@@ -191,7 +192,7 @@ export function createStageWindow(deps: StageWindowDeps) {
   }
   function toggleLock(win: ConsoleWin) {
     applyLock(win, !win._deskLocked);
-    setWin(win, { locked: !!win._deskLocked });
+    setWin(win, { locked: win._deskLocked });
   }
 
   function toggleFull(win: ConsoleWin) {
@@ -219,7 +220,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     const el = document.fullscreenElement;
     for (const btn of document.querySelectorAll<HTMLElement>(".session-full")) {
       const win = btn.closest(".session-window");
-      const on = !!win && el === win;
+      const on = Boolean(win) && el === win;
       btn.title = on ? "Exit full screen" : "Full screen";
       btn.innerHTML = on
         ? '<i class="bi bi-fullscreen-exit"></i>'
@@ -241,12 +242,13 @@ export function createStageWindow(deps: StageWindowDeps) {
     const st = stage();
     if (!st) return;
     // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
+    // oxlint-disable-next-line unicorn/prefer-number-coercion -- "12px" is NaN to Number()
     const at = (w: HTMLElement, v: string) => parseInt(w.style.getPropertyValue(v), 10) || 0;
     const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].sort(
       (a, b) =>
         at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
-    if (cols.length) {
+    if (cols.length > 0) {
       for (const w of cols) focusWin(w);
       return;
     }
@@ -266,10 +268,11 @@ export function createStageWindow(deps: StageWindowDeps) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    const maxed = !!st.querySelector(".session-window.maximized");
+    const maxed = Boolean(st.querySelector(".session-window.maximized"));
     ws.classList.toggle("maxlock", maxed);
     // The body-level mirror, for the phone bleed: the rail and the sidebar are
     // `#workspace`'s cousins, unreachable from `maxlock`. The width gate is CSS's.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test document has no body
     document.body?.classList.toggle("console-max", maxed);
     refreshCover();
   }
@@ -321,8 +324,9 @@ export function createStageWindow(deps: StageWindowDeps) {
       { width: ws.clientWidth, height: ws.clientHeight },
       STAGE_MARGIN,
     );
-    const width = opts?.grow ? Math.max(ext.width, st.offsetWidth) : ext.width;
-    const height = opts?.grow ? Math.max(ext.height, st.offsetHeight) : ext.height;
+    const grow = opts?.grow === true;
+    const width = grow ? Math.max(ext.width, st.offsetWidth) : ext.width;
+    const height = grow ? Math.max(ext.height, st.offsetHeight) : ext.height;
     st.style.width = width + "px";
     st.style.height = height + "px";
     // Publish the extent to the footer pill (#338), ONLY on a real change: a

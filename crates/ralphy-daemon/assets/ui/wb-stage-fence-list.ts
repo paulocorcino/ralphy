@@ -175,9 +175,9 @@ export function createFenceList(deps: FenceListDeps) {
   function markHeldNotes(st: HTMLElement) {
     for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<NoteCard>(".note-card")) {
       const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
-      const held = !own?.locked && !!fenceOf(fences(), restoreRect(el))?.locked;
+      const held = own?.locked !== true && Boolean(fenceOf(fences(), restoreRect(el))?.locked);
       el.classList.toggle("held", held);
-      window.WBNotes?.applyLock(el, !!own?.locked || held);
+      window.WBNotes.applyLock(el, own?.locked === true || held);
     }
   }
 
@@ -186,7 +186,7 @@ export function createFenceList(deps: FenceListDeps) {
   // `applyColumns`, which runs on every resize.
   function paintFenceColumns() {
     const narrow = columnMeasure().viewport <= PHONE_MAX_WIDTH;
-    for (const el of stage()?.querySelectorAll<FenceElement>(".fence") || []) {
+    for (const el of stage()?.querySelectorAll<FenceElement>(".fence") ?? []) {
       const btn = el.querySelector<HTMLButtonElement>(".fence-columns");
       if (btn) btn.hidden = narrow || isDetached(el.dataset.fenceId);
     }
@@ -197,7 +197,7 @@ export function createFenceList(deps: FenceListDeps) {
   function readFenceRects(st: HTMLElement) {
     return [...st.querySelectorAll<FenceElement>(".fence")].map((el) => ({
       id: el.dataset.fenceId,
-      name: el.querySelector<HTMLInputElement>(".fence-name")?.value || "",
+      name: el.querySelector<HTMLInputElement>(".fence-name")?.value ?? "",
       rect: restoreRect(el),
     }));
   }
@@ -226,7 +226,7 @@ export function createFenceList(deps: FenceListDeps) {
 
   // Called wherever `renderFences` is: both go on the plane together.
   function renderNotes() {
-    window.WBNotes?.render();
+    window.WBNotes.render();
   }
 
   function fenceList() {
@@ -238,7 +238,7 @@ export function createFenceList(deps: FenceListDeps) {
   // A fence's own lock, and a console held by a locked fence: the same
   // `fenceOf` fold as membership.
   function fenceLocked(id: string | null) {
-    return !!fences().find((f: DeskFence) => f.id === id)?.locked;
+    return Boolean(fences().find((f: DeskFence) => f.id === id)?.locked);
   }
   function heldByFence(el: HTMLElement) {
     return fenceHolds(fences(), restoreRect(el), OPTS.autoBoot === false);
@@ -246,7 +246,7 @@ export function createFenceList(deps: FenceListDeps) {
   // A fence's lock, painted: the class, the glyph, and the tile button, which is a
   // no-op on a locked fence and says so by being disabled.
   function paintFenceLock(el: HTMLElement, locked: boolean) {
-    el.classList.toggle("locked", !!locked);
+    el.classList.toggle("locked", locked);
     const btn = el.querySelector<HTMLButtonElement>(".fence-lock");
     if (btn) {
       btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
@@ -254,10 +254,10 @@ export function createFenceList(deps: FenceListDeps) {
       btn.setAttribute("aria-pressed", locked ? "true" : "false");
     }
     const tile = el.querySelector<HTMLButtonElement>(".fence-arrange");
-    if (tile) tile.disabled = !!locked;
+    if (tile) tile.disabled = locked;
   }
   function setFenceLock(id: string, locked: boolean) {
-    saveFences(fences().map((x: DeskFence) => (x.id === id ? { ...x, locked: !!locked } : x)));
+    saveFences(fences().map((x: DeskFence) => (x.id === id ? { ...x, locked } : x)));
     renderFences();
   }
 
@@ -298,9 +298,9 @@ export function createFenceList(deps: FenceListDeps) {
     const seen = new Set<string>();
     for (const f of fences()) {
       seen.add(f.id);
-      const el = nodes.get(f.id) || buildFence(f);
+      const el = nodes.get(f.id) ?? buildFence(f);
       placeFence(el, f);
-      paintFenceLock(el, !!f.locked);
+      paintFenceLock(el, Boolean(f.locked));
     }
     for (const [id, el] of nodes) {
       if (!seen.has(id)) el.remove();
@@ -322,7 +322,7 @@ export function createFenceList(deps: FenceListDeps) {
   // One record onto its element: the rect unless the fence is under a gesture,
   // and the name unless the operator is typing in it.
   function placeFence(el: HTMLElement, f: DeskFence) {
-    const r = f.rect || {};
+    const r = f.rect;
     if (!inGesture(el)) {
       el.style.left = (r.left || 0) + "px";
       el.style.top = (r.top || 0) + "px";
@@ -330,16 +330,16 @@ export function createFenceList(deps: FenceListDeps) {
       el.style.height = (r.height || 0) + "px";
     }
     const name = el.querySelector<HTMLInputElement>(".fence-name");
-    if (name && name !== document.activeElement) name.value = f.name || "";
+    if (name && name !== document.activeElement) name.value = f.name ?? "";
   }
 
   // A focused fence that is gone must not leave a dangling id: the birth path
   // resolves it, and a stale one would place the next console nowhere (#343).
   function settleFenceFocus(seen: Set<string>) {
-    if (focusedFence && !seen.has(focusedFence)) clearFenceFocus();
+    if (focusedFence !== null && !seen.has(focusedFence)) clearFenceFocus();
     // The class rides the ELEMENT, and `buildFence` makes a fresh one for a
     // fence that arrived after the focus was taken.
-    else if (focusedFence) focusFence(focusedFence);
+    else if (focusedFence !== null) focusFence(focusedFence);
   }
 
   function atFenceCap() {
@@ -387,15 +387,15 @@ export function createFenceList(deps: FenceListDeps) {
   // viewport, 0 before the page has one.
   function workspaceView(ws: HTMLElement | null) {
     return {
-      offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
-      viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
+      offset: { left: ws?.scrollLeft ?? 0, top: ws?.scrollTop ?? 0 },
+      viewport: { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 },
     };
   }
 
   // The refusal said on the fence that holds the first spawn slot.
   function flashBlockingFence(offset: Offset, viewport: Size) {
     const blocked = fenceSpawnRect(offset, viewport, 0);
-    const hit = fences().find((x: DeskFence) => rectsOverlap(blocked, x.rect || {}));
+    const hit = fences().find((x: DeskFence) => rectsOverlap(blocked, x.rect));
     const el = hit && fenceEl(hit.id);
     if (el) {
       clearFenceFlash();
@@ -417,7 +417,7 @@ export function createFenceList(deps: FenceListDeps) {
   function renameFence(id: string, name: string | null | undefined) {
     saveFences(
       fences().map((f: DeskFence) =>
-        f.id === id ? { ...f, name: String(name == null ? "" : name).slice(0, FENCE_NAME_MAX) } : f,
+        f.id === id ? { ...f, name: (name ?? "").slice(0, FENCE_NAME_MAX) } : f,
       ),
     );
     renderFences();

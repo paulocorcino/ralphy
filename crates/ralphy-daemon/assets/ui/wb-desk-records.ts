@@ -77,8 +77,8 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
-      locked: !!win._deskLocked, // a bool on the wire: the daemon refuses null
-      consoleName: win._deskConsoleName || null,
+      locked: win._deskLocked, // a bool on the wire: the daemon refuses null
+      consoleName: (win._deskConsoleName ?? "") || null,
     };
   }
   function createRecord(win: ConsoleWin) {
@@ -93,7 +93,7 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   function setWin(win: ConsoleWin, fields: DeskWindowFields) {
     // A window taken off the page (a late pointerup after a close) must not
     // write.
-    if (!win?._deskId || !win.isConnected) return;
+    if (!win._deskId || !win.isConnected) return;
     if (win._deskUnrecorded) createRecord(win);
     emitDesk({ op: "set", type: "window", id: win._deskId, fields });
     // A moved window may have joined or left a region; membership is derived.
@@ -115,10 +115,10 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
     "fence" | "note",
     (r: Partial<DeskFence & DeskNote>) => { [field: string]: JsonValue | undefined }
   > = {
-    fence: (r) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: !!r.locked }),
+    fence: (r) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: r.locked === true }),
     note: (r) => ({
       rect: rectOnly(r.rect),
-      locked: !!r.locked,
+      locked: r.locked === true,
       file: { repo: r.repo, path: r.path ?? "", checkout: r.checkout ?? null },
     }),
   };
@@ -144,9 +144,9 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
       for (const k of Object.keys(b)) {
         if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
       }
-      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields });
+      if (Object.keys(fields).length > 0) changes.push({ op: "set", type, id: r.id, fields });
     }
-    if (!changes.length) return;
+    if (changes.length === 0) return;
     for (const c of changes) sync.emit(c);
     refreshView();
     scheduleDeskFlush();
@@ -164,13 +164,18 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   // pages that read one desk agree, and the name is stored as a change.
   function nameUnnamed() {
     const named = WBConsoleName.nameDesk(desk(), consolePrefix);
-    let emitted = false;
-    named.forEach((r, i) => {
-      if (desk()[i]?.consoleName || !r.consoleName) return;
-      sync.emit({ op: "set", type: "window", id: r.id, fields: { consoleName: r.consoleName } });
-      emitted = true;
-    });
-    if (!emitted) return;
+    const given = named.filter(
+      (r, i) => (desk()[i]?.consoleName ?? "") === "" && (r.consoleName ?? "") !== "",
+    );
+    for (const r of given) {
+      sync.emit({
+        op: "set",
+        type: "window",
+        id: r.id,
+        fields: { consoleName: r.consoleName ?? "" },
+      });
+    }
+    if (given.length === 0) return;
     refreshView();
     scheduleDeskFlush();
   }
@@ -180,7 +185,7 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   }
   // The desk as the column restore reads it (ADR-0051 §8): ids and `max` only.
   function deskRecords() {
-    return loadDesk().map((r) => ({ id: r.id, max: !!r.max }));
+    return loadDesk().map((r) => ({ id: r.id, max: r.max === true }));
   }
 
   // Whether a NEW console would be over the window cap — asked before it is
@@ -201,14 +206,17 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   }
   // The selected checkout for one repo ref, or `null` — the primary tree.
   function checkoutOf(ref: string) {
-    return checkouts()[ref] || null;
+    return (checkouts()[ref] ?? "") || null;
   }
   // Select (`name`) or clear (`null`) a project's checkout. A clear names the
   // tree it clears, so it never erases a tree another device picked since.
   function setCheckout(ref: string, name: string | null | undefined) {
     const current = checkouts()[ref];
-    if (name) emitDesk({ op: "checkout", repo: ref, name: String(name) });
-    else if (current) emitDesk({ op: "checkout-clear", repo: ref, ifName: current });
+    if (name != null && name !== "") {
+      emitDesk({ op: "checkout", repo: ref, name });
+    } else if (current !== undefined && current !== "") {
+      emitDesk({ op: "checkout-clear", repo: ref, ifName: current });
+    }
   }
   function allCheckouts() {
     return { ...checkouts() };

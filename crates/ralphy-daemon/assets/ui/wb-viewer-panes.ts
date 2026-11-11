@@ -14,7 +14,8 @@ export type PaneLayout = { on: boolean; display: "flex" | "none"; gridColumn: "1
 /** Whether the slot shows a second pane beside the active one. */
 export function isSplit(slot: ViewerSlot | null, slotRec: PaneShape | null | undefined): boolean {
   // A mirror needs an editor to mirror; a pin needs its pane open.
-  return !!slot && !!slotRec && (!slot.mirror || (slotRec.kind === "code" && !!slotRec.ed));
+  if (slot === null || slotRec == null) return false;
+  return slot.mirror !== true || (slotRec.kind === "code" && Boolean(slotRec.ed));
 }
 
 /** The place of the pane `recId` when `id` is active: the active pane takes
@@ -38,5 +39,5 @@ export function focusTarget<E>(
   mirror: { ed: E | null } | null,
   slotEd: E | undefined,
 ): E | null | undefined {
-  return slot.mirror ? mirror?.ed : slotEd;
+  return slot.mirror === true ? mirror?.ed : slotEd;
 }

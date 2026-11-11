@@ -28,7 +28,7 @@ import type { NoteLook } from "./wb-types.d.ts";
 // section the operator wrote and absorbing it into the header would delete
 // text nobody asked to move.
 export function legacyTitleOf(body: string | null | undefined) {
-  const lines = String(body || "").split("\n");
+  const lines = (body ?? "").split("\n");
   let at = 0;
   while (at < lines.length && lines[at]?.trim() === "") at += 1;
   const name = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "")?.[1];
@@ -52,9 +52,9 @@ function openingLength(text: string) {
 }
 
 export function splitFrontMatter(markdown: string | null | undefined) {
-  const text = String(markdown || "");
+  const text = markdown ?? "";
   const open = openingLength(text);
-  if (!open) return null;
+  if (open === 0) return null;
   const rest = text.slice(open);
   let offset = 0;
   for (const line of rest.split("\n")) {
@@ -69,7 +69,7 @@ export function splitFrontMatter(markdown: string | null | undefined) {
 // The document without its front matter — what the editor shows.
 export function bodyOf(markdown: string | null | undefined) {
   const split = splitFrontMatter(markdown);
-  return split ? split.body : String(markdown || "");
+  return split ? split.body : (markdown ?? "");
 }
 
 // One field out of the block, by name, or `null` when it is absent or names
@@ -124,11 +124,11 @@ export function titleYaml(name: string) {
 // the ground takes, and the ink over it (ADR-0064 §8, amended 2026-09-22).
 export function styleOf(markdown: string | null | undefined) {
   return {
-    tone: toneOf(colorOf(markdown) || DEFAULT_TONE),
-    fill: fillOf(fieldOf(markdown, "fill", FILLS) || DEFAULT_FILL),
-    ink: inkOf(fieldOf(markdown, "ink", INKS) || DEFAULT_INK),
-    font: fontOf(fieldOf(markdown, "font", FONTS) || DEFAULT_FONT),
-    size: sizeOf(fieldOf(markdown, "size", SIZES) || DEFAULT_SIZE),
+    tone: toneOf(colorOf(markdown) ?? DEFAULT_TONE),
+    fill: fillOf(fieldOf(markdown, "fill", FILLS) ?? DEFAULT_FILL),
+    ink: inkOf(fieldOf(markdown, "ink", INKS) ?? DEFAULT_INK),
+    font: fontOf(fieldOf(markdown, "font", FONTS) ?? DEFAULT_FONT),
+    size: sizeOf(fieldOf(markdown, "size", SIZES) ?? DEFAULT_SIZE),
   };
 }
 
@@ -144,16 +144,14 @@ export function withHeader(
   style: Partial<NoteLook> | null | undefined,
   veiled?: boolean,
 ) {
-  const name = String(title || "")
-    .replaceAll(/[\r\n]+/gu, " ")
-    .trim();
+  const name = (title ?? "").replaceAll(/[\r\n]+/gu, " ").trim();
   const lines: string[] = [];
-  if (name) lines.push(`title: ${titleYaml(name)}`);
+  if (name !== "") lines.push(`title: ${titleYaml(name)}`);
   lines.push(`color: ${toneOf(style?.tone)}`, ...refinementLines(style));
   // Last, and only when true: `hidden: false` is what every note in the
   // world already is, and writing it would put a line in every file to say
   // nothing.
-  if (veiled) lines.push("hidden: true");
+  if (veiled === true) lines.push("hidden: true");
   return `---\n${lines.join("\n")}\n---\n${body}`;
 }
 
@@ -185,7 +183,7 @@ export function withStyle(markdown: string | null | undefined, style: Partial<No
 // The veil, as a WRITE — the ONE door that changes it, which is what lets
 // every other writer carry it without knowing what it is for.
 export function withVeil(markdown: string | null | undefined, veiled: boolean) {
-  return withHeader(bodyOf(markdown), titleFieldOf(markdown) ?? "", styleOf(markdown), !!veiled);
+  return withHeader(bodyOf(markdown), titleFieldOf(markdown) ?? "", styleOf(markdown), veiled);
 }
 
 // The visible name, as a WRITE (ADR-0064 §4 as amended 2026-09-22: the title
@@ -197,9 +195,7 @@ export function withVeil(markdown: string | null | undefined, veiled: boolean) {
 // the name stops being shown twice. It happens on a retitle and nowhere else
 // — opening a note rewrites nothing.
 export function withTitle(markdown: string | null | undefined, title: string | null | undefined) {
-  const name = String(title || "")
-    .replaceAll(/[\r\n]+/gu, " ")
-    .trim();
+  const name = (title ?? "").replaceAll(/[\r\n]+/gu, " ").trim();
   const body = bodyOf(markdown);
   const legacy = legacyTitleOf(body);
   return withHeader(legacy ? legacy.rest : body, name, styleOf(markdown), veiledOf(markdown));

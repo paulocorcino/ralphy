@@ -131,9 +131,9 @@ export function createNoteEditor(deps: NoteEditorDeps) {
       },
     })
       .then((editor) => {
-        if (el._noteGone) {
+        if (el._noteGone === true) {
           try {
-            editor?.destroy();
+            editor.destroy();
           } catch {}
           return null;
         }
@@ -142,10 +142,10 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         // The footer says when this note last landed, from the moment it
         // opens — not only after the card has saved it once itself.
         if (!el._noteDirty) paintState(el, "");
-        if (el._noteFocusOnMount) {
+        if (el._noteFocusOnMount === true) {
           el._noteFocusOnMount = false;
           try {
-            editor?.dom()?.focus();
+            editor.dom()?.focus();
           } catch {}
         }
         return editor;
@@ -165,7 +165,9 @@ export function createNoteEditor(deps: NoteEditorDeps) {
   // keeps an editor, because the way back from that state is the operator
   // writing in it.
   function loadInto(el: NoteCard, record: NoteSource) {
-    if (!record.path) return mountEditor(el, dress(el, ""));
+    if (record.path === undefined || record.path === "") {
+      return mountEditor(el, dress(el, ""));
+    }
     return window.WBDaemon.observe(
       "note.read",
       window.WBDaemon.withCheckout({ repo: record.repo, path: record.path }, record.checkout),
@@ -176,7 +178,7 @@ export function createNoteEditor(deps: NoteEditorDeps) {
         // After a reload the card remembers no save of its own, and this is
         // the only place the answer exists (`note.read` carries it).
         el._noteSavedAt = Number(reply.modified) || null;
-        return mountEditor(el, reply.markdown || "");
+        return mountEditor(el, reply.markdown ?? "");
       })
       .catch((err: unknown) => {
         paintMissing(
@@ -198,8 +200,8 @@ export function createNoteEditor(deps: NoteEditorDeps) {
     // else's file under our extension (ADR-0064 §11). The card goes and
     // the shell says so; keeping it would put an editor over bytes and
     // the first autosave would overwrite them.
-    if (reason === "not a note" && record.path) {
-      consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
+    if (reason === "not a note" && record.path !== undefined && record.path !== "") {
+      consoleHost?.saveNotes(removeNote(consoleHost.notes(), record.id));
       render();
       sendDocument(document, "workbench:open-request", {
         project: record.repo ?? null,
@@ -239,7 +241,7 @@ export function createNoteEditor(deps: NoteEditorDeps) {
     el.classList.add("missing");
     paintState(el, reason);
     const state = el.querySelector<HTMLElement>(".note-state");
-    if (state) state.title = full || reason;
+    if (state) state.title = full === undefined || full === "" ? reason : full;
   }
 
   // The head, repainted from the document: both the name and whether there is
@@ -258,23 +260,27 @@ export function createNoteEditor(deps: NoteEditorDeps) {
   function paintState(el: NoteCard, text?: string) {
     const state = el.querySelector<HTMLElement>(".note-state");
     if (!state) return;
-    if (text) {
+    if (text !== undefined && text !== "") {
       state.textContent = text;
       state.title = "";
       return;
     }
     state.textContent = savedLabel(el._noteSavedAt);
-    state.title = el._noteSavedAt ? new Date(el._noteSavedAt).toLocaleString() : "";
+    state.title =
+      el._noteSavedAt !== null && el._noteSavedAt !== 0
+        ? new Date(el._noteSavedAt).toLocaleString()
+        : "";
   }
 
   function paintPath(el: NoteCard, path: string | null | undefined) {
     const field = el.querySelector<HTMLElement>(".note-path");
     if (field) {
-      field.textContent = path || "";
-      field.title = path || "This note is not saved yet";
+      field.textContent = path ?? "";
+      field.title =
+        path === null || path === undefined || path === "" ? "This note is not saved yet" : path;
     }
     const dir = el.querySelector<HTMLInputElement>(".note-dir");
-    if (dir) dir.hidden = !!path;
+    if (dir) dir.hidden = (path ?? "") !== "";
   }
 
   return {

@@ -56,6 +56,7 @@ export function shell() {
       window.addEventListener("workbench:logged-in", () => {
         // `/api/desk` is gated too: unread AND unwritable until re-read (#327);
         // the selected checkouts ride it (#406).
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
         void window.WBConsole?.afterLogin()?.then(() => {
           this.$store.checkouts.adoptDeskCheckouts();
           this.syncDeskFailure();
@@ -76,10 +77,12 @@ export function shell() {
       });
       // The Alpine store `checkouts` hears `unknown checkout` and copies the
       // desk's checkouts once the boot desk lands (wb-checkouts-store.ts).
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
       void window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.syncDeskFailure();
       });
       // A flush can be the read that finds the desk unreadable; no push says so.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
       window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
       // The phase clock's tick: one assignment a second while the panel is
       // open; the run document is NOT re-read. The presence half of the clock
@@ -93,19 +96,18 @@ export function shell() {
     // the columns (wb-consoles-tab.ts) which consoles left it; the selected
     // checkouts are copied, since another client may have picked a tree.
     rereadDesk() {
-      const read = window.WBConsole?.reloadDesk?.();
-      if (!read?.then) return;
+      const read = window.WBConsole.reloadDesk();
       void read.then(() => {
         this.syncDeskFailure();
         this.$store.checkouts.adoptDeskCheckouts();
       });
     },
     syncDeskFailure() {
-      this.deskFailure = window.WBConsole?.deskFailure?.() || "";
+      this.deskFailure = window.WBConsole.deskFailure();
     },
     // The desk failure's one action (ADR-0070 D4).
     startNewDesk() {
-      window.WBConsole?.startNewDesk?.()
+      window.WBConsole.startNewDesk()
         .then(() => this.syncDeskFailure())
         .catch((e: unknown) => {
           const message = e instanceof Error ? e.message : "";
@@ -143,13 +145,13 @@ export function shell() {
     // A sleeping peer's wake button. Its two sentences keep their order here,
     // not in a `+` chain inside the markup (ADR-0065 §9).
     wakeTitle(g: Group) {
-      if (this.$store.projects.waking[g.daemon]) return `Waking ${g.environment}…`;
+      if (this.$store.projects.waking[g.daemon] === true) return `Waking ${g.environment}…`;
       return `Wake ${g.environment}. ${g.diagnosis}`;
     },
     // The update button of an SSH host that speaks another protocol.
     updateTitle(g: Group) {
       const host = WBFleet.peerName(g);
-      if (this.$store.projects.updating[g.daemon]) return `Updating Ralphy on ${host}…`;
+      if (this.$store.projects.updating[g.daemon] === true) return `Updating Ralphy on ${host}…`;
       return `${g.diagnosis} Click to install this computer's Ralphy on ${host}.`;
     },
     // A row on a host that cannot answer: why it does not open.
@@ -216,7 +218,7 @@ export function shell() {
             waiting: "An agent is waiting for you",
             offline: "The folder cannot be reached",
           } as Record<string, string>
-        )[state] || "No console is open"
+        )[state] ?? "No console is open"
       );
     },
     dotClass(state: string) {

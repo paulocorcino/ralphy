@@ -63,7 +63,7 @@ export function wireDetached(window: Window, document: Document) {
   // the button's own `window.close()` fires the unload handlers below.
   let sent = false;
   const sendHome = () => {
-    const desc = window.WBViewer?.descOf("detached");
+    const desc = window.WBViewer.descOf("detached");
     const to = opener();
     if (sent || !desc || !to) return;
     sent = true;

@@ -101,7 +101,7 @@ export const WBView = (function () {
   function read() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (!raw) return null;
+      if (raw === null || raw === "") return null;
       const parsed: unknown = JSON.parse(raw);
       if (!isRecord(parsed)) return null;
       // A record from a future (or corrupt) version is not ours to interpret.

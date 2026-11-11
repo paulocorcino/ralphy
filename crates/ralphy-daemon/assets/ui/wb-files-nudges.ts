@@ -33,10 +33,10 @@ function freshBytes(t: CanvasTab, project: string): Promise<string | null | unde
   if (path === undefined) return Promise.resolve(null);
   if (t.kind === "image") return WBDaemon.readImage(project, path, undefined, t.checkout);
   const payload = WBDaemon.withCheckout({ repo: project, path }, t.checkout);
-  const enc = WBViewer.encodingOf?.(t.id)?.encoding;
-  if (enc) payload.encoding = enc;
+  const enc = WBViewer.encodingOf(t.id)?.encoding ?? "";
+  if (enc !== "") payload["encoding"] = enc;
   return WBDaemon.observe("file.read", payload).then((reply) =>
-    reply?.status === "ok" ? reply.content : null,
+    reply.status === "ok" ? reply.content : null,
   );
 }
 
@@ -48,7 +48,7 @@ export function headMoved(files: NudgeFiles) {
   clearTimeout(files._headTimer);
   files._headTimer = setTimeout(() => {
     const ref = files.$store.projects.openSlug;
-    if (!ref) return;
+    if (ref == null || ref === "") return;
     sendWindow(window, "workbench:head-moved", { ref });
   }, files.HEAD_SETTLE_MS);
 }

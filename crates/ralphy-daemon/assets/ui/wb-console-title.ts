@@ -161,7 +161,7 @@ export function createTitle(deps: TitleDeps) {
     // SPANS, not bare text nodes: they are what ellipsise when the bar is
     // narrow, the repo first (06-consoles.css `.session-repo`); a text node
     // inside an inline-flex box wraps instead.
-    const parts = WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent);
+    const parts = WBConsoleName.labelParts(win._deskConsoleName ?? "", win._deskAgent);
     const nameSpan = document.createElement("span");
     nameSpan.className = "session-name";
     nameSpan.textContent = parts.name;
@@ -193,7 +193,7 @@ export function createTitle(deps: TitleDeps) {
   // Whether the desk says this console has "Tell me when it is done" on. The
   // daemon clears it when the request opens, so it is read at each use.
   function doneMarkOn(win: ConsoleWin) {
-    return !!desk().find((r) => r.id === win._deskId)?.doneMark;
+    return desk().find((r) => r.id === win._deskId)?.doneMark === true;
   }
 
   // "Tell me when it is done" (docs/adr/0085 D11): a bell that asks for one
@@ -278,7 +278,7 @@ export function createTitle(deps: TitleDeps) {
     input.className = "session-name-input";
     input.setAttribute("aria-label", "Console name");
     input.maxLength = WBConsoleName.NAME_MAX;
-    input.value = win._deskConsoleName || "";
+    input.value = win._deskConsoleName ?? "";
     input.style.width = `${Math.max(span.offsetWidth + 16, 96)}px`;
     let editing = true;
     // Capture phase, before the plane's pan handler swallows the press: the
@@ -303,7 +303,7 @@ export function createTitle(deps: TitleDeps) {
         // A name another page gave while this edit was open was skipped by
         // `converge`; take it now.
         const stored = desk().find((r) => r.id === win._deskId)?.consoleName;
-        if (stored) win._deskConsoleName = stored;
+        if (stored !== undefined && stored !== "") win._deskConsoleName = stored;
       }
       input.remove();
       if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
@@ -339,7 +339,7 @@ export function createTitle(deps: TitleDeps) {
       confirmLabel: "Restart",
       danger: !ended,
     });
-    if (!ok) return;
+    if (ok !== true) return;
     endLiveThen(win, () => win._relaunchIn?.());
   }
 

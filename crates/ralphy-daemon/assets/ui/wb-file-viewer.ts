@@ -165,8 +165,8 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       // goes first: a model disposed while attached raises a page error (#407).
       const m = (ed as MonacoDiffEditor).getModel();
       ed.dispose();
-      m?.original?.dispose();
-      m?.modified?.dispose();
+      m?.original.dispose();
+      m?.modified.dispose();
     } else {
       (ed as MonacoEditor).getModel()?.dispose();
       ed.dispose();
@@ -261,11 +261,30 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
 
   // --- public API ---------------------------------------------------------
   let uidSeq = 0;
+  // The fields every pane has, from the shell's open request.
+  function paneRecord(spec: OpenSpec): PaneRecord {
+    const { id, project, label, path, ftype, original, detached, checkout, encoding, bom } = spec;
+    return {
+      id,
+      project,
+      label: (label ?? "") || WBFleet.refSlug(project),
+      path,
+      kind: ftype,
+      original,
+      uid: ++uidSeq,
+      editing: false,
+      visible: false,
+      detached: Boolean(detached),
+      checkout: (checkout ?? "") || null,
+      encoding: (encoding ?? "") || "UTF-8",
+      bom: Boolean(bom),
+    };
+  }
   const API = {
     // Whether any open file tab holds an edit not yet saved: the work a
     // reload onto a new build must not lose (ADR-0070 D6).
     anyDirty() {
-      return [...map.values()].some((rec) => rec.dirty);
+      return [...map.values()].some((rec) => rec.dirty === true);
     },
     // `original` is the diff's HEAD side. `project` is the IDENTITY (tab id,
     // wire field, model URI) and stays the full ref; `label` is the human
@@ -277,24 +296,9 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     // the daemon's reason for serving nothing: the pane says so and keeps the
     // tab, instead of the tab closing under the click.
     open(spec: OpenSpec) {
-      const { id, project, label, path, ftype, original, detached, checkout, encoding, bom } = spec;
+      const { id, ftype } = spec;
       if (map.has(id)) return;
-      const shown = label || (WBFleet ? WBFleet.refSlug(project) : project);
-      const pane: PaneRecord = {
-        id,
-        project,
-        label: shown,
-        path,
-        kind: ftype,
-        original,
-        uid: ++uidSeq,
-        editing: false,
-        visible: false,
-        detached: !!detached,
-        checkout: checkout || null,
-        encoding: encoding || "UTF-8",
-        bom: !!bom,
-      };
+      const pane = paneRecord(spec);
       if (spec.refused !== undefined) {
         const refused: RefusedRecord = { ...pane, refused: spec.refused };
         map.set(id, refused);
@@ -327,9 +331,9 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       rec.saveBtn?.classList.add("dirty");
       const text =
         reason === "unencodable"
-          ? `Could not save: character ${Number(reply?.char_index ?? 0) + 1} ` +
+          ? `Could not save: character ${(reply?.char_index ?? 0) + 1} ` +
             `cannot be written in ${rec.encoding}.`
-          : WBFail.failed(reply || { reason }, "Could not save: the daemon gave no reason.");
+          : WBFail.failed(reply ?? { reason }, "Could not save: the daemon gave no reason.");
       showSaveError(rec, text);
     },
 
@@ -337,13 +341,13 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     // with…" or the `unencodable` dialog's "save as UTF-8").
     encodingOf(id: string) {
       const rec = map.get(id);
-      return rec ? { encoding: rec.encoding, bom: !!rec.bom } : null;
+      return rec ? { encoding: rec.encoding, bom: rec.bom } : null;
     },
     setEncoding(id: string, encoding: string, bom: boolean) {
       const rec = map.get(id);
       if (!rec) return;
       rec.encoding = encoding;
-      rec.bom = !!bom;
+      rec.bom = bom;
       rec.dirty = true;
       rec.saveBtn?.classList.add("dirty");
       refreshEncodingPill(rec);
@@ -365,7 +369,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     // or nothing. One argument is the single pane every caller had; the
     // detached popup never passes a second.
     setActive(id: string | null, slot?: ViewerSlot | "" | null) {
-      show(id, slot || null);
+      show(id, slot === "" || slot === undefined ? null : slot);
     },
 
     // The canvas width the split decision is made against.
@@ -440,11 +444,11 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       // refused pane has no bytes to compare; its Reload is the retry.
       if (rec.kind === "diff" || rec.refused !== null) return;
       if (content === rec.content) return;
-      if (!rec.dirty) {
-        applyFresh(rec, content);
-      } else {
+      if (rec.dirty === true) {
         rec.pendingDisk = content;
         showDiskBadge(rec);
+      } else {
+        applyFresh(rec, content);
       }
     },
   };

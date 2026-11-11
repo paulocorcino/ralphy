@@ -76,13 +76,13 @@ export function hostsDialog() {
     },
     // Opens on the list when a host is paired over SSH, else on the form.
     openAddHost() {
-      const tab = this.sshHosts().length ? "hosts" : "add";
+      const tab = this.sshHosts().length > 0 ? "hosts" : "add";
       this.addHost = Object.assign(WBHosts.initial(), { open: true, tab });
       this.hostSecretShown = false;
       this.removeHost.open = false;
       window.WBDaemon.observe("host.aliases", {})
         .then((reply) => {
-          if (reply?.status === "ok") this.addHostStep({ type: "aliases", aliases: reply.aliases });
+          if (reply.status === "ok") this.addHostStep({ type: "aliases", aliases: reply.aliases });
         })
         // Without the list the operator types the address.
         .catch((e: unknown) => console.warn("host aliases:", e));
@@ -93,11 +93,11 @@ export function hostsDialog() {
     },
     // The hosts paired over SSH. A WSL daemon is paired by its setup instead.
     sshHosts(): FleetPeer[] {
-      return (this.$store.projects.fleetPeers || []).filter((p) => p.tunnel);
+      return this.$store.projects.fleetPeers.filter((p) => p.tunnel);
     },
     // With no host left there is no list to show.
     hostTab() {
-      return this.sshHosts().length ? this.addHost.tab : "add";
+      return this.sshHosts().length > 0 ? this.addHost.tab : "add";
     },
     addHostTab(tab: string) {
       if (this.addHost.busy) return;
@@ -141,6 +141,7 @@ export function hostsDialog() {
     hostSecretType() {
       if (this.hostSecretShown) return "text";
       const css = window.CSS;
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's window has no CSS
       return css?.supports?.("-webkit-text-security", "disc") ? "text" : "password";
     },
     hostView() {
@@ -174,7 +175,7 @@ export function hostsDialog() {
       return WBHosts.helpTabs();
     },
     hostHelpSteps() {
-      return this.hostHelpTabs().find((t) => t.id === this.addHost.helpTab)?.steps || [];
+      return this.hostHelpTabs().find((t) => t.id === this.addHost.helpTab)?.steps ?? [];
     },
     hostWrongAddress() {
       return WBHosts.WRONG_ADDRESS;
@@ -189,7 +190,7 @@ export function hostsDialog() {
             warn: "bi-exclamation-triangle",
             pending: "bi-hourglass",
           } as Record<string, string>
-        )[c.status] || "bi-dot"
+        )[c.status] ?? "bi-dot"
       );
     },
     // Step 1 → 2 or 3: read the host key before anything signs in.
@@ -217,7 +218,7 @@ export function hostsDialog() {
     async addHostTrust() {
       const destination = WBHosts.destination(this.addHost);
       const fingerprint = this.addHost.keys[0]?.fingerprint;
-      if (!fingerprint || this.addHost.busy) return;
+      if (fingerprint === undefined || fingerprint === "" || this.addHost.busy) return;
       this.addHostStep({ type: "busy", value: true });
       let reply;
       try {
@@ -287,6 +288,7 @@ export function hostsDialog() {
             this.addHostStep({ type: "auto-tried" });
             this.addHostInstall();
           }
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- an unchecked frame
         } else if (st.status === "error") {
           this.addHostFailed(
             WBFail.failed(st, "Could not reach the host: the daemon did not start the command."),
@@ -325,7 +327,7 @@ export function hostsDialog() {
       let s = WBHosts.initial();
       window.WBDaemon.spawn(
         "host.remove",
-        { host: this.removeHost.daemon, rotate_token: !!this.removeHost.rotate },
+        { host: this.removeHost.daemon, rotate_token: this.removeHost.rotate },
         (st) => {
           if (st.status === "output") {
             const fed = WBHosts.feed(s.buf, st.chunk);
@@ -338,6 +340,7 @@ export function hostsDialog() {
               this.removeHost.open = false;
               void this.$store.projects.loadRepos();
             }
+            // oxlint-disable-next-line typescript/no-unnecessary-condition -- an unchecked frame
           } else if (st.status === "error") {
             s = WBHosts.next(s, {
               type: "event",

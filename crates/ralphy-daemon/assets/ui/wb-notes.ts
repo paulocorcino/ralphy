@@ -75,14 +75,14 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   }
 
   function recordOf(id: string | null | undefined) {
-    return (consoleHost?.notes?.() || []).find((n) => n.id === id) || null;
+    return (consoleHost?.notes() ?? []).find((n) => n.id === id) ?? null;
   }
 
   // Write one card's record back, keeping the rest of the collection.
   // `saveNotes` sends only the fields that differ (ADR-0050 amendment
   // 2026-10-04, changes, not the desk).
   function patch(id: string | null | undefined, fields: Partial<DeskNote>) {
-    const next = (consoleHost?.notes?.() || []).map((n) => (n.id === id ? { ...n, ...fields } : n));
+    const next = (consoleHost?.notes() ?? []).map((n) => (n.id === id ? { ...n, ...fields } : n));
     consoleHost?.saveNotes(next);
   }
 
@@ -90,7 +90,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // top paints its floating box over the inline rect, which is still the desk
   // rect, so a fence move persists the place and not the box.
   function rectOf(el: NoteCard) {
-    if (el.classList?.contains("on-top")) return consoleHost?.restoreRect(el);
+    if (el.classList.contains("on-top")) return consoleHost?.restoreRect(el);
     return {
       left: el.offsetLeft,
       top: el.offsetTop,
@@ -104,8 +104,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   function persistCards(els: NoteCard | NoteCard[]) {
     const list = Array.isArray(els) ? els : [els];
     const moved = new Map(list.filter(Boolean).map((el) => [el.dataset.noteId, rectOf(el)]));
-    if (!moved.size) return;
-    const next = (consoleHost?.notes?.() || []).map((n) => {
+    if (moved.size === 0) return;
+    const next = (consoleHost?.notes() ?? []).map((n) => {
       const rect = moved.get(n.id);
       return rect ? { ...n, rect } : n;
     });
@@ -279,22 +279,22 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   // The desk's note records and fence records; none where a test has no host.
   function deskNotes() {
-    return consoleHost?.notes?.() || [];
+    return consoleHost?.notes() ?? [];
   }
   function deskFences() {
-    return consoleHost?.fenceRecords?.() || [];
+    return consoleHost?.fenceRecords() ?? [];
   }
 
-  // A card whose fence is detached is not on THIS stage — it is in the popup.
-  // Derived, never stored: the record stays in the desk (the popup is a view,
-  // not an owner), so a reload works this out again from the fence registry
-  // instead of restoring a set that died with the document.
+  // A card whose fence is detached is not on THIS stage — it is in the popup. Derived, never
+  // stored: the record stays in the desk (the popup is a view, not an owner), so a reload works
+  // this out again from the fence registry, not restoring a set that died with the document.
   function isAway(
     record: Pick<NoteSource, "rect"> | null | undefined,
     fences: DeskFence[] | null | undefined,
   ) {
-    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
-    return !!held && !!consoleHost?.isDetached?.(held.id);
+    const held = WBGeometry.fenceOf(fences ?? [], record?.rect);
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test host has no isDetached
+    return held !== null && consoleHost?.isDetached?.(held.id) === true;
   }
 
   // This document holds a FRAGMENT of the plane (one detached fence's members),
@@ -315,7 +315,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     for (const record of records) {
       if (!showsHere(record, fences, nodes)) continue;
       seen.add(record.id);
-      const el = nodes.get(record.id) || mountCard(record);
+      const el = nodes.get(record.id) ?? mountCard(record);
       el._noteListed = true;
       paint(el, record, fences);
     }
@@ -349,8 +349,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // gesture keeps the place the operator's hand gives it.
   function paint(el: NoteCard, record: NoteSource, fences: DeskFence[]) {
     el._noteRecord = record;
-    const r = record.rect || {};
-    if (!gestures?.active(el)) {
+    const r = record.rect;
+    if (gestures?.active(el) !== true) {
       el.style.left = (r.left || 0) + "px";
       el.style.top = (r.top || 0) + "px";
       el.style.width = (r.width || NOTE_DEFAULT.width) + "px";
@@ -358,7 +358,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     }
     paintTitle(el);
     paintPath(el, record.path);
-    applyLock(el, !!lockedBy(record, fences));
+    applyLock(el, lockedBy(record, fences) !== null);
     if (el._noteShadow) paintShadow(el);
   }
 
@@ -370,8 +370,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     // This document's desk may not hold the record yet (a note created a
     // moment before the detach), and `writeNow` needs one to save at all.
     el._noteOrphan = record;
-    if (typeof record.draft === "string" && !record.path) {
-      if (record.claim) {
+    if (typeof record.draft === "string" && (record.path ?? "") === "") {
+      if (record.claim != null && record.claim !== "") {
         el._noteClaim = record.claim;
         paintPath(el, record.claim);
       }
@@ -380,7 +380,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       void loadInto(el, record);
     }
     paint(el, record, []);
-    if (el._noteClaim) paintPath(el, el._noteClaim);
+    if (el._noteClaim != null && el._noteClaim !== "") paintPath(el, el._noteClaim);
     return el;
   }
 

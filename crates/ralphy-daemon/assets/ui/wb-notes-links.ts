@@ -21,7 +21,8 @@ export function installLinks(deps: NoteLinksDeps) {
 
   // The anchor a click landed on, when it is a link of this card.
   function linkAnchor(ev: Event, el: NoteCard) {
-    const a = (ev.target as Element | null)?.closest?.<HTMLAnchorElement>("a[href]");
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
+    const a = (ev.target as Element | null)?.closest<HTMLAnchorElement>("a[href]");
     return a && el.contains(a) ? a : null;
   }
 
@@ -29,13 +30,14 @@ export function installLinks(deps: NoteLinksDeps) {
   // note lands in `.ralphy/notes/` by default, and a path written there is
   // the operator's path into their repo, not into the run-state directory.
   function linkTargetOf(href: string | null) {
-    return window.WBViewer?.linkTarget?.("", href) || popupLinkTarget(href);
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a popup has no WBViewer
+    return window.WBViewer?.linkTarget("", href) ?? popupLinkTarget(href);
   }
 
   // The open REQUEST to the shell for a path inside the repo.
   function requestOpen(record: NoteSource | null, target: { path: string; fragment: string }) {
     sendDocument(document, "workbench:open-request", {
-      project: record?.repo || null,
+      project: record?.repo === "" ? null : (record?.repo ?? null),
       path: target.path,
       fragment: target.fragment,
       checkout: record?.checkout ?? null,

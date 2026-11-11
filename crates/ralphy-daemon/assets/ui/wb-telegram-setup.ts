@@ -70,7 +70,8 @@ function offText(why: OffReason | undefined) {
 
 /** The bot line: its name, or why there is none. */
 export function botText(reply: BotReply) {
-  if (reply.bot) return `@${reply.bot}`;
+  const bot = reply.bot ?? "";
+  if (bot !== "") return `@${bot}`;
   if (!reply.answered) return "Telegram did not answer for this token";
   return "No bot";
 }
@@ -85,7 +86,7 @@ type BotRoute =
 /** The text of a refusal: the daemon's `error`, or its status. */
 async function refusal(res: ApiFailed<{ error: string }>) {
   const body = await res.json().catch(() => null);
-  return body?.error || `the daemon answered ${res.status}`;
+  return (body?.error ?? "") || `the daemon answered ${res.status}`;
 }
 
 /** A setup action: its route and what the page says when it is done. */
@@ -134,7 +135,7 @@ export function telegramSetup() {
       return this.reply?.state === "sends";
     },
     fault() {
-      return !!this.reply && (!this.reply.answered || this.reply.state === "off");
+      return this.reply !== null && (!this.reply.answered || this.reply.state === "off");
     },
     botLine() {
       return this.reply ? botText(this.reply) : "";
@@ -143,7 +144,8 @@ export function telegramSetup() {
       return this.reply ? stateText(this.reply) : "";
     },
     chatLine() {
-      return this.reply?.chat ? String(this.reply.chat) : "No chat yet";
+      const chat = this.reply?.chat ?? 0;
+      return chat === 0 ? "No chat yet" : String(chat);
     },
     async load() {
       this.error = "";

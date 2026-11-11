@@ -72,7 +72,7 @@ export type FenceGestureDeps = {
 // A surface shown elsewhere keeps its place as a shadow, which goes where the
 // surface's desk rect goes.
 function moveShadow(m: Carried) {
-  const sh = m.el._noteShadow || m.el._tabShadow;
+  const sh = m.el._noteShadow ?? m.el._tabShadow;
   if (!sh) return;
   sh.style.left = m.el.style.left;
   sh.style.top = m.el.style.top;
@@ -140,7 +140,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
       // overlapping pair (reachable via a hand-edited `desk.toml`), and a
       // singleton bypasses it.
       const live = fences().map((x) => (x.id === f.id ? { id: x.id, rect: start } : x));
-      const ids = new Set(fenceMembership(live, all)[f.id] || []);
+      const ids = new Set(fenceMembership(live, all)[f.id] ?? []);
       const carried = all.filter((m) => ids.has(m.id));
       gestures.begin(el);
       for (const m of carried) gestures.begin(m.el);
@@ -248,7 +248,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
           });
         }
         const cards = carried.filter((m) => m.kind === "note").map((m) => m.el);
-        if (cards.length) window.WBNotes?.persistCards(cards);
+        if (cards.length > 0) window.WBNotes.persistCards(cards);
         applyExtent();
       };
       document.addEventListener("pointermove", onMove);

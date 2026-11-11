@@ -25,8 +25,8 @@ export function readFold<T>(
   board: DaemonReplies["board.list"]["board"],
   toIssue: (row: BoardRow) => T,
 ) {
-  const b = board || {};
-  return { issues: (b.issues || []).map(toIssue), colors: labelColors(b.labels) };
+  const b = board ?? {};
+  return { issues: (b.issues ?? []).map((row) => toIssue(row)), colors: labelColors(b.labels) };
 }
 
 // The repo's label colors by label name. A Map, so a label named
@@ -34,16 +34,16 @@ export function readFold<T>(
 // truthy and masks `labelColor`'s fallback.
 function labelColors(labels: BoardLabel[] | undefined) {
   const colors = new Map<string, string>();
-  for (const l of labels || []) {
-    if (!l.color) continue;
-    colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
+  for (const l of labels ?? []) {
+    if (l.color === undefined || l.color === "") continue;
+    colors.set(l.name, "#" + l.color.replace(/^#/u, ""));
   }
   return colors;
 }
 
 // The issues that block a fold row, under either name the fold uses.
 function rowBlockers(row: BoardRow) {
-  return row.blocked_by || row.blockedBy || [];
+  return row.blocked_by ?? row.blockedBy ?? [];
 }
 
 // A CLI fold row → the issue shape `wb-kanban.ts` expects. Body + comments
@@ -51,14 +51,14 @@ function rowBlockers(row: BoardRow) {
 export function rowToIssue(row: BoardRow) {
   return {
     number: row.number,
-    title: row.title || "",
-    state: row.state || "open",
+    title: row.title ?? "",
+    state: row.state === undefined || row.state === "" ? "open" : row.state,
     reason: row.reason ?? row.state_reason ?? null,
-    labels: row.labels || [],
-    assignees: row.assignees || [],
+    labels: row.labels ?? [],
+    assignees: row.assignees ?? [],
     blockedBy: rowBlockers(row),
-    created: row.created || "",
-    updated: row.updated || "",
+    created: row.created ?? "",
+    updated: row.updated ?? "",
     body: "",
     comments: [],
   };

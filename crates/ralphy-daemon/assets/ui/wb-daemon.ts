@@ -103,7 +103,7 @@ export function createDaemon(
     checkout: string | null | undefined,
   ): CommandPayload {
     const out = { ...payload };
-    if (checkout) out.checkout = String(checkout);
+    if (checkout !== null && checkout !== undefined && checkout !== "") out.checkout = checkout;
     return out;
   }
 
@@ -118,11 +118,12 @@ export function createDaemon(
     unknownCheckout.push(fn);
   }
   function noteUnknownCheckout(payload: CommandPayload, reply: DaemonReply) {
-    if (!payload || !payload.checkout) return;
-    if (WBProject?.checkoutAfter?.(payload.checkout, reply) !== null) return;
+    const name = payload.checkout ?? "";
+    if (name === "") return;
+    if (WBProject.checkoutAfter(name, reply) !== null) return;
     for (const fn of unknownCheckout) {
       try {
-        fn(payload.repo, payload.checkout);
+        fn(payload.repo, name);
       } catch {}
     }
   }
@@ -167,7 +168,7 @@ export function createDaemon(
     checkout: string | null | undefined,
   ) {
     return observe("file.image", withCheckout({ repo, path }, checkout)).then((reply) => {
-      if (WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
+      if (WBFail.isError(reply) || (reply.base64 ?? "") === "" || (reply.mediaType ?? "") === "") {
         onRefused?.(WBFail.message(reply, "refused"));
         return null;
       }
@@ -252,6 +253,7 @@ export function createDaemon(
         ch.onClosed = finish;
       },
     });
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the callbacks above set both
     if (over && !left) finish();
     return id;
   }
@@ -291,7 +293,7 @@ export function createDaemon(
         if (over) return;
         over = true;
         channel?.close();
-        leave?.();
+        leave();
       },
     };
     return opened;
@@ -324,7 +326,7 @@ export function createDaemon(
       onBare: (bytes: Uint8Array) => {
         if (bytes[0] === TAG_COMMAND) {
           const f = commandFrame(bytes);
-          if (f?.verb) onPush?.(f.verb, f.payload || {});
+          if (f !== null && f.verb !== "") onPush?.(f.verb, f.payload ?? {});
           return;
         }
         if (bytes[0] !== TAG_PRESENCE) return;
@@ -400,9 +402,10 @@ export function createDaemon(
   document.addEventListener("workbench:action", (e) => {
     // A `workbench:action` always carries its `action`; a bare event names none.
     const d = e.detail;
-    if (!d) return;
-    const verb = ACTION_TO_VERB[d.action] || (d.action === "command" ? d.verb : null);
-    if (!verb) return;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a bare event has no detail
+    if (d === null || d === undefined) return;
+    const verb = ACTION_TO_VERB[d.action] ?? (d.action === "command" ? d.verb : null);
+    if (verb === null || verb === "") return;
     const payload =
       d.action === "run-start"
         ? { repo: d.project, agent: d.agent, planAgent: d.planAgent, branchMode: d.branchMode }
@@ -440,7 +443,7 @@ export function createDaemon(
     spawn(verb, payload, (s: SpawnStatus) => {
       if (s.status === "output") {
         const chunk = s.chunk || "";
-        window.WBRuns?.output?.(chunk);
+        window.WBRuns.output(chunk);
         feedLines(chunk);
       } else if (WBFail.isError(s)) {
         const msg = WBFail.failed(s, "Could not start: the daemon gave no reason.");

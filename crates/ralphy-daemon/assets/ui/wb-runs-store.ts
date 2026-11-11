@@ -35,7 +35,7 @@ function superseded(store: { _runsSeq: number }, seq: number, slug: string) {
 
 // A run's id is a key, not a name: the line counts the runs instead.
 function unreadableText(bad: unknown[]) {
-  return bad.length
+  return bad.length > 0
     ? `Could not read ${bad.length} saved run${bad.length > 1 ? "s" : ""}. ` +
         "The file is damaged or from another version of Ralphy."
     : "";
@@ -43,7 +43,7 @@ function unreadableText(bad: unknown[]) {
 
 // The selected run while it is still listed, else the first one.
 function keptRunId(listed: Run[], current: string | null) {
-  return listed.some((r) => r.runid === current) ? current : listed[0]?.runid || null;
+  return listed.some((r) => r.runid === current) ? current : (listed[0]?.runid ?? null);
 }
 
 // A push arrives on every snapshot write (~every few hundred ms);
@@ -87,14 +87,14 @@ export function runsStore(_deps: RunsStoreDeps) {
       const slug = window.Alpine.store("projects").openSlug;
       // Clear FIRST: a stale error must not outlive its project.
       this.runsError = "";
-      if (!slug) return;
-      const prevRuns = this.runsByProject[slug] || [];
+      if (slug === null || slug === "") return;
+      const prevRuns = this.runsByProject[slug] ?? [];
       const seq = ++this._runsSeq;
       try {
         const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
         // Superseded while in flight: the newer hydration owns the state.
         if (superseded(this, seq, slug)) return;
-        if (reply?.status !== "ok") {
+        if (reply.status !== "ok") {
           this.runsFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
@@ -115,10 +115,10 @@ export function runsStore(_deps: RunsStoreDeps) {
         value: true,
         at: Date.now(),
       });
-      this.runsByProject[slug] = (reply.runs || []).map((d) =>
+      this.runsByProject[slug] = (reply.runs ?? []).map((d) =>
         withKeptPlan(WBRun.fromSnapshot(d), prevRuns),
       );
-      this.runsError = unreadableText(reply.unreadable || []);
+      this.runsError = unreadableText(reply.unreadable ?? []);
       // Keep the selected run while it is still listed.
       this.currentRunId = keptRunId(this.projectRuns(), this.currentRunId);
       // The panel reads the selected run's plan, if it shows (wb-runs-panel.ts).
@@ -139,13 +139,13 @@ export function runsStore(_deps: RunsStoreDeps) {
 
     // The open project's runs (the panel is project-scoped).
     projectRuns() {
-      return this.runsByProject[window.Alpine.store("projects").openKey()] || [];
+      return this.runsByProject[window.Alpine.store("projects").openKey()] ?? [];
     },
     // The selected run, falling back to the first when the id is stale (e.g. the
     // project changed).
     currentRun() {
       const runs = this.projectRuns();
-      return runs.find((r) => r.runid === this.currentRunId) || runs[0] || null;
+      return runs.find((r) => r.runid === this.currentRunId) ?? runs[0] ?? null;
     },
     // The operator picked a run (the run menu, a board pill).
     setCurrentRun(runid: string | null) {
@@ -165,7 +165,7 @@ export function runsStore(_deps: RunsStoreDeps) {
     // The open project's run-snapshot subscription (#300, ADR-0047 §9).
     mountRunsSub() {
       const slug = window.Alpine.store("projects").openSlug;
-      if (!window.WBDaemon?.subscribeRuns || !slug) return;
+      if (slug === null || slug === "") return;
       // What a push means for the page (a hidden tab, the board) is the
       // page's: `app.ts` hears it.
       this._runsSub = window.WBDaemon.subscribeRuns(slug, () =>
@@ -185,8 +185,9 @@ export function runsStore(_deps: RunsStoreDeps) {
       void window.Alpine.nextTick(() => {
         this.destroyRunsSub();
         this.mountRunsSub();
-        this.currentRunId = this.projectRuns()[0]?.runid || null;
-        if (window.Alpine.store("projects").openSlug) void this.hydrateRuns();
+        this.currentRunId = this.projectRuns()[0]?.runid ?? null;
+        const open = window.Alpine.store("projects").openSlug;
+        if (open !== null && open !== "") void this.hydrateRuns();
       });
     },
   };

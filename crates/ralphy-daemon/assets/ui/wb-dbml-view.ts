@@ -93,7 +93,7 @@ function columnRow(ctx: Ctx, column: DbmlColumn, out: DbmlRef[]) {
   const row = el(doc, "tr", "dbml-col");
   row.dataset.col = column.name;
   const name = el(doc, "td", "dbml-col-name");
-  name.title = column.note ? `${column.name}: ${column.note}` : column.name;
+  name.title = (column.note ?? "") === "" ? column.name : `${column.name}: ${column.note}`;
   if (column.pk) name.append(el(doc, "i", "bi bi-key"), " ");
   name.append(column.name);
   for (const ref of out) {
@@ -184,7 +184,7 @@ function buildCard(ctx: Ctx, table: DbmlTable) {
   box.dataset.table = table.name;
   tableOfCard.set(box, table);
   box.append(cardHead(ctx, table));
-  if (table.note) box.append(el(doc, "p", "dbml-note", table.note));
+  if (table.note !== null && table.note !== "") box.append(el(doc, "p", "dbml-note", table.note));
   const refs = refsOf(ctx.schema, table.name);
   const cols = el(doc, "table", "dbml-cols");
   const body = el(doc, "tbody", "");

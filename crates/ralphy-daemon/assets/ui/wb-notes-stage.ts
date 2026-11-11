@@ -49,7 +49,7 @@ export function createNoteStage(deps: NoteStageDeps) {
   // no file yet, else from a read of its file.
   function mountCard(record: NoteSource) {
     const el = buildCard(record);
-    const home = record.path ? undefined : drafts.get(record.id);
+    const home = (record.path ?? "") === "" ? drafts.get(record.id) : undefined;
     drafts.delete(record.id);
     if (home) mountHome(el, record, home);
     else loadInto(el, record);
@@ -62,7 +62,7 @@ export function createNoteStage(deps: NoteStageDeps) {
     // A popup card whose record this document's desk has never held (a
     // note created a moment before the detach) is not gone: it is the
     // snapshot's. Tearing it down would drop its text unsaved.
-    if (isFragment() && el._noteOrphan && !el._noteListed) return;
+    if (isFragment() && el._noteOrphan && el._noteListed !== true) return;
     // A card leaving the stage takes its editor with it; the record it was
     // built from has already gone (closed) or moved (detached). It is put
     // back first, so a detach carries it from its place and not from the
@@ -72,7 +72,7 @@ export function createNoteStage(deps: NoteStageDeps) {
     // named here while a detach popup opens the same record with no path,
     // and the two would write two files.
     if (id === onTopNow()) putBack();
-    if (el._noteRecord?.path) {
+    if ((el._noteRecord?.path ?? "") !== "") {
       el._noteOrphan = el._noteRecord;
       flush(el).catch(() => {});
     }

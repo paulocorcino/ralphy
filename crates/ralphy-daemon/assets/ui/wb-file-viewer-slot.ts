@@ -88,8 +88,8 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     setTimeout(() => {
       rec.ed?.layout();
       // A find asked for while the pane was off screen (see findInEditor).
-      if (rec.pendingFind && rec.ed) {
-        const term: string = rec.pendingFind;
+      const term = rec.pendingFind ?? "";
+      if (term !== "" && rec.ed) {
         rec.pendingFind = null;
         findInEditor(rec, term);
       }
@@ -109,9 +109,9 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
   function paintSplit(box: HTMLElement, slot: ViewerSlot, slotRec: ViewerRecord) {
     ensureDivider(box);
     box.style.setProperty("--wb-split", ratioPct(slot.ratio));
-    if (slot.mirror) ensureMirror(slotRec, box);
+    if (slot.mirror === true) ensureMirror(slotRec, box);
     else closeMirror();
-    if (slot.focus) {
+    if (slot.focus === true) {
       const target = focusTarget(slot, mirror, slotRec.ed as MonacoEditor | undefined);
       setTimeout(() => target?.focus(), 0);
     }
@@ -145,7 +145,9 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    need(el, '[data-act="mirror"]').onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
+    need(el, '[data-act="mirror"]').addEventListener("click", () => {
+      window.Alpine.store("tabs").toggleMirror();
+    });
     box.append(el);
     const holder: Mirror = { rec, el, ed: null, ro: undefined, saveKey: undefined };
     const ed = WBMonaco.createOver(need(el, ".viewer-body"), model, {
@@ -182,7 +184,9 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     divider.innerHTML =
       '<button class="slot-close" title="Close the second pane" ' +
       'aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
-    need(divider, ".slot-close").onclick = () => window.Alpine?.store("tabs")?.clearSlot();
+    need(divider, ".slot-close").addEventListener("click", () => {
+      window.Alpine.store("tabs").clearSlot();
+    });
     divider.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;
       e.preventDefault();
@@ -223,7 +227,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
 
   // Whether the slot shows a mirror of the pane `id`.
   function mirrors(id: string) {
-    return !!shown.slot?.mirror && shown.slot.id === id;
+    return shown.slot?.mirror === true && shown.slot.id === id;
   }
 
   // The pane the mirror sits over, if there is a mirror.

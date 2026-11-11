@@ -106,29 +106,36 @@ const ACTION_NAMES: Record<string, string> = {
 
 function actionLine(e: ActionEvent) {
   const name = ACTION_NAMES[`${e.method} ${e.path}`];
-  if (!name) return `${e.method} ${e.path} (${e.status})`;
+  if (name === undefined) return `${e.method} ${e.path} (${e.status})`;
   return e.status >= 200 && e.status < 300 ? name : `${name} (refused: ${e.status})`;
 }
 
 function withVersion(name: string, version: string | null) {
-  return version ? `${name} ${version}` : name;
+  return (version ?? "") === "" ? name : `${name} ${version}`;
+}
+
+function orEmpty(value: string | null | undefined) {
+  return value ?? "";
 }
 
 // "Android 12 · Chrome 148 · phone", from the parts the device reported.
 export function deviceName(d: Device) {
   const parts = [];
-  if (d.os) parts.push(withVersion(OS_NAMES[d.os] || "Other system", d.os_version));
-  const browser = d.browser ?? "";
+  const os = orEmpty(d.os);
+  if (os !== "") parts.push(withVersion(OS_NAMES[os] ?? "Other system", d.os_version));
+  const browser = orEmpty(d.browser);
   if (browser !== "") {
     parts.push(withVersion(BROWSER_NAMES[browser] ?? "Other browser", d.browser_version));
   }
-  if (d.form) parts.push(FORM_NAMES[d.form] || d.form);
-  return parts.length ? parts.join(" · ") : "A device that sent no facts yet";
+  const form = orEmpty(d.form);
+  if (form !== "") parts.push(FORM_NAMES[form] ?? form);
+  return parts.length > 0 ? parts.join(" · ") : "A device that sent no facts yet";
 }
 
 export function rows(reply: { devices?: Device[] }, formatAt: (at: string) => string) {
-  return (reply.devices || []).map((d) => ({
+  return (reply.devices ?? []).map((d) => ({
     device: d.device,
+    // oxlint-disable-next-line typescript/no-unnecessary-boolean-literal-compare -- may be absent
     this: d.this === true,
     name: deviceName(d),
     detail: [
@@ -145,7 +152,7 @@ export function rows(reply: { devices?: Device[] }, formatAt: (at: string) => st
 
 export function eventLine(e: AuditEvent) {
   // The daemon names a registered project; a peer's keeps its recorded value.
-  const repo = e.repo_name || e.repo;
+  const repo = orEmpty(e.repo_name) || orEmpty(e.repo);
   switch (e.event) {
     case "login_ok":
       return "Signed in";
@@ -167,7 +174,7 @@ export function eventLine(e: AuditEvent) {
     case "command":
       return repo ? `Command ${e.verb} in ${repo}` : `Command ${e.verb}`;
     case "console_launch": {
-      const what = !e.agent || e.agent === "console" ? "a console" : e.agent;
+      const what = orEmpty(e.agent) === "" || e.agent === "console" ? "a console" : e.agent;
       return repo ? `Opened ${what} in ${repo}` : `Opened ${what}`;
     }
     case "console_takeover":
@@ -182,9 +189,9 @@ export function eventLine(e: AuditEvent) {
 // file keeps each line.
 export function eventRows(reply: { events?: AuditEvent[] }, formatAt: (at: string) => string) {
   const out: { when: string; text: string; ip: string; line: string; count: number }[] = [];
-  for (const e of reply.events || []) {
+  for (const e of reply.events ?? []) {
     const text = eventLine(e);
-    const ip = e.ip || (e.server && e.server.real_ip) || "";
+    const ip = (e.ip ?? "") || (e.server?.real_ip ?? "");
     const last = out.at(-1);
     if (last && last.line === text && last.ip === ip) {
       last.count += 1;
@@ -208,7 +215,7 @@ async function readJson<K extends "GET /api/audit/devices" | "GET /api/audit/eve
   const res = await apiFetch(route, { query });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error || `the daemon answered ${res.status}`);
+    throw new Error((body?.error ?? "") || `the daemon answered ${res.status}`);
   }
   return res.json();
 }

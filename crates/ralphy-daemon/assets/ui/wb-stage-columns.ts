@@ -111,7 +111,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
 
   // The width of the viewport the columns share, in px.
   function columnMeasure() {
-    return { viewport: workspace()?.clientWidth || 0 };
+    return { viewport: workspace()?.clientWidth ?? 0 };
   }
 
   // A phone has no hover to show a title, so the icon changes with it.
@@ -142,7 +142,11 @@ export function createStageColumns(deps: StageColumnsDeps) {
   }
 
   // A column's place in the grid, as the CSS variables its box is drawn from.
-  function paintColumnSlot(win: ConsoleWin, p: Painted) {
+  // An older grid names no row: one row, at the top.
+  function paintColumnSlot(
+    win: ConsoleWin,
+    p: Omit<Painted, "row" | "rows"> & { row?: number; rows?: number },
+  ) {
     win.classList.add("column");
     win.style.setProperty("--col-index", String(p.index));
     win.style.setProperty("--col-count", String(p.count));
@@ -159,12 +163,13 @@ export function createStageColumns(deps: StageColumnsDeps) {
     if (c.column) paintColumnSlot(win, p);
     // The class is set FIRST: `restoreRect` must already read a column's
     // inline rect.
-    if (c.maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
-    else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false, persist);
+    const maximized = c.maximized === true;
+    if (maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
+    else if (!maximized && win.classList.contains("maximized")) setMax(win, false, persist);
     paintMaxButton(win);
     // The last column left is a plain maximize, and a full bleed must be on
     // top: the console just restored was raised later than it.
-    return c.column || c.maximized ? win : null;
+    return c.column || maximized ? win : null;
   }
 
   // Never disabled: at the cap the list still swaps (ADR-0051 §5). A console
@@ -195,7 +200,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
 
   // The old first console, when the paint no longer shows it as a column.
   function unmaxGone(grid: Painted[], unmax: string | null | undefined, persist: boolean) {
-    const gone = unmax ? findWindow(unmax) : null;
+    const gone = unmax != null && unmax !== "" ? findWindow(unmax) : null;
     if (gone && !columnClasses(grid, gone._deskId).column) setMax(gone, false, persist);
   }
 
@@ -204,7 +209,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
   // mark off the column the operator is typing in.
   function raiseAndFit(shown: ConsoleWin[], raise: boolean | undefined) {
     for (const win of shown) {
-      if (raise) focusWin(win);
+      if (raise === true) focusWin(win);
       try {
         win._term?.fit.fit();
       } catch {}
@@ -218,8 +223,8 @@ export function createStageColumns(deps: StageColumnsDeps) {
     painted: Painted[] | null | undefined,
     opts?: { unmax?: string | null; raise?: boolean; persist?: boolean },
   ) {
-    const grid = painted || [];
-    const persist = !!opts?.persist;
+    const grid = painted ?? [];
+    const persist = Boolean(opts?.persist);
     clearStaleColumns(grid);
     unmaxGone(grid, opts?.unmax, persist);
     const shown = [];
@@ -261,8 +266,8 @@ export function createStageColumns(deps: StageColumnsDeps) {
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
     const out: Record<string, DetachedMember[]> = {};
     for (const [id, entry] of popups.entries()) {
-      out[id] = (entry.members || [])
-        .filter((m) => m && m.id && m.kind !== "note")
+      out[id] = entry.members
+        .filter((m) => m.id !== "" && m.kind !== "note")
         .map((m) => ({
           id: m.id,
           agent: m.agent ?? null,

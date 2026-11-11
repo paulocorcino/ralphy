@@ -71,10 +71,11 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     },
     // The open project's row, for the panels that reuse a per-row control.
     openProject() {
-      return this.projects.find((p) => this.repoRef(p) === this.openSlug) || null;
+      return this.projects.find((p) => this.repoRef(p) === this.openSlug) ?? null;
     },
     openProjectBranch() {
-      return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
+      const row = this.projects.find((p) => this.repoRef(p) === this.openSlug);
+      return (row?.branch ?? "") || "current";
     },
     // The branch chip lives on the Files bar (#332), which only the OPEN
     // project renders.
@@ -87,20 +88,20 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // is untouched on the wire, the desk and the tab ids. Row lookup by
     // `repoRef`, not slug: the same `owner/repo` on two daemons is two rows.
     projectLabel(ref: string | null | undefined) {
-      if (!ref) return "";
+      if (ref == null || ref === "") return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       if (!row) return WBFleet.refLabel(ref);
       const name = WBProject.projectName(row);
-      return row.daemon && row.env ? `${name} · ${row.env}` : name;
+      return (row.daemon ?? "") !== "" && row.env ? `${name} · ${row.env}` : name;
     },
     // The tooltip twin of `projectLabel`: `owner/repo` or the full folder of
     // a remoteless repo, plus the environment of a peer.
     projectTitle(ref: string | null | undefined) {
-      if (!ref) return "";
+      if (ref == null || ref === "") return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       if (!row) return WBFleet.refLabel(ref);
       const who = WBProject.projectTitle(row);
-      return row.daemon && row.env ? `${who} · ${row.env}` : who;
+      return (row.daemon ?? "") !== "" && row.env ? `${who} · ${row.env}` : who;
     },
 
     // The adapter roster comes from `/api/agents`, never a list here (#304).
@@ -167,7 +168,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       if (repo === undefined) repo = this.openSlug;
       const seq = ++this._agentsSeq;
       try {
-        const r = await apiFetch("GET /api/agents", { query: repo ? { repo } : {} });
+        const r = await apiFetch("GET /api/agents", {
+          query: repo != null && repo !== "" ? { repo } : {},
+        });
         if (!r.ok) throw new Error(`/api/agents ${r.status}`);
         const state = WBAgents.rosterState(await r.json(), repo);
         if (seq !== this._agentsSeq) return;
@@ -193,7 +196,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
           // The rows this read replaces: their live dot and their environment
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
-          const before = new Map(this.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
+          const before = new Map(
+            this.projects.filter((p) => (p.daemon ?? "") === "").map((p) => [p.slug, p]),
+          );
           const local: Project[] = repos.map((x) => {
             const prev = before.get(x.slug);
             return {
@@ -205,20 +210,20 @@ export function projectsStore(deps: ProjectsStoreDeps) {
               path: x.path || "",
               // The ABSOLUTE native root (#362), distinct from `path` (git's
               // forward-slashed `--show-toplevel` that peers parse).
-              root: x.root || "",
-              branch: x.branch || "",
-              branches: x.branch ? [x.branch] : [],
+              root: x.root ?? "",
+              branch: x.branch ?? "",
+              branches: x.branch !== null && x.branch !== "" ? [x.branch] : [],
               // `{kind:"branch",name}` or `{kind:"detached",sha}`; `null` when
               // the daemon has no answer or is older than this field.
-              head: x.head || null,
+              head: x.head ?? null,
               // `remote` is the github|local classification the dot binds to; the
               // raw origin url rides in `remoteUrl` for `githubUrl()`.
-              dirty: !!x.dirty,
+              dirty: x.dirty,
               state: carriedState(x.reachable, prev),
               env: carriedEnv(prev),
               daemonName: carriedDaemonName(prev),
               remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
-              remoteUrl: x.remote || "",
+              remoteUrl: x.remote ?? "",
               tree: [],
             };
           });
@@ -267,7 +272,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The fleet read is in wb-projects-fleet.ts.
     fleetRejectText(peers: FleetPeer[]) {
       const bad = peers.filter((p) => p.state === "malformed");
-      if (!bad.length) return "";
+      if (bad.length === 0) return "";
       const what = bad.length === 1 ? "a peer" : `${bad.length} peers`;
       return `Could not read ${what}: ${bad.map((p) => p.diagnosis || p.name).join("; ")}`;
     },
@@ -280,11 +285,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // read could. Calls close together share the read in flight: every
     // console of a peer that drops asks at the same moment.
     readFleetNow() {
-      if (!this._fleetNow) {
-        this._fleetNow = this.loadFleet().finally(() => {
-          this._fleetNow = null;
-        });
-      }
+      this._fleetNow ??= this.loadFleet().finally(() => {
+        this._fleetNow = null;
+      });
       return this._fleetNow;
     },
     _fleetNow: null as Promise<void> | null,
@@ -292,7 +295,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The fleet read that confirms a removed host waits up to 2 s for the
     // peer that is now down: until then its row would come back.
     hostRemoved(daemon: string) {
-      this.fleetPeers = (this.fleetPeers || []).filter((p) => p.daemon_id !== daemon);
+      this.fleetPeers = this.fleetPeers.filter((p) => p.daemon_id !== daemon);
       this._fleetRows = this._fleetRows.filter((r) => r.daemon !== daemon);
       this.setProjects(this.projects.filter((r) => r.daemon !== daemon));
     },
@@ -300,12 +303,12 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // Wake a sleeping peer. The operator's action is the consent (ADR-0052 §4).
     // `/api/fleet/nudge` resolves when the environment is USABLE.
     async wakePeer(daemonId: string) {
-      if (!daemonId || this.waking[daemonId]) return false;
+      if (!daemonId || this.waking[daemonId] === true) return false;
       this.waking[daemonId] = true;
       try {
         const r = await apiFetch("POST /api/fleet/nudge", { query: { daemon_id: daemonId } });
         const woke = r.ok ? await r.json().catch(() => null) : null;
-        if (!woke?.ready) {
+        if (woke?.ready !== true) {
           deps.messages.flash(await wakeRefusal(r, woke));
           return false;
         }
@@ -398,7 +401,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         // The console menu's fold reads this (#304).
         this.liveSessions = sessions;
         // The console windows read their own row off the same poll (ADR-0059).
-        window.WBConsole?.ingestSessions?.(sessions);
+        window.WBConsole.ingestSessions(sessions);
         for (const p of this.projects) {
           if (p.state === "offline") continue;
           const mine = sessions.filter((s) => WBSessionRoute.matchesRepo(s, this.repoRef(p)));
@@ -425,18 +428,18 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The consoles this daemon hosts. A peer's rows in `/api/sessions` carry the
     // peer's `daemon_id`; they end only when that peer restarts.
     localSessions() {
-      const peers = new Set((this.fleetPeers || []).map((p) => p.daemon_id));
-      return (this.liveSessions || []).filter((s) => !peers.has(s.daemon_id));
+      const peers = new Set(this.fleetPeers.map((p) => p.daemon_id));
+      return this.liveSessions.filter((s) => !peers.has(s.daemon_id));
     },
     // The consoles a peer hosts, by the peer's `daemon_id`.
     peerSessions(daemonId: string) {
-      return (this.liveSessions || []).filter((s) => s.daemon_id === daemonId);
+      return this.liveSessions.filter((s) => s.daemon_id === daemonId);
     },
 
     // The consoles name their project too (title, tooltip, default name), and
     // `wb-console.ts` has no project list of its own.
     shareProjectNames() {
-      window.WBConsole?.ingestProjects?.(
+      window.WBConsole.ingestProjects(
         this.projects.map((p) => ({
           ref: this.repoRef(p),
           name: WBProject.projectName(p),
@@ -448,7 +451,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // back when the peer does. Every project, not the filtered list: a search
     // in the sidebar must not change what a console says.
     shareFleet() {
-      window.WBConsole?.ingestFleet?.(WBFleet.fleetGroups(this.projects, this.fleetPeers), {
+      window.WBConsole.ingestFleet(WBFleet.fleetGroups(this.projects, this.fleetPeers), {
         wake: (daemonId) => this.wakePeer(daemonId),
         read: () => void this.readFleetNow(),
       });

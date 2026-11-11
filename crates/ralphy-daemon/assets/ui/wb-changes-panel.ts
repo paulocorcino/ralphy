@@ -78,7 +78,9 @@ export function wbChanges() {
     // Re-read the working tree, only while the Changes panel is on screen: both
     // reads are local but each is a subprocess.
     refreshChanges() {
-      if (!this.sideOpen || this.sideView !== "changes" || !this.$store.projects.openSlug) return;
+      if (!this.sideOpen || this.sideView !== "changes" || !(this.$store.projects.openSlug ?? "")) {
+        return;
+      }
       if (document.visibilityState !== "visible") return;
       void this.loadChanges(this.$store.projects.openSlug);
       void this.loadSync(this.$store.projects.openSlug);
@@ -88,7 +90,7 @@ export function wbChanges() {
     // open, sidebar refresh and run-completion nudge (#310), never on a
     // repo-wide watch. The SELECTED checkout's (#407, ADR-0063 §2).
     async loadChanges(slug: string | null | undefined) {
-      if (!slug) return;
+      if (slug === null || slug === undefined || slug === "") return;
       // Overlapping reads can return OUT OF ORDER (as `_runsSeq`).
       const seq = ++this._changesSeq;
       try {
@@ -97,7 +99,8 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
-        if (!reply || reply.status !== "ok") {
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- tests answer null
+        if (reply?.status !== "ok") {
           this.changesFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
@@ -141,7 +144,7 @@ export function wbChanges() {
     // network call. No timer: a launcher holding N repos must never become a
     // scheduled network client.
     async loadSync(slug: string | null | undefined) {
-      if (!slug) return;
+      if (slug === null || slug === undefined || slug === "") return;
       const seq = ++this._syncSeq;
       try {
         const reply = await window.WBDaemon.observe(
@@ -149,7 +152,8 @@ export function wbChanges() {
           window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
-        if (!reply || reply.status !== "ok") {
+        // oxlint-disable-next-line typescript/no-unnecessary-condition -- tests answer null
+        if (reply?.status !== "ok") {
           this.syncFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
@@ -208,19 +212,16 @@ export function wbChanges() {
     // The run-completion subscription (#310, ADR-0036 amendment). The socket
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
-      if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(
-        this.$store.projects.openSlug,
-        (frame) => {
-          if (this.$store.connection.tabHidden()) return;
-          // Optional-chained: a frame without wb-changes.ts must not throw
-          // inside `onmessage`.
-          if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
-            void this.loadChanges(this.$store.projects.openSlug);
-            void this.loadSync(this.$store.projects.openSlug);
-          }
-        },
-      );
+      const slug = this.$store.projects.openSlug ?? "";
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's daemon has none
+      if (window.WBDaemon?.subscribeChanges === undefined || !slug) return;
+      this._changesSub = window.WBDaemon.subscribeChanges(slug, (frame) => {
+        if (this.$store.connection.tabHidden()) return;
+        if (WBChanges.shouldReload(frame, this.$store.projects.openSlug)) {
+          void this.loadChanges(this.$store.projects.openSlug);
+          void this.loadSync(this.$store.projects.openSlug);
+        }
+      });
     },
     destroyChangesSub() {
       try {
@@ -241,8 +242,8 @@ export function wbChanges() {
       void this.$nextTick(() => {
         this.destroyChangesSub();
         this.mountChangesSub();
-        if (this.$store.projects.openSlug) void this.loadChanges(this.$store.projects.openSlug);
-        if (this.$store.projects.openSlug) void this.loadSync(this.$store.projects.openSlug);
+        void this.loadChanges(this.$store.projects.openSlug);
+        void this.loadSync(this.$store.projects.openSlug);
       });
     },
     // On `workbench:head-moved` (the files' socket heard `head.dirty`): re-read
@@ -288,7 +289,7 @@ export function wbChanges() {
       return (
         ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[
           verb
-        ] || ""
+        ] ?? ""
       );
     },
     groupNote(group: string) {
@@ -304,7 +305,7 @@ export function wbChanges() {
     commitTitle() {
       const locked = this.$store.connection.writeLockReason();
       if (locked) return locked;
-      if (!(this.changesStaged[this.$store.projects.openKey()] || []).length) {
+      if ((this.changesStaged[this.$store.projects.openKey()] ?? []).length === 0) {
         return "Stage a change first";
       }
       if (!this.commitMsg.trim()) return "Write a commit message first";
@@ -314,15 +315,15 @@ export function wbChanges() {
       return (
         !this.$store.connection.writeLocked() &&
         this.commitMsgSlug === this.$store.projects.openSlug &&
-        !!this.commitMsg.trim() &&
-        !!(this.changesStaged[this.$store.projects.openKey()] || []).length
+        this.commitMsg.trim() !== "" &&
+        (this.changesStaged[this.$store.projects.openKey()] ?? []).length > 0
       );
     },
 
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the
     // list on EVERY path. The list is never moved optimistically.
     async stagePaths(slug: string, paths: string[]) {
-      if (!slug || !paths || !paths.length || this.$store.connection.writeLocked()) return;
+      if (!slug || paths.length === 0 || this.$store.connection.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -344,7 +345,7 @@ export function wbChanges() {
     },
 
     async unstagePaths(slug: string, paths: string[]) {
-      if (!slug || !paths || !paths.length || this.$store.connection.writeLocked()) return;
+      if (!slug || paths.length === 0 || this.$store.connection.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -369,7 +370,7 @@ export function wbChanges() {
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
     async discardRow(slug: string, entry: ChangeEntry) {
-      if (!slug || !entry || !entry.path || this.$store.connection.writeLocked()) return;
+      if (!slug || !entry.path || this.$store.connection.writeLocked()) return;
       const c = WBChanges.discardConfirm(entry);
       const ok = await this.$store.modals.askConfirm({
         title: c.title,

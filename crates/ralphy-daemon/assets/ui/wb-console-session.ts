@@ -246,7 +246,8 @@ export function relaunchRequest(record: RelaunchRecord) {
 // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
 // the environment the desk record kept, for a box drawn before the fleet list.
 export function peerHost(group: Group | null | undefined, fallback: string | null | undefined) {
-  return WBFleet.peerName(group) || fallback || "The other computer";
+  const name = WBFleet.peerName(group) || (fallback ?? "");
+  return name === "" ? "The other computer" : name;
 }
 
 // What a console box says about a project whose peer cannot serve it, from
@@ -266,7 +267,9 @@ export function peerOfflineView(
   fallbackHost: string | null | undefined,
 ) {
   const host = peerHost(group, fallbackHost);
-  const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
+  const diagnosis = group?.diagnosis ?? "";
+  const refused = typeof refusal === "string" ? refusal.trim() : "";
+  const detail = diagnosis === "" ? refused : diagnosis;
   const view = (text: string, action: PeerAction) => ({ text, detail, action });
   const wakeOrRetry: PeerAction = WBFleet.wakeable(group) ? "wake" : "retry";
   switch (group?.state ?? "") {
@@ -350,7 +353,7 @@ export function unheardRef(
   unheard: ReadonlySet<string> | null | undefined,
 ) {
   const daemon = WBFleet.refDaemon(ref);
-  return !!daemon && !!unheard?.has(daemon);
+  return daemon !== "" && unheard?.has(daemon) === true;
 }
 
 // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
@@ -365,7 +368,8 @@ export function peerHeld(ref: string | null | undefined, groups: ReadonlyMap<str
 // literal `console` for the bare shell (the daemon labels it so on launch).
 // So the label alone says how to launch that console again.
 export function consoleCommand(label: string | null | undefined) {
-  return label && label !== "console" ? label : undefined;
+  const command = label ?? "";
+  return command !== "" && command !== "console" ? command : undefined;
 }
 
 // The session the window holds, on a `/api/sessions` listing: the daemon's
@@ -379,9 +383,9 @@ export function sessionRowFor(
   if (id == null) return null;
   const ref = win._deskRepo;
   return (
-    (sessions || []).find(
-      (s) => s && s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
-    ) || null
+    (sessions ?? []).find(
+      (s) => s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
+    ) ?? null
   );
 }
 
@@ -390,10 +394,11 @@ export function sessionRowFor(
 // as its detail; `unknown` is a stale observation (agent_state.rs); `silent`
 // carries the reason the daemon gave.
 export function agentStateTitle(state: string | null | undefined, detail?: string) {
-  if (!state) return "";
+  if ((state ?? "") === "") return "";
+  const told = detail !== undefined && detail !== "";
   if (state === "unknown") return "Agent state unknown";
   if (state === "silent") {
-    return detail ? `Agent state not reported: ${detail}` : "Agent state not reported";
+    return told ? `Agent state not reported: ${detail}` : "Agent state not reported";
   }
-  return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
+  return told ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
 }

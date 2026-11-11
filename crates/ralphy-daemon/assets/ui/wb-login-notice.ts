@@ -50,7 +50,7 @@ export function noticeKey(notice: LoginNotice) {
 /** The line that names the other device: its facts and its address. */
 export function deviceText(notice: LoginNotice) {
   if (!notice.facts) return "A device that sent no facts";
-  const ip = notice.facts.ip ? ` · ${notice.facts.ip}` : "";
+  const ip = (notice.facts.ip ?? "") === "" ? "" : ` · ${notice.facts.ip}`;
   return `${deviceName(notice.facts)}${ip}`;
 }
 
@@ -62,7 +62,9 @@ export function didText(notice: LoginNotice) {
   const when = Number.isNaN(at.getTime()) ? notice.at : at.toLocaleString();
   let what = "Something it did not name";
   if (notice.did === "console_launch") what = eventLine({ at: notice.at, event: notice.did });
-  else if (notice.did) what = eventLine({ at: notice.at, event: "command", verb: notice.did });
+  else if (notice.did !== null && notice.did !== "") {
+    what = eventLine({ at: notice.at, event: "command", verb: notice.did });
+  }
   return `${what} · ${when}`;
 }
 
@@ -127,7 +129,7 @@ export function wbLoginNotice() {
       return noticeKey(notice);
     },
     failureOf(notice: LoginNotice) {
-      return this.failed[noticeKey(notice)] || "";
+      return this.failed[noticeKey(notice)] ?? "";
     },
 
     // End the login of `notice`. The daemon lists no notice of a revoked

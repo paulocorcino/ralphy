@@ -80,7 +80,7 @@ export function closeItems(store: MenuTabs, t: CanvasTab): MenuItem[] {
     {
       label: "Close to the right",
       icon: "bi-arrow-bar-right",
-      disabled: !tabsRightOf(store.tabs, t.id).length,
+      disabled: tabsRightOf(store.tabs, t.id).length === 0,
       run: () => closeTabsRightOf(store, t),
     },
   ];
@@ -92,22 +92,22 @@ export function renderMenu(store: MenuTabs, x: number, y: number, items: MenuIte
   const menu = document.getElementById("ctxmenu") as HTMLElement;
   menu.innerHTML = "";
   for (const it of items) {
-    if (it.sep) {
+    if (it.sep === true) {
       const hr = document.createElement("div");
       hr.className = "ctx-sep";
       menu.append(hr);
       continue;
     }
     const b = document.createElement("button");
-    b.className = "ctx-item" + (it.danger ? " danger" : "");
+    b.className = "ctx-item" + (it.danger === true ? " danger" : "");
     // Built as elements: a label can name a file, and a file name is text.
     const icon = document.createElement("i");
     icon.className = "bi " + it.icon;
     const label = document.createElement("span");
     label.textContent = it.label;
     b.append(icon, label);
-    if (it.disabled) b.disabled = true;
-    if (it.title) b.title = it.title;
+    if (it.disabled === true) b.disabled = true;
+    if (it.title !== undefined && it.title !== "") b.title = it.title;
     b.onclick = () => {
       store.hideMenu();
       it.run();

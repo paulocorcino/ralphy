@@ -227,10 +227,13 @@ export const ROUTE_DEADLINE_MS: Partial<Record<ApiRoute, number>> = {
 export function apiRequest(route: ApiRoute, query?: Record<string, string | number>) {
   const space = route.indexOf(" ");
   const [path = ""] = route.slice(space + 1).split("?");
-  const pairs = Object.entries(query || {}).map(
+  const pairs = Object.entries(query ?? {}).map(
     ([name, value]) => `${name}=${encodeURIComponent(value)}`,
   );
-  return { method: route.slice(0, space), url: pairs.length ? `${path}?${pairs.join("&")}` : path };
+  return {
+    method: route.slice(0, space),
+    url: pairs.length > 0 ? `${path}?${pairs.join("&")}` : path,
+  };
 }
 
 // Reject with `ReadDeadline` when `work` has not settled in `ms`. The timer is
@@ -265,6 +268,7 @@ function beforeDeadline<T>(
 // method (a test double) is returned as it is.
 function boundBodyReads(res: Response, what: string, ms: number, abort: () => void) {
   for (const name of ["json", "text"] as const) {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test double lacks it
     const read = res[name]?.bind(res);
     if (typeof read !== "function") continue;
     Object.defineProperty(res, name, {

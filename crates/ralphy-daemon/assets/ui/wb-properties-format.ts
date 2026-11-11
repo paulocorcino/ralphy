@@ -47,7 +47,7 @@ export function modifiedText(ms: number | undefined) {
 
 /** The line for a fact that is a yes or a no. */
 export function yesNo(fact: boolean | undefined) {
-  return fact ? "Yes" : "No";
+  return fact === true ? "Yes" : "No";
 }
 
 /** The line for the type of a file. */
@@ -59,7 +59,7 @@ export function typeText(type: StatType | undefined) {
 export function typeLabel(type: StatType) {
   switch (type.class) {
     case "text":
-      return `Text · ${type.encoding ?? "unknown encoding"}${type.bom ? " with BOM" : ""}`;
+      return `Text · ${type.encoding ?? "unknown encoding"}${type.bom === true ? " with BOM" : ""}`;
     case "image":
       return `Image · ${(type.image ?? "").toUpperCase()}`;
     case "binary":
@@ -78,7 +78,7 @@ const plural = (n: number, one: string, many: string) =>
 
 /** The size of a folder: a lower bound, marked `≥`, when the walk stopped early. */
 export function folderSize(reply: SizeReply) {
-  return `${reply.truncated ? "≥ " : ""}${formatBytes(reply.bytes ?? 0)}`;
+  return `${reply.truncated === true ? "≥ " : ""}${formatBytes(reply.bytes ?? 0)}`;
 }
 
 /** What a folder holds: `3 files, 1 folder`. */

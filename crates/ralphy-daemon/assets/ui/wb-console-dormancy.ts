@@ -84,7 +84,7 @@ export function createDormancy(deps: DormancyDeps) {
     for (const w of wins) {
       // A placeholder has no terminal, and a window whose session ended latches
       // itself — both decline from inside `resume`.
-      if (w._term?.resume(stale)) woke += 1;
+      if (w._term?.resume(stale) === true) woke += 1;
     }
     return woke;
   }
@@ -117,7 +117,7 @@ export function createDormancy(deps: DormancyDeps) {
   function followPageResume() {
     if (following) return;
     following = true;
-    window.WBDaemon?.onPageResume(onPageResume);
+    window.WBDaemon.onPageResume(onPageResume);
   }
 
   // Tell the daemon's log that this page went hidden or came back, so a
@@ -182,7 +182,7 @@ export function createDormancy(deps: DormancyDeps) {
   // focused, maximized or closed meanwhile.
   function applyDormancy(win: ConsoleWin) {
     const verdict = dormancyDecision(dormancyInputs(win));
-    if (win._dormantTimer) {
+    if (win._dormantTimer !== null) {
       clearTimeout(win._dormantTimer);
       win._dormantTimer = null;
     }
@@ -212,7 +212,7 @@ export function createDormancy(deps: DormancyDeps) {
   function refreshCover() {
     for (const win of wins) {
       const covered = isCovered(win);
-      if (covered === !!win._covered) continue;
+      if (covered === (win._covered === true)) continue;
       win._covered = covered;
       // The size it kept while covered goes now, on the next frame.
       if (!covered) win._term?.uncovered();
@@ -227,13 +227,13 @@ export function createDormancy(deps: DormancyDeps) {
       // is the reading that changes nothing.
       // The observer watches the stage's viewport; a console in a tab fills
       // its own pane.
-      intersecting: inTab(win) || win._visible !== false,
+      intersecting: inTab(win) || win._visible,
       covered: isCovered(win),
-      dormant: !!win._dormant,
+      dormant: win._dormant,
       maximized: win.classList.contains("maximized") || win.classList.contains("column"),
       fullscreen: isFull(win),
       focused: win.classList.contains("focused"),
-      hasTerminal: !!win._term,
+      hasTerminal: win._term !== null,
       ended: win.classList.contains("ended"),
       // NOT `sessionIdOf`: only these two sources survive `sleepWindow`. A
       // spawned-but-silent console with only `_wantsSession` would sleep with
@@ -272,7 +272,7 @@ export function createDormancy(deps: DormancyDeps) {
     // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
     // to the opener) and reads no store, so its bar stays on auto.
     document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
-      if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
+      if (e.detail.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
       for (const w of wins) applyKeyBar(w);
     });
     // The canvas tab changed: a hidden Consoles tab sleeps its consoles, a

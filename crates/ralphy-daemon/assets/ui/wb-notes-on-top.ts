@@ -52,7 +52,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
 
   function viewportSize() {
     const ws = document.getElementById("workspace");
-    return { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
+    return { width: ws?.clientWidth ?? 0, height: ws?.clientHeight ?? 0 };
   }
 
   // The floating box lives in CSS variables and NEVER in the inline rect: the
@@ -71,8 +71,8 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
       el.style.setProperty("--ws-w", ws.clientWidth + "px");
       el.style.setProperty("--ws-h", ws.clientHeight + "px");
     }
-    el.classList.toggle("band", !!box.band);
-    if (box.band) {
+    el.classList.toggle("band", box.band === true);
+    if (box.band === true) {
       el._noteOnTop = null;
       return;
     }
@@ -111,13 +111,13 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   function keepOnTop(id: string | null | undefined) {
     const el = cardEl(id);
     const record = floatableRecord(id, el);
-    if (!record || !el || !id) return false;
+    if (!record || !el || id == null || id === "") return false;
     if (onTopId === id) return true;
     putBack();
     wakeCard(el);
     onTopId = id;
     el.classList.add("on-top");
-    placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
+    placeOnTop(el, onTopRect(record.rect, viewportSize()));
     paintShadow(el);
     watchViewport();
     stack?.focusWin(el);
@@ -127,8 +127,8 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   // The record of a card that may float, or null: a card in a detached
   // fence's popup stays where it is.
   function floatableRecord(id: string | null | undefined, el: ReturnType<typeof cardEl>) {
-    const record = recordOf(id) || (fragment() ? el?._noteOrphan : null);
-    if (!record || isAway(record, consoleHost?.fenceRecords?.() || [])) return null;
+    const record = recordOf(id) ?? (fragment() ? el?._noteOrphan : null);
+    if (!record || isAway(record, consoleHost?.fenceRecords() ?? [])) return null;
     return record;
   }
 
@@ -136,7 +136,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
   function putBack() {
     const id = onTopId;
     onTopId = null;
-    const el = id ? cardEl(id) : null;
+    const el = (id ?? "") === "" ? null : cardEl(id);
     if (!el) return;
     el.classList.remove("on-top", "band");
     for (const v of [
@@ -158,6 +158,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     viewportWatch = null;
     // Back on the plane the card keeps the z it was last focused with, which
     // is above a maximized console that covered its place before it floated.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test host lacks it
     consoleHost?.raiseMaximized?.();
   }
 
@@ -177,7 +178,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     viewportWatch.observe(ws);
   }
   function refitOnTop() {
-    const el = onTopId ? cardEl(onTopId) : null;
+    const el = (onTopId ?? "") === "" ? null : cardEl(onTopId);
     if (!el) return;
     const vp = viewportSize();
     // A hidden Consoles tab measures 0×0, which would read as a phone.
@@ -185,20 +186,23 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
     const record = recordOf(onTopId);
     placeOnTop(
       el,
-      el._noteOnTop ? onTopClamp(el._noteOnTop, vp) : onTopRect(record?.rect || NOTE_DEFAULT, vp),
+      el._noteOnTop ? onTopClamp(el._noteOnTop, vp) : onTopRect(record?.rect ?? NOTE_DEFAULT, vp),
     );
   }
   // The observer sees the viewport's SIZE; a window resize can also move it.
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test window has no listeners
   window.addEventListener?.("resize", refitOnTop);
 
   // Drag (`dir` null) or resize the floating box. The plane's own gestures
   // cannot do this: they write the inline rect and persist it. Nothing here is
   // persisted — the floating box is thrown away when the card goes back.
   function floatGesture(el: NoteCard, dir: string | null) {
+    const resizing = dir !== null && dir !== "";
     return (e: PointerEvent) => {
       if (!onTop(el) || el.classList.contains("band") || !el._noteOnTop) return;
       if (e.button !== 0 || !e.isPrimary) return;
-      if (!dir && (e.target as Element).closest("button, input")) return;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a pointer hits an element
+      if (!resizing && (e.target as Element).closest("button, input")) return;
       const start = { ...el._noteOnTop };
       const vp = viewportSize();
       const from = { x: e.clientX, y: e.clientY };
@@ -217,7 +221,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
           armed = true;
         }
         const delta = { dx: at.x - from.x, dy: at.y - from.y };
-        const box = dir
+        const box = resizing
           ? WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
           : onTopClamp({ ...start, left: start.left + delta.dx, top: start.top + delta.dy }, vp);
         placeOnTop(el, box);
@@ -233,7 +237,7 @@ export function createNoteOnTop(deps: NoteOnTopDeps) {
       document.addEventListener("pointercancel", onUp);
       window.addEventListener("blur", onUp);
       e.preventDefault();
-      if (dir) e.stopPropagation();
+      if (resizing) e.stopPropagation();
     };
   }
 

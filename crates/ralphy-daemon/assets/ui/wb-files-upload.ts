@@ -152,7 +152,7 @@ export function wbUploadDialog() {
     },
 
     uploadBlocked() {
-      return this.upload.busy || !!this.upload.error || this.uploadRequests().length === 0;
+      return this.upload.busy || Boolean(this.upload.error) || this.uploadRequests().length === 0;
     },
 
     uploadCancel() {
@@ -180,7 +180,7 @@ type DropTree = {
 
 /** Whether a drag carries files from the operator's computer. */
 function carriesFiles(event: DragEvent): boolean {
-  return !!event.dataTransfer?.types.includes("Files");
+  return Boolean(event.dataTransfer?.types.includes("Files"));
 }
 
 /** Open the dialog for the files dropped or picked for `folder` ("" is the
@@ -194,14 +194,14 @@ export function askUpload(
 ) {
   const flash = (msg: string) => tree.$store.modals.flash(msg);
   const dropped = items ? Array.from(items) : [];
-  if (dropped.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+  if (dropped.some((item) => item.webkitGetAsEntry()?.isDirectory === true)) {
     flash("Upload takes files, not folders. Drop the files of the folder instead.");
     return;
   }
   if (files.length === 0) return;
   const repo = tree.$store.projects.openSlug;
-  if (!repo) return;
-  if (tree.$store.checkouts.checkoutOf(repo)) {
+  if (repo == null || repo === "") return;
+  if ((tree.$store.checkouts.checkoutOf(repo) ?? "") !== "") {
     flash("Uploading into a worktree is not available yet.");
     return;
   }
