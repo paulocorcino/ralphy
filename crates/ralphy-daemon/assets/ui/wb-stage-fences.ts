@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
-   The console's fences: the fence element and its tools, tiling a fence's
-   consoles, and detaching a fence into its own window (ADR-0075 phase 5). The
-   move and resize gestures are `wb-stage-fence-gestures.ts`.
+   The console's fences: the fence element and its tools, and detaching a
+   fence into its own window (ADR-0075 phase 5). The move and resize gestures
+   are `wb-stage-fence-gestures.ts`, the tiling is `wb-stage-fence-tile.ts`.
 
    `createFences(deps)` returns `buildFence`, `startFenceMove`,
    `startFenceResize`, `arrangeFence` and `detachFence` for one console
@@ -14,6 +14,7 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { DIRS } from "./wb-stage-chrome.ts";
 import { sendDocument } from "./wb-events.ts";
 import { createFenceGestures } from "./wb-stage-fence-gestures.ts";
+import { createFenceTiling } from "./wb-stage-fence-tile.ts";
 import type { Gestures } from "./wb-stage-chrome.ts";
 import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-desk-popups.ts";
 import type { FenceList } from "./wb-stage-fence-list.ts";
@@ -29,7 +30,7 @@ import type {
   Rect,
 } from "./wb-types.d.ts";
 
-const { fenceMembership, tileIntoRect, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
+const { fenceMembership } = WBGeometry;
 const { detachFold, DETACH_MAX } = WBDeskFolds;
 
 // What the fences read from the console, and nothing else.
@@ -98,7 +99,6 @@ export function createFences(deps: FenceDeps) {
     askConfirm,
     autoPan,
     fenceSnapshot,
-    focusWin,
     glyphClick,
     newPid,
     reattachFence,
@@ -143,10 +143,19 @@ export function createFences(deps: FenceDeps) {
     restoreRect,
     setWin,
   });
+  const { arrangeFence } = createFenceTiling({
+    ...deps,
+    fenceEl,
+    fenceLocked,
+    refreshFenceChrome,
+  });
   const dialogName = (f: DeskFence) => (f.name ?? "") || "this fence";
   async function tileOnConfirm(f: DeskFence) {
     // A detached fence has nothing here to tile; `arrangeFence` says so.
-    if (popups.isDetached(f.id)) return arrangeFence(f.id);
+    if (popups.isDetached(f.id)) {
+      arrangeFence(f.id);
+      return;
+    }
     const ok = await askConfirm({
       title: "Tile this fence?",
       message: `Rearranges the consoles in ${dialogName(f)}. Sessions keep running.`,
@@ -157,7 +166,10 @@ export function createFences(deps: FenceDeps) {
 
   async function removeOnConfirm(f: DeskFence) {
     // A DETACHED fence refuses removal and says why.
-    if (popups.isDetached(f.id)) return removeFence(f.id);
+    if (popups.isDetached(f.id)) {
+      removeFence(f.id);
+      return;
+    }
     const ok = await askConfirm({
       title: "Remove this fence?",
       message: `Removes ${dialogName(f)}. Consoles stay where they are.`,
@@ -235,7 +247,9 @@ export function createFences(deps: FenceDeps) {
       endEdit(e.key === "Enter");
     });
     // A real focus loss cancels too; `endEdit` is idempotent.
-    name.addEventListener("blur", () => endEdit(false));
+    name.addEventListener("blur", () => {
+      endEdit(false);
+    });
     // Filled by `refreshFenceChrome`. No repo list (ADR-0051 §6).
     const count = document.createElement("span");
     count.className = "fence-count";
@@ -264,12 +278,16 @@ export function createFences(deps: FenceDeps) {
     detach.type = "button";
     detach.title = "Detach this fence into its own window";
     detach.textContent = "⧉";
-    detach.addEventListener("click", () => detachFence(f.id));
+    detach.addEventListener("click", () => {
+      detachFence(f.id);
+    });
     // The fence and every console it holds refuse a drag. Glyph: `paintFenceLock`.
     const lock = document.createElement("button");
     lock.className = "fence-lock";
     lock.type = "button";
-    lock.addEventListener("click", () => setFenceLock(f.id, !fenceLocked(f.id)));
+    lock.addEventListener("click", () => {
+      setFenceLock(f.id, !fenceLocked(f.id));
+    });
     // Every member as columns (ADR-0051 §5, 2026-09-30). `wbColumns`
     // (wb-consoles-tab.ts) owns the columns; this names the members and rects.
     const columns = document.createElement("button");
@@ -299,7 +317,9 @@ export function createFences(deps: FenceDeps) {
     away.title = "Return this fence's consoles to this window";
     away.textContent = "⧉";
     away.hidden = true;
-    away.addEventListener("click", () => glyphClick(f.id));
+    away.addEventListener("click", () => {
+      glyphClick(f.id);
+    });
     // Only the SE handle (`.fence-grip`) is visible; the others show a cursor.
     const handles = FENCE_DIRS.map((dir) => {
       const h = document.createElement("div");
@@ -411,89 +431,6 @@ export function createFences(deps: FenceDeps) {
     entry.rescue = setTimeout(() => {
       if (!entry.greeted && popups.entry(id) === entry) reattachFence(id);
     }, 5000);
-  }
-
-  // Tile ONE fence's members into its rect (#342), inset by the fence's OWN chrome:
-  // a member on the head band or the SE `.fence-grip` buries the fence's controls.
-  const FENCE_GRIP = 14;
-  function arrangeFence(id: string) {
-    // Tiling the empty box would rewrite the rects the popup restores from.
-    if (popups.isDetached(id)) return;
-    // A locked fence keeps its layout: tiling would rewrite every member's rect.
-    if (fenceLocked(id)) return;
-    const st = stage();
-    const el = fenceEl(id);
-    if (!st || !el) return;
-    const rect = restoreRect(el);
-    const all = [...st.querySelectorAll<ConsoleWin>(".session-window")].map((w) => ({
-      el: w,
-      id: w._deskId,
-      rect: restoreRect(w),
-    }));
-    // The FULL fence list with this fence's LIVE rect: the fold's `break` decides
-    // an overlapping pair.
-    const live = fences().map((x) => (x.id === id ? { id: x.id, rect } : x));
-    const ids = new Set(fenceMembership(live, all)[id] ?? []);
-    // A maximized console is NOT tiled: a tile rect written onto it is invisible
-    // while it REPLACES the pre-maximize rect (#338). A LOCKED one is skipped too.
-    const members = all
-      .filter(
-        (m) =>
-          ids.has(m.id) &&
-          !m.el.classList.contains("maximized") &&
-          !m.el.classList.contains("column") &&
-          !m.el._deskLocked,
-      )
-      .map((m) => m.el);
-    if (members.length === 0) return;
-    const headH = fenceHeadHeight(el);
-    const tiles = tileIntoRect(
-      {
-        left: rect.left,
-        top: rect.top + headH,
-        width: rect.width,
-        height: Math.max(0, rect.height - headH - FENCE_GRIP),
-      },
-      members,
-    );
-    members.forEach((win, i) => {
-      const t = tiles[i];
-      if (!t) return;
-      // Written now: a read after the transition would race a hidden tab.
-      setWin(win, { rect: { left: t.left, top: t.top, width: t.width, height: t.height } });
-      win.classList.add("tiling");
-      win.style.left = t.left + "px";
-      win.style.top = t.top + "px";
-      win.style.width = t.width + "px";
-      win.style.height = t.height + "px";
-      // Relaxed to the cell for tiles below the floor, CLEARED otherwise.
-      win.style.minWidth = t.width < WIN_MIN_W ? t.width + "px" : "";
-      win.style.minHeight = t.height < WIN_MIN_H ? t.height + "px" : "";
-      focusWin(win);
-      setTimeout(() => win.classList.remove("tiling"), 260);
-    });
-    raiseFullBleeds();
-    // AFTER the 0.24s tiling transition: else the fold measures the old boxes.
-    setTimeout(() => {
-      for (const win of members) {
-        try {
-          win._term?.fit.fit();
-        } catch {}
-      }
-      refreshFenceChrome();
-      applyExtent();
-    }, 300);
-  }
-
-  // `maxlock` leaves no way to scroll away from a buried full bleed.
-  function raiseFullBleeds() {
-    for (const win of wins) {
-      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
-    }
-  }
-
-  function fenceHeadHeight(el: HTMLElement) {
-    return (el.querySelector<HTMLElement>(".fence-head")?.offsetHeight ?? 0) || 28;
   }
 
   return { buildFence, startFenceMove, startFenceResize, arrangeFence, detachFence };

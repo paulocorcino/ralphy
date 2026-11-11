@@ -165,9 +165,9 @@ export function wbUploadDialog() {
       const requests = this.uploadRequests();
       this.upload.open = false;
       pending = [];
-      this.$store.uploads
-        .add(requests)
-        .catch(() => this.$store.modals.flash("Could not send the files."));
+      this.$store.uploads.add(requests).catch(() => {
+        this.$store.modals.flash("Could not send the files.");
+      });
     },
   });
 }
@@ -192,7 +192,9 @@ export function askUpload(
   files: ArrayLike<Blob & { name: string }>,
   items?: DataTransferItemList,
 ) {
-  const flash = (msg: string) => tree.$store.modals.flash(msg);
+  const flash = (msg: string) => {
+    tree.$store.modals.flash(msg);
+  };
   const dropped = items ? Array.from(items) : [];
   if (dropped.some((item) => item.webkitGetAsEntry()?.isDirectory === true)) {
     flash("Upload takes files, not folders. Drop the files of the folder instead.");
@@ -267,7 +269,9 @@ export function treeDrop(tree: DropTree): WunderbaumOptions["dnd"] {
     // passes over a folder opened it.
     autoExpandMS: 1,
     dragEnter: (e) => (carriesFiles(e.event) ? "over" : false),
-    dragOver: (e) => rest.over(e.node, e.event),
+    dragOver: (e) => {
+      rest.over(e.node, e.event);
+    },
     dragExpand: (e) => rest.rested(e.node),
     drop: (e) => {
       const data = e.event.dataTransfer;

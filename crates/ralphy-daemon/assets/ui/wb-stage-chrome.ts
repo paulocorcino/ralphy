@@ -345,7 +345,9 @@ export function createChrome(deps: ChromeDeps) {
   function wireChromeEvents(win: ConsoleWin, bar: Bar) {
     const { titlebar, colBtn, maxBtn, fullBtn, lockBtn } = bar;
     // Pointer: a touch raises the window on contact, not after the tap resolves.
-    win.addEventListener("pointerdown", () => focusWin(win));
+    win.addEventListener("pointerdown", () => {
+      focusWin(win);
+    });
     makeDraggable(win, titlebar);
     // Maximize/restore: the button, a double-click on the titlebar, or a
     // double tap on it. `wbColumns` (wb-consoles-tab.ts) owns the columns, so

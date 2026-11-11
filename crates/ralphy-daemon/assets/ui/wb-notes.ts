@@ -126,8 +126,12 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     document,
     recordOf,
     loadInto: (el, record) => loadInto(el, record),
-    syncFromEditor: (el) => syncFromEditor(el),
-    markDirty: (el) => markDirty(el),
+    syncFromEditor: (el) => {
+      syncFromEditor(el);
+    },
+    markDirty: (el) => {
+      markDirty(el);
+    },
     flush: (el) => flush(el),
   });
 
@@ -153,7 +157,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     recordOf,
     patch,
     render,
-    paintIndex: (el) => paintIndex(el),
+    paintIndex: (el) => {
+      paintIndex(el);
+    },
     veilPanel,
     paintVeil,
     fragment: () => fragment,
@@ -166,7 +172,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   const { togglePalette, closePalette, buildPalette } = createNotePalette({
     document,
     veiledNow,
-    closeMenu: () => closeMenu(),
+    closeMenu: () => {
+      closeMenu();
+    },
     syncFromEditor,
     markDirty,
   });
@@ -256,7 +264,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     commitRename,
     endRename,
     onTop: (el) => onTop(el),
-    putBack: () => putBack(),
+    putBack: () => {
+      putBack();
+    },
     floatGesture: (el, dir) => floatGesture(el, dir),
   });
 
@@ -430,7 +440,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   // ---- the cards on the stage (in `wb-notes-stage.ts`) -------------------------
 
-  const { mountCard, dropCard } = createNoteStage({
+  const { mountCard, dropCard, flushAll, anyDirty } = createNoteStage({
+    stage,
+    syncFromEditor,
     buildCard,
     drafts,
     mountHome,
@@ -446,31 +458,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // ---- the map (in `wb-notes-map.ts`) ------------------------------------------
 
   const { list, jump } = createNoteMap({ consoleHost, cardEl, isAway, onTopNow });
-
-  // Every card writes what it holds before the page goes: best effort, as
-  // `wb-console.ts` takes for the desk on `pagehide`.
-  function flushAll() {
-    const st = stage();
-    if (!st) return;
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      // `flush` re-reads the editor itself, so an unannounced last keystroke
-      // is carried here too.
-      void flush(el);
-    }
-  }
-
-  // Whether any note card holds an edit not yet saved (ADR-0070 D6). The
-  // editor is asked first, like every flush point: its change notification
-  // can land after the last keystroke.
-  function anyDirty() {
-    const st = stage();
-    if (!st) return false;
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      syncFromEditor(el);
-      if (el._noteDirty) return true;
-    }
-    return false;
-  }
 
   return {
     ...NOTE_FOLDS,

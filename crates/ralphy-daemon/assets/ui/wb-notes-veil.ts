@@ -101,7 +101,10 @@ export function createNoteVeil(deps: NoteVeilDeps) {
       const record = recordOf(el.dataset.noteId);
       if (!record) return;
       el._noteRevealed = true;
-      void loadInto(el, record).then(() => setMarked(el, false));
+      void loadInto(el, record).then(() => {
+        setMarked(el, false);
+        return null;
+      });
       return;
     }
     // Through the editor first: a character typed a frame ago is not in
@@ -116,6 +119,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     void flush(el).then(() => {
       const record = recordOf(el.dataset.noteId);
       if (record) void loadInto(el, record);
+      return null;
     });
   }
 

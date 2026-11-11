@@ -143,12 +143,16 @@ export function createStageParts(deps: StagePartsDeps) {
     syncMaxPin,
     applyExtent,
     list,
-    paintFenceColumns: () => paintFenceColumns(),
+    paintFenceColumns: () => {
+      paintFenceColumns();
+    },
     fenceList: () => fenceList(),
     readFenceRects: (st: HTMLElement) => readFenceRects(st),
     readWindowRects: (st: HTMLElement) => readWindowRects(st),
     findWindow: (id: string) => findWindow(id),
-    tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
+    tearDownMember: (win: ConsoleWin, reason: DetachReason) => {
+      tearDownMember(win, reason);
+    },
   });
   const { columnMeasure } = columns;
   // ---- the fence list: `wb-stage-fence-list.ts` --------------------------------
@@ -235,7 +239,9 @@ export function createStageParts(deps: StagePartsDeps) {
     newDeskId,
     renderTitle,
     restoreRect,
-    reveal,
+    reveal: (deskId) => {
+      reveal(deskId);
+    },
     sessionPresentation,
     setMax,
     setWin,

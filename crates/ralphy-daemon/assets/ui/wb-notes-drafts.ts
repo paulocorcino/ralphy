@@ -105,9 +105,10 @@ export function createNoteDrafts(deps: NoteDraftsDeps) {
   function mountDraft(el: NoteCard, draft: string) {
     el._noteDirty = true;
     return mountEditor(el, draft).then(() => {
-      if (el._noteGone === true) return;
+      if (el._noteGone === true) return null;
       if (!el._noteEditor) el._noteMarkdown = draft;
       markDirty(el);
+      return null;
     });
   }
 

@@ -26,16 +26,20 @@ function showProperties(rows: Rows, node: WunderbaumNode | null) {
 /** The context menu row. It only reads, so the menu offers it everywhere,
  * inside `.git` and `.ralphy` too. */
 export function propertiesItem(rows: Rows, node: WunderbaumNode | null) {
-  return { label: "Properties", icon: "bi-info-circle", run: () => showProperties(rows, node) };
+  return {
+    label: "Properties",
+    icon: "bi-info-circle",
+    run: () => {
+      showProperties(rows, node);
+    },
+  };
 }
 
 /** `Alt+Enter` on a row, as the file managers of the desktop have it. `false`
  * stops the tree's own handling of the key; `undefined` leaves every other key
  * to the tree. */
 export function propertiesKey(rows: Rows, e: WunderbaumKeyEvent) {
-  if (!e.node || !e.event.altKey || e.event.key !== "Enter") {
-    return;
-  }
-  showProperties(rows, e.node);
-  return false;
+  const node = e.event.altKey && e.event.key === "Enter" ? e.node : null;
+  if (node) showProperties(rows, node);
+  return node ? false : undefined;
 }

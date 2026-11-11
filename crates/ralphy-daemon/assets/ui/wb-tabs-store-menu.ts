@@ -32,17 +32,31 @@ export function showSlotMenu(store: MenuTabs, x: number, y: number, t: CanvasTab
   const narrowTitle = wide ? "" : "Needs a wider canvas";
   const items = [
     pinned
-      ? { label: "Unpin", icon: "bi-pin-angle", run: () => store.clearSlot() }
+      ? {
+          label: "Unpin",
+          icon: "bi-pin-angle",
+          run: () => {
+            store.clearSlot();
+          },
+        }
       : {
           label: "Open to the side",
           icon: "bi-layout-split",
           disabled: !wide,
           title: narrowTitle,
-          run: () => store.pinTab(t.id),
+          run: () => {
+            store.pinTab(t.id);
+          },
         },
     t.kind === "code" &&
       (mirrored
-        ? { label: "Close mirror", icon: "bi-files", run: () => store.toggleMirror() }
+        ? {
+            label: "Close mirror",
+            icon: "bi-files",
+            run: () => {
+              store.toggleMirror();
+            },
+          }
         : {
             label: "Mirror editor",
             icon: "bi-files",
@@ -76,12 +90,20 @@ export function closeTabsRightOf(store: MenuTabs, t: CanvasTab) {
 /** The Close entries of the menu of tab `t`. */
 export function closeItems(store: MenuTabs, t: CanvasTab): MenuItem[] {
   return [
-    { label: "Close", icon: "bi-x-lg", run: () => store.closeTab(t.id) },
+    {
+      label: "Close",
+      icon: "bi-x-lg",
+      run: () => {
+        store.closeTab(t.id);
+      },
+    },
     {
       label: "Close to the right",
       icon: "bi-arrow-bar-right",
       disabled: tabsRightOf(store.tabs, t.id).length === 0,
-      run: () => closeTabsRightOf(store, t),
+      run: () => {
+        closeTabsRightOf(store, t);
+      },
     },
   ];
 }

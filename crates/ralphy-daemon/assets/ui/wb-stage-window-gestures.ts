@@ -88,8 +88,13 @@ export function createWindowGestures(deps: WindowGestureDeps) {
     // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
     const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
     // The rect at the end of the drag, computed at the act.
-    // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
-    const persist = opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }));
+    const persist =
+      // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
+      opts?.onDrop ||
+      (() => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
+        setWin(win as ConsoleWin, { rect: restoreRect(win) });
+      });
     handle.addEventListener("pointerdown", (e) => {
       if ((e.target as HTMLElement).closest("button, .session-name-input")) return;
       // Primary button only: a right/middle press is followed by `contextmenu`
@@ -248,7 +253,11 @@ export function createWindowGestures(deps: WindowGestureDeps) {
         if (ev.pointerId === pointerId) finish(null);
       };
       // Android fires `contextmenu` on a held finger; its menu is not ours.
-      const onMenu = (ev: MouseEvent) => ev.preventDefault();
+      // One function per hold, so the end of one hold does not remove another's.
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- see the line above
+      const onMenu = (ev: MouseEvent) => {
+        ev.preventDefault();
+      };
       const finish = (up: PointerEvent | null) => {
         clearTimeout(timer);
         timer = null;
@@ -289,8 +298,13 @@ export function createWindowGestures(deps: WindowGestureDeps) {
     // Without `opts` the element is a console window.
     // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
     const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
-    // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
-    const persist = opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }));
+    const persist =
+      // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a hook: a function or none
+      opts?.onDrop ||
+      (() => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- no opts: a window
+        setWin(win as ConsoleWin, { rect: restoreRect(win) });
+      });
     const min = opts?.min ?? RESIZE_MIN;
     return (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable

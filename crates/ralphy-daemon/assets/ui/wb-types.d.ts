@@ -350,7 +350,7 @@ export type NoteCard = HTMLElement & {
   /** The naming probe in flight. */
   _noteNaming?: Promise<string | null> | null;
   /** The write chain of this card. */
-  _noteWrite?: Promise<void>;
+  _noteWrite?: Promise<unknown>;
   /** The rename field aims the card at another file. */
   _notePointing?: boolean;
   /** Built from the stage's records by `render`. */

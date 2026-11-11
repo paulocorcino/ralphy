@@ -160,13 +160,16 @@ export function wireDetachedFence(window: Window, document: Document) {
       !headWin.classList.contains("maximized") &&
       !headWin.classList.contains("column")
     ) {
-      return restoreColumn(head);
+      restoreColumn(head);
+      return;
     }
     const kept = WBColumns.keep(grid, new Set(byId.keys()));
     grid = WBColumns.flat(kept).length >= 2 ? kept : [];
     paintGrid(kept);
   }
-  document.addEventListener("workbench:column-restore", (e) => restoreColumn(e.detail.id));
+  document.addEventListener("workbench:column-restore", (e) => {
+    restoreColumn(e.detail.id);
+  });
   document.addEventListener("workbench:columns-stale", repaintColumns);
   document.addEventListener("workbench:consoles-changed", repaintColumns);
   window.addEventListener("resize", repaintColumns);
@@ -223,12 +226,13 @@ export function wireDetachedFence(window: Window, document: Document) {
     // Only `popup-here` carries the snapshot: it is the re-adoption
     // payload, and cloning every member record once a second would be a
     // structured clone of the whole fence at 1 Hz for nothing.
-    const say = (type: string) =>
+    const say = (type: string) => {
       LINK.post(
         type === "popup-here"
           ? { type, tab: TAB, fenceId, pid: PID, members: MEMBERS }
           : { type, tab: TAB, fenceId, pid: PID },
       );
+    };
 
     // A console CLOSED in this window ended a real daemon session. The
     // opener re-attaches from `MEMBERS`, so leaving the closed one in
@@ -301,11 +305,13 @@ export function wireDetachedFence(window: Window, document: Document) {
     let probed = false;
     const openerGone = () => opener()?.closed ?? true;
     const silent = () => {
-      if (openerGone()) return lost();
-      // The handle says the tab is open, so the only way it is really
-      // gone is that it navigated somewhere else. Ask; a workbench
+      // When the handle says the tab is open, the only way it is really
+      // gone is that it navigated somewhere else. Ask once; a workbench
       // answers, a stranger does not.
-      if (probed) return lost();
+      if (openerGone() || probed) {
+        lost();
+        return;
+      }
       probed = true;
       peer = { seen: Date.now(), lost: false };
       LINK.post({ type: "popup-ping", tab: TAB, fenceId, pid: PID });
@@ -320,7 +326,9 @@ export function wireDetachedFence(window: Window, document: Document) {
       // there is no other tab left to come home to.
       stageEl().innerHTML =
         '<p class="detached-lost">The workbench window was closed. This window will close too.</p>';
-      setTimeout(() => window.close(), 1500);
+      setTimeout(() => {
+        window.close();
+      }, 1500);
     };
 
     // The origin has taken these consoles back. Go NOW and say nothing:

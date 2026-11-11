@@ -196,7 +196,8 @@
         "**/ui-tests/**",
         "**/assets/ui/app.ts",
         "**/assets/ui/wb-console*.ts",
-        "**/assets/ui/wb-[a-b]*.ts"
+        "**/assets/ui/wb-[a-b]*.ts",
+        "**/assets/ui/*.ts"
       ],
       "rules": {
         "typescript/no-confusing-void-expression": "error",

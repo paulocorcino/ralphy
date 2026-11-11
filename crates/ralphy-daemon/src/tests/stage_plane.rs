@@ -19,6 +19,7 @@ fn shell_drags_only_past_a_threshold() {
         include_str!("../../assets/ui/wb-stage-chrome.ts"),
         include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
     ]
     .concat();
@@ -56,9 +57,8 @@ fn shell_drags_only_past_a_threshold() {
             "{handler} must persist only an armed gesture"
         );
         assert!(
-            b.contains(
-                "opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }))"
-            ),
+            squeeze(&b).contains("opts?.onDrop||(()=>{")
+                && b.contains("setWin(win as ConsoleWin, { rect: restoreRect(win) });"),
             "{handler}'s drop hook must default to writing the window's rect"
         );
     }
@@ -74,13 +74,13 @@ fn shell_drags_only_past_a_threshold() {
     // And the card must actually PASS both hooks: the default is correct
     // for a window and wrong for a card, whose node has no `_deskLocked`
     // and whose rect belongs to another collection.
-    let notes_js = include_str!("../../assets/ui/wb-notes-build.ts");
+    let notes_js = squeeze(include_str!("../../assets/ui/wb-notes-build.ts"));
     for pin in [
         "locked: () => el._noteLocked === true",
-        "onDrop: () => persistCards(el)",
+        "onDrop: () => { persistCards(el); }",
     ] {
         assert!(
-            notes_js.contains(pin),
+            notes_js.contains(&squeeze(pin)),
             "the card must hand the gesture its own {pin} (ADR-0064 §8)"
         );
     }
@@ -197,6 +197,7 @@ fn shell_navigates_the_plane() {
         include_str!("../../assets/ui/wb-stage-chrome.ts"),
         include_str!("../../assets/ui/wb-stage-window-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-fences.ts"),
+        include_str!("../../assets/ui/wb-stage-fence-tile.ts"),
         include_str!("../../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../../assets/ui/wb-stage-view.ts"),
     ]

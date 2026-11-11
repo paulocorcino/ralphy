@@ -147,14 +147,15 @@ export function revalidateLevel(files: LevelFiles, rel: string) {
       .fetchTreeLevel(rel)
       .then(() => {
         // A project switch in flight: another project's tree.
-        if (slug !== files.$store.projects.openSlug || !files._tree) return;
-        if (JSON.stringify(cache.get(key) ?? null) === before) return;
-        const node = levelNode(files, rel);
-        if (!node) return;
-        return files.reconcileLevel(node, rel);
+        const moved = slug !== files.$store.projects.openSlug || !files._tree;
+        const same = moved || JSON.stringify(cache.get(key) ?? null) === before;
+        const node = same ? null : levelNode(files, rel);
+        return node ? files.reconcileLevel(node, rel) : Promise.resolve();
       })
       // A dropped read leaves the cached level on screen, but says so.
-      .catch((err: unknown) => files.treeWentStale(err))
+      .catch((err: unknown) => {
+        files.treeWentStale(err);
+      })
   );
 }
 

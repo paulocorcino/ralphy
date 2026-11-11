@@ -40,6 +40,11 @@ function freshBytes(t: CanvasTab, project: string): Promise<string | null | unde
   );
 }
 
+async function showFreshBytes(t: CanvasTab, project: string) {
+  const content = await freshBytes(t, project);
+  if (content != null) WBViewer.externalChange(t.id, content);
+}
+
 // A `head.dirty` push: the open checkout's HEAD moved (a switch, a commit).
 // Git re-reads what the branch drives on `workbench:head-moved`. The gitdir
 // and its `logs/` push together for one move, so a short trailing timer
@@ -57,16 +62,18 @@ export function headMoved(files: NudgeFiles) {
 // nudge for a collapsed/absent dir is DROPPED (ADR-0036 §4).
 export function treeDirty(files: NudgeFiles, rel: string) {
   const tree = files.rawTree();
-  if (!tree) return;
+  if (!tree) return Promise.resolve();
   const node = rel === "" ? tree.root : files.findFolderByRel(rel);
-  if (!node) return; // not in the tree → invisible, drop
-  if (rel !== "" && !node.expanded) return; // collapsed → invisible, drop
+  if (!node) return Promise.resolve(); // not in the tree → invisible, drop
+  if (rel !== "" && !node.expanded) return Promise.resolve(); // collapsed → invisible, drop
   // Reconcile in place, then freshen the open tabs in this directory. A
   // reconcile failure leaves every row in place (`_reconcileOnce` resolves
   // the listing BEFORE touching the tree) and must still refresh viewers.
   return files
     .reconcileLevel(node, rel)
-    .catch((err: unknown) => files.treeWentStale(err))
+    .catch((err: unknown) => {
+      files.treeWentStale(err);
+    })
     .then(() => files.refreshOpenViewers(rel));
 }
 
@@ -84,13 +91,7 @@ export function openViewersRefresh(files: NudgeFiles, rel: string): Promise<void
     if (t.project !== files.$store.projects.openSlug || dirOf(t.path) !== rel) continue;
     // A tab pinned to another checkout (#406) is not this nudge's.
     if ((t.checkout ?? null) !== (files._treeCheckout ?? null)) continue;
-    reads.push(
-      freshBytes(t, t.project)
-        .then((content) => {
-          if (content != null) WBViewer.externalChange(t.id, content);
-        })
-        .catch(() => {}),
-    );
+    reads.push(showFreshBytes(t, t.project).catch(() => {}));
   }
   // The settled batch, so a caller can await a fully-refreshed set.
   return Promise.all(reads);

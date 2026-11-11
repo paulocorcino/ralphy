@@ -78,6 +78,8 @@ export function installLinks(deps: NoteLinksDeps) {
   }
 
   return function installOn(el: NoteCard) {
-    el.addEventListener("click", (ev) => followLink(ev, el));
+    el.addEventListener("click", (ev) => {
+      followLink(ev, el);
+    });
   };
 }

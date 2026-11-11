@@ -111,7 +111,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
     };
     btn.onclick = (ev: MouseEvent) => {
       ev.stopPropagation();
-      if (menu.style.display !== "none") return close();
+      if (menu.style.display !== "none") {
+        close();
+        return;
+      }
       markCurrentEncoding(rec, menu);
       menu.style.display = "";
       document.addEventListener("click", onOutside, true);
@@ -141,17 +144,18 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
               rec,
               WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`),
             );
-            return;
+            return null;
           }
           rec.encoding = reply.encoding || name;
           rec.bom = reply.bom;
           refreshEncodingPill(rec);
-          if (rec.refused !== null) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content);
+          if (rec.refused === null) applyFresh(rec, reply.content);
+          else reopenRefused(rec, reply);
+          return null;
         })
-        .catch(() =>
-          showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`),
-        );
+        .catch(() => {
+          showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`);
+        });
     };
     if (rec.dirty !== true) {
       go();

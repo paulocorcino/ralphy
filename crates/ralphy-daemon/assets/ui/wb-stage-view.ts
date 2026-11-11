@@ -454,14 +454,17 @@ export function createView(deps: ViewDeps) {
 
   // Refit every open console. Called when the Consoles tab returns to view.
   function refitAll(attempt?: number) {
-    // A viewport that measures 0 (before the first layout) cannot be fitted.
-    // Refitting there collapses the stage to the bare margin (3200×2080 →
-    // 200×200) and sizes every terminal to nothing. Wait for a frame that can
-    // measure; give up rather than refit blind.
+    // A viewport that measures 0 (before the first layout) cannot be fitted. Refitting there
+    // collapses the stage to the bare margin (3200×2080 → 200×200) and sizes every terminal
+    // to nothing. Wait for a frame that can measure; give up rather than refit blind.
     const ws0 = workspace();
     if (ws0 && (!ws0.clientWidth || !ws0.clientHeight)) {
       const n = attempt ?? 0;
-      if (n < 10) requestAnimationFrame(() => refitAll(n + 1));
+      if (n < 10) {
+        requestAnimationFrame(() => {
+          refitAll(n + 1);
+        });
+      }
       return;
     }
     // The extent dispatch is an EDGE: one fired before Alpine mounted would leave
