@@ -8,10 +8,10 @@ use super::*;
 /// `(lint, exact count)`. Lower a count in the same change that removes an
 /// exception: the count is exact, so it cannot grow back.
 const EXPECTS: &[(&str, usize)] = &[
-    ("as_conversions", 16),
+    ("as_conversions", 14),
     ("cast_possible_truncation", 5),
     ("cast_possible_wrap", 0),
-    ("cast_precision_loss", 9),
+    ("cast_precision_loss", 7),
     ("cast_sign_loss", 2),
     ("panic", 0),
     ("string_slice", 0),

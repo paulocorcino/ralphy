@@ -15,11 +15,11 @@ use tracing::info;
 
 use crate::api_watch::{ApiWatch, ApiWatchAction};
 use crate::auth::{is_claude_auth_error, transcript_limit, CLAUDE_AUTH_ERROR_MSG};
-use crate::cleanup::remove_stale_file;
 use crate::headless::classify_outcome;
 use crate::plan::materialize_plugin;
 use crate::usage::{latest_transcript_text, latest_transcript_text_since};
 use crate::ClaudeAgent;
+use ralphy_adapter_support::remove_stale_file;
 
 mod first_run;
 mod proof;

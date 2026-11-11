@@ -32,7 +32,6 @@ use ralphy_core::{git, plan, Agent, Execution, Issue, Plan, PlanLimit, Workspace
 use tracing::info;
 
 mod auth;
-mod cleanup;
 mod command;
 mod forge_rules;
 mod outcome;
@@ -45,13 +44,13 @@ mod usage;
 pub const ACCEPTS_IMAGES: bool = true;
 
 use auth::{codex_reset, is_codex_auth_error, is_codex_limit_text, CODEX_AUTH_ERROR_MSG};
-use cleanup::remove_stale_file;
 use command::{
     build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
     CODEX_MODEL_SOL, DEFAULT_CODEX_EFFORT,
 };
 use forge_rules::install_forge_rules;
 use outcome::classify_codex_outcome;
+use ralphy_adapter_support::remove_stale_file;
 use skills::materialize_codex_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
 use usage::{

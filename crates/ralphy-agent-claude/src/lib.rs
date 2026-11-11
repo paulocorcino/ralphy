@@ -30,6 +30,7 @@ use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 
 mod api_watch;
 mod auth;
+#[cfg(test)]
 mod cleanup;
 mod headless;
 mod interactive;
@@ -45,9 +46,9 @@ mod usage;
 pub const ACCEPTS_IMAGES: bool = true;
 
 use auth::{claude_reset, is_claude_auth_error, is_limit_text, CLAUDE_AUTH_ERROR_MSG};
-use cleanup::remove_stale_file;
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};
+use ralphy_adapter_support::remove_stale_file;
 use settings::{recommended_model, ExecConfig};
 use usage::{
     fold_exec_usage, parse_plan_session_id, parse_plan_usage, parse_transcript_usage,

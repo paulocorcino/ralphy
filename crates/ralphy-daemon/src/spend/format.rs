@@ -2,6 +2,8 @@
 //! a client is rendered HERE, so neither the abbreviation (`1.2M`) nor the
 //! percentage (`38.2%`) is ever reimplemented in JavaScript (PRD #355).
 
+pub(crate) use ralphy_pricing::fmt_tokens;
+
 /// `part / whole` as `0.0..=1.0`, and `0.0` for an empty whole — a share of
 /// nothing is not a share, and `NaN` would reach a bar's width.
 #[expect(
@@ -65,24 +67,6 @@ pub(crate) fn volume_label(tokens: u64) -> String {
         String::new()
     } else {
         fmt_tokens(tokens)
-    }
-}
-
-/// Format a token count compactly: `1.2M`, `8.4k`, or a bare `912` under a
-/// thousand. Mirrors the CLI footer's `fmt_tokens` so the web and the terminal
-/// abbreviate identically.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
-)]
-pub(crate) fn fmt_tokens(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
     }
 }
 
