@@ -145,7 +145,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     lock.type = "button";
     lock.addEventListener("click", () => {
       const r = recordOf(el.dataset.noteId);
-      patch(el.dataset.noteId, { locked: !r?.locked });
+      patch(el.dataset["noteId"], { locked: r?.locked !== true });
       render();
     });
     // The card's own index (ADR-0064 §10). The `Note` menu already maps every
@@ -334,7 +334,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
       h.addEventListener(
         "pointerdown",
         consoleHost?.startResize(el, d, {
-          locked: () => !!el._noteLocked || onTop(el),
+          locked: () => el._noteLocked === true || onTop(el),
           onDrop: () => persistCards(el),
           min: NOTE_MIN,
         }) ?? (() => {}),
@@ -374,7 +374,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     const field = el.querySelector<HTMLInputElement>(".note-title-edit");
     // `blur` is also what a teardown fires: a card removed with the field open
     // must not remount an editor onto a node that has left the document.
-    if (!field || field.hidden || !el.isConnected) return;
+    if (!field || field.hidden !== false || !el.isConnected) return;
     const next = field.value;
     endTitle(el);
     if (next === titleOf(el._noteMarkdown, "")) return;

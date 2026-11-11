@@ -124,6 +124,7 @@ export function titleOf(markdown: string | null | undefined, fallback?: string) 
   if (named !== null) return named;
   const legacy = legacyTitleOf(bodyOf(markdown));
   if (legacy) return legacy.name;
+  // oxlint-disable-next-line typescript/prefer-nullish-coalescing -- a test passes null for it
   return fallback === undefined ? "Untitled note" : fallback;
 }
 
@@ -134,7 +135,7 @@ export function titleOf(markdown: string | null | undefined, fallback?: string) 
 // operator saved it where they are. `null` for a note no save has landed
 // for yet — a card is not going to claim a time it does not have.
 export function savedLabel(at: number | null | undefined, now?: number) {
-  if (!at) return "";
+  if (at == null || at === 0) return "";
   const then = new Date(at);
   const today = new Date(now ?? Date.now());
   const hh = String(then.getHours()).padStart(2, "0");
@@ -154,7 +155,7 @@ export function savedLabel(at: number | null | undefined, now?: number) {
 // the second level is an anchor.
 export function anchorsOf(markdown: string | null | undefined) {
   const out: { text: string; index: number }[] = [];
-  const lines = String(markdown || "").split("\n");
+  const lines = (markdown ?? "").split("\n");
   let fenced = false;
   for (const line of lines) {
     // A `##` inside a code fence is source, not a heading.
@@ -170,7 +171,7 @@ export function anchorsOf(markdown: string | null | undefined) {
 // ASCII-ish, hyphen-joined, capped — and `""` when the title yields nothing,
 // which is the caller's signal to fall back to a stamp.
 export function noteSlug(title: string | null | undefined) {
-  return String(title || "")
+  return (title ?? "")
     .toLowerCase()
     .normalize("NFKD")
     .replaceAll(/[̀-ͯ]/gu, "")
@@ -203,9 +204,9 @@ export function lockedBy(
   record: Pick<NoteSource, "locked" | "rect"> | null | undefined,
   fences: DeskFence[] | null | undefined,
 ) {
-  if (record?.locked) return "self";
-  const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
-  return held?.locked ? "fence" : null;
+  if (record?.locked === true) return "self";
+  const held = WBGeometry.fenceOf(fences ?? [], record?.rect);
+  return held?.locked === true ? "fence" : null;
 }
 
 // Where a new card lands: the centre of what the operator is looking at,
@@ -228,24 +229,24 @@ export function spawnRect(
     return {
       left: Math.max(
         0,
-        Math.round((offset?.left || 0) + (viewport?.width || 0) / 2 - NOTE_DEFAULT.width / 2) +
+        Math.round((offset?.left ?? 0) + (viewport?.width ?? 0) / 2 - NOTE_DEFAULT.width / 2) +
           step,
       ),
       top: Math.max(
         0,
-        Math.round((offset?.top || 0) + (viewport?.height || 0) / 2 - NOTE_DEFAULT.height / 2) +
+        Math.round((offset?.top ?? 0) + (viewport?.height ?? 0) / 2 - NOTE_DEFAULT.height / 2) +
           step,
       ),
       width: NOTE_DEFAULT.width,
       height: NOTE_DEFAULT.height,
     };
   };
-  const start = taken || 0;
+  const start = taken ?? 0;
   const first = at(start);
-  if (!fences || !fences.length) return first;
+  if (!fences || fences.length === 0) return first;
   for (let i = 0; i < SPAWN_SLOTS; i++) {
     const rect = at(start + i);
-    if (!WBGeometry?.fenceOf?.(fences, rect)) return rect;
+    if (!WBGeometry.fenceOf(fences, rect)) return rect;
   }
   return first;
 }
@@ -292,13 +293,13 @@ export function onTopRect(
   rect: Partial<Size> | null | undefined,
   viewport: Partial<Size> | null | undefined,
 ): FloatBox {
-  const vw = viewport?.width || 0;
-  const vh = viewport?.height || 0;
+  const vw = viewport?.width ?? 0;
+  const vh = viewport?.height ?? 0;
   if (vw < ON_TOP_BAND_BELOW) return { band: true };
-  const width = Math.round(Math.min(Math.max(rect?.width || 0, ON_TOP_FLOOR.width), vw * 0.5));
+  const width = Math.round(Math.min(Math.max(rect?.width ?? 0, ON_TOP_FLOOR.width), vw * 0.5));
   const height = Math.round(
     Math.min(
-      Math.max(rect?.height || 0, ON_TOP_FLOOR.height),
+      Math.max(rect?.height ?? 0, ON_TOP_FLOOR.height),
       vh * 0.8,
       vh - ON_TOP_TOP - ON_TOP_MARGIN,
     ),
@@ -309,8 +310,8 @@ export function onTopRect(
 // Keep a floating box inside the viewport after a drag or a window resize:
 // the size shrinks to fit first, then the corner is pulled in.
 export function onTopClamp(box: Rect, viewport: Partial<Size> | null | undefined): FloatBox {
-  const vw = viewport?.width || 0;
-  const vh = viewport?.height || 0;
+  const vw = viewport?.width ?? 0;
+  const vh = viewport?.height ?? 0;
   if (vw < ON_TOP_BAND_BELOW) return { band: true };
   const width = Math.min(box.width, vw);
   const height = Math.min(box.height, vh);
@@ -327,7 +328,7 @@ export function onTopClamp(box: Rect, viewport: Partial<Size> | null | undefined
 // that includes `javascript:`, `data:` and `vbscript:` — is inert.
 export const SAFE_SCHEMES = ["http:", "https:", "mailto:"];
 export function isSafeScheme(href: string | null) {
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(href || ""))?.[1];
+  const scheme = /^([a-z][a-z0-9+.-]*):/iu.exec(href ?? "")?.[1];
   // No scheme means a `/`-rooted path, which the browser resolves on this
   // origin: an ordinary navigation, not a foreign one.
   if (scheme === undefined) return true;
@@ -341,7 +342,7 @@ export function isSafeScheme(href: string | null) {
 export function popupLinkTarget(
   href: string | null,
 ): { kind: "fragment"; fragment: string } | { kind: "external" } | null {
-  if (!href) return null;
+  if (href === null || href === "") return null;
   if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
   return null;

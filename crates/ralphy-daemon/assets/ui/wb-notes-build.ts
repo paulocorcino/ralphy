@@ -63,8 +63,8 @@ export function createNoteBuild(deps: NoteBuildDeps) {
   // JS guards in `makeDraggable`/`startResize` are the truth for the gestures;
   // this is the glyph.
   function applyLock(el: NoteCard, locked: boolean) {
-    el._noteLocked = !!locked;
-    el.classList.toggle("locked", !!locked);
+    el._noteLocked = locked;
+    el.classList.toggle("locked", locked);
     const btn = el.querySelector<HTMLElement>(".note-lock");
     if (btn) {
       // The console's own two glyphs, verbatim (`wb-console.ts`'s `applyLock`):
@@ -83,9 +83,10 @@ export function createNoteBuild(deps: NoteBuildDeps) {
     // colours; one with a path is dressed from what it is about to read, and
     // starting it anywhere but the reading default would flash a colour the
     // file does not hold for the tick the read takes.
-    const born = record.path
-      ? { tone: DEFAULT_TONE, fill: DEFAULT_FILL, ink: DEFAULT_INK }
-      : NEW_NOTE_STYLE;
+    const born =
+      (record.path ?? "") === ""
+        ? NEW_NOTE_STYLE
+        : { tone: DEFAULT_TONE, fill: DEFAULT_FILL, ink: DEFAULT_INK };
     applyLook(el, born);
     // Everything the card knows that is not in the desk record: the text, what
     // has been written, and what is in flight. Deliberately NOT desk state —
@@ -110,7 +111,7 @@ export function createNoteBuild(deps: NoteBuildDeps) {
     // The plane's gestures write the inline rect, which is the DESK rect; a
     // card on top moves its floating box instead, through `floatGesture`.
     consoleHost?.makeDraggable(el, head, {
-      locked: () => !!el._noteLocked || onTop(el),
+      locked: () => el._noteLocked === true || onTop(el),
       onDrop: () => persistCards(el),
     });
     head.addEventListener("pointerdown", floatGesture(el, null));
@@ -128,7 +129,7 @@ export function createNoteBuild(deps: NoteBuildDeps) {
     // presses through to the default, which BLURRED the editor. The keystrokes
     // after it went to `document.body` and were lost with no sign on the card.
     body.addEventListener("mousedown", (ev) => {
-      const dom = el._noteEditor?.dom?.();
+      const dom = el._noteEditor?.dom();
       if (!dom) return;
       if (dom === ev.target || dom.contains(ev.target as Node | null)) return;
       ev.preventDefault();
@@ -175,8 +176,9 @@ export function createNoteBuild(deps: NoteBuildDeps) {
       const inEditor = el
         .querySelector<HTMLElement>(".note-body")
         ?.contains(document.activeElement);
-      (document.activeElement as HTMLElement | null)?.blur?.();
-      if (!inEditor) el.classList.remove("focused");
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- focus is on an HTML element
+      (document.activeElement as HTMLElement | null)?.blur();
+      if (inEditor !== true) el.classList.remove("focused");
     });
   }
 

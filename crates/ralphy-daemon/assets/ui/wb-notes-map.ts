@@ -30,17 +30,17 @@ export function createNoteMap(deps: NoteMapDeps) {
   // this window's viewport to where the fence is, which is where it will be
   // when it comes home.
   function list() {
-    const fences = consoleHost?.fenceRecords?.() || [];
-    return (consoleHost?.notes?.() || []).map((record) => {
+    const fences = consoleHost?.fenceRecords() ?? [];
+    return (consoleHost?.notes() ?? []).map((record) => {
       const el = cardEl(record.id);
-      const markdown = el?._noteMarkdown || "";
-      const fence = WBGeometry?.fenceOf?.(fences, record.rect || {});
+      const markdown = el?._noteMarkdown ?? "";
+      const fence = WBGeometry.fenceOf(fences, record.rect);
       return {
         id: record.id,
         title: titleOf(markdown, "Untitled note"),
         tone: toneOf(el?._noteTone),
-        path: record.path || "",
-        fence: fence?.name || "",
+        path: record.path ?? "",
+        fence: fence?.name ?? "",
         onTop: record.id === onTopNow(),
         // The row's `Keep on top` is refused for a card in the popup.
         away: isAway(record, fences),
@@ -50,7 +50,7 @@ export function createNoteMap(deps: NoteMapDeps) {
 
   // Jump to a card: the plane moves to it and it takes the focus.
   function jump(id: string) {
-    return consoleHost?.jumpToNote?.(id) ?? null;
+    return consoleHost?.jumpToNote(id) ?? null;
   }
 
   return { list, jump };

@@ -61,7 +61,7 @@ export function createNoteVeil(deps: NoteVeilDeps) {
     const btn = el.querySelector<HTMLElement>(".note-veil");
     if (!btn) return;
     const marked = veiledOf(el._noteMarkdown);
-    const shown = marked && !!el._noteRevealed;
+    const shown = marked && el._noteRevealed;
     const hides = !marked || shown;
     btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
     btn.title = !marked ? "Hide this note" : markedTitle(shown);
