@@ -58,6 +58,7 @@ mod gate_mirrors_ci;
 mod gate_paths;
 mod ignore_lists;
 mod leftovers;
+mod lint_expects;
 mod peer_reply_pin;
 mod rust_coupling;
 mod skipped_tests;
