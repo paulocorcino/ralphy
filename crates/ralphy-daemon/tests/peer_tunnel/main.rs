@@ -186,7 +186,7 @@ fn app(id: &str, store: &Path, auth: Arc<AuthState>) -> axum::Router {
     repos.upsert("owner/repo", &store.to_string_lossy());
     registry::save_to(&repos, &registry_path).expect("save the registry");
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         Some(Identity {
             id: id.parse().expect("parse the peer id"),

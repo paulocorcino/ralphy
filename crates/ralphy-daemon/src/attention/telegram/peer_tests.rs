@@ -210,7 +210,7 @@ pub(super) async fn real_peer(home: &Path, with_bot: bool) -> u16 {
         ),
     );
     // The shutdown sender lives as long as the test's runtime.
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     serve(app).await
 }
 

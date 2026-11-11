@@ -23,7 +23,7 @@ const TOKEN: &str = "sock-tok";
 
 fn app(id: &str, store: &Path, auth: Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         Some(Identity {
             id: id.parse().expect("a valid ULID"),

@@ -200,11 +200,10 @@ async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
             }),
         );
     let serving = tokio::spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the stub serves until the test aborts its task"
-        )]
-        let _ = axum::serve(listener, stub).await;
+        // The stub serves until the test aborts its task.
+        match axum::serve(listener, stub).await {
+            Ok(()) | Err(_) => {}
+        }
     });
 
     let registry_path = seed_fleet_store(dir.path(), port);
@@ -241,11 +240,10 @@ async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
     assert_eq!(up_rows[0]["environment"], "WSL: Debian-12");
 
     serving.abort();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "an aborted task answers with a cancel error"
-    )]
-    let _ = serving.await;
+    // An aborted task answers with a cancel error.
+    match serving.await {
+        Ok(()) | Err(_) => {}
+    }
 
     let down = fleet(app.clone()).await;
     assert_eq!(
@@ -308,11 +306,10 @@ async fn a_nudge_reports_ready_only_once_the_peer_answers() {
                 }))
             }),
         );
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the stub serves until the test aborts its task"
-        )]
-        let _ = axum::serve(listener, stub).await;
+        // The stub serves until the test aborts its task.
+        match axum::serve(listener, stub).await {
+            Ok(()) | Err(_) => {}
+        }
     });
 
     let d = nudge_target(port, "127.0.0.1");

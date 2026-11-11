@@ -372,11 +372,10 @@ mod tests {
     #[test]
     fn the_marker_toggles_and_is_idempotent() {
         let dir = std::env::temp_dir().join(format!("ralphy-relwatch-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // The scratch directory may be absent, and a failed cleanup is no test failure.
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).expect("scratch");
 
         assert!(!watch_disabled_in(&dir), "the watch is on by default");
@@ -386,10 +385,9 @@ mod tests {
         set_watch_disabled_in(&dir, false).expect("enable");
         set_watch_disabled_in(&dir, false).expect("enabling twice is not an error");
         assert!(!watch_disabled_in(&dir));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // The scratch directory may be absent, and a failed cleanup is no test failure.
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }

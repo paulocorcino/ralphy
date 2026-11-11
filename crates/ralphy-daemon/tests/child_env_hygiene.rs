@@ -42,11 +42,10 @@ fn spawned_child_does_not_inherit_the_token() {
         Some("01DAEMONID0000000000000000"),
     )
     .expect("dispatching the helper child");
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the test checks the env dump, not the exit status of the child"
-    )]
-    let _ = child.wait();
+    // The test checks the env dump, not the exit status of the child.
+    match child.wait() {
+        Ok(_) | Err(_) => {}
+    }
 
     let contents = std::fs::read_to_string(&dump).expect("the child must write its env dump");
     for secret in [

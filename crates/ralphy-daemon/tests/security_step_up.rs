@@ -37,7 +37,7 @@ const SEED: &[u8] = b"12345678901234567890";
 /// handlers run — the step-up is what is under test, not the gate.
 fn app(state: &Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         PathBuf::from("does-not-exist"),

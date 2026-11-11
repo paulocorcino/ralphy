@@ -55,7 +55,7 @@ async fn serve_repo() -> (u16, String) {
     registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
-    std::mem::forget(dir);
+    let _kept = dir.keep();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -64,7 +64,7 @@ async fn serve_repo() -> (u16, String) {
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
         registry_path,
@@ -75,7 +75,7 @@ async fn serve_repo() -> (u16, String) {
         ralphy_daemon::auth::AuthState::localhost(),
     );
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
-    std::mem::forget(_tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await

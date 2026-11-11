@@ -176,7 +176,7 @@ fn shell_lists_the_fences() {
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
-    for (owner, what, found) in [
+    for (_owner, what, found) in [
         (
             "function fenceMembership(",
             "membership",
@@ -188,7 +188,6 @@ fn shell_lists_the_fences() {
             body("function onFloorDown("),
         ),
     ] {
-        let _ = owner;
         assert!(
             found.contains("rectHolds("),
             "{what} must go through the one containment predicate (#343)"

@@ -124,11 +124,10 @@ fn on_client_frame(bytes: &[u8], attach: &session::Attachment, traffic: &mut Tra
         Ok(Frame::Terminal { data, .. }) => silent_if_err(attach.write(&data)),
         Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
             if let Some((rows, cols)) = resize_of(&cmd) {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "a resize fails only once the console has ended, which the loop sees"
-                )]
-                let _ = attach.resize(rows, cols);
+                // A resize fails only once the console has ended, which the loop sees.
+                match attach.resize(rows, cols) {
+                    Ok(()) | Err(_) => {}
+                }
             }
             ControlFlow::Continue(())
         }

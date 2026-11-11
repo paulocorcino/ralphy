@@ -27,7 +27,7 @@ use tower::ServiceExt;
 /// passes and the handlers run.
 fn fresh_router() -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         PathBuf::from("does-not-exist"),

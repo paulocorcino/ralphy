@@ -33,7 +33,7 @@ fn app(registry_path: PathBuf) -> axum::Router {
 
 fn app_with(registry_path: PathBuf, auth: std::sync::Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         registry_path,

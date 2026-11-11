@@ -12,7 +12,7 @@ use tower::ServiceExt;
 
 async fn poll(registry_path: std::path::PathBuf, repo: &str) -> serde_json::Value {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     let app = router(
         None,
         registry_path,

@@ -150,7 +150,7 @@ async fn fleet() -> u16 {
     .await;
     // The stores must outlive the daemons, which read them on every command; the
     // OS reclaims them when the test process exits.
-    std::mem::forget((peer_store, peer_repo, local_store, local_repo));
+    let _kept = Box::leak(Box::new((peer_store, peer_repo, local_store, local_repo)));
     port
 }
 

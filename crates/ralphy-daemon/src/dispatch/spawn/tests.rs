@@ -128,11 +128,10 @@ impl Read for HeldPipe {
             return Ok(3);
         }
         // `recv` returns only when the test drops the sender: then EOF.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "recv fails when the test drops the sender, and that drop is the signal"
-        )]
-        let _ = self.hold.recv();
+        // Recv fails when the test drops the sender, and that drop is the signal.
+        match self.hold.recv() {
+            Ok(()) | Err(_) => {}
+        }
         Ok(0)
     }
 }
@@ -149,11 +148,10 @@ impl Child for GatedChild {
         Some(4243)
     }
     fn wait(&mut self) -> Result<Option<i32>> {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "recv fails when the test drops the sender, and that drop is the signal"
-        )]
-        let _ = self.exit.recv();
+        // Recv fails when the test drops the sender, and that drop is the signal.
+        match self.exit.recv() {
+            Ok(()) | Err(_) => {}
+        }
         Ok(Some(0))
     }
     fn take_output(&mut self) -> Option<Box<dyn Read + Send>> {
@@ -205,11 +203,10 @@ fn collect_returns_the_output_when_a_grandchild_holds_the_pipe() {
             Path::new("."),
             None,
         );
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the test may have stopped waiting, and then nobody reads the answer"
-        )]
-        let _ = tx.send(got.map_err(|e| e.to_string()));
+        // The test may have stopped waiting, and then nobody reads the answer.
+        match tx.send(got.map_err(|e| e.to_string())) {
+            Ok(()) | Err(_) => {}
+        }
     });
     let got = rx
         .recv_timeout(Duration::from_secs(2))
