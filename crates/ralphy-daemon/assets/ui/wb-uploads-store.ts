@@ -127,7 +127,7 @@ async function partOf(item: UploadItem, file: Blob): Promise<CommandPayload> {
     total: item.size,
     data: toBase64(bytes),
   };
-  if (end === item.size) payload.on_conflict = item.onConflict;
+  if (end === item.size) payload["on_conflict"] = item.onConflict;
   return payload;
 }
 

@@ -42,6 +42,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBNotify, canNotify } from "./wb-notify.ts";
 import { WBProject } from "./wb-project.ts";
 import { showConsoleWindow } from "./wb-console-place.ts";
+import { isElement } from "./wb-dom-need.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
 /** The kind of a request (`attention::Kind`). */
@@ -388,8 +389,7 @@ export function wbAttention() {
     // The operator opened the console that holds `target`: its `console-done`
     // requests end.
     focused(target: EventTarget | null) {
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a window has no closest
-      const win = (target as Element | null)?.closest?.<ConsoleWin>(".session-window");
+      const win = isElement(target) ? target.closest<ConsoleWin>(".session-window") : null;
       const deskId = win?._deskId ?? "";
       if (deskId === "") return;
       for (const request of this.requests) {

@@ -462,7 +462,7 @@ export function createSpawn(deps: SpawnDeps) {
     agent?: string | null;
     plain?: boolean;
     checkout?: string | null;
-    command?: string;
+    command?: string | undefined;
   }) {
     if (atDeskCap()) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });

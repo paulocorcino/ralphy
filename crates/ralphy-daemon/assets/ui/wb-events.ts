@@ -80,6 +80,7 @@ export function createEmitter(document: Document): Window["WB"] {
     emit(action, ...detail) {
       // The signature ties the detail to the action; TypeScript cannot follow
       // that tie through a spread of a generic detail.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a generic spread
       const full = { action, ...detail[0], at: new Date().toISOString() } as WorkbenchAction;
       sendDocument(document, "workbench:action", full);
       // eslint-disable-next-line no-console
@@ -119,6 +120,7 @@ export function forwardAction(
   if (!isWorkbenchActionName(action)) return false;
   // The popup is a page of this build, and its own `WB.emit` checked the
   // detail against the action before it posted it.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a popup of this build
   const known = (typeof detail === "object" && detail ? detail : {}) as NonNullable<
     WorkbenchActions[WorkbenchActionName]
   >;

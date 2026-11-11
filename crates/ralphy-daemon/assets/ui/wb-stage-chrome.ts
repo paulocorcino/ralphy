@@ -17,7 +17,7 @@ import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { sendDocument } from "./wb-events.ts";
 import { inTab } from "./wb-console-place.ts";
-import { required } from "./wb-dom-need.ts";
+import { required, targetClosest } from "./wb-dom-need.ts";
 import { createWindowGestures } from "./wb-stage-window-gestures.ts";
 import type { Gestures } from "./wb-stage-stack.ts";
 import type {
@@ -28,6 +28,7 @@ import type {
   Point,
   Presentation,
   Rect,
+  SpawnCarry,
 } from "./wb-types.d.ts";
 
 const { fullscreenOffered } = WBConsoleInput;
@@ -45,11 +46,7 @@ export type { Gestures };
 
 // What `buildChrome` seeds a window from: a desk record, or a partial of one
 // that carries at least `kind`.
-export type ChromeRecord =
-  | Partial<DeskRecord>
-  | import("./wb-types.d.ts").SpawnCarry
-  | null
-  | undefined;
+export type ChromeRecord = Partial<DeskRecord> | SpawnCarry | null | undefined;
 
 // What the chrome reads from the console, and nothing else.
 export type ChromeDeps = {
@@ -188,6 +185,7 @@ export function createChrome(deps: ChromeDeps) {
     kind: string | null | undefined,
     consoleName: string,
   ) {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- initWindow sets its fields
     const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
     initWindow(win, {
@@ -371,10 +369,7 @@ export function createChrome(deps: ChromeDeps) {
       // Fullscreen hides the maximize control; a double-click must not toggle
       // it unseen underneath.
       // Nor may a double-click on the name, which renames (ADR-0066 §3).
-      if (
-        (e.target as HTMLElement).closest("button, .session-name, .session-name-input") ||
-        isFull(win)
-      ) {
+      if (targetClosest(e, "button, .session-name, .session-name-input") || isFull(win)) {
         return;
       }
       // A finger's double tap is `wireTitleTouch`'s.

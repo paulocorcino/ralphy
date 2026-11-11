@@ -4,9 +4,9 @@ import { WBFail } from "./wb-fail.ts";
 import { need } from "./wb-dom-need.ts";
 import { refreshEncodingPill } from "./wb-viewer-encoding.ts";
 import { isRendered } from "./wb-viewer-render.ts";
-import type { MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { BytesRecord, RefusedRecord, ViewerRecord } from "./wb-file-viewer.ts";
+import { codeEditor } from "./wb-file-viewer-records.ts";
 
 /** What a refused pane is rebuilt from once the daemon serves its bytes. */
 export type ReopenBytes = { content: string; encoding?: string; bom?: boolean };
@@ -100,7 +100,8 @@ export function createViewerSave(deps: ViewerSaveDeps) {
   // `rec.content` is still authoritative.
   function contentOf(rec: BytesRecord) {
     if (rec.kind === "diff") return rec.content;
-    if (rec.ed && (rec.kind === "code" || rec.editing)) return (rec.ed as MonacoEditor).getValue();
+    const ed = codeEditor(rec.ed);
+    if (ed && (rec.kind === "code" || rec.editing)) return ed.getValue();
     return rec.content;
   }
 
@@ -213,7 +214,8 @@ export function createViewerSave(deps: ViewerSaveDeps) {
       const img = rec.el?.querySelector<HTMLImageElement>(".img-canvas");
       if (img) img.src = fresh;
     } else if (rec.kind === "code" || rec.editing) {
-      if (rec.ed) (rec.ed as MonacoEditor).setValue(fresh);
+      const ed = codeEditor(rec.ed);
+      if (ed) ed.setValue(fresh);
       // In the read-only fallback there is no editor to update, and leaving the
       // <pre> stale would show bytes that no longer match rec.content.
       else if (rec.fallbackEl) rec.fallbackEl.textContent = fresh;

@@ -14,6 +14,7 @@ import type { createNoteOnTop } from "./wb-notes-on-top.ts";
 import type { createNotePalette } from "./wb-notes-palette.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { CardHost, NoteCard, NoteSource } from "./wb-types.d.ts";
+import { isNode } from "./wb-dom-need.ts";
 
 /** What `createNotes` hands the assembly: the card's closure names. */
 export type NoteBuildDeps = {
@@ -78,7 +79,7 @@ export function createNoteBuild(deps: NoteBuildDeps) {
   // order, including its hit-test rule.
   function assembleCard(el: NoteCard, record: NoteSource) {
     el.className = "note-card";
-    el.dataset.noteId = record.id;
+    el.dataset["noteId"] = record.id;
     // A card with NO FILE YET is a new note and is born in the operator's
     // colours; one with a path is dressed from what it is about to read, and
     // starting it anywhere but the reading default would flash a colour the
@@ -133,7 +134,7 @@ export function createNoteBuild(deps: NoteBuildDeps) {
     body.addEventListener("mousedown", (ev) => {
       const dom = el._noteEditor?.dom();
       if (!dom) return;
-      if (dom === ev.target || dom.contains(ev.target as Node | null)) return;
+      if (dom === ev.target || (isNode(ev.target) && dom.contains(ev.target))) return;
       ev.preventDefault();
       try {
         dom.focus();

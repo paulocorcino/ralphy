@@ -47,7 +47,7 @@ const BINARY_EXT = new Set([
 
 function extOf(name: string) {
   const n = name.toLowerCase();
-  return n.includes(".") ? (n.split(".").pop() as string) : "";
+  return n.includes(".") ? (n.split(".").pop() ?? "") : "";
 }
 
 // The directories the daemon's Write path refuses (`fswrite::PROTECTED_DIRS`),

@@ -36,8 +36,8 @@ TSC = ["npx", "-y", "-p", "typescript@7.0.2", "tsc"]
 # test of a `tests/` crate until its phase puts one `#![expect]` at each crate
 # root; that phase removes it from this list.
 ADDED_IGNORE = {"clippy": "clippy::tests_outside_test_module"}
-# The tsconfig flags of the target that are not on yet.
-TSC_FLAGS = ["--exactOptionalPropertyTypes", "--noPropertyAccessFromIndexSignature"]
+# The tsconfig flags of the target that are not on yet; tsconfig.json has them all.
+TSC_FLAGS: list[str] = []
 
 
 def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:

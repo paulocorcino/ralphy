@@ -341,7 +341,7 @@ export const WBColumns = (function () {
 
   // The stored direction, "right" when there is none.
   function dirOf(stored: string | null | undefined): string {
-    return DIRS.includes(stored) ? (stored as string) : "right";
+    return typeof stored === "string" && DIRS.includes(stored) ? stored : "right";
   }
 
   return {

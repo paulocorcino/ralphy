@@ -61,7 +61,10 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // The git fields of one row: the branch acts (and their revert) and the
     // sync read set them. It takes the row the caller found, not its ref: a
     // revert after a new repo read lands on the old row, not on the new one.
-    setRowGit(p: Project, git: { branch?: string; branches?: string[]; head?: Project["head"] }) {
+    setRowGit(
+      p: Project,
+      git: { branch?: string | undefined; branches?: string[] | undefined; head?: Project["head"] },
+    ) {
       if (git.branches !== undefined) p.branches = git.branches;
       if (git.branch !== undefined) p.branch = git.branch;
       if (git.head !== undefined) p.head = git.head;

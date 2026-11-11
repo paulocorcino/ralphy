@@ -106,7 +106,10 @@ export function runsStore(_deps: RunsStoreDeps) {
         // A transport failure is a read failure, not an idle project.
         this.runsFailed(
           slug,
-          WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"),
+          WBFail.why(
+            { message: err instanceof Error ? err.message : undefined },
+            "the daemon did not answer",
+          ),
         );
       }
     },

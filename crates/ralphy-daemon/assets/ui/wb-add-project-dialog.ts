@@ -37,7 +37,7 @@ export function addProjectDialog() {
     openAddProject() {
       this.addProjectStep({ type: "open" });
       this.addProjectList(0);
-      void this.$nextTick(() => this.$refs.addProjectFolder?.focus());
+      void this.$nextTick(() => this.$refs["addProjectFolder"]?.focus());
     },
     // Closing does not cancel an add in flight: the list reloads when it ends.
     closeAddProject() {
@@ -78,7 +78,7 @@ export function addProjectDialog() {
       if ((entry.error ?? "") !== "" || (ev && ev.detail > 1)) return;
       this.addProjectStep({ type: "pick", name: entry.name, up: entry.up === true });
       this.addProjectList(0);
-      if (!this._addProjectTouch) this.$refs.addProjectFolder?.focus();
+      if (!this._addProjectTouch) this.$refs["addProjectFolder"]?.focus();
     },
     // Arrows move in the list; Enter or Tab on a highlighted folder goes down
     // one level; Enter with none highlighted adds.
@@ -137,7 +137,10 @@ export function addProjectDialog() {
       try {
         reply = await window.WBDaemon.observe("project.add", payload);
       } catch (e) {
-        reply = { status: "error", message: String((e as Error).message || e) };
+        reply = {
+          status: "error",
+          message: e instanceof Error && e.message ? e.message : String(e),
+        };
       }
       if (reply.status !== "ok") {
         this.addProjectStep({
@@ -158,10 +161,11 @@ export function addProjectDialog() {
       }
     },
     selectAddedProject(ref: string | undefined) {
+      if (ref === undefined) return;
       if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) {
         return;
       }
-      if (this.$store.projects.openSlug !== ref) this.toggle(ref as string);
+      if (this.$store.projects.openSlug !== ref) this.toggle(ref);
       void this.$nextTick(() => {
         const head = document.querySelector<HTMLElement>("li.project.open .project-head");
         if (!head) return;

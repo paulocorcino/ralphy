@@ -174,7 +174,7 @@ export function createFenceList(deps: FenceListDeps) {
   // rects while `fences` holds the shell's coordinates.
   function markHeldNotes(st: HTMLElement) {
     for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<NoteCard>(".note-card")) {
-      const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
+      const own = notes().find((n: DeskNote) => n.id === el.dataset["noteId"]);
       const held = own?.locked !== true && Boolean(fenceOf(fences(), restoreRect(el))?.locked);
       el.classList.toggle("held", held);
       window.WBNotes.applyLock(el, own?.locked === true || held);

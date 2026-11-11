@@ -377,7 +377,7 @@ test("renderMenu sets a label as text, never as markup", () => {
   };
   const menu = element("div");
   const { state } = loadShell({
-    document: { getElementById: () => menu, createElement: element },
+    document: { querySelector: () => menu, createElement: element },
   });
   // `renderMenu` reads the BARE viewport globals a browser has; lend them.
   globalThis.innerWidth = 1440;

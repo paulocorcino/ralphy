@@ -13,7 +13,7 @@ type JsonValue =
 
 /** The `payload` of a command: the verb's arguments. */
 type CommandPayload = {
-  repo?: string | null;
+  repo?: string | null | undefined;
   checkout?: string;
   [field: string]: JsonValue | undefined;
 };
@@ -351,7 +351,7 @@ type OpenRequest = {
   project: string | null;
   path: string;
   checkout: string | null;
-  fragment?: string;
+  fragment?: string | undefined;
   as?: "bytes";
 };
 

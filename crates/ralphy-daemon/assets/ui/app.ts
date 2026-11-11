@@ -300,7 +300,7 @@ export function shell() {
       // `/` must never focus an input the Changes view is hiding (#317).
       this.sideView = "projects";
       this.sideOpen = true;
-      void this.$nextTick(() => this.$refs.projectSearch?.focus());
+      void this.$nextTick(() => this.$refs["projectSearch"]?.focus());
     },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;

@@ -103,7 +103,7 @@ export type Action =
   | { type: "type"; field: keyof State; value: unknown }
   | { type: "host"; value: string }
   | { type: "busy"; value: boolean }
-  | { type: "key"; key?: KeyReply }
+  | { type: "key"; key?: KeyReply | undefined }
   | { type: "close" }
   | { type: "cancel-trust" }
   | { type: "trusted" }

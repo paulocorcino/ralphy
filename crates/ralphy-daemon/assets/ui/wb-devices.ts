@@ -51,8 +51,6 @@ export type AuditEvent = {
   agent?: string;
   changed?: string[];
 };
-/** An `action` line: an HTTP request that changed something. */
-type ActionEvent = AuditEvent & { method: string; path: string; status: number };
 
 const OS_NAMES: Record<string, string> = {
   windows: "Windows",
@@ -104,10 +102,10 @@ const ACTION_NAMES: Record<string, string> = {
   "POST /api/security/totp/revoke": "Removed the authenticator app",
 };
 
-function actionLine(e: ActionEvent) {
-  const name = ACTION_NAMES[`${e.method} ${e.path}`];
-  if (name === undefined) return `${e.method} ${e.path} (${e.status})`;
-  return e.status >= 200 && e.status < 300 ? name : `${name} (refused: ${e.status})`;
+function actionLine({ method = "", path = "", status = 0 }: AuditEvent) {
+  const name = ACTION_NAMES[`${method} ${path}`];
+  if (name === undefined) return `${method} ${path} (${status})`;
+  return status >= 200 && status < 300 ? name : `${name} (refused: ${status})`;
 }
 
 function withVersion(name: string, version: string | null) {
@@ -170,7 +168,7 @@ export function eventLine(e: AuditEvent) {
         (e.changed ?? []).map((c: string) => CHANGED_NAMES[c] ?? c).join(", ")
       );
     case "action":
-      return actionLine(e as ActionEvent);
+      return actionLine(e);
     case "command":
       return repo ? `Command ${e.verb} in ${repo}` : `Command ${e.verb}`;
     case "console_launch": {
@@ -242,7 +240,8 @@ export function devices() {
       } catch (e) {
         this.loaded = false;
         this.devices = [];
-        this.error = `Could not read the devices: ${(e as Error).message}.`;
+        const why = e instanceof Error ? e.message : String(e);
+        this.error = `Could not read the devices: ${why}.`;
       }
     },
     async toggle(d: { device: string }) {
@@ -259,7 +258,8 @@ export function devices() {
         this.events = eventRows(reply, when);
         this.raw = JSON.stringify(reply.events, null, 2);
       } catch (e) {
-        this.eventsError = `Could not read the activity of this device: ${(e as Error).message}.`;
+        const why = e instanceof Error ? e.message : String(e);
+        this.eventsError = `Could not read the activity of this device: ${why}.`;
       }
     },
   });

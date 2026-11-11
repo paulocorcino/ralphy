@@ -131,7 +131,7 @@ export function createFenceGestures(deps: FenceGestureDeps) {
         .concat(
           [...st.querySelectorAll<NoteCard>(".note-card")].map((card): Carried => ({
             el: card,
-            id: "n:" + card.dataset.noteId,
+            id: "n:" + card.dataset["noteId"],
             kind: "note",
             rect: restoreRect(card),
           })),

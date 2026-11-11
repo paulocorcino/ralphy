@@ -67,7 +67,8 @@ type ReconcileInput<S, R> = {
 };
 // What the fold reads of a record. A placeholder whose record another page
 // deleted stands in with the record it was spawned from, which has no rect.
-export type FoldRecord = Pick<DeskRecord, "id" | "sessionId" | "checkout"> & {
+export type FoldRecord = Pick<DeskRecord, "id" | "sessionId"> & {
+  checkout?: string | null | undefined;
   repo?: string | null;
   agent?: string | null;
   kind?: string | null;
@@ -340,11 +341,11 @@ export function detachFold(
 // note must be a card the popup holds, its desk record must have no path
 // yet (a name is given once, ADR-0064 §4), and the path must name a note.
 // `msg` comes from the popup: `path` is checked below before it is used.
-export function noteNameOk(
+export function noteNameOk<M extends { noteId?: unknown; path?: unknown }>(
   entry: { members?: readonly { kind?: string | null; id?: string }[] } | null | undefined,
   record: DeskNote | null | undefined,
-  msg: { noteId?: unknown; path?: unknown },
-) {
+  msg: M,
+): msg is M & { path: string } {
   const held = (entry?.members ?? []).some((x) => x.kind === "note" && x.id === msg.noteId);
   if (!held || !record || record.id !== msg.noteId || (record.path ?? "") !== "") return false;
   return isNotePath(msg.path);

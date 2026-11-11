@@ -93,7 +93,7 @@ export function wbBranchDialog() {
       // The chip's dirty dot and the `current` seed above read the listing.
       void this.$store.checkouts.ensureWorktreeListing(ref);
       void this.$nextTick(() => {
-        this.$refs.branchFilter?.focus();
+        this.$refs["branchFilter"]?.focus();
       });
     },
 

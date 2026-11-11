@@ -29,9 +29,9 @@ export type FitDeps = {
   // `readyState` takes the WebSocket numbers.
   socket: () => ConsoleChannel | null;
   // Whether a full-bleed console covers this one. Absent: never covered.
-  covered?: () => boolean;
+  covered?: (() => boolean) | undefined;
   // Whether this console has the focus. A focused console always sizes.
-  focused?: () => boolean;
+  focused?: (() => boolean) | undefined;
   // Whether this console only watches the session. Absent: never.
   watching?: () => boolean;
 };

@@ -239,7 +239,7 @@ function state({
   project?: string | null;
   loading?: boolean;
   error?: string;
-  doc?: SpendDoc | null;
+  doc?: SpendDoc | null | undefined;
   issues?: TitledIssue[] | null;
   period?: string;
 } = {}) {

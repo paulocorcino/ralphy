@@ -139,7 +139,7 @@ export function createDeskConverge(deps: ConvergeDeps) {
   function keepUnsavedCards(st: HTMLElement) {
     const listed = new Set<string | undefined>(currentNotes().map((n) => n.id));
     for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      if (!el._noteDirty || !el._noteRecord || listed.has(el.dataset.noteId)) continue;
+      if (!el._noteDirty || !el._noteRecord || listed.has(el.dataset["noteId"])) continue;
       emitDesk({ op: "create", type: "note", record: el._noteRecord });
     }
   }

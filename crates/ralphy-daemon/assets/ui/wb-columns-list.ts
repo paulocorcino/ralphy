@@ -47,7 +47,7 @@ export type DetachedMember = {
 /** A console the list is folded from: a window on this stage. */
 type RosterRow = DetachedMember & {
   state?: string | null;
-  detail?: string | null;
+  detail?: string | null | undefined;
   running?: boolean;
 };
 
@@ -197,7 +197,7 @@ function listGroups(
   const groups: ColumnGroup[] = [];
   if (loose.length > 0) groups.push(group(null, loose));
   for (const f of fences ?? []) {
-    const members = byFence.get(f.id) as ColumnRow[];
+    const members = byFence.get(f.id) ?? [];
     if (members.length > 0) groups.push(group({ id: f.id, name: f.name }, members));
   }
   return groups;

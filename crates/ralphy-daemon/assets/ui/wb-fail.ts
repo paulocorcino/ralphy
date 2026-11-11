@@ -26,7 +26,7 @@ export type Read = { value: unknown; goodAt: number; error: string; current: boo
 /** What one read attempt answered. */
 export type Outcome = { ok: boolean; value?: unknown; reason?: string; at: number };
 /** A verb's reply, a `spawn` frame, or nothing: what a failure is read from. */
-type Reply = { status?: string; message?: string; reason?: string } | null | undefined;
+type Reply = { status?: string; message?: string | undefined; reason?: string } | null | undefined;
 
 const CAUSE: Record<string, string> = {
   "not found": "it does not exist",
@@ -152,9 +152,9 @@ function readFold(prev: Read | null | undefined, outcome: Outcome): Read {
   const { ok, value, reason, at } = outcome;
   if (ok) return { value, goodAt: at, error: "", current: true };
   if (prev !== null && prev !== undefined && prev.goodAt !== 0) {
-    return { value: prev.value, goodAt: prev.goodAt, error: reason as string, current: false };
+    return { value: prev.value, goodAt: prev.goodAt, error: reason ?? "", current: false };
   }
-  return { value: null, goodAt: 0, error: reason as string, current: false };
+  return { value: null, goodAt: 0, error: reason ?? "", current: false };
 }
 
 // A time of day, `14:02`, for "Read at …".

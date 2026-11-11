@@ -101,8 +101,8 @@ function slotKey(slot: Slot | null) {
 
 function paint(win: ConsoleWin, slot: Slot | null, key: string) {
   const p = slot?.p ?? null;
-  if (key) win.dataset.tabSlot = key;
-  else delete win.dataset.tabSlot;
+  if (key) win.dataset["tabSlot"] = key;
+  else delete win.dataset["tabSlot"];
   win.classList.toggle("in-tab", slot !== null);
   win.classList.toggle("tab-shown", p !== null);
   win.classList.toggle("tab-grid", p !== null && slot?.many === true);
@@ -186,7 +186,7 @@ export function createPlace(deps: PlaceDeps) {
     const moves = win.parentElement !== parent;
     if (moves) parent.append(win);
     const key = slotKey(slot);
-    const was = win.dataset.tabSlot ?? "";
+    const was = win.dataset["tabSlot"] ?? "";
     if (key !== was) paint(win, slot, key);
     if (key !== was || moves) moved(win);
     return { entered: moves && slot !== null, shown: key !== was && newlyShown(was, slot) };

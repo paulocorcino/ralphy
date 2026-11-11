@@ -8,6 +8,7 @@
    the store stays the one writer of its tabs.
    --------------------------------------------------------------------------- */
 import type { CanvasTab, MenuItem, Slot } from "./wb-shell-types.d.ts";
+import { required } from "./wb-dom-need.ts";
 
 /** What the tab menu reads or calls on the store `tabs`. */
 type MenuTabs = {
@@ -111,7 +112,7 @@ export function closeItems(store: MenuTabs, t: CanvasTab): MenuItem[] {
 // Paint `items` into the one `#ctxmenu` and keep it on-screen. An item is
 // `{ label, icon, run }` with optional `sep`, `danger`, `disabled`, `title`.
 export function renderMenu(store: MenuTabs, x: number, y: number, items: MenuItem[]) {
-  const menu = document.getElementById("ctxmenu") as HTMLElement;
+  const menu = required(document.querySelector<HTMLElement>("#ctxmenu"), "the element #ctxmenu");
   menu.innerHTML = "";
   for (const it of items) {
     if (it.sep === true) {

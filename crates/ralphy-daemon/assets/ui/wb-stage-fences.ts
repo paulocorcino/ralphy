@@ -186,7 +186,7 @@ export function createFences(deps: FenceDeps) {
   function buildFence(f: DeskFence) {
     const el = document.createElement("div");
     el.className = "fence";
-    el.dataset.fenceId = f.id;
+    el.dataset["fenceId"] = f.id;
     const head = document.createElement("div");
     head.className = "fence-head";
     // Two SMALL opt-in handles: a full-width head would swallow the floor's pan.
@@ -324,7 +324,7 @@ export function createFences(deps: FenceDeps) {
     const handles = FENCE_DIRS.map((dir) => {
       const h = document.createElement("div");
       h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
-      h.dataset.dir = dir;
+      h.dataset["dir"] = dir;
       h.title = "Resize this fence";
       h.addEventListener("pointerdown", startFenceResize(el, f, dir));
       return h;

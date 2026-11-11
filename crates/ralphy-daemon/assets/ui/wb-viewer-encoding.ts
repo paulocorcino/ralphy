@@ -1,5 +1,6 @@
 // The encoding pill and its menu, on a file pane that has bytes.
 import { WBFail } from "./wb-fail.ts";
+import { isNode, targetClosest } from "./wb-dom-need.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { ViewerRecord } from "./wb-file-viewer.ts";
 import type { ReopenRefused, ViewerSave } from "./wb-viewer-save.ts";
@@ -57,7 +58,7 @@ export function refreshEncodingPill(rec: ViewerRecord) {
 
 function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
   for (const item of menu.querySelectorAll<HTMLElement>(".enc-item")) {
-    const i = Number(item.dataset.reopen ?? item.dataset.savewith);
+    const i = Number(item.dataset["reopen"] ?? item.dataset["savewith"]);
     const row = ENCODINGS[i];
     if (!row) continue;
     const [, name, bom] = row;
@@ -104,7 +105,7 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       document.removeEventListener("keydown", onKey, true);
     };
     const onOutside = (ev: MouseEvent) => {
-      if (!menu.contains(ev.target as Node) && ev.target !== btn) close();
+      if (!(isNode(ev.target) && menu.contains(ev.target)) && ev.target !== btn) close();
     };
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") close();
@@ -121,15 +122,14 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       document.addEventListener("keydown", onKey, true);
     };
     menu.onclick = (ev: MouseEvent) => {
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a text node has no closest
-      const item = (ev.target as Element).closest?.<HTMLElement>(".enc-item");
+      const item = targetClosest(ev, ".enc-item");
       if (!item) return;
       ev.stopPropagation();
       close();
-      const encoding = ENCODINGS[Number(item.dataset.reopen ?? item.dataset.savewith)];
+      const encoding = ENCODINGS[Number(item.dataset["reopen"] ?? item.dataset["savewith"])];
       if (!encoding) return;
-      if (item.dataset.reopen != null) reopenWith(rec, encoding);
-      else if (item.dataset.savewith != null) saveWith(rec, encoding);
+      if (item.dataset["reopen"] != null) reopenWith(rec, encoding);
+      else if (item.dataset["savewith"] != null) saveWith(rec, encoding);
     };
   }
 

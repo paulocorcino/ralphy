@@ -9,6 +9,7 @@
 --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { touchInput } from "./wb-viewport.ts";
+import { targetClosest } from "./wb-dom-need.ts";
 import type { WBView } from "./wb-client-view.ts";
 import type { TerminalDeps } from "./wb-console-terminal-types.d.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
@@ -152,7 +153,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       // Not in the tab order: a keyboard user already has these keys.
       b.tabIndex = -1;
       b.className = "session-key" + (cls !== undefined && cls !== "" ? " " + cls : "");
-      b.dataset.key = name;
+      b.dataset["key"] = name;
       b.title = title;
       if (icon !== undefined && icon !== "") {
         const i = document.createElement("i");
@@ -262,10 +263,10 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     }
 
     bar.addEventListener("click", (e: MouseEvent) => {
-      const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-key]");
+      const btn = targetClosest(e, "button[data-key]");
       if (!btn) return;
       e.stopPropagation();
-      const name = btn.dataset.key;
+      const name = btn.dataset["key"];
       // The clipboard READ goes first, before any focus move: Safari grants
       // it only to a call made synchronously inside the tap. `term.paste`
       // then rides `onData → sendInput`, so a watcher's paste is refused

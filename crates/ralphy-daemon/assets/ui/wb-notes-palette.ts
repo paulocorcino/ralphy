@@ -14,6 +14,7 @@ import {
   withStyle,
 } from "./wb-notes-folds.ts";
 import type { NoteCard, NoteLook } from "./wb-types.d.ts";
+import { isNode, targetClosest } from "./wb-dom-need.ts";
 
 /** What `createNotes` hands the palette: the card's and the editor's names. */
 export type NotePaletteDeps = {
@@ -66,9 +67,8 @@ export function createNotePalette(deps: NotePaletteDeps) {
   function closePaletteOutside(ev: PointerEvent) {
     if (
       openPalette &&
-      !openPalette.contains(ev.target as Node | null) &&
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a click hits an element
-      !(ev.target as Element | null)?.closest(".note-tone")
+      !(isNode(ev.target) && openPalette.contains(ev.target)) &&
+      !targetClosest(ev, ".note-tone")
     ) {
       closePalette();
     }
@@ -106,7 +106,7 @@ export function createNotePalette(deps: NotePaletteDeps) {
         const b = document.createElement("button");
         b.className = cls;
         b.type = "button";
-        b.dataset.name = name;
+        b.dataset["name"] = name;
         b.title = SWATCH_NAME[name] ?? name;
         if (text) b.textContent = text(name);
         b.setAttribute("aria-label", label + ": " + (SWATCH_NAME[name] ?? name));
@@ -140,9 +140,9 @@ export function createNotePalette(deps: NotePaletteDeps) {
       ["ink", "note-swatch-ink"],
       ["font", "note-swatch-font"],
       ["size", "note-swatch-size"],
-    ]) {
+    ] as const) {
       for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
-        b.classList.toggle("is-on", b.dataset.name === have[key as keyof NoteLook]);
+        b.classList.toggle("is-on", b.dataset["name"] === have[key]);
       }
     }
   }

@@ -13,6 +13,7 @@
    --------------------------------------------------------------------------- */
 import { socketFrame } from "./wb-api.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
+// oxlint-disable-next-line typescript/consistent-type-imports -- the peer pin hashes this import
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { reportStall } from "./wb-stall.ts";
 
