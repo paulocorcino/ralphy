@@ -35,9 +35,9 @@ type TreeRow = Omit<CheckoutRow, "current" | "state">;
 // The menu row of a worktree in a listing.
 function worktreeRow(w: Listing["worktrees"][number]): TreeRow {
   return {
-    name: String(w.name || ""),
-    branch: String(w.branch || ""),
-    dirty: w.dirty === true,
+    name: w.name,
+    branch: w.branch,
+    dirty: w.dirty,
     primary: false,
   };
 }
@@ -99,7 +99,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // the store says its listing changed (`ingestWorktrees`). Only a repo with at
   // least one worktree gets a switcher.
   function listingOf(ref: string | null | undefined) {
-    return window.Alpine?.store("checkouts")?.listingOf(ref) ?? null;
+    return window.Alpine.store("checkouts").listingOf(ref) ?? null;
   }
   function ingestWorktrees(ref: string) {
     if (!ref) return;
@@ -112,7 +112,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // Asks the store to read the repo's listing: one read per ref, cached.
   function ensureListing(ref: string | null | undefined, force = false) {
     if (OPTS.canLaunch === false) return;
-    void window.Alpine?.store("checkouts")?.ensureWorktreeListing(ref, force);
+    void window.Alpine.store("checkouts").ensureWorktreeListing(ref, force);
   }
   // The switcher's rows: `primary` first, then the worktrees in listing order,
   // each with its dirty flag; the current one marked. With `sessions` (rows with
@@ -129,25 +129,21 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     const rows: TreeRow[] = [
       {
         name: "primary",
-        branch: String(primaryBranch || ""),
-        dirty: primaryDirty === true,
+        branch: primaryBranch,
+        dirty: primaryDirty,
         primary: true,
       },
     ];
-    for (const w of listing?.worktrees || []) rows.push(worktreeRow(w));
-    const states =
-      sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
+    for (const w of listing?.worktrees ?? []) rows.push(worktreeRow(w));
+    const states = sessions ? WBProject.worktreeStates(rows, sessions) : {};
     return rows.map((r) => ({
       ...r,
       current: (current ?? "primary") === r.name,
-      state: states[r.name] || null,
+      state: states[r.name] ?? null,
     }));
   }
   function sessionsOfRepo(ref: string) {
-    const route = WBSessionRoute;
-    return (lastSessions() || []).filter(
-      (s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref),
-    );
+    return lastSessions().filter((s) => WBSessionRoute.matchesRepo(s, ref));
   }
 
   // The checkout menu — ONE component, under the console's title segment and
@@ -234,7 +230,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
       item.append(branch);
     }
     // The agent in this tree (ADR-0059): the same words as the console's dot.
-    if (row.state) {
+    if (row.state !== null && row.state !== "") {
       const state = document.createElement("span");
       state.className = `session-checkout-state ${row.state}`;
       state.title = agentStateTitle(row.state);
@@ -307,7 +303,8 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // never touched: that is what Files shows; this is where THIS console lives.
   async function switchCheckout(win: ConsoleWin, checkout: string | null) {
     if (typeof win._relaunchIn !== "function") return;
-    const where = checkout ? `worktree ${checkout}` : "the primary tree";
+    const where =
+      checkout !== null && checkout !== "" ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
       title: `Restart in ${checkout ?? "primary"}?`,
       message:
@@ -315,7 +312,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
         "You lose the text in this console.",
       confirmLabel: "Restart",
     });
-    if (!ok) return;
+    if (ok !== true) return;
     moveTo(win, checkout);
   }
   // The record is written with the choice BEFORE anything is requested, so a
@@ -340,7 +337,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   function endLiveThen(win: ConsoleWin, go: () => void) {
     const id = sessionIdOf(win);
     const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
-    if (live && WBSessionRoute) {
+    if (live) {
       fetch(WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
     } else {
       go();
@@ -354,7 +351,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     const repo = win._deskRepo;
     if (!repo || repo === "~" || typeof win._relaunchIn !== "function") return;
     const daemon = window.WBDaemon;
-    if (typeof daemon?.observe !== "function") return;
+    if (typeof daemon.observe !== "function") return;
     const { branches, base: first } = await readBranches(daemon, repo);
     let base = first;
     let error = "";
@@ -390,7 +387,7 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
   // The words of a `worktree.add` refusal for the prompt, or "" when the
   // worktree was added.
   function addRefusal(reply: ReplyOf<"worktree.add">) {
-    if (reply && reply.status === "ok") return "";
+    if (reply.status === "ok") return "";
     return WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
   }
   // The branches the prompt offers and the one it starts from; unreadable
@@ -400,9 +397,10 @@ export function createCheckoutSwitcher(deps: CheckoutDeps) {
     let base = "";
     try {
       const reply = await daemon.observe("branch.list", { repo });
-      const data = (reply && reply.status === "ok" && reply.branches) || {};
+      const data = (reply.status === "ok" ? reply.branches : null) ?? {};
       if (Array.isArray(data.branches)) branches = data.branches;
-      if (data.current && data.current !== "HEAD") base = data.current;
+      const current = data.current ?? "";
+      if (current !== "" && current !== "HEAD") base = current;
     } catch {}
     return { branches, base };
   }

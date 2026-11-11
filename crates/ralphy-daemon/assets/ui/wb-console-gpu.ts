@@ -51,6 +51,7 @@ export const SLOW_DORMANT_AFTER_MS = 120000;
 // handshake is `null` before its socket first opened, and then the link is
 // not slow.
 export function dormantAfterMs() {
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- read with no WBDaemon too
   const handshakeMs = globalThis.WBDaemon?.pageHandshakeMs?.() ?? null;
   return handshakeMs != null && handshakeMs >= SLOW_HANDSHAKE_MS
     ? SLOW_DORMANT_AFTER_MS
@@ -135,7 +136,7 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
   // Paired with every `wins.delete`: the observer holds its targets, so a window
   // taken off the plane without this stays reachable for the life of the page.
   function untrackDormancy(win: ConsoleWin) {
-    if (win._dormantTimer) {
+    if (win._dormantTimer !== null) {
       clearTimeout(win._dormantTimer);
       win._dormantTimer = null;
     }
@@ -165,10 +166,10 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
           // the observer watches the stage only. A file tab hides the stage
           // with `visibility: hidden`, which the observer does not report, so
           // the shown tab is asked first.
-          seen: windowShown(w) && (w._visible === true || w.classList.contains("tab-shown")),
+          seen: windowShown(w) && (w._visible || w.classList.contains("tab-shown")),
           covered: isCovered(w),
-          hasTerminal: !!w._term,
-          z: parseInt(w.style.zIndex, 10) || 0,
+          hasTerminal: w._term !== null,
+          z: Math.trunc(Number(w.style.zIndex)) || 0,
         })),
         GPU_BUDGET,
       ).flatMap((i) => list[i] ?? []),

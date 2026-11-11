@@ -203,7 +203,8 @@
         "**/ui/wb-kanban*.ts",
         "**/ui/wb-columns*.ts",
         "**/ui/wb-uploads-store.ts",
-        "**/ui/wb-notes*.ts"
+        "**/ui/wb-notes*.ts",
+        "**/ui/wb-console*.ts"
       ],
       "rules": {
         "typescript/strict-boolean-expressions": "error",

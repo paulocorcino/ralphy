@@ -246,7 +246,7 @@ fn shell_locks_consoles_and_fences() {
         "recordOf must write the lock as a bool"
     );
     assert!(
-        body("function deskOf(").contains("locked: !!win._deskLocked"),
+        body("function deskOf(").contains("locked: win._deskLocked,"),
         "deskOf must carry the lock into rebuilds and the popup"
     );
     assert!(

@@ -117,7 +117,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     s.held = true;
     // The peer's own strip says why.
     link("back");
-    if (s.retryTimer) {
+    if (s.retryTimer !== null) {
       clearTimeout(s.retryTimer);
       s.retryTimer = null;
     }
@@ -371,11 +371,11 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
 
   // Reattach now: a pending backoff is dropped, else the old channel is.
   function reconnectNow() {
-    if (s.retryTimer) {
+    if (s.retryTimer === null) {
+      detachSocket(s.ws, "reconnect");
+    } else {
       clearTimeout(s.retryTimer);
       s.retryTimer = null;
-    } else {
-      detachSocket(s.ws, "reconnect");
     }
     connect(again());
   }
@@ -396,7 +396,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
     if (now - s.lastResumeAt < RESUME_DEBOUNCE_MS) return false;
     // A pending backoff is brought forward. `retryDelay` is kept: it stops
     // a second fleet read for one drop.
-    if (!s.retryTimer) {
+    if (s.retryTimer === null) {
       const readyState = s.ws ? s.ws.readyState : null;
       const connectingMs = now - s.connectingSince;
       if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
@@ -411,7 +411,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
   function takeOver() {
     if (s.currentSessionId == null) return;
     s.switching = true;
-    if (s.retryTimer) {
+    if (s.retryTimer !== null) {
       clearTimeout(s.retryTimer);
       s.retryTimer = null;
     }
@@ -442,7 +442,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       else release();
       return;
     }
-    if (s.retryTimer && gate === "hold") hold(group);
+    if (s.retryTimer !== null && gate === "hold") hold(group);
   }
 
   // The first half of a window's close: no reconnect from here on, the link
@@ -454,7 +454,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
       s.held = false;
       if (typeof opts.onPeerBack === "function") opts.onPeerBack();
     }
-    if (s.retryTimer) {
+    if (s.retryTimer !== null) {
       clearTimeout(s.retryTimer);
       s.retryTimer = null;
     }

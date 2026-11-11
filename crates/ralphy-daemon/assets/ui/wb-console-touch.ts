@@ -65,19 +65,19 @@ export function wireTouch(deps: TouchDeps) {
   let selecting = false;
   let selStart: number | null = null;
   const setSelecting = (on: boolean) => {
-    selecting = !!on;
+    selecting = on;
     selStart = null;
     if (typeof opts.onSelecting === "function") opts.onSelecting(selecting);
   };
   const rowAt = (clientY: number) => {
-    const screen = term.element?.querySelector(".xterm-screen");
+    const screen = term.element.querySelector(".xterm-screen");
     const top = screen ? screen.getBoundingClientRect().top : 0;
     return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
   };
   const cellHeight = () => {
     const el = term.element;
     const rows = term.rows;
-    return el && rows > 0 ? el.clientHeight / rows : 0;
+    return rows > 0 ? el.clientHeight / rows : 0;
   };
   // Scroll by a fractional number of lines, carrying the remainder (a slow
   // drag moves less than one row per event). Coalesced to ONE scroll per
@@ -90,7 +90,6 @@ export function wireTouch(deps: TouchDeps) {
   // cell). xterm then does what it does for the trackpad.
   const wheelToApp = (lines: number) => {
     const el = term.element;
-    if (!el) return;
     const deltaY = Math.sign(lines);
     for (let n = Math.abs(lines); n > 0; n--) {
       el.dispatchEvent(
@@ -169,7 +168,7 @@ export function wireTouch(deps: TouchDeps) {
         return;
       }
       const ws = workspace();
-      const gesture = touchGesture(e.touches.length, !!ws?.classList.contains("maxlock"));
+      const gesture = touchGesture(e.touches.length, ws?.classList.contains("maxlock") === true);
       if (gesture === "canvas") {
         // A second finger ends the terminal's gesture: the plane owns the touch.
         touchY = null;

@@ -34,6 +34,11 @@ import type {
 const { birthDecision, consoleCommand } = WBConsoleSession;
 const { sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
 
+// A blank text is no value: the events carry `null` for it.
+function orNull(text: string | null | undefined) {
+  return text === null || text === undefined || text === "" ? null : text;
+}
+
 // What the window birth reads from the console, and nothing else. Every dep
 // is built before the spawn, except the placeholder group, built after it
 // (`wb-console-placeholder.ts`): lazy arrows.
@@ -187,7 +192,7 @@ export function createSpawn(deps: SpawnDeps) {
     repo: string | null | undefined,
     desk?: SpawnCarry,
   ) {
-    const kind = termOpts.console ? "console" : "agent";
+    const kind = termOpts.console === true ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
@@ -206,7 +211,7 @@ export function createSpawn(deps: SpawnDeps) {
     // repeated typing EXTENDS the pulse rather than stacking timers.
     let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
     function clearNudge() {
-      if (nudgeTimer) {
+      if (nudgeTimer !== null) {
         clearTimeout(nudgeTimer);
         nudgeTimer = null;
       }
@@ -217,7 +222,7 @@ export function createSpawn(deps: SpawnDeps) {
       if (hintEl) hintEl.textContent = "";
     }
 
-    const peerDaemon = WBFleet?.refDaemon(repo) || "";
+    const peerDaemon = WBFleet.refDaemon(repo);
     const peerStrip = { document, peerDaemon, wakePeerNow, readFleetNow };
     const parked = () => showParked(document, win);
 
@@ -286,7 +291,7 @@ export function createSpawn(deps: SpawnDeps) {
       onEnded: (announced, refusal) => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
-        if (announced === "refused" && WBFleet?.refDaemon(repo)) {
+        if (announced === "refused" && WBFleet.refDaemon(repo) !== "") {
           const carry = deskOf(win);
           discard();
           spawnPlaceholder(carry, null, { message: refusal });
@@ -297,7 +302,7 @@ export function createSpawn(deps: SpawnDeps) {
       // A peer project: the fleet's word on its peer gates every reattach.
       ...(peerDaemon
         ? {
-            peerGroup: () => peerGroups.get(peerDaemon) || null,
+            peerGroup: () => peerGroups.get(peerDaemon) ?? null,
             readFleet: () => readFleetNow()?.(),
           }
         : {}),
@@ -327,7 +332,9 @@ export function createSpawn(deps: SpawnDeps) {
     // The fleet reaches a live window here; `wakeWindow` replaces `_term`, so
     // it is read at each call. A dormant window has none, and its wake asks.
     win._peerRefresh = () => win._term?.peerRefresh();
-    if (birthDecision({ id: termOpts.id, observed: !!budget.dormancyWatch() }) === "dormant") {
+    if (
+      birthDecision({ id: termOpts.id, observed: budget.dormancyWatch() !== null }) === "dormant"
+    ) {
       markDormant(win, termOpts);
     } else {
       // On the window, not in a local: after a sleep/wake cycle a captured
@@ -369,7 +376,7 @@ export function createSpawn(deps: SpawnDeps) {
             checkout: checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
           };
       void spawnOrMissing(fresh, label, repo, carry);
-      WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
+      WB.emit("console-restart", { repo: orNull(at), agent: plain ? null : label });
     };
     win._relaunchIn = relaunchIn;
     restartBtn.addEventListener("click", (e: MouseEvent) => {
@@ -397,7 +404,7 @@ export function createSpawn(deps: SpawnDeps) {
         confirmLabel: "Close",
         danger: true,
       });
-      if (!ok) return;
+      if (ok !== true) return;
       const finish = () => {
         // A window closed mid-pulse must not leave `nudgeTimer` pending.
         clearNudge();
@@ -409,7 +416,7 @@ export function createSpawn(deps: SpawnDeps) {
         budget.untrackDormancy(win);
         wins.delete(win);
         applyExtent();
-        WB.emit("console-close", { repo: repo || null, agent: label });
+        WB.emit("console-close", { repo: orNull(repo), agent: label });
         changed();
       };
       // End the daemon-owned session first, then drop the window. A WATCHER
@@ -444,7 +451,7 @@ export function createSpawn(deps: SpawnDeps) {
   function open({
     repo,
     agent,
-    plain,
+    plain = false,
     checkout,
     command,
   }: {
@@ -458,11 +465,11 @@ export function createSpawn(deps: SpawnDeps) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
       return false;
     }
-    const label = agent || (plain && command) || "console";
+    const label = orNull(agent) ?? (plain ? orNull(command) : null) ?? "console";
     // The plain console ignores the checkout: it rides the repo path (on a
     // peer, `wsl.exe --cd`) and stays on the primary.
     spawnWindow(plain ? { console: true, repo, command } : { repo, agent, checkout }, label, repo);
-    WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
+    WB.emit("console-open", { repo: orNull(repo), agent: orNull(agent), plain });
     return true;
   }
 

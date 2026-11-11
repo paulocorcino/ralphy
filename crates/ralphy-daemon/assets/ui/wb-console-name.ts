@@ -27,8 +27,8 @@ export const WBConsoleName = (function () {
   // The last segment of a repo slug; `home` for no repo.
   function prefixOf(slug: string | null | undefined) {
     if (slug == null || slug === "" || slug === "~") return HOME;
-    const last = String(slug).replace(/\/+$/, "").split("/").pop();
-    return last || HOME;
+    const last = slug.replace(/\/+$/u, "").split("/").pop() ?? "";
+    return last === "" ? HOME : last;
   }
 
   function escapeRegExp(s: string) {
@@ -42,8 +42,8 @@ export const WBConsoleName = (function () {
   ) {
     const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`);
     const used = new Set<number>();
-    for (const name of names || []) {
-      const m = form.exec(name || "");
+    for (const name of names ?? []) {
+      const m = form.exec(name ?? "");
       if (m) used.add(Number(m[1]));
     }
     let n = 1;
@@ -58,7 +58,7 @@ export const WBConsoleName = (function () {
     prefix: string,
     names: Iterable<string | null | undefined> | null | undefined,
   ) {
-    const cut = Array.from(String(raw ?? "").trim())
+    const cut = Array.from((raw ?? "").trim())
       .slice(0, NAME_MAX)
       .join("");
     const trimmed = cut.trim();
@@ -69,7 +69,7 @@ export const WBConsoleName = (function () {
   // title keeps them apart so the label shrinks first. A console with no
   // agent is labelled `console`.
   function labelParts(name: string, label: string | null) {
-    return { name, tag: `(${label || "console"})` };
+    return { name, tag: `(${label !== null && label !== "" ? label : "console"})` };
   }
 
   // The one text that names a console on every surface.
@@ -96,7 +96,7 @@ export const WBConsoleName = (function () {
   ): R[] {
     const names = records.map((r) => r.consoleName).filter(Boolean);
     return records.map((r) => {
-      if (r.consoleName) return r;
+      if ((r.consoleName ?? "") !== "") return r;
       const consoleName = defaultName(prefixOfRepo(r.repo), names);
       names.push(consoleName);
       return { ...r, consoleName };

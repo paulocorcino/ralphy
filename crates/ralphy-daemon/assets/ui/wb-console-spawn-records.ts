@@ -49,10 +49,10 @@ export function createSpawnRecords(deps: SpawnRecordDeps) {
     const r = currentDesk().find((x) => x.id === win._deskId);
     if (r) {
       const fields = birthFields(r, win);
-      if (Object.keys(fields).length) setWin(win, fields);
+      if (Object.keys(fields).length > 0) setWin(win, fields);
       return;
     }
-    if (carry?.unrecorded) {
+    if (carry?.unrecorded === true) {
       win._deskUnrecorded = true;
       setTimeout(() => adoptOrphan(win), ADOPT_GRACE_MS);
       return;
@@ -83,14 +83,14 @@ export function createSpawnRecords(deps: SpawnRecordDeps) {
     };
     if (sessionDiffers(r, session)) fields.session = session;
     if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
-    if (Object.keys(fields).length) setWin(win, fields);
+    if (Object.keys(fields).length > 0) setWin(win, fields);
   }
 
   // The window's placement as a desk record, to carry identity and box across
   // a rebuild (takeover, placeholder → live console).
   function deskOf(win: ConsoleWin): WindowSnapshot {
     return {
-      unrecorded: !!win._deskUnrecorded,
+      unrecorded: win._deskUnrecorded,
       id: win._deskId,
       repo: win._deskRepo,
       agent: win._deskAgent,
@@ -98,7 +98,7 @@ export function createSpawnRecords(deps: SpawnRecordDeps) {
       daemonId: win._deskDaemonId,
       environment: win._deskEnvironment,
       checkout: win._deskCheckout ?? null,
-      locked: !!win._deskLocked,
+      locked: win._deskLocked,
       consoleName: win._deskConsoleName ?? null,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
@@ -113,9 +113,8 @@ export function createSpawnRecords(deps: SpawnRecordDeps) {
 function birthFields(r: DeskRecord, win: ConsoleWin): DeskWindowFields {
   const fields: DeskWindowFields = {};
   if (checkoutDiffers(r, win)) fields.checkout = win._deskCheckout ?? null;
-  if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
-    fields.consoleName = win._deskConsoleName;
-  }
+  const name = win._deskConsoleName ?? "";
+  if (name !== "" && r.consoleName !== name) fields.consoleName = name;
   return fields;
 }
 

@@ -113,6 +113,9 @@ export function frameQueue(
   let waiting: Uint8Array[] | null = null;
   // What waits for the queue to be idle, in order.
   let idle: (() => void)[] = [];
+  // Read through a call: `take` may start a new decode while `drain` runs,
+  // and a direct read would stay narrowed to the value `drain` set.
+  const decoding = () => waiting !== null;
 
   function take(bytes: Uint8Array) {
     if (waiting) {
@@ -170,7 +173,7 @@ export function frameQueue(
         }
       }
     } finally {
-      if (!waiting) {
+      if (!decoding()) {
         const runs = idle;
         idle = [];
         for (const run of runs) run();

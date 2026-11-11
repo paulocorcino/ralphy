@@ -39,10 +39,18 @@ fn the_destructive_console_clicks_confirm_first() {
             1,
             "if (ok) removeFence(f.id);",
         ),
-        ("title: `Restart in ${", 1, "if (!ok) return;"),
-        (r#"title: "Restart session?""#, 1, "if (!ok) return;"),
+        ("title: `Restart in ${", 1, "if (ok !== true) return;"),
+        (
+            r#"title: "Restart session?""#,
+            1,
+            "if (ok !== true) return;",
+        ),
         // The live console's ×, and the dormant one's.
-        (r#"title: "Close this console?""#, 2, "if (!ok) return;"),
+        (
+            r#"title: "Close this console?""#,
+            2,
+            "if (ok !== true) return;",
+        ),
     ] {
         let found: Vec<&str> = js
             .match_indices(title)

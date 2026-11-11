@@ -31,7 +31,7 @@ export function prefersDomRenderer(vendor: string) {
 // sandboxed frame and a standalone PWA. On WebKit it is true but iOS drops
 // out of fullscreen the moment a text field takes focus, so on an iPad the
 // first keystroke would cancel it; maximize is the honest control there.
-export function fullscreenOffered(enabled: boolean, vendor: string) {
+export function fullscreenOffered(enabled: boolean | undefined, vendor: string) {
   return enabled === true && !isWebKit(vendor);
 }
 
@@ -74,7 +74,7 @@ export function touchGesture(fingers: number, maxlock: boolean) {
 // fingers can drift apart or together without the plane jumping.
 export function touchCentroid(touches: TouchList | null | undefined) {
   const list: Touch[] = Array.from(touches ?? []);
-  if (!list.length) return { x: 0, y: 0 };
+  if (list.length === 0) return { x: 0, y: 0 };
   let x = 0;
   let y = 0;
   for (const t of list) {
@@ -99,8 +99,8 @@ export function dragBegins(
   pointer: Point | null | undefined,
   threshold: number,
 ) {
-  const dx = (pointer?.x || 0) - (start?.x || 0);
-  const dy = (pointer?.y || 0) - (start?.y || 0);
+  const dx = (pointer?.x ?? 0) - (start?.x ?? 0);
+  const dy = (pointer?.y ?? 0) - (start?.y ?? 0);
   return Math.hypot(dx, dy) >= threshold;
 }
 
@@ -220,7 +220,7 @@ export function isTerminalReply(d: string) {
 export function keyBarVisible(mode: string | null | undefined, coarse: boolean) {
   if (mode === "on") return true;
   if (mode === "off") return false;
-  return !!coarse;
+  return coarse;
 }
 
 // The `inputmode` of a terminal's input field. With the key bar shown, the
@@ -235,8 +235,8 @@ export function terminalInputMode(barShown: boolean, keyboardOpen: boolean) {
 // Whether the key bar offers a PASTE button. `readText` exists only in a
 // secure context, and unlike the write there is no `execCommand` fallback
 // for a read. Pure: takes the clipboard object (or `undefined`).
-export function pasteOffered(clipboard: Clipboard | undefined) {
-  return !!clipboard && typeof clipboard.readText === "function";
+export function pasteOffered(clipboard: Clipboard | null | undefined) {
+  return clipboard !== undefined && clipboard !== null && typeof clipboard.readText === "function";
 }
 
 // The PASTE key, after its clipboard read. The read can wait on a permission
@@ -260,7 +260,7 @@ export function pasteAfterRead<T extends PasteTerm>(
       .then(({ image, text }) => {
         if (!attached()) return;
         if (image) t.pasteImage(image);
-        else if (text) t.term.paste(text);
+        else if (text !== undefined && text !== "") t.term.paste(text);
       })
       // The key bar shows nothing for a refused or failed read.
       .catch(() => {})
@@ -299,14 +299,14 @@ export function pressRoute(mode: string, button: number, modified: boolean) {
 // `macOptionClickForcesSelection`, and Shift elsewhere. Alt is NOT set
 // outside macOS: there it asks for a column selection. Pure.
 export function forceSelectionKeys(platform: string | undefined) {
-  return /Mac|iPhone|iPad/.test(platform || "") ? { altKey: true } : { shiftKey: true };
+  return /Mac|iPhone|iPad/u.test(platform ?? "") ? { altKey: true } : { shiftKey: true };
 }
 
 // A move with no button pressed is a report too (mode "any", DECSET 1003)
 // and clears the selection the same way: moving the pointer to the right
 // button would erase it. Held back while a selection exists. Pure.
 export function holdMoveReport(mode: string, hasSelection: boolean, buttons: number) {
-  return typeof mode === "string" && mode !== "none" && !!hasSelection && buttons === 0;
+  return typeof mode === "string" && mode !== "none" && hasSelection && buttons === 0;
 }
 
 // THE PHONE BLEED. Fullscreen is withheld on WebKit (`fullscreenOffered`), so
@@ -316,7 +316,7 @@ export function holdMoveReport(mode: string, hasSelection: boolean, buttons: num
 // owner is `wb-viewport.ts`.
 export { PHONE_MAX_WIDTH };
 export function phoneBleed(maxed: boolean, viewportWidth: number) {
-  return !!maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
+  return maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
 }
 
 // The buffer row under a finger, for the line-selection mode. `selectLines`
@@ -379,7 +379,7 @@ export const IMAGE_PASTE_MAX = 4 * 1024 * 1024;
 // What `pasteDecision` reads of a paste.
 type PasteInput = { types: readonly string[] | null | undefined; size: number; watching: boolean };
 export function pasteDecision({ types, size, watching }: PasteInput) {
-  const hasImage = (types || []).some((t) => typeof t === "string" && t.startsWith("image/"));
+  const hasImage = (types ?? []).some((t) => typeof t === "string" && t.startsWith("image/"));
   if (!hasImage) return "passthrough";
   if (watching) return "watched";
   if (!(size >= 0) || size > IMAGE_PASTE_MAX) return "too-large";
@@ -406,13 +406,13 @@ export function scrubClipboard(text: string) {
 // Pure over `ClipboardItem`s: the first image wins over text, as in the
 // keyboard `paste` event (ADR-0055).
 export async function clipboardContent(items: readonly ClipboardItem[] | null | undefined) {
-  const list: ClipboardItem[] = Array.from(items || []);
+  const list: ClipboardItem[] = Array.from(items ?? []);
   for (const item of list) {
-    const type = (item.types || []).find((t) => t.startsWith("image/"));
-    if (type) return { image: await item.getType(type) };
+    const type = item.types.find((t) => t.startsWith("image/"));
+    if (type !== undefined) return { image: await item.getType(type) };
   }
   for (const item of list) {
-    if ((item.types || []).includes("text/plain")) {
+    if (item.types.includes("text/plain")) {
       return { text: await (await item.getType("text/plain")).text() };
     }
   }

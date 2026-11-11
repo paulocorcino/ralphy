@@ -50,12 +50,13 @@ export function createConsole(
   // ingests its first desk before the stage exists), and every caller already
   // handles a null stage.
   const stage = () =>
-    typeof document?.getElementById === "function" ? document.getElementById("stage") : null;
+    // oxlint-disable-next-line unicorn/prefer-query-selector -- the ui-tests' page has only this
+    typeof document.getElementById === "function" ? document.getElementById("stage") : null;
   // Every console window of this page: on the stage, then in the pane of the
   // console tabs (ADR-0037 §3d). A lookup by console uses this; a rule about
   // the stage's layout reads the stage only.
   const tabsPane = () =>
-    typeof document?.getElementById === "function"
+    typeof document.getElementById === "function"
       ? document.getElementById("console-tabs-pane")
       : null;
   const pageWindows = () =>
@@ -66,22 +67,22 @@ export function createConsole(
   // for operator messages (every other default below is the shell's
   // behaviour); `detached-fence-main.ts` overrides all five,
   // which is what makes the popup unable to author the desk or the viewport.
-  const OPTS = opts || {};
-  const deskSink = OPTS.deskSink || WBDeskSink.daemon();
-  const viewStore = OPTS.viewStore || WBView;
+  const OPTS = opts;
+  const deskSink = OPTS.deskSink ?? WBDeskSink.daemon();
+  const viewStore = OPTS.viewStore ?? WBView;
   // The confirm, the notice and the toast are the door's (`wb-messages.ts`);
   // a page that passes no door gets one with no shell.
-  const messages = OPTS.messages || createMessages(window, document);
+  const messages = OPTS.messages ?? createMessages(window, document);
   const { askConfirm, toast } = messages;
   // The z stack and the gestures are the document's (`wb-stage-stack.ts`),
   // shared with the note cards; a page that passes none gets its own.
-  const stack = OPTS.stack || createStack(document);
+  const stack = OPTS.stack ?? createStack(document);
   const { focusWin } = stack;
-  const gestures = OPTS.gestures || createGestures();
+  const gestures = OPTS.gestures ?? createGestures();
   // Detach registry + lifecycle channel (#347). Denied in the popup: `window.open`
   // hands it a COPY of the opener's session-scoped store, so a read there drifts.
   // This module names no browser store of its own — pinned in lib.rs.
-  const link = OPTS.detachLink || WBDetachLink.link();
+  const link = OPTS.detachLink ?? WBDetachLink.link();
   const wins = new Set<ConsoleWin>();
 
   // ---- the desk records: `wb-desk-records.ts` ----------------------------------
@@ -171,8 +172,7 @@ export function createConsole(
   // its tab is the active one (ADR-0037 §3d). The dormancy rule and the GPU
   // budget both read it.
   const windowShown = (win: ConsoleWin) => {
-    const tabs = window.Alpine?.store("tabs");
-    if (!tabs) return true;
+    const tabs = window.Alpine.store("tabs");
     return inTab(win) ? win.classList.contains("tab-shown") : tabs.active === "consoles";
   };
   // ---- dormancy and resume: `wb-console-dormancy.ts` ---------------------------

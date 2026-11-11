@@ -44,7 +44,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
   // Per browser profile (wb-settings.ts `scope: client`, stored by
   // `wb-client-view.ts`). Absent — the popup reads nothing — means auto.
   function keyBarMode() {
-    return viewStore?.read()?.keys ?? null;
+    return viewStore.read()?.keys ?? null;
   }
 
   function applyKeyBar(win: ConsoleWin) {
@@ -53,13 +53,13 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
   }
 
   function fontSize() {
-    return viewStore?.read()?.font ?? FONT_DEFAULT;
+    return viewStore.read()?.font ?? FONT_DEFAULT;
   }
 
   // Every window at once. `fit` is required: the BOX does not change, so the
   // ResizeObserver never fires and the daemon would never learn the new size.
   function setFont(px: number) {
-    viewStore?.patch({ font: px });
+    viewStore.patch({ font: px });
     for (const w of wins) {
       const t = w._term;
       if (!t) continue;
@@ -84,7 +84,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     const fallback = () => {
       // A detached popup has its OWN document — write into the one this terminal
       // actually lives in, not the shell's.
-      const doc = term?.element?.ownerDocument || document;
+      const doc = term.element.ownerDocument;
       const ta = doc.createElement("textarea");
       ta.value = text;
       // Off-screen rather than `display:none`: a hidden element cannot be selected.
@@ -100,10 +100,11 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       } catch {}
       ta.remove();
       try {
-        term?.focus();
+        term.focus();
       } catch {}
     };
-    if (!navigator.clipboard) {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on an insecure origin
+    if (navigator.clipboard === undefined) {
       fallback();
       return;
     }
@@ -148,10 +149,10 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       b.type = "button";
       // Not in the tab order: a keyboard user already has these keys.
       b.tabIndex = -1;
-      b.className = "session-key" + (cls ? " " + cls : "");
+      b.className = "session-key" + (cls !== undefined && cls !== "" ? " " + cls : "");
       b.dataset.key = name;
       b.title = title;
-      if (icon) {
+      if (icon !== undefined && icon !== "") {
         const i = document.createElement("i");
         i.className = "bi " + icon;
         b.append(i);
@@ -184,7 +185,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       // iOS reads `inputmode` only when the field takes focus. The click
       // handler focuses it again, inside the same tap.
       refocusing = true;
-      field?.blur();
+      field.blur();
       refocusing = false;
     };
 
@@ -217,7 +218,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     const copyBtn = key("copy", "", "Copy selection", "", "bi-copy");
     copyBtn.disabled = true;
     const syncCopy = () => {
-      copyBtn.disabled = !win._term?.term.hasSelection();
+      copyBtn.disabled = win._term?.term.hasSelection() !== true;
     };
     // The one piece of chrome bound to a PARTICULAR terminal:
     // `onSelectionChange` is on the xterm instance, so a woken console's new
@@ -225,7 +226,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
     win._rewire = (t: ConsoleTerm) => {
       t.term.onSelectionChange(syncCopy);
       syncCopy();
-      t.term.textarea?.addEventListener("blur", () => {
+      t.term.textarea.addEventListener("blur", () => {
         if (refocusing || !keyboardOpen) return;
         keyboardOpen = false;
         applyInputMode();

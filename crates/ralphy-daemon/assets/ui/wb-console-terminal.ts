@@ -154,7 +154,7 @@ export function createTerminal(deps: TerminalDeps) {
       opened: false,
       everOpened: false,
       // A launch that is a watch starts read-only.
-      watching: !!opts.watch,
+      watching: opts.watch === true,
       announced: null,
       refusal: null,
       switching: false,
@@ -253,7 +253,7 @@ export function createTerminal(deps: TerminalDeps) {
           if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
           return ctrlLatched;
         }
-        const step = barKey(name, !!term.modes?.applicationCursorKeysMode, shiftLatched);
+        const step = barKey(name, term.modes.applicationCursorKeysMode, shiftLatched);
         if (step.latched !== shiftLatched) {
           shiftLatched = step.latched;
           if (typeof opts.onShiftLatch === "function") opts.onShiftLatch(shiftLatched);
