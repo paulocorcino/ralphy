@@ -96,20 +96,19 @@
     "no-promise-executor-return": "error",
     "promise/always-return": "error",
     "promise/no-callback-in-promise": "error",
+    "typescript/no-unsafe-type-assertion": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-unnecessary-type-parameters": "error",
     // debt: 461 sites
     "require-unicode-regexp": "off",
     // debt: 133 sites
     "unicorn/consistent-function-scoping": "off",
-    // debt: 102 sites
-    "typescript/no-unsafe-type-assertion": "off",
     // debt: 46 sites
     "no-restricted-properties": "off",
     // debt: 45 sites
     "unicorn/prefer-add-event-listener": "off",
     // debt: 44 sites
     "unicorn/no-array-sort": "off",
-    // debt: 41 sites
-    "typescript/consistent-type-imports": "off",
     // debt: 38 sites
     "no-console": "off",
     // debt: 23 sites
@@ -134,8 +133,6 @@
     "no-script-url": "off",
     // debt: 4 sites
     "typescript/no-extraneous-class": "off",
-    // debt: 3 sites
-    "typescript/no-unnecessary-type-parameters": "off",
     // debt: 3 sites
     "unicorn/no-object-as-default-parameter": "off",
     // debt: 3 sites
@@ -182,16 +179,6 @@
   "overrides": [
     // Test code is not measured for complexity (ADR-0081 D3).
     { "files": ["**/ui-tests/**"], "env": { "node": true }, "rules": { "complexity": "off" } },
-    // Phase 11: the modules have no cast the checker cannot read; the rules
-    // read the types, so they run with `--type-aware` only.
-    {
-      "files": ["**/assets/ui/*.ts"],
-      "rules": {
-        "typescript/no-unsafe-type-assertion": "error",
-        "typescript/no-unnecessary-type-parameters": "error",
-        "typescript/consistent-type-imports": "error"
-      }
-    },
     // `globals.d.ts` is a script: it names other modules' types with `import()`,
     // because a top-level `import` would make it a module and its names not global.
     {

@@ -38,3 +38,4 @@
 {"date": "2026-11-11", "kind": "note", "text": "Phase 3: panic, string_slice, as_conversions, undocumented_unsafe_blocks, cast_possible_truncation, cast_precision_loss, cast_sign_loss and cast_possible_wrap are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 14: jscpd at minTokens 75 and minLines 5 is an error, with a clone count ratchet (42) and a jscpd ignore marker ratchet (22)"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 10: no-confusing-void-expression, strict-void-return, consistent-return, require-await, no-promise-executor-return, promise/always-return and promise/no-callback-in-promise are errors in the workbench and the ui-tests"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 11: typescript/no-unsafe-type-assertion, typescript/consistent-type-imports and typescript/no-unnecessary-type-parameters are errors; exactOptionalPropertyTypes and noPropertyAccessFromIndexSignature are on"}
