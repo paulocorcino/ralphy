@@ -204,7 +204,10 @@
         "**/ui/wb-columns*.ts",
         "**/ui/wb-uploads-store.ts",
         "**/ui/wb-notes*.ts",
-        "**/ui/wb-console*.ts"
+        "**/ui/wb-console*.ts",
+        "**/ui/wb-spend*.ts",
+        "**/ui/wb-fleet*.ts",
+        "**/ui/wb-runs*.ts"
       ],
       "rules": {
         "typescript/strict-boolean-expressions": "error",

@@ -38,13 +38,13 @@ export function wbRuns() {
     // `loadPlan`, `diffWorkSide` and the git-backed panels.
     async loadRunPlan() {
       const run = this.$store.runs.currentRun();
-      if (!run?.planPath) return;
+      if (run === null || run.planPath === "") return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
           repo: this.$store.projects.openSlug,
           path: run.planPath,
         });
-        if (reply?.status === "ok") {
+        if (reply.status === "ok") {
           this.$store.runs.setRunPlan(run, reply.content || "");
         } else {
           this.$store.runs.setRunPlan(run, null);
@@ -57,14 +57,14 @@ export function wbRuns() {
       if (this.$store.runs.currentRun() !== run) return;
       // Reassign the section only when the chosen heading is gone.
       const hs = this.planHeadings(run);
-      if (!hs.includes(this.planSection)) this.planSection = hs[0] || "";
+      if (!hs.includes(this.planSection)) this.planSection = hs[0] ?? "";
     },
 
     selectRun(runid: string) {
       this.$store.runs.setCurrentRun(runid);
       this.trailFocus = null; // the arrival marker belonged to the run we left
       // reset the section dropdown to the new run's first non-Steps heading
-      this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
+      this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] ?? "";
       // each run has its own plan; the viewer follows the selection.
       void this.loadRunPlan();
     },
@@ -77,7 +77,7 @@ export function wbRuns() {
       if (this.$store.projects.openSlug !== repo) this.toggle(repo);
       void this.$nextTick(() => {
         this.$store.runs.setCurrentRun(runid);
-        this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
+        this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] ?? "";
         void this.loadRunPlan();
         if (!this.runsOpen) this.toggleRuns();
       });
@@ -134,7 +134,7 @@ export function wbRuns() {
     nodeTitle(run: Run | null, iss: RunIssue | null) {
       if (!run || !iss) return "";
       const st = WBRun.issueState(run, iss);
-      let t = `#${iss.number} — ${iss.title} · ${WBRun.LABEL[st] || st}`;
+      let t = `#${iss.number} — ${iss.title} · ${WBRun.LABEL[st] ?? st}`;
       // Per-issue: tier routing gives two issues of one run different models.
       const seg = WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;
@@ -165,7 +165,7 @@ export function wbRuns() {
       const hit = window.WBKanban.runningFor(number, this.$store.runs.projectRuns());
       if (!hit) return;
       this.$store.runs.setCurrentRun(hit.runid);
-      this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
+      this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] ?? "";
       void this.loadRunPlan();
       // `toggleRuns()` would CLOSE an already-open panel — only open it.
       if (!this.runsOpen) this.toggleRuns();
@@ -193,7 +193,7 @@ export function wbRuns() {
     // `runs.dirty` when it exits.
     async stopRun(runid: string | null | undefined) {
       // No runid: the run left the panel between the render and the click.
-      if (!runid || this.runStopping) return;
+      if (runid == null || runid === "" || this.runStopping !== null) return;
       // ADR-0032 §6 asks for a strong confirmation. The shell's OWN dialog,
       // not `window.confirm` (blocks the page, ignores the theme).
       const ok = await this.$store.modals.askConfirm({
@@ -202,7 +202,7 @@ export function wbRuns() {
         confirmLabel: "Stop",
         danger: true,
       });
-      if (!ok) return;
+      if (ok !== true) return;
       this.runStopping = runid;
       try {
         const reply = await window.WBDaemon.observe("run.stop", {
@@ -248,13 +248,13 @@ export function wbRuns() {
     // snapshot document, not from here (#330).
     renderPlanSection(run: Run | null, name: string) {
       if (!run || !name || !this.planProseIsCurrent(run)) return "";
-      const body = WBRun.section(run?.planMd, name);
+      const body = WBRun.section(run.planMd, name);
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
     },
 
     // --- the step list (the plan block is state, #330) ---------------------
     planSteps() {
-      return this.$store.runs.currentRun()?.steps || [];
+      return this.$store.runs.currentRun()?.steps ?? [];
     },
     stepGlyph(status: string) {
       return WBRun.stepGlyph(status);
@@ -268,7 +268,7 @@ export function wbRuns() {
     // Why the step list is empty — an unexplained blank block reads as a bug.
     stepsNote() {
       const run = this.$store.runs.currentRun();
-      if (this.planSteps().length) return "";
+      if (this.planSteps().length > 0) return "";
       if (run?.phase === "planning") return "Writing the plan…";
       if (run?.planIssue != null) return "This plan has no steps.";
       return "No plan for this issue yet.";
@@ -376,7 +376,7 @@ export function wbRuns() {
       this.trailFocus = null;
       this.verbError = "";
       void this.$nextTick(() => {
-        this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
+        this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] ?? "";
       });
     },
 
