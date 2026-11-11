@@ -197,7 +197,7 @@ export type ApiRefusal<K extends ApiRoute> = ApiFailed<FailedOf<ApiRoutes[K]>>;
  * `ReadDeadline` and in the stall report, when the route is not the name the
  * operator knows (a command is named by its verb). */
 export type ApiInit = Omit<RequestInit, "method"> & {
-  query?: Record<string, string | number>;
+  query?: Record<string, string | number> | undefined;
   deadlineMs?: number;
   what?: string;
 };

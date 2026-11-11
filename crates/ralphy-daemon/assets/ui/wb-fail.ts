@@ -26,7 +26,7 @@ export type Read = { value: unknown; goodAt: number; error: string; current: boo
 /** What one read attempt answered. */
 export type Outcome = { ok: boolean; value?: unknown; reason?: string; at: number };
 /** A verb's reply, a `spawn` frame, or nothing: what a failure is read from. */
-type Reply = { status?: string; message?: string; reason?: string } | null | undefined;
+type Reply = { status?: string; message?: string | undefined; reason?: string } | null | undefined;
 
 const CAUSE: Record<string, string> = {
   "not found": "it does not exist",

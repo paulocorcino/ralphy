@@ -23,20 +23,20 @@ export type PaneRecord = {
   encoding: string;
   bom: boolean;
   el?: HTMLElement;
-  ed?: MonacoEditor | MonacoDiffEditor;
+  ed?: MonacoEditor | MonacoDiffEditor | undefined;
   dirty?: boolean;
   mounting?: boolean;
   mountFailed?: boolean;
   fallbackEl?: HTMLElement;
   saveBtn?: HTMLElement | null;
   mirrorBtn?: HTMLElement | null;
-  saveKey?: MonacoDisposable;
-  ro?: ResizeObserver;
+  saveKey?: MonacoDisposable | undefined;
+  ro?: ResizeObserver | undefined;
   encMenu?: HTMLElement;
   /** A find asked for while the editor was not mounted or the pane was off screen. */
   pendingFind?: string | null;
   /** The bytes of an external write a dirty pane has not taken yet. */
-  pendingDisk?: string;
+  pendingDisk?: string | undefined;
   mermaidPending?: HTMLElement[];
   hits?: HTMLElement[];
   hitIdx?: number;
@@ -60,8 +60,8 @@ export type OpenSpec = {
   original?: string;
   detached?: boolean;
   checkout?: string | null;
-  encoding?: string;
-  bom?: boolean;
+  encoding?: string | undefined;
+  bom?: boolean | undefined;
 } & ({ content: string; refused?: undefined } | { content?: undefined; refused: string });
 
 /** Whether `v` has the shape `descOf` gives a file: what one window posts to

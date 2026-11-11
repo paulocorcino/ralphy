@@ -40,7 +40,7 @@ export type ExtentOpts = { grow?: boolean };
  * field may be missing, because each source fills a different part.
  */
 export type SpawnCarry = {
-  id?: string;
+  id?: string | undefined;
   repo?: string | null;
   agent?: string | null;
   kind?: string | null;
@@ -48,7 +48,7 @@ export type SpawnCarry = {
   max?: boolean;
   locked?: boolean;
   consoleName?: string | null;
-  checkout?: string | null;
+  checkout?: string | null | undefined;
   daemonId?: string | null;
   environment?: string | null;
   unrecorded?: boolean;
@@ -131,9 +131,9 @@ export type DeskRecordType = "window" | "fence" | "note";
 
 /** The session of a window in a `set`: a reconnect changes all three. */
 export type DeskSessionFields = {
-  sessionId?: number | null;
-  daemonId?: string | null;
-  environment?: string | null;
+  sessionId?: number | null | undefined;
+  daemonId?: string | null | undefined;
+  environment?: string | null | undefined;
 };
 
 /** The fields a `set` may change on a window. */
@@ -335,7 +335,7 @@ export type NoteCard = HTMLElement & {
   /** The card's desk record. */
   _noteRecord?: DeskNote;
   /** The record of a card whose record left the desk, or the popup's snapshot. */
-  _noteOrphan?: NoteSource;
+  _noteOrphan?: NoteSource | undefined;
   _noteLocked?: boolean;
   _noteEditor?: NoteEditor | null;
   _noteAsleep?: boolean;

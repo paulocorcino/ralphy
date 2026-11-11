@@ -26,6 +26,7 @@
     // The checks of #804: a read by index may be `undefined`, so a guard comes
     // before the value is used.
     "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
     // The lint gate: the checks that cost nothing when they came on. Two
     // more come with docs/lint/lint-transition.md.
     "noUnusedLocals": true,

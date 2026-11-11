@@ -29,7 +29,7 @@ export type PopupMember = {
   session?: number | null;
   rect?: Partial<Rect>;
   draft?: string;
-  claim?: string | null;
+  claim?: string | null | undefined;
 };
 
 const RECT_SIDES = ["left", "top", "width", "height"] as const;

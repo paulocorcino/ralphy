@@ -20,8 +20,8 @@ import type {
 export type NewNote = {
   repo?: string | null;
   checkout?: string | null;
-  viewport?: Partial<Size> | null;
-  offset?: Partial<Offset> | null;
+  viewport?: Partial<Size> | null | undefined;
+  offset?: Partial<Offset> | null | undefined;
 };
 
 /** What `createNotes` hands the card's birth and close: the card's closure names. */

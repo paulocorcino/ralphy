@@ -25,7 +25,7 @@ export type ViewerReadOnlyDeps = {
   reloadFile: (rec: ViewerRecord) => unknown;
   isNarrow: (el: HTMLElement | undefined) => boolean;
   watchNarrow: (
-    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    rec: { el?: HTMLElement; ro?: ResizeObserver | undefined },
     ed: MonacoEditor | MonacoDiffEditor,
   ) => void;
 };

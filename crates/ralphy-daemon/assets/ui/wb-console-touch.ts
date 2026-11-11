@@ -41,7 +41,7 @@ export type TouchDeps = {
   // The terminal's opts: `onSelecting` arms or disarms the key bar's button.
   opts: Pick<TerminalOpts, "onSelecting">;
   // The scroll probe's hooks, in a developer build only (wb-console-probe.ts).
-  probe?: Pick<ScrollWatch, "moved" | "step">;
+  probe?: Pick<ScrollWatch, "moved" | "step"> | undefined;
 };
 
 export function wireTouch(deps: TouchDeps) {

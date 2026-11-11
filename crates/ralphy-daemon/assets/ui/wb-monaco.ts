@@ -170,7 +170,7 @@ type CreateSpec = {
   path: string;
   uid: number;
   project: string;
-  wordWrap?: string;
+  wordWrap?: string | undefined;
   narrow: boolean;
 };
 
@@ -334,7 +334,7 @@ export const WBMonaco = (function () {
   // The options every code editor shares, whether it owns its model (create)
   // or sits over another pane's (createOver): the two must render identically,
   // or a mirror would read as a different file.
-  function editorOptions({ wordWrap, narrow }: { wordWrap?: string; narrow: boolean }) {
+  function editorOptions({ wordWrap, narrow }: { wordWrap?: string | undefined; narrow: boolean }) {
     return {
       ...gutterOptions(narrow),
       theme: "wb",
@@ -379,7 +379,7 @@ export const WBMonaco = (function () {
   function createOver(
     container: HTMLElement,
     model: MonacoModel,
-    { wordWrap, narrow }: { wordWrap?: string; narrow: boolean },
+    { wordWrap, narrow }: { wordWrap?: string | undefined; narrow: boolean },
   ) {
     const monaco = window.monaco;
     return monaco.editor.create(container, { model, ...editorOptions({ wordWrap, narrow }) });

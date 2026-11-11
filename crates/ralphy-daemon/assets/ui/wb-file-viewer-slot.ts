@@ -35,7 +35,7 @@ export type ViewerSlotDeps = {
   setCaption: (btn: HTMLElement, icon: string, caption: string) => void;
   isNarrow: (el: HTMLElement | undefined) => boolean;
   watchNarrow: (
-    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    rec: { el?: HTMLElement; ro?: ResizeObserver | undefined },
     ed: MonacoEditor | MonacoDiffEditor,
   ) => void;
   bindSave: (ed: MonacoEditor, rec: ViewerRecord) => MonacoDisposable;

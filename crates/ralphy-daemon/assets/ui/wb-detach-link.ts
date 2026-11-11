@@ -50,7 +50,7 @@ export type DetachMessage = {
   tab: string | null;
   /** `null` in a popup that has not been handed its fence yet. */
   fenceId?: string | null;
-  pid?: string | null;
+  pid?: string | null | undefined;
   /** `popup-here`: the popup's snapshot of its members. */
   members?: { id: string; kind?: string | null; path?: string }[];
   noteId?: string;

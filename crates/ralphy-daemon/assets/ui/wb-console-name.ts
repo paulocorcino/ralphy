@@ -92,7 +92,7 @@ export const WBConsoleName = (function () {
   // records and never mutates the input, so running it twice changes nothing.
   function nameDesk<R extends NamedRecord>(
     records: R[],
-    prefixOfRepo: (repo: R["repo"]) => string,
+    prefixOfRepo: (repo: R["repo"] | undefined) => string,
   ): R[] {
     const names = records.map((r) => r.consoleName).filter(Boolean);
     return records.map((r) => {

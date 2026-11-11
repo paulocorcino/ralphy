@@ -116,17 +116,17 @@ export type TabOpen = {
   title: string;
   ftype: string;
   content?: string;
-  fragment?: string;
+  fragment?: string | undefined;
   find?: string | null;
   checkout?: string | null;
-  encoding?: string;
-  bom?: boolean;
+  encoding?: string | undefined;
+  bom?: boolean | undefined;
 };
 
 /** What a file tab opens with: the bytes, or why the daemon served none.
  * `null`: there is nothing to show, and the tab is closed. */
 export type TabBody =
-  | { content: string; encoding?: string; bom?: boolean }
+  | { content: string; encoding?: string | undefined; bom?: boolean | undefined }
   | { refused: string }
   | null;
 

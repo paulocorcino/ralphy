@@ -47,7 +47,7 @@ export type DetachedMember = {
 /** A console the list is folded from: a window on this stage. */
 type RosterRow = DetachedMember & {
   state?: string | null;
-  detail?: string | null;
+  detail?: string | null | undefined;
   running?: boolean;
 };
 

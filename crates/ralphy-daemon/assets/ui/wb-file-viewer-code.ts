@@ -49,7 +49,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
   const isNarrow = (el: HTMLElement | undefined) =>
     el !== undefined && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
   function watchNarrow(
-    rec: { el?: HTMLElement; ro?: ResizeObserver },
+    rec: { el?: HTMLElement; ro?: ResizeObserver | undefined },
     ed: MonacoEditor | MonacoDiffEditor,
   ) {
     if (!rec.el || typeof ResizeObserver !== "function") return;
