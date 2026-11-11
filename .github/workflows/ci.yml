@@ -375,8 +375,8 @@ jobs:
 
   duplication:
     name: no new duplicated code
-    # Fails when the pull request adds a clone (.jscpd.json: 100 tokens over
-    # 10 lines, test files excluded) that the base branch does not have. A
+    # Fails when the pull request adds a clone (.jscpd.json: 75 tokens over
+    # 5 lines, test files excluded) that the base branch does not have. A
     # clone the pull request edits counts as new too: the fingerprint is the
     # fragment's text, so an edit inside an old clone changes it (measured
     # with jscpd 5.4.0, 2026-10-04).
@@ -403,6 +403,14 @@ jobs:
           echo "${JSCPD_SHA256}  jscpd.tar.gz" | sha256sum --check
           tar xzf jscpd.tar.gz jscpd
           ./jscpd --baseline-from-ref "origin/$BASE_REF" --fail-on-new-clones 0 crates
+
+      # The total of clones is a ratchet: it fails when the count is not the
+      # number below, so a removed clone lowers it in the same change.
+      - name: The clone count holds
+        run: |
+          set -euo pipefail
+          ./jscpd --reporters json --output jscpd-out crates
+          python3 docs/lint/scripts/tally.py jscpd jscpd-out/jscpd-report.json --prefix crates/ --expect 42
 
   lint-transition:
     name: lint debt

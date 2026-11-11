@@ -57,6 +57,7 @@ mod gate_exits;
 mod gate_mirrors_ci;
 mod gate_paths;
 mod ignore_lists;
+mod jscpd_markers;
 mod leftovers;
 mod lint_expects;
 mod peer_reply_pin;
