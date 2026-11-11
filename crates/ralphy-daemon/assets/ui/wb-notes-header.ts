@@ -31,7 +31,7 @@ export function legacyTitleOf(body: string | null | undefined) {
   const lines = (body ?? "").split("\n");
   let at = 0;
   while (at < lines.length && lines[at]?.trim() === "") at += 1;
-  const name = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "")?.[1];
+  const name = /^#\s+(.+?)\s*$/u.exec(lines[at] ?? "")?.[1];
   if (name === undefined) return null;
   // The blank line that separated the heading from the text goes with it.
   let after = at + 1;
@@ -58,7 +58,7 @@ export function splitFrontMatter(markdown: string | null | undefined) {
   const rest = text.slice(open);
   let offset = 0;
   for (const line of rest.split("\n")) {
-    if (line.replace(/\r$/, "") === "---") {
+    if (line.replace(/\r$/u, "") === "---") {
       return { inner: rest.slice(0, offset), body: rest.slice(offset + line.length + 1) };
     }
     offset += line.length + 1;
@@ -77,9 +77,9 @@ export function bodyOf(markdown: string | null | undefined) {
 export function fieldOf(markdown: string | null | undefined, key: string, set: string[]) {
   const split = splitFrontMatter(markdown);
   if (!split) return null;
-  const re = new RegExp("^\\s*" + key + ":\\s*(\\S+)\\s*$");
+  const re = new RegExp("^\\s*" + key + ":\\s*(\\S+)\\s*$", "u");
   for (const line of split.inner.split("\n")) {
-    const value = re.exec(line.replace(/\r$/, ""))?.[1];
+    const value = re.exec(line.replace(/\r$/u, ""))?.[1];
     if (value !== undefined) return set.includes(value) ? value : null;
   }
   return null;
@@ -107,7 +107,7 @@ export function titleFieldOf(markdown: string | null | undefined) {
   const split = splitFrontMatter(markdown);
   if (!split) return null;
   for (const line of split.inner.split("\n")) {
-    const raw = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""))?.[1];
+    const raw = /^\s*title:\s*(.*?)\s*$/u.exec(line.replace(/\r$/u, ""))?.[1];
     if (raw === undefined) continue;
     if (!raw.startsWith('"')) return raw;
     return raw

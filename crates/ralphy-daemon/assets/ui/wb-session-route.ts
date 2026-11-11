@@ -98,7 +98,7 @@ export const WBSessionRoute = (function () {
   // socket still holds half-open behind a tunnel. The daemon's rule, mirrored:
   // anything else is not a holder.
   const HOLDER_KEY = "ralphy.holder";
-  const HOLDER_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  const HOLDER_RE = /^[A-Za-z0-9_-]{1,64}$/u;
 
   // `sessionStorage` is per tab and survives a reload, which is the scope that
   // must keep the name. A storage that throws or is absent still yields a
@@ -215,7 +215,7 @@ export const WBSessionRoute = (function () {
 
   // Only the values the daemon reads; any other value is not sent. The
   // daemon reads the three as strings, so a bad one is absent there.
-  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/;
+  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/u;
   function linkFields(link: LinkFacts | undefined): SessionPayload {
     const out: SessionPayload = {};
     if (!link) return out;

@@ -204,11 +204,12 @@ export function applyCtrlLatch(latched: boolean, d: string) {
 // startup `ESC[6n` is always there), so these answers are dropped while it
 // replays. A modified F3 (`CSI 1;5R`) has the same bytes as a cursor answer;
 // the replay lasts a moment, so that collision is accepted.
-const CSI_REPLY = /\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)/;
+const CSI_REPLY = /\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)/u;
 const DCS_REPLY = /P[\s\S]*\u001B\\/u;
 const OSC_REPLY = /\]\d+;[\s\S]*(?:\u0007|\u001B\\)/u;
 const TERMINAL_REPLY = new RegExp(
   `^\\x1b(?:${CSI_REPLY.source}|${DCS_REPLY.source}|${OSC_REPLY.source})$`,
+  "u",
 );
 export function isTerminalReply(d: string) {
   return typeof d === "string" && TERMINAL_REPLY.test(d);
@@ -405,7 +406,7 @@ export function scrubClipboard(text: string) {
     // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.
     if (c === 9 || c === 10 || (c >= 32 && c !== 127 && !(c >= 0x80 && c <= 0x9f))) out += ch;
   }
-  return out.replace(/\n+$/, "");
+  return out.replace(/\n+$/u, "");
 }
 
 // Pure over `ClipboardItem`s: the first image wins over text, as in the

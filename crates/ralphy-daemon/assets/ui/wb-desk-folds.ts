@@ -358,8 +358,8 @@ function isNotePath(path: unknown) {
     typeof path === "string" &&
     path.endsWith(".note") &&
     !path.includes("..") &&
-    !/^[\\/]/.test(path) &&
-    !/^[a-zA-Z]:/.test(path)
+    !/^[\\/]/u.test(path) &&
+    !/^[a-zA-Z]:/u.test(path)
   );
 }
 
@@ -377,7 +377,7 @@ export function popupMatches(
   return m?.pid === entry.pid;
 }
 
-const FENCE_NAME_RE = /^Fence (\d+)$/;
+const FENCE_NAME_RE = /^Fence (\d+)$/u;
 export function nextFenceName(existing: readonly { name?: string | null }[] = []) {
   const highest = existing.reduce((max: number, f) => {
     const m = FENCE_NAME_RE.exec(f.name ?? "");

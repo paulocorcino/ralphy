@@ -27,7 +27,7 @@ function stepStatus(mark: string) {
 export function parseSteps(md: string | null | undefined) {
   const out: { text: string; status: string }[] = [];
   (md ?? "").split(/\r?\n/u).forEach((ln) => {
-    const [, mark, text] = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/) ?? [];
+    const [, mark, text] = ln.replace(/^\s+/u, "").match(/^- \[([ xX!])\](.*)$/u) ?? [];
     if (mark === undefined || text === undefined) return;
     const status = stepStatus(mark);
     const plain = text.replaceAll(/[*_`]/gu, "").trim().replaceAll(/\s+/gu, " ");
@@ -41,7 +41,7 @@ export function parseSteps(md: string | null | undefined) {
 export function headings(md: string | null | undefined) {
   const out: string[] = [];
   (md ?? "").split("\n").forEach((ln) => {
-    const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
+    const heading = ln.match(/^##\s+(.+?)\s*$/u)?.[1];
     if (heading !== undefined) out.push(heading);
   });
   return out;
@@ -61,7 +61,7 @@ export function headings(md: string | null | undefined) {
 // `## Notes & decisions` / `## Handoff` AFTER the trailer while it works — so
 // presence anywhere, not position. Do not "fix" this into the resume rule: the
 // prose would vanish the moment execution wrote its first note.
-export const PLAN_TRAILER_RE = /<!--\s*ralphy-plan:\s*issue=(\d+)\s*-->/g;
+export const PLAN_TRAILER_RE = /<!--\s*ralphy-plan:\s*issue=(\d+)\s*-->/gu;
 export function planTrailerIssue(md: string | null | undefined) {
   if (md == null || md === "") return null;
   let issue = null;
@@ -91,8 +91,8 @@ export function section(md: string | null | undefined, name: string) {
   let inSec = false;
   // `/\r?\n/` for the same reason as `parseSteps`: a CRLF plan.md would
   // otherwise return a body with a carriage return on every line.
-  for (const ln of md.split(/\r?\n/)) {
-    const heading = ln.match(/^##\s+(.+?)\s*$/)?.[1];
+  for (const ln of md.split(/\r?\n/u)) {
+    const heading = ln.match(/^##\s+(.+?)\s*$/u)?.[1];
     if (heading !== undefined) {
       const isTarget = heading.trim().toLowerCase() === want;
       if (inSec && !isTarget) break;
@@ -119,13 +119,13 @@ export function section(md: string | null | undefined, name: string) {
 //     the heading carries the verdict, so any tail after "Feasible" is accepted).
 //   • needsSplit  ⇐ a heading other than `Feasible: yes` and that reason containing
 //     the literal word "bundle" (core `handoff::is_bundle_verdict`).
-export const FEASIBLE_HEAD = /^##\s+Feasible\b.*$/im;
+export const FEASIBLE_HEAD = /^##\s+Feasible\b.*$/imu;
 // The `## Feasible` heading verbatim ("Feasible: no"), for the modal's banner.
 export function feasibleHeading(md: string | null | undefined) {
   return (
     (md ?? "")
       .match(FEASIBLE_HEAD)?.[0]
-      .replace(/^##\s+/, "")
+      .replace(/^##\s+/u, "")
       .trim() ?? ""
   );
 }
@@ -140,7 +140,7 @@ export function isBundleReason(reason: string | null | undefined) {
   return (reason ?? "").toLowerCase().includes("bundle");
 }
 
-export const FEASIBLE_YES = /^##\s+Feasible\s*:\s*yes\b/im;
+export const FEASIBLE_YES = /^##\s+Feasible\s*:\s*yes\b/imu;
 // One plan.md → what the board needs to know about it. `issue` is null for prose
 // carrying no trailer, and the caller MUST treat that as "no plan for anyone":
 // an unfinished plan is not yet a plan (see `planBelongsTo`).

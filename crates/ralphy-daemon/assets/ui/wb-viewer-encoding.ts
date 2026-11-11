@@ -37,8 +37,8 @@ const ENCODINGS: Encoding[] = [
 // was read and will be written back.
 export function encodingLabel(name: string | null | undefined, bom: boolean) {
   let text = (name ?? "") || "UTF-8";
-  text = text.replace(/^utf-16(le|be)$/i, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
-  text = text.replace(/^windows-/i, "Windows-");
+  text = text.replace(/^utf-16(le|be)$/iu, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
+  text = text.replace(/^windows-/iu, "Windows-");
   return bom ? `${text} BOM` : text;
 }
 

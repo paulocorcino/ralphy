@@ -71,7 +71,7 @@ function blockingDialogOpen(modals: { modalOpen(path: string): boolean }) {
 // Why `name` cannot be a single directory entry, or "" when it can.
 function nameProblem(name: string) {
   if (!name) return "name is required";
-  if (/[\\/]/.test(name)) return "name cannot contain / or \\";
+  if (/[\\/]/u.test(name)) return "name cannot contain / or \\";
   return name === "." || name === ".." ? "name cannot be . or .." : "";
 }
 

@@ -434,7 +434,7 @@ export function createDaemon(
     let pending = "";
     const feedLines = (text: string) => {
       pending += text;
-      const parts = pending.split(/\r\n|\n|\r/);
+      const parts = pending.split(/\r\n|\n|\r/u);
       pending = parts.pop() ?? "";
       if (pending.length > PENDING_CAP) pending = pending.slice(-PENDING_CAP);
       for (const line of parts) if (line.trim() !== "") lastLine = line.trim();

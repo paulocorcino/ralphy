@@ -40,7 +40,7 @@ export const WBConsoleName = (function () {
     prefix: string,
     names: Iterable<string | null | undefined> | null | undefined,
   ) {
-    const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`);
+    const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`, "u");
     const used = new Set<number>();
     for (const name of names ?? []) {
       const m = form.exec(name ?? "");

@@ -159,9 +159,9 @@ export function anchorsOf(markdown: string | null | undefined) {
   let fenced = false;
   for (const line of lines) {
     // A `##` inside a code fence is source, not a heading.
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    if (/^\s*(```|~~~)/u.test(line)) fenced = !fenced;
     if (fenced) continue;
-    const text = /^##\s+(.+?)\s*$/.exec(line)?.[1];
+    const text = /^##\s+(.+?)\s*$/u.exec(line)?.[1];
     if (text !== undefined) out.push({ text, index: out.length });
   }
   return out;
@@ -344,7 +344,7 @@ export function popupLinkTarget(
 ): { kind: "fragment"; fragment: string } | { kind: "external" } | null {
   if (href === null || href === "") return null;
   if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(href) || href.startsWith("/")) return { kind: "external" };
   return null;
 }
 

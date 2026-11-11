@@ -81,7 +81,7 @@ export function wirePaste(deps: PasteDeps) {
     };
     reader.onload = () => {
       const base64 = (typeof reader.result === "string" ? reader.result : "").replace(
-        /^data:[^,]*,/,
+        /^data:[^,]*,/u,
         "",
       );
       daemon

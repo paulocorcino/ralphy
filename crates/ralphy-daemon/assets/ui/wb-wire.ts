@@ -362,7 +362,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
       // "not found" on a delete says the ROW is the lie: re-list the parent
       // so the ghost ends up off the screen.
-      if (/not found/i.test(reason)) {
+      if (/not found/iu.test(reason)) {
         sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
       }
     }

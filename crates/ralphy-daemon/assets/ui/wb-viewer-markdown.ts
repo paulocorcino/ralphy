@@ -42,7 +42,7 @@ export function remoteImageNotice(src: string, alt: string) {
 // for anything that climbs OUT of the repo — the daemon would refuse it
 // anyway, and not asking is the honest way to spell "not ours".
 function repoRelative(dir: string, src: string) {
-  let clean = src.split(/[?#]/)[0] ?? "";
+  let clean = src.split(/[?#]/u)[0] ?? "";
   try {
     clean = decodeURIComponent(clean);
   } catch {
@@ -246,7 +246,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
       const src = img.getAttribute("src") ?? "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
-      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
+      if (/^[a-z][a-z0-9+.-]*:/iu.test(src) || src.startsWith("/")) return;
       const rel = repoRelative(dir, src);
       if (rel === null) return;
       WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)

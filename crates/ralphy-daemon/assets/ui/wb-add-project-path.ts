@@ -19,7 +19,7 @@ export function sepOf(state: State) {
   // Only a Windows daemon lists drives, with an empty folder path.
   if (state.listing?.dir?.path === "") return "\\";
   const sample = pathSample(state);
-  return /^[A-Za-z]:/.test(sample) || sample.includes("\\") ? "\\" : "/";
+  return /^[A-Za-z]:/u.test(sample) || sample.includes("\\") ? "\\" : "/";
 }
 
 // A path the daemon answered, or else the text in the field.
@@ -43,7 +43,7 @@ export function withSep(path: string, sep: string) {
 
 // `C:\Dev\..` and `/home/me/..\` go up one level, as in a shell.
 export function collapseDots(text: string) {
-  const m = /^(.*[\\/])[^\\/]+[\\/]\.\.([\\/]?)$/.exec(text);
+  const m = /^(.*[\\/])[^\\/]+[\\/]\.\.([\\/]?)$/u.exec(text);
   return m ? m[1] : text;
 }
 
@@ -51,7 +51,7 @@ export function collapseDots(text: string) {
 // when the text is not one; else the peer's id and the Linux path, or the
 // distro that has no peer.
 export function mapWsl(text: string, peers: Peer[] | null | undefined) {
-  const m = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)([\\/].*)?$/i.exec(text || "");
+  const m = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)([\\/].*)?$/iu.exec(text || "");
   const distro = m?.[1];
   if (!m || distro === undefined) return null;
   const rest = ((m[2] ?? "") || "/").replaceAll("\\", "/");
@@ -75,7 +75,7 @@ export function parentText(text: string) {
 }
 
 export function basename(path: string) {
-  return lastName(path.replace(/[\\/]+$/, "")) || path;
+  return lastName(path.replace(/[\\/]+$/u, "")) || path;
 }
 
 export function sameName(a: string, b: string, sep: string) {
