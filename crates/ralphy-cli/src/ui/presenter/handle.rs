@@ -14,7 +14,7 @@ use crate::ui::{
 /// [`finalize`](Self::finalize) after `run_queue` returns to flush the queue bar to
 /// `N/N` and clear the bars, so the final summary `println!`s are not tangled with
 /// a live region (ADR-0006 consequences).
-pub struct PresenterHandle {
+pub(crate) struct PresenterHandle {
     pub(super) multi: MultiProgress,
     pub(super) state: Arc<Mutex<LiveState>>,
     pub(super) color: bool,
@@ -30,7 +30,7 @@ pub struct PresenterHandle {
 impl PresenterHandle {
     /// A plain (colour off, no bars) handle for the `--verbose` / raw-stderr path.
     /// `finalize` is a no-op; `print_panel` produces uncoloured lines.
-    pub fn plain() -> PresenterHandle {
+    pub(crate) fn plain() -> PresenterHandle {
         PresenterHandle {
             multi: MultiProgress::new(),
             state: Arc::new(Mutex::new(LiveState::default())),
@@ -51,7 +51,7 @@ impl PresenterHandle {
     /// stdout stream and byte shape as the imperative print it replaced; a no-op
     /// on every run that did work. Call AFTER [`finalize`](Self::finalize), so the
     /// live region is cleared first (ADR-0006).
-    pub fn print_edge_notice(&self) {
+    pub(crate) fn print_edge_notice(&self) {
         let notice = match self.edge.lock() {
             Ok(mut g) => g.take(),
             Err(e) => e.into_inner().take(),
@@ -66,16 +66,16 @@ impl PresenterHandle {
     /// Telegram card for the run and varies across runs. Routed through
     /// `MultiProgress` when styled so it sits cleanly above the live region; bold-cyan
     /// on a colour TTY, plain otherwise.
-    pub fn print_header(&self, seed: &str) {
+    pub(crate) fn print_header(&self, seed: &str) {
         let header = crate::runstate::ralphy_header(seed);
         if self.color {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the console is the only place to report a failed write to it"
-            )]
-            let _ = self
+            // the console is the only place to report a failed write to it
+            match self
                 .multi
-                .println(Style::new().cyan().bold().apply_to(&header).to_string());
+                .println(Style::new().cyan().bold().apply_to(&header).to_string())
+            {
+                Ok(()) | Err(_) => {}
+            }
         } else {
             println!("{header}");
         }
@@ -83,18 +83,17 @@ impl PresenterHandle {
 
     /// Print the start-up info line (project · branch · repo URL) under the header.
     /// Routed through `MultiProgress` when styled so it sits above the live region.
-    pub fn print_info_line(&self, project: &str, branch: Option<&str>, url: Option<&str>) {
+    pub(crate) fn print_info_line(&self, project: &str, branch: Option<&str>, url: Option<&str>) {
         let opts = RenderOpts {
             color: self.color,
             emoji: self.color,
         };
         let line = render_info_line(project, branch, url, opts);
         if self.color {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the console is the only place to report a failed write to it"
-            )]
-            let _ = self.multi.println(line);
+            // the console is the only place to report a failed write to it
+            match self.multi.println(line) {
+                Ok(()) | Err(_) => {}
+            }
         } else {
             println!("{line}");
         }
@@ -102,7 +101,7 @@ impl PresenterHandle {
 
     /// Print the end-of-run totals panel to stdout, coloured when the handle is
     /// styled. Called after `finalize` has cleared the live region.
-    pub fn print_panel(&self, data: &PanelData) {
+    pub(crate) fn print_panel(&self, data: &PanelData) {
         let opts = RenderOpts {
             color: self.color,
             emoji: self.color,
@@ -114,7 +113,7 @@ impl PresenterHandle {
 
     /// Flush the queue bar to `N/N` (covering a trailing infeasible/dry-run issue
     /// with no following event) and clear the live region. No-op off a colour TTY.
-    pub fn finalize(&self) {
+    pub(crate) fn finalize(&self) {
         if !self.color {
             return;
         }
@@ -153,11 +152,10 @@ impl PresenterHandle {
         if let Some(bar) = s.queue_bar.take() {
             bar.finish_and_clear();
         }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the console is the only place to report a failed write to it"
-        )]
-        let _ = self.multi.clear();
+        // the console is the only place to report a failed write to it
+        match self.multi.clear() {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     /// Acquire the live state without blocking teardown forever: on a wedged render

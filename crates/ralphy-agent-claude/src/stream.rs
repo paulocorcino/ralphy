@@ -30,7 +30,7 @@ pub(crate) fn stream_text(stdout: &str) -> String {
             .flatten();
         match event {
             Some(event) => out.extend(event_text(&event)),
-            None => out.push(line.to_string()),
+            None => out.push(line.to_owned()),
         }
     }
     out.join("\n")
@@ -47,12 +47,12 @@ fn event_text(event: &Value) -> Vec<String> {
             .flatten()
             .filter(|item| item.get("type").and_then(Value::as_str) == Some("text"))
             .filter_map(|item| item.get("text").and_then(Value::as_str))
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect(),
         Some("result") => event
             .get("result")
             .and_then(Value::as_str)
-            .map(str::to_string)
+            .map(str::to_owned)
             .into_iter()
             .collect(),
         _ => Vec::new(),

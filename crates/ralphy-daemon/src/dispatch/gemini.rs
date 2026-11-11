@@ -6,6 +6,6 @@
 pub fn gemini_root_argv() -> Vec<String> {
     ["gemini", "prepare-root"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }

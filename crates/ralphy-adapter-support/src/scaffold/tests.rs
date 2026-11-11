@@ -6,7 +6,7 @@ use crate::scratch::remove_scratch_dir;
 fn fake_run(log: &str) -> HeadlessRun {
     HeadlessRun {
         stdout: String::new(),
-        log: log.to_string(),
+        log: log.to_owned(),
         exited_cleanly: true,
         timed_out: false,
         idle_killed: false,
@@ -30,7 +30,7 @@ fn fake_run_failed(log: &str) -> HeadlessRun {
 fn fake_run_killed(log: &str) -> HeadlessRun {
     HeadlessRun {
         stdout: String::new(),
-        log: log.to_string(),
+        log: log.to_owned(),
         exited_cleanly: false,
         timed_out: true,
         idle_killed: false,
@@ -121,7 +121,7 @@ fn plan_present_returns_ok() {
     .unwrap()
     .expect("fresh plan yields Some");
     assert_eq!(p, 7);
-    assert!(r.log.is_empty());
+    assert_eq!(r.log, "");
     remove_scratch_dir(&dir);
 }
 

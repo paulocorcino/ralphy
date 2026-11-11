@@ -12,6 +12,7 @@
 //! download through the same primitive here, so both paths replace a binary the
 //! same way (ADR-0056 §8).
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -20,8 +21,12 @@ use clap::Args;
 mod user_path;
 pub(crate) use user_path::remove_from_user_path;
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent command-line flag, not a state"
+)]
 #[derive(Args)]
-pub struct InstallArgs {
+pub(crate) struct InstallArgs {
     /// The folder to put `ralphy` in. Default: `~/.cargo/bin` when it exists,
     /// otherwise `~/.local/bin`.
     #[arg(long)]
@@ -66,7 +71,7 @@ pub(crate) fn warn_if_elevated() {
     }
 }
 
-pub fn run(args: &InstallArgs) -> Result<()> {
+pub(crate) fn run(args: &InstallArgs) -> Result<()> {
     let dir = match &args.dir {
         Some(d) => d.clone(),
         None => default_bin_dir()?,
@@ -262,14 +267,11 @@ fn copy_permissions(from: Option<&Path>, to: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let mode = from
         .and_then(|p| std::fs::metadata(p).ok())
-        .map(|m| m.permissions().mode())
-        .unwrap_or(0o755);
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the copy is already in place, and a mode that cannot be set leaves the \
-                  file as copied"
-    )]
-    let _ = std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode | 0o111));
+        .map_or(0o755, |m| m.permissions().mode());
+    // the copy is already in place, and a mode that cannot be set leaves the file as copied
+    if let Err(e) = std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode | 0o111)) {
+        tracing::debug!("could not set the mode of {}: {e}", to.display());
+    }
 }
 
 #[cfg(not(unix))]
@@ -323,7 +325,11 @@ fn print_path_added(dir: &Path, added: &user_path::Added) {
     }
     match &added.reload {
         Some(cmd) => {
-            println!("Open a new terminal to use `ralphy`, or run this in this one: {cmd}")
+            writeln!(
+                std::io::stdout(),
+                "Open a new terminal to use `ralphy`, or run this in this one: {cmd}"
+            )
+            .expect("the report goes to stdout, as println! sent it");
         }
         None => println!("Open a new terminal to use `ralphy`."),
     }
@@ -338,7 +344,7 @@ fn on_path(path: &std::ffi::OsStr, dir: &Path) -> bool {
         if cfg!(windows) {
             s.to_lowercase()
         } else {
-            s.to_string()
+            s.to_owned()
         }
     };
     let want = norm(dir);

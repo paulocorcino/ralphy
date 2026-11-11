@@ -67,10 +67,6 @@
 //! with the assertions in `tests/headless/main.rs` via the shared constants below.
 
 #![expect(
-    clippy::let_underscore_must_use,
-    reason = "a test helper child: the parent may close its pipes, and no one reads its errors"
-)]
-#![expect(
     clippy::disallowed_methods,
     reason = "a test helper child: the parent test reads the exit code, so the child exits at once"
 )]
@@ -111,7 +107,10 @@ pub const SESSION_START_DELAY: Duration = Duration::from_millis(500);
 fn record_stdin() {
     let path = std::env::args().nth(2).unwrap_or_default();
     let mut buf = String::new();
-    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+    best_effort(std::io::Read::read_to_string(
+        &mut std::io::stdin(),
+        &mut buf,
+    ));
     if let Err(e) = std::fs::write(&path, buf) {
         eprintln!("failed to record stdin to {path}: {e}");
         std::process::exit(3);
@@ -121,7 +120,7 @@ fn record_stdin() {
 /// Write [`AUTH_TEXT`] to stdout as a full line, flushed.
 fn print_auth_text() {
     println!("{AUTH_TEXT}");
-    let _ = std::io::stdout().flush();
+    best_effort(std::io::stdout().flush());
 }
 
 /// Append the `SessionStart` hook line to `$RALPHY_STATUS_FILE`.
@@ -158,8 +157,8 @@ fn beat(label: &str) {
             .append(true)
             .open(&path)
         {
-            let _ = f.write_all(line.as_bytes());
-            let _ = f.flush();
+            best_effort(f.write_all(line.as_bytes()));
+            best_effort(f.flush());
         }
         std::thread::sleep(CHATTY_TICK);
     }
@@ -187,9 +186,9 @@ fn main() {
     match mode.as_str() {
         "clean" => {
             print!("{CLEAN_STDOUT}");
-            let _ = std::io::stdout().flush();
+            best_effort(std::io::stdout().flush());
             eprint!("{CLEAN_STDERR}");
-            let _ = std::io::stderr().flush();
+            best_effort(std::io::stderr().flush());
         }
         "sleep" => {
             std::thread::sleep(Duration::from_secs(60));
@@ -199,7 +198,7 @@ fn main() {
             // stays open even after we are killed. Then sleep. Only a process-tree
             // kill closes the pipe and lets the reader reach EOF.
             if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(exe).arg("sleep").spawn();
+                best_effort(std::process::Command::new(exe).arg("sleep").spawn());
             }
             std::thread::sleep(Duration::from_secs(60));
         }
@@ -208,11 +207,11 @@ fn main() {
             // reader reaches EOF, which — with the orphan below holding the
             // write-end — only the pre-collect tree-kill can force.
             println!("{LEAK_MARKER}");
-            let _ = std::io::stdout().flush();
+            best_effort(std::io::stdout().flush());
             // Grandchild inherits our stdout, then we exit 0 straight away — the
             // orphan holds the pipe open past our natural exit.
             if let Ok(exe) = std::env::current_exe() {
-                let _ = std::process::Command::new(exe).arg("sleep").spawn();
+                best_effort(std::process::Command::new(exe).arg("sleep").spawn());
             }
         }
         "stderr-then-sleep" => {
@@ -220,7 +219,7 @@ fn main() {
             // `read_until` returns it immediately, then sleep past any test's
             // patience. The early-kill switch must reap us on the marker line.
             eprintln!("{STDERR_MARKER}");
-            let _ = std::io::stderr().flush();
+            best_effort(std::io::stderr().flush());
             std::thread::sleep(Duration::from_secs(60));
         }
         "chatty" => {
@@ -228,7 +227,7 @@ fn main() {
             // idle beacon) immediately, rather than sitting in a block buffer.
             for i in 0..600 {
                 println!("tick {i}");
-                let _ = std::io::stdout().flush();
+                best_effort(std::io::stdout().flush());
                 std::thread::sleep(CHATTY_TICK);
             }
         }
@@ -238,7 +237,7 @@ fn main() {
             // them rearm the idle beacon and the watchdog reaps it anyway.
             for i in 0..600 {
                 println!("{DEGRADED_MARKER} (attempt {i})");
-                let _ = std::io::stdout().flush();
+                best_effort(std::io::stdout().flush());
                 std::thread::sleep(CHATTY_TICK);
             }
         }
@@ -249,9 +248,12 @@ fn main() {
             // Read to EOF before writing a byte: a partial read would silently
             // truncate exactly the way this mode exists to detect.
             let mut buf = String::new();
-            let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
-            let _ = std::io::stdout().write_all(buf.as_bytes());
-            let _ = std::io::stdout().flush();
+            best_effort(std::io::Read::read_to_string(
+                &mut std::io::stdin(),
+                &mut buf,
+            ));
+            best_effort(std::io::stdout().write_all(buf.as_bytes()));
+            best_effort(std::io::stdout().flush());
         }
         "record-stdin" => record_stdin(),
         "session-start-then-record" => {
@@ -283,12 +285,18 @@ fn main() {
             // A repeating byte pattern, written in one shot, so the test can assert
             // the captured length exactly.
             let blob = vec![b'x'; LARGE_LEN];
-            let _ = std::io::stdout().write_all(&blob);
-            let _ = std::io::stdout().flush();
+            best_effort(std::io::stdout().write_all(&blob));
+            best_effort(std::io::stdout().flush());
         }
         other => {
             eprintln!("unknown mode: {other:?}");
             std::process::exit(2);
         }
     }
+}
+
+/// Ignore the result of a write, read or spawn: the parent may close its pipes, and
+/// the parent test asserts on what it receives, so a failure here shows up there.
+fn best_effort<T>(result: std::io::Result<T>) {
+    drop(result);
 }

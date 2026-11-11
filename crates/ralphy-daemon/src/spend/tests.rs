@@ -11,7 +11,7 @@ fn the_annotator_marks_every_unpriced_cause_and_leaves_a_priced_row_bare() {
     let unpriced = |row: &serde_json::Value| {
         row.get("unpriced_cause")
             .and_then(serde_json::Value::as_str)
-            .map(str::to_string)
+            .map(str::to_owned)
     };
     let mut records = vec![
         // `unknown` + a session a vendor store could still be read for.
@@ -94,7 +94,7 @@ fn a_recovered_row_loses_its_unpriced_mark() {
     annotate_unpriced(
         &mut records,
         &mut [],
-        &BTreeMap::from([("s1".to_string(), OPUS.to_string())]),
+        &BTreeMap::from([("s1".to_owned(), OPUS.to_owned())]),
         &table(),
     );
     assert!(
@@ -234,7 +234,7 @@ fn an_unknown_model_produces_a_floor_total_and_the_recoverable_lost_split() {
 #[test]
 fn a_recovered_model_prices_and_leaves_the_unpriced_split() {
     let rows = [row("unknown", Some("s2"), 1_000_000, 0)];
-    let map = BTreeMap::from([("s2".to_string(), OPUS.to_string())]);
+    let map = BTreeMap::from([("s2".to_owned(), OPUS.to_owned())]);
 
     let before = summarize_rows(&rows, &BTreeMap::new());
     assert_eq!(before.total, "~$?", "nothing priced is never `$0`");

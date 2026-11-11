@@ -20,8 +20,8 @@ const SLUG: &str = "owner/shared";
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("parse the peer id"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
@@ -43,8 +43,8 @@ async fn serve(
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(_tx);
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    let _kept = Box::leak(Box::new(tx));
     let app = router(
         Some(identity),
         registry_path,
@@ -66,7 +66,7 @@ async fn send_watch(ws: &mut Channel, repo: &str) {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: "watch".to_string(),
+            verb: "watch".to_owned(),
             payload: serde_json::json!({ "repo": repo, "path": "" }),
         }))
         .into(),
@@ -102,7 +102,7 @@ async fn peer_and_local_creates_push_their_own_repo_identity() {
         identity(B_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-tok".to_string()),
+            AuthPolicy::Bearer("peer-tok".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -115,14 +115,14 @@ async fn peer_and_local_creates_push_their_own_repo_identity() {
     peer::write_descriptor(
         local_store.path(),
         &PeerDescriptor {
-            daemon_id: B_ID.to_string(),
-            name: "peer".to_string(),
-            avatar: "🐙".to_string(),
-            address: "127.0.0.1".to_string(),
+            daemon_id: B_ID.to_owned(),
+            name: "peer".to_owned(),
+            avatar: "🐙".to_owned(),
+            address: "127.0.0.1".to_owned(),
             port: peer_port,
-            environment: "WSL: Ubuntu-22.04".to_string(),
+            environment: "WSL: Ubuntu-22.04".to_owned(),
             os: String::new(),
-            token: "peer-tok".to_string(),
+            token: "peer-tok".to_owned(),
             protocol_version: PEER_PROTOCOL_VERSION,
             tunnel: None,
             nudge: None,

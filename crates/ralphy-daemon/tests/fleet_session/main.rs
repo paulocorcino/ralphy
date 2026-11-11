@@ -75,21 +75,21 @@ struct Daemon {
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("the test id parses"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
 fn descriptor(id: &str, port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: ENVIRONMENT.to_string(),
+        environment: ENVIRONMENT.to_owned(),
         os: String::new(),
-        token: "peer-token".to_string(),
+        token: "peer-token".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -158,7 +158,7 @@ fn resize(rows: u16, cols: u16) -> Message {
     Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 0,
-            verb: "resize".to_string(),
+            verb: "resize".to_owned(),
             payload: serde_json::json!({ "rows": rows, "cols": cols }),
         }))
         .into(),
@@ -225,7 +225,7 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> Seen {
                 Message::Binary(bytes) => match protocol::decode(&bytes) {
                     Ok(Frame::Terminal { data, .. }) => {
                         seen.first_frame
-                            .get_or_insert_with(|| "terminal".to_string());
+                            .get_or_insert_with(|| "terminal".to_owned());
                         if answer_cursor
                             && data
                                 .windows(CURSOR_POSITION_REQUEST.len())
@@ -301,7 +301,7 @@ async fn http_exchange(
         .and_then(|value| value.parse().ok())
         .unwrap_or_default();
     let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
-    (status, head.to_string(), body.to_string())
+    (status, head.to_owned(), body.to_owned())
 }
 
 /// The value of header `name` in a header block from `http_exchange`.
@@ -328,7 +328,7 @@ async fn fixture() -> (
         identity(PEER_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-token".to_string()),
+            AuthPolicy::Bearer("peer-token".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -355,7 +355,7 @@ async fn fixture() -> (
 /// gave OR the one the OS resolved — `/private/var/…` for a macOS temp dir
 /// spelled `/var/…` (the `\\?\` verbatim prefix a Windows canonical path
 /// carries is dropped, the child never prints it).
-fn names_cwd(terminal: &str, dir: &std::path::Path) -> bool {
+fn names_cwd(terminal: &str, dir: &Path) -> bool {
     let raw = format!("CWD:{}", dir.display());
     let canonical = dir
         .canonicalize()

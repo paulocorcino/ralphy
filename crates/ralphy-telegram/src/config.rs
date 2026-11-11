@@ -21,7 +21,7 @@ pub const TOKEN_ENV: &str = "RALPHY_TELEGRAM_TOKEN";
 /// captured it, the chat the notifier posts to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TelegramConfig {
-    /// The bot token issued by BotFather.
+    /// The bot token issued by `BotFather`.
     pub token: String,
     /// The chat the bot posts to, auto-detected from an inbound `/start`. `None`
     /// until `setup` captures it.

@@ -220,16 +220,14 @@ fn drain<R: Read + Send + 'static>(
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut buf = Vec::new();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a read error ends the output, and the bytes read so far are still sent"
-        )]
-        let _ = pipe.read_to_end(&mut buf);
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver is gone once the collect grace has passed"
-        )]
-        let _ = tx.send(buf);
+        // A read error ends the output, and the bytes read so far are still sent.
+        if let Err(error) = pipe.read_to_end(&mut buf) {
+            tracing::debug!(%error, "reading child output ended");
+        }
+        // The receiver is gone once the collect grace has passed.
+        match tx.send(buf) {
+            Ok(()) | Err(_) => {}
+        }
     })
 }
 
@@ -306,8 +304,7 @@ fn spawn_argv(
             let is_batch = path
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
-                .unwrap_or(false);
+                .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"));
             if is_batch {
                 let mut args: Vec<OsString> = vec![OsString::from("/C"), path.into_os_string()];
                 args.extend(rest.iter().map(OsString::from));
@@ -348,23 +345,17 @@ fn recv_and_join(
     handle: thread::JoinHandle<()>,
     stream: &str,
 ) -> String {
-    match rx.recv_timeout(OUTPUT_COLLECT_GRACE) {
-        Ok(buf) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the drain thread does not panic, and its bytes arrived over the channel"
-            )]
-            let _ = handle.join();
-            String::from_utf8_lossy(&buf).into_owned()
-        }
-        Err(_) => {
-            tracing::warn!(
-                stream,
-                "verify gate reader still blocked after the tree-kill — this stream's captured \
-                output was dropped"
-            );
-            String::new()
-        }
+    if let Ok(buf) = rx.recv_timeout(OUTPUT_COLLECT_GRACE) {
+        // The drain thread does not panic, and its bytes arrived over the channel.
+        let _drain_exit = handle.join();
+        String::from_utf8_lossy(&buf).into_owned()
+    } else {
+        tracing::warn!(
+            stream,
+            "verify gate reader still blocked after the tree-kill — this stream's captured \
+            output was dropped"
+        );
+        String::new()
     }
 }
 
@@ -373,7 +364,7 @@ fn recv_and_join(
 fn tail(s: &str) -> String {
     let trimmed = s.trim_end();
     if trimmed.len() <= TAIL_BYTES {
-        return trimmed.to_string();
+        return trimmed.to_owned();
     }
     let mut start = trimmed.len() - TAIL_BYTES;
     // The byte offset may land inside a multi-byte char (e.g. box-drawing '└' in
@@ -385,7 +376,7 @@ fn tail(s: &str) -> String {
     let slice = &trimmed[start..];
     match slice.find('\n') {
         Some(nl) => slice[nl + 1..].to_string(),
-        None => slice.to_string(),
+        None => slice.to_owned(),
     }
 }
 

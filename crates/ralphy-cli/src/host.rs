@@ -116,7 +116,7 @@ pub(crate) enum HostCommand {
         /// An alias from your SSH config, or `user@host`.
         destination: String,
     },
-    /// Add a host's key to your known_hosts, only when its fingerprint is the
+    /// Add a host's key to your `known_hosts`, only when its fingerprint is the
     /// one given.
     Trust {
         /// An alias from your SSH config, or `user@host`.
@@ -306,7 +306,7 @@ fn ssh_program() -> Result<PathBuf> {
 fn ssh_keygen(ssh: &Path) -> Option<PathBuf> {
     let name = match ssh.extension() {
         Some(ext) => format!("ssh-keygen.{}", ext.to_string_lossy()),
-        None => "ssh-keygen".to_string(),
+        None => "ssh-keygen".to_owned(),
     };
     Some(ssh.with_file_name(name))
         .filter(|p| p.is_file())
@@ -374,7 +374,7 @@ fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()>
     }
     let mut resp = match req.send_empty() {
         Ok(resp) => resp,
-        Err(ureq::Error::Io(_)) | Err(ureq::Error::ConnectionFailed) => {
+        Err(ureq::Error::Io(_) | ureq::Error::ConnectionFailed) => {
             out.note(
                 "The daemon on this computer is not running. The tunnel opens when it starts.",
             )?;
@@ -423,7 +423,7 @@ fn nudge_verdict(body: &serde_json::Value) -> std::result::Result<(), String> {
     let diagnosis = body["diagnosis"].as_str().unwrap_or("").trim();
     let diagnosis = diagnosis.trim_end_matches('.');
     if diagnosis.is_empty() {
-        Err("the host was added, but the tunnel does not reach its daemon".to_string())
+        Err("the host was added, but the tunnel does not reach its daemon".to_owned())
     } else {
         Err(format!(
             "the host was added, but the tunnel does not reach its daemon: {diagnosis}"

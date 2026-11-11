@@ -278,12 +278,12 @@ fn prune_preserves_layout_order_not_ts_order() {
 #[test]
 fn prune_never_cuts_a_record_a_live_session_serves() {
     let records: Vec<DeskRecord> = (1..=36).map(|n| record(&format!("w{n}"), n)).collect();
-    let live: HashSet<String> = ["w1".to_string()].into();
+    let live: HashSet<String> = ["w1".to_owned()].into();
     let kept: Vec<String> = prune(records.clone(), &live)
         .into_iter()
         .map(|r| r.id)
         .collect();
-    let mut expected = vec!["w1".to_string()];
+    let mut expected = vec!["w1".to_owned()];
     expected.extend((8..=36).map(|n| format!("w{n}")));
     assert_eq!(kept, expected, "w1 stays; the oldest unpinned make room");
 
@@ -454,10 +454,10 @@ fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
         notes: vec![note("n1", ".ralphy/notes/a.note", 1)],
         // ADR-0063 §4: a repo key with a daemon prefix, beside a bare one.
         checkouts: BTreeMap::from([
-            ("owner/repo".to_string(), "wt-a".to_string()),
+            ("owner/repo".to_owned(), "wt-a".to_owned()),
             (
-                "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_string(),
-                "wt-b".to_string(),
+                "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_owned(),
+                "wt-b".to_owned(),
             ),
         ]),
     };

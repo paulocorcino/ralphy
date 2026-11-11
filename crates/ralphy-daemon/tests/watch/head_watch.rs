@@ -51,7 +51,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
     store.upsert(slug, &root.to_string_lossy());
     registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn.
-    std::mem::forget(dir);
+    let _kept = dir.keep();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -70,13 +70,13 @@ async fn serve_repo() -> (u16, String, PathBuf) {
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
     );
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 async fn send_head_watch(ws: &mut Ws, repo: &str, checkout: Option<&str>) {
@@ -86,7 +86,7 @@ async fn send_head_watch(ws: &mut Ws, repo: &str, checkout: Option<&str>) {
     }
     let frame = Frame::Command(Command {
         id: 0,
-        verb: "head.watch".to_string(),
+        verb: "head.watch".to_owned(),
         payload,
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))

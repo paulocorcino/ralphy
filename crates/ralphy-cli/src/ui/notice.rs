@@ -44,7 +44,7 @@ impl EdgeNoticeState {
                 // preposition, so drop the whole clause instead.
                 self.notice = Some(match self.scope.as_deref() {
                     Some(scope) => format!("No open issues for {scope} to process. Done."),
-                    None => "No open issues to process. Done.".to_string(),
+                    None => "No open issues to process. Done.".to_owned(),
                 });
             }
             RunEvent::RunSkipped { reason } => self.notice = Some(reason.clone()),

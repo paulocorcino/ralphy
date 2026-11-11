@@ -64,20 +64,25 @@ impl Drop for SnapshotGuard {
                 report(&e);
             }
         }
-        // Never panic in Drop, and this crate carries no logger; a file left
-        // behind is the orphan the reader's dead-pid sweep deletes.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a drop cannot return the error, and the file may be gone already"
-        )]
-        let _ = std::fs::remove_file(&self.path);
+        // Never panic in Drop; a file left behind is the orphan the reader's
+        // dead-pid sweep deletes.
+        match std::fs::remove_file(&self.path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                tracing::warn!("could not remove snapshot {}: {e}", self.path.display());
+            }
+            _ => {}
+        }
         // The sentinel is already inert once this run is gone (the next run has
         // a different runid), so this is hygiene rather than correctness.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a drop cannot return the error, and the file may be gone already"
-        )]
-        let _ = std::fs::remove_file(&self.stop);
+        match std::fs::remove_file(&self.stop) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                tracing::debug!(
+                    "could not remove stop sentinel {}: {e}",
+                    self.stop.display()
+                );
+            }
+            _ => {}
+        }
     }
 }
 
@@ -136,7 +141,7 @@ mod tests {
         std::fs::create_dir_all(&run_dir).unwrap();
         drop(
             SnapshotGuard::new(dir.path(), "01NEVERWRITTEN").keep_final_in(&run_dir, |_| {
-                REPORTED.store(true, std::sync::atomic::Ordering::SeqCst)
+                REPORTED.store(true, std::sync::atomic::Ordering::SeqCst);
             }),
         );
         assert!(!final_snapshot_path(&run_dir).exists());

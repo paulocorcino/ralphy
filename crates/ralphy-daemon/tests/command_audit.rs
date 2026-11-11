@@ -75,7 +75,7 @@ async fn device_cookie(port: u16) -> String {
         .split(';')
         .next()
         .expect("the reply sets a device cookie")
-        .to_string()
+        .to_owned()
 }
 
 #[tokio::test]
@@ -83,7 +83,7 @@ async fn a_command_that_changes_state_is_recorded_with_its_device() {
     let dir = tempfile::tempdir().unwrap();
     let port = serve(dir.path().join("repos.toml")).await;
     let cookie = device_cookie(port).await;
-    let device = cookie.split('.').nth(1).unwrap().to_string();
+    let device = cookie.split('.').nth(1).unwrap().to_owned();
 
     let mut request = page::url(port).into_client_request().unwrap();
     request
@@ -95,7 +95,7 @@ async fn a_command_that_changes_state_is_recorded_with_its_device() {
         .send(Message::Binary(
             protocol::encode(&Frame::Command(Command {
                 id: 1,
-                verb: "branch.switch".to_string(),
+                verb: "branch.switch".to_owned(),
                 payload: serde_json::json!({"repo": "nope", "name": "main"}),
             }))
             .into(),

@@ -151,7 +151,7 @@ mod tests {
         let t = UNIX_EPOCH + Duration::from_millis(1_000_000_000_042);
         assert_eq!(utc_stamp(t), "20010909-014640-042");
         // A leap day, to exercise the era arithmetic.
-        let t = UNIX_EPOCH + Duration::from_secs(951_782_400);
+        let t = UNIX_EPOCH + Duration::from_hours(264_384);
         assert_eq!(utc_stamp(t), "20000229-000000-000");
     }
 

@@ -29,7 +29,9 @@ struct StopFlagGuard(
 
 impl StopFlagGuard {
     fn acquire() -> Self {
-        let lock = STOP_FLAG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = STOP_FLAG_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ralphy_core::stop::clear();
         Self(lock)
     }
@@ -44,11 +46,10 @@ impl Drop for StopFlagGuard {
 /// Remove a scratch file a test made. It may be gone already, and a leftover
 /// file in the temp dir fails nothing.
 fn remove_scratch(file: &std::path::Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of a test file that may be gone, and no test reads it after"
-    )]
-    let _ = std::fs::remove_file(file);
+    // cleanup of a test file that may be gone, and no test reads it after
+    match std::fs::remove_file(file) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 fn child_cmd(mode: &str) -> Command {

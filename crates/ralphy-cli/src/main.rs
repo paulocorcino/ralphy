@@ -71,20 +71,29 @@ fn main() -> Result<ExitCode> {
     let outcome = match cli.command {
         Command::Run(args) => run::run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),
-        Command::Models(args) => models::run(args),
+        Command::Models(args) => models::run(&args),
         Command::Config(args) => config::run(args),
-        Command::Usage(args) => usage::usage_cmd(args),
-        Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
+        Command::Usage(args) => usage::usage_cmd(&args),
+        Command::Hook(HookCommand::Stop) => {
+            hook::run_stop_hook();
+            Ok(())
+        }
         Command::Hook(HookCommand::Guard { cost_gate }) => guard::run_guard_hook(cost_gate),
-        Command::Hook(HookCommand::Post) => hook::run_post_hook(),
-        Command::Hook(HookCommand::Status { vendor }) => hook::run_status_hook(vendor),
+        Command::Hook(HookCommand::Post) => {
+            hook::run_post_hook();
+            Ok(())
+        }
+        Command::Hook(HookCommand::Status { vendor }) => {
+            hook::run_status_hook(vendor);
+            Ok(())
+        }
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
         Command::Doctor(args) => return doctor::run(&args),
         Command::Uninstall(args) => uninstall::run(&args),
         Command::Init(args) => init::run(&args),
         Command::Triage(args) => triage::run(&args),
-        Command::Issues(args) => issues::issues_cmd(args),
+        Command::Issues(args) => issues::issues_cmd(&args),
         Command::Schedule(cmd) => schedule::run(cmd),
         Command::Daemon(args) => daemon::run(&args),
         Command::Host(cmd) => host::run(&cmd),
@@ -162,7 +171,7 @@ pub(crate) fn consolidate_defaults(
 fn consolidate_with_agent(
     agent: CliAgent,
     ws: &Workspace,
-    run_dir: &std::path::Path,
+    run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     timeout: std::time::Duration,
@@ -223,7 +232,7 @@ fn consolidate_with_agent(
 fn run_consolidation(
     agent: CliAgent,
     ws: &Workspace,
-    run_dir: &std::path::Path,
+    run_dir: &Path,
     model: Option<&str>,
     effort: Option<&str>,
     max_minutes: u64,

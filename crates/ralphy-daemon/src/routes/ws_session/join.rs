@@ -61,6 +61,6 @@ pub(super) fn join(
             checkout: info.checkout,
             watching,
         },
-        environment: info.environment.unwrap_or_else(|| environment.to_string()),
+        environment: info.environment.unwrap_or_else(|| environment.to_owned()),
     })
 }

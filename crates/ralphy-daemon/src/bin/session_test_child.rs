@@ -120,11 +120,10 @@ fn main() {
                 // we die, so a plain direct-child kill would leave the reader
                 // blocked — only a tree kill reaches EOF.
                 if let Ok(exe) = std::env::current_exe() {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "nothing waits for it, and a failed start times the test out"
-                    )]
-                    let _ = std::process::Command::new(exe).arg("sleep").spawn();
+                    // Nothing waits for it, and a failed start times the test out.
+                    match std::process::Command::new(exe).arg("sleep").spawn() {
+                        Ok(_) | Err(_) => {}
+                    }
                 }
             }
             "argv" => {
@@ -134,11 +133,10 @@ fn main() {
             }
             other if other.starts_with("flood ") => {
                 let kib = other["flood ".len()..].trim().parse::<usize>().unwrap_or(0);
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "a write error means the PTY is closed, and the test is over"
-                )]
-                let _ = flood(kib);
+                // A write error means the PTY is closed, and the test is over.
+                match flood(kib) {
+                    Ok(()) | Err(_) => {}
+                }
             }
             other if other.starts_with("osc52 ") => {
                 // Emit a clipboard-write escape the way a vendor TUI does, so a
@@ -168,11 +166,10 @@ fn main() {
 
 /// Flush stdout. A failure means the PTY is closed, and then the test is over.
 fn flush_stdout() {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a flush error means the PTY is closed, and the test is over"
-    )]
-    let _ = std::io::stdout().flush();
+    // A flush error means the PTY is closed, and the test is over.
+    match std::io::stdout().flush() {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 /// Width of one flood line, in characters, before the line break.
@@ -237,14 +234,14 @@ fn configure_raw_input() {
     // read or passed back; both calls take the stdin descriptor this process owns.
     unsafe {
         let mut attrs: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(libc::STDIN_FILENO, &mut attrs) != 0 {
+        if libc::tcgetattr(libc::STDIN_FILENO, &raw mut attrs) != 0 {
             return;
         }
         attrs.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
         // Non-canonical reads return as soon as one byte is there, never on a timer.
         attrs.c_cc[libc::VMIN] = 1;
         attrs.c_cc[libc::VTIME] = 0;
-        let _ = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &attrs);
+        let _: libc::c_int = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const attrs);
     }
 }
 
@@ -267,9 +264,9 @@ fn configure_raw_input() {
     unsafe {
         let input = GetStdHandle(STD_INPUT_HANDLE);
         let mut mode = 0;
-        if GetConsoleMode(input, &mut mode) != 0 {
+        if GetConsoleMode(input, &raw mut mode) != 0 {
             let raw = mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
-            let _ = SetConsoleMode(input, raw);
+            let _: i32 = SetConsoleMode(input, raw);
         }
     }
 }

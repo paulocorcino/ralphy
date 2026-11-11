@@ -26,7 +26,7 @@ fn roundtrip_usage_limit_waiting() {
     // `hint` rides along for the log but has no decoded home — the pin in
     // `ralphy-core`'s `pins_usage_limit_vocabulary` is what keeps it emitted.
     let ev = one(|| {
-        ralphy_core::emit::usage_limit_waiting("07:30", "2026-07-19T07:25:00Z", 1_700_000_000)
+        ralphy_core::emit::usage_limit_waiting("07:30", "2026-07-19T07:25:00Z", 1_700_000_000);
     });
     assert_eq!(
         decode(&ev),
@@ -58,7 +58,7 @@ fn roundtrip_agent_state() {
             "waiting",
             "2026-09-15T10:00:00-03:00",
             Some("AskUserQuestion: which port?"),
-        )
+        );
     });
     assert_eq!(
         decode(&ev),
@@ -110,7 +110,7 @@ fn roundtrip_queue_built() {
             r#"[{"number":1,"queue_status":"eligible"}]"#,
             "octocat",
             "labels [AFK]",
-        )
+        );
     });
     assert_eq!(
         decode(&ev),
@@ -136,7 +136,7 @@ fn roundtrip_run_started() {
             "new",
             "origin/main",
             6.0,
-        )
+        );
     });
     assert_eq!(
         decode(&ev),
@@ -180,7 +180,7 @@ fn roundtrip_run_started_folds_the_no_deadline_sentinel() {
     // `0.0` is the "no `--deadline-hours`" sentinel the emitter writes; the
     // decoder must fold it back to `None` rather than report a 0-hour budget.
     let ev = one(|| {
-        ralphy_core::emit::run_started("o/r", "", "claude", "claude", "current", "main", 0.0)
+        ralphy_core::emit::run_started("o/r", "", "claude", "claude", "current", "main", 0.0);
     });
     assert_eq!(
         decode(&ev),
@@ -210,7 +210,7 @@ fn roundtrip_run_finished() {
             r#"[{"number":7,"status":"done"}]"#,
             &usage(),
             412,
-        )
+        );
     });
     assert_eq!(
         decode(&ev),
@@ -248,7 +248,7 @@ fn roundtrip_run_finished_no_work() {
             "",
             &ralphy_core::Usage::default(),
             0,
-        )
+        );
     });
     assert_eq!(
         decode(&ev),

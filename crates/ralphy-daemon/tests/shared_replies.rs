@@ -21,7 +21,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -222,8 +222,8 @@ async fn the_audit_log_reads_are_the_shared_replies() {
         .split(';')
         .next()
         .unwrap()
-        .to_string();
-    let device = cookie.split('.').nth(1).unwrap().to_string();
+        .to_owned();
+    let device = cookie.split('.').nth(1).unwrap().to_owned();
 
     let measured: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(

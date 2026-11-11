@@ -107,7 +107,7 @@ lost.
 The label is `<consoleName> (<label>)`, where `<label>` is what the title shows
 first today: the agent, the start command of a shell, or `console`.
 
-```
+```text
 fincal #1 (claude) · primary ▾
 fincal #2 (console)
 backend (codex) · wt-foo ▾
@@ -209,7 +209,7 @@ tooltip. That was a regression: the operator reads the owner and the repo
 not say the owner, and says nothing after a rename. The title bar now ends
 with the slug:
 
-```
+```text
 fincal #1 (claude) · primary ▾ · owner/fincal
 fincal #2 (console) · owner/fincal
 home #1 (console)

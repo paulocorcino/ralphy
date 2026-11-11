@@ -5,6 +5,7 @@
 //! `CHANGELOG.md`, `changelog.json` and the crate manifests' version lines are
 //! this tool's.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -13,14 +14,14 @@ use crate::changelog::{fold, load_history, read_fragments, render_changelog, ren
 
 /// `<workspace root>`, located from this crate's compile-time manifest dir
 /// (`<root>/crates/xtask`).
-pub fn workspace_root() -> &'static Path {
+pub(crate) fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("xtask crate lives at <root>/crates/xtask")
 }
 
-pub fn changelog_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn changelog_cmd(args: &[String]) -> Result<()> {
     let mut check = false;
     let mut force = false;
     let mut pending = false;
@@ -158,23 +159,26 @@ fn write_notes(root: &Path, wanted: &str, out: &Path) -> Result<()> {
         .iter()
         .find(|r| r.version == wanted || r.version.strip_prefix('v').unwrap_or(&r.version) == bare);
 
-    let (body, announce) = match record {
-        Some(record) => (render_notes(record), record.announce),
-        None => {
-            // Not a reason to fail a release that is already built: publish an
-            // honest body and say so in the log.
-            eprintln!("warning: no changelog record for {wanted} — publishing a pointer instead");
-            // Absolute, not relative: this renders on a GitHub release page,
-            // where `../CHANGELOG.md` resolves to nothing.
-            (
-                concat!(
-                    "No changelog entry was recorded for this release. See the ",
-                    "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
-                )
-                .to_string(),
-                false,
+    let (body, announce) = if let Some(record) = record {
+        (render_notes(record), record.announce)
+    } else {
+        // Not a reason to fail a release that is already built: publish an
+        // honest body and say so in the log.
+        writeln!(
+            std::io::stderr(),
+            "warning: no changelog record for {wanted} — publishing a pointer instead"
+        )
+        .expect("the warning goes to stderr, as eprintln sent it");
+        // Absolute, not relative: this renders on a GitHub release page,
+        // where `../CHANGELOG.md` resolves to nothing.
+        (
+            concat!(
+                "No changelog entry was recorded for this release. See the ",
+                "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
             )
-        }
+            .to_owned(),
+            false,
+        )
     };
 
     write_release_body(out, &body, announce)?;
@@ -208,7 +212,7 @@ fn report_fragments(entries: &[Entry]) {
 
 fn pending_report(entries: &[Entry]) -> String {
     if entries.is_empty() {
-        return "no fragments pending\n".to_string();
+        return "no fragments pending\n".to_owned();
     }
     let mut history = crate::changelog::History::default();
     fold(&mut history, "(pending)", "(unreleased)", entries.to_vec());
@@ -237,12 +241,12 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the rename error is the one reported; a temp file that stays is harmless"
-            )]
-            let _ = std::fs::remove_file(&tmp);
-            Err(e).with_context(|| format!("replacing {}", path.display()))
+            // The rename error is the one reported; a temp file that stays is named in it.
+            let kept = std::fs::remove_file(&tmp)
+                .err()
+                .map(|c| format!(" (temp file {} stays: {c})", tmp.display()))
+                .unwrap_or_default();
+            Err(e).with_context(|| format!("replacing {}{kept}", path.display()))
         }
     }
 }
@@ -270,7 +274,7 @@ fn today() -> String {
 ///
 /// Fifteen manifests carry a literal version today and no script moved them; at
 /// a release every few days that is a recurring drift risk (ADR-0056 §2).
-pub fn bump_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn bump_cmd(args: &[String]) -> Result<()> {
     let mut version: Option<String> = None;
     let mut root = workspace_root().to_path_buf();
 
@@ -279,14 +283,14 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
         match arg.as_str() {
             "--root" => root = PathBuf::from(crate::next_value(&mut it, "--root")?),
             other if other.starts_with("--") => bail!("unknown flag {other}"),
-            other => version = Some(other.to_string()),
+            other => version = Some(other.to_owned()),
         }
     }
     let version = version.context("usage: bump <version>, e.g. bump 0.1.0-rc.20")?;
     // A tag is `v0.1.0-rc.20`; a manifest version is not. Writing the tag
     // spelling verbatim into sixteen manifests produces a workspace Cargo
     // cannot parse, and the `v` is the spelling ADR-0056 uses everywhere.
-    let version = version.trim().trim_start_matches('v').to_string();
+    let version = version.trim().trim_start_matches('v').to_owned();
     semver::Version::parse(&version)
         .with_context(|| format!("`{version}` is not a version Cargo will accept"))?;
 
@@ -332,7 +336,7 @@ fn stage_bumps(root: &Path, version: &str) -> Result<Vec<(String, PathBuf, Strin
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?")
-                .to_string();
+                .to_owned();
             staged.push((name, manifest, replaced));
         }
     }
@@ -360,7 +364,7 @@ fn bumped_manifest(manifest: &Path, version: &str) -> Option<String> {
 /// never at the start of a line, so it cannot be hit by accident.
 fn replace_package_version(text: &str, version: &str) -> Option<String> {
     let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
-    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
     let idx = lines.iter().position(|l| l.starts_with("version = \""))?;
     lines[idx] = format!("version = \"{version}\"");
     let mut out = lines.join(newline);

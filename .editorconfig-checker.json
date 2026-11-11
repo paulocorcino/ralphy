@@ -1,0 +1,20 @@
+{
+  "Exclude": [
+    "^CHANGELOG\\.md$",
+    "^target/",
+    "^worktrees/",
+    "/vendor/",
+    "/fixtures/",
+    "\\.log$",
+    "\\.err$",
+    "^\\.gitignore$",
+    "^assets/prompts/",
+    "^assets/plugin/skills/setup-pocock/prd-template\\.md$",
+    "^crates/ralphy-daemon/src/session/spec/tests\\.rs$"
+  ],
+  "Disable": {
+    "Indentation": true,
+    "IndentSize": true,
+    "MaxLineLength": true
+  }
+}

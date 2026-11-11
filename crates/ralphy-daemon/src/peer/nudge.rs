@@ -51,13 +51,13 @@ pub const READY_POLL: std::time::Duration = std::time::Duration::from_millis(500
 /// shell: `wsl.exe -d <distro> -e systemctl --user start <unit>`.
 pub fn nudge_argv(spec: &NudgeSpec) -> Vec<String> {
     vec![
-        "wsl.exe".to_string(),
-        "-d".to_string(),
+        "wsl.exe".to_owned(),
+        "-d".to_owned(),
         spec.distro.clone(),
-        "-e".to_string(),
-        "systemctl".to_string(),
-        "--user".to_string(),
-        "start".to_string(),
+        "-e".to_owned(),
+        "systemctl".to_owned(),
+        "--user".to_owned(),
+        "start".to_owned(),
         spec.unit.clone(),
     ]
 }
@@ -68,12 +68,12 @@ pub fn nudge_argv(spec: &NudgeSpec) -> Vec<String> {
 /// runs for it.
 pub fn keepalive_argv(spec: &NudgeSpec) -> Vec<String> {
     vec![
-        "wsl.exe".to_string(),
-        "-d".to_string(),
+        "wsl.exe".to_owned(),
+        "-d".to_owned(),
         spec.distro.clone(),
-        "-e".to_string(),
-        "sleep".to_string(),
-        "infinity".to_string(),
+        "-e".to_owned(),
+        "sleep".to_owned(),
+        "infinity".to_owned(),
     ]
 }
 
@@ -177,7 +177,10 @@ impl Keepalives {
     ) -> Result<bool> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future wake over it would be the worse failure.
-        let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut held = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let still_running = match held.get_mut(distro) {
             // `try_wait` is the one question asked of the child, and it is a
             // read: it neither blocks nor signals. `Err` means the handle itself
@@ -196,7 +199,7 @@ impl Keepalives {
                 pid,
                 "keeping the WSL distro running with the keepalive a previous daemon started"
             );
-            held.insert(distro.to_string(), Held::Adopted(pid));
+            held.insert(distro.to_owned(), Held::Adopted(pid));
             return Ok(false);
         }
         let child = spawn()?;
@@ -210,7 +213,7 @@ impl Keepalives {
                 "could not record the keepalive pid"
             );
         }
-        held.insert(distro.to_string(), Held::Spawned(child));
+        held.insert(distro.to_owned(), Held::Spawned(child));
         Ok(true)
     }
 }

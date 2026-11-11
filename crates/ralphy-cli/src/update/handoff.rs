@@ -423,11 +423,10 @@ mod tests {
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-handoff-{}-{tag}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
     }
@@ -446,11 +445,10 @@ mod tests {
             "new"
         );
         assert!(!parked.exists());
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]

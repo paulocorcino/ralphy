@@ -256,7 +256,7 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
     );
 }
 
-/// D7's failure direction, exactly: an inherited VertexAI flag from unrelated
+/// D7's failure direction, exactly: an inherited `VertexAI` flag from unrelated
 /// cloud tooling would silently redirect a `gemini-api-key` operator's run to
 /// another account, and the run would still look green.
 #[test]
@@ -302,14 +302,14 @@ fn an_inherited_vertexai_flag_is_scrubbed() {
         .filter(|n| n.starts_with("GEMINI_") || n.starts_with("GOOGLE_"))
         .collect();
     kept.push("GEMINI_CLI_HOME");
-    kept.sort();
+    kept.sort_unstable();
     assert_eq!(kept, ["GEMINI_API_KEY", "GEMINI_CLI_HOME"]);
     // Never `env_clear`: the child is Node.
     assert!(!removed.contains(&"PATH"), "{removed:?}");
     assert!(!removed.contains(&"SystemRoot"), "{removed:?}");
     assert_eq!(
         env_of(&cmd, "GEMINI_CLI_HOME"),
-        Some(Some("/owned".to_string()))
+        Some(Some("/owned".to_owned()))
     );
 }
 

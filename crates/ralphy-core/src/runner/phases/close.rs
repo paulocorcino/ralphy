@@ -64,7 +64,7 @@ pub(crate) fn close_and_record(
                 error = %e,
                 "reading the plan at close failed — no review debt, no evidence, \
                  no handoff recorded"
-            )
+            );
         })
         .ok();
     let verdicts = plan_md
@@ -120,14 +120,14 @@ fn publish_plan_record(
     // Capture the raw plan at close (before the next issue's `plan()` overwrites
     // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
     crate::emit::plan_closed(issue.number, plan_md);
-    if !verdicts.is_empty() {
-        cx.tracker
-            .write_evidence(issue.number, &issue.body, verdicts)?;
-    } else {
+    if verdicts.is_empty() {
         warn!(
             number = issue.number,
             "no acceptance ledger in the plan — no evidence comment written"
         );
+    } else {
+        cx.tracker
+            .write_evidence(issue.number, &issue.body, verdicts)?;
     }
     if let Some(report) = handoff::close_report(plan_md) {
         cx.tracker.comment(issue.number, &report)?;

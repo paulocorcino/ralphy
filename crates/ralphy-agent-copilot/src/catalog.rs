@@ -357,7 +357,7 @@ mod tests {
         // An ABSENT `restricted_to` means every tier, and an absent
         // `max_prompt_tokens` means the vendor caps nothing here.
         let mini = cat.get("gpt-5-mini").expect("gpt-5-mini present");
-        assert!(mini.restricted_to.is_empty());
+        assert_eq!(mini.restricted_to, Vec::<String>::new());
         assert_eq!(mini.prices.max_prompt_tokens, None);
 
         assert!(!cat.get("claude-opus-4.8").expect("present").selectable);

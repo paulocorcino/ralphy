@@ -236,7 +236,7 @@ fn worker_pushes_on_a_waiting_agent_state_only() {
     let agent = |state: &str, detail: Option<&str>| RunEvent::AgentState {
         state: state.into(),
         since: "t".into(),
-        detail: detail.map(str::to_string),
+        detail: detail.map(str::to_owned),
     };
     queue.push(agent("working", None));
     queue.push(agent("waiting", Some("AskUserQuestion: which port?")));

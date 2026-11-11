@@ -87,7 +87,7 @@ redirection was not stress-tested.
 Every line: `{"type", "data", "id", "timestamp", "parentId", "ephemeral"?}`.
 Discriminators observed across probes P1 and P2:
 
-```
+```text
 session.mcp_server_status_changed   session.mcp_servers_loaded
 session.skills_loaded               session.tools_updated
 session.auto_mode_resolved          session.background_tasks_changed
@@ -146,7 +146,7 @@ the last line and nothing else: RALPHY_DONE_EXIT"`:
 
 Probe P2, after real tool work, the final message was:
 
-```
+```text
 Done. File created, staged, and committed successfully.
 
 RALPHY_DONE_EXIT
@@ -184,7 +184,7 @@ operator upgraded to a paid plan.** The delta is the finding.
 On the **free** account, `--model` rejected every id — including the two the
 CLI itself routes to:
 
-```
+```sh
 $ copilot -p "…" --model claude-haiku-4.5 …
 Error: Model "claude-haiku-4.5" from --model flag is not available.   exit=1
 $ copilot -p "…" --model gpt-5-mini …
@@ -194,7 +194,7 @@ $ copilot -p "say OK" --model auto …                                   exit=0
 
 After the **upgrade**, the same flag works, and so does `--effort`:
 
-```
+```sh
 $ copilot -p "Reply with exactly: RALPHY_DONE_EXIT" --model claude-sonnet-5 --effort high …
 exit=0   assistant.message.data.model = "claude-sonnet-5"
 result.usage.premiumRequests = 1          # vs 0.33 for claude-haiku-4.5
@@ -215,7 +215,7 @@ from argv when `None` — the OpenCode D4 shape, not the Kimi D4 shape.**
 Probe P3 passed no `--model` and got `claude-sonnet-5` — the account's default —
 with **no `session.auto_mode_resolved` event emitted**:
 
-```
+```text
 [INFO] Using default model: claude-sonnet-5
 "model": "capi:claude-sonnet-5:defaultReasoningEffort=medium"
 ```
@@ -251,7 +251,7 @@ A run with an **invalid** `--model` fails *after* the catalog fetch but *before*
 any paid call. With `--log-level all --log-dir <dir>`, the catalog lands in the
 log verbatim:
 
-```
+```sh
 $ copilot -p "hi" --model "zzz-not-real" --allow-all-tools --log-level all --log-dir $tmp
 [DEBUG] [rust:capi_models] fetched models from CAPI /models {"count":46,"models":"[…]"}
 [WARNING] Model 'zzz-not-real' from CLI argument is not available. Falling back to next option.
@@ -398,7 +398,7 @@ The catalog's per-model `capabilities.supports.reasoning_effort` is `null` for
 four picker-enabled models. Passing `--effort` to one of them is a **hard,
 pre-flight failure on every run**:
 
-```
+```sh
 $ copilot -p "…" --model kimi-k2.7-code --effort medium
 Error: Model "kimi-k2.7-code" does not support reasoning effort configuration (requested: "medium").
 exit = 1
@@ -460,7 +460,7 @@ tiered-pricing models.
 
 **The logged-out signature was captured before login** (ADR-0040 C5 discipline):
 
-```
+```sh
 $ copilot -p "…" --allow-all-tools --output-format json     # logged out
 exit = 1
 stderr:
@@ -514,7 +514,7 @@ would also bypass every assumption in this document.
 
 `~/.copilot/` (overridable with `COPILOT_HOME`):
 
-```
+```text
 session-store.db  (+ -wal, -shm)   ← the store
 session-state/<session-uuid>/{checkpoints,files,research,workspace.yaml}
 logs/process-<epoch>-<pid>.log
@@ -551,14 +551,14 @@ Probe P1 minted `1138b4fc-b139-44b4-9a3e-a7fbcdd6181b`, passed it as
 `--session-id`, and it came back verbatim in `result.sessionId` **and** as the
 `sessions.id` primary key:
 
-```
+```json
 {'id':'1138b4fc-…','cwd':'C:\\Dev\\FinCal','repository':'paulocorcino/FinCal',
  'host_type':'github','branch':'feat/opencode-v2','created_at':'2026-07-20T08:52:57.932Z'}
 ```
 
 with its usage row:
 
-```
+```json
 {'turn_index':0,'model':'claude-haiku-4.5','input_tokens':17522,'output_tokens':75,
  'cache_read_tokens':0,'cache_write_tokens':17512,'reasoning_tokens':61,
  'total_nano_aiu':2227500000,'request_multiplier':0.33,'finish_reason':'stop',
@@ -567,7 +567,7 @@ with its usage row:
 
 Probe P2 (two calls in one session):
 
-```
+```text
 turn 0  claude-haiku-4.5  in=22913 out=350  cache_read=0      cache_write=22903  reasoning=159  finish=tool_calls  initiator=user
 turn 0  claude-haiku-4.5  in=23345 out=23   cache_read=22903  cache_write=437    reasoning=0    finish=stop        initiator=agent
 ```

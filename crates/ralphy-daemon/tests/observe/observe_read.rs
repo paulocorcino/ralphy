@@ -48,7 +48,7 @@ pub(super) async fn serve_repo() -> (u16, String) {
     registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
-    std::mem::forget(outer);
+    let _kept = outer.keep();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -57,7 +57,7 @@ pub(super) async fn serve_repo() -> (u16, String) {
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
         registry_path,
@@ -68,13 +68,13 @@ pub(super) async fn serve_repo() -> (u16, String) {
         ralphy_daemon::auth::AuthState::localhost(),
     );
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
-    std::mem::forget(_tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string())
+    (port, slug.to_owned())
 }
 
 /// Bind a daemon over a temp *git* repo seeded with committed dot-folders
@@ -111,7 +111,7 @@ pub(super) async fn serve_git_repo() -> (u16, String) {
     let slug = "owner/gitobserve";
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).expect("save the registry");
-    std::mem::forget(dir);
+    let _kept = dir.keep();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -120,7 +120,7 @@ pub(super) async fn serve_git_repo() -> (u16, String) {
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
         registry_path,
@@ -130,13 +130,13 @@ pub(super) async fn serve_git_repo() -> (u16, String) {
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
     );
-    std::mem::forget(_tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string())
+    (port, slug.to_owned())
 }
 
 /// Send one `Command` on a `spawn` channel and collect every reply frame on
@@ -151,7 +151,7 @@ pub(super) async fn round_trip(
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -215,7 +215,7 @@ pub(super) async fn serve_checkout_repo() -> (u16, String, std::path::PathBuf) {
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).expect("save the registry");
     let root = dir.path().to_path_buf();
-    std::mem::forget(dir);
+    let _kept = dir.keep();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -224,7 +224,7 @@ pub(super) async fn serve_checkout_repo() -> (u16, String, std::path::PathBuf) {
         .local_addr()
         .expect("read the bound address")
         .port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         None,
         registry_path,
@@ -234,13 +234,13 @@ pub(super) async fn serve_checkout_repo() -> (u16, String, std::path::PathBuf) {
         rx,
         ralphy_daemon::auth::AuthState::localhost(),
     );
-    std::mem::forget(_tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 fn entry_names(reply: &serde_json::Value) -> Vec<&str> {

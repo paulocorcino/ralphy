@@ -1,4 +1,4 @@
-//! The OpenCode map, a copy of the one in `ralphy-agent-opencode/src/status.rs`:
+//! The `OpenCode` map, a copy of the one in `ralphy-agent-opencode/src/status.rs`:
 //! one line of the state plugin in, one fold signal out (ADR-0085 D2, D7).
 //! Also the plugin file a console loads, and the config entry that names it.
 
@@ -7,27 +7,28 @@ use std::path::Path;
 use super::fold::{Signal, StatusLine, WaitKind};
 
 /// The plugin source, the same file the adapter writes for a run.
-pub const STATE_PLUGIN: &str = include_str!("../../../../assets/opencode/ralphy-state-plugin.js");
+pub(crate) const STATE_PLUGIN: &str =
+    include_str!("../../../../assets/opencode/ralphy-state-plugin.js");
 
 /// The plugin's first line: it changes no state, but it is the proof that
 /// the plugin runs, so it ends a console's silence (ADR-0085 D9).
-pub const PLUGIN_LOADED: &str = "plugin.loaded";
+pub(crate) const PLUGIN_LOADED: &str = "plugin.loaded";
 
 // The same map is in `ralphy-agent-opencode/src/status.rs`, and it stays two
 // copies: the daemon imports no adapter crate (ADR-0059 §5). The shared
 // fixture test below holds the two maps equal.
 // jscpd:ignore-start
-/// The tool OpenCode asks the operator a question with.
+/// The tool `OpenCode` asks the operator a question with.
 const QUESTION_TOOL: &str = "question";
 
-/// The OpenCode map (ADR-0085 D7): one line of the state plugin in, one fold
+/// The `OpenCode` map (ADR-0085 D7): one line of the state plugin in, one fold
 /// signal out, or `None` for a line that changes no state. The plugin's
 /// first line, `plugin.loaded`, is only the proof that it runs. A
 /// `session.created` line is a new lead session: the plugin writes none for
 /// a subagent's session, and it names a subagent's other lines with an
 /// `agent_id`. A reply carries the id of the request it answers, so it ends
 /// only that request's wait.
-pub fn opencode_signal(line: &StatusLine) -> Option<Signal> {
+pub(crate) fn opencode_signal(line: &StatusLine) -> Option<Signal> {
     let request = line.tool_use_id.clone();
     let signal = match line.event.as_str() {
         "session.created" => Signal::SessionBoundary,
@@ -37,7 +38,7 @@ pub fn opencode_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: request,
             detail: match line.tool_name.as_deref() {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "question.asked" => Signal::Wait {
@@ -45,7 +46,7 @@ pub fn opencode_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: request,
             detail: match line.question.as_deref().map(str::trim) {
                 Some(q) if !q.is_empty() => format!("{QUESTION_TOOL}: {q}"),
-                _ => QUESTION_TOOL.to_string(),
+                _ => QUESTION_TOOL.to_owned(),
             },
         },
         "permission.replied" | "question.replied" | "question.rejected" => Signal::WaitEnd {
@@ -61,18 +62,18 @@ pub fn opencode_signal(line: &StatusLine) -> Option<Signal> {
 // The adapter names a run's plugin the same way, in
 // `ralphy-agent-opencode/src/command.rs` (ADR-0059 §5).
 /// The `plugin` entry that names `path`: a `file:///` URL with forward
-/// slashes, the form OpenCode loaded on Windows and on Linux (measured with
-/// OpenCode 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
-pub fn plugin_entry(path: &Path) -> String {
+/// slashes, the form `OpenCode` loaded on Windows and on Linux (measured with
+/// `OpenCode` 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
+pub(crate) fn plugin_entry(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
     let text = text.strip_prefix("//?/").unwrap_or(&text);
     format!("file:///{}", text.trim_start_matches('/'))
 }
 
 /// The `OPENCODE_CONFIG_CONTENT` of a console: the state plugin and nothing
-/// else. OpenCode merges it with the operator's own config, so their
+/// else. `OpenCode` merges it with the operator's own config, so their
 /// settings and plugins still load.
-pub fn console_config(plugin: &Path) -> String {
+pub(crate) fn console_config(plugin: &Path) -> String {
     serde_json::json!({ "plugin": [plugin_entry(plugin)] }).to_string()
 }
 
@@ -107,7 +108,7 @@ mod tests {
                     serde_json::json!({
                         "state": o.state.as_str(),
                         "detail": o.detail,
-                        "cause": o.cause.map(|c| c.as_str()),
+                        "cause": o.cause.map(super::super::fold::Cause::as_str),
                         "ts": o.ts,
                     })
                 });

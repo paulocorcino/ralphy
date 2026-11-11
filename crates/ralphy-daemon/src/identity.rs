@@ -102,7 +102,7 @@ pub fn validate_name(raw: &str) -> std::result::Result<String, NameError> {
         return Err(NameError::InvalidChars);
     }
     if let Some(term) = RESERVED.iter().find(|r| normalized.eq_ignore_ascii_case(r)) {
-        return Err(NameError::Reserved((*term).to_string()));
+        return Err(NameError::Reserved((*term).to_owned()));
     }
     Ok(normalized)
 }
@@ -113,7 +113,7 @@ pub fn validate_name(raw: &str) -> std::result::Result<String, NameError> {
 pub fn suggest_name(hostname: &str) -> String {
     let stem = name_stem(hostname);
     if stem.is_empty() || RESERVED.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
-        return "ralphy".to_string();
+        return "ralphy".to_owned();
     }
     stem
 }
@@ -222,7 +222,7 @@ mod tests {
             "name may only contain lowercase letters, digits, and hyphens"
         );
         assert_eq!(
-            NameError::Reserved("list".to_string()).to_string(),
+            NameError::Reserved("list".to_owned()).to_string(),
             "'list' is reserved (it collides with Ralphy's command vocabulary) — pick another name"
         );
     }
@@ -277,21 +277,21 @@ mod tests {
     fn default_name_joins_host_and_user() {
         assert_eq!(
             default_name("vps.example.com", Some("Ralphy1"), &[]),
-            Some("vps-ralphy1".to_string())
+            Some("vps-ralphy1".to_owned())
         );
-        assert_eq!(default_name("vps", None, &[]), Some("vps".to_string()));
-        assert_eq!(default_name("vps", Some(""), &[]), Some("vps".to_string()));
+        assert_eq!(default_name("vps", None, &[]), Some("vps".to_owned()));
+        assert_eq!(default_name("vps", Some(""), &[]), Some("vps".to_owned()));
     }
 
     #[test]
     fn default_name_counts_up_past_a_taken_or_reserved_name() {
-        let taken = vec!["vps-ralphy1".to_string(), "VPS-ralphy1-2".to_string()];
+        let taken = vec!["vps-ralphy1".to_owned(), "VPS-ralphy1-2".to_owned()];
         assert_eq!(
             default_name("vps", Some("ralphy1"), &taken),
-            Some("vps-ralphy1-3".to_string())
+            Some("vps-ralphy1-3".to_owned())
         );
         // "run" is reserved, so "run" alone is refused and "run-2" is the first valid name.
-        assert_eq!(default_name("run", None, &[]), Some("run-2".to_string()));
+        assert_eq!(default_name("run", None, &[]), Some("run-2".to_owned()));
     }
 
     #[test]

@@ -74,7 +74,7 @@ fn serve_answers_only_the_askpass_that_has_the_nonce() {
         ])
     })
     .unwrap();
-    assert_eq!(replies, [None, None, Some("s3cret".to_string())]);
+    assert_eq!(replies, [None, None, Some("s3cret".to_owned())]);
     assert_eq!(unhandled.as_deref(), Some("Verification code:"));
 }
 
@@ -131,7 +131,7 @@ fn a_refused_password_stops_after_one_attempt() {
 #[test]
 fn a_second_factor_prompt_is_reported_as_a_prompt() {
     let mut fake = FakeHost {
-        prompt: Some("Verification code:".to_string()),
+        prompt: Some("Verification code:".to_owned()),
         ..FakeHost::default()
     }
     .with_password();

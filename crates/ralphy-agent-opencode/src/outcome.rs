@@ -11,11 +11,11 @@ use ralphy_core::{Outcome, ResetAt};
 
 use crate::OpenCodeAgent;
 
-/// Extract OpenCode's [`CompletionSignals`] from a call's raw end state and delegate
+/// Extract `OpenCode`'s [`CompletionSignals`] from a call's raw end state and delegate
 /// the precedence ordering to the shared [`classify`](ralphy_adapter_support::classify)
 /// ladder (ADR-0023 D1/D2). This function owns only the vendor-specific extraction:
 /// the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinel parse and the JSON `error`
-/// event. OpenCode's `limit` is a structural JSON event (`parse_opencode_limit`, D5)
+/// event. `OpenCode`'s `limit` is a structural JSON event (`parse_opencode_limit`, D5)
 /// trustworthy regardless of exit — unlike Codex, no exit-code gating is needed here.
 /// Ordering — including that a trustworthy limit outranks both done and timeout, and
 /// that `Done` needs no commit — lives in the shared ladder, not here.
@@ -38,10 +38,10 @@ pub(crate) fn classify_opencode_outcome(
     })
 }
 
-/// Collapse a detected OpenCode usage limit to an **unschedulable** one: keep the
+/// Collapse a detected `OpenCode` usage limit to an **unschedulable** one: keep the
 /// "a limit fired" signal (the outer `Some`) but drop any reset hint (the inner
-/// `Option` → `None`). OpenCode fronts many providers whose reset strings are
-/// unreliable — a "5 hour" limit reporting a reset ~12h out (FinCal #73, glm-5.2) is
+/// `Option` → `None`). `OpenCode` fronts many providers whose reset strings are
+/// unreliable — a "5 hour" limit reporting a reset ~12h out (`FinCal` #73, glm-5.2) is
 /// internally impossible yet parses cleanly — so the runner must never schedule on
 /// one; a `Limit(None)` routes it to the ~30-min synthetic cadence (ADR-0030 D1).
 /// Trustworthiness is a per-vendor extraction decision (the `classify` seam,

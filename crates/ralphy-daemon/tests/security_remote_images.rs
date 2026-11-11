@@ -35,7 +35,7 @@ const REMOTE_IMG: &str = "img-src 'self' data: blob: https:;";
 /// flag the route re-reads is the one the header layer sees.
 fn app(state: &Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         PathBuf::from("does-not-exist"),
@@ -79,7 +79,7 @@ async fn csp(state: &Arc<AuthState>) -> String {
     resp.headers()[header::CONTENT_SECURITY_POLICY]
         .to_str()
         .expect("read the CSP header as text")
-        .to_string()
+        .to_owned()
 }
 
 /// The current RFC 6238 code for `SEED`, computed here because `Seed::code_at`
@@ -93,10 +93,14 @@ fn code() -> String {
     mac.update(&(now / 30).to_be_bytes());
     let hs = mac.finalize().into_bytes();
     let off = (hs[hs.len() - 1] & 0x0f) as usize;
-    let bin = ((hs[off] as u32 & 0x7f) << 24)
-        | ((hs[off + 1] as u32) << 16)
-        | ((hs[off + 2] as u32) << 8)
-        | (hs[off + 3] as u32);
+    let [b0, b1, b2, b3] = *hs
+        .get(off..)
+        .and_then(<[u8]>::first_chunk::<4>)
+        .expect("a SHA-1 digest is 20 bytes and the offset is at most 15");
+    let bin = ((u32::from(b0) & 0x7f) << 24)
+        | (u32::from(b1) << 16)
+        | (u32::from(b2) << 8)
+        | u32::from(b3);
     format!("{:06}", bin % 1_000_000)
 }
 

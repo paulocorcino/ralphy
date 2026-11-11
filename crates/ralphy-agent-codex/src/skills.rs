@@ -20,11 +20,11 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 /// the conventional `.agents/skills` hierarchy (CWD up to repo root, plus
 /// `$HOME/.agents/skills` and `/etc/codex/skills`), and its sole skills config key,
 /// `[[skills.config]]`, just toggles a skill on/off — there is no additional-path
-/// setting (unlike OpenCode's `skills.paths`). `.agents/skills` is therefore a
+/// setting (unlike `OpenCode`'s `skills.paths`). `.agents/skills` is therefore a
 /// user-owned, shared location we must NOT wipe.
 ///
 /// So the real skill content lives in `.ralphy/skills` (cleared-and-replaced
-/// wholesale, like the OpenCode adapter, and kept out of git by `.ralphy/.gitignore`),
+/// wholesale, like the `OpenCode` adapter, and kept out of git by `.ralphy/.gitignore`),
 /// and only per-skill symlinks are placed into `.agents/skills/<name>` —
 /// **additively**, replacing just the subdirectories ralphy owns and leaving sibling
 /// (user) skills intact. On Windows, where a symlink needs Developer Mode/admin, the
@@ -45,11 +45,9 @@ mod tests {
 
     /// A scratch directory may not exist, and a failed cleanup must not fail a test.
     fn remove_scratch(path: &std::path::Path) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the directory may not exist, and a failed cleanup is harmless"
-        )]
-        let _ = fs::remove_dir_all(path);
+        if let Err(e) = fs::remove_dir_all(path) {
+            tracing::debug!("could not remove scratch dir {}: {e}", path.display());
+        }
     }
 
     /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter

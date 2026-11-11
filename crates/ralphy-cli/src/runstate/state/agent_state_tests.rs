@@ -58,7 +58,7 @@ fn every_event_that_ends_the_child_clears_the_agent_state() {
                 number: 7,
                 tokens: 0,
                 invocations: 0,
-                usage: super::super::UsageLite::default(),
+                usage: UsageLite::default(),
             },
         ),
         (
@@ -109,7 +109,7 @@ fn every_event_that_ends_the_child_clears_the_agent_state() {
     s.apply(RunEvent::PlanWritten {
         number: 7,
         open_steps: 3,
-        usage: super::super::UsageLite::default(),
+        usage: UsageLite::default(),
         steps: Vec::new(),
     });
     assert!(

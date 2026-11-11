@@ -126,16 +126,15 @@ impl KeptOutput {
     /// is not poisoned, because the panic does not leave this call.
     pub(super) fn on_screen<R>(&mut self, f: impl FnOnce(&mut Screen) -> R) -> Option<R> {
         let screen = self.screen.as_mut()?;
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(screen))) {
-            Ok(result) => Some(result),
-            Err(_) => {
-                tracing::warn!(
-                    session = self.session,
-                    "the console screen failed; a reattach of this session now gets the raw output"
-                );
-                self.screen = None;
-                None
-            }
+        if let Ok(result) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(screen))) {
+            Some(result)
+        } else {
+            tracing::warn!(
+                session = self.session,
+                "the console screen failed; a reattach of this session now gets the raw output"
+            );
+            self.screen = None;
+            None
         }
     }
 }
@@ -151,11 +150,10 @@ impl KeptOutput {
 pub(super) fn publish(kept: &Mutex<KeptOutput>, tx: &broadcast::Sender<Vec<u8>>, chunk: Vec<u8>) {
     let mut kept = kept.lock().expect("kept output mutex");
     kept.push(&chunk);
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a send with no receiver is a no-op: the kept bytes serve the next attach"
-    )]
-    let _ = tx.send(chunk);
+    // A send with no receiver is a no-op: the kept bytes serve the next attach.
+    match tx.send(chunk) {
+        Ok(_) | Err(_) => {}
+    }
     drop(kept);
 }
 

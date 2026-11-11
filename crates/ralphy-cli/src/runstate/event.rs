@@ -26,13 +26,13 @@ use super::{SkipKind, UsageLite};
 /// `f64` has no total equality. `PartialEq` is all any consumer needs (`assert_eq!`
 /// in the fold/decoder tests, no `HashSet`/`BTreeSet` of events).
 #[derive(Debug, Clone, PartialEq)]
-pub enum RunEvent {
+pub(crate) enum RunEvent {
     /// The queue was built: its size, the issue numbers in order, the first
     /// issue carrying `stop-before` (where the run will halt), if any, and the
     /// enriched per-issue snapshot (ADR-0020) — a `serde_json::Value` array of
     /// `{number, title, labels[], queue_status, skip_reason?, blocked_by[],
     /// position?}`, or `Value::Null` when the resolver produced none (the legacy
-    /// shape). The Telegram/console fold ignores `issues`; only the CloudEvents
+    /// shape). The Telegram/console fold ignores `issues`; only the `CloudEvents`
     /// sink carries it onto `queue.built`.
     QueueBuilt {
         count: u64,
@@ -41,7 +41,7 @@ pub enum RunEvent {
         issues: serde_json::Value,
         /// The resolved concrete login the queue was scoped to (ADR-0021 §5);
         /// `None` = whole queue (unfiltered, or an explicit `--issues`/`--only-issue`
-        /// selection). Only the CloudEvents sink carries it onto `queue.built`.
+        /// selection). Only the `CloudEvents` sink carries it onto `queue.built`.
         assignee_filter: Option<String>,
         /// The human-readable queue scope phrase (`labels [AFK]`, `issue #7`…),
         /// LOG-ONLY (#222): the console edge notice is folded from it and it is
@@ -215,13 +215,17 @@ pub enum RunEvent {
 ///
 /// `target` is currently informational — the message + fields uniquely identify
 /// every consumed event — but kept in the signature for future disambiguation.
-pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> Option<RunEvent> {
-    let _ = target;
+pub(crate) fn event_to_runevent(
+    target: &str,
+    message: &str,
+    fields: &EventFields,
+) -> Option<RunEvent> {
+    let _: &str = target;
     // Level wins: WARN and ERROR always surface as Notice.
     if fields.level == Level::WARN || fields.level == Level::ERROR {
         return Some(RunEvent::Notice {
             level: fields.level,
-            message: message.to_string(),
+            message: message.to_owned(),
         });
     }
     let number = fields.number.unwrap_or(0);
@@ -324,6 +328,13 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             label: None,
             blockers: Vec::new(),
         }),
+        _ => run_level_runevent(message, number, fields),
+    }
+}
+
+/// The run-level half of [`event_to_runevent`]: deadline, stop, sleep, agent and run bounds.
+fn run_level_runevent(message: &str, number: u64, fields: &EventFields) -> Option<RunEvent> {
+    match message {
         ralphy_core::emit::DEADLINE_PASSED_MSG => Some(RunEvent::DeadlinePassed { number }),
         // The operator's stop. `number` is already `unwrap_or(0)`, which is the
         // between-issues case verbatim: the emitter omits the field there.
@@ -407,7 +418,7 @@ fn split_labels(raw: Option<&str>) -> Vec<String> {
             .split(',')
             .map(str::trim)
             .filter(|t| !t.is_empty())
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect(),
     }
 }
@@ -434,8 +445,8 @@ fn parse_steps_json(raw: Option<&str>) -> Vec<(String, String)> {
     };
     arr.iter()
         .filter_map(|e| {
-            let text = e.get("text")?.as_str()?.to_string();
-            let status = e.get("status")?.as_str()?.to_string();
+            let text = e.get("text")?.as_str()?.to_owned();
+            let status = e.get("status")?.as_str()?.to_owned();
             Some((text, status))
         })
         .collect()

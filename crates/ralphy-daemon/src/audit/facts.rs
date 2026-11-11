@@ -15,10 +15,10 @@ const MAX_LIST_LEN: usize = 16;
 /// A string cut at [`MAX_TEXT_CHARS`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
-pub struct Text(String);
+pub(crate) struct Text(String);
 
 impl Text {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -33,7 +33,7 @@ impl<'de> Deserialize<'de> for Text {
 /// A list cut at [`MAX_LIST_LEN`]; `null` reads as empty.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct List<T>(pub Vec<T>);
+pub(crate) struct List<T>(pub Vec<T>);
 
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for List<T> {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -45,7 +45,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for List<T> {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct ClientFacts {
+pub(crate) struct ClientFacts {
     /// The tab's holder ID (D11).
     pub holder: Option<Text>,
     pub ua: Option<Text>,
@@ -79,7 +79,7 @@ pub struct ClientFacts {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct UaData {
+pub(crate) struct UaData {
     pub platform: Option<Text>,
     #[serde(rename = "platformVersion")]
     pub platform_version: Option<Text>,
@@ -96,14 +96,14 @@ pub struct UaData {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct Brand {
+pub(crate) struct Brand {
     pub brand: Text,
     pub version: Text,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct IntlFacts {
+pub(crate) struct IntlFacts {
     pub time_zone: Option<Text>,
     pub locale: Option<Text>,
     pub calendar: Option<Text>,
@@ -113,7 +113,7 @@ pub struct IntlFacts {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct ScreenFacts {
+pub(crate) struct ScreenFacts {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub avail_width: Option<u32>,
@@ -125,7 +125,7 @@ pub struct ScreenFacts {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct WindowFacts {
+pub(crate) struct WindowFacts {
     pub inner: List<u32>,
     pub outer: List<u32>,
     pub visual_scale: Option<f64>,
@@ -133,7 +133,7 @@ pub struct WindowFacts {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct SafeArea {
+pub(crate) struct SafeArea {
     pub top: f64,
     pub right: f64,
     pub bottom: f64,
@@ -142,7 +142,7 @@ pub struct SafeArea {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct MediaFacts {
+pub(crate) struct MediaFacts {
     pub pointer: Option<Text>,
     pub any_pointer: Option<Text>,
     pub hover: Option<Text>,
@@ -158,7 +158,7 @@ pub struct MediaFacts {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct EngineSignals {
+pub(crate) struct EngineSignals {
     pub webkit_touch_callout: Option<bool>,
     pub gesture_event: Option<bool>,
     pub safari_object: Option<bool>,
@@ -169,7 +169,7 @@ pub struct EngineSignals {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct GpuFacts {
+pub(crate) struct GpuFacts {
     pub vendor: Option<Text>,
     pub renderer: Option<Text>,
     pub unmasked_vendor: Option<Text>,
@@ -179,21 +179,21 @@ pub struct GpuFacts {
 /// The speech voices: their count and the first few, never the whole list.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct Voices {
+pub(crate) struct Voices {
     pub count: u32,
     pub sample: List<Text>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct Storage {
+pub(crate) struct Storage {
     pub quota: Option<f64>,
     pub usage: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct Connection {
+pub(crate) struct Connection {
     #[serde(rename = "type")]
     pub kind: Option<Text>,
     pub effective_type: Option<Text>,
@@ -204,7 +204,7 @@ pub struct Connection {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
-pub struct Battery {
+pub(crate) struct Battery {
     pub level: Option<f64>,
     pub charging: Option<bool>,
 }

@@ -261,7 +261,7 @@ pub(crate) fn task_args(
     }
     args.push("-p".into());
     args.push("--dangerously-skip-permissions".into());
-    args.extend(crate::STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
+    args.extend(crate::STREAM_JSON_ARGS.iter().map(ToString::to_string));
     args.push("--settings".into());
     args.push(settings_path.to_string_lossy().into_owned());
     if let Some(e) = effort {

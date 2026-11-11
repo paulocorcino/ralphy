@@ -39,7 +39,7 @@ fn parse_blocked_by_reads_the_bullet_refs_of_its_section() {
 #[test]
 fn find_consolidated_spec_returns_marked_comment_only() {
     let comments = vec![
-        "just a normal comment mentioning ## Blocked by\n- #1\n".to_string(),
+        "just a normal comment mentioning ## Blocked by\n- #1\n".to_owned(),
         format!("{CONSOLIDATED_SPEC_MARKER}\n## Consolidated spec\nbody\n"),
     ];
     let spec = find_consolidated_spec(&comments).expect("marked comment found");
@@ -61,9 +61,9 @@ fn parse_blocked_by_all_unions_body_and_marked_comment() {
 #[test]
 fn blocked_by_in_unmarked_comment_is_ignored() {
     let body = "## Steps\n- [ ] do it\n";
-    let comments = vec!["## Blocked by\n- #9\n".to_string()];
+    let comments = vec!["## Blocked by\n- #9\n".to_owned()];
     // No marker → the comment's `## Blocked by` does not gate.
-    assert!(parse_blocked_by_all(body, &comments).is_empty());
+    assert_eq!(parse_blocked_by_all(body, &comments), Vec::<u64>::new());
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn numbers(queue: &[Issue]) -> Vec<u64> {
 fn assignee_union_default_hides_assigned() {
     // No configured login ⇒ only unassigned issues survive.
     assert!(assignee_union_keep(&[], None));
-    assert!(!assignee_union_keep(&["octo".to_string()], None));
+    assert!(!assignee_union_keep(&["octo".to_owned()], None));
 }
 
 #[test]
@@ -209,10 +209,10 @@ fn assignee_union_keeps_unassigned_or_login() {
     // survives, anything assigned only to others is dropped.
     assert!(assignee_union_keep(&[], Some("octo")));
     assert!(assignee_union_keep(
-        &["octo".to_string(), "other".to_string()],
+        &["octo".to_owned(), "other".to_owned()],
         Some("octo")
     ));
-    assert!(!assignee_union_keep(&["other".to_string()], Some("octo")));
+    assert!(!assignee_union_keep(&["other".to_owned()], Some("octo")));
 }
 
 #[test]

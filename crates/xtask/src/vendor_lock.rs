@@ -14,7 +14,7 @@ use crate::asset_pins::repo_root;
 
 const MANIFEST: &str = "crates/ralphy-daemon/assets/ui/vendor/manifest.json";
 
-pub fn vendor_lock_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn vendor_lock_cmd(args: &[String]) -> Result<()> {
     let [out] = args else {
         anyhow::bail!("usage: vendor-lock <out>");
     };

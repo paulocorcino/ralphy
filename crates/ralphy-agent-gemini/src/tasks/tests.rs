@@ -182,7 +182,7 @@ fn finished(code: i32, stdout: &str) -> ralphy_adapter_support::HeadlessOutput {
     #[cfg(windows)]
     let exit = std::os::windows::process::ExitStatusExt::from_raw(code as u32);
     ralphy_adapter_support::HeadlessOutput {
-        stdout: stdout.to_string(),
+        stdout: stdout.to_owned(),
         stderr: String::new(),
         timed_out: false,
         idle_killed: false,

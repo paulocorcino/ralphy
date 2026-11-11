@@ -61,7 +61,7 @@ fn totals_panel_undo_line_is_mode_aware() {
     let current = render_totals_panel(
         &PanelData {
             branch_mode: PanelBranchMode::Current,
-            branch: "main".to_string(),
+            branch: "main".to_owned(),
             ..panel_base()
         },
         opts,
@@ -106,8 +106,8 @@ fn totals_panel_undo_line_absent_without_tag_or_commits() {
 
 fn panel_base() -> PanelData {
     PanelData {
-        branch: "afk/run-20260610-120000".to_string(),
-        orig_branch: "main".to_string(),
+        branch: "afk/run-20260610-120000".to_owned(),
+        orig_branch: "main".to_owned(),
         done: 3,
         blocked: 1,
         skipped: 2,
@@ -117,7 +117,7 @@ fn panel_base() -> PanelData {
         stop: None,
         branch_mode: PanelBranchMode::New,
         dry_run: false,
-        undo_tag: Some("ralphy/pre-run-20260610-120000".to_string()),
+        undo_tag: Some("ralphy/pre-run-20260610-120000".to_owned()),
         run_breakdown: UsageLite {
             input: 8_400_000,
             ..Default::default()
@@ -126,7 +126,7 @@ fn panel_base() -> PanelData {
             input: 142_000_000,
             ..Default::default()
         },
-        project_id: "owner/repo".to_string(),
+        project_id: "owner/repo".to_owned(),
         run_usd: Some(2.10),
         project_usd: Some(35.6),
         run_usd_partial: false,
@@ -428,7 +428,7 @@ fn render_totals_panel_plain_no_ansi_and_stop_reason_present() {
     let data = PanelData {
         stop: Some(PanelStop::NonGreen {
             number: 42,
-            outcome: "Blocked(\"reason\")".to_string(),
+            outcome: "Blocked(\"reason\")".to_owned(),
         }),
         ..panel_base()
     };

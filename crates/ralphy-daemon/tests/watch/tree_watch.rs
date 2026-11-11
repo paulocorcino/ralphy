@@ -27,7 +27,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
     registry::save_to(&store, &registry_path).expect("save the registry");
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
-    std::mem::forget(dir);
+    let _kept = dir.keep();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -47,20 +47,20 @@ async fn serve_repo() -> (u16, String, PathBuf) {
         ralphy_daemon::auth::AuthState::localhost(),
     );
     // Leak the shutdown sender so the channel stays open for the server's lifetime.
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     tokio::spawn(async move {
         axum::serve(listener, app)
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 /// Send a `watch`/`unwatch` command for `(repo, path)` on the open channel.
 async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
     let frame = Frame::Command(Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload: serde_json::json!({ "repo": repo, "path": path }),
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
@@ -72,7 +72,7 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
 async fn send_verb_checkout(ws: &mut Ws, verb: &str, repo: &str, path: &str, checkout: &str) {
     let frame = Frame::Command(Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload: serde_json::json!({ "repo": repo, "path": path, "checkout": checkout }),
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
@@ -99,8 +99,18 @@ async fn recv_dirty_within(
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.verb == "tree.dirty" {
-                    let repo = cmd.payload["repo"].as_str().unwrap_or("").to_string();
-                    let path = cmd.payload["path"].as_str().unwrap_or("").to_string();
+                    let repo = cmd
+                        .payload
+                        .get("repo")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_owned();
+                    let path = cmd
+                        .payload
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_owned();
                     let checkout = cmd.payload["checkout"].as_str().map(String::from);
                     return Some((repo, path, checkout));
                 }
@@ -161,7 +171,7 @@ async fn dirty_nudge_reaches_a_checkout_watcher() {
     let got = recv_dirty(&mut ws).await;
     assert_eq!(
         got,
-        Some((slug.clone(), String::new(), Some("wt-a".to_string()))),
+        Some((slug.clone(), String::new(), Some("wt-a".to_owned()))),
         "a create inside the worktree nudges the checkout watcher with the operator's rel"
     );
 }
@@ -188,7 +198,7 @@ async fn unwatch_with_checkout_retires_the_alias() {
     let got = recv_dirty(&mut ws).await;
     assert_eq!(
         got,
-        Some((slug.clone(), ".ralphy/worktrees/wt-a".to_string(), None)),
+        Some((slug.clone(), ".ralphy/worktrees/wt-a".to_owned(), None)),
         "the retired alias must not relabel a plain watch of the same dir"
     );
 }
@@ -203,7 +213,7 @@ async fn malformed_checkout_on_watch_holds_nothing() {
     for checkout in [serde_json::json!(""), serde_json::json!(5)] {
         let frame = Frame::Command(Command {
             id: 0,
-            verb: "watch".to_string(),
+            verb: "watch".to_owned(),
             payload: serde_json::json!({ "repo": slug, "path": "", "checkout": checkout }),
         });
         ws.send(Message::Binary(protocol::encode(&frame).into()))

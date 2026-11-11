@@ -30,7 +30,7 @@ async fn api_about_route_reports_version_and_facts() {
 /// surface is deleted.
 #[test]
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
-    let html = super::INDEX_HTML;
+    let html = INDEX_HTML;
     let app = shell_family();
     let module = include_str!("../../assets/ui/wb-release.ts");
     let dialogs = include_str!("../../assets/ui/wb-release-dialogs.ts");
@@ -92,7 +92,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
             .next()
             .unwrap_or_default()
             .trim()
-            .to_string();
+            .to_owned();
         if !css.contains(&format!("{name}:")) {
             missing.push(name);
         }
@@ -109,11 +109,10 @@ async fn api_release_watch_turns_the_watch_off_and_on() {
     // `set_watch_disabled_in(dir, !enable)`, and a sign flip would turn the
     // watch OFF when the operator asks to check again, silently.
     let dir = std::env::temp_dir().join(format!("ralphy-watch-route-{}", std::process::id()));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // The scratch directory may be absent, and a failed cleanup is no test failure.
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
     std::fs::create_dir_all(&dir).expect("scratch");
     let registry = dir.join("repos.toml");
 
@@ -165,11 +164,10 @@ async fn api_release_watch_turns_the_watch_off_and_on() {
     // Idempotent both ways, like the require-login toggle it is modelled on.
     assert_eq!(post("true").await.status(), StatusCode::OK);
     assert!(!release::watch_disabled_in(&dir));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // The scratch directory may be absent, and a failed cleanup is no test failure.
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[tokio::test]
@@ -195,7 +193,7 @@ async fn api_release_answers_from_the_cache_without_reaching_the_network() {
     // The watch is spawned by `serve`, never by `router`: building a router
     // must not reach the network, nor drop a cache beside the test.
     assert!(
-        !std::path::Path::new("releases.json").exists(),
+        !Path::new("releases.json").exists(),
         "a router built in a test must not have written a release cache"
     );
     // This tree's binary is built from a working copy, so it is ahead of its

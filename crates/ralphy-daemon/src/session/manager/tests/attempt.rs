@@ -8,9 +8,9 @@ fn held_session(
     let manager = Arc::new(SessionManager::new());
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,

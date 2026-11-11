@@ -37,7 +37,7 @@ pub(crate) fn is_claude_auth_error(text: &str) -> bool {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
                 if matches!(
                     v.get("type").and_then(|t| t.as_str()),
-                    Some("user") | Some("assistant")
+                    Some("user" | "assistant")
                 ) {
                     return false;
                 }
@@ -97,10 +97,10 @@ pub(crate) fn transcript_limit(jsonl: &str) -> Option<Option<ResetAt>> {
 fn line_is_rate_limit_error(v: &serde_json::Value) -> bool {
     let api_rate_limited = v
         .get("isApiErrorMessage")
-        .and_then(|b| b.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
         && (v.get("error").and_then(|e| e.as_str()) == Some("rate_limit")
-            || v.get("apiErrorStatus").and_then(|s| s.as_u64()) == Some(429));
+            || v.get("apiErrorStatus").and_then(serde_json::Value::as_u64) == Some(429));
     let rate_limit_event = v.get("type").and_then(|t| t.as_str()) == Some("rate_limit_event")
         && v.get("rate_limit_info")
             .and_then(|i| i.get("status"))
@@ -198,7 +198,7 @@ pub(crate) fn parse_reset_hhmm(text: &str) -> Option<String> {
         "am" => hour % 12,
         _ => (hour % 12) + 12,
     };
-    let hhmm = format!("{:02}:{:02}", hour24, min);
+    let hhmm = format!("{hour24:02}:{min:02}");
     match caps.get(1) {
         Some(wd) => Some(format!("{} {}", title_case_weekday(wd.as_str()), hhmm)),
         None => Some(hhmm),
@@ -211,7 +211,7 @@ fn title_case_weekday(wd: &str) -> String {
     match chars.next() {
         Some(first) => first
             .to_uppercase()
-            .chain(chars.flat_map(|c| c.to_lowercase()))
+            .chain(chars.flat_map(char::to_lowercase))
             .collect(),
         None => String::new(),
     }

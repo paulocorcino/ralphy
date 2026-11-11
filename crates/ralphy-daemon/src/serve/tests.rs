@@ -38,9 +38,9 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
 
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
-    let mut store = crate::registry::RegistryStore::default();
+    let mut store = registry::RegistryStore::default();
     store.upsert("owner/workbench", &dir.path().to_string_lossy());
-    crate::registry::save_to(&store, &registry_path).unwrap();
+    registry::save_to(&store, &registry_path).unwrap();
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -52,15 +52,15 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
             .build()
             .unwrap();
         let served = runtime.block_on(async move {
-            let (sockets, drain) = crate::mux::tracked();
-            let app = crate::router_tracking(
+            let (sockets, drain) = mux::tracked();
+            let app = router_tracking(
                 None,
                 registry_path,
-                std::path::PathBuf::from("does-not-exist"),
-                crate::StorePaths::default(),
-                std::time::Instant::now(),
+                PathBuf::from("does-not-exist"),
+                StorePaths::default(),
+                Instant::now(),
                 stop.clone(),
-                crate::auth::AuthState::localhost(),
+                auth::AuthState::localhost(),
                 sockets,
             );
             let tcp = tokio::net::TcpListener::from_std(listener).unwrap();
@@ -83,7 +83,7 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
         .unwrap();
     let open = Frame::Command(Command {
         id: 0,
-        verb: "channel.open".to_string(),
+        verb: "channel.open".to_owned(),
         payload: serde_json::json!({
             "channel": 1, "kind": "console", "repo": "owner/workbench", "console": 1,
         }),
@@ -116,7 +116,7 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
                 if c.verb == "session-open" {
                     stop_tx.send(true).unwrap();
                 }
-                let reason = c.payload["reason"].as_str().map(str::to_string);
+                let reason = c.payload["reason"].as_str().map(str::to_owned);
                 verbs.push((c.verb, reason));
                 if verbs.last().is_some_and(|(verb, _)| verb == "session-end") {
                     break;
@@ -128,10 +128,7 @@ async fn the_process_stop_waits_for_an_open_page_socket() {
     assert!(read.is_ok(), "the console ends after the stop: {verbs:?}");
     assert_eq!(
         verbs.last(),
-        Some(&(
-            "session-end".to_string(),
-            Some("daemon-shutdown".to_string())
-        )),
+        Some(&("session-end".to_owned(), Some("daemon-shutdown".to_owned()))),
         "the console tells the page the daemon stopped"
     );
     // The page has not closed its socket: the process waits for it, up to

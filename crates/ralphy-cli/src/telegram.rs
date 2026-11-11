@@ -3,10 +3,11 @@
 //! and transport spine; the run-time notifier Layer (D1/D6) lands in a later
 //! slice.
 
-pub use ralphy_telegram::client;
-pub mod config;
-pub mod notifier;
+pub(crate) use ralphy_telegram::client;
+pub(crate) mod config;
+pub(crate) mod notifier;
 
+use std::io::Write as _;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -17,11 +18,11 @@ use config::{effective_token, masked_token, TelegramConfig};
 
 /// The `ralphy telegram` command group (ADR-0007 D2).
 #[derive(Subcommand)]
-pub enum TelegramCommand {
+pub(crate) enum TelegramCommand {
     /// Save the bot token, then find your chat when you send `/start` to the
     /// bot.
     Setup {
-        /// The bot token from BotFather. Default: the `RALPHY_TELEGRAM_TOKEN`
+        /// The bot token from `BotFather`. Default: the `RALPHY_TELEGRAM_TOKEN`
         /// environment variable.
         #[arg(long)]
         token: Option<String>,
@@ -39,7 +40,7 @@ const SETUP_POLL_ATTEMPTS: u32 = 30;
 const SETUP_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Dispatch a `telegram` subcommand.
-pub fn run(cmd: TelegramCommand) -> Result<()> {
+pub(crate) fn run(cmd: TelegramCommand) -> Result<()> {
     match cmd {
         TelegramCommand::Setup { token } => setup(token),
         TelegramCommand::Test => test(),
@@ -120,7 +121,11 @@ fn status() -> Result<()> {
             match cfg.chat_id {
                 Some(id) => println!("Telegram: configured (chat {id}, notifications on)."),
                 None => {
-                    println!("Telegram: token stored but no chat captured — run `telegram setup`.")
+                    writeln!(
+                        std::io::stdout(),
+                        "Telegram: token stored but no chat captured — run `telegram setup`."
+                    )
+                    .expect("the report goes to stdout, as println! sent it");
                 }
             }
             println!("Token: {}", masked_token(&token));

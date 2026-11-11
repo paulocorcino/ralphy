@@ -319,7 +319,7 @@ mod tests {
     /// duplication the shared verdict alone did not remove.
     #[test]
     fn recovery_names_an_unknown_models_engine_from_the_map() {
-        let map = std::collections::BTreeMap::from([("s1".to_string(), OPUS.to_string())]);
+        let map = std::collections::BTreeMap::from([("s1".to_owned(), OPUS.to_owned())]);
 
         assert_eq!(recover_ledger_model(Some(OPUS), None, &map), Some(OPUS));
         assert_eq!(

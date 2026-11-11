@@ -21,7 +21,7 @@ pub fn own_process_group(cmd: &mut Command) {
         cmd.process_group(0);
     }
     #[cfg(not(unix))]
-    let _ = cmd;
+    let _: &mut Command = cmd;
 }
 
 /// Prepend `dir` to a `PATH` value, or `None` when it is already there.
@@ -49,7 +49,7 @@ pub fn program_dir_on_path(cmd: &mut Command) {
         .get_envs()
         .find(|(key, _)| key.eq_ignore_ascii_case(std::ffi::OsStr::new("PATH")))
         .and_then(|(_, value)| value)
-        .map(|v| v.to_os_string())
+        .map(std::ffi::OsStr::to_os_string)
         .or_else(|| std::env::var_os("PATH"));
     if let Some(widened) = path_with_dir(dir, existing.as_deref()) {
         cmd.env("PATH", widened);
@@ -66,7 +66,7 @@ pub fn no_window(cmd: &mut Command) {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     #[cfg(not(windows))]
-    let _ = cmd;
+    let _: &mut Command = cmd;
 }
 
 /// Keep this process's standard handles out of the children it starts from now
@@ -111,16 +111,14 @@ pub fn keep_std_handles_from_children() {
 /// when `child` has already exited. Best-effort.
 pub fn kill_tree(child: &mut Child) {
     kill_tree_by_pid(child.id());
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the child may have exited already, and the tree kill above is the one that counts"
-    )]
-    let _ = child.kill();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the child may have been reaped already; this call only prevents a zombie"
-    )]
-    let _ = child.wait();
+    // The child may have exited already; the tree kill above is the one that counts.
+    if let Err(e) = child.kill() {
+        tracing::debug!("kill of the child failed: {e}");
+    }
+    // The child may have been reaped already; this call only prevents a zombie.
+    if let Err(e) = child.wait() {
+        tracing::debug!("reap of the child failed: {e}");
+    }
 }
 
 /// Kill the process tree rooted at `pid`, a child not owned as a [`Child`].
@@ -169,11 +167,12 @@ fn kill_tree_windows(root: u32) {
             return;
         }
         let mut entry: PROCESSENTRY32 = std::mem::zeroed();
-        entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
-        if Process32First(snap, &mut entry) != 0 {
+        entry.dwSize =
+            u32::try_from(size_of::<PROCESSENTRY32>()).expect("the struct size fits in u32");
+        if Process32First(snap, &raw mut entry) != 0 {
             loop {
                 table.push((entry.th32ProcessID, entry.th32ParentProcessID));
-                if Process32Next(snap, &mut entry) == 0 {
+                if Process32Next(snap, &raw mut entry) == 0 {
                     break;
                 }
             }
@@ -181,7 +180,7 @@ fn kill_tree_windows(root: u32) {
         CloseHandle(snap);
     }
 
-    let doomed = tree_to_kill(root, &table, std::process::id(), process_created);
+    let doomed = tree_to_kill(root, &table, std::process::id(), pid::process_created);
     for pid in doomed {
         // SAFETY: the handle is checked for null before use and closed once.
         unsafe {
@@ -239,33 +238,6 @@ fn created_before_parent(parent_created: Option<u64>, child_created: Option<u64>
     )
 }
 
-/// When `pid` was created, as a `FILETIME`, or `None` when it cannot be opened.
-#[cfg(windows)]
-#[expect(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
-fn process_created(pid: u32) -> Option<u64> {
-    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows_sys::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-    // SAFETY: the handle is checked for null before use and closed once; the
-    // four FILETIMEs are valid out pointers.
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle.is_null() {
-            return None;
-        }
-        let zero = FILETIME {
-            dwLowDateTime: 0,
-            dwHighDateTime: 0,
-        };
-        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
-        let ok = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
-        CloseHandle(handle);
-        (ok != 0)
-            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
-    }
-}
-
 /// A home-scoped path: `override_base/tail` when a vendor `$XXX_HOME` is set,
 /// else `home_dir()/home_rel/tail`; `None` when neither is known.
 pub fn home_scoped_path(
@@ -284,9 +256,7 @@ pub fn home_scoped_path(
 /// Only `std`'s `Command` escapes a `.cmd` command line; `ralphy-pty` refuses
 /// a batch program whose command line cmd.exe would not read as text.
 pub fn resolve_program(name: &str) -> std::ffi::OsString {
-    locate_program(name)
-        .map(PathBuf::into_os_string)
-        .unwrap_or_else(|| name.into())
+    locate_program(name).map_or_else(|| name.into(), PathBuf::into_os_string)
 }
 
 /// Locate `name` on `PATH`, then in `~/.local/bin` and an nvm bin. Both
@@ -350,7 +320,7 @@ pub fn nvm_candidates(home: &Path, name: &str) -> Vec<PathBuf> {
         return Vec::new();
     };
     let mut found: Vec<(Vec<u64>, PathBuf)> = entries
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .map(|e| {
             let dir = e.path();
             let key = dir
@@ -422,9 +392,7 @@ pub fn home_dir() -> Option<PathBuf> {
 #[cfg(unix)]
 fn is_executable_file(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(p)
-        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+    std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(not(unix))]
@@ -464,7 +432,7 @@ fn pathext_list(pathext: Option<std::ffi::OsString>) -> Vec<String> {
         .and_then(|p| p.into_string().ok())
         .unwrap_or_else(|| ".EXE".into())
         .split(';')
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty())
         .collect()
 }

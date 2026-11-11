@@ -70,13 +70,13 @@ fn tracking_reports_branch_upstream_and_counts() {
     assert_eq!(
         st.head,
         Head::Branch {
-            name: "main".to_string()
+            name: "main".to_owned()
         }
     );
     assert_eq!(
         st.tracking,
         Some(Tracking {
-            upstream: "origin/main".to_string(),
+            upstream: "origin/main".to_owned(),
             ahead: 0,
             behind: 0,
         })
@@ -94,7 +94,7 @@ fn no_upstream_is_its_own_state() {
     assert_eq!(
         st.head,
         Head::Branch {
-            name: "main".to_string()
+            name: "main".to_owned()
         }
     );
     assert!(
@@ -135,7 +135,7 @@ fn behind_only_reads_one_behind_zero_ahead() {
     assert_eq!(
         status(&clone).unwrap().tracking,
         Some(Tracking {
-            upstream: "origin/main".to_string(),
+            upstream: "origin/main".to_owned(),
             ahead: 0,
             behind: 1,
         })
@@ -154,7 +154,7 @@ fn ahead_only_reads_one_ahead_zero_behind() {
     assert_eq!(
         status(&clone).unwrap().tracking,
         Some(Tracking {
-            upstream: "origin/main".to_string(),
+            upstream: "origin/main".to_owned(),
             ahead: 1,
             behind: 0,
         })
@@ -175,7 +175,7 @@ fn diverged_reads_one_each_way() {
     assert_eq!(
         status(&clone).unwrap().tracking,
         Some(Tracking {
-            upstream: "origin/main".to_string(),
+            upstream: "origin/main".to_owned(),
             ahead: 1,
             behind: 1,
         })
@@ -249,7 +249,7 @@ fn last_fetch_is_the_fetch_head_mtime() {
 
 /// The absence of `FETCH_HEAD` proves "did not fetch", not "made no network
 /// call" — `git ls-remote`, the natural way to freshen counts, writes no
-/// FETCH_HEAD and would pass that oracle. Here the remote PATH is made
+/// `FETCH_HEAD` and would pass that oracle. Here the remote PATH is made
 /// unreachable after the clone: the remote-tracking refs stay readable, so a
 /// local-only reader answers unchanged, while anything that consults the remote
 /// fails.
@@ -265,7 +265,7 @@ fn status_consults_no_remote_at_all() {
     std::fs::rename(&remote, &gone).unwrap();
     // Positive control: the remote really is unreachable now.
     assert!(
-        crate::git::git(&clone, &["ls-remote", "origin"]).is_err(),
+        git(&clone, &["ls-remote", "origin"]).is_err(),
         "the fixture must be unreachable, or this proves nothing"
     );
 
@@ -289,7 +289,7 @@ fn a_single_non_origin_remote_is_the_one_to_fetch() {
     assert_eq!(
         fetch(&clone).unwrap(),
         FetchOutcome::Fetched {
-            remote: "upstream".to_string()
+            remote: "upstream".to_owned()
         }
     );
     assert!(fetch_head(&clone).exists());
@@ -307,7 +307,7 @@ fn fetch_updates_the_remote_tracking_ref() {
     assert_eq!(
         fetch(&clone).unwrap(),
         FetchOutcome::Fetched {
-            remote: "origin".to_string()
+            remote: "origin".to_owned()
         }
     );
     assert!(fetch_head(&clone).exists(), "a fetch writes FETCH_HEAD");

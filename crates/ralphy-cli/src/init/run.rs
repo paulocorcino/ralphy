@@ -14,13 +14,13 @@ use crate::doctor::gh_signed_in;
 mod decisions;
 mod stages;
 
-pub use decisions::{
+pub(crate) use decisions::{
     create_repo_decision, labels_decision, private_visibility_decision, repo_name_from_path,
 };
 use decisions::{init_model_for, select_agent};
 
 #[derive(Args)]
-pub struct InitArgs {
+pub(crate) struct InitArgs {
     /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
@@ -140,14 +140,12 @@ fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
     // Resolve to an absolute path so the repo name comes from the real directory (a
     // bare `.` has no file name) and the git/gh calls below have a stable cwd. The
     // dir may not exist yet — create it, then canonicalize.
-    let abs = match std::fs::canonicalize(target) {
-        Ok(p) => p,
-        Err(_) => {
-            std::fs::create_dir_all(target)
-                .with_context(|| format!("creating {}", target.display()))?;
-            std::fs::canonicalize(target)
-                .with_context(|| format!("resolving {}", target.display()))?
-        }
+    let abs = if let Ok(p) = std::fs::canonicalize(target) {
+        p
+    } else {
+        std::fs::create_dir_all(target)
+            .with_context(|| format!("creating {}", target.display()))?;
+        std::fs::canonicalize(target).with_context(|| format!("resolving {}", target.display()))?
     };
     let name = repo_name_from_path(&abs);
 
@@ -169,7 +167,7 @@ fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
     git::resolve_toplevel(&abs)
 }
 
-pub fn run(args: &InitArgs) -> Result<()> {
+pub(crate) fn run(args: &InitArgs) -> Result<()> {
     let repo = resolve_or_bootstrap_repo(&args.repo)?;
     crate::daemon::register_repo(&repo);
 
@@ -257,11 +255,10 @@ mod tests {
     #[test]
     fn write_scaffold_writes_the_agent_docs_and_no_instruction_file() {
         let dir = std::env::temp_dir().join(format!("ralphy-init-scaffold-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).unwrap();
 
         let mut cfg = block_cfg();
@@ -281,10 +278,9 @@ mod tests {
         assert!(!dir.join("CLAUDE.md").exists());
         assert!(!dir.join("AGENTS.md").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }

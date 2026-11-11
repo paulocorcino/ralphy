@@ -152,13 +152,9 @@ impl Open {
         // A peer free console is the one composite-ref session hosted HERE. Match
         // both id and repo so an equal numeric id owned by the peer still proxies.
         let locally_owned = query.id.and_then(|id| {
-            sessions.get(id).filter(|info| {
-                query
-                    .repo
-                    .as_deref()
-                    .map(|repo| repo == info.repo)
-                    .unwrap_or(true)
-            })
+            sessions
+                .get(id)
+                .filter(|info| query.repo.as_deref().is_none_or(|repo| repo == info.repo))
         });
         Open {
             query,
@@ -199,12 +195,12 @@ impl Open {
         Some(
             match fleet::route(&repo_ref, &self.daemon_id, &descriptors) {
                 fleet::route::Route::Local { slug } => {
-                    self.query.repo = Some(slug.to_string());
+                    self.query.repo = Some(slug.to_owned());
                     Placement::Local
                 }
                 fleet::route::Route::Peer { peer, slug } => Placement::Peer {
                     peer: Box::new(peer.clone()),
-                    slug: slug.to_string(),
+                    slug: slug.to_owned(),
                     repo_ref,
                 },
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
@@ -290,7 +286,7 @@ pub(super) fn launch_record(
     ConsoleRecord {
         kind: ConsoleKind::Launch,
         session: Some(session),
-        agent: Some(agent.to_string()),
+        agent: Some(agent.to_owned()),
         repo,
         peer,
         holder: tab.holder.clone(),
@@ -311,17 +307,15 @@ pub(super) fn relayed_record(
             (ConsoleKind::Takeover, Some(id), None)
         }
         Some(_) => return None,
-        None if query.console == Some(1) => {
-            (ConsoleKind::Launch, None, Some("console".to_string()))
-        }
+        None if query.console == Some(1) => (ConsoleKind::Launch, None, Some("console".to_owned())),
         None => (ConsoleKind::Launch, None, query.agent.clone()),
     };
     Some(ConsoleRecord {
         kind,
         session,
         agent,
-        repo: Some(slug.to_string()),
-        peer: Some(peer_id.to_string()),
+        repo: Some(slug.to_owned()),
+        peer: Some(peer_id.to_owned()),
         holder: tab.holder.clone(),
     })
 }
@@ -344,7 +338,7 @@ mod tests {
         let host = SessionHost {
             peers_dir: dir.path().join("peers"),
             identity: None,
-            environment: "Linux".to_string(),
+            environment: "Linux".to_owned(),
             bound_port: 0,
             sessions: Arc::new(session::SessionManager::new()),
             registry_path: dir.path().join("repos.json"),
@@ -368,7 +362,7 @@ mod tests {
     #[test]
     fn a_relayed_request_records_a_launch_or_a_takeover_and_nothing_else() {
         let tab = Tab {
-            holder: Some("tab-a".to_string()),
+            holder: Some("tab-a".to_owned()),
             ..Tab::default()
         };
         let record = |q| relayed_record(&query(q), "owner/repo", "01PEER", &tab);

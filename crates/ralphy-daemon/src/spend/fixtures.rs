@@ -26,7 +26,7 @@ pub(crate) fn table() -> PriceTable {
         cache_creation: 18.75,
     };
     PriceTable::from_layers(
-        BTreeMap::from([(OPUS.to_string(), price()), (SECOND.to_string(), price())]),
+        BTreeMap::from([(OPUS.to_owned(), price()), (SECOND.to_owned(), price())]),
         BTreeMap::new(),
         BTreeMap::new(),
         BTreeMap::new(),
@@ -69,7 +69,7 @@ impl Default for LedgerRow<'_> {
 }
 
 impl LedgerRow<'_> {
-    pub fn json(&self) -> serde_json::Value {
+    pub(crate) fn json(&self) -> serde_json::Value {
         let mut object = serde_json::json!({
             "project": self.project,
             "issue": self.issue,
@@ -86,7 +86,7 @@ impl LedgerRow<'_> {
             "ts": self.ts,
         });
         if let Some(session) = self.session {
-            object["session_id"] = serde_json::Value::String(session.to_string());
+            object["session_id"] = serde_json::Value::String(session.to_owned());
         }
         object
     }
@@ -121,7 +121,7 @@ impl Default for InteractiveRow<'_> {
 }
 
 impl InteractiveRow<'_> {
-    pub fn json(&self) -> serde_json::Value {
+    pub(crate) fn json(&self) -> serde_json::Value {
         let tokens = match self.tokens {
             None => serde_json::Value::Null,
             Some((input, output)) => serde_json::json!({

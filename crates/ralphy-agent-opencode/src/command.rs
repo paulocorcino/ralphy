@@ -23,7 +23,7 @@ pub(crate) fn build_opencode_command(
     command_with(model, variant, root, skills_dir, None)
 }
 
-/// The state plugin of a run (ADR-0085 D2): the plugin file OpenCode loads,
+/// The state plugin of a run (ADR-0085 D2): the plugin file `OpenCode` loads,
 /// and the status file the plugin appends to.
 pub(crate) struct StatePlugin<'a> {
     pub(crate) plugin: &'a Path,
@@ -95,8 +95,8 @@ fn command_with(
 // `ralphy-daemon/src/agent_state/opencode.rs`: it imports no adapter crate
 // (ADR-0059 §5).
 /// The `plugin` entry that names `path`: a `file:///` URL with forward
-/// slashes, the form OpenCode loaded on Windows and on Linux (measured with
-/// OpenCode 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
+/// slashes, the form `OpenCode` loaded on Windows and on Linux (measured with
+/// `OpenCode` 1.18.4 and 1.19.0). A Windows verbatim prefix is dropped.
 pub(crate) fn plugin_entry(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
     let text = text.strip_prefix("//?/").unwrap_or(&text);
@@ -111,7 +111,7 @@ pub(crate) fn plugin_entry(path: &Path) -> String {
 /// the model as a tool error; the run goes on (measured with opencode 1.18.32).
 /// The map has no `"*"` entry, so the operator's own bash rules still apply.
 /// A plan or an execute also names Ralphy's state plugin under `plugin`;
-/// OpenCode joins that list with the operator's own plugins.
+/// `OpenCode` joins that list with the operator's own plugins.
 fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
     let mut bash = serde_json::Map::new();
     for words in DENIED_FORGE_WRITES {
@@ -156,24 +156,24 @@ mod tests {
             "program: {program:?}"
         );
         let args = argv(&cmd);
-        assert!(args.contains(&"run".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"run".to_owned()), "argv: {args:?}");
         // No -m flag is passed; OpenCode resolves its own model (ADR-0005 D4).
-        assert!(!args.contains(&"-m".to_string()), "argv: {args:?}");
+        assert!(!args.contains(&"-m".to_owned()), "argv: {args:?}");
         // --variant is absent unless the operator set one (D3).
-        assert!(!args.contains(&"--variant".to_string()), "argv: {args:?}");
+        assert!(!args.contains(&"--variant".to_owned()), "argv: {args:?}");
         // Always-on flags.
         assert!(
-            args.contains(&"--dangerously-skip-permissions".to_string()),
+            args.contains(&"--dangerously-skip-permissions".to_owned()),
             "argv: {args:?}"
         );
-        assert!(args.contains(&"--format".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"json".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--format".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"json".to_owned()), "argv: {args:?}");
         // `--print-logs`/`--log-level ERROR` route opencode's own logs to stderr so
         // a provider quota block that never reaches the JSON stream is still visible
         // to the limit detector (D9 — silent-quota fix, FinCal #71).
-        assert!(args.contains(&"--print-logs".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"--log-level".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"ERROR".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--print-logs".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"--log-level".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"ERROR".to_owned()), "argv: {args:?}");
     }
 
     #[test]
@@ -185,9 +185,9 @@ mod tests {
             None,
         );
         let args = argv(&cmd);
-        assert!(args.contains(&"-m".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"-m".to_owned()), "argv: {args:?}");
         assert!(
-            args.contains(&"anthropic/claude-sonnet-4-6".to_string()),
+            args.contains(&"anthropic/claude-sonnet-4-6".to_owned()),
             "argv: {args:?}"
         );
     }
@@ -195,12 +195,12 @@ mod tests {
     #[test]
     fn build_command_includes_variant_only_when_some() {
         let without = build_opencode_command(None, None, Path::new("/repo"), None);
-        assert!(!argv(&without).contains(&"--variant".to_string()));
+        assert!(!argv(&without).contains(&"--variant".to_owned()));
 
         let with = build_opencode_command(None, Some("high"), Path::new("/repo"), None);
         let args = argv(&with);
-        assert!(args.contains(&"--variant".to_string()), "argv: {args:?}");
-        assert!(args.contains(&"high".to_string()), "argv: {args:?}");
+        assert!(args.contains(&"--variant".to_owned()), "argv: {args:?}");
+        assert!(args.contains(&"high".to_owned()), "argv: {args:?}");
     }
 
     #[test]

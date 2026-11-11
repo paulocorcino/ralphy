@@ -30,7 +30,7 @@ async fn serve_repo() -> (Daemon, tempfile::TempDir) {
 fn command(verb: &str, payload: serde_json::Value) -> Vec<u8> {
     protocol::encode(&Frame::Command(Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     }))
 }
@@ -175,7 +175,7 @@ async fn a_changes_channel_pushes_changes_dirty_on_a_run_exit() {
 
     let run = Command {
         id: 1,
-        verb: "run".to_string(),
+        verb: "run".to_owned(),
         payload: serde_json::json!({ "repo": SLUG, "agent": "claude", "branchMode": "new" }),
     };
     let mut runner = connect(&daemon).await;

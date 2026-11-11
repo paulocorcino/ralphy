@@ -76,7 +76,7 @@ pub fn changes(repo: &Path) -> Result<Vec<Change>> {
                 }
             }),
             Some(b'2') => {
-                let original = records.get(i).map(|t| t.to_string());
+                let original = records.get(i).map(ToString::to_string);
                 i += 1;
                 field(record, 10).map(|path| {
                     let (index_status, worktree_status) = sides(record);
@@ -126,7 +126,7 @@ fn field(record: &str, count: usize) -> Option<String> {
         .splitn(count, ' ')
         .nth(count - 1)
         .filter(|p| !p.is_empty())
-        .map(|p| p.to_string())
+        .map(str::to_owned)
 }
 
 /// The two-char `XY` status field of a `1`/`2` record.

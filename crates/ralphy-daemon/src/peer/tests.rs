@@ -22,8 +22,8 @@ mod fold;
 fn read_store_of_missing_dir_is_empty() {
     let dir = tempfile::tempdir().unwrap();
     let (accepted, rejected) = read_store(&dir.path().join("no-such-peers"));
-    assert!(accepted.is_empty());
-    assert!(rejected.is_empty());
+    assert_eq!(accepted, Vec::<PeerDescriptor>::new());
+    assert_eq!(rejected, Vec::<PeerReject>::new());
 }
 
 /// ADR-0070 D4: a store that exists but cannot be listed is a failure the
@@ -41,7 +41,7 @@ fn an_unreadable_store_is_a_failure_not_an_empty_fleet() {
         "the fixture must not read as missing"
     );
     let (accepted, rejected) = read_store(&store);
-    assert!(accepted.is_empty());
+    assert_eq!(accepted, Vec::<PeerDescriptor>::new());
     assert_eq!(rejected.len(), 1, "one failure: {rejected:?}");
     assert!(
         rejected[0].why().contains("cannot be read"),
@@ -273,8 +273,7 @@ fn diagnosis_always_names_the_environment() {
         let d = status.diagnosis(env);
         assert!(
             d.contains(env),
-            "{:?} diagnosis lost the environment: {d}",
-            status
+            "{status:?} diagnosis lost the environment: {d}"
         );
     }
 }
@@ -285,7 +284,7 @@ use super::tunnel::Ensured::Started;
 fn tunnel_diagnoses_name_the_host_and_never_wsl() {
     use super::client::classify_tunnel;
     let closed = classify_tunnel("svrapp", Ok(Started), String::new(), None);
-    let failed = "no ssh program found: install OpenSSH".to_string();
+    let failed = "no ssh program found: install OpenSSH".to_owned();
     let failed = classify_tunnel("svrapp", Err(failed), String::new(), None);
     let silent = PeerStatus::TunnelSilent {
         host: "svrapp".into(),
@@ -314,7 +313,7 @@ fn classify_tunnel_maps_the_ensure_answer() {
     assert_eq!(started.state(), "tunnel-closed");
     let held = classify_tunnel(
         "svrapp",
-        Ok(super::tunnel::Ensured::Running),
+        Ok(tunnel::Ensured::Running),
         "refused".into(),
         None,
     );
@@ -341,25 +340,25 @@ fn classify_tunnel_maps_the_ensure_answer() {
 #[test]
 fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
     let mut d = DaemonDescription {
-        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string()),
-        name: Some("svrapp".to_string()),
+        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_owned()),
+        name: Some("svrapp".to_owned()),
         avatar: None,
-        environment: "Linux".to_string(),
-        os: "linux".to_string(),
+        environment: "Linux".to_owned(),
+        os: "linux".to_owned(),
         port: 7257,
         protocol_version: PEER_PROTOCOL_VERSION,
         require_token: true,
         autostart: true,
         running: true,
         socket: None,
-        token: Some("tok".to_string()),
+        token: Some("tok".to_owned()),
     };
     let paired = paired_descriptor(&d, "svrapp", 7401, None).unwrap();
     assert_eq!(
         paired.os, "linux",
         "the host's OS family is kept for the icon"
     );
-    d.daemon_id = Some("../../evil".to_string());
+    d.daemon_id = Some("../../evil".to_owned());
     let err = paired_descriptor(&d, "svrapp", 7401, None).unwrap_err();
     assert!(err.to_string().contains("not a valid id"), "{err}");
 }

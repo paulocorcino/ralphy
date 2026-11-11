@@ -181,7 +181,7 @@ fn limit_resume_reexecutes_same_issue_only() {
     let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
     assert_eq!(closes, vec![20], "same issue closed green after resume");
     // wait_for_reset was called once, with the parsed reset string.
-    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_owned()]);
 
     remove_scratch(&repo);
 }
@@ -218,7 +218,7 @@ fn two_no_commit_limit_resumes_abandon_the_issue() {
         // The cap is reached via the resume path, not by skipping the wait.
         assert_eq!(
             *clock.waited_for.borrow(),
-            vec!["09:00".to_string()],
+            vec!["09:00".to_owned()],
             "the first limit waited for its reset before the cap fired"
         );
         match report.stop {
@@ -294,7 +294,7 @@ fn deadline_during_wait_short_circuits_with_deadline() {
         vec![40],
         "no resume past the deadline"
     );
-    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_owned()]);
     assert!(
         matches!(report.stop, Some(StopReason::Deadline)),
         "deadline beats resume: {:?}",

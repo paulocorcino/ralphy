@@ -11,8 +11,8 @@ fn a_stop_cuts_a_running_verify_gate() {
     let _flag = StopFlagGuard::acquire();
     let repo = init_repo("verify");
     let cmd = vec![
-        env!("CARGO_BIN_EXE_verify_test_child").to_string(),
-        "sleep".to_string(),
+        env!("CARGO_BIN_EXE_verify_test_child").to_owned(),
+        "sleep".to_owned(),
     ];
 
     // Pre-set, so the assertion is about the check existing rather than about
@@ -43,7 +43,7 @@ fn wait_for_reset_returns_at_once_on_a_stop_request() {
     let _flag = StopFlagGuard::acquire();
     let clock = ralphy_core::WallClock { deadline: None };
     let far_future = ResetAt {
-        text: "in three days".to_string(),
+        text: "in three days".to_owned(),
         at: Some((chrono::Local::now() + chrono::Duration::days(3)).fixed_offset()),
     };
 
@@ -70,8 +70,8 @@ fn without_a_stop_the_verify_gate_runs_its_command_to_completion() {
     let _flag = StopFlagGuard::acquire();
     let repo = init_repo("verify-clean");
     let cmd = vec![
-        env!("CARGO_BIN_EXE_verify_test_child").to_string(),
-        "exit-leaking-grandchild".to_string(),
+        env!("CARGO_BIN_EXE_verify_test_child").to_owned(),
+        "exit-leaking-grandchild".to_owned(),
     ];
 
     let report = ralphy_core::verify::run(&[cmd], &repo, Duration::from_secs(120));

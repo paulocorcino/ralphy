@@ -18,7 +18,7 @@ use crate::{pricing, ui, CliAgent};
 /// there is nothing to commit and the panel's "clean run" report stays accurate. The
 /// caller runs this AFTER the presenter finalize and BEFORE the notifier/sink
 /// shutdown so it surfaces as a first-class lifecycle event in both surfaces: the
-/// `info!`/`warn!` here decode to RunEvents the console presenter renders
+/// `info!`/`warn!` here decode to `RunEvents` the console presenter renders
 /// (timestamp + 📚) and the live Telegram card folds (a 📚 line during, a footer
 /// segment after). A failed session is a warning, never a run failure — the run
 /// already succeeded and the notes stay loose for a later retry. `ANTHROPIC_API_KEY`
@@ -186,7 +186,7 @@ pub(crate) fn render_final_panel(
             .add_tokens(consolidate_usage);
     }
     let (run_usd, run_partial) =
-        price_table.cost_usd_by_model(&crate::pricing::counts_by_model(&run_by_model));
+        price_table.cost_usd_by_model(&pricing::counts_by_model(&run_by_model));
 
     // The consolidation pass as its own footer segment, so the overhead stays
     // legible beside the run total it is now part of. Priced alone; `None` (the
@@ -203,7 +203,7 @@ pub(crate) fn render_final_panel(
             )
             .or_default()
             .add_tokens(consolidate_usage);
-        let (usd, _) = price_table.cost_usd_by_model(&crate::pricing::counts_by_model(&by_model));
+        let (usd, _) = price_table.cost_usd_by_model(&pricing::counts_by_model(&by_model));
         (
             Some(ralphy_core::Usage {
                 model: None,
@@ -224,7 +224,7 @@ pub(crate) fn render_final_panel(
             .add_tokens(&row.tokens);
     }
     let (project_usd, project_partial) =
-        price_table.cost_usd_by_model(&crate::pricing::counts_by_model(&project_by_model));
+        price_table.cost_usd_by_model(&pricing::counts_by_model(&project_by_model));
 
     let data = ui::PanelData {
         branch: report.branch,
@@ -300,14 +300,13 @@ pub(crate) fn empty_queue_scope(
             .join(", ");
         return format!("issues [{list}]");
     }
-    match only_issue {
-        Some(n) => format!("issue #{n}"),
-        None => {
-            let base = format!("labels [{}]", labels.join(", "));
-            match assignee {
-                Some(a) => format!("{base} assigned to {a}"),
-                None => base,
-            }
+    if let Some(n) = only_issue {
+        format!("issue #{n}")
+    } else {
+        let base = format!("labels [{}]", labels.join(", "));
+        match assignee {
+            Some(a) => format!("{base} assigned to {a}"),
+            None => base,
         }
     }
 }
@@ -349,12 +348,12 @@ mod tests {
     #[test]
     fn empty_queue_scope_names_the_filter() {
         // Active filter on a label queue names the assignee.
-        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_string()], Some("@me"));
+        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_owned()], Some("@me"));
         assert!(scope.contains("@me"), "scope must name the filter: {scope}");
         assert!(scope.contains("assigned to"), "got: {scope}");
 
         // No filter omits the "assigned to" phrase.
-        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_string()], None);
+        let scope = empty_queue_scope(&[], None, &["ready-for-agent".to_owned()], None);
         assert!(
             !scope.contains("assigned to"),
             "unfiltered scope must not mention an assignee: {scope}"
@@ -363,7 +362,7 @@ mod tests {
         // Explicit selections never carry the filter phrase.
         let scope = empty_queue_scope(&[5, 3], None, &[], None);
         assert_eq!(scope, "issues [#5, #3]");
-        let scope = empty_queue_scope(&[], Some(7), &["ready-for-agent".to_string()], None);
+        let scope = empty_queue_scope(&[], Some(7), &["ready-for-agent".to_owned()], None);
         assert_eq!(scope, "issue #7");
     }
 }

@@ -23,12 +23,12 @@ const TOKEN: &str = "sock-tok";
 
 fn app(id: &str, store: &Path, auth: Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         Some(Identity {
             id: id.parse().expect("a valid ULID"),
-            name: id.to_string(),
-            avatar: "🐙".to_string(),
+            name: id.to_owned(),
+            avatar: "🐙".to_owned(),
         }),
         store.join("repos.toml"),
         PathBuf::from("does-not-exist"),
@@ -79,14 +79,17 @@ async fn get(store: &Path, uri: &str, bearer: Option<&str>) -> (u16, String) {
         .expect("a status line");
     let body = response
         .split_once("\r\n\r\n")
-        .map(|(_, body)| body.to_string())
+        .map(|(_, body)| body.to_owned())
         .unwrap_or_default();
     (status, body)
 }
 
 fn daemon_id(body: &str) -> String {
     let json: serde_json::Value = serde_json::from_str(body).expect("a JSON body");
-    json["daemon_id"].as_str().expect("a daemon_id").to_string()
+    json.get("daemon_id")
+        .and_then(serde_json::Value::as_str)
+        .expect("a daemon_id")
+        .to_owned()
 }
 
 #[tokio::test]
@@ -176,7 +179,7 @@ async fn the_socket_is_owner_only() {
 async fn the_bearer_policy_holds_on_the_socket() {
     let store = tempfile::tempdir().expect("a temp store");
     let auth = AuthState::fixed(
-        AuthPolicy::Bearer(TOKEN.to_string()),
+        AuthPolicy::Bearer(TOKEN.to_owned()),
         SessionEpoch::in_memory_detached(),
     );
     let _served = serve_socket(store.path(), app(A_ID, store.path(), auth));

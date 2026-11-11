@@ -12,7 +12,7 @@ use super::fold::{Signal, StatusLine, WaitKind};
 /// (`SubagentStop`: a subagent never owns the state; `Notification`, which
 /// stays out by ADR-0085 D4; an event outside the table). Claude sends no
 /// event on an interrupt (D7.6), so no line maps to `Interrupt`.
-pub fn claude_signal(line: &StatusLine) -> Option<Signal> {
+pub(super) fn claude_signal(line: &StatusLine) -> Option<Signal> {
     let tool = line.tool_name.as_deref();
     let signal = match line.event.as_str() {
         "SessionStart" => Signal::SessionBoundary,
@@ -33,7 +33,7 @@ pub fn claude_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: line.tool_use_id.clone(),
             detail: match tool {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "Elicitation" => Signal::Wait {
@@ -51,7 +51,7 @@ pub fn claude_signal(line: &StatusLine) -> Option<Signal> {
 fn named(name: &str, question: Option<&str>) -> String {
     match question.map(str::trim).filter(|q| !q.is_empty()) {
         Some(q) => format!("{name}: {q}"),
-        None => name.to_string(),
+        None => name.to_owned(),
     }
 }
 // jscpd:ignore-end
@@ -87,7 +87,7 @@ mod tests {
                     serde_json::json!({
                         "state": o.state.as_str(),
                         "detail": o.detail,
-                        "cause": o.cause.map(|c| c.as_str()),
+                        "cause": o.cause.map(super::super::fold::Cause::as_str),
                         "ts": o.ts,
                     })
                 });

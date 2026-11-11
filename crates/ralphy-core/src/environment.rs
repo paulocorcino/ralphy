@@ -153,10 +153,10 @@ pub fn ensure_brief(ws: &Workspace) {
 /// path and PID, read fresh each run. `current_exe` is stable (same binary) but the
 /// PID is not — which is exactly why the brief cannot be cached.
 fn orchestrator_guard() -> String {
-    let exe = std::env::current_exe()
-        .ok()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "the ralphy executable".to_string());
+    let exe = std::env::current_exe().ok().map_or_else(
+        || "the ralphy executable".to_owned(),
+        |p| p.display().to_string(),
+    );
     guard_section(&exe, std::process::id())
 }
 
@@ -227,7 +227,7 @@ fn probe(
     };
     Some(match parse_version(&text) {
         Some(v) => format!("{} {v}", tool.name),
-        None => tool.name.to_string(),
+        None => tool.name.to_owned(),
     })
 }
 
@@ -238,12 +238,12 @@ fn parse_version(text: &str) -> Option<String> {
     // A run of at least two dot-separated number groups — enough to skip stray
     // single integers in a banner while matching real versions.
     let re = Regex::new(r"\d+(?:\.\d+)+").ok()?;
-    re.find(text).map(|m| m.as_str().to_string())
+    re.find(text).map(|m| m.as_str().to_owned())
 }
 
 /// The WSL flavor of the host, or `None` when not under WSL (native Linux,
 /// Windows, macOS). Read from `/proc/version` — absent off Linux, so the read
-/// simply fails and yields `None` without any platform gate. os_info reports the
+/// simply fails and yields `None` without any platform gate. `os_info` reports the
 /// underlying distro under WSL and never surfaces this, yet it is the exact
 /// signal that separates a real Linux box from one where a Windows toolchain may
 /// be reachable (or, on WSL1, unreachable) — the class of trap this brief exists
@@ -398,7 +398,7 @@ mod tests {
         // The repo is a git checkout and CI has git on PATH, so detection must
         // surface it — a live, cross-platform smoke test of the probe path.
         let d = detect();
-        assert!(!d.os.is_empty());
+        assert_ne!(d.os, "");
         assert!(
             d.tools.iter().any(|t| t.starts_with("git")),
             "expected git among {:?}",

@@ -28,8 +28,8 @@ const SLUG: &str = "owner/shared";
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("the test id parses"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
@@ -68,14 +68,14 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
 
 fn descriptor(port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: B_ID.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: B_ID.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: "WSL: Ubuntu-22.04".to_string(),
+        environment: "WSL: Ubuntu-22.04".to_owned(),
         os: String::new(),
-        token: "peer-tok".to_string(),
+        token: "peer-tok".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -87,7 +87,7 @@ async fn ask(port: u16, verb: &str, payload: Value) -> Value {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -126,7 +126,7 @@ async fn fleet() -> u16 {
         identity(B_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-tok".to_string()),
+            AuthPolicy::Bearer("peer-tok".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -150,7 +150,7 @@ async fn fleet() -> u16 {
     .await;
     // The stores must outlive the daemons, which read them on every command; the
     // OS reclaims them when the test process exits.
-    std::mem::forget((peer_store, peer_repo, local_store, local_repo));
+    let _kept = Box::leak(Box::new((peer_store, peer_repo, local_store, local_repo)));
     port
 }
 

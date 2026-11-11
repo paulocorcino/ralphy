@@ -24,14 +24,14 @@ type Ws =
 /// exist. The test's channels use none of it.
 fn ctx() -> Ctx {
     let store = std::path::PathBuf::from("does-not-exist");
-    let (_stop, shutdown) = tokio::sync::watch::channel(false);
+    let (_stop, shutdown) = watch::channel(false);
     Ctx {
         who: SocketAudit::of(Arc::new(crate::audit::Audit::in_dir(None)), None),
         secret_ok: false,
         host: SessionHost {
             peers_dir: store.join("peers"),
             identity: None,
-            environment: "test".to_string(),
+            environment: "test".to_owned(),
             bound_port: 0,
             sessions: Arc::new(crate::session::SessionManager::new()),
             registry_path: store.join("repos.toml"),
@@ -135,7 +135,7 @@ async fn send_on(ws: &mut Ws, channel: u32, inner: &[u8]) {
 /// `STUCK`, and the frame `ECHO` sent back.
 async fn read_both(ws: &mut Ws) -> (Option<String>, Option<Vec<u8>>) {
     let (mut closed, mut echoed) = (None, None);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(5);
     while closed.is_none() || echoed.is_none() {
         let Ok(Some(Ok(Wire::Binary(bytes)))) = tokio::time::timeout_at(deadline, ws.next()).await
         else {
@@ -144,7 +144,7 @@ async fn read_both(ws: &mut Ws) -> (Option<String>, Option<Vec<u8>>) {
         match protocol::decode(&bytes) {
             Ok(Frame::Command(c)) if c.verb == "channel.closed" => {
                 assert_eq!(c.payload["channel"], STUCK, "only the stuck channel ends");
-                closed = c.payload["reason"].as_str().map(str::to_string);
+                closed = c.payload["reason"].as_str().map(str::to_owned);
             }
             Ok(Frame::Channel { channel, piece, .. }) if channel == ECHO => echoed = Some(piece),
             Ok(_) | Err(_) => {}

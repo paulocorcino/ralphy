@@ -37,7 +37,7 @@ pub(crate) fn current_branch(repo: &Path) -> String {
     String::from_utf8(out.stdout)
         .expect("git output was not UTF-8")
         .trim()
-        .to_string()
+        .to_owned()
 }
 
 pub(crate) fn branch_exists(repo: &Path, branch: &str) -> bool {
@@ -68,7 +68,7 @@ pub(crate) fn rev_parse(repo: &Path, refname: &str) -> Option<String> {
         String::from_utf8(out.stdout)
             .expect("git output was not UTF-8")
             .trim()
-            .to_string()
+            .to_owned()
     })
 }
 
@@ -83,7 +83,7 @@ pub(crate) fn git_ls(repo: &Path, refname: &str) -> Vec<String> {
     String::from_utf8(out.stdout)
         .expect("git output was not UTF-8")
         .lines()
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -136,7 +136,7 @@ fn sweep_stale(prefix: &str) {
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age > std::time::Duration::from_secs(3600));
+            .is_some_and(|age| age > Duration::from_secs(3600));
         if old && entry.path().is_dir() {
             remove_scratch(&entry.path());
         }
@@ -184,7 +184,7 @@ pub(crate) fn issue_labeled(number: u64, labels: &[&str]) -> Issue {
         number,
         title: format!("issue {number}"),
         body: String::new(),
-        labels: labels.iter().map(|s| s.to_string()).collect(),
+        labels: labels.iter().map(ToString::to_string).collect(),
         comments: vec![],
     }
 }
@@ -212,7 +212,7 @@ pub(crate) fn default_human_return() -> Vec<String> {
         "triage-agent",
     ]
     .iter()
-    .map(|s| s.to_string())
+    .map(ToString::to_string)
     .collect()
 }
 
@@ -311,7 +311,7 @@ pub(crate) fn cfg_stop_on_limit(repo: &Path, stamp: &str) -> QueueConfig {
 /// A New-mode config with the per-phase asymmetry a split run produces: the
 /// planner auto-resumes through a plan-time limit (`stop_on_limit_plan = false`,
 /// e.g. a Claude planner) while the executor stops on an execute-time limit
-/// (`stop_on_limit_exec = true`, e.g. an OpenCode executor). See docs/adr/0009.
+/// (`stop_on_limit_exec = true`, e.g. an `OpenCode` executor). See docs/adr/0009.
 pub(crate) fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
     QueueConfig {
         repo_root: repo.to_path_buf(),

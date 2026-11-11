@@ -29,7 +29,7 @@ use presence::{presence_gate, PresenceGate};
 const NEEDS_INFO_LABEL: &str = "needs-info";
 
 #[derive(Args)]
-pub struct TriageArgs {
+pub(crate) struct TriageArgs {
     /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     repo: std::path::PathBuf,
@@ -64,7 +64,7 @@ pub struct TriageArgs {
 
 /// The resolved label strings a triage apply swaps between, named once so the
 /// pure [`apply_triage`] core stays free of `gh`/repo lookups.
-pub struct TriageLabels {
+pub(crate) struct TriageLabels {
     /// The label `triage-agent` is removed in favour of on promote/consolidate.
     pub queue_label: String,
     /// The label `triage-agent` is removed in favour of on bounce.
@@ -147,11 +147,12 @@ fn select_triage_agent(requested: Option<Agent>) -> Result<Agent> {
             "ralphy triage: --agent {} is not logged in (logged in: {})",
             a.cli_name(),
             if logged_in.is_empty() {
-                "none".to_string()
+                "none".to_owned()
             } else {
                 logged_in
                     .iter()
-                    .map(|x| x.cli_name())
+                    .copied()
+                    .map(Agent::cli_name)
                     .collect::<Vec<_>>()
                     .join(", ")
             }
@@ -192,7 +193,7 @@ fn verdict_line(item: &TriageItem, labels: &TriageLabels) -> String {
 /// promote (its evidence stamp, ADR-0027) and consolidate (its spec) both
 /// post-or-edit their marked comment (idempotent). Pure over the
 /// [`IssueTracker`] trait so it unit-tests against a recording fake.
-pub fn apply_triage(
+pub(crate) fn apply_triage(
     draft: &TriageDraft,
     tracker: &dyn IssueTracker,
     labels: &TriageLabels,
@@ -269,7 +270,7 @@ fn comment_if_any(item: &TriageItem, tracker: &dyn IssueTracker) -> Result<()> {
 /// posted under the operator's identity. Only the `--yes` branch of [`run`]
 /// calls this; interactive triage asks the operator instead. Returns the
 /// numbers of the held items.
-pub fn hold_untrusted_consolidations(
+pub(crate) fn hold_untrusted_consolidations(
     draft: &mut TriageDraft,
     threads: &[github::IssueThread],
 ) -> Vec<u64> {
@@ -308,7 +309,7 @@ pub fn hold_untrusted_consolidations(
 
 /// `ralphy triage`: list the `triage-agent` issues, run the judgment session,
 /// preview the verdicts, and apply them on confirm (or `--yes`).
-pub fn run(args: &TriageArgs) -> Result<()> {
+pub(crate) fn run(args: &TriageArgs) -> Result<()> {
     let repo = git::resolve_toplevel(&args.repo)?;
     crate::daemon::register_repo(&repo);
 
@@ -323,7 +324,7 @@ pub fn run(args: &TriageArgs) -> Result<()> {
     // The labelled subset — tens, not hundreds. `triage-agent` is a fixed
     // operational label, never remapped.
     // Triage sweeps the whole repo's queue label — never assignee-scoped (ADR-0021).
-    let issues = github::list_queue(&[TRIAGE_AGENT_LABEL.to_string()], None, &repo)?;
+    let issues = github::list_queue(&[TRIAGE_AGENT_LABEL.to_owned()], None, &repo)?;
     if issues.is_empty() {
         println!("No open issue carries `triage-agent` — nothing to triage.");
         return Ok(());
@@ -418,11 +419,11 @@ pub fn run(args: &TriageArgs) -> Result<()> {
 fn triage_labels(repo: &Path) -> TriageLabels {
     TriageLabels {
         queue_label: resolve_triage_label(repo),
-        needs_info_label: NEEDS_INFO_LABEL.to_string(),
+        needs_info_label: NEEDS_INFO_LABEL.to_owned(),
         human_label: resolve_human_label(repo),
-        triage_agent_label: TRIAGE_AGENT_LABEL.to_string(),
-        marker: CONSOLIDATED_SPEC_MARKER.to_string(),
-        promote_marker: PROMOTE_EVIDENCE_MARKER.to_string(),
+        triage_agent_label: TRIAGE_AGENT_LABEL.to_owned(),
+        marker: CONSOLIDATED_SPEC_MARKER.to_owned(),
+        promote_marker: PROMOTE_EVIDENCE_MARKER.to_owned(),
     }
 }
 

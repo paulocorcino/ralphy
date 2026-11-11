@@ -5,10 +5,10 @@
 
 /// The `program` of a step that runs xtask itself: the gate starts its own
 /// program, so a step never has to build xtask while it runs.
-pub const XTASK: &str = "xtask";
+pub(super) const XTASK: &str = "xtask";
 
 /// One check that the gate runs.
-pub struct Step {
+pub(super) struct Step {
     /// The short name the table prints, and the name of the log file.
     pub name: &'static str,
     /// The names of the CI steps this step is the local form of.
@@ -41,7 +41,7 @@ const fn step(
 }
 
 /// The steps, quick ones first, so a fast failure is seen before the suite.
-pub const STEPS: &[Step] = &[
+pub(super) const STEPS: &[Step] = &[
     step(
         "fmt",
         &["Format check"],
@@ -139,7 +139,73 @@ pub const STEPS: &[Step] = &[
         "markdownlint",
         &["Markdown (markdownlint)"],
         "npx",
-        &["-y", "markdownlint-cli2@0.18.1"],
+        &["-y", "markdownlint-cli2@0.24.0"],
+    ),
+    // The module installed on the machine, as for PSScriptAnalyzer:
+    // `ci.yml` installs `YAMLLINT_VERSION`.
+    step(
+        "yamllint",
+        &["YAML (yamllint)"],
+        "python",
+        &["-m", "yamllint", "-s", "."],
+    ),
+    // Rules off in .htmlvalidate.json (JSON has no comments). Noise:
+    // void-style (both forms are valid), text-content, empty-heading and
+    // attribute-misuse (Alpine fills text and binds :href at run time).
+    // Debt: no-implicit-button-type 170 sites, no-inline-style 11,
+    // prefer-native-element 4, autocomplete-password 2,
+    // element-permitted-content 1.
+    step(
+        "html-validate",
+        &["HTML (html-validate)"],
+        "npx",
+        &[
+            "-y",
+            "html-validate@11.21.0",
+            "crates/ralphy-daemon/assets/ui",
+        ],
+    ),
+    // .stylelintrc.json lists the core rules of stylelint-config-recommended
+    // 19.0.0, with no `extends`, so npx needs no second package. Rules off
+    // (JSON has no comments). Debt: no-descending-specificity 64 sites,
+    // no-duplicate-selectors 4, declaration-property-value-keyword-no-deprecated
+    // 2, property-no-deprecated 1.
+    step(
+        "stylelint",
+        &["CSS (stylelint)"],
+        "npx",
+        &[
+            "-y",
+            "stylelint@18.0.0",
+            "crates/ralphy-daemon/assets/ui/styles/*.css",
+        ],
+    ),
+    // taplo.toml holds the files; `ci.yml` fetches the release binary at
+    // `TAPLO_VERSION`. `.gitattributes` checks every TOML file out with LF.
+    step("taplo", &["TOML (taplo)"], "taplo", &["check"]),
+    step(
+        "taplo-fmt",
+        &["TOML format (taplo)"],
+        "taplo",
+        &["fmt", "--check"],
+    ),
+    // .editorconfig holds the rules, .editorconfig-checker.json the settings;
+    // `ci.yml` fetches the release binary at `EDITORCONFIGCHECKER_VERSION`.
+    // Debt: 16 sites in the files the settings exclude by name (trailing
+    // whitespace in prompts, a missing final newline, a test with raw bytes).
+    step(
+        "editorconfig-checker",
+        &["Text files (editorconfig-checker)"],
+        "editorconfig-checker",
+        &["-no-color"],
+    ),
+    // lychee.toml holds the settings (offline); `ci.yml` fetches the release
+    // binary at `LYCHEE_VERSION`.
+    step(
+        "lychee",
+        &["Local links (lychee)"],
+        "lychee",
+        &["--offline", "--no-progress", "."],
     ),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
@@ -155,7 +221,7 @@ pub const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "@ast-grep/cli@0.51.1",
+            "@ast-grep/cli@0.51.2",
             "ast-grep",
             "scan",
             "--error=unused-suppression",
@@ -168,7 +234,7 @@ pub const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "@ast-grep/cli@0.51.1",
+            "@ast-grep/cli@0.51.2",
             "ast-grep",
             "test",
             "--skip-snapshot-tests",
@@ -240,7 +306,7 @@ pub const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "oxfmt@0.75.0",
+            "oxfmt@0.78.0",
             "--check",
             "crates/ralphy-daemon/assets/ui/*.ts",
         ],
@@ -251,7 +317,7 @@ pub const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "jscpd@5.4.0",
+            "jscpd@5.4.3",
             "--baseline-from-ref",
             "main",
             "--fail-on-new-clones",

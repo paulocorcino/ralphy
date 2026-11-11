@@ -9,7 +9,7 @@ fn labeled(number: u64, labels: &[&str]) -> Issue {
         number,
         title: format!("issue {number}"),
         body: String::new(),
-        labels: labels.iter().map(|s| s.to_string()).collect(),
+        labels: labels.iter().map(ToString::to_string).collect(),
         comments: Vec::new(),
     }
 }
@@ -33,7 +33,7 @@ fn first_stop_before_finds_first_and_respects_forced() {
 
 #[test]
 fn human_return_label_matches_first_configured_label() {
-    let labels = vec!["needs-info".to_string(), "wontfix".to_string()];
+    let labels = vec!["needs-info".to_owned(), "wontfix".to_owned()];
     let parked = labeled(5, &["queue", "wontfix"]);
     assert_eq!(
         human_return_label(&parked, &labels).map(String::as_str),
@@ -259,12 +259,12 @@ impl IssueTracker for FakeTracker {
     }
 
     fn comment(&self, number: u64, body: &str) -> Result<()> {
-        self.comments.borrow_mut().push((number, body.to_string()));
+        self.comments.borrow_mut().push((number, body.to_owned()));
         Ok(())
     }
 
     fn add_label(&self, number: u64, label: &str) -> Result<()> {
-        self.labels.borrow_mut().push((number, label.to_string()));
+        self.labels.borrow_mut().push((number, label.to_owned()));
         Ok(())
     }
 

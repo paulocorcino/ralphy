@@ -73,7 +73,7 @@ fn failed(e: &anyhow::Error, status: StatusCode, text: &'static str) -> Refusal 
 }
 
 fn client(b: &BotShared, token: &str) -> BotClient<AnyTransport> {
-    BotClient::new((b.transport)(token.to_string()))
+    BotClient::new((b.transport)(token.to_owned()))
 }
 
 /// The bot's name, from `getMe`.
@@ -81,7 +81,7 @@ fn name_of(b: &BotShared, token: &str) -> anyhow::Result<String> {
     let me = client(b, token).get_me()?;
     me.get("username")
         .and_then(|v| v.as_str())
-        .map(str::to_string)
+        .map(str::to_owned)
         .ok_or_else(|| anyhow::anyhow!("getMe named no bot"))
 }
 
@@ -157,7 +157,7 @@ async fn set_token(b: BotShared, headers: HeaderMap, body: TokenBody) -> Respons
         let text = "a bot token is taken only over https or from this computer";
         return Refusal(StatusCode::FORBIDDEN, text).into_response();
     }
-    let token = body.token.trim().to_string();
+    let token = body.token.trim().to_owned();
     if !token_is_valid(&token) {
         return Refusal(StatusCode::BAD_REQUEST, "this is not a bot token").into_response();
     }

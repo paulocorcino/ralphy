@@ -43,13 +43,13 @@ const TUNNEL: &str = "12ad-203-0-113-7.ngrok-free.app";
 /// given bind plus one declared host.
 fn fresh_router(bound: &str) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     let bound: SocketAddr = bound.parse().expect("a valid bound address");
     let auth = AuthState::boot(
         bound,
-        Some(TOKEN.to_string()),
+        Some(TOKEN.to_owned()),
         SessionEpoch::in_memory_detached(),
-        &[DECLARED.to_string(), TUNNEL.to_string()],
+        &[DECLARED.to_owned(), TUNNEL.to_owned()],
     )
     .expect("a bind with a token must boot");
     router(

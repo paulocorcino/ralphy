@@ -357,7 +357,7 @@ fn require_verify_gate_parks_no_gate_issue_and_continues() {
     assert_eq!(closes, vec![2], "the gateless issue must not close");
     assert_eq!(
         tracker.labels.borrow().as_slice(),
-        &[(1u64, "ready-for-human".to_string())],
+        &[(1u64, "ready-for-human".to_owned())],
         "the gateless issue is labeled for a human"
     );
     let comments = tracker.comments.borrow();

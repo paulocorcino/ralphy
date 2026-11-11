@@ -1,18 +1,18 @@
-# Prompt sources and assembled artifacts are byte-compared by the
-# prompt_assembly anti-drift tests; pin LF so Windows autocrlf checkouts
-# cannot manufacture a false drift between template and artifact.
-assets/prompts/** text eol=lf
+# Every text file checks out with LF on every machine. The format checks
+# (oxfmt, taplo fmt, editorconfig-checker) read the working tree, so a CRLF
+# checkout on Windows would make them depend on the machine.
+* text=auto eol=lf
+
+# Binary files: no line-ending conversion and no text diff.
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.gz binary
 
 # The vendored UI files are hashed in vendor/manifest.json, and include_dir!
 # embeds the working-tree bytes. No checkout may convert their line endings.
 crates/ralphy-daemon/assets/ui/vendor/** -text
-
-# The install script runs under sh and is served from main as it is.
-assets/install/install.sh text eol=lf
-
-# oxfmt writes LF (.oxfmtrc.json). Git stores LF, so a checkout with CRLF
-# would make the format check depend on the machine.
-crates/ralphy-daemon/assets/ui/*.ts text eol=lf
-
-# shellcheck reads the working tree, so a shell script must check out with LF.
-*.sh text eol=lf

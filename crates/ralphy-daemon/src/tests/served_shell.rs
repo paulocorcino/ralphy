@@ -56,7 +56,7 @@ async fn every_response_carries_the_security_headers() {
 /// Alpine's `@click` is the idiom — and this keeps it that way.
 #[tokio::test]
 async fn no_shell_carries_an_inline_event_handler() {
-    let re = regex::Regex::new(r#"\son[a-z]+="#).unwrap();
+    let re = regex::Regex::new(r"\son[a-z]+=").unwrap();
     for path in ["/", "/popup", "/fence"] {
         let body = body_string(get_local(path).await).await;
         for line in body.lines() {

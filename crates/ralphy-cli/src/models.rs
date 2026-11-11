@@ -1,6 +1,6 @@
 /// Routing decision for `ralphy models`: passthrough to the agent's own lister,
 /// or an unsupported note when the agent has no model-listing capability.
-pub enum ModelsAction {
+pub(crate) enum ModelsAction {
     Passthrough,
     Unsupported(String),
 }
@@ -38,13 +38,13 @@ fn plan_action(a: crate::CliAgent) -> ModelsAction {
 }
 
 #[derive(clap::Args)]
-pub struct ModelsArgs {
+pub(crate) struct ModelsArgs {
     /// Which agent's model list to show.
     #[arg(long = "agent", value_enum, default_value_t = crate::CliAgent::OpenCode)]
     pub agent: crate::CliAgent,
 }
 
-pub fn run(args: ModelsArgs) -> anyhow::Result<()> {
+pub(crate) fn run(args: &ModelsArgs) -> anyhow::Result<()> {
     match plan_action(args.agent) {
         ModelsAction::Passthrough => ralphy_agent_opencode::list_models(),
         ModelsAction::Unsupported(note) => {

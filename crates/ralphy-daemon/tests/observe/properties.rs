@@ -171,7 +171,7 @@ async fn a_symlinked_checkout_is_refused() {
         eprintln!("SKIPPED: cannot create a directory symlink here: {e}");
         return;
     }
-    std::mem::forget(outside);
+    let _kept = outside.keep();
 
     let reply = stat(port, &slug, "secret.txt", Some("wt-out")).await;
 

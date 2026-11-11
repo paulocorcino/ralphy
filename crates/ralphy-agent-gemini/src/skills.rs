@@ -105,9 +105,9 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "reviewer".to_string(),
-                "setup-pocock".to_string(),
-                "staged-plan".to_string()
+                "reviewer".to_owned(),
+                "setup-pocock".to_owned(),
+                "staged-plan".to_owned()
             ]
         );
     }
@@ -223,16 +223,16 @@ mod tests {
     #[test]
     fn present_skills_reads_the_live_listing() {
         let required = vec![
-            "reviewer".to_string(),
-            "setup-pocock".to_string(),
-            "staged-plan".to_string(),
+            "reviewer".to_owned(),
+            "setup-pocock".to_owned(),
+            "staged-plan".to_owned(),
         ];
         assert_eq!(
             present_skills(LIVE_LISTING, &required),
             vec![
-                "reviewer".to_string(),
-                "setup-pocock".to_string(),
-                "staged-plan".to_string()
+                "reviewer".to_owned(),
+                "setup-pocock".to_owned(),
+                "staged-plan".to_owned()
             ]
         );
         assert_eq!(

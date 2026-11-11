@@ -227,12 +227,12 @@ impl Logins {
             return false;
         }
         self.reported
-            .insert((login.to_string(), device.map(str::to_string)))
+            .insert((login.to_owned(), device.map(str::to_owned)))
     }
 
     /// Whether the pair of `login` and `device` was dismissed.
     pub(crate) fn dismissed(&self, login: &str, device: Option<&str>) -> bool {
         self.dismissed
-            .contains(&(login.to_string(), device.map(str::to_string)))
+            .contains(&(login.to_owned(), device.map(str::to_owned)))
     }
 }

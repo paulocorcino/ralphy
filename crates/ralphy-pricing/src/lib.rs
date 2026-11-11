@@ -220,7 +220,7 @@ impl PriceTable {
                     path = %path.display(),
                     error = %e,
                     "parsing pricing.toml failed — using defaults"
-                )
+                );
             }
         }
         table
@@ -248,7 +248,7 @@ fn parse_pricing_table(
         toml::from_str(text).map_err(|e| format!("toml: {e}; flatten: {flatten_err}"))?;
     let offline = value
         .get("offline")
-        .and_then(|v| v.as_bool())
+        .and_then(toml::Value::as_bool)
         .unwrap_or(false);
     let mut overrides = BTreeMap::new();
     if let toml::Value::Table(table) = value {
@@ -274,9 +274,7 @@ pub fn pricing_offline_from_file() -> bool {
     let Ok(text) = std::fs::read_to_string(&path) else {
         return false;
     };
-    parse_pricing_toml(&text)
-        .map(|f| f.offline)
-        .unwrap_or(false)
+    parse_pricing_toml(&text).is_ok_and(|f| f.offline)
 }
 
 /// The price of the first candidate that is a key of `layer`.
@@ -292,11 +290,11 @@ fn bare_candidates(model: &str) -> Vec<String> {
     let stripped = strip_release_date(model);
     let mut out = Vec::with_capacity(5);
     for c in [
-        model.to_string(),
-        stripped.to_string(),
+        model.to_owned(),
+        stripped.to_owned(),
         dots_to_dashes(model),
         dots_to_dashes(stripped),
-        strip_provider_prefix(model).to_string(),
+        strip_provider_prefix(model).to_owned(),
     ] {
         if !out.iter().any(|e| e == &c) {
             out.push(c);
@@ -376,8 +374,10 @@ pub fn pricing_cache_file() -> Option<PathBuf> {
 /// is not a real model id) gets a distinct, actionable message instead of the
 /// nonsensical "add `unknown` to pricing.toml". Logged at most once per id.
 fn warn_unknown(model: &str) {
-    let mut seen = WARNED.lock().unwrap_or_else(|e| e.into_inner());
-    if seen.insert(model.to_string()) {
+    let mut seen = WARNED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if seen.insert(model.to_owned()) {
         if model == UNKNOWN_MODEL {
             warn!(
                 model,

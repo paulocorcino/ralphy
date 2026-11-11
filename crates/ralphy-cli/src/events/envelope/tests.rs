@@ -6,8 +6,8 @@ mod run_finished;
 /// A test context with a stub emitter object.
 fn ctx() -> EventCtx {
     EventCtx {
-        source: "ralphy/o/r".to_string(),
-        runid: "01RUNIDRUNIDRUNIDRUNID".to_string(),
+        source: "ralphy/o/r".to_owned(),
+        runid: "01RUNIDRUNIDRUNIDRUNID".to_owned(),
         emitter: json!({ "version": "0.0.0", "pid": 4242 }),
         git: json!({ "repository": "o/r", "branch": "afk/run-t" }),
     }
@@ -220,7 +220,7 @@ fn issue_closed_has_full_envelope_shape() {
             model: Some("claude-sonnet-4".into()),
         },
     };
-    let v = runevent_to_cloudevent(&ev, &ctx(), &RunState::new("t", 1)).unwrap();
+    let v = runevent_to_cloudevent(&ev, &ctx(), &RunState::new("t", 1));
     assert_eq!(v["specversion"], "1.0");
     assert_eq!(v["type"], "dev.ralphy.issue.closed");
     assert_eq!(v["source"], "ralphy/o/r");
@@ -253,7 +253,7 @@ fn active_state() -> RunState {
 }
 
 fn map(ev: RunEvent, state: &RunState) -> Value {
-    runevent_to_cloudevent(&ev, &ctx(), state).expect("mapped")
+    runevent_to_cloudevent(&ev, &ctx(), state)
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn only_extension_attribute_is_runid_git_issue_agent_live_in_data() {
         .collect();
     assert_eq!(
         extensions,
-        vec!["runid".to_string()],
+        vec!["runid".to_owned()],
         "the only extension attribute must be runid: {extensions:?}"
     );
 }

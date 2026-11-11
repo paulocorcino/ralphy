@@ -94,7 +94,7 @@ impl CloseReason {
 pub(crate) fn closed_frame(channel: u32, reason: CloseReason) -> Vec<u8> {
     protocol::encode(&Frame::Command(Command {
         id: 0,
-        verb: "channel.closed".to_string(),
+        verb: "channel.closed".to_owned(),
         payload: serde_json::json!({ "channel": channel, "reason": reason.as_wire() }),
     }))
 }
@@ -218,7 +218,7 @@ impl Opening {
             Ok(Ok(())) => {}
             Ok(Err(_closed)) => return,
             Err(_elapsed) => {
-                tracing::debug!(channel, "a channel ended before its frames were sent")
+                tracing::debug!(channel, "a channel ended before its frames were sent");
             }
         }
         drop(out);

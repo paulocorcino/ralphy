@@ -84,9 +84,9 @@ impl TelegramState {
     /// when it is known, else by its id.
     pub fn text_naming(&self, main_name: Option<&str>) -> String {
         match self {
-            TelegramState::Off { why: None } => "off".to_string(),
+            TelegramState::Off { why: None } => "off".to_owned(),
             TelegramState::Off { why: Some(why) } => format!("off: {}", why.text()),
-            TelegramState::Sends => "sends from this machine".to_string(),
+            TelegramState::Sends => "sends from this machine".to_owned(),
             TelegramState::ThroughMain { main } => {
                 format!(
                     "sends through the main daemon {}",
@@ -224,13 +224,13 @@ fn token_of(stored: &str) -> Option<String> {
     ENV_TOKEN
         .get_or_init(read_env_token)
         .clone()
-        .or_else(|| Some(stored.to_string()))
+        .or_else(|| Some(stored.to_owned()))
 }
 
 /// [`token_of`] in a unit test: the file's token only.
 #[cfg(test)]
 fn token_of(stored: &str) -> Option<String> {
-    Some(stored.to_string())
+    Some(stored.to_owned())
 }
 
 /// The state of the config at `path`. A config that cannot be read is
@@ -269,7 +269,7 @@ impl StateLog {
 
 /// How long the claim of a main daemon holds. The main claims every minute,
 /// so a peer whose main stopped sends by itself again after three minutes.
-pub(crate) const CLAIM_HOLDS: Duration = Duration::from_secs(3 * 60);
+pub(crate) const CLAIM_HOLDS: Duration = Duration::from_mins(3);
 
 /// The last claim of a main daemon on this daemon, in memory only: after a
 /// restart the main's next claim comes within a minute.
@@ -301,7 +301,7 @@ impl Claim {
 /// lock is logged and holds no claim.
 pub(crate) fn holder_at(claim: &SharedClaim, now: SystemTime) -> Option<String> {
     match claim.lock() {
-        Ok(claim) => claim.holder(now).map(str::to_string),
+        Ok(claim) => claim.holder(now).map(str::to_owned),
         Err(e) => {
             tracing::warn!(error = %e, "the Telegram claim is poisoned");
             None
@@ -339,7 +339,7 @@ chat_id = 42
         .expect("write the config");
         let no_config = dir.path().join("none.toml");
         let through = TelegramState::ThroughMain {
-            main: "m".to_string(),
+            main: "m".to_owned(),
         };
         // (case, config, seconds since the claim, state)
         let rows = [
@@ -357,7 +357,7 @@ chat_id = 42
             claim
                 .lock()
                 .expect("the claim lock")
-                .take("m".to_string(), at(0));
+                .take("m".to_owned(), at(0));
             assert_eq!(state_with(config, &claim, at(age)), want, "{case}");
         }
     }
@@ -408,9 +408,9 @@ chat_id = 42
     #[test]
     fn the_fleet_reply_reads_back() {
         let peer = |id: &str| PeerName {
-            daemon_id: id.to_string(),
+            daemon_id: id.to_owned(),
             name: format!("name-{id}"),
-            environment: "WSL: Ubuntu".to_string(),
+            environment: "WSL: Ubuntu".to_owned(),
         };
         let fleet = FleetTelegram {
             state: TelegramState::Sends,
@@ -418,9 +418,9 @@ chat_id = 42
             peers: vec![PeerTelegram {
                 peer: peer("a"),
                 state: TelegramState::ThroughMain {
-                    main: "m".to_string(),
+                    main: "m".to_owned(),
                 },
-                main_name: Some("main".to_string()),
+                main_name: Some("main".to_owned()),
             }],
             unanswered: vec![peer("b")],
         };

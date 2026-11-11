@@ -4,11 +4,13 @@ use std::path::Path;
 
 /// Removes a plan or output file that an earlier run may have left.
 ///
-/// The file may not exist, which is the normal case, so the result is dropped.
+/// The file may not exist, which is the normal case; any other failure is logged,
+/// because the next write replaces a file that stays.
 pub(crate) fn remove_stale_file(path: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the file may not exist, and the next write replaces one that stays"
-    )]
-    let _ = std::fs::remove_file(path);
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            tracing::warn!("could not remove stale file {}: {e}", path.display());
+        }
+        _ => {}
+    }
 }

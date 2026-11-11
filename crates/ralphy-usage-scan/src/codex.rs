@@ -78,7 +78,7 @@ struct Session {
 /// `seen.insert` runs after both exclusions, so an excluded session never
 /// shadows a later copy.
 fn read_session(file: &Path, input: &CodexScan, seen: &mut HashSet<String>) -> Option<Session> {
-    let stem = file.file_stem().and_then(|s| s.to_str())?.to_string();
+    let stem = file.file_stem().and_then(|s| s.to_str())?.to_owned();
     // Run-owned exclusion, primary key: the rollout file stem (ADR-0033 §5).
     if input.run_session_ids.contains(&stem) {
         return None;
@@ -139,7 +139,7 @@ impl Session {
             .into_iter()
             .map(|(model, agg)| {
                 let record = InteractiveRecord {
-                    agent: "codex".to_string(),
+                    agent: "codex".to_owned(),
                     model,
                     session_id: session_id.clone(),
                     project: project.clone(),
@@ -208,7 +208,7 @@ fn parse_rollout(jsonl: &str) -> (Option<String>, Option<String>, BTreeMap<Strin
     let mut head = Header {
         meta_id: None,
         cwd: None,
-        current_model: "unknown".to_string(),
+        current_model: "unknown".to_owned(),
     };
     let mut prev = RawTotals::default();
     let mut models: BTreeMap<String, ModelAgg> = BTreeMap::new();
@@ -253,7 +253,7 @@ impl Header {
     /// Take the `session_meta` id and cwd (first wins) or the `turn_context`
     /// model (last wins) of one line; `kind` is the line's own `type`.
     fn track(&mut self, kind: Option<&str>, payload: &serde_json::Value) {
-        let text = |k: &str| payload.get(k).and_then(|v| v.as_str()).map(str::to_string);
+        let text = |k: &str| payload.get(k).and_then(|v| v.as_str()).map(str::to_owned);
         match kind {
             Some("session_meta") => {
                 if self.meta_id.is_none() {
@@ -283,7 +283,7 @@ fn read_snapshot(payload: &serde_json::Value) -> Option<RawTotals> {
     if !ttu.is_object() {
         return None;
     }
-    let field = |k: &str| ttu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |k: &str| ttu.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
     Some(RawTotals {
         input: field("input_tokens"),
         output: field("output_tokens"),
@@ -308,10 +308,10 @@ impl ModelAgg {
             return;
         };
         if self.first_ts.as_deref().is_none_or(|cur| ts_lt(ts, cur)) {
-            self.first_ts = Some(ts.to_string());
+            self.first_ts = Some(ts.to_owned());
         }
         if self.last_ts.as_deref().is_none_or(|cur| ts_lt(cur, ts)) {
-            self.last_ts = Some(ts.to_string());
+            self.last_ts = Some(ts.to_owned());
         }
     }
 }

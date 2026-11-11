@@ -152,7 +152,7 @@ fn sync_status_without_format_never_prints_zeroed_counts_for_a_stateless_head() 
         &ralphy(&["sync", "status", "--repo", &repo.path().to_string_lossy()]).stdout,
     )
     .trim()
-    .to_string();
+    .to_owned();
     assert!(
         noup.contains("no upstream"),
         "the human line names the state: {noup:?}"
@@ -167,7 +167,7 @@ fn sync_status_without_format_never_prints_zeroed_counts_for_a_stateless_head() 
         &ralphy(&["sync", "status", "--repo", &repo.path().to_string_lossy()]).stdout,
     )
     .trim()
-    .to_string();
+    .to_owned();
     assert!(
         detached.contains("detached at"),
         "the human line names the state: {detached:?}"
@@ -185,7 +185,7 @@ fn sync_status_without_format_never_prints_zeroed_counts_for_a_stateless_head() 
         &ralphy(&["sync", "status", "--repo", &clone.path().to_string_lossy()]).stdout,
     )
     .trim()
-    .to_string();
+    .to_owned();
     assert!(
         tracking.contains("origin/main") && tracking.contains("0 ahead, 0 behind"),
         "a tracking branch prints its counts: {tracking:?}"
@@ -326,9 +326,9 @@ pub(super) fn lock_rows() -> Vec<LockRow> {
 
 fn sync_args(verb: &str, repo: &Path) -> Vec<String> {
     vec![
-        "sync".to_string(),
-        verb.to_string(),
-        "--repo".to_string(),
+        "sync".to_owned(),
+        verb.to_owned(),
+        "--repo".to_owned(),
         repo.to_string_lossy().to_string(),
     ]
 }

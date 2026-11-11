@@ -16,7 +16,7 @@ use super::{drive_headless, Guards, PromptGate};
 use crate::idle::IdleWatch;
 
 /// The post-processed result of [`run_headless_logged`]: the raw stdout kept
-/// apart (OpenCode parses its JSON event stream from stdout alone), the combined
+/// apart (`OpenCode` parses its JSON event stream from stdout alone), the combined
 /// `log` exactly as persisted, and the two recovered flags every headless adapter
 /// derives from a [`HeadlessOutput`](super::HeadlessOutput).
 ///
@@ -153,7 +153,7 @@ pub fn run_headless_logged(
 /// [`run_headless_logged`] with an **early-kill** predicate over stderr lines. The
 /// moment a stderr line matches `kill_on_stderr_line`, the child is reaped instead
 /// of being left to idle in its own silent backoff until the wall `timeout` — the
-/// OpenCode adapter passes its usage-limit matcher here so a provider quota block
+/// `OpenCode` adapter passes its usage-limit matcher here so a provider quota block
 /// (which only ever prints to `--print-logs` stderr and never reaches the JSON
 /// stream) ends the call in ~sub-second rather than burning the full per-issue
 /// budget. The predicate must match the same signal the caller's post-run
@@ -221,11 +221,10 @@ fn run_headless_logged_impl(call: HeadlessCall<'_>) -> Result<HeadlessRun> {
     // byte-identical to the returned `log` the detectors scan (and deterministic for
     // tests). A mid-run crash leaves the interleaved partial, which is fine for
     // forensics — the canonical rewrite only matters once the run completed.
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the file is a diagnostic copy; the caller gets the same text in the return value"
-    )]
-    let _ = fs::write(log_path, &log);
+    // the file is a diagnostic copy; the caller gets the same text in the return value
+    if let Err(e) = fs::write(log_path, &log) {
+        tracing::warn!("could not write the run log: {e}");
+    }
     let exit = r.exit;
     Ok(HeadlessRun {
         stdout,

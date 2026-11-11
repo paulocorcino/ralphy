@@ -64,14 +64,14 @@ pub(crate) fn hosted_session(
     daemon_id: &str,
     environment: &str,
 ) -> HostedSessionInfo {
-    let effective_environment = info.environment.unwrap_or_else(|| environment.to_string());
+    let effective_environment = info.environment.unwrap_or_else(|| environment.to_owned());
     HostedSessionInfo {
         id: info.id,
         repo: info.repo,
         agent: info.agent,
         kind: info.kind,
         started_at: info.started_at,
-        daemon_id: daemon_id.to_string(),
+        daemon_id: daemon_id.to_owned(),
         environment: effective_environment,
         name: info.name,
         checkout: info.checkout,
@@ -246,17 +246,17 @@ mod tests {
     fn a_silent_agent_block_survives_the_relay() {
         let row = HostedSessionInfo {
             id: 3,
-            repo: "owner/r".to_string(),
-            agent: "claude".to_string(),
-            kind: "agent".to_string(),
+            repo: "owner/r".to_owned(),
+            agent: "claude".to_owned(),
+            kind: "agent".to_owned(),
             started_at: 1,
-            daemon_id: "d".to_string(),
-            environment: "wsl".to_string(),
+            daemon_id: "d".to_owned(),
+            environment: "wsl".to_owned(),
             name: None,
             checkout: None,
             record: None,
             agent_state: Some(agent_state::AgentState::silent(
-                "the hook did not start".to_string(),
+                "the hook did not start".to_owned(),
                 std::time::SystemTime::UNIX_EPOCH,
             )),
         };
@@ -303,14 +303,14 @@ mod tests {
         });
         let peers_dir = tempfile::tempdir().expect("a peers folder");
         let peer = peer::PeerDescriptor {
-            daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAX".to_string(),
-            name: "peer".to_string(),
+            daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAX".to_owned(),
+            name: "peer".to_owned(),
             avatar: String::new(),
-            address: "127.0.0.1".to_string(),
+            address: "127.0.0.1".to_owned(),
             port,
-            environment: "wsl".to_string(),
+            environment: "wsl".to_owned(),
             os: String::new(),
-            token: "peer-token".to_string(),
+            token: "peer-token".to_owned(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             nudge: None,
             tunnel: None,
@@ -320,7 +320,7 @@ mod tests {
             Arc::new(session::SessionManager::new()),
             peers_dir.path().join("peers"),
             None,
-            "windows".to_string(),
+            "windows".to_owned(),
             false,
         )
         .await;

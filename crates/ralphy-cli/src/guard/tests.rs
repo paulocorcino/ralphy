@@ -356,7 +356,7 @@ fn denied_spans(text: &str) -> Vec<String> {
                 continue;
             }
             if matches!(eval("Bash", &bash(span)), GuardDecision::Deny(_)) {
-                denied.push(span.to_string());
+                denied.push(span.to_owned());
             }
         }
     }
@@ -381,16 +381,22 @@ fn charters_never_tell_the_agent_to_run_a_denied_command() {
     // The scan finds an instruction and skips a prohibition.
     assert_eq!(
         denied_spans("Then run `gh pr create --fill`."),
-        vec!["gh pr create --fill".to_string()]
+        vec!["gh pr create --fill".to_owned()]
     );
-    assert!(denied_spans("NEVER run `git push`.").is_empty());
-    assert!(denied_spans("- NEVER run `git push`,\n  `git rebase` or a delete.").is_empty());
+    assert_eq!(denied_spans("NEVER run `git push`."), Vec::<String>::new());
+    assert_eq!(
+        denied_spans("- NEVER run `git push`,\n  `git rebase` or a delete."),
+        Vec::<String>::new()
+    );
     // A prohibition in one item does not cover the next one.
     assert_eq!(
         denied_spans("- NEVER run `git push`.\n- Then run `git rebase main`.").len(),
         1
     );
-    assert!(denied_spans("Read it with `gh pr view 5`.").is_empty());
+    assert_eq!(
+        denied_spans("Read it with `gh pr view 5`."),
+        Vec::<String>::new()
+    );
 
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/prompts");
     let mut files = Vec::new();

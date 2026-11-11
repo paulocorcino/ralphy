@@ -33,7 +33,7 @@ fn fixture_body() -> String {
   {"tag_name":"v0.1.0-rc19","name":"v0.1.0-rc19","published_at":"2026-09-07T10:00:00Z",
    "html_url":"https://example.invalid/19","prerelease":true,"draft":false,"body":"notes"}
 ]"#
-    .to_string()
+    .to_owned()
 }
 
 fn http_response(status: u16, body: &str) -> Vec<u8> {
@@ -99,26 +99,22 @@ fn serve_n(
         {
             match listener.accept() {
                 Ok((mut stream, _)) => {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "a failure shows in the read that follows"
-                    )]
-                    let _ = stream.set_nonblocking(false);
+                    // A failure shows in the read that follows.
+                    if let Err(e) = stream.set_nonblocking(false) {
+                        tracing::debug!("set_nonblocking failed: {e}");
+                    }
                     accepts_bg.fetch_add(1, Ordering::SeqCst);
                     let head = read_request(&mut stream);
                     if let Ok(mut seen) = requests_bg.lock() {
                         seen.push(head);
                     }
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the test client may have closed its end before the reply"
-                    )]
-                    let _ = stream.write_all(&response);
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the test client may have closed its end before the reply"
-                    )]
-                    let _ = stream.flush();
+                    // The test client may have closed its end before the reply.
+                    if let Err(e) = stream.write_all(&response) {
+                        tracing::debug!("reply not written: {e}");
+                    }
+                    if let Err(e) = stream.flush() {
+                        tracing::debug!("reply not flushed: {e}");
+                    }
                 }
                 Err(e)
                     if e.kind() == std::io::ErrorKind::WouldBlock
@@ -143,11 +139,9 @@ fn temp_cache_path(tag: &str) -> std::path::PathBuf {
 }
 
 fn remove_cache(cache: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of a test file that may not exist, and no test reads it after"
-    )]
-    let _ = std::fs::remove_file(cache);
+    if let Err(e) = std::fs::remove_file(cache) {
+        tracing::debug!("could not remove test file {}: {e}", cache.display());
+    }
 }
 
 fn opts<'a>(url: &'a str, cache: &'a Path) -> RefreshOpts<'a> {
@@ -328,7 +322,7 @@ fn a_malformed_body_does_not_poison_the_cache() {
     refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
     handle.join().expect("server thread");
 
-    assert!(load(&cache).is_empty());
+    assert_eq!(load(&cache), Vec::<Release>::new());
     assert!(
         !cache.exists(),
         "an unparseable body must not be written at all"
@@ -377,5 +371,8 @@ fn a_release_is_read_by_its_tag() {
 
 #[test]
 fn an_absent_cache_reads_as_nothing_known() {
-    assert!(load(&temp_cache_path("absent-never-written")).is_empty());
+    assert_eq!(
+        load(&temp_cache_path("absent-never-written")),
+        Vec::<Release>::new()
+    );
 }

@@ -28,6 +28,9 @@ members = [
 [workspace.lints.rust]
 unsafe_code = "deny"
 non_ascii_idents = "deny"
+unreachable_pub = "deny"
+unused_qualifications = "deny"
+let_underscore_drop = "deny"
 # The lint gate: `rust_2018_idioms` is on. A lint `allow` below is debt that
 # docs/lint/lint-transition.md turns on (this list only shrinks).
 rust_2018_idioms = { level = "deny", priority = -1 }
@@ -38,6 +41,8 @@ elided_lifetimes_in_paths = "allow"
 # `disallowed_methods` and `too_many_arguments` are in `clippy.toml`.
 [workspace.lints.clippy]
 let_underscore_must_use = "deny"
+let_underscore_untyped = "deny"
+mem_forget = "deny"
 unused_result_ok = "deny"
 map_err_ignore = "deny"
 wildcard_enum_match_arm = "deny"
@@ -49,6 +54,7 @@ allow_attributes_without_reason = "deny"
 allow_attributes = "deny"
 disallowed_methods = "deny"
 too_many_arguments = "deny"
+str_to_string = "deny"
 # The lint gate: `pedantic` is on. A lint `allow` below is debt that docs/lint/lint-transition.md
 # turns on (this list only shrinks), or noise, off for good with its reason.
 pedantic = { level = "deny", priority = -1 }
@@ -56,50 +62,30 @@ pedantic = { level = "deny", priority = -1 }
 missing_errors_doc = "allow"
 # noise: fires on every pure function; #[must_use] goes where ignoring the value is a bug (D3)
 must_use_candidate = "allow"
-# debt: 208 sites
-doc_markdown = "allow"
-# debt: 157 sites
-assert_is_empty = "allow"
-# debt: 146 sites
-redundant_closure_for_method_calls = "allow"
 # debt: 103 sites
 format_push_string = "allow"
 # debt: 91 sites
 missing_panics_doc = "allow"
-# debt: 78 sites
-map_unwrap_or = "allow"
 # debt: 68 sites
 needless_pass_by_value = "allow"
 # debt: 54 sites
 return_self_not_must_use = "allow"
 # debt: 45 sites
 case_sensitive_file_extension_comparisons = "allow"
-# debt: 39 sites
-semicolon_if_nothing_returned = "allow"
 # debt: 38 sites
 cast_possible_truncation = "allow"
 # debt: 35 sites
 too_many_lines = "allow"
 # debt: 33 sites
 unreadable_literal = "allow"
-# debt: 29 sites
-borrow_as_ptr = "allow"
 # debt: 23 sites
 default_trait_access = "allow"
 # debt: 22 sites
 cast_precision_loss = "allow"
 # debt: 22 sites
 items_after_statements = "allow"
-# debt: 22 sites
-single_match_else = "allow"
-# debt: 21 sites
-cast_lossless = "allow"
 # debt: 21 sites
 cast_sign_loss = "allow"
-# debt: 21 sites
-duration_suboptimal_units = "allow"
-# debt: 18 sites
-needless_raw_string_hashes = "allow"
 # debt: 17 sites
 match_same_arms = "allow"
 # debt: 16 sites
@@ -119,8 +105,6 @@ option_option = "allow"
 # debt: 12 sites
 ref_option = "allow"
 # debt: 11 sites
-uninlined_format_args = "allow"
-# debt: 11 sites
 used_underscore_binding = "allow"
 # debt: 9 sites
 cast_possible_wrap = "allow"
@@ -128,14 +112,8 @@ cast_possible_wrap = "allow"
 struct_excessive_bools = "allow"
 # debt: 7 sites
 format_collect = "allow"
-# debt: 7 sites
-unnested_or_patterns = "allow"
 # debt: 6 sites
 unnecessary_debug_formatting = "allow"
-# debt: 5 sites
-if_not_else = "allow"
-# debt: 5 sites
-ignored_unit_patterns = "allow"
 # debt: 5 sites
 manual_let_else = "allow"
 # debt: 4 sites
@@ -143,53 +121,17 @@ struct_field_names = "allow"
 # debt: 4 sites
 unused_self = "allow"
 # debt: 3 sites
-manual_assert = "allow"
-# debt: 3 sites
-manual_assert_eq = "allow"
-# debt: 3 sites
-manual_is_variant_and = "allow"
-# debt: 3 sites
 match_wildcard_for_single_variants = "allow"
-# debt: 3 sites
-ptr_as_ptr = "allow"
-# debt: 3 sites
-range_plus_one = "allow"
-# debt: 3 sites
-unchecked_time_subtraction = "allow"
-# debt: 2 sites
-implicit_clone = "allow"
 # debt: 2 sites
 many_single_char_names = "allow"
 # debt: 2 sites
 needless_for_each = "allow"
-# debt: 2 sites
-wildcard_imports = "allow"
-# debt: 1 site
-enum_glob_use = "allow"
-# debt: 1 site
-explicit_iter_loop = "allow"
-# debt: 1 site
-filter_map_next = "allow"
 # debt: 1 site
 fn_params_excessive_bools = "allow"
 # debt: 1 site
 implicit_hasher = "allow"
 # debt: 1 site
-inconsistent_struct_constructor = "allow"
-# debt: 1 site
-manual_midpoint = "allow"
-# debt: 1 site
-manual_string_new = "allow"
-# debt: 1 site
 nonminimal_bool = "allow"
-# debt: 1 site
-option_as_ref_cloned = "allow"
-# debt: 1 site
-stable_sort_primitive = "allow"
-# debt: 1 site
-unnecessary_join = "allow"
-# debt: 1 site
-unnecessary_semicolon = "allow"
 
 [workspace.package]
 edition = "2021"

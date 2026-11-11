@@ -157,13 +157,13 @@ enum Mirrored {
 /// The expression of `const NAME = …;` in a JS file.
 fn js_value(src: &str, name: &str) -> Option<String> {
     let re = Regex::new(&format!(r"\bconst\s+{name}\s*=\s*([^;]+);")).expect("a valid regex");
-    re.captures(src).map(|c| c[1].trim().to_string())
+    re.captures(src).map(|c| c[1].trim().to_owned())
 }
 
 /// The expression of `const NAME: T = …;` in a Rust file.
 fn rust_value(src: &str, name: &str) -> Option<String> {
     let re = Regex::new(&format!(r"\bconst\s+{name}\s*:[^=]+=\s*([^;]+);")).expect("a valid regex");
-    re.captures(src).map(|c| c[1].trim().to_string())
+    re.captures(src).map(|c| c[1].trim().to_owned())
 }
 
 /// An integer that is a product of decimal or hex literals, a quoted string,

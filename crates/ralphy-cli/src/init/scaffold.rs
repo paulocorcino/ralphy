@@ -78,7 +78,7 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
     let block = block.trim_end();
     let Some(start) = find_heading(doc, AGENT_SKILLS_HEADING) else {
         // Append, separated by a blank line from any existing content.
-        let mut out = doc.trim_end().to_string();
+        let mut out = doc.trim_end().to_owned();
         if out.is_empty() {
             return format!("{block}\n");
         }
@@ -94,7 +94,7 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
     // or `## ` sibling section is preserved rather than silently clobbered; a
     // deeper `### ` nests under our section and is replaced with it.
     let after = &doc[start..];
-    let body_offset = after.find('\n').map(|n| n + 1).unwrap_or(after.len());
+    let body_offset = after.find('\n').map_or(after.len(), |n| n + 1);
     let end_rel = next_top_heading(&after[body_offset..]).map(|p| body_offset + p);
 
     let mut out = String::new();
@@ -248,11 +248,10 @@ mod tests {
     #[test]
     fn write_scaffold_prd_opt_in_controls_prd_docs() {
         let dir = std::env::temp_dir().join(format!("ralphy-scaffold-prd-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).unwrap();
 
         let mut cfg = block_cfg();
@@ -264,11 +263,10 @@ mod tests {
 
         let dir2 =
             std::env::temp_dir().join(format!("ralphy-scaffold-noprd-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir2);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir2) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir2).unwrap();
         let mut cfg2 = block_cfg();
         cfg2.adopt_prd_roadmap = false;
@@ -276,15 +274,13 @@ mod tests {
         assert!(!dir2.join("docs/roadmap.md").exists());
         assert!(!dir2.join("docs/prd").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir2);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir2) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }

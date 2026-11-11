@@ -51,15 +51,14 @@ pub(crate) fn one_shot_base(repo: &Path) -> PathBuf {
     if ralphy_core::git::is_repo(repo) {
         return repo.join(".ralphy");
     }
-    match ralphy_proc_util::home_dir() {
-        Some(home) => home.join(".ralphy"),
-        None => {
-            tracing::warn!(
-                "gemini: no home directory — the one-shot's configuration root falls back to \
-                 the system temp dir, so its installation identity will not persist"
-            );
-            std::env::temp_dir().join("ralphy")
-        }
+    if let Some(home) = ralphy_proc_util::home_dir() {
+        home.join(".ralphy")
+    } else {
+        tracing::warn!(
+            "gemini: no home directory — the one-shot's configuration root falls back to \
+             the system temp dir, so its installation identity will not persist"
+        );
+        std::env::temp_dir().join("ralphy")
     }
 }
 
@@ -125,13 +124,13 @@ pub(crate) fn one_shot_stop(log: &str, exit_code: Option<i32>, timed_out: bool) 
     let rev = revocation::detect_revocation(log);
     rev.filter(|r| r.is_hard_stop())
         .map(|r| r.message(exit_code, log))
-        .or_else(|| timed_out.then(|| "gemini session hit the wall timeout".to_string()))
+        .or_else(|| timed_out.then(|| "gemini session hit the wall timeout".to_owned()))
         .or_else(|| outcome::gemini_limit_note(log))
         .or_else(|| rev.map(|r| r.message(exit_code, log)))
         .or_else(|| {
             outcome::classify_exit(exit_code)
                 .actionable_stop()
-                .map(str::to_string)
+                .map(str::to_owned)
         })
 }
 
@@ -162,11 +161,13 @@ fn judge_one_shot(out: ralphy_adapter_support::HeadlessOutput, log_path: &Path) 
     let (code, timed_out) = (out.exit.and_then(|s| s.code()), out.timed_out);
     let mut log = out.stdout;
     log.push_str(&out.stderr);
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the log is a copy for the operator; the session result stands without it"
-    )]
-    let _ = fs::write(log_path, &log);
+    // The log is a copy for the operator; the session result stands without it.
+    if let Err(e) = fs::write(log_path, &log) {
+        tracing::warn!(
+            "could not write the session log {}: {e}",
+            log_path.display()
+        );
+    }
 
     if succeeded {
         // The `--output-format stream-json` stream is captured in `log`; callers
@@ -185,7 +186,7 @@ fn judge_one_shot(out: ralphy_adapter_support::HeadlessOutput, log_path: &Path) 
         // beats returning `Ok` and letting the caller report a missing artifact.
         None => bail!(
             "the gemini session failed (exit {}) — see {}",
-            code.map_or_else(|| "killed".to_string(), |c| c.to_string()),
+            code.map_or_else(|| "killed".to_owned(), |c| c.to_string()),
             log_path.display()
         ),
     }
@@ -250,7 +251,7 @@ pub fn diagnose_repo(
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let log_path = neutral_cwd.join("diagnose.log");
     let prompt = build_diagnose_prompt(repo, &out_path);
@@ -284,7 +285,7 @@ pub fn draft_issues(
     timeout: Duration,
 ) -> Result<IssuesDraft> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
@@ -335,7 +336,7 @@ pub fn triage_issues(
     timeout: Duration,
 ) -> Result<TriageDraft> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let prompt = triage_prompt(repo, req, out_path);
     let log_path = repo.join(".ralphy").join("triage.log");
     check_stdin_ceiling(&prompt)?;
@@ -370,7 +371,7 @@ pub fn consolidate_knowledge(
     timeout: Duration,
 ) -> Result<Usage> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
-    let _ = effort;
+    let _: Option<&str> = effort;
     check_stdin_ceiling(PROMPT_CONSOLIDATE)?;
     fs::create_dir_all(run_dir).context("creating the run directory")?;
     let log_path = run_dir.join("consolidate.log");

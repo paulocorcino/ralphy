@@ -18,7 +18,6 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use anyhow::Result;
 use regex::Regex;
 use serde_json::Value;
 
@@ -31,7 +30,7 @@ static BLOCKED_EXIT_RE: LazyLock<Regex> =
 /// What the Stop hook decided to write to the flag file. Rendered with
 /// [`FlagWrite::contents`]; the orchestrator reads it back verbatim.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FlagWrite {
+pub(crate) enum FlagWrite {
     /// The agent emitted `RALPHY_DONE_EXIT`.
     Done,
     /// The agent emitted `RALPHY_BLOCKED_EXIT <reason>`.
@@ -40,9 +39,9 @@ pub enum FlagWrite {
 
 impl FlagWrite {
     /// The exact bytes written to `$RALPHY_FLAG_FILE` (matches the ps1 oracle).
-    pub fn contents(&self) -> String {
+    pub(crate) fn contents(&self) -> String {
         match self {
-            FlagWrite::Done => "DONE".to_string(),
+            FlagWrite::Done => "DONE".to_owned(),
             FlagWrite::Blocked(reason) => format!("BLOCKED {reason}"),
         }
     }
@@ -54,7 +53,7 @@ impl FlagWrite {
 /// field, falling back to `read_transcript(transcript_path)` when that field is
 /// absent or blank (older/newer CLIs differ on whether it is included). Returns
 /// `None` when neither sentinel is present — the caller then writes nothing.
-pub fn classify_stop(
+pub(crate) fn classify_stop(
     payload: &str,
     read_transcript: impl Fn(&str) -> Option<String>,
 ) -> Option<FlagWrite> {
@@ -64,7 +63,7 @@ pub fn classify_stop(
         .get("last_assistant_message")
         .and_then(Value::as_str)
         .unwrap_or("")
-        .to_string();
+        .to_owned();
 
     if msg.trim().is_empty() {
         if let Some(path) = value.get("transcript_path").and_then(Value::as_str) {
@@ -83,7 +82,7 @@ fn classify_message(msg: &str) -> Option<FlagWrite> {
     }
     if let Some(caps) = BLOCKED_EXIT_RE.captures(msg) {
         let reason = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return Some(FlagWrite::Blocked(reason.to_string()));
+        return Some(FlagWrite::Blocked(reason.to_owned()));
     }
     None
 }
@@ -91,7 +90,7 @@ fn classify_message(msg: &str) -> Option<FlagWrite> {
 /// Read the last `assistant` `text` block out of a transcript JSONL file. Returns
 /// `None` if the path is missing/unreadable; version-robust like the ps1 oracle
 /// (skips lines that don't parse, keeps the last text block seen).
-pub fn read_transcript_last_assistant(path: &str) -> Option<String> {
+pub(crate) fn read_transcript_last_assistant(path: &str) -> Option<String> {
     let p = Path::new(path);
     if !p.exists() {
         return None;
@@ -103,7 +102,7 @@ pub fn read_transcript_last_assistant(path: &str) -> Option<String> {
             continue;
         };
         if let Some(t) = content.as_array().and_then(|blocks| last_text(blocks)) {
-            text = Some(t.to_string());
+            text = Some(t.to_owned());
         }
     }
     text
@@ -128,39 +127,38 @@ fn last_text(blocks: &[Value]) -> Option<&str> {
         .rfind(|t| !t.is_empty())
 }
 
-/// Run the `hook post` subcommand (PostToolUse, matcher `Bash`): close the
-/// timing loop the guard's verification-cost gate opened. The PreToolUse guard
+/// Run the `hook post` subcommand (`PostToolUse`, matcher `Bash`): close the
+/// timing loop the guard's verification-cost gate opened. The `PreToolUse` guard
 /// stamps when a plan `## Verify` command starts; this hook, firing right after
 /// the tool returns, records the elapsed wall clock as that command's durable
 /// cost — so even the first session in a fresh repo learns an expensive suite's
 /// price after paying it once. Best-effort and always `Ok`: cost knowledge is
 /// an optimization, never worth failing a session over.
-pub fn run_post_hook() -> Result<()> {
+pub(crate) fn run_post_hook() {
     let mut payload = String::new();
     if std::io::stdin().read_to_string(&mut payload).is_err() {
-        return Ok(());
+        return;
     }
     let Ok(value) = serde_json::from_str::<Value>(&payload) else {
-        return Ok(());
+        return;
     };
     if value.get("tool_name").and_then(Value::as_str) != Some("Bash") {
-        return Ok(());
+        return;
     }
     let Some(command) = value
         .get("tool_input")
         .and_then(|t| t.get("command"))
         .and_then(Value::as_str)
     else {
-        return Ok(());
+        return;
     };
     let Some(root) = crate::guard::project_root(&value) else {
-        return Ok(());
+        return;
     };
     let Ok(plan_md) = fs::read_to_string(root.join(".ralphy").join("plan.md")) else {
-        return Ok(());
+        return;
     };
     ralphy_core::cmdcost::note_finish(&root, command, &plan_md);
-    Ok(())
 }
 
 /// Run the `hook status` subcommand (ADR-0059 §3): read the vendor's hook
@@ -174,7 +172,7 @@ pub fn run_post_hook() -> Result<()> {
 /// variable is unset, like the Stop hook, so a settings file that leaks into
 /// a non-Ralphy session does nothing. A write error goes to stderr; the exit
 /// is still 0.
-pub fn run_status_hook(vendor: HookVendor) -> Result<()> {
+pub(crate) fn run_status_hook(vendor: HookVendor) {
     match vendor {
         HookVendor::Claude => println!("{{}}"),
         HookVendor::Codex | HookVendor::OpenCode => {}
@@ -184,16 +182,15 @@ pub fn run_status_hook(vendor: HookVendor) -> Result<()> {
     let mut payload = String::new();
     let read = std::io::stdin().read_to_string(&mut payload);
     let Ok(path) = std::env::var("RALPHY_STATUS_FILE") else {
-        return Ok(());
+        return;
     };
     if path.is_empty() || read.is_err() {
-        return Ok(());
+        return;
     }
     let line = status_line(vendor, &payload, &chrono::Local::now().to_rfc3339());
     if let Err(e) = append_line(Path::new(&path), &line) {
         eprintln!("ralphy hook status: could not append to {path}: {e:#}");
     }
-    Ok(())
 }
 
 /// The one line `hook status` appends, from the vendor's payload (ADR-0085
@@ -204,7 +201,7 @@ pub fn run_status_hook(vendor: HookVendor) -> Result<()> {
 /// second time for one string. A payload that is not JSON still yields a
 /// line, with `event` empty, so a vendor change never silences the file — the
 /// fold treats it as noise.
-pub fn status_line(vendor: HookVendor, payload: &str, ts: &str) -> String {
+pub(crate) fn status_line(vendor: HookVendor, payload: &str, ts: &str) -> String {
     let value: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
     let text = |name: &str| value.get(name).and_then(Value::as_str);
     // Not carried: `stop_hook_active`. It means "already continuing because a
@@ -265,27 +262,25 @@ fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
 
 /// Run the `hook stop` subcommand: read the payload from stdin, classify it, and
 /// write the flag file named by `$RALPHY_FLAG_FILE`. No-op when that env var is
-/// unset. Always returns `Ok` — the hook must never fail the session.
-pub fn run_stop_hook() -> Result<()> {
+/// unset. It never fails — the hook must never fail the session.
+pub(crate) fn run_stop_hook() {
     // Read stdin before every return, so a caller that writes the payload
     // never gets a broken pipe.
     let mut payload = String::new();
     let read = std::io::stdin().read_to_string(&mut payload);
     let Ok(flag) = std::env::var("RALPHY_FLAG_FILE") else {
-        return Ok(());
+        return;
     };
     if flag.is_empty() || read.is_err() {
-        return Ok(());
+        return;
     }
 
     if let Some(write) = classify_stop(&payload, read_transcript_last_assistant) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the hook never fails the session, so an unwritable flag file is not an error"
-        )]
-        let _ = fs::write(&flag, write.contents());
+        // the hook never fails the session, so an unwritable flag file is not an error
+        match fs::write(&flag, write.contents()) {
+            Ok(()) | Err(_) => {}
+        }
     }
-    Ok(())
 }
 
 #[cfg(test)]

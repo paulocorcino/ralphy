@@ -27,7 +27,10 @@ impl Said {
                 std::thread::sleep(Duration::from_millis(10));
             }
         }
-        self.line.lock().unwrap_or_else(|e| e.into_inner()).take()
+        self.line
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 }
 
@@ -64,7 +67,9 @@ fn keep_last_line(stderr: impl std::io::Read, slot: &Mutex<Option<String>>) {
                 let text = text.trim();
                 if !text.is_empty() {
                     let kept: String = text.chars().take(SAID_MAX_CHARS).collect();
-                    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(kept);
+                    *slot
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(kept);
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}

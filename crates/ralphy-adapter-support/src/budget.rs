@@ -101,7 +101,7 @@ mod tests {
     // The horizon core substitutes when the per-issue cap is disabled; kept in
     // sync with `ralphy_core::UNBOUNDED_ISSUE_HORIZON` by construction here (this
     // crate stays core-free, so the constant is passed in by the adapters).
-    const UNBOUNDED: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+    const UNBOUNDED: Duration = Duration::from_hours(8760);
 
     #[test]
     fn uncapped_beats_a_finite_budget() {

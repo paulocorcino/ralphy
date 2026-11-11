@@ -181,11 +181,10 @@ pub fn archive_notes(ws: &Workspace, notes: &[PathBuf]) -> Result<usize> {
         let dest = raw.join(name);
         // `rename` fails on a pre-existing destination on some platforms;
         // remove first so the move is an overwrite either way.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the destination may not exist, and a real failure surfaces in the rename"
-        )]
-        let _ = fs::remove_file(&dest);
+        // The destination may not exist, and a real failure surfaces in the rename.
+        match fs::remove_file(&dest) {
+            Ok(()) | Err(_) => {}
+        }
         fs::rename(note, &dest)
             .with_context(|| format!("archiving {} into raw/", note.display()))?;
     }
@@ -236,7 +235,7 @@ mod tests {
     #[test]
     fn loose_notes_empty_without_knowledge_dir() {
         let ws = temp_ws("empty");
-        assert!(loose_notes(&ws).is_empty());
+        assert_eq!(loose_notes(&ws), Vec::<PathBuf>::new());
         remove_scratch(ws.repo_root());
     }
 

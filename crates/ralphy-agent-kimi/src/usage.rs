@@ -24,7 +24,7 @@ fn parse_kimi_wire_usage(jsonl: &str, model: Option<String>) -> Usage {
         ..Usage::default()
     };
     for tu in jsonl.lines().filter_map(turn_usage_record) {
-        let field = |k: &str| tu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| tu.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         usage.input += field("inputOther");
         usage.output += field("output");
         usage.cache_read += field("inputCacheRead");
@@ -107,7 +107,7 @@ pub(crate) fn resume_hint_session_id(stdout: &str) -> Option<String> {
         (v.get("type").and_then(|t| t.as_str()) == Some("session.resume_hint"))
             .then(|| v.get("session_id").and_then(|s| s.as_str()))
             .flatten()
-            .map(str::to_string)
+            .map(str::to_owned)
     })
 }
 

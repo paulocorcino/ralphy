@@ -1,3 +1,4 @@
+use super::tree_to_kill;
 #[cfg(unix)]
 use super::*;
 
@@ -6,7 +7,7 @@ use super::*;
 /// `kill_tree_by_pid` used to spend the pgid as *text* on `kill(1)`, which has
 /// to guess whether a leading `-` opens an option or names a group. procps-ng
 /// guessed wrong and killed the calling process's group, so every
-/// `run_headless` teardown SIGKILLed the process that asked for it: locally the
+/// `run_headless` teardown sent `SIGKILL` to the process that asked for it: locally the
 /// test, on CI the runner itself — which then uploaded no log, leaving the gate
 /// red with nothing to read.
 ///
@@ -44,16 +45,13 @@ fn a_group_kill_spares_the_callers_own_group() {
         .expect("polling the bystander should succeed")
         .is_some();
 
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of the witness, which may have died already"
-    )]
-    let _ = bystander.kill();
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of the witness, which may have died already"
-    )]
-    let _ = bystander.wait();
+    // Cleanup of the witness, which may have died already.
+    if let Err(e) = bystander.kill() {
+        tracing::debug!("kill of the witness failed: {e}");
+    }
+    if let Err(e) = bystander.wait() {
+        tracing::debug!("reap of the witness failed: {e}");
+    }
 
     assert!(
         !died,
@@ -71,9 +69,9 @@ fn a_tree_kill_never_ends_the_process_doing_it() {
     // is a launcher that exited and whose pid 10 now names; 30 is the caller's
     // child; 40 is the console's real child.
     let table = [(10, 1), (20, 10), (30, 20), (40, 10)];
-    let doomed = super::tree_to_kill(10, &table, 20, |_| None);
+    let doomed = tree_to_kill(10, &table, 20, |_| None);
     assert_eq!(doomed, vec![10, 40]);
-    assert!(super::tree_to_kill(20, &table, 20, |_| None).is_empty());
+    assert_eq!(tree_to_kill(20, &table, 20, |_| None), Vec::<u32>::new());
 }
 
 /// A process created before the parent it records is not that parent's child:
@@ -88,6 +86,6 @@ fn a_process_older_than_its_recorded_parent_is_not_its_child() {
         30 => Some(900),
         _ => None,
     };
-    let doomed = super::tree_to_kill(10, &table, 99, created);
+    let doomed = tree_to_kill(10, &table, 99, created);
     assert_eq!(doomed, vec![10, 30, 40]);
 }

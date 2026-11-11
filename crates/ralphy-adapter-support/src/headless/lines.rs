@@ -111,16 +111,14 @@ impl LineWatch {
     fn tee_line(&self, line: &[u8]) {
         if let Some(f) = &self.log {
             if let Ok(mut f) = f.lock() {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the streamed log is a live copy; the reader keeps the bytes in memory"
-                )]
-                let _ = f.write_all(line);
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the streamed log is a live copy; the reader keeps the bytes in memory"
-                )]
-                let _ = f.flush();
+                // the streamed log is a live copy; the reader keeps the bytes in memory
+                if let Err(e) = f.write_all(line) {
+                    tracing::debug!("could not tee a line to the streamed log: {e}");
+                }
+                // the streamed log is a live copy; the reader keeps the bytes in memory
+                if let Err(e) = f.flush() {
+                    tracing::debug!("could not flush the streamed log: {e}");
+                }
             }
         }
     }
@@ -159,10 +157,9 @@ pub(super) fn spawn_reader<R: Read + Send + 'static>(
             all.extend_from_slice(&line);
             watch.on_line(&line);
         }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver is gone once the run gave up on this stream"
-        )]
-        let _ = tx.send(all);
+        // the receiver is gone once the run gave up on this stream
+        if let Err(e) = tx.send(all) {
+            tracing::debug!("the stream receiver is gone: {e}");
+        }
     })
 }

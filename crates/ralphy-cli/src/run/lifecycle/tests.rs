@@ -1,19 +1,16 @@
 use super::*;
 use crate::run::report;
 
-/// A fake CloudEvents sink recording every delivered envelope.
+/// A fake `CloudEvents` sink recording every delivered envelope.
 struct RecordingSink(Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
 
-impl crate::events::client::EventSink for RecordingSink {
-    fn post(
-        &self,
-        body: &serde_json::Value,
-    ) -> Result<crate::events::client::PostOutcome, anyhow::Error> {
+impl events::client::EventSink for RecordingSink {
+    fn post(&self, body: &serde_json::Value) -> Result<events::client::PostOutcome, anyhow::Error> {
         self.0
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(body.clone());
-        Ok(crate::events::client::PostOutcome::Delivered)
+        Ok(events::client::PostOutcome::Delivered)
     }
 }
 
@@ -28,8 +25,8 @@ fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) ->
     let handle = events::sink::try_start_sink(
         RecordingSink(Arc::clone(&recorded)),
         events::envelope::EventCtx {
-            source: "ralphy/o/r".to_string(),
-            runid: "01TESTRUNIDTESTRUNIDTE".to_string(),
+            source: "ralphy/o/r".to_owned(),
+            runid: "01TESTRUNIDTESTRUNIDTE".to_owned(),
             emitter: serde_json::json!({ "version": "0.0.0", "pid": 4242 }),
             git: serde_json::json!({ "repository": "o/r", "branch": "main" }),
         },
@@ -39,9 +36,12 @@ fn envelopes_delivered_by(f: impl FnOnce(Option<events::sink::EventsHandle>)) ->
     let subscriber =
         tracing_subscriber::registry().with(events::sink::new_events_layer(queue.clone()));
     tracing::subscriber::with_default(subscriber, || f(handle));
-    let out = recorded.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let out = recorded
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     out.iter()
-        .map(|e| e["type"].as_str().unwrap_or_default().to_string())
+        .map(|e| e["type"].as_str().unwrap_or_default().to_owned())
         .collect()
 }
 

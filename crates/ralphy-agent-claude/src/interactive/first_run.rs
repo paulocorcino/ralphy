@@ -29,11 +29,10 @@ pub(super) fn ensure_interactive_session_ready(repo_root: &Path) {
     let key = repo_root.to_string_lossy().replace('\\', "/");
     let updated = with_onboarding_completed(with_workspace_trusted(root, &key));
     if let Ok(s) = serde_json::to_string_pretty(&updated) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the pre-cleared first-run gates are a convenience; the session still starts"
-        )]
-        let _ = std::fs::write(&cfg_path, s);
+        // The pre-cleared first-run gates are a convenience; the session still starts.
+        if let Err(e) = std::fs::write(&cfg_path, s) {
+            tracing::warn!("could not write {}: {e}", cfg_path.display());
+        }
     }
 }
 
@@ -45,7 +44,7 @@ pub(super) fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> 
     if let Some(obj) = root.as_object_mut() {
         let projects = obj.entry("projects").or_insert_with(|| json!({}));
         if let Some(projects) = projects.as_object_mut() {
-            let entry = projects.entry(key.to_string()).or_insert_with(|| json!({}));
+            let entry = projects.entry(key.to_owned()).or_insert_with(|| json!({}));
             if let Some(entry) = entry.as_object_mut() {
                 entry.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
             }

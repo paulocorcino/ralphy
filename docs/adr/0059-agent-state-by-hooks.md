@@ -237,7 +237,7 @@ absent: the operator acts on it.
 ## Consequences
 
 - The workbench can show, per run and per console, "working / asking:
-  <question> / idle", and the Telegram card can push the middle one.
+  \<question> / idle", and the Telegram card can push the middle one.
   Item 4 of the same track (review notes pasted into a console) is gated on
   this: a paste is safe only when the state says the agent is at its prompt.
 - Plan-phase hangs at a question surface immediately instead of after the

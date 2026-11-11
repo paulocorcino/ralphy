@@ -72,7 +72,7 @@ pub(crate) fn fold(classified: &Classified) -> Vec<ModelRow> {
                 _ => 0.0,
             };
             ModelRow {
-                model: model.to_string(),
+                model: model.to_owned(),
                 usd,
                 total: fmt_total(usd, accum.floor),
                 floor: accum.floor,
@@ -80,7 +80,7 @@ pub(crate) fn fold(classified: &Classified) -> Vec<ModelRow> {
                 share_label: if usd.is_some() {
                     fmt_share(share)
                 } else {
-                    "—".to_string()
+                    "—".to_owned()
                 },
                 tokens: accum.tokens,
                 tokens_label: fmt_tokens(accum.tokens),

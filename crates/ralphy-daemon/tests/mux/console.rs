@@ -89,7 +89,7 @@ async fn opened(ws: &mut Ws, channel: u32) -> Command {
 
 /// Read terminal frames of `channel` into `shown` until its bytes hold
 /// `needle`. Commands on the channel are skipped. A cursor position request
-/// is answered, as the terminal of the page answers it: ConPTY waits for the
+/// is answered, as the terminal of the page answers it: `ConPTY` waits for the
 /// answer before the child's output.
 async fn read_until(ws: &mut Ws, channel: u32, shown: &mut Shown, needle: &str) {
     while !shown.text().contains(needle) {

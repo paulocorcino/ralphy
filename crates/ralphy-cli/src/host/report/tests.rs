@@ -19,17 +19,17 @@ fn json_checks_are_one_event_each_with_the_fix_command() {
         HostCheck {
             id: CheckId::Ralphy,
             status: CheckStatus::Pass,
-            text: "Ralphy 0.1".to_string(),
+            text: "Ralphy 0.1".to_owned(),
         },
         HostCheck {
             id: CheckId::Autostart,
             status: CheckStatus::Fix(HostOp::InstallAutostart),
-            text: "Ralphy installs its autostart".to_string(),
+            text: "Ralphy installs its autostart".to_owned(),
         },
         HostCheck {
             id: CheckId::Name,
-            status: CheckStatus::Copy("ralphy host add svrapp --name <name>".to_string()),
-            text: "the daemon on the host has no name".to_string(),
+            status: CheckStatus::Copy("ralphy host add svrapp --name <name>".to_owned()),
+            text: "the daemon on the host has no name".to_owned(),
         },
     ];
     let mut report = Report::json(Vec::new());
@@ -56,11 +56,8 @@ fn json_checks_are_one_event_each_with_the_fix_command() {
 #[test]
 fn json_failed_names_the_ssh_failure_kind() {
     let mut report = Report::json(Vec::new());
-    let e = ssh_error(
-        SshFailure::Unreachable,
-        "could not reach svrapp".to_string(),
-    )
-    .context("checking svrapp");
+    let e = ssh_error(SshFailure::Unreachable, "could not reach svrapp".to_owned())
+        .context("checking svrapp");
     report.failed(&e).unwrap();
     report.failed(&anyhow::anyhow!("x")).unwrap();
     let events = lines(report);
@@ -80,8 +77,8 @@ fn json_failed_carries_the_key_line_to_add() {
     let mut report = Report::json(Vec::new());
     let e: anyhow::Error = SshError {
         kind: SshFailure::AuthRefused,
-        message: "svrapp refused both keys".to_string(),
-        key_line: Some("ssh-ed25519 BODY ralphy-peer@anvil".to_string()),
+        message: "svrapp refused both keys".to_owned(),
+        key_line: Some("ssh-ed25519 BODY ralphy-peer@anvil".to_owned()),
     }
     .into();
     report.failed(&e.context("checking svrapp")).unwrap();
@@ -110,13 +107,13 @@ fn json_connected_fixed_added_and_linger_lines() {
     };
     report.fixed(&check, "ralphy daemon install").unwrap();
     report.linger_needs_sudo("paulo").unwrap();
-    let d = ralphy_daemon::peer::PeerDescriptor {
-        daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string(),
-        name: "vps".to_string(),
+    let d = PeerDescriptor {
+        daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FC0".to_owned(),
+        name: "vps".to_owned(),
         avatar: String::new(),
-        address: "127.0.0.1".to_string(),
+        address: "127.0.0.1".to_owned(),
         port: 7401,
-        environment: "Linux".to_string(),
+        environment: "Linux".to_owned(),
         os: String::new(),
         token: String::new(),
         protocol_version: ralphy_daemon::peer::PEER_PROTOCOL_VERSION,

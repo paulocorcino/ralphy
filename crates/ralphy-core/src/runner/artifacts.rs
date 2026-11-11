@@ -79,8 +79,7 @@ pub(crate) fn verify_failure_summary(report: &verify::VerifyReport) -> String {
             "`{}` exited {}",
             c.argv.join(" "),
             c.exit_code
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "non-zero".into())
+                .map_or_else(|| "non-zero".into(), |n| n.to_string())
         ),
         None => "verify gate failed".into(),
     }
@@ -132,11 +131,10 @@ pub(crate) fn write_handoffs(
             }
         }
         None => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the stale file may already be gone, and a leftover file is harmless"
-            )]
-            let _ = std::fs::remove_file(&path);
+            // The stale file may already be gone, and a leftover file is harmless.
+            match std::fs::remove_file(&path) {
+                Ok(()) | Err(_) => {}
+            }
         }
     }
 }
@@ -163,7 +161,7 @@ pub(crate) fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn Issu
                     reference = n,
                     error = %e,
                     "fetching referenced issue failed — skipping"
-                )
+                );
             }
         }
     }
@@ -181,11 +179,10 @@ pub(crate) fn write_references(ws: &Workspace, issue: &Issue, tracker: &dyn Issu
             }
         }
         None => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the stale file may already be gone, and a leftover file is harmless"
-            )]
-            let _ = std::fs::remove_file(&path);
+            // The stale file may already be gone, and a leftover file is harmless.
+            match std::fs::remove_file(&path) {
+                Ok(()) | Err(_) => {}
+            }
         }
     }
 }
@@ -227,7 +224,7 @@ pub(crate) fn write_knowledge(ws: &Workspace, issue: &Issue, stamp: &str, note: 
 pub(crate) fn record_citations(ws: &Workspace, issue: &Issue, stamp: &str, citations: Vec<String>) {
     let entry = knowledge::CitationEntry {
         issue: issue.number,
-        stamp: stamp.to_string(),
+        stamp: stamp.to_owned(),
         date: chrono::Local::now().format("%Y-%m-%d").to_string(),
         citations,
     };

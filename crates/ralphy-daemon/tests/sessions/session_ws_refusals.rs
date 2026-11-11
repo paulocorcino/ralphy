@@ -47,7 +47,7 @@ async fn refusal(port: u16, fields: serde_json::Value) -> String {
     payload["message"]
         .as_str()
         .expect("read the message field")
-        .to_string()
+        .to_owned()
 }
 
 fn register(dir: &Path, slug: &str) {

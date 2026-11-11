@@ -43,11 +43,11 @@ NT\\CurrentVersion\\Winlogon\r\n\
 
 pub(crate) fn description(os: &str) -> DaemonDescription {
     DaemonDescription {
-        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string()),
-        name: Some("svrapp".to_string()),
-        avatar: Some("🐙".to_string()),
-        environment: "Linux".to_string(),
-        os: os.to_string(),
+        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_owned()),
+        name: Some("svrapp".to_owned()),
+        avatar: Some("🐙".to_owned()),
+        environment: "Linux".to_owned(),
+        os: os.to_owned(),
         port: 7257,
         protocol_version: PEER_PROTOCOL_VERSION,
         require_token: true,
@@ -105,7 +105,7 @@ fn a_host_without_git_gets_advice_that_does_not_block() {
     );
     assert_eq!(
         get(&mac, Git).status,
-        CheckStatus::Copy("xcode-select --install".to_string())
+        CheckStatus::Copy("xcode-select --install".to_owned())
     );
     let windows = run(
         HostOs::Windows,
@@ -114,7 +114,7 @@ fn a_host_without_git_gets_advice_that_does_not_block() {
     );
     assert_eq!(
         get(&windows, Git).status,
-        CheckStatus::Copy("winget install --id Git.Git -e".to_string())
+        CheckStatus::Copy("winget install --id Git.Git -e".to_owned())
     );
 }
 
@@ -167,7 +167,7 @@ fn checks_macos_filevault_on() {
     assert!(sign_in.text.contains("FileVault"), "{sign_in:?}");
     assert_eq!(
         get(&checks, Sleep).status,
-        CheckStatus::Copy("sudo pmset -a sleep 0".to_string())
+        CheckStatus::Copy("sudo pmset -a sleep 0".to_owned())
     );
     assert_eq!(get(&checks, User).status, CheckStatus::Pass);
 }
@@ -220,7 +220,7 @@ fn checks_windows_user() {
     assert!(sign_in.text.contains("Autologon"), "{sign_in:?}");
     assert_eq!(
         get(&checks, Sleep).status,
-        CheckStatus::Copy("powercfg /change standby-timeout-ac 0".to_string())
+        CheckStatus::Copy("powercfg /change standby-timeout-ac 0".to_owned())
     );
 }
 
@@ -233,7 +233,7 @@ fn checks_old_ralphy() {
     );
     assert_eq!(
         get(&checks, Ralphy).status,
-        CheckStatus::Copy("ralphy host install svrapp".to_string())
+        CheckStatus::Copy("ralphy host install svrapp".to_owned())
     );
     for id in [Name, Autostart, RequireToken] {
         assert_eq!(get(&checks, id).status, CheckStatus::Pending, "{id:?}");
@@ -246,7 +246,7 @@ fn checks_no_ralphy() {
     let checks = run(HostOs::Linux, LINUX_USER, &RalphyOnHost::Missing);
     assert_eq!(
         get(&checks, Ralphy).status,
-        CheckStatus::Copy("ralphy host install svrapp".to_string())
+        CheckStatus::Copy("ralphy host install svrapp".to_owned())
     );
 }
 
@@ -258,10 +258,7 @@ fn checks_a_newer_ralphy_is_never_replaced() {
     assert!(newer.is_newer());
     let checks = run(HostOs::Linux, LINUX_USER, &newer);
     let ralphy = get(&checks, Ralphy);
-    assert_eq!(
-        ralphy.status,
-        CheckStatus::Copy("ralphy update".to_string())
-    );
+    assert_eq!(ralphy.status, CheckStatus::Copy("ralphy update".to_owned()));
     assert!(ralphy.text.contains("this computer"), "{ralphy:?}");
     let older = RalphyOnHost::Old {
         protocol: Some(PEER_PROTOCOL_VERSION - 1),
@@ -284,14 +281,14 @@ fn the_probe_reads_the_architecture() {
 #[test]
 fn checks_name_used_in_fleet() {
     let facts = parse_facts(HostOs::Linux, LINUX_USER);
-    let fleet = vec!["anvil".to_string(), "svrapp".to_string()];
+    let fleet = vec!["anvil".to_owned(), "svrapp".to_owned()];
     let checks = evaluate(&facts, &ready("linux"), &fleet, "svrapp", None);
     let name = get(&checks, Name);
     assert!(matches!(name.status, CheckStatus::Copy(_)), "{name:?}");
     assert!(name.text.contains("already named svrapp"), "{name:?}");
     assert!(name.is_blocking());
 
-    let fleet = vec!["anvil".to_string()];
+    let fleet = vec!["anvil".to_owned()];
     let checks = evaluate(&facts, &ready("linux"), &fleet, "svrapp", None);
     assert_eq!(get(&checks, Name).status, CheckStatus::Pass);
 }
@@ -331,7 +328,7 @@ fn an_unnamed_host_gets_its_default_name_in_the_first_run() {
     assert_eq!(
         name.status,
         CheckStatus::Fix(HostOp::SetName {
-            name: "svr-paulo".to_string(),
+            name: "svr-paulo".to_owned(),
             avatar: 1
         })
     );
@@ -342,12 +339,12 @@ fn an_unnamed_host_gets_its_default_name_in_the_first_run() {
 #[test]
 fn the_default_name_skips_a_name_the_fleet_has() {
     let facts = parse_facts(HostOs::Linux, LINUX_USER);
-    let fleet = vec!["svr-paulo".to_string()];
+    let fleet = vec!["svr-paulo".to_owned()];
     let checks = evaluate(&facts, &unnamed(), &fleet, "svrapp", None);
     assert_eq!(
         get(&checks, Name).status,
         CheckStatus::Fix(HostOp::SetName {
-            name: "svr-paulo-2".to_string(),
+            name: "svr-paulo-2".to_owned(),
             avatar: 1
         })
     );
@@ -360,7 +357,7 @@ fn wanted_name_beats_the_default() {
     assert_eq!(
         get(&checks, Name).status,
         CheckStatus::Fix(HostOp::SetName {
-            name: "box-2".to_string(),
+            name: "box-2".to_owned(),
             avatar: 1
         })
     );
@@ -377,7 +374,7 @@ fn checks_unnamed_host_takes_the_wanted_name() {
     assert_eq!(
         get(&checks, Name).status,
         CheckStatus::Fix(HostOp::SetName {
-            name: "box-2".to_string(),
+            name: "box-2".to_owned(),
             avatar: 1
         })
     );
@@ -388,7 +385,7 @@ fn checks_unnamed_host_takes_the_wanted_name() {
     let name = get(&checks, Name);
     assert_eq!(
         name.status,
-        CheckStatus::Copy("ralphy host add svrapp --name <name>".to_string())
+        CheckStatus::Copy("ralphy host add svrapp --name <name>".to_owned())
     );
     assert!(name.is_blocking());
 }
@@ -477,7 +474,7 @@ fn checks_linux_linger_unknown_is_a_warning() {
     assert_eq!(get(&checks, Linger).status, CheckStatus::Warn);
 }
 
-/// A macOS host with FileVault off and no automatic sign-in gets the generic
+/// A macOS host with `FileVault` off and no automatic sign-in gets the generic
 /// advice, and a probe with no `pmset` section leaves the sleep setting unread.
 #[test]
 fn checks_macos_without_automatic_sign_in_or_sleep_setting() {

@@ -84,7 +84,7 @@ async fn an_open_after_a_logout_is_refused_and_ends_the_socket() {
         closed,
         Some(Closed {
             channel: 1,
-            reason: "refused".to_string()
+            reason: "refused".to_owned()
         })
     );
     assert!(ends_within(&mut ws, WITHIN).await, "the socket ends");
@@ -103,7 +103,7 @@ async fn an_open_with_the_same_login_is_served() {
         closed,
         Some(Closed {
             channel: 1,
-            reason: "done".to_string()
+            reason: "done".to_owned()
         })
     );
     assert!(!ends_within(&mut ws, Duration::from_secs(1)).await);
@@ -124,10 +124,14 @@ fn code_now() -> String {
     mac.update(&(now / 30).to_be_bytes());
     let hs = mac.finalize().into_bytes();
     let off = (hs[hs.len() - 1] & 0x0f) as usize;
-    let bin = ((hs[off] as u32 & 0x7f) << 24)
-        | ((hs[off + 1] as u32) << 16)
-        | ((hs[off + 2] as u32) << 8)
-        | (hs[off + 3] as u32);
+    let [b0, b1, b2, b3] = *hs
+        .get(off..)
+        .and_then(<[u8]>::first_chunk::<4>)
+        .expect("a SHA-1 digest is 20 bytes and the offset is at most 15");
+    let bin = ((u32::from(b0) & 0x7f) << 24)
+        | (u32::from(b1) << 16)
+        | (u32::from(b2) << 8)
+        | u32::from(b3);
     format!("{:06}", bin % 1_000_000)
 }
 
@@ -176,7 +180,7 @@ async fn sign_in(port: u16) -> String {
         .split(';')
         .next()
         .expect("a cookie pair")
-        .to_string()
+        .to_owned()
 }
 
 /// A revoke of the login a page socket was let in under reaches its next
@@ -187,7 +191,7 @@ async fn an_open_after_a_revoke_of_its_login_is_refused_and_ends_the_socket() {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     let epoch = ralphy_daemon::epoch::SessionEpoch::in_memory_detached();
     let session = Arc::new(SessionAuth {
-        token: "tok".to_string(),
+        token: "tok".to_owned(),
         totp: ralphy_daemon::totp::Seed::from_bytes(SEED.to_vec()),
         password: None,
         epoch: epoch.clone(),
@@ -231,7 +235,7 @@ async fn an_open_after_a_revoke_of_its_login_is_refused_and_ends_the_socket() {
         closed,
         Some(Closed {
             channel: 1,
-            reason: "refused".to_string()
+            reason: "refused".to_owned()
         })
     );
     assert!(ends_within(&mut ws, WITHIN).await, "the socket ends");

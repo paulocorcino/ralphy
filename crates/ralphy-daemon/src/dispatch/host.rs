@@ -106,7 +106,7 @@ pub fn host_password(
     if text.len() > MAX_PASSWORD || text.contains('\0') {
         return Err(ArgvError::BadParam("password"));
     }
-    Ok(Some(Zeroizing::new(text.to_string())))
+    Ok(Some(Zeroizing::new(text.to_owned())))
 }
 
 /// Compose `ralphy host …` for a host verb. Any other verb, or any value
@@ -134,7 +134,7 @@ pub fn host_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>,
     };
     Ok(std::iter::once("host")
         .chain(parts)
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect())
 }
 

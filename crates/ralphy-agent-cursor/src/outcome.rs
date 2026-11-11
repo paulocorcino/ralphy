@@ -95,10 +95,10 @@ impl CursorFold {
 fn describe(discriminator: &Value, fallback: &str) -> String {
     for key in ["command", "path", "cmd"] {
         if let Some(s) = discriminator.get(key).and_then(Value::as_str) {
-            return s.to_string();
+            return s.to_owned();
         }
     }
-    fallback.to_string()
+    fallback.to_owned()
 }
 
 /// Walk a `tool_call` record for the three result discriminators the vendor uses —
@@ -169,7 +169,7 @@ fn bare_limit_prose(line: &str) -> Option<String> {
     LIMIT_CLASSES
         .iter()
         .any(|class| lower.contains(class))
-        .then(|| rest.to_string())
+        .then(|| rest.to_owned())
 }
 
 /// Fold one call's stream. Reads `r.stdout` on the paths that only need the JSON
@@ -198,7 +198,7 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
                 fold.session_id = obj
                     .get("session_id")
                     .and_then(Value::as_str)
-                    .map(str::to_string);
+                    .map(str::to_owned);
             }
             ("result", _) => fold_result(&mut fold, &obj),
             ("turn_ended", _) => fold_turn_ended(&mut fold, &obj),
@@ -236,16 +236,16 @@ fn fold_result(fold: &mut CursorFold, obj: &Value) {
     fold.subtype = obj
         .get("subtype")
         .and_then(Value::as_str)
-        .map(str::to_string);
+        .map(str::to_owned);
     fold.is_error = obj
         .get("is_error")
         .and_then(Value::as_bool)
         .unwrap_or(false);
     if let Some(text) = obj.get("result").and_then(Value::as_str) {
-        fold.final_text = text.to_string();
+        text.clone_into(&mut fold.final_text);
     }
     if let Some(sid) = obj.get("session_id").and_then(Value::as_str) {
-        fold.session_id.get_or_insert_with(|| sid.to_string());
+        fold.session_id.get_or_insert_with(|| sid.to_owned());
     }
 }
 
@@ -263,7 +263,7 @@ fn fold_turn_ended(fold: &mut CursorFold, obj: &Value) {
     if status != "success" {
         fold.is_error = true;
         if let Some(msg) = obj.get("error").and_then(Value::as_str) {
-            fold.vendor_error = Some(msg.to_string());
+            fold.vendor_error = Some(msg.to_owned());
         }
     }
 }
@@ -291,7 +291,7 @@ pub(crate) fn cursor_limit_note(fold: &CursorFold) -> Option<String> {
     LIMIT_CLASSES
         .iter()
         .any(|class| lower.contains(class))
-        .then(|| msg.to_string())
+        .then(|| msg.to_owned())
 }
 
 /// The operator-facing note for a quota stop: the vendor's own sentence, plus,

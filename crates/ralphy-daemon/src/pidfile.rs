@@ -74,7 +74,7 @@ pub fn clear_own_in(dir: &Path, pid: u32) {
 
 fn read_lines(dir: &Path) -> Vec<String> {
     std::fs::read_to_string(pid_path_in(dir))
-        .map(|text| text.lines().map(str::to_string).collect())
+        .map(|text| text.lines().map(str::to_owned).collect())
         .unwrap_or_default()
 }
 
@@ -111,7 +111,7 @@ pub fn read_args_in(dir: &Path) -> Vec<String> {
     if lines.iter().any(|l| l.starts_with("arg=")) {
         return lines
             .iter()
-            .filter_map(|l| l.strip_prefix("arg=").map(str::to_string))
+            .filter_map(|l| l.strip_prefix("arg=").map(str::to_owned))
             .collect();
     }
     // Older build: a bare pid, then one argument per line.
@@ -120,7 +120,7 @@ pub fn read_args_in(dir: &Path) -> Vec<String> {
         .skip(1)
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -135,11 +135,10 @@ mod tests {
     }
 
     fn remove_scratch(dir: &Path) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be absent, and a failed cleanup is no test failure"
-        )]
-        let _ = std::fs::remove_dir_all(dir);
+        // The scratch directory may be absent, and a failed cleanup is no test failure.
+        match std::fs::remove_dir_all(dir) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
@@ -158,11 +157,7 @@ mod tests {
     #[test]
     fn a_recorded_daemon_reads_back_whole() {
         let dir = scratch("roundtrip");
-        let args = vec![
-            "daemon".to_string(),
-            "--port".to_string(),
-            "8080".to_string(),
-        ];
+        let args = vec!["daemon".to_owned(), "--port".to_owned(), "8080".to_owned()];
         write_in(&dir, 4242, Path::new("/usr/local/bin/ralphy"), &args).expect("write");
         assert_eq!(read_in(&dir), Some(4242));
         assert_eq!(
@@ -184,9 +179,9 @@ mod tests {
         // format this replaced silently dropped both.
         let dir = scratch("verbatim");
         let args = vec![
-            "daemon".to_string(),
-            "--allowed-host".to_string(),
-            "  spaced  ".to_string(),
+            "daemon".to_owned(),
+            "--allowed-host".to_owned(),
+            "  spaced  ".to_owned(),
             String::new(),
         ];
         write_in(&dir, 7, Path::new("/bin/ralphy"), &args).expect("write");
@@ -206,11 +201,7 @@ mod tests {
         assert_eq!(read_exe_in(&dir), None, "identity unknown, not matched");
         assert_eq!(
             read_args_in(&dir),
-            vec![
-                "daemon".to_string(),
-                "--port".to_string(),
-                "7999".to_string()
-            ]
+            vec!["daemon".to_owned(), "--port".to_owned(), "7999".to_owned()]
         );
         remove_scratch(&dir);
     }

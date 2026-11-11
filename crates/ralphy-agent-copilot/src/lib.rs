@@ -3,7 +3,7 @@
 //! JSON-lines stream parser, and the signal→[`Outcome`] mapping — is confined
 //! here. See docs/adr/0041.
 //!
-//! Like the Codex, Kimi and OpenCode adapters (and unlike Claude's live PTY
+//! Like the Codex, Kimi and `OpenCode` adapters (and unlike Claude's live PTY
 //! session), Copilot needs no interactive session: `plan` and `execute` both pipe
 //! the charter on **stdin** with no `-p` at all — `prompt.execute.md` is ~24 KB
 //! before the issue body is appended, against a Windows argv ceiling of
@@ -221,7 +221,7 @@ impl CopilotAgent {
     /// `--effort` rather than failing the run.
     fn catalog(&self) -> Option<&CopilotCatalog> {
         self.catalog
-            .get_or_init(|| match catalog::fetch_catalog() {
+            .get_or_init(|| match fetch_catalog() {
                 Ok(c) => Some(c),
                 Err(e) => {
                     tracing::warn!(error = %e, "no Copilot catalog: --effort will be omitted");
@@ -264,7 +264,7 @@ impl CopilotAgent {
 fn warn_effort_mismatch(requested: Option<&str>, session_id: &str) {
     warn_effort_mismatch_with(requested, session_id, || {
         usage::copilot_recorded_effort(session_id)
-    })
+    });
 }
 
 /// The reader is a closure so a test can COUNT its invocations — the "a default
@@ -362,7 +362,7 @@ impl Agent for CopilotAgent {
         // `run`: the closure's error would pre-empt the auth and plan-limit
         // handlers the wrapper applies to `r.log`, turning a logged-out run into
         // "MCP receipt missing".
-        if let Some((r, _)) = session.as_ref() {
+        if let Some((r, ())) = session.as_ref() {
             self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
                 .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
             // Cross-path invariant: the SAFETY receipt (D7) keeps precedence over

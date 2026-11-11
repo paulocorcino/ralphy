@@ -71,7 +71,7 @@ async fn exchange(port: u16, request: &str) -> (u16, String, String) {
         .and_then(|s| s.parse().ok())
         .unwrap_or_default();
     let (head, body) = raw.split_once("\r\n\r\n").unwrap_or((&raw, ""));
-    (status, head.to_string(), body.to_string())
+    (status, head.to_owned(), body.to_owned())
 }
 
 fn header_value<'a>(head: &'a str, name: &str) -> Option<&'a str> {
@@ -216,21 +216,21 @@ async fn claude_console(port: u16, bearer: Option<&str>) -> page::Channel {
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("a daemon id"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
 fn descriptor(id: &str, port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: "Linux".to_string(),
+        environment: "Linux".to_owned(),
         os: String::new(),
-        token: TOKEN.to_string(),
+        token: TOKEN.to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -257,15 +257,15 @@ fn finished_run(home: &Path) {
     let run_dir = home.join(".ralphy").join("runs").join(STAMP);
     std::fs::create_dir_all(&run_dir).expect("create the run folder");
     let snapshot = ralphy_run_snapshot::RunSnapshot {
-        runid: "01RUNFINISHED".to_string(),
+        runid: "01RUNFINISHED".to_owned(),
         pid: 1,
-        exec_agent: "codex".to_string(),
-        started_at: "2026-10-28T10:00:00-03:00".to_string(),
+        exec_agent: "codex".to_owned(),
+        started_at: "2026-10-28T10:00:00-03:00".to_owned(),
         issues: [71, 72]
             .into_iter()
             .map(|number| ralphy_run_snapshot::IssueBlock {
                 number,
-                status: "blocked".to_string(),
+                status: "blocked".to_owned(),
                 ..ralphy_run_snapshot::IssueBlock::default()
             })
             .collect(),
@@ -283,7 +283,7 @@ fn ids(requests: &serde_json::Value) -> Vec<String> {
         .as_array()
         .map(|a| {
             a.iter()
-                .filter_map(|r| r["id"].as_str().map(str::to_string))
+                .filter_map(|r| r["id"].as_str().map(str::to_owned))
                 .collect()
         })
         .unwrap_or_default()

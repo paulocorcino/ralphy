@@ -197,7 +197,7 @@ fn subagent_transcripts_is_empty_when_a_session_spawned_none() {
     let tmp = tempfile::tempdir().expect("tempdir for a lone transcript");
     let top = tmp.path().join("lonely.jsonl");
     fs::write(&top, "{}\n").expect("write a top-level transcript");
-    assert!(subagent_transcripts(&[top]).is_empty());
+    assert_eq!(subagent_transcripts(&[top]), Vec::<PathBuf>::new());
 }
 
 #[test]

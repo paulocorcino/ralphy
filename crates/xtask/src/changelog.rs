@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 /// release candidates (ADR-0056 §7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Kind {
+pub(crate) enum Kind {
     Breaking,
     Security,
     Feature,
@@ -79,7 +79,7 @@ impl Kind {
 
 /// One fragment, parsed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Entry {
+pub(crate) struct Entry {
     /// The fragment's file stem — the pull request or issue number when there is
     /// one, otherwise any slug the author chose.
     pub id: String,
@@ -97,13 +97,13 @@ pub struct Entry {
 
 /// Prose cap: one line. At 280 the record's median entry was 196 characters
 /// (ADR-0056 §10, amended 2026-09-30).
-pub const MAX_PROSE_CHARS: usize = 140;
+pub(crate) const MAX_PROSE_CHARS: usize = 140;
 /// Headline cap: one line on the release page.
-pub const MAX_HEADLINE_CHARS: usize = 100;
+pub(crate) const MAX_HEADLINE_CHARS: usize = 100;
 
 /// One published release and everything it carried.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ReleaseRecord {
+pub(crate) struct ReleaseRecord {
     pub version: String,
     pub date: String,
     /// True when this release carried a feature, a breaking change or a security
@@ -115,7 +115,7 @@ pub struct ReleaseRecord {
 
 /// The accumulated record, newest first.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct History {
+pub(crate) struct History {
     pub releases: Vec<ReleaseRecord>,
 }
 
@@ -123,7 +123,7 @@ pub struct History {
 ///
 /// `id` is the caller's (the file stem), so this stays a pure function of the
 /// text and is testable without a filesystem.
-pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
+pub(crate) fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
     let normalized = text.replace("\r\n", "\n");
     let body = normalized
         .strip_prefix("---\n")
@@ -146,7 +146,7 @@ pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
             .context("fragment front matter must carry `kind:`")?,
     )?;
 
-    let text = prose.trim().to_string();
+    let text = prose.trim().to_owned();
     if text.is_empty() {
         bail!("fragment has no prose: a kind alone says nothing to a reader");
     }
@@ -161,7 +161,7 @@ pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
     let optional = |key: &str| {
         fields
             .get(key)
-            .map(|v| v.to_string())
+            .map(ToString::to_string)
             .filter(|v| !v.is_empty())
     };
     let headline = optional("headline");
@@ -172,7 +172,7 @@ pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
     }
 
     Ok(Entry {
-        id: id.to_string(),
+        id: id.to_owned(),
         kind,
         text,
         topic: optional("topic"),
@@ -182,7 +182,7 @@ pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
 
 /// Read every fragment in `dir`, ordered by number so the fold is deterministic.
 /// A missing directory is an empty list, not an error.
-pub fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
+pub(crate) fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return Ok(Vec::new());
     };
@@ -198,7 +198,7 @@ pub fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or_default()
-            .to_string();
+            .to_owned();
         (stem.parse::<u64>().unwrap_or(u64::MAX), stem)
     });
 
@@ -209,7 +209,7 @@ pub fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or_default()
-                .to_string();
+                .to_owned();
             let text = std::fs::read_to_string(path)
                 .with_context(|| format!("reading {}", path.display()))?;
             parse_fragment(&stem, &text).with_context(|| format!("in {}", path.display()))
@@ -219,7 +219,7 @@ pub fn read_fragments(dir: &Path) -> Result<Vec<Entry>> {
 
 /// Fold `entries` into `history` as `version`, dated `date`. Internal entries are
 /// dropped: they were written to satisfy the gate, not to be read.
-pub fn fold(history: &mut History, version: &str, date: &str, entries: Vec<Entry>) {
+pub(crate) fn fold(history: &mut History, version: &str, date: &str, entries: Vec<Entry>) {
     let mut kept: Vec<Entry> = entries
         .into_iter()
         .filter(|e| e.kind != Kind::Internal)
@@ -237,8 +237,8 @@ pub fn fold(history: &mut History, version: &str, date: &str, entries: Vec<Entry
 
     let announce = kept.iter().any(|e| e.kind.announceable());
     let record = ReleaseRecord {
-        version: version.to_string(),
-        date: date.to_string(),
+        version: version.to_owned(),
+        date: date.to_owned(),
         announce,
         entries: kept,
     };
@@ -247,7 +247,7 @@ pub fn fold(history: &mut History, version: &str, date: &str, entries: Vec<Entry
 }
 
 /// Render the whole history as `CHANGELOG.md`.
-pub fn render_changelog(history: &History) -> String {
+pub(crate) fn render_changelog(history: &History) -> String {
     let mut out = String::from(
         "# Changelog\n\n\
          Generated by `cargo run -p xtask -- changelog --release <version>`, which folds\n\
@@ -265,9 +265,9 @@ pub fn render_changelog(history: &History) -> String {
 
 /// Render one release as its page: one line per capability, a feature's own
 /// fixes left to the record (ADR-0056 §10).
-pub fn render_notes(record: &ReleaseRecord) -> String {
+pub(crate) fn render_notes(record: &ReleaseRecord) -> String {
     if record.entries.is_empty() {
-        return "No user-visible changes in this release.\n".to_string();
+        return "No user-visible changes in this release.\n".to_owned();
     }
     let launched = launched_topics(&record.entries);
 
@@ -330,7 +330,7 @@ fn topic_source<'a>(rest: &'a [Entry], entry: &'a Entry) -> &'a Entry {
 /// The page line of an entry: its headline, else the first sentence of its prose.
 fn notes_line(source: &Entry) -> String {
     match source.headline.as_deref() {
-        Some(headline) => headline.to_string(),
+        Some(headline) => headline.to_owned(),
         None => first_sentence(&source.text),
     }
 }
@@ -365,13 +365,13 @@ fn first_sentence(text: &str) -> String {
     let text = text.replace('\n', " ");
     match text.split_once(". ") {
         Some((head, _)) => format!("{}.", head.trim()),
-        None => text.trim().to_string(),
+        None => text.trim().to_owned(),
     }
 }
 
 /// Load the history, treating an absent file as an empty one — the record starts
 /// where the discipline starts.
-pub fn load_history(path: &Path) -> Result<History> {
+pub(crate) fn load_history(path: &Path) -> Result<History> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return Ok(History::default());
     };

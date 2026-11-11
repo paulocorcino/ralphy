@@ -67,8 +67,8 @@ mod tests {
             !fs::read_to_string(&reviewer_md).unwrap().is_empty(),
             "reviewer/SKILL.md must be non-empty"
         );
-        assert!(names.contains(&"reviewer".to_string()), "{names:?}");
-        assert!(names.contains(&"staged-plan".to_string()), "{names:?}");
+        assert!(names.contains(&"reviewer".to_owned()), "{names:?}");
+        assert!(names.contains(&"staged-plan".to_owned()), "{names:?}");
     }
 
     #[test]
@@ -134,7 +134,7 @@ mod tests {
         }
     }
 
-    /// A source-text grep for the literal "home_dir" cannot catch a regression
+    /// A source-text grep for the literal "`home_dir`" cannot catch a regression
     /// that reaches the user-level root through a different call shape, and it
     /// only ever checked `skills.rs`'s own text — not the actual location a
     /// leak would land. This observes the REAL location instead: snapshot

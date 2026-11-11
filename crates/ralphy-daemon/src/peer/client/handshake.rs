@@ -55,7 +55,7 @@ fn hello_environment(hello: Option<&serde_json::Value>) -> Option<String> {
     hello
         .and_then(|v| v.get("environment").and_then(|e| e.as_str()))
         .filter(|e| !e.is_empty())
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// A refusal when the daemon that answered is not the one `d` names: this
@@ -114,7 +114,7 @@ fn protocol_verdict(hello: Option<&serde_json::Value>) -> PeerStatus {
             ours: PEER_PROTOCOL_VERSION,
         },
         None => PeerStatus::Unreachable {
-            why: "the handshake answered without a protocol_version".to_string(),
+            why: "the handshake answered without a protocol_version".to_owned(),
         },
     }
 }

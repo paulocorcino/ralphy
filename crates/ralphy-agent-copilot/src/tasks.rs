@@ -66,7 +66,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
     let log_path = neutral_cwd.join("diagnose.log");
@@ -114,7 +114,7 @@ pub fn draft_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<IssuesDraft> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
@@ -173,7 +173,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     std::fs::create_dir_all(run_dir).context("creating the run directory")?;
     let log_path = run_dir.join("consolidate.log");
 
@@ -214,7 +214,7 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    let _ = effort;
+    let _: Option<&str> = effort;
     let prompt = format!(
         "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),

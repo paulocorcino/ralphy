@@ -4,7 +4,7 @@
 //!
 //! Codex loads rules only from `$CODEX_HOME/rules` or a project's `.codex/rules`,
 //! and has no `-c` key for a rules path (codex-cli 0.159.2). Measured with
-//! 0.159.2 under `-s danger-full-access`, in a live run (FinCal, 2026-10-01): the
+//! 0.159.2 under `-s danger-full-access`, in a live run (`FinCal`, 2026-10-01): the
 //! project rules load, a forbidden prefix is refused before the process starts,
 //! and the model reads the justification.
 

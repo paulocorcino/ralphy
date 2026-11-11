@@ -14,7 +14,7 @@ use super::{strip_release_date, ModelPrice};
 /// `$0`/subscription trap). Malformed entries are skipped, and so is a row with
 /// a negative or non-finite price (ADR-0072 D9); a non-object root yields an
 /// empty map — never panics.
-pub fn ingest_models_dev(doc: &Value) -> BTreeMap<String, ModelPrice> {
+pub(crate) fn ingest_models_dev(doc: &Value) -> BTreeMap<String, ModelPrice> {
     let mut out = BTreeMap::new();
     let Some(providers) = doc.as_object() else {
         return out;

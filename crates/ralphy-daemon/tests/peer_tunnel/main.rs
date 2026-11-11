@@ -74,7 +74,7 @@ fn lines(log: &Path) -> Vec<String> {
     std::fs::read_to_string(log)
         .unwrap_or_default()
         .lines()
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -137,14 +137,14 @@ async fn a_tunnel_is_held_once_and_replaced_once_dead() {
 
 fn descriptor(id: &str, port: u16, tunnel: Option<TunnelSpec>) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "svrapp".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "svrapp".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: "Linux".to_string(),
+        environment: "Linux".to_owned(),
         os: String::new(),
-        token: "peer-token".to_string(),
+        token: "peer-token".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         nudge: None,
         tunnel,
@@ -186,12 +186,12 @@ fn app(id: &str, store: &Path, auth: Arc<AuthState>) -> axum::Router {
     repos.upsert("owner/repo", &store.to_string_lossy());
     registry::save_to(&repos, &registry_path).expect("save the registry");
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         Some(Identity {
             id: id.parse().expect("parse the peer id"),
-            name: "svrapp".to_string(),
-            avatar: "🐙".to_string(),
+            name: "svrapp".to_owned(),
+            avatar: "🐙".to_owned(),
         }),
         registry_path,
         PathBuf::from("does-not-exist"),
@@ -239,18 +239,18 @@ const PAIRED_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB4";
 
 fn description(token: &str) -> peer::DaemonDescription {
     peer::DaemonDescription {
-        daemon_id: Some(PAIRED_ID.to_string()),
-        name: Some("svrapp".to_string()),
-        avatar: Some("🐙".to_string()),
-        environment: "Linux".to_string(),
-        os: "linux".to_string(),
+        daemon_id: Some(PAIRED_ID.to_owned()),
+        name: Some("svrapp".to_owned()),
+        avatar: Some("🐙".to_owned()),
+        environment: "Linux".to_owned(),
+        os: "linux".to_owned(),
         port: 7257,
         protocol_version: PEER_PROTOCOL_VERSION,
         require_token: true,
         autostart: true,
         running: true,
         socket: None,
-        token: Some(token.to_string()),
+        token: Some(token.to_owned()),
     }
 }
 
@@ -263,7 +263,7 @@ async fn a_paired_descriptor_is_reachable_through_its_local_port() {
         PAIRED_ID,
         peer_store.path(),
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-tok".to_string()),
+            AuthPolicy::Bearer("peer-tok".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     );

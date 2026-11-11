@@ -30,26 +30,26 @@ struct Daemon {
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("the test id parses"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
 fn descriptor(port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: PEER_ID.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: PEER_ID.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: PEER_ENVIRONMENT.to_string(),
+        environment: PEER_ENVIRONMENT.to_owned(),
         os: String::new(),
-        token: "peer-token".to_string(),
+        token: "peer-token".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: Some(NudgeSpec {
-            distro: "Ubuntu-22.04".to_string(),
-            unit: "ralphy-daemon.service".to_string(),
+            distro: "Ubuntu-22.04".to_owned(),
+            unit: "ralphy-daemon.service".to_owned(),
         }),
     }
 }
@@ -206,7 +206,7 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
         identity(PEER_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-token".to_string()),
+            AuthPolicy::Bearer("peer-token".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -302,7 +302,7 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
         .split("ARGV:")
         .nth(1)
         .unwrap_or_default()
-        .to_string();
+        .to_owned();
     assert!(
         !argv.contains("-d ") && !argv.contains("--cd"),
         "agent session received free-console launcher tokens: {agent_argv}"
@@ -369,7 +369,7 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
         .nth(1)
         .and_then(|rest| rest.split("GOT:").next())
         .unwrap_or_default()
-        .to_string();
+        .to_owned();
     assert_eq!(
         argv.split(' ').nth(1),
         Some("wb-a-b-path-x"),
@@ -398,7 +398,7 @@ async fn a_free_console_on_a_peer_with_no_distro_runs_on_the_peer() {
         identity(PEER_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-token".to_string()),
+            AuthPolicy::Bearer("peer-token".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )

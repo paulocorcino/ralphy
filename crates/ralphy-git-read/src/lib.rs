@@ -102,7 +102,7 @@ fn stdout_of(repo: &Path, read: Read) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     (!text.is_empty()).then_some(text)
 }
 
@@ -114,7 +114,7 @@ pub fn head(repo: &Path) -> Result<Head> {
     let out = run(repo, Read::SymbolicHead)?;
     if out.status.success() {
         return Ok(Head::Branch {
-            name: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            name: String::from_utf8_lossy(&out.stdout).trim().to_owned(),
         });
     }
     if out.status.code() != Some(1) {
@@ -132,7 +132,7 @@ pub fn head(repo: &Path) -> Result<Head> {
         );
     }
     Ok(Head::Detached {
-        sha: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        sha: String::from_utf8_lossy(&out.stdout).trim().to_owned(),
     })
 }
 
@@ -210,7 +210,7 @@ pub fn user_email(repo: &Path) -> Option<String> {
 pub fn pointer_target(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join(".git")).ok()?;
     let target = text.lines().next()?.trim().strip_prefix("gitdir:")?.trim();
-    (!target.is_empty()).then(|| target.to_string())
+    (!target.is_empty()).then(|| target.to_owned())
 }
 
 /// The gitdir a `<dir>/.git` pointer file names, joined to `dir` (an absolute

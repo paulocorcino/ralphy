@@ -169,13 +169,13 @@ fn rust_findings(text: &str) -> Vec<Hit> {
     if RUST_UNSAFE.is_match(text) {
         out.push((
             Capability::Unsafe,
-            "adds an `unsafe` block or item".to_string(),
+            "adds an `unsafe` block or item".to_owned(),
         ));
     }
     if RUST_SECRET_ENV.is_match(text) {
         out.push((
             Capability::Credential,
-            "reads a secret from the environment".to_string(),
+            "reads a secret from the environment".to_owned(),
         ));
     }
     out
@@ -197,7 +197,7 @@ fn content_findings(ext: &str, text: &str) -> Vec<Hit> {
         out.push((Capability::Credential, format!("names `{}`", m.as_str())));
     }
     if BASE64_BLOB.is_match(text) {
-        out.push((Capability::Encoded, "a long encoded string".to_string()));
+        out.push((Capability::Encoded, "a long encoded string".to_owned()));
     }
     let chars = text.chars().count();
     let spaces = text.chars().filter(|c| *c == ' ').count();
@@ -242,6 +242,6 @@ pub(crate) fn lock_crates(lock: &str) -> std::collections::BTreeSet<String> {
     lock.lines()
         .filter_map(|l| l.strip_prefix("name = \""))
         .filter_map(|l| l.strip_suffix('"'))
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }

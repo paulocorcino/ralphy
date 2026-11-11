@@ -25,7 +25,7 @@ fn command(id: u64, verb: &str, payload: serde_json::Value) -> Message {
     Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -34,7 +34,7 @@ fn command(id: u64, verb: &str, payload: serde_json::Value) -> Message {
 
 fn app(registry_path: std::path::PathBuf) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         registry_path,
@@ -79,7 +79,12 @@ async fn replies_with(
                 continue;
             };
             if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
-                let status = reply.payload["status"].as_str().unwrap_or("").to_string();
+                let status = reply
+                    .payload
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
                 frames.push(reply.payload);
                 if status == "exited" || status == "error" {
                     break;

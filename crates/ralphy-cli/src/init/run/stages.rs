@@ -281,8 +281,8 @@ fn offer_skills(repo: &Path, cfg: &InitConfig) -> Result<()> {
 }
 
 fn install_skills(skills_dst: &Path) -> Result<()> {
-    let fetch_ref = SKILLS_REF.to_string();
-    let subtree = SKILLS_SUBTREE.to_string();
+    let fetch_ref = SKILLS_REF.to_owned();
+    let subtree = SKILLS_SUBTREE.to_owned();
     let fetch = |scratch: &Path| -> Result<PathBuf> {
         for argv in sparse_fetch_commands(&fetch_ref, &subtree) {
             let args: Vec<&str> = argv.iter().map(String::as_str).collect();
@@ -293,7 +293,7 @@ fn install_skills(skills_dst: &Path) -> Result<()> {
     };
     let outcome = with_spinner("Installing skills…", || {
         install_skills_step(skills_dst, fetch)
-    })?;
+    });
     match outcome {
         Outcome::Installed(n) => print_ok(&format!("Installed {n} skill(s).")),
         Outcome::Skipped => print_ok("Skills already up to date."),

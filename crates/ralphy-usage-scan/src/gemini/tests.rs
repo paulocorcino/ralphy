@@ -221,11 +221,14 @@ fn a_nested_subagent_file_is_counted() {
 
 #[test]
 fn a_missing_or_malformed_store_is_empty_never_an_error() {
-    assert!(scan(Path::new("does-not-exist")).is_empty());
+    assert_eq!(
+        scan(Path::new("does-not-exist")),
+        Vec::<InteractiveRecord>::new()
+    );
 
     let empty = tempfile::tempdir().unwrap();
     fs::create_dir_all(empty.path().join("tmp")).unwrap();
-    assert!(scan(empty.path()).is_empty());
+    assert_eq!(scan(empty.path()), Vec::<InteractiveRecord>::new());
 
     let garbage = tempfile::tempdir().unwrap();
     seed(
@@ -235,7 +238,7 @@ fn a_missing_or_malformed_store_is_empty_never_an_error() {
         "session-x.jsonl",
         "not json\nnot json either\n",
     );
-    assert!(scan(garbage.path()).is_empty());
+    assert_eq!(scan(garbage.path()), Vec::<InteractiveRecord>::new());
 }
 
 /// `lastUpdated` lives on `$set` mutation records after the header — trusting
@@ -302,10 +305,10 @@ fn a_session_is_attributed_through_its_project_root_sibling() {
         gemini_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "acme/fincal".to_string(),
+            slug: "acme/fincal".to_owned(),
             // `.project_root` holds the lowercased Windows form: the match
             // must cross both the separator and the case difference.
-            path: "C:/Dev/FinCal/".to_string(),
+            path: "C:/Dev/FinCal/".to_owned(),
         }],
         since: None,
     });
@@ -339,7 +342,7 @@ fn a_project_root_in_a_linked_worktree_is_attributed_to_its_repo() {
         gemini_dir: tmp.path(),
         run_session_ids: &HashSet::new(),
         repos: &[crate::RegisteredRepo {
-            slug: "o/repo".to_string(),
+            slug: "o/repo".to_owned(),
             path: repo.to_string_lossy().to_string(),
         }],
         since: None,
@@ -358,9 +361,7 @@ fn a_run_owned_session_id_is_excluded() {
         "session-x.jsonl",
         &format!("{HEADER}\n{TURN}\n"),
     );
-    let owned: HashSet<String> = ["ralphy-probe-p1p2p3p4p6".to_string()]
-        .into_iter()
-        .collect();
+    let owned: HashSet<String> = ["ralphy-probe-p1p2p3p4p6".to_owned()].into_iter().collect();
 
     let records = scan_gemini(&GeminiScan {
         gemini_dir: tmp.path(),
@@ -394,7 +395,10 @@ fn since_is_inclusive_and_never_filters_on_an_unparseable_bound() {
     };
     assert_eq!(with_since("2026-07-21T01:00:00Z").len(), 1, "inclusive");
     assert_eq!(with_since("not-a-timestamp").len(), 1);
-    assert!(with_since("2026-07-21T01:00:01Z").is_empty());
+    assert_eq!(
+        with_since("2026-07-21T01:00:01Z"),
+        Vec::<InteractiveRecord>::new()
+    );
 }
 
 #[test]

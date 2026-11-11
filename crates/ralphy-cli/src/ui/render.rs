@@ -15,7 +15,7 @@ pub(crate) use line::{render_active_line, render_line, sleep_label};
 #[cfg(test)]
 pub(crate) use meter::{fmt_tokens, fmt_usd_compact};
 pub(crate) use meter::{meter_for, LineExtra, Meter};
-pub use panel::{render_totals_panel, PanelBranchMode, PanelData, PanelStop};
+pub(crate) use panel::{render_totals_panel, PanelBranchMode, PanelData, PanelStop};
 
 /// `MM:SS` clock form (minutes may exceed 59), e.g. `12:43`, `45:00`. The
 /// active-line/budget form; distinct from [`fmt_duration`]'s `2m13s` finished-line
@@ -29,7 +29,7 @@ pub(crate) fn fmt_clock(d: Duration) -> String {
 /// non-TTY / `NO_COLOR` path sets both `false`, guaranteeing no ANSI ever reaches
 /// a redirected file (ADR-0006 D3).
 #[derive(Debug, Clone, Copy)]
-pub struct RenderOpts {
+pub(crate) struct RenderOpts {
     pub color: bool,
     pub emoji: bool,
 }
@@ -38,7 +38,7 @@ pub struct RenderOpts {
 /// trailing `.git`, and rewrite the `git@host:owner/repo` / `ssh://git@host/owner/repo`
 /// SSH forms to `https://host/owner/repo`. An already-`http(s)` URL is left as-is
 /// (minus `.git`). Pure over its input.
-pub fn normalize_remote_url(raw: &str) -> String {
+pub(crate) fn normalize_remote_url(raw: &str) -> String {
     let s = raw.trim();
     let s = s.strip_suffix(".git").unwrap_or(s);
     if let Some(rest) = s.strip_prefix("ssh://git@") {
@@ -48,14 +48,14 @@ pub fn normalize_remote_url(raw: &str) -> String {
         // `host:owner/repo` → `host/owner/repo` (only the first colon is the sep).
         return format!("https://{}", rest.replacen(':', "/", 1));
     }
-    s.to_string()
+    s.to_owned()
 }
 
 /// Render the start-up info line shown under the branding header: the project name,
 /// the current branch, and the repo web URL, joined by ` · `. Each present segment
 /// gets an emoji prefix only when `opts.emoji`; a missing branch or URL is simply
 /// omitted. The non-colour path emits no ANSI byte.
-pub fn render_info_line(
+pub(crate) fn render_info_line(
     project: &str,
     branch: Option<&str>,
     url: Option<&str>,
@@ -65,7 +65,7 @@ pub fn render_info_line(
         if opts.emoji {
             format!("{emoji} {value}")
         } else {
-            value.to_string()
+            value.to_owned()
         }
     };
     let mut parts: Vec<String> = vec![seg("📦", project)];

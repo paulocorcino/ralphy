@@ -22,12 +22,12 @@ mod event;
 mod fields;
 #[cfg(test)]
 mod roundtrip;
-pub mod snapshot;
+pub(crate) mod snapshot;
 mod state;
 
-pub use event::{event_to_runevent, RunEvent};
-pub use fields::EventFields;
-pub use state::{IssueEntry, IssueStatus, RunState, SleepState};
+pub(crate) use event::{event_to_runevent, RunEvent};
+pub(crate) use fields::EventFields;
+pub(crate) use state::{IssueEntry, IssueStatus, RunState, SleepState};
 // `Counts`, `QueueRef`, and `fold` are not named via `crate::runstate::*` by any
 // current consumer (only through `RunState::counts()`'s return type and
 // `state.rs`'s own tests), but stay re-exported at this stable path per
@@ -37,13 +37,13 @@ pub use state::{IssueEntry, IssueStatus, RunState, SleepState};
     unused_imports,
     reason = "no consumer names these items at this path, but the path stays stable"
 )]
-pub use state::{fold, Counts, QueueRef};
+pub(crate) use state::{fold, Counts, QueueRef};
 
 /// The pool of branding header faces (human + animal). One is picked per run by a
 /// hash of a stable seed (the run title), so the face is "random" across runs but
 /// constant across every render of one run — an animated face would re-trigger
 /// edits and trip Telegram's "message is not modified".
-pub const HEADER_FACES: &[&str] = &[
+pub(crate) const HEADER_FACES: &[&str] = &[
     "🦊", "🐶", "🐱", "🦁", "🐯", "🐰", "🐻", "🐼", "🐨", "🐸", "🐵", "🦝", "🐺", "🦄", "🐷", "🐲",
     "🦉", "🦅", "🐢", "🐙", "🐳", "🐝", "🦋", "🐧", "🦦", "🦥", "🐹", "🐭", "🐮", "🐔",
 ];
@@ -51,10 +51,10 @@ pub const HEADER_FACES: &[&str] = &[
 /// Pick a stable header face for `seed` via a small FNV-1a hash, so the same seed
 /// always maps to the same face — deterministic across runs and processes (unlike a
 /// randomized hasher).
-pub fn header_face(seed: &str) -> &'static str {
+pub(crate) fn header_face(seed: &str) -> &'static str {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in seed.bytes() {
-        h ^= b as u64;
+        h ^= u64::from(b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
     HEADER_FACES[(h as usize) % HEADER_FACES.len()]
@@ -63,7 +63,7 @@ pub fn header_face(seed: &str) -> &'static str {
 /// The shared branding header used by both the console and the Telegram card:
 /// `🦊 Ralphy - v0.1.0` — a stable per-run face (seeded by `seed`) plus the binary's
 /// own version.
-pub fn ralphy_header(seed: &str) -> String {
+pub(crate) fn ralphy_header(seed: &str) -> String {
     format!(
         "{} Ralphy - v{}",
         header_face(seed),
@@ -75,7 +75,7 @@ pub fn ralphy_header(seed: &str) -> String {
 /// human-return label that outranks its queue label (ADR-0016), or a verify gate
 /// that stayed red after the runner's repair attempts (ADR-0011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkipKind {
+pub(crate) enum SkipKind {
     BlockedBy,
     StopBefore,
     HumanReturn,
@@ -86,7 +86,7 @@ impl SkipKind {
     /// The wire name on an `issue.skipped` event (docs/events.md) and on the run
     /// snapshot's issue block (ADR-0047 §5) — one vocabulary, so the two cannot
     /// drift.
-    pub fn skip_wire(self) -> &'static str {
+    pub(crate) fn skip_wire(self) -> &'static str {
         match self {
             SkipKind::BlockedBy => "blocked_by",
             SkipKind::StopBefore => "stop_before",
@@ -100,4 +100,4 @@ impl SkipKind {
 /// Single source of truth is [`ralphy_core::Usage`] (same four numeric fields +
 /// priced `model`, ADR-0008 D4); the alias keeps the CLI-local import path so the
 /// decoder and UI keep referring to it as `UsageLite`.
-pub type UsageLite = ralphy_core::Usage;
+pub(crate) type UsageLite = ralphy_core::Usage;

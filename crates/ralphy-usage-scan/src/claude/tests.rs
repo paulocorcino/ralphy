@@ -110,7 +110,7 @@ fn excludes_run_owned_sessions() {
         &usage_line("m", "b", Some("r"), 20, "2026-07-10T10:00:00Z"),
     );
     let mut runs = HashSet::new();
-    runs.insert("run-sess".to_string());
+    runs.insert("run-sess".to_owned());
 
     let records = scan_claude(&ClaudeScan {
         projects_dir: root,
@@ -258,7 +258,7 @@ fn zero_usage_session_scans_to_empty() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]

@@ -151,7 +151,7 @@ pub fn paired_descriptor(
         daemon_id,
         name,
         avatar: d.avatar.clone().unwrap_or_default(),
-        address: "127.0.0.1".to_string(),
+        address: "127.0.0.1".to_owned(),
         port: local_port,
         environment: d.environment.clone(),
         os: d.os.clone(),
@@ -159,7 +159,7 @@ pub fn paired_descriptor(
         protocol_version: d.protocol_version,
         nudge: None,
         tunnel: Some(TunnelSpec {
-            destination: destination.to_string(),
+            destination: destination.to_owned(),
             peer_port: if d.socket.is_some() { 0 } else { d.port },
             peer_socket: d.socket.clone(),
             local_port,
@@ -290,12 +290,12 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
 /// before it is compared with the other records.
 fn read_record(file: &str, text: &str) -> Result<PeerDescriptor, PeerReject> {
     let d: PeerDescriptor = toml::from_str(text).map_err(|e| PeerReject::Malformed {
-        file: file.to_string(),
+        file: file.to_owned(),
         why: e.to_string(),
     })?;
     if saved_version_refused(&d) {
         return Err(PeerReject::IncompatibleVersion {
-            file: file.to_string(),
+            file: file.to_owned(),
             daemon_id: d.daemon_id,
             environment: d.environment,
             theirs: d.protocol_version,
@@ -303,7 +303,7 @@ fn read_record(file: &str, text: &str) -> Result<PeerDescriptor, PeerReject> {
     }
     if let Some(why) = d.tunnel.as_ref().and_then(|t| tunnel_flaw(t, d.port)) {
         return Err(PeerReject::Malformed {
-            file: file.to_string(),
+            file: file.to_owned(),
             why,
         });
     }

@@ -123,7 +123,7 @@ fn scanned_files(root: &Path) -> Vec<(String, PathBuf)> {
         collect(root, &root.join(dir), &mut out);
     }
     for name in ROOT_FILES {
-        out.push(((*name).to_string(), root.join(name)));
+        out.push(((*name).to_owned(), root.join(name)));
     }
     // This file cites routes in its own tests.
     out.retain(|(rel, _)| rel != "crates/xtask/tests/ui_contract/cited_routes.rs");
@@ -193,7 +193,7 @@ fn cited_paths() -> Regex {
 fn citations(cited: &Regex, line: &str) -> Vec<String> {
     cited
         .captures_iter(line)
-        .map(|c| c[1].trim_end_matches(['.', ':', ',']).to_string())
+        .map(|c| c[1].trim_end_matches(['.', ':', ',']).to_owned())
         .filter(|c| c != "/api" && c != "/ws" && c != "/api/" && c != "/ws/")
         .collect()
 }
@@ -250,7 +250,10 @@ fn the_scan_reads_citations_as_routes() {
     assert!(is_served("/api/sess*", &served), "a family of routes");
     assert!(!is_served("/api/gone", &served));
     assert!(!is_served("/ws/tree", &served));
-    assert!(citations(&cited, "\"/ws/.ralphy/gemini-home\"").is_empty());
+    assert_eq!(
+        citations(&cited, "\"/ws/.ralphy/gemini-home\""),
+        Vec::<String>::new()
+    );
     assert_eq!(
         citations(&cited, "http://127.0.0.1:7431/api/repos?x=1"),
         ["/api/repos"],

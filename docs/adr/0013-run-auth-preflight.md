@@ -3,8 +3,7 @@
 Status: accepted.
 
 Issue #65 added a `ralphy run` preflight gate for agent binary presence: fail
-before queue work if the selected planner/executor CLI is not on `PATH`. Issue
-# 66 asked whether that preflight should also prove the selected agent is logged
+before queue work if the selected planner/executor CLI is not on `PATH`. Issue #66 asked whether that preflight should also prove the selected agent is logged
 in.
 
 We tested the logged-out path against both supported subscription agents before

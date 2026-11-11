@@ -34,7 +34,7 @@ use crate::routes::{push, Push};
 use crate::session::{SessionInfo, SessionManager};
 
 /// How often the tick reads the runs.
-pub const EVERY: Duration = Duration::from_secs(3);
+pub(crate) const EVERY: Duration = Duration::from_secs(3);
 
 /// The run snapshots of the last tick, shared with the route.
 pub(crate) type Runs = Arc<Mutex<RunsRead>>;
@@ -235,22 +235,22 @@ mod tests {
 
     fn snapshot(detail: &str) -> RunSnapshot {
         let mut snap = RunSnapshot {
-            runid: "01TICK".to_string(),
+            runid: "01TICK".to_owned(),
             pid: std::process::id(),
-            exec_agent: "claude".to_string(),
+            exec_agent: "claude".to_owned(),
             ..RunSnapshot::default()
         };
-        snap.phase.state = "executing".to_string();
+        snap.phase.state = "executing".to_owned();
         snap.phase.agent = Some(AgentBlock {
-            state: "waiting".to_string(),
-            since: "2026-10-28T11:00:00-03:00".to_string(),
-            detail: Some(detail.to_string()),
+            state: "waiting".to_owned(),
+            since: "2026-10-28T11:00:00-03:00".to_owned(),
+            detail: Some(detail.to_owned()),
         });
         snap
     }
 
     /// The files the tick reads: the registry, and a desk that is not there.
-    fn files_of(dir: &tempfile::TempDir, registry_path: &std::path::Path) -> DeskFiles {
+    fn files_of(dir: &tempfile::TempDir, registry_path: &Path) -> DeskFiles {
         DeskFiles {
             desk: dir.path().join("desk.toml"),
             registry: registry_path.to_path_buf(),
@@ -343,7 +343,7 @@ mod tests {
         done.phase.agent = None;
         done.issues = vec![ralphy_run_snapshot::IssueBlock {
             number: 71,
-            status: "blocked".to_string(),
+            status: "blocked".to_owned(),
             ..ralphy_run_snapshot::IssueBlock::default()
         }];
         std::fs::write(
@@ -387,6 +387,6 @@ mod tests {
         )
         .await;
         assert!(pushed(&mut rx), "a request that ended is a change");
-        assert!(ids(&runs).is_empty());
+        assert_eq!(ids(&runs), Vec::<String>::new());
     }
 }

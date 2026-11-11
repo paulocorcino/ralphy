@@ -31,8 +31,8 @@ const ENV: &str = "WSL: Ubuntu-22.04";
 fn identity(id: &str, name: &str) -> Identity {
     Identity {
         id: id.parse().expect("the test id parses"),
-        name: name.to_string(),
-        avatar: "🐙".to_string(),
+        name: name.to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
@@ -75,14 +75,14 @@ async fn serve(
 
 fn descriptor(id: &str, port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: ENV.to_string(),
+        environment: ENV.to_owned(),
         os: String::new(),
-        token: "peer-tok".to_string(),
+        token: "peer-tok".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -94,7 +94,7 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -123,7 +123,7 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -161,12 +161,12 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
 /// Whether the child's `dispatch-cwd:` line names `repo` — compared canonical,
 /// since the child prints the cwd the OS resolved (`/private/var/…` for a
 /// macOS temp dir spelled `/var/…`).
-fn ran_in(text: &str, repo: &std::path::Path) -> bool {
+fn ran_in(text: &str, repo: &Path) -> bool {
     let want = repo.canonicalize().expect("the repo exists");
     text.lines()
         .filter_map(|l| l.strip_prefix("dispatch-cwd: "))
         .any(|cwd| {
-            std::path::Path::new(cwd.trim())
+            Path::new(cwd.trim())
                 .canonicalize()
                 .is_ok_and(|got| got == want)
         })
@@ -183,7 +183,7 @@ async fn ask_until_the_end(
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),

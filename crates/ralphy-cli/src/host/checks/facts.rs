@@ -66,9 +66,9 @@ fn read_section(facts: &mut HostFacts, name: &str, lines: &[&str]) {
     let first = lines.first().copied();
     match name {
         "uid" => facts.uid = first.and_then(|l| l.parse().ok()),
-        "user" => facts.user = first.map(str::to_string),
-        "host" => facts.host = first.map(str::to_string),
-        "arch" => facts.arch = first.map(str::to_string),
+        "user" => facts.user = first.map(str::to_owned),
+        "host" => facts.host = first.map(str::to_owned),
+        "arch" => facts.arch = first.map(str::to_owned),
         "linger" => facts.linger = linger_flag(lines),
         "filevault" => facts.filevault = filevault_flag(lines),
         "autologin" => facts.autologin = Some(lines.iter().any(|l| !l.contains("does not exist"))),
@@ -82,7 +82,7 @@ fn read_section(facts: &mut HostFacts, name: &str, lines: &[&str]) {
                 lines
                     .iter()
                     .any(|l| l.contains("REG_SZ") && l.ends_with('1')),
-            )
+            );
         }
         "standby" => facts.sleeps = standby_sleeps(lines),
         _ => {}

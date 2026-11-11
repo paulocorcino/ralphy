@@ -41,7 +41,7 @@ impl Source {
 
     pub(crate) fn describe(&self) -> String {
         match self {
-            Source::ThisComputer => "this computer".to_string(),
+            Source::ThisComputer => "this computer".to_owned(),
             Source::Release(tag) => format!("the {tag} release"),
         }
     }
@@ -75,7 +75,7 @@ pub(crate) fn target_of(os: HostOs, arch: Option<&str>) -> Result<&'static str, 
     };
     target_for(os_name, arch).ok_or_else(|| {
         if printed.is_empty() {
-            "the host did not say what processor it has".to_string()
+            "the host did not say what processor it has".to_owned()
         } else {
             format!(
                 "there is no Ralphy build for {} on {printed}, so build it on the host with cargo",
@@ -215,19 +215,16 @@ pub(crate) fn release_binary(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e).with_context(|| format!("reading {}", cache.display())),
     };
-    let bytes = match cached {
-        Some(bytes) => bytes,
-        None => {
-            let bytes = fetch(&archive.browser_download_url, Some(archive.size))?;
-            verify(&bytes, &expected)?;
-            if let Some(dir) = cache.parent() {
-                std::fs::create_dir_all(dir)
-                    .with_context(|| format!("creating {}", dir.display()))?;
-            }
-            std::fs::write(&cache, &bytes)
-                .with_context(|| format!("writing {}", cache.display()))?;
-            bytes
+    let bytes = if let Some(bytes) = cached {
+        bytes
+    } else {
+        let bytes = fetch(&archive.browser_download_url, Some(archive.size))?;
+        verify(&bytes, &expected)?;
+        if let Some(dir) = cache.parent() {
+            std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
         }
+        std::fs::write(&cache, &bytes).with_context(|| format!("writing {}", cache.display()))?;
+        bytes
     };
 
     let staging = std::env::temp_dir().join(format!("ralphy-host-install-{}", std::process::id()));

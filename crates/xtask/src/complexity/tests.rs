@@ -2,8 +2,8 @@ use super::*;
 
 fn score(path: &str, name: &str, value: u32) -> Score {
     Score {
-        path: path.to_string(),
-        name: name.to_string(),
+        path: path.to_owned(),
+        name: name.to_owned(),
         value,
         marked: false,
     }
@@ -42,7 +42,7 @@ fn a_marked_function_over_ten_passes_the_check() {
         "struct S;\nimpl S {{\n    {kept}{}}}\n",
         function_of("m", 11)
     );
-    assert!(errors_of(&method).is_empty());
+    assert_eq!(errors_of(&method), Vec::<String>::new());
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn the_near_list_holds_seven_to_ten_in_the_changed_files() {
         score("a.rs", "eleven", 11),
         score("b.rs", "eight", 8),
     ];
-    let files = BTreeSet::from(["a.rs".to_string()]);
+    let files = BTreeSet::from(["a.rs".to_owned()]);
     let names: Vec<&str> = near_limit(&scores, &files)
         .iter()
         .map(|s| s.name.as_str())

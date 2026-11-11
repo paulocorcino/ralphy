@@ -31,25 +31,25 @@ impl CapturedFields {
 
 impl tracing::field::Visit for CapturedFields {
     fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_string());
     }
 
     fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_string());
     }
 
     fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_string());
     }
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        self.all.insert(field.name().to_string(), value.to_string());
+        self.all.insert(field.name().to_owned(), value.to_owned());
     }
 
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
         // `%plan_md`/`%steps_json` (Display) and the event message all arrive here.
         let rendered = format!("{value:?}");
-        self.all.insert(field.name().to_string(), rendered.clone());
+        self.all.insert(field.name().to_owned(), rendered.clone());
         match field.name() {
             "message" => self.message = rendered,
             "plan_md" => self.plan_md = Some(rendered),
@@ -105,12 +105,10 @@ fn install_global_capture() {
     use std::sync::OnceLock;
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a global default set elsewhere makes this fail, and the doc above calls \
-                     that harmless"
-        )]
-        let _ = tracing::subscriber::set_global_default(GlobalCapture);
+        // A global default set elsewhere makes this fail; the doc above calls that harmless.
+        match tracing::subscriber::set_global_default(GlobalCapture) {
+            Ok(()) | Err(_) => {}
+        }
     });
 }
 

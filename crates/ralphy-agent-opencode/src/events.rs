@@ -1,4 +1,4 @@
-//! Parsing OpenCode's `--format json` line-delimited event stream: extracting
+//! Parsing `OpenCode`'s `--format json` line-delimited event stream: extracting
 //! assistant text, detecting error/limit events under the several observed
 //! envelope shapes, and the auth-error detector (ADR-0005 D2/D6/D9).
 
@@ -13,7 +13,7 @@ use regex::Regex;
 /// exceeded/exhausted`), not a bare `"limit"`, so an ordinary error line (`limit not
 /// found`, a transient backend blip) is not misread as a quota cap. `exhausted` sits
 /// in the limit-verb group so Z.ai's weekly/monthly wording (`Limit Exhausted`, which
-/// carries no `quota` prefix — FinCal #77, 2026-07-13) is caught. Compiled once per
+/// carries no `quota` prefix — `FinCal` #77, 2026-07-13) is caught. Compiled once per
 /// scan (or once per early-kill hook build in the execute path —
 /// [`OpenCodeAgent::execute`]).
 pub(crate) fn usage_limit_regex() -> Regex {
@@ -29,7 +29,7 @@ pub(crate) fn usage_limit_regex() -> Regex {
 pub(crate) const OPENCODE_AUTH_ERROR_MSG: &str =
     "OpenCode is not authenticated (ProviderAuthError) — run `opencode auth login` and retry";
 
-/// Return `true` when `text` (the combined stdout+stderr log) shows an OpenCode
+/// Return `true` when `text` (the combined stdout+stderr log) shows an `OpenCode`
 /// authentication failure. A signed-out `opencode run` emits a `ProviderAuthError`
 /// SDK error event (ADR-0005 D6). Keying on the case-insensitive substring
 /// `providerautherror` is specific enough to avoid false positives from our own
@@ -104,7 +104,7 @@ fn error_name(val: &serde_json::Value) -> &str {
         .unwrap_or("")
 }
 
-/// Parse OpenCode's `--format json` line-delimited event stream: concatenate the
+/// Parse `OpenCode`'s `--format json` line-delimited event stream: concatenate the
 /// assistant `text` parts into the returned string (the source the sentinel scan
 /// reads) and set the bool when any line is an `error` event. Tolerant of
 /// unparseable lines (skipped). Reads the text from the event's `part` payload
@@ -144,7 +144,7 @@ fn text_part(val: &serde_json::Value) -> Option<&str> {
     payload.get("text").and_then(|v| v.as_str())
 }
 
-/// Extract a reset hint from an OpenCode error event or message text (best-effort).
+/// Extract a reset hint from an `OpenCode` error event or message text (best-effort).
 /// Looks for a `retryAfter` field value, or a `Retry-After` / "try again" substring
 /// in the message. Returns `None` when absent (D9: reset hint is not guaranteed).
 fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
@@ -180,7 +180,7 @@ fn retry_after_header(msg: &str, lower: &str) -> Option<String> {
         .next()
         .unwrap_or("")
         .trim_end_matches(',');
-    (!hint.is_empty()).then(|| hint.to_string())
+    (!hint.is_empty()).then(|| hint.to_owned())
 }
 
 /// The text after "try again at " or "try again in ", up to the first `.` or
@@ -193,7 +193,7 @@ fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
                 .chars()
                 .take_while(|c| *c != '.' && *c != '\n')
                 .collect();
-            let hint = hint.trim().to_string();
+            let hint = hint.trim().to_owned();
             if !hint.is_empty() {
                 return Some(hint);
             }
@@ -211,8 +211,8 @@ fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
 ///
 /// Detects three documented shapes:
 /// 1. `name:"APIError"` + `statusCode:429` (the SDK's rate-limit error).
-/// 2. Literal rate-limit strings from OpenCode's `retryable()` function
-///    (`retry.ts`): "rate_limit_error", "rate limit exceeded", "too many requests",
+/// 2. Literal rate-limit strings from `OpenCode`'s `retryable()` function
+///    (`retry.ts`): "`rate_limit_error`", "rate limit exceeded", "too many requests",
 ///    "quota exceeded".
 /// 3. Zen provider `*UsageLimitError` name suffix.
 pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
@@ -229,7 +229,7 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
         let detail = error_detail(val);
         let status = detail
             .get("statusCode")
-            .and_then(|v| v.as_u64())
+            .and_then(serde_json::Value::as_u64)
             .unwrap_or(0);
         let msg = detail
             .get("message")
@@ -256,7 +256,7 @@ pub(crate) fn parse_opencode_limit(stdout: &str) -> Option<Option<String>> {
 /// cannot see. Some providers never surface a quota block as a `{type:"error"}`
 /// JSON event: Z.ai's `zai-coding-plan` (GLM) treats `AI_APICallError: Usage limit
 /// reached` as a retryable stream error and loops on backoff, logging it only here
-/// (observed live 2026-07-11, FinCal #71, glm-5.2). Uses the same model-agnostic
+/// (observed live 2026-07-11, `FinCal` #71, glm-5.2). Uses the same model-agnostic
 /// [`usage_limit_regex`] as the JSON path so a new provider's wording is caught
 /// without a per-model change. Same contract as [`parse_opencode_limit`]:
 /// `Some(Some(hint))` when a limit is seen with a reset hint, `Some(None)` when
@@ -289,7 +289,7 @@ fn parse_reset_hint_from_text(line: &str) -> Option<String> {
     .expect("valid reset-hint regex");
     re.captures(line)
         .and_then(|caps| caps.get(1))
-        .map(|m| m.as_str().trim().to_string())
+        .map(|m| m.as_str().trim().to_owned())
         .filter(|hint| !hint.is_empty())
 }
 

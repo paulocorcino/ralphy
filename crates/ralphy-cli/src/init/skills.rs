@@ -24,7 +24,7 @@ const INSTALLABLE_SKILLS: &[&str] = &[
 
 /// The names shown to the dev before the skills download prompt. Static (not
 /// derived from a local tree) because the skills now live in a separate repo.
-pub fn skill_names() -> Vec<&'static str> {
+pub(crate) fn skill_names() -> Vec<&'static str> {
     INSTALLABLE_SKILLS.to_vec()
 }
 
@@ -33,7 +33,7 @@ pub fn skill_names() -> Vec<&'static str> {
 /// - A value already ending in `skills` → used as-is (idempotent)
 /// - `.codex` → `.agents/skills` (codex discovers there per ADR-0004)
 /// - Anything else → `<dir>/skills`
-pub fn skills_target(skills_dir: Option<&str>) -> PathBuf {
+pub(crate) fn skills_target(skills_dir: Option<&str>) -> PathBuf {
     match skills_dir {
         None => PathBuf::from(".agents/skills"),
         Some(d) if d == ".codex" || d.ends_with("/.codex") => PathBuf::from(".agents/skills"),
@@ -46,7 +46,7 @@ pub fn skills_target(skills_dir: Option<&str>) -> PathBuf {
 /// Return `true` only when the dev explicitly authorizes the download with
 /// `y` or `yes` (case-insensitive, trimmed). Any other answer — including silence
 /// — declines. The prompt defaults to `[y/N]`, so silence is a network-safe no.
-pub fn download_decision(answer: &str) -> bool {
+pub(crate) fn download_decision(answer: &str) -> bool {
     matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
 }
 
@@ -58,9 +58,9 @@ pub(crate) const SKILLS_REF: &str = "main";
 /// Build the exact git argv sequence for a sparse fetch of `subtree` from the skills
 /// repo at `git_ref`. Pure: the impure shell feeds these to `git::git`.
 /// Order: init → remote add → sparse-checkout init --cone →
-///        sparse-checkout set `<subtree>` → fetch --depth 1 origin <git_ref> →
-///        checkout FETCH_HEAD.
-pub fn sparse_fetch_commands(git_ref: &str, subtree: &str) -> Vec<Vec<String>> {
+///        sparse-checkout set `<subtree>` → fetch --depth 1 origin <`git_ref`> →
+///        checkout `FETCH_HEAD`.
+pub(crate) fn sparse_fetch_commands(git_ref: &str, subtree: &str) -> Vec<Vec<String>> {
     vec![
         vec!["init".into()],
         vec![
@@ -111,7 +111,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 /// INVARIANT: only immediate subdirs of `src` are removed and replaced — unrelated
 /// sibling dirs already in `dst` (the user's own skills) are never touched
 /// (ADR-0004). Returns the count of installed skills.
-pub fn install_skills_from(src: &Path, dst: &Path) -> Result<usize> {
+pub(crate) fn install_skills_from(src: &Path, dst: &Path) -> Result<usize> {
     std::fs::create_dir_all(dst)
         .with_context(|| format!("creating skills dir {}", dst.display()))?;
     let mut count = 0usize;
@@ -119,18 +119,20 @@ pub fn install_skills_from(src: &Path, dst: &Path) -> Result<usize> {
         .with_context(|| format!("reading source skills {}", src.display()))?
     {
         let entry = entry.with_context(|| format!("reading entry in {}", src.display()))?;
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if !entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
 
         let name = entry.file_name();
         let dst_skill = dst.join(&name);
         // Remove only this managed skill; sibling user dirs are untouched.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dst_skill);
+        // A new skill has no directory yet.
+        if let Err(rm_err) = std::fs::remove_dir_all(&dst_skill) {
+            tracing::debug!(
+                "could not remove the directory {}: {rm_err}",
+                dst_skill.display()
+            );
+        }
         copy_dir_all(&entry.path(), &dst_skill)?;
         count += 1;
     }
@@ -140,7 +142,7 @@ pub fn install_skills_from(src: &Path, dst: &Path) -> Result<usize> {
 
 /// The result of the skills download step.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Outcome {
+pub(crate) enum Outcome {
     Installed(usize),
     #[expect(dead_code, reason = "no step skips the install yet")]
     Skipped,
@@ -150,43 +152,49 @@ pub enum Outcome {
 /// Run the skills install step.  `fetch` materialises a pinned subtree into a
 /// scratch dir and returns the path to it.  EVERY failure — creating the scratch
 /// dir, the fetch closure, or the subsequent copy — is absorbed and returned as
-/// `Ok(Outcome::Failed(_))`.  This function NEVER propagates an error; the caller
+/// `Outcome::Failed(_)`.  This function NEVER propagates an error; the caller
 /// (init's `run`) logs a warning and continues (warn-and-continue boundary).
-pub fn install_skills_step(
+pub(crate) fn install_skills_step(
     dst: &Path,
     fetch: impl FnOnce(&Path) -> Result<PathBuf>,
-) -> Result<Outcome> {
+) -> Outcome {
     let scratch = std::env::temp_dir().join(format!("ralphy-skills-fetch-{}", std::process::id()));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&scratch);
+    // the scratch directory may be gone
+    if let Err(rm_err) = std::fs::remove_dir_all(&scratch) {
+        tracing::debug!(
+            "could not remove the directory {}: {rm_err}",
+            scratch.display()
+        );
+    }
     if let Err(e) = std::fs::create_dir_all(&scratch) {
-        return Ok(Outcome::Failed(format!("creating scratch dir: {e}")));
+        return Outcome::Failed(format!("creating scratch dir: {e}"));
     }
 
     let src = match fetch(&scratch) {
         Ok(p) => p,
         Err(e) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the scratch directory may be gone"
-            )]
-            let _ = std::fs::remove_dir_all(&scratch);
-            return Ok(Outcome::Failed(e.to_string()));
+            // the scratch directory may be gone
+            if let Err(rm_err) = std::fs::remove_dir_all(&scratch) {
+                tracing::debug!(
+                    "could not remove the directory {}: {rm_err}",
+                    scratch.display()
+                );
+            }
+            return Outcome::Failed(e.to_string());
         }
     };
     let outcome = match install_skills_from(&src, dst) {
         Ok(n) => Outcome::Installed(n),
         Err(e) => Outcome::Failed(e.to_string()),
     };
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&scratch);
-    Ok(outcome)
+    // the scratch directory may be gone
+    if let Err(rm_err) = std::fs::remove_dir_all(&scratch) {
+        tracing::debug!(
+            "could not remove the directory {}: {rm_err}",
+            scratch.display()
+        );
+    }
+    outcome
 }
 
 #[cfg(test)]
@@ -221,11 +229,11 @@ mod tests {
         let cmds = sparse_fetch_commands(git_ref, subtree);
         let fetch_argv: Vec<String> = vec!["fetch", "--depth", "1", "origin", git_ref]
             .into_iter()
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect();
         let sc_set_argv: Vec<String> = vec!["sparse-checkout", "set", subtree]
             .into_iter()
-            .map(str::to_string)
+            .map(str::to_owned)
             .collect();
         assert!(cmds.contains(&fetch_argv), "missing fetch argv in {cmds:?}");
         assert!(
@@ -237,9 +245,10 @@ mod tests {
         for argv in &cmds {
             for token in argv {
                 let is_url = token.contains("://");
-                if !is_url && token.contains('/') && token.as_str() != subtree {
-                    panic!("unexpected path token {token:?} in {argv:?}");
-                }
+                assert!(
+                    is_url || !token.contains('/') || token.as_str() == subtree,
+                    "unexpected path token {token:?} in {argv:?}"
+                );
             }
         }
     }
@@ -247,11 +256,10 @@ mod tests {
     #[test]
     fn install_skills_from_idempotent_and_preserves_sibling() {
         let base = std::env::temp_dir().join(format!("ralphy-skills-test-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
 
         // Build source fixture with two skill dirs.
         let src = base.join("src");
@@ -289,46 +297,42 @@ mod tests {
         assert!(dst.join("skill-a").join("skill.md").exists());
         assert!(dst.join("user-skill").join("keep.md").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
     fn install_skills_step_returns_failed_on_fetch_error() {
         let dst =
             std::env::temp_dir().join(format!("ralphy-skills-step-err-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dst);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dst) {
+            Ok(()) | Err(_) => {}
+        }
         let result = install_skills_step(&dst, |_scratch| Err(anyhow::anyhow!("boom")));
-        match result.unwrap() {
+        match result {
             Outcome::Failed(msg) => assert!(msg.contains("boom"), "expected 'boom' in {msg}"),
             other @ (Outcome::Installed(_) | Outcome::Skipped) => {
                 panic!("expected Failed, got {other:?}")
             }
         }
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dst);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dst) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
     fn install_skills_step_returns_installed_on_success() {
         let base =
             std::env::temp_dir().join(format!("ralphy-skills-step-ok-{}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
 
         // Build a fixture source with one skill.
         let src = base.join("src");
@@ -338,7 +342,7 @@ mod tests {
         let dst = base.join("dst");
         let src_clone = src.clone();
         let result = install_skills_step(&dst, move |_scratch| Ok(src_clone));
-        match result.unwrap() {
+        match result {
             Outcome::Installed(n) => assert_eq!(n, 1, "expected 1 skill installed"),
             other @ (Outcome::Skipped | Outcome::Failed(_)) => {
                 panic!("expected Installed, got {other:?}")
@@ -347,11 +351,10 @@ mod tests {
 
         assert!(dst.join("my-skill").join("skill.md").exists());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]
@@ -361,11 +364,10 @@ mod tests {
             "ralphy-skills-step-installfail-{}",
             std::process::id()
         ));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
         // Build a fixture source — but point the fetch closure at a *file*, not a dir,
         // so install_skills_from's read_dir fails.
         let bad_src = base.join("not-a-dir.txt");
@@ -374,17 +376,16 @@ mod tests {
         let dst = base.join("dst");
         let bad_src_clone = bad_src.clone();
         let result = install_skills_step(&dst, move |_scratch| Ok(bad_src_clone));
-        match result.unwrap() {
+        match result {
             Outcome::Failed(_) => {} // expected
             other @ (Outcome::Installed(_) | Outcome::Skipped) => {
                 panic!("expected Failed, got {other:?}")
             }
         }
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&base);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&base) {
+            Ok(()) | Err(_) => {}
+        }
     }
 }

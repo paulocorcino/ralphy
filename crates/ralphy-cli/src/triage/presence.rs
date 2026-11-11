@@ -17,9 +17,10 @@ pub(super) enum PresenceGate {
 /// Format an RFC 3339 timestamp as `%Y-%m-%d %H:%M:%S`, falling back to the raw
 /// string on parse failure (mirrors `run_cmd`'s formatting, run.rs L76-78).
 fn format_since(started_at: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(started_at)
-        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_else(|_| started_at.to_string())
+    chrono::DateTime::parse_from_rfc3339(started_at).map_or_else(
+        |_| started_at.to_owned(),
+        |t| t.format("%Y-%m-%d %H:%M:%S").to_string(),
+    )
 }
 
 /// Classify the repo-scoped presence lock into what `triage::run` should do.

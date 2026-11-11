@@ -15,11 +15,11 @@ fn device_set_cookie(res: &Response) -> Option<String> {
         .iter()
         .filter_map(|v| v.to_str().ok())
         .find(|v| v.starts_with("ralphy_device="))
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 fn pair(set_cookie: &str) -> String {
-    set_cookie.split(';').next().unwrap().to_string()
+    set_cookie.split(';').next().unwrap().to_owned()
 }
 
 async fn send(app: Router, req: Request<Body>) -> Response {
@@ -168,7 +168,7 @@ async fn device_facts_with_no_device_are_refused() {
         StatusCode::CONFLICT,
         "the page sends again later"
     );
-    assert!(audit_lines(dir.path()).is_empty());
+    assert_eq!(audit_lines(dir.path()), Vec::<serde_json::Value>::new());
 }
 
 #[tokio::test]
@@ -182,7 +182,7 @@ async fn a_read_writes_no_line() {
             .unwrap(),
     )
     .await;
-    assert!(audit_lines(dir.path()).is_empty());
+    assert_eq!(audit_lines(dir.path()), Vec::<serde_json::Value>::new());
 }
 
 #[tokio::test]
@@ -292,7 +292,7 @@ async fn device_facts_are_recorded_once_and_again_when_the_profile_changes() {
     assert_eq!(facts["os"]["value"], "android");
     assert_eq!(facts["model_hint"]["value"], "moto g(30)");
     assert_eq!(facts["holder"], "tab1");
-    assert_eq!(facts["normalizer"], crate::audit::normalize::NORMALIZER);
+    assert_eq!(facts["normalizer"], audit::normalize::NORMALIZER);
     assert_eq!(facts["server"]["real_ip"], "203.0.113.10");
     assert_eq!(facts["client"]["cores"], 8, "the raw facts are kept");
     assert_eq!(lines[1]["changed"], serde_json::json!(["screen"]));
@@ -308,7 +308,7 @@ async fn a_facts_body_over_the_cap_is_refused() {
     )
     .await;
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
-    assert!(audit_lines(dir.path()).is_empty());
+    assert_eq!(audit_lines(dir.path()), Vec::<serde_json::Value>::new());
 }
 
 #[tokio::test]
@@ -387,5 +387,5 @@ async fn a_stall_report_writes_no_audit_action() {
     )
     .await;
     assert_eq!(res.status(), StatusCode::NO_CONTENT);
-    assert!(audit_lines(dir.path()).is_empty());
+    assert_eq!(audit_lines(dir.path()), Vec::<serde_json::Value>::new());
 }

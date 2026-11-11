@@ -38,12 +38,12 @@ fn boot() -> anyhow::Result<Arc<AuthState>> {
 
 fn app(id: &str, registry_path: PathBuf, auth: Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         Some(Identity {
             id: id.parse().expect("a valid ULID"),
-            name: id.to_string(),
-            avatar: "🐙".to_string(),
+            name: id.to_owned(),
+            avatar: "🐙".to_owned(),
         }),
         registry_path,
         PathBuf::from("does-not-exist"),
@@ -129,14 +129,14 @@ async fn the_marker_requires_the_token_on_loopback_and_the_fleet_still_reaches_t
     peer::write_descriptor(
         local_dir,
         &PeerDescriptor {
-            daemon_id: PEER_ID.to_string(),
-            name: "peer".to_string(),
-            avatar: "🐙".to_string(),
-            address: "127.0.0.1".to_string(),
+            daemon_id: PEER_ID.to_owned(),
+            name: "peer".to_owned(),
+            avatar: "🐙".to_owned(),
+            address: "127.0.0.1".to_owned(),
             port,
-            environment: "vps".to_string(),
+            environment: "vps".to_owned(),
             os: String::new(),
-            token: TOKEN.to_string(),
+            token: TOKEN.to_owned(),
             protocol_version: PEER_PROTOCOL_VERSION,
             tunnel: None,
             nudge: None,

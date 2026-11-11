@@ -167,7 +167,7 @@ fn assert_heartbeat_grew_then_froze(beat: &std::path::Path) {
     }
     let len_at_kill = text.len() as u64;
     std::thread::sleep(Duration::from_millis(1500));
-    let len_after = std::fs::metadata(beat).map(|m| m.len()).unwrap_or(0);
+    let len_after = std::fs::metadata(beat).map_or(0, |m| m.len());
     assert_eq!(
         len_after, len_at_kill,
         "a member of the tree outlived the kill and kept writing"
@@ -266,9 +266,9 @@ fn a_command_with_an_unpiped_stream_errors_and_leaves_no_child_running() {
         );
 
         std::thread::sleep(Duration::from_millis(500));
-        let len_after_error = std::fs::metadata(&beat).map(|m| m.len()).unwrap_or(0);
+        let len_after_error = std::fs::metadata(&beat).map_or(0, |m| m.len());
         std::thread::sleep(Duration::from_millis(1000));
-        let len_later = std::fs::metadata(&beat).map(|m| m.len()).unwrap_or(0);
+        let len_later = std::fs::metadata(&beat).map_or(0, |m| m.len());
         assert_eq!(
             len_later, len_after_error,
             "the child spawned for the {tag} case kept running after the error"

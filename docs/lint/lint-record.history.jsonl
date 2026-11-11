@@ -24,7 +24,14 @@
 {"date": "2026-11-10", "id": "13", "kind": "issue", "url": "https://github.com/paulocorcino/ralphy/issues/899"}
 {"date": "2026-11-10", "id": "14", "kind": "issue", "url": "https://github.com/paulocorcino/ralphy/issues/900"}
 {"date": "2026-11-10", "id": "15", "kind": "issue", "url": "https://github.com/paulocorcino/ralphy/issues/901"}
+{"date": "2026-11-10", "kind": "note", "text": "Phase 1: inconsistent_struct_constructor, option_as_ref_cloned, unnecessary_join, filter_map_next, manual_midpoint, explicit_iter_loop, unnecessary_semicolon, enum_glob_use, stable_sort_primitive are errors"}
+{"date": "2026-11-10", "kind": "note", "text": "Phase 1: manual_string_new, implicit_clone, wildcard_imports, ptr_as_ptr, manual_is_variant_and, range_plus_one, manual_assert_eq, manual_assert, unchecked_time_subtraction are errors"}
+{"date": "2026-11-10", "kind": "note", "text": "Phase 1: duration_suboptimal_units, cast_lossless, needless_raw_string_hashes, uninlined_format_args, unnested_or_patterns, ignored_unit_patterns, if_not_else, single_match_else, borrow_as_ptr are errors"}
+{"date": "2026-11-10", "kind": "note", "text": "Phase 1: semicolon_if_nothing_returned, map_unwrap_or, redundant_closure_for_method_calls, assert_is_empty, unused_qualifications, doc_markdown, unreachable_pub, str_to_string are errors"}
 {"date": "2026-11-10", "kind": "note", "text": "curly end state is multi-line (user, 2026-11-10): all would push 17 modules past 500 lines"}
 {"date": "2026-11-10", "kind": "note", "text": "Phase 8: eslint(no-var), eslint(prefer-const), eslint(no-useless-concat), eslint(no-useless-return), typescript(no-unnecessary-template-expression), unicorn(new-for-builtins), unicorn(no-useless-switch-case), unicorn(prefer-single-call), unicorn(prefer-dom-node-append), unicorn(prefer-code-point), unicorn(prefer-at), unicorn(prefer-import-meta-properties), unicorn(prefer-string-replace-all), unicorn(no-useless-undefined), unicorn(no-hex-escape) and unicorn(escape-case) are errors"}
 {"date": "2026-11-10", "kind": "note", "text": "Phase 8: eslint(curly) is an error with the option multi-line"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 9: typescript(strict-boolean-expressions), typescript(prefer-nullish-coalescing), typescript(no-unnecessary-condition), eslint(no-implicit-coercion), typescript(no-unnecessary-type-conversion), unicorn(explicit-length-check), unicorn(prefer-number-coercion) and typescript(no-unnecessary-boolean-literal-compare) are errors"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 2: let_underscore_untyped, let_underscore_drop and mem_forget are errors"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 15: markdownlint MD001, MD022, MD024, MD025, MD026, MD028, MD029, MD032, MD033, MD036, MD040, MD041 and MD056 are errors"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 15: yamllint, html-validate, stylelint, taplo, lychee and editorconfig-checker are errors in the gate"}

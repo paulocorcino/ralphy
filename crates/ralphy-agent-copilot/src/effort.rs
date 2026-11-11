@@ -135,12 +135,12 @@ mod tests {
         assert_eq!(list, ["low", "medium", "high"].map(String::from));
         assert_eq!(
             clamp_effort("xhigh", Some(&list)),
-            Some("high".to_string()),
+            Some("high".to_owned()),
             "a request above the ceiling clamps down"
         );
         assert_eq!(
             clamp_effort("minimal", Some(&list)),
-            Some("low".to_string()),
+            Some("low".to_owned()),
             "a request below the floor takes the lowest supported level"
         );
     }
@@ -153,12 +153,8 @@ mod tests {
         let list = supported(&cat, "claude-sonnet-4.6");
         assert_eq!(list, ["low", "medium", "high", "max"].map(String::from));
         let got = clamp_effort("xhigh", Some(&list));
-        assert_eq!(got, Some("high".to_string()));
-        assert_ne!(
-            got,
-            Some("max".to_string()),
-            "the clamp must never escalate"
-        );
+        assert_eq!(got, Some("high".to_owned()));
+        assert_ne!(got, Some("max".to_owned()), "the clamp must never escalate");
     }
 
     /// The property the whole slice exists for: whatever the operator asks, the
@@ -253,7 +249,7 @@ mod tests {
         assert_eq!(cat.default_model.as_deref(), Some("claude-sonnet-5"));
         assert_eq!(
             resolve_effort(Some("max"), None, Some(&cat)),
-            Some("max".to_string())
+            Some("max".to_owned())
         );
     }
 

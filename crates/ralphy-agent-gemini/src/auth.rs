@@ -158,7 +158,7 @@ mod tests {
             include_str!("tasks.rs"),
             include_str!("lib.rs"),
         ]
-        .map(|s| crate::tests::production_text(s).to_string())
+        .map(|s| crate::tests::production_text(s).to_owned())
         .join("\n");
         for banned in [
             "oauth_creds",

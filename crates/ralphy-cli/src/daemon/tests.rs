@@ -14,7 +14,7 @@ fn baptism_refuses_reserved_then_accepts() {
         "the console must show a refusal naming `run`; got: {printed}"
     );
     assert_eq!(name, "anvil");
-    assert_eq!(avatar, AVATARS[2].to_string());
+    assert_eq!(avatar, AVATARS[2].to_owned());
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn empty_name_accepts_suggestion() {
     let mut out: Vec<u8> = Vec::new();
     let (name, avatar) = baptize_console(input, &mut out, "anvil").unwrap();
     assert_eq!(name, "anvil");
-    assert_eq!(avatar, AVATARS[0].to_string());
+    assert_eq!(avatar, AVATARS[0].to_owned());
 }
 
 #[test]

@@ -56,7 +56,7 @@ fn degraded_board_issue(iss: &ralphy_core::Issue) -> github::BoardIssue {
     github::BoardIssue {
         number: iss.number,
         title: iss.title.clone(),
-        state: "open".to_string(),
+        state: "open".to_owned(),
         reason: None,
         labels: iss.labels.clone(),
         assignees: Vec::new(),
@@ -137,7 +137,7 @@ fn status_extra(iv: &IssueView) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        QueueStatus::StopBefore => "run halts here".to_string(),
+        QueueStatus::StopBefore => "run halts here".to_owned(),
     }
 }
 
@@ -149,7 +149,7 @@ fn labels_cell(labels: &[String]) -> String {
 /// Truncate a title to `max` chars for the text table, appending `…` when cut.
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
-        s.to_string()
+        s.to_owned()
     } else {
         let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
         out.push('…');
@@ -162,7 +162,7 @@ pub(super) fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
     if view.issues.is_empty() {
         return match assignee {
             Some(a) => format!("No open issues in the queue assigned to {a}."),
-            None => "No open issues in the queue.".to_string(),
+            None => "No open issues in the queue.".to_owned(),
         };
     }
     const TITLE_MAX: usize = 40;
@@ -188,7 +188,7 @@ pub(super) fn render_text(view: &QueueView, assignee: Option<&str>) -> String {
             "{num:<num_w$}  {title:<title_w$}  {labels:<labels_w$}  {status:<11}  {extra}\n"
         ));
     }
-    out.trim_end().to_string()
+    out.trim_end().to_owned()
 }
 
 /// Render the `show` detail view as a readable text block.
@@ -199,7 +199,7 @@ pub(super) fn render_show_text(view: &ShowView) -> String {
     let judgment = match view.queue_status {
         // A detail view has no list to rank against, so `eligible` carries no
         // position (position is a list-relative concept — see `IssueView`).
-        QueueStatus::Eligible => "eligible".to_string(),
+        QueueStatus::Eligible => "eligible".to_owned(),
         QueueStatus::Skipped => format!(
             "skipped ({})",
             view.skip_reason.as_deref().unwrap_or("human-return")
@@ -212,7 +212,7 @@ pub(super) fn render_show_text(view: &ShowView) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        QueueStatus::StopBefore => "stop_before (run halts here)".to_string(),
+        QueueStatus::StopBefore => "stop_before (run halts here)".to_owned(),
     };
     out.push_str(&format!("queue: {judgment}\n"));
     if let Some(spec) = &view.consolidated_spec {
@@ -241,5 +241,5 @@ pub(super) fn render_show_text(view: &ShowView) -> String {
             out.push('\n');
         }
     }
-    out.trim_end().to_string()
+    out.trim_end().to_owned()
 }

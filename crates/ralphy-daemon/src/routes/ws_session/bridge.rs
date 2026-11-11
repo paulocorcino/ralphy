@@ -25,7 +25,7 @@ use crate::{protocol, session};
 /// The browser answers every ping with a pong from its network stack, even
 /// in a background tab, so a browser that has sent NOTHING for
 /// `silent_after` is gone. A send succeeding proves nothing: a tunnel agent
-/// (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
+/// (measured: `TunnelDeck` for dev tunnels, 2026-09-22) keeps its leg to the
 /// daemon open for minutes after the browser behind it vanished, and that
 /// leg would hold a console's writer slot against the page's own reattach.
 #[derive(Clone, Copy, Debug)]
@@ -124,11 +124,10 @@ fn on_client_frame(bytes: &[u8], attach: &session::Attachment, traffic: &mut Tra
         Ok(Frame::Terminal { data, .. }) => silent_if_err(attach.write(&data)),
         Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
             if let Some((rows, cols)) = resize_of(&cmd) {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "a resize fails only once the console has ended, which the loop sees"
-                )]
-                let _ = attach.resize(rows, cols);
+                // A resize fails only once the console has ended, which the loop sees.
+                match attach.resize(rows, cols) {
+                    Ok(()) | Err(_) => {}
+                }
             }
             ControlFlow::Continue(())
         }

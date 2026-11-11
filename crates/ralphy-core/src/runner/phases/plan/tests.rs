@@ -7,10 +7,10 @@ fn parse_plan_steps_maps_the_three_markers() {
     assert_eq!(
         parse_plan_steps(md),
         vec![
-            ("open one".to_string(), "open"),
-            ("done two".to_string(), "checked"),
-            ("noticed three".to_string(), "noticed"),
-            ("indented checked".to_string(), "checked"),
+            ("open one".to_owned(), "open"),
+            ("done two".to_owned(), "checked"),
+            ("noticed three".to_owned(), "noticed"),
+            ("indented checked".to_owned(), "checked"),
         ]
     );
     // The serialized wire form parses back to a JSON array of {text,status}.

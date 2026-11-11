@@ -86,7 +86,7 @@ fn sync_status(args: SyncStatusArgs) -> anyhow::Result<()> {
 fn human_line(st: &ralphy_core::sync::SyncStatus) -> String {
     let stamp = match &st.last_fetch {
         Some(when) => format!("last fetch {when}"),
-        None => "never fetched".to_string(),
+        None => "never fetched".to_owned(),
     };
     match (&st.head, &st.tracking) {
         (Head::Detached { sha }, _) => format!("detached at {sha} — {stamp}"),

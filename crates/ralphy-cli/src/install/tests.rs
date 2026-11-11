@@ -9,11 +9,10 @@ fn only_an_elevated_run_is_warned() {
 
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ralphy-install-{}-{tag}", std::process::id()));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
     std::fs::create_dir_all(&dir).expect("scratch");
     dir
 }
@@ -35,15 +34,14 @@ fn replacing_parks_the_old_binary_rather_than_deleting_it() {
     assert_eq!(std::fs::read(&dest).expect("read"), b"new");
     assert_eq!(std::fs::read(&parked).expect("read parked"), b"old");
     assert_eq!(parked.file_name().and_then(|n| n.to_str()), {
-        let mut expected = binary_name().to_string();
+        let mut expected = binary_name().to_owned();
         expected.push_str(".old");
         Some(expected).as_deref()
     });
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[test]
@@ -54,11 +52,10 @@ fn a_first_install_has_nothing_to_park() {
     std::fs::write(&new, b"new").expect("new");
     assert_eq!(replace_binary(&dest, &new).expect("replace"), None);
     assert_eq!(std::fs::read(&dest).expect("read"), b"new");
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[test]
@@ -74,11 +71,10 @@ fn a_failed_put_restores_the_original() {
         b"old",
         "a failed replacement must never leave the operator without a binary"
     );
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[test]
@@ -108,11 +104,10 @@ fn a_park_that_cannot_be_freed_steps_aside_instead_of_failing() {
     std::fs::write(&new, b"new").expect("new");
     replace_binary(&dest, &new).expect("a held leftover must not fail the install");
     assert_eq!(std::fs::read(&dest).expect("read"), b"new");
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[test]
@@ -133,11 +128,10 @@ fn a_leftover_park_from_last_time_does_not_block_this_one() {
         b"old",
         "the park holds the binary just replaced, not the one before it"
     );
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[test]
@@ -195,11 +189,10 @@ fn an_update_adds_the_install_folder_only_when_it_runs_this_binary() {
     if symlink(&away.join(binary_name()), &bin.join(binary_name())).is_ok() {
         assert_eq!(path_fix(&in_away, &path, &bin), PathFix::Add(bin.clone()));
     }
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&root);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&root) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 #[test]
@@ -210,11 +203,10 @@ fn a_dangling_symlink_counts_as_occupied() {
     let dest = dir.join(binary_name());
     if symlink(&dir.join("nowhere"), &dest).is_err() {
         // Windows without Developer Mode: nothing to assert.
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         return;
     }
     assert!(
@@ -225,9 +217,8 @@ fn a_dangling_symlink_counts_as_occupied() {
     let parked = park_existing(&dest).expect("park").expect("parked");
     assert!(!occupied(&dest), "the way is clear now");
     assert!(parked.symlink_metadata().is_ok());
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&dir);
+    // the scratch directory may be gone
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) | Err(_) => {}
+    }
 }

@@ -5,12 +5,12 @@ use crate::host::ssh::tests::out;
 fn line(tool: Tool, name: &str, ok: bool, fix: Option<&str>) -> ToolLine {
     ToolLine {
         tool,
-        name: name.to_string(),
+        name: name.to_owned(),
         ok,
         required: true,
         version: None,
         text: format!("{name} text"),
-        fix: fix.map(str::to_string),
+        fix: fix.map(str::to_owned),
     }
 }
 
@@ -29,7 +29,7 @@ fn probe_checks() -> Vec<HostCheck> {
     let check = |id| HostCheck {
         id,
         status: CheckStatus::Warn,
-        text: "probe".to_string(),
+        text: "probe".to_owned(),
     };
     vec![
         check(CheckId::User),
@@ -72,11 +72,11 @@ fn a_missing_git_keeps_the_hosts_own_install_command() {
     };
     assert_eq!(
         git(HostOs::MacOs),
-        CheckStatus::Copy("xcode-select --install".to_string())
+        CheckStatus::Copy("xcode-select --install".to_owned())
     );
     assert_eq!(
         git(HostOs::Windows),
-        CheckStatus::Copy("winget install --id Git.Git -e".to_string())
+        CheckStatus::Copy("winget install --id Git.Git -e".to_owned())
     );
     assert_eq!(git(HostOs::Linux), CheckStatus::Warn);
 }
@@ -116,7 +116,7 @@ fn doctor_is_asked_of_the_installed_ralphy_on_every_os() {
 fn hooks_line(name: &str, ok: bool, text: &str) -> ToolLine {
     ToolLine {
         required: false,
-        text: text.to_string(),
+        text: text.to_owned(),
         ..line(Tool::Hooks, name, ok, None)
     }
 }

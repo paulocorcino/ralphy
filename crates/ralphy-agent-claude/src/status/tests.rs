@@ -31,7 +31,7 @@ fn fold_matches_the_shared_mapping_fixture() {
                 serde_json::json!({
                     "state": o.state.as_str(),
                     "detail": o.detail,
-                    "cause": o.cause.map(|c| c.as_str()),
+                    "cause": o.cause.map(agent_state::Cause::as_str),
                     "ts": o.ts,
                 })
             });
@@ -58,13 +58,13 @@ fn tail_reports_transitions_and_handles_partial_lines() {
     let path = dir.path().join(STATUS_FILE);
     let mut f = std::fs::File::create(&path).unwrap();
     let mut tail = Tail::new(path.clone(), claude_signal);
-    assert!(tail.poll().is_empty());
+    assert_eq!(tail.poll(), Vec::<agent_state::Observed>::new());
 
     let line = |event: &str, tool: &str| {
         format!(
             r#"{{"event":"{event}","tool_name":{},"ts":"t"}}"#,
             if tool.is_empty() {
-                "null".to_string()
+                "null".to_owned()
             } else {
                 format!("\"{tool}\"")
             }
@@ -82,7 +82,7 @@ fn tail_reports_transitions_and_handles_partial_lines() {
     let (head, rest) = stop.split_at(10);
     write!(f, "{head}").unwrap();
     f.flush().unwrap();
-    assert!(tail.poll().is_empty());
+    assert_eq!(tail.poll(), Vec::<agent_state::Observed>::new());
     writeln!(f, "{rest}").unwrap();
     f.flush().unwrap();
     let got: Vec<&str> = tail.poll().iter().map(|o| o.state.as_str()).collect();
@@ -126,10 +126,10 @@ fn every_child_shape_is_handed_the_status_file() {
         // Production text with whitespace removed: the call, not its layout.
         let code: String = src.split_whitespace().collect();
         let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
-        let watcher = bind
-            .captures(code)
-            .map(|c| c[1].to_string())
-            .unwrap_or_else(|| panic!("{name} must start a Watcher"));
+        let watcher = bind.captures(code).map_or_else(
+            || panic!("{name} must start a Watcher"),
+            |c| c[1].to_string(),
+        );
         assert!(
             code.contains(&format!("status::STATUS_ENV,{watcher}.path())")),
             "{name} must hand the child RALPHY_STATUS_FILE from that Watcher"

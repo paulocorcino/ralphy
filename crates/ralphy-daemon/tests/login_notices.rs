@@ -27,7 +27,7 @@ const OTHER: &str = "fedcba9876543210fedcba9876543210";
 /// A router over `auth` whose store is `dir`.
 fn app(auth: &Arc<AuthState>, dir: &Path) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         dir.join("repos.toml"),
@@ -114,7 +114,7 @@ fn dismiss_from(body: &str, cookie: Option<&str>) -> Request<Body> {
     if let Some(cookie) = cookie {
         req = req.header(header::COOKIE, cookie);
     }
-    req.body(Body::from(body.to_string()))
+    req.body(Body::from(body.to_owned()))
         .expect("build the request")
 }
 
@@ -136,12 +136,12 @@ async fn new_device(auth: &Arc<AuthState>, dir: &Path) -> (String, String) {
         .split(';')
         .next()
         .expect("a cookie pair")
-        .to_string();
+        .to_owned();
     let device = cookie
         .split('.')
         .nth(1)
         .expect("a signed device ID")
-        .to_string();
+        .to_owned();
     (cookie, device)
 }
 
@@ -315,7 +315,7 @@ async fn the_device_a_notice_names_cannot_dismiss_it() {
         assert_eq!(resp.status(), StatusCode::OK, "{body}");
     }
     assert_eq!(dismissed_lines(dir.path()), 2);
-    assert!(notices(&auth, dir.path()).await.is_empty());
+    assert_eq!(notices(&auth, dir.path()).await, Vec::<Value>::new());
 }
 
 /// `here` marks the notice of the device that reads the list.

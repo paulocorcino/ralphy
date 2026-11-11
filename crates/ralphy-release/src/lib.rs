@@ -208,7 +208,7 @@ mod tests {
 
     fn release(tag: &str, prerelease: bool) -> Release {
         Release {
-            tag_name: tag.to_string(),
+            tag_name: tag.to_owned(),
             name: None,
             published_at: None,
             html_url: String::new(),
@@ -221,7 +221,7 @@ mod tests {
 
     fn asset(name: &str) -> Asset {
         Asset {
-            name: name.to_string(),
+            name: name.to_owned(),
             browser_download_url: format!("https://example.invalid/{name}"),
             size: 0,
         }

@@ -105,7 +105,7 @@ fn file_verb(verb: dispatch::Verb, cmd: &protocol::Command, repo_path: &Path) ->
             let dir = cmd
                 .payload
                 .get("dir")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
             write_reply(fswrite::create(repo_path, rel, dir))
         }
@@ -132,7 +132,7 @@ fn file_write(cmd: &protocol::Command, repo_path: &Path, rel: &str) -> serde_jso
     let bom = cmd
         .payload
         .get("bom")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     write_reply(fswrite::write_encoded(
         repo_path, rel, content, encoding, bom,

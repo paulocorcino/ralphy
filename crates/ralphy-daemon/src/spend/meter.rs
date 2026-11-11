@@ -98,9 +98,9 @@ impl Counts {
                 let tokens = self.of(key);
                 let share = share_of(tokens, self.total);
                 MeterPart {
-                    key: (*key).to_string(),
-                    glyph: (*glyph).to_string(),
-                    name: (*name).to_string(),
+                    key: (*key).to_owned(),
+                    glyph: (*glyph).to_owned(),
+                    name: (*name).to_owned(),
                     tokens,
                     label: fmt_tokens(tokens),
                     share,

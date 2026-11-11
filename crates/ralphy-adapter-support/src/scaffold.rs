@@ -1,5 +1,5 @@
 //! The vendor-neutral **plan/execute shell** the headless adapters (Codex,
-//! OpenCode) share. Each adapter's `plan()`/`execute()` repeated the same
+//! `OpenCode`) share. Each adapter's `plan()`/`execute()` repeated the same
 //! mechanical front and back around the one vendor-specific step (build the
 //! command, snapshot usage, run headless): create the run/`.ralphy` dirs, write
 //! the plan charter, remove a stale plan, then — after the run — walk the no-plan
@@ -63,11 +63,10 @@ pub(crate) fn ensure_dir(dir: &Path) {
 /// output. The file is usually absent, and a leftover that cannot be removed is
 /// overwritten or reported by the step that writes it.
 pub(crate) fn remove_stale_file(file: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the file is usually absent, and the step that writes it reports a real failure"
-    )]
-    let _ = fs::remove_file(file);
+    // the file is usually absent, and the step that writes it reports a real failure
+    if let Err(e) = fs::remove_file(file) {
+        tracing::debug!("could not remove the old file: {e}");
+    }
 }
 
 /// Drive the shared plan shell. FIRST checks the resume short-circuit: when
@@ -147,15 +146,14 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
     let Ok(md) = fs::read_to_string(plan_path) else {
         return;
     };
-    let mut out = md.trim_end().to_string();
+    let mut out = md.trim_end().to_owned();
     out.push_str("\n\n");
     out.push_str(&crate::resume::plan_trailer(issue_number));
     out.push('\n');
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "best-effort: a failed write only forgoes resume and never fails the plan"
-    )]
-    let _ = fs::write(plan_path, out);
+    // best-effort: a failed write only forgoes resume and never fails the plan
+    if let Err(e) = fs::write(plan_path, out) {
+        tracing::warn!("could not write the plan file: {e}");
+    }
 }
 
 /// The paths and auth wording for a [`run_exec_session`] call — no plan/charter,

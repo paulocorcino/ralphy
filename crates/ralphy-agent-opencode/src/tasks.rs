@@ -30,7 +30,7 @@ use crate::usage::opencode_usage;
 const NO_SKILLS: Option<&Path> = None;
 
 /// Run a one-shot headless `opencode run` repo-diagnosis session (ADR-0012 stage
-/// 2) from `neutral_cwd` — a directory OUTSIDE the target repo, so OpenCode never
+/// 2) from `neutral_cwd` — a directory OUTSIDE the target repo, so `OpenCode` never
 /// auto-loads the target's `AGENTS.md` as instructions. The target `repo` is
 /// passed as data in the prompt; the session writes its JSON report to
 /// `<neutral_cwd>/diagnosis.json`, which this function reads, validates against
@@ -45,7 +45,7 @@ pub fn diagnose_repo(
 ) -> Result<DiagnosisReport> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
     info!(?model, "diagnosing repo with opencode run");
@@ -91,7 +91,7 @@ pub fn draft_issues(
 ) -> Result<IssuesDraft> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let prompt =
         build_init_issues_prompt(repo, req.mode, req.source_docs, req.triage_label, out_path);
     info!(
@@ -139,7 +139,7 @@ pub fn triage_issues(
 ) -> Result<TriageDraft> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
-    let _ = effort;
+    let _: Option<&str> = effort;
     let prompt = format!(
         "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
@@ -195,7 +195,7 @@ pub fn consolidate_knowledge(
 ) -> Result<Usage> {
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
-    let _ = effort;
+    let _: Option<&str> = effort;
     std::fs::create_dir_all(run_dir).context("creating the run directory")?;
 
     info!(?model, "consolidating knowledge with opencode run");

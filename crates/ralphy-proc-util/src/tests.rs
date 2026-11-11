@@ -6,12 +6,12 @@ fn path_with_dir_prepends_a_missing_directory() {
 
     let dir = Path::new("/home/me/.nvm/versions/node/v24.13.0/bin");
     let current = std::env::join_paths(["/usr/bin", "/bin"]).expect("fixture joins");
-    let widened = super::path_with_dir(dir, Some(current.as_os_str()))
+    let widened = path_with_dir(dir, Some(current.as_os_str()))
         .expect("a directory absent from PATH is prepended");
 
     let entries: Vec<_> = std::env::split_paths(&widened).collect();
     assert_eq!(
-        entries.first().map(|p| p.as_path()),
+        entries.first().map(PathBuf::as_path),
         Some(dir),
         "{entries:?}"
     );
@@ -32,7 +32,7 @@ fn path_with_dir_declines_a_directory_already_present() {
 
     let dir = Path::new("/opt/tools/bin");
     let current = std::env::join_paths(["/usr/bin", "/opt/tools/bin"]).expect("fixture joins");
-    assert!(super::path_with_dir(dir, Some(current.as_os_str())).is_none());
+    assert!(path_with_dir(dir, Some(current.as_os_str())).is_none());
 }
 
 /// An empty or absent `PATH` still yields a usable one-entry `PATH`.
@@ -41,7 +41,7 @@ fn path_with_dir_handles_an_absent_path() {
     use std::path::Path;
 
     let dir = Path::new("/opt/tools/bin");
-    let widened = super::path_with_dir(dir, None).expect("an absent PATH still widens");
+    let widened = path_with_dir(dir, None).expect("an absent PATH still widens");
     let entries: Vec<_> = std::env::split_paths(&widened).collect();
     assert!(entries.contains(&dir.to_path_buf()), "{entries:?}");
 }
@@ -57,7 +57,7 @@ fn program_dir_on_path_extends_a_declared_path() {
     let scrubbed = std::env::join_paths(["/scrubbed/bin"]).expect("fixture joins");
     let mut cmd = Command::new(&program);
     cmd.env("PATH", &scrubbed);
-    super::program_dir_on_path(&mut cmd);
+    program_dir_on_path(&mut cmd);
 
     let path = cmd
         .get_envs()
@@ -66,7 +66,7 @@ fn program_dir_on_path_extends_a_declared_path() {
         .expect("PATH is set on the command");
     let entries: Vec<_> = std::env::split_paths(path).collect();
     assert_eq!(
-        entries.first().map(|p| p.as_path()),
+        entries.first().map(PathBuf::as_path),
         program.parent(),
         "the program's own directory leads: {entries:?}"
     );
@@ -83,7 +83,7 @@ fn program_dir_on_path_leaves_a_bare_program_alone() {
     use std::process::Command;
 
     let mut cmd = Command::new("codex");
-    super::program_dir_on_path(&mut cmd);
+    program_dir_on_path(&mut cmd);
     assert!(
         cmd.get_envs()
             .all(|(k, _)| k != std::ffi::OsStr::new("PATH")),
@@ -109,17 +109,15 @@ fn mark_executable(p: &Path) {
         fs::set_permissions(p, perms).unwrap();
     }
     #[cfg(not(unix))]
-    let _ = p;
+    let _: &Path = p;
 }
 
 /// Remove a scratch directory a test made. It may be gone already, and a
 /// leftover directory in the temp dir fails nothing.
 fn remove_scratch(dir: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of a test directory that may be gone, and no test reads it after"
-    )]
-    let _ = fs::remove_dir_all(dir);
+    if let Err(e) = fs::remove_dir_all(dir) {
+        tracing::debug!("could not remove test dir {}: {e}", dir.display());
+    }
 }
 
 #[test]
@@ -395,11 +393,10 @@ fn std_handles_do_not_reach_a_detached_grandchild() {
     std::thread::spawn(move || {
         let mut text = String::new();
         let read = stdout.read_to_string(&mut text).map(|_| text);
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver is gone once the test has its answer"
-        )]
-        let _ = tx.send(read);
+        // The receiver is gone once the test has its answer.
+        if let Err(e) = tx.send(read) {
+            tracing::debug!("answer not sent: {e}");
+        }
     });
     let ended = rx.recv_timeout(Duration::from_secs(20));
     parent.wait().expect("reap the parent");

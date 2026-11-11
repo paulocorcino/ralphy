@@ -51,15 +51,12 @@ fn join_line(
     text: &str,
 ) {
     let (_, joined) = pending.get_or_insert((line, String::new()));
-    match text.strip_suffix('\\') {
-        Some(rest) => {
-            joined.push_str(rest);
-            joined.push(' ');
-        }
-        None => {
-            joined.push_str(text);
-            commands.extend(pending.take());
-        }
+    if let Some(rest) = text.strip_suffix('\\') {
+        joined.push_str(rest);
+        joined.push(' ');
+    } else {
+        joined.push_str(text);
+        commands.extend(pending.take());
     }
 }
 
@@ -94,7 +91,7 @@ fn unlocked(commands: &[(usize, String)]) -> Vec<(usize, String)> {
             let command = command_at(text, m.start());
             let cargo_flags = command.split(" -- ").next().unwrap_or(command);
             if !cargo_flags.split_whitespace().any(|t| t == "--locked") {
-                found.push((*line, command.to_string()));
+                found.push((*line, command.to_owned()));
             }
         }
     }
@@ -161,7 +158,7 @@ steps:
 
 #[test]
 fn a_chained_command_is_read_one_command_at_a_time() {
-    let line = |text: &str| vec![(1, text.to_string())];
+    let line = |text: &str| vec![(1, text.to_owned())];
     let missing =
         |text: &str| -> Vec<String> { unlocked(&line(text)).into_iter().map(|(_, c)| c).collect() };
     assert_eq!(
@@ -174,5 +171,8 @@ fn a_chained_command_is_read_one_command_at_a_time() {
         missing("cargo run | tee out; cargo test --locked"),
         ["cargo run"]
     );
-    assert!(missing("cd x && cargo build --locked && cargo test --locked | tee out").is_empty());
+    assert_eq!(
+        missing("cd x && cargo build --locked && cargo test --locked | tee out"),
+        Vec::<String>::new()
+    );
 }

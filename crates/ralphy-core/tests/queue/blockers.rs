@@ -277,7 +277,7 @@ fn human_gate_blocker_is_classified_and_run_continues() {
     let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #7 executes
     let tracker = RecordingTracker {
         // #2 is open (absent from closed_issues) and carries the human gate.
-        issue_labels: HashMap::from([(2u64, vec!["ready-for-human".to_string()])]),
+        issue_labels: HashMap::from([(2u64, vec!["ready-for-human".to_owned()])]),
         ..Default::default()
     };
 
@@ -330,7 +330,7 @@ fn ordinary_open_blocker_is_not_a_human_gate() {
     let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n")];
     let agent = ScriptedAgent::new(vec![]);
     let tracker = RecordingTracker {
-        issue_labels: HashMap::from([(2u64, vec!["ready-for-agent".to_string()])]),
+        issue_labels: HashMap::from([(2u64, vec!["ready-for-agent".to_owned()])]),
         ..Default::default()
     };
 

@@ -42,7 +42,7 @@ fn ralphy_in(cwd: &Path, args: &[&str]) -> std::process::Output {
 }
 
 fn stdout(out: &std::process::Output) -> String {
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
 fn stderr(out: &std::process::Output) -> String {
@@ -136,7 +136,7 @@ fn git_backed_verbs_run_in_the_worktree_cwd_act_on_the_worktree_only() {
         v["content"]
             .as_str()
             .unwrap_or_else(|| panic!("a content string; got {v}"))
-            .to_string()
+            .to_owned()
     };
     assert_eq!(
         blob_at(&wt),

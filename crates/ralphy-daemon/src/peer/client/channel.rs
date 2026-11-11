@@ -72,7 +72,7 @@ pub async fn open_channel(
 fn bare(verb: &str, payload: serde_json::Value) -> Message {
     let command = Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload,
     };
     Message::Binary(protocol::encode(&Frame::Command(command)).into())
@@ -199,6 +199,6 @@ fn closed(command: &Command) -> Option<PeerEvent> {
         .get("reason")
         .and_then(serde_json::Value::as_str);
     Some(PeerEvent::Closed {
-        reason: reason.unwrap_or_default().to_string(),
+        reason: reason.unwrap_or_default().to_owned(),
     })
 }

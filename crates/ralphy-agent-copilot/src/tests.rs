@@ -94,7 +94,7 @@ fn production_text_drops_the_test_module() {
 #[test]
 fn no_tests_directory() {
     assert!(
-        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).exists(),
+        !Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).exists(),
         "adapter tests stay inline (ADR-0040 Tier 1)"
     );
 }
@@ -161,7 +161,7 @@ fn the_receipt_guard_is_wired_into_both_phases() {
 /// suppress a missing skill.
 #[test]
 fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
-    let required = vec!["reviewer".to_string(), "staged-plan".to_string()];
+    let required = vec!["reviewer".to_owned(), "staged-plan".to_owned()];
     let missing = concat!(
         r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]},"#,
         r#""ephemeral":true}"#,
@@ -263,7 +263,7 @@ fn the_builder_puts_the_given_model_in_argv() {
         "s1",
         agent.phase_model(Phase::Plan),
         None,
-        std::path::Path::new("/repo"),
+        Path::new("/repo"),
         false,
         &[],
     );
@@ -280,7 +280,7 @@ fn phase_model_gives_the_exec_pin_to_the_builder() {
         "s1",
         agent.phase_model(Phase::Execute),
         None,
-        std::path::Path::new("/repo"),
+        Path::new("/repo"),
         false,
         &[],
     );
@@ -297,7 +297,7 @@ fn the_builder_omits_model_when_unpinned() {
             "s1",
             agent.phase_model(phase),
             None,
-            std::path::Path::new("/repo"),
+            Path::new("/repo"),
             false,
             &[],
         );
@@ -330,7 +330,7 @@ fn the_builder_carries_the_clamped_effort_in_argv() {
         "s1",
         model,
         effort.as_deref(),
-        std::path::Path::new("/repo"),
+        Path::new("/repo"),
         false,
         &[],
     );
@@ -356,7 +356,7 @@ fn the_builder_omits_effort_when_unset() {
             "s1",
             agent.phase_model(phase),
             effort.as_deref(),
-            std::path::Path::new("/repo"),
+            Path::new("/repo"),
             false,
             &[],
         );
@@ -413,7 +413,7 @@ fn no_hardcoded_model_table() {
 /// The per-issue setter reaches the budget, and the run deadline clamps it.
 #[test]
 fn budget_setters_reach_the_issue_deadline() {
-    let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let run_deadline = Instant::now() + Duration::from_secs(1);
     let agent = CopilotAgent::new(None, std::path::PathBuf::from("/run"))
         .with_max_minutes_per_issue(120)
         .with_run_deadline(Some(run_deadline));

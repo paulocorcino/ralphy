@@ -107,7 +107,12 @@ pub fn sum_tokens(jsonl: &str) -> Usage {
         let Some(tokens) = value.get("tokens") else {
             continue;
         };
-        let field = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| {
+            tokens
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         total.input += field("input");
         total.output += field("output");
         total.cache_read += field("cache_read");
@@ -161,14 +166,19 @@ pub fn read_rows(jsonl: &str) -> Vec<UsageRow> {
                 .get(k)
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
-                .to_string()
+                .to_owned()
         };
-        let n = |k: &str| value.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let n = |k: &str| {
+            value
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         let tok = |k: &str| {
             value
                 .get("tokens")
                 .and_then(|t| t.get(k))
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or(0)
         };
         rows.push(UsageRow {
@@ -183,7 +193,7 @@ pub fn read_rows(jsonl: &str) -> Vec<UsageRow> {
             session_id: value
                 .get("session_id")
                 .and_then(|v| v.as_str())
-                .map(str::to_string),
+                .map(str::to_owned),
             outcome: s("outcome"),
             tokens: Usage {
                 input: tok("input"),
@@ -229,7 +239,7 @@ fn project_models(rows: &mut [UsageRow], models: &crate::model_recovery::Session
             continue;
         };
         if let Some(model) = models.get(session_id) {
-            row.model = model.to_string();
+            row.model = model.to_owned();
         }
     }
 }
@@ -289,12 +299,12 @@ fn rename_project_in(root: &Path, from: &str, to: &str) -> Result<bool> {
     for line in content.lines().filter(|l| !l.trim().is_empty()) {
         let rewritten = match serde_json::from_str::<serde_json::Value>(line) {
             Ok(mut v) => {
-                if v.get("project").and_then(|p| p.as_str()) == Some(from) {
-                    v["project"] = serde_json::Value::String(to.to_string());
+                if let Some(project) = v.get_mut("project").filter(|p| p.as_str() == Some(from)) {
+                    *project = serde_json::Value::String(to.to_owned());
                 }
                 serde_json::to_string(&v).context("re-serializing a ledger line")?
             }
-            Err(_) => line.to_string(),
+            Err(_) => line.to_owned(),
         };
         writeln!(file, "{rewritten}").with_context(|| format!("writing {}", target.display()))?;
     }
@@ -342,13 +352,13 @@ pub fn append_run_phase(
         return;
     }
     let rec = LedgerRecord {
-        project: project.to_string(),
-        actor_email: actor_email.to_string(),
-        actor_name: actor_name.to_string(),
+        project: project.to_owned(),
+        actor_email: actor_email.to_owned(),
+        actor_name: actor_name.to_owned(),
         ralphy_version: env!("CARGO_PKG_VERSION").into(),
         issue: 0,
-        phase: phase.to_string(),
-        agent: agent.to_string(),
+        phase: phase.to_owned(),
+        agent: agent.to_owned(),
         model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
         session_id: None,
         outcome: "ok".into(),

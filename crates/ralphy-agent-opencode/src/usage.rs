@@ -1,16 +1,16 @@
-//! OpenCode token-usage capture, correlating a phase's `--format json` stream
-//! `sessionID` to the rows OpenCode wrote into its SQLite message store
+//! `OpenCode` token-usage capture, correlating a phase's `--format json` stream
+//! `sessionID` to the rows `OpenCode` wrote into its SQLite message store
 //! (ADR-0008 D5).
 
 use std::path::{Path, PathBuf};
 
 use ralphy_core::Usage;
 
-/// Map an OpenCode assistant message's `data` JSON to a normalized [`Usage`]
+/// Map an `OpenCode` assistant message's `data` JSON to a normalized [`Usage`]
 /// (ADR-0008 D5). Requires `role == "assistant"` with a `tokens` object; maps
 /// `input = tokens.input`, `output = tokens.output`,
 /// `cache_read = tokens.cache.read`, `cache_creation = tokens.cache.write`, and
-/// `model = data.modelID`. `tokens.reasoning` is NOT added — OpenCode's own
+/// `model = data.modelID`. `tokens.reasoning` is NOT added — `OpenCode`'s own
 /// `total = input + output + cache.read` reconciles without it (verified live on
 /// 8 rows), so reasoning already sits inside `output`. The CLI `cost` field is
 /// never read: it is `0` for the operator's un-priced custom providers.
@@ -19,17 +19,19 @@ fn usage_from_opencode_message(data: &serde_json::Value) -> Option<Usage> {
         return None;
     }
     let tokens = data.get("tokens").filter(|t| t.is_object())?;
-    let field = |obj: &serde_json::Value, k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let field = |obj: &serde_json::Value, k: &str| {
+        obj.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0)
+    };
     let cache = tokens.get("cache");
     Some(Usage {
         input: field(tokens, "input"),
         output: field(tokens, "output"),
-        cache_read: cache.map(|c| field(c, "read")).unwrap_or(0),
-        cache_creation: cache.map(|c| field(c, "write")).unwrap_or(0),
+        cache_read: cache.map_or(0, |c| field(c, "read")),
+        cache_creation: cache.map_or(0, |c| field(c, "write")),
         model: data
             .get("modelID")
             .and_then(|v| v.as_str())
-            .map(str::to_string),
+            .map(str::to_owned),
     })
 }
 
@@ -50,14 +52,14 @@ pub(crate) fn session_id_from_stream(stdout: &str) -> Option<String> {
         };
         if let Some(sid) = val.get("sessionID").and_then(|v| v.as_str()) {
             if !sid.is_empty() {
-                return Some(sid.to_string());
+                return Some(sid.to_owned());
             }
         }
     }
     None
 }
 
-/// `<home>/.local/share/opencode/opencode.db` — the SQLite store OpenCode writes
+/// `<home>/.local/share/opencode/opencode.db` — the SQLite store `OpenCode` writes
 /// message records into (`USERPROFILE` on Windows, `HOME` elsewhere). `None` when
 /// no home is known.
 fn opencode_db_path() -> Option<PathBuf> {
@@ -69,7 +71,7 @@ fn opencode_db_path() -> Option<PathBuf> {
 }
 
 /// Sum the token usage of every assistant message belonging to `session_id` in
-/// the OpenCode SQLite store at `db` (ADR-0008 D5). Opens read-only and is fully
+/// the `OpenCode` SQLite store at `db` (ADR-0008 D5). Opens read-only and is fully
 /// best-effort: any error (missing DB, lock, schema drift) yields
 /// `Usage::default()` so token capture never fails the run. The last seen
 /// per-record `modelID` is carried as the usage model (D8).
@@ -113,7 +115,7 @@ fn read_opencode_session_usage(db: &Path, session_id: &str) -> rusqlite::Result<
 }
 
 /// Capture a phase's token usage by correlating the stream's `sessionID` to the
-/// rows OpenCode wrote into `opencode.db`. Best-effort: `Usage::default()` when
+/// rows `OpenCode` wrote into `opencode.db`. Best-effort: `Usage::default()` when
 /// no session id is on the stream or the DB is unavailable.
 pub(crate) fn opencode_usage(stdout: &str) -> Usage {
     match (session_id_from_stream(stdout), opencode_db_path()) {

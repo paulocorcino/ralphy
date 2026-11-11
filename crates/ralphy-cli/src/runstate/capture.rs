@@ -61,7 +61,7 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
             // while the sink's Mutex is held.
             let captured = Captured {
                 level: fields.level,
-                target: event.metadata().target().to_string(),
+                target: event.metadata().target().to_owned(),
                 message: fields.message.clone(),
                 fields,
             };
@@ -80,13 +80,12 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
 fn install() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a default set elsewhere is a harmless no-op: the capture records nothing"
-        )]
-        let _ = tracing::subscriber::set_global_default(
+        // a default set elsewhere is a harmless no-op: the capture records nothing
+        match tracing::subscriber::set_global_default(
             tracing_subscriber::registry().with(CaptureLayer),
-        );
+        ) {
+            Ok(()) | Err(_) => {}
+        }
     });
 }
 

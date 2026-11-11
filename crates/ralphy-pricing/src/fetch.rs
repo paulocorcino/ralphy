@@ -16,7 +16,7 @@ use super::ModelPrice;
 pub const DEFAULT_MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 /// Cache freshness window (ADR-0034 A6): refetch at most once per day.
-pub const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const CACHE_TTL: Duration = Duration::from_hours(24);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
@@ -27,7 +27,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(1);
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const MAX_ATTEMPTS: u32 = 2;
 /// The largest models.dev body the fetch reads (ADR-0072 D9). Measured
-/// 2026-10-01 with curl: `api.json` is 5_282_228 bytes (5.04 MiB); the cap is
+/// 2026-10-01 with curl: `api.json` is `5_282_228` bytes (5.04 MiB); the cap is
 /// three times that, rounded up. A larger body fails the fetch and leaves the
 /// cache as it was.
 pub const MAX_MODELS_DEV_BYTES: u64 = 16 * 1024 * 1024;
@@ -95,9 +95,7 @@ pub fn refresh_if_stale(opts: &RefreshOpts<'_>) {
 
 /// True when `RALPHY_PRICING_OFFLINE` trims to `"1"`.
 pub fn pricing_offline_env() -> bool {
-    std::env::var("RALPHY_PRICING_OFFLINE")
-        .ok()
-        .is_some_and(|v| v.trim() == "1")
+    std::env::var("RALPHY_PRICING_OFFLINE").is_ok_and(|v| v.trim() == "1")
 }
 
 fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
@@ -191,11 +189,10 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     match std::fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
         Err(e) => {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the rename error is the one to return; a failed cleanup would mask it"
-            )]
-            let _ = std::fs::remove_file(&tmp);
+            // The rename error is the one to return; a failed cleanup would mask it.
+            if let Err(e) = std::fs::remove_file(&tmp) {
+                tracing::warn!("could not remove temp file {}: {e}", tmp.display());
+            }
             Err(e)
         }
     }

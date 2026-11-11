@@ -39,7 +39,7 @@ pub fn git(repo: &Path, args: &[&str]) -> Result<String> {
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
 /// Resolve any path inside a repo to its git toplevel.
@@ -52,7 +52,7 @@ pub fn resolve_toplevel(path: &Path) -> Result<PathBuf> {
         );
     }
     Ok(PathBuf::from(
-        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
     ))
 }
 
@@ -60,9 +60,7 @@ pub fn resolve_toplevel(path: &Path) -> Result<PathBuf> {
 /// whether to bootstrap a fresh repo (`git init` + a GitHub remote) before
 /// resolving the toplevel, rather than failing hard on a non-repo directory.
 pub fn is_repo(path: &Path) -> bool {
-    raw(path, &["rev-parse", "--is-inside-work-tree"])
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    raw(path, &["rev-parse", "--is-inside-work-tree"]).is_ok_and(|o| o.status.success())
 }
 
 /// `git init` a fresh repository at `path`, creating the directory first when it
@@ -101,7 +99,7 @@ pub fn initial_commit(repo: &Path) -> Result<()> {
 
 /// Best-effort `git fetch origin`. A missing remote is not fatal here.
 pub fn fetch_origin(repo: &Path) -> Result<()> {
-    let _ = raw(repo, &["fetch", "origin", "--quiet"])?;
+    drop(raw(repo, &["fetch", "origin", "--quiet"])?);
     Ok(())
 }
 
@@ -109,7 +107,7 @@ pub fn fetch_origin(repo: &Path) -> Result<()> {
 pub fn current_branch(repo: &Path) -> Result<String> {
     Ok(match ralphy_git_read::head(repo)? {
         ralphy_git_read::Head::Branch { name } => name,
-        ralphy_git_read::Head::Detached { .. } => "HEAD".to_string(),
+        ralphy_git_read::Head::Detached { .. } => "HEAD".to_owned(),
     })
 }
 
@@ -151,8 +149,8 @@ pub fn local_branches_held(repo: &Path) -> Result<Vec<LocalBranch>> {
             }
             let path = path.trim();
             Some(LocalBranch {
-                name: name.to_string(),
-                worktree: (!path.is_empty()).then(|| path.to_string()),
+                name: name.to_owned(),
+                worktree: (!path.is_empty()).then(|| path.to_owned()),
             })
         })
         .collect())
@@ -235,8 +233,7 @@ pub fn commitish_exists(repo: &Path, refname: &str) -> bool {
             &format!("{refname}^{{commit}}"),
         ],
     )
-    .map(|o| o.status.success())
-    .unwrap_or(false)
+    .is_ok_and(|o| o.status.success())
 }
 
 pub fn checkout_new_branch(repo: &Path, branch: &str, base: &str) -> Result<()> {
@@ -259,9 +256,7 @@ pub fn validate_branch_name(repo: &Path, name: &str) -> Result<()> {
     if name.is_empty() || name.starts_with('-') {
         bail!("invalid branch name '{name}'");
     }
-    let ok = raw(repo, &["check-ref-format", "--branch", name])
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let ok = raw(repo, &["check-ref-format", "--branch", name]).is_ok_and(|o| o.status.success());
     if !ok {
         bail!("invalid branch name '{name}': not a valid git branch name");
     }
@@ -336,7 +331,7 @@ pub fn head_sha(repo: &Path) -> Result<String> {
 /// `git log --oneline` order. An empty range yields an empty vec.
 pub fn log_oneline(repo: &Path, range: &str) -> Result<Vec<String>> {
     let out = git(repo, &["log", "--oneline", range])?;
-    Ok(out.lines().map(|l| l.to_string()).collect())
+    Ok(out.lines().map(str::to_owned).collect())
 }
 
 /// Number of commits in `range` (e.g. `base..branch`). Zero == empty branch.

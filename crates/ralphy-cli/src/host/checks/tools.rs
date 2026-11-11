@@ -120,9 +120,9 @@ fn status(line: &ToolLine, os: HostOs) -> CheckStatus {
         return CheckStatus::Pass;
     }
     match (line.tool, os) {
-        (Tool::Git, HostOs::MacOs) => CheckStatus::Copy("xcode-select --install".to_string()),
+        (Tool::Git, HostOs::MacOs) => CheckStatus::Copy("xcode-select --install".to_owned()),
         (Tool::Git, HostOs::Windows) => {
-            CheckStatus::Copy("winget install --id Git.Git -e".to_string())
+            CheckStatus::Copy("winget install --id Git.Git -e".to_owned())
         }
         _ => line
             .fix
@@ -150,7 +150,7 @@ fn agent_check(report: &DoctorReport) -> HostCheck {
     if found.is_empty() {
         let text = agents
             .first()
-            .map_or("no agent CLI found".to_string(), |l| l.text.clone());
+            .map_or("no agent CLI found".to_owned(), |l| l.text.clone());
         return HostCheck {
             id: CheckId::Agent,
             status: CheckStatus::Warn,

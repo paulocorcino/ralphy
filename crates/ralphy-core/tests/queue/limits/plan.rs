@@ -35,7 +35,7 @@ fn per_phase_limit_plans_resume_but_execute_stops() {
     );
     assert_eq!(
         *clock.waited_for.borrow(),
-        vec!["12:00".to_string()],
+        vec!["12:00".to_owned()],
         "waited only for the plan reset; the execute limit never waits"
     );
     assert_eq!(
@@ -86,7 +86,7 @@ fn plan_limit_auto_resumes_by_replanning() {
         2,
         "planned twice: limit, then success after the reset"
     );
-    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_owned()]);
     assert_eq!(*agent.executed.borrow(), vec![7], "executed after re-plan");
     let closed: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
     assert_eq!(closed, vec![7], "green issue closed after the resume");
@@ -125,7 +125,7 @@ fn repeated_plan_limits_hit_the_cap_and_stop() {
     );
     assert_eq!(
         *clock.waited_for.borrow(),
-        vec!["09:00".to_string(), "09:00".to_string()],
+        vec!["09:00".to_owned(), "09:00".to_owned()],
         "waited twice before the cap stopped it"
     );
     assert!(agent.executed.borrow().is_empty(), "never executed");
@@ -161,7 +161,7 @@ fn plan_limit_deadline_beats_resume() {
     .unwrap();
 
     assert!(matches!(report.stop, Some(StopReason::Deadline)));
-    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_string()]);
+    assert_eq!(*clock.waited_for.borrow(), vec!["15:00".to_owned()]);
     assert_eq!(*agent.plan_attempts.borrow(), 1, "planned once, then cut");
     assert!(agent.executed.borrow().is_empty(), "never executed");
 

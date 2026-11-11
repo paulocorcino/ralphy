@@ -54,7 +54,7 @@ pub(crate) fn claude_signal(line: &StatusLine) -> Option<Signal> {
             tool_use_id: line.tool_use_id.clone(),
             detail: match tool {
                 Some(t) => format!("permission: {t}"),
-                None => "permission".to_string(),
+                None => "permission".to_owned(),
             },
         },
         "Elicitation" => Signal::Wait {
@@ -72,7 +72,7 @@ pub(crate) fn claude_signal(line: &StatusLine) -> Option<Signal> {
 fn named(name: &str, question: Option<&str>) -> String {
     match question.map(str::trim).filter(|q| !q.is_empty()) {
         Some(q) => format!("{name}: {q}"),
-        None => name.to_string(),
+        None => name.to_owned(),
     }
 }
 // jscpd:ignore-end
@@ -167,9 +167,10 @@ fn no_proof_cause(settings: &Path, project: &Path, window: Duration) -> String {
             file.display()
         ));
     }
-    let program = ralphy_proc_util::exe::running_exe()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|e| format!("the ralphy program (not found: {e:#})"));
+    let program = ralphy_proc_util::exe::running_exe().map_or_else(
+        |e| format!("the ralphy program (not found: {e:#})"),
+        |p| p.display().to_string(),
+    );
     cause.push_str(&format!(
         "no SessionStart hook event came in {} s; the hooks in {} run {}. \
          Fix the cause and start again",

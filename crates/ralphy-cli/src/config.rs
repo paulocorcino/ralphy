@@ -20,19 +20,19 @@ mod resolve;
 mod view;
 mod write;
 
-pub use resolve::{
+pub(crate) use resolve::{
     parse_branch_mode, resolve_assignee, resolve_effort, resolve_opencode_model,
     resolve_optional_model, resolve_remote_control, resolve_str, resolve_u64,
 };
 #[cfg(test)]
 use view::config_json;
-pub use view::get;
+pub(crate) use view::get;
 #[cfg(test)]
 use write::cleartext_remote_host;
-pub use write::{set, unset};
+pub(crate) use write::{set, unset};
 
 #[derive(Args)]
-pub struct ConfigArgs {
+pub(crate) struct ConfigArgs {
     /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
@@ -42,7 +42,7 @@ pub struct ConfigArgs {
 }
 
 #[derive(Subcommand)]
-pub enum ConfigCommand {
+pub(crate) enum ConfigCommand {
     /// Save a setting in `.ralphy/settings.json`.
     Set {
         /// The key to set: `opencode.model`, `base_branch`, `branch_mode`,
@@ -71,7 +71,7 @@ pub enum ConfigCommand {
 }
 
 /// Dispatch a `config` subcommand.
-pub fn run(args: ConfigArgs) -> Result<()> {
+pub(crate) fn run(args: ConfigArgs) -> Result<()> {
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let ws = Workspace::new(&repo_root);
     match args.command {

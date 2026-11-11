@@ -69,7 +69,7 @@ pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
         .filter(|e| e.depth() > 0)
         .map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
-            let dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let dir = e.file_type().is_some_and(|t| t.is_dir());
             let ignored = rules.ignored(&ignored::join(&dir_rel, &name), dir);
             Entry { name, dir, ignored }
         })
@@ -94,8 +94,7 @@ pub(crate) fn walker(dir: &Path) -> ignore::WalkBuilder {
 pub(crate) fn is_not_noise(e: &ignore::DirEntry) -> bool {
     e.file_name()
         .to_str()
-        .map(|n| !HARD_EXCLUDE.contains(&n))
-        .unwrap_or(true)
+        .is_none_or(|n| !HARD_EXCLUDE.contains(&n))
 }
 
 /// A [`read`] failure that is not a plain confinement escape.

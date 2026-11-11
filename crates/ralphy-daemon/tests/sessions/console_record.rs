@@ -29,7 +29,7 @@ async fn daemon(dir: &std::path::Path) -> u16 {
     let (tx, rx) = tokio::sync::watch::channel(false);
     // The sender lives as long as the test process: a dropped sender reads as
     // a shutdown to every bridge.
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     let app = router(
         None,
         registry_path,
@@ -114,7 +114,7 @@ async fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) 
         .unwrap_or(0);
     let body = text
         .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
+        .map(|(_, b)| b.to_owned())
         .unwrap_or_default();
     (status, body)
 }
@@ -172,7 +172,7 @@ async fn a_running_console_gets_its_record_back_on_a_full_desk() {
     // A full desk first, then the running console's record.
     let changes: Vec<serde_json::Value> = (1..=ralphy_daemon::desk::DESK_MAX)
         .map(|n| create(format!("w-{n}")))
-        .chain(std::iter::once(create("w-live".to_string())))
+        .chain(std::iter::once(create("w-live".to_owned())))
         .collect();
     let upload = serde_json::json!({ "seq": 1, "changes": changes }).to_string();
     let (status, body) = http(port, "PUT", "/api/desk", &upload).await;

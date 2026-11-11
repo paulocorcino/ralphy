@@ -3,7 +3,7 @@
 //! the `stream-json` final-text parser, and the signal→[`ralphy_core::Outcome`] mapping — is
 //! confined here. See docs/adr/0028.
 //!
-//! Like the Codex and OpenCode adapters (and unlike Claude's live PTY session),
+//! Like the Codex and `OpenCode` adapters (and unlike Claude's live PTY session),
 //! Kimi needs no interactive session: `plan` and `execute` both run headless
 //! `kimi -p <charter>` with the charter on argv, and completion is detected from
 //! the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the final
@@ -135,7 +135,7 @@ impl KimiAgent {
     fn resolve_model(&self) -> String {
         self.model
             .clone()
-            .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_string())
+            .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_owned())
     }
 }
 
@@ -166,7 +166,7 @@ impl Agent for KimiAgent {
             );
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "".
-            let _ = self.plan_effort.as_deref();
+            let _: Option<&str> = self.plan_effort.as_deref();
             ralphy_core::emit::planning("kimi", &model, "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding dir/skills setup.
@@ -255,7 +255,7 @@ impl Agent for KimiAgent {
             );
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "".
-            let _ = self.exec_effort.as_deref();
+            let _: Option<&str> = self.exec_effort.as_deref();
             ralphy_core::emit::executing("kimi", 0, &model, "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let before = snapshot();

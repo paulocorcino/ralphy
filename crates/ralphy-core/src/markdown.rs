@@ -11,7 +11,7 @@ pub(crate) fn section_after_heading<'a>(md: &'a str, heading_re: &Regex) -> &'a 
     };
     let after = &md[start_m.end()..];
     let end_re = Regex::new(r"(?m)^##\s+").expect("valid regex");
-    let end = end_re.find(after).map(|m| m.start()).unwrap_or(after.len());
+    let end = end_re.find(after).map_or(after.len(), |m| m.start());
     &after[..end]
 }
 

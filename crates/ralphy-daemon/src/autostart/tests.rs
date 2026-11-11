@@ -14,14 +14,14 @@ fn spec() -> AutostartSpec {
 
 fn path_spec(path: &str) -> AutostartSpec {
     AutostartSpec {
-        path: Some(path.to_string()),
+        path: Some(path.to_owned()),
         ..spec()
     }
 }
 
 fn wsl_spec(distro: &str) -> AutostartSpec {
     AutostartSpec {
-        wsl_distro: Some(distro.to_string()),
+        wsl_distro: Some(distro.to_owned()),
         ..spec()
     }
 }
@@ -196,7 +196,7 @@ fn launchd_plist_pins_the_installers_path() {
 fn launchd_plist_escapes_xml_in_paths_and_env() {
     let plist = launchd_plist(&AutostartSpec {
         program: PathBuf::from("/Users/me/tools & bins/<ralphy>"),
-        path: Some("/a&b:/c<d>".to_string()),
+        path: Some("/a&b:/c<d>".to_owned()),
         ..spec()
     });
     assert!(
@@ -301,7 +301,7 @@ fn systemd_unit_pins_the_installers_path() {
     );
 
     let both = systemd_unit(&AutostartSpec {
-        wsl_distro: Some("Ubuntu-22.04".to_string()),
+        wsl_distro: Some("Ubuntu-22.04".to_owned()),
         ..path_spec(path)
     });
     assert!(

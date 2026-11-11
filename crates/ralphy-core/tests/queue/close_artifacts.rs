@@ -76,7 +76,7 @@ fn green_close_records_review_only_count_and_labels_the_issue() {
     // (ADR-0014 — review debt must never re-enter the human-blocker path).
     assert_eq!(
         tracker.labels.borrow().as_slice(),
-        [(1, "needs-human-review".to_string())]
+        [(1, "needs-human-review".to_owned())]
     );
 
     remove_scratch(&repo);
@@ -196,8 +196,8 @@ fn green_close_appends_knowledge_used_citations() {
     assert_eq!(
         entries[0].citations,
         vec![
-            "\"Toolchain & platform\" — cargo test needs docker up first".to_string(),
-            "handoffs.md #5: schema rejects empty DEVICEID".to_string(),
+            "\"Toolchain & platform\" — cargo test needs docker up first".to_owned(),
+            "handoffs.md #5: schema rejects empty DEVICEID".to_owned(),
         ]
     );
     assert_eq!(entries[1].issue, 2);
@@ -264,7 +264,7 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
     let labels = tracker.labels.borrow();
     assert_eq!(
         labels.as_slice(),
-        &[(3u64, "needs-split".to_string())],
+        &[(3u64, "needs-split".to_owned())],
         "bundle verdict applies the needs-split label"
     );
 
@@ -331,7 +331,7 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
                 2u64,
                 "## Handoff\n\n- **Delivered**: lab fixtures\n- **Commands that work**: docker \
                 compose up -d"
-                    .to_string(),
+                    .to_owned(),
             )]),
             ..Default::default()
         };
@@ -402,8 +402,8 @@ fn issue_comments_are_attached_to_the_planner_issue_json() {
         comment_threads: HashMap::from([(
             5u64,
             vec![
-                "first clarification from a human".to_string(),
-                "second: use the staging endpoint".to_string(),
+                "first clarification from a human".to_owned(),
+                "second: use the staging endpoint".to_owned(),
             ],
         )]),
         ..Default::default()

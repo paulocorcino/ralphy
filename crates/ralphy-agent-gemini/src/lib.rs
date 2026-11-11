@@ -3,7 +3,7 @@
 //! fold, the exit-code taxonomy and the policy document — is confined here.
 //! See docs/adr/0043.
 //!
-//! Like Codex, Kimi, OpenCode, Copilot and Cursor (and unlike Claude's live PTY
+//! Like Codex, Kimi, `OpenCode`, Copilot and Cursor (and unlike Claude's live PTY
 //! session), Gemini needs no interactive session: `plan` and `execute` both pipe
 //! the charter on **stdin** (ADR-0043 D2).
 //!
@@ -255,7 +255,7 @@ fn report_skill_discovery(
             }
         }
         None => {
-            tracing::warn!("gemini: skill discovery receipt unavailable (spawn error or timeout)")
+            tracing::warn!("gemini: skill discovery receipt unavailable (spawn error or timeout)");
         }
     }
 }
@@ -295,7 +295,7 @@ impl Agent for GeminiAgent {
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". Numeric
             // `thinkingBudget` mapping deliberately deferred.
-            let _ = self.plan_effort.as_deref();
+            let _: Option<&str> = self.plan_effort.as_deref();
             ralphy_core::emit::planning("gemini", model.unwrap_or(DEFAULT_MODEL), "", "");
             // Clock the budget at the spawn, not method entry, so the run_deadline
             // clamp isn't eroded by the preceding root setup.
@@ -404,7 +404,7 @@ impl Agent for GeminiAgent {
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". Numeric
             // `thinkingBudget` mapping deliberately deferred.
-            let _ = self.exec_effort.as_deref();
+            let _: Option<&str> = self.exec_effort.as_deref();
             ralphy_core::emit::executing("gemini", 0, model.unwrap_or(DEFAULT_MODEL), "", "");
             let timeout = self.budget.timeout(ralphy_core::UNBOUNDED_ISSUE_HORIZON);
             let r = self.run_gemini(cmd, &exec_prompt, timeout)?;

@@ -28,7 +28,7 @@ mod golden;
 /// A router over `auth`, with no store of its own.
 fn app(auth: &Arc<AuthState>) -> axum::Router {
     let (tx, rx) = tokio::sync::watch::channel(false);
-    std::mem::forget(tx);
+    let _kept = Box::leak(Box::new(tx));
     router(
         None,
         PathBuf::from("does-not-exist"),
@@ -160,7 +160,7 @@ async fn a_revoke_pushes_logins_dirty() {
 async fn revoke_needs_a_login() {
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
     let policy = AuthPolicy::Session(Arc::new(SessionAuth {
-        token: "tok".to_string(),
+        token: "tok".to_owned(),
         totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
         password: None,
         epoch: session_epoch.clone(),

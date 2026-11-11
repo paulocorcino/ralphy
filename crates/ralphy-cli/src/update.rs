@@ -118,22 +118,26 @@ fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Insta
     say("checksum ok");
 
     let staging = std::env::temp_dir().join(format!("ralphy-update-{}", std::process::id()));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&staging);
+    // the scratch directory may be gone
+    if let Err(rm_err) = std::fs::remove_dir_all(&staging) {
+        tracing::debug!(
+            "could not remove the directory {}: {rm_err}",
+            staging.display()
+        );
+    }
     let staged = apply::unpack(&bytes, &archive.name, &staging)?;
 
     let dest = ralphy_proc_util::exe::running_exe()?;
     // The same primitive `ralphy install` places through, so both replace a
     // running image the same way.
     let parked = crate::install::replace_binary(&dest, &staged)?;
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the scratch directory may be gone"
-    )]
-    let _ = std::fs::remove_dir_all(&staging);
+    // the scratch directory may be gone
+    if let Err(rm_err) = std::fs::remove_dir_all(&staging) {
+        tracing::debug!(
+            "could not remove the directory {}: {rm_err}",
+            staging.display()
+        );
+    }
     say(&format!("replaced {}", dest.display()));
     Ok(Installed { dest, parked })
 }
@@ -221,9 +225,9 @@ mod tests {
 
     fn release(tag: &str, published: &str) -> Release {
         Release {
-            tag_name: tag.to_string(),
+            tag_name: tag.to_owned(),
             name: None,
-            published_at: Some(published.to_string()),
+            published_at: Some(published.to_owned()),
             html_url: format!("https://example.invalid/{tag}"),
             prerelease: true,
             draft: false,
@@ -234,7 +238,7 @@ mod tests {
 
     fn asset(name: &str) -> ralphy_release::Asset {
         ralphy_release::Asset {
-            name: name.to_string(),
+            name: name.to_owned(),
             browser_download_url: format!("https://example.invalid/{name}"),
             size: 0,
         }

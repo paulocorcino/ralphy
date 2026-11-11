@@ -143,14 +143,14 @@ chat_id = 42
     }
     for id in peers {
         let descriptor = crate::peer::PeerDescriptor {
-            daemon_id: (*id).to_string(),
-            name: "peer".to_string(),
+            daemon_id: (*id).to_owned(),
+            name: "peer".to_owned(),
             avatar: String::new(),
-            address: "127.0.0.1".to_string(),
+            address: "127.0.0.1".to_owned(),
             port: 1,
-            environment: "WSL: Ubuntu".to_string(),
+            environment: "WSL: Ubuntu".to_owned(),
             os: String::new(),
-            token: "peer-token".to_string(),
+            token: "peer-token".to_owned(),
             protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
             nudge: None,
@@ -161,11 +161,11 @@ chat_id = 42
         config,
         claim: Default::default(),
         peers_dir: dir.path().join("peers"),
-        daemon_id: Some(own.to_string()),
+        daemon_id: Some(own.to_owned()),
         name: None,
     };
     let body = super::ClaimBody {
-        daemon_id: main.to_string(),
+        daemon_id: main.to_owned(),
     };
     super::claim_route(shared, body).await.status().as_u16()
 }
@@ -255,6 +255,6 @@ async fn a_claim_body_over_the_cap_is_refused() {
     };
     let (status, _) = reply_of(app.clone(), claim("a".repeat(super::CLAIM_MAX_BYTES))).await;
     assert_eq!(status, 413);
-    let (status, _) = reply_of(app, claim("m".to_string())).await;
+    let (status, _) = reply_of(app, claim("m".to_owned())).await;
     assert_eq!(status, 200, "a claim of the size the page sends is read");
 }

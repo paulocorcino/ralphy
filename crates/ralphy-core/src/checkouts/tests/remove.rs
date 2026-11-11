@@ -119,14 +119,14 @@ fn remove_applies_the_gates_in_order() {
     }
 
     // (7) nothing left to list.
-    assert!(list(&root).unwrap().worktrees.is_empty());
+    assert_eq!(list(&root).unwrap().worktrees, Vec::<Checkout>::new());
 
     remove_scratch(&root);
 }
 
 #[test]
 fn core_errors_keep_their_text_remove_error() {
-    let n = || "wt-a".to_string();
+    let n = || "wt-a".to_owned();
     let cases = [
         (
             RemoveError::NotFound { name: n() },

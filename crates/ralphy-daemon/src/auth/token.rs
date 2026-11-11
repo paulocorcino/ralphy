@@ -58,7 +58,7 @@ pub fn token_path() -> Result<PathBuf> {
 /// still compares equal.
 pub fn load_token_from(path: &Path) -> Result<Option<String>> {
     match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text.trim_end_matches(['\r', '\n']).to_string())),
+        Ok(text) => Ok(Some(text.trim_end_matches(['\r', '\n']).to_owned())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
     }
@@ -88,13 +88,12 @@ pub fn generate_token() -> String {
 /// save, and return a fresh one with `true`. The `bool` is "was newly minted",
 /// so `daemon setup` can show it exactly once.
 pub fn ensure_token_at(path: &Path) -> Result<(String, bool)> {
-    match load_token_from(path)?.filter(|t| !t.is_empty()) {
-        Some(token) => Ok((token, false)),
-        None => {
-            let token = generate_token();
-            save_token_to(&token, path)?;
-            Ok((token, true))
-        }
+    if let Some(token) = load_token_from(path)?.filter(|t| !t.is_empty()) {
+        Ok((token, false))
+    } else {
+        let token = generate_token();
+        save_token_to(&token, path)?;
+        Ok((token, true))
     }
 }
 

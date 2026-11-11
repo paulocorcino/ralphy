@@ -50,7 +50,7 @@ pub(super) fn add_to_user_path(dir: &Path) -> Result<Added> {
     };
     let mut places = Vec::new();
     if registry::add(dir)? {
-        places.push("your user Path (HKEY_CURRENT_USER\\Environment)".to_string());
+        places.push("your user Path (HKEY_CURRENT_USER\\Environment)".to_owned());
     }
     Ok(Added {
         places,
@@ -126,8 +126,7 @@ fn profile_targets(env: &ShellEnv<'_>, exists: &dyn Fn(&Path) -> bool) -> Vec<(P
 
     let config = env
         .config_home
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| home.join(".config"));
+        .map_or_else(|| home.join(".config"), Path::to_path_buf);
     let fish = config.join("fish");
     if shell == Shell::Fish || exists(&fish) {
         targets.push((fish.join("conf.d").join("ralphy.fish"), Shell::Fish));
@@ -242,7 +241,7 @@ fn path_with(current: &str, dir: &str) -> Option<String> {
     }
     let rest = current.trim().trim_matches(';');
     Some(if rest.is_empty() {
-        dir.to_string()
+        dir.to_owned()
     } else {
         format!("{dir};{rest}")
     })
@@ -260,11 +259,10 @@ mod tests {
     fn scratch(tag: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("ralphy-user-path-{}-{tag}", std::process::id()));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&dir);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) | Err(_) => {}
+        }
         std::fs::create_dir_all(&dir).expect("scratch");
         dir
     }
@@ -410,11 +408,10 @@ mod tests {
             format!("export EDITOR=vi\n\n{block}"),
             "a second install must not add a second block"
         );
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&home);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&home) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     /// The block is real shell code: `sh` runs it, puts the folder first, and a
@@ -440,11 +437,10 @@ mod tests {
             "stderr: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the scratch directory may be gone"
-        )]
-        let _ = std::fs::remove_dir_all(&home);
+        // the scratch directory may be gone
+        match std::fs::remove_dir_all(&home) {
+            Ok(()) | Err(_) => {}
+        }
     }
 
     #[test]

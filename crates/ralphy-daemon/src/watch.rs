@@ -111,13 +111,13 @@ impl RepoWatcher {
         let watch_set = Arc::new(Mutex::new(BTreeSet::new()));
         let debouncer = spawn_backend(
             WatchMode::Native,
-            repo.to_string(),
+            repo.to_owned(),
             canon_root.clone(),
             watch_set.clone(),
             tx.clone(),
         )?;
         Ok(Self {
-            repo: repo.to_string(),
+            repo: repo.to_owned(),
             root: canon_root,
             debouncer,
             watches: BTreeMap::new(),
@@ -205,7 +205,7 @@ impl WatcherManager {
             .with_context(|| format!("canonicalizing watch root {}", root.display()))?;
         let mut repos = lock(&self.repos);
         if !repos.contains_key(repo) {
-            repos.insert(repo.to_string(), RepoWatcher::new(repo, canon_root)?);
+            repos.insert(repo.to_owned(), RepoWatcher::new(repo, canon_root)?);
         }
         // Every failure below leaves the registry as it was: no raised count,
         // and no empty repo watcher.
@@ -285,9 +285,9 @@ fn hold(repos: &mut BTreeMap<String, RepoWatcher>, repo: &str, rel: &str) -> Res
             }
             return Err(e).with_context(|| format!("watching {}", target.display()));
         }
-        lock(&rw.watch_set).insert(rel.to_string());
+        lock(&rw.watch_set).insert(rel.to_owned());
     }
-    *rw.watches.entry(rel.to_string()).or_insert(0) += 1;
+    *rw.watches.entry(rel.to_owned()).or_insert(0) += 1;
     Ok(rw.tx.subscribe())
 }
 
@@ -342,11 +342,10 @@ fn spawn_backend(
     // the pump do the tokio-side work. A closed mpsc (pump gone) just drops it.
     let handler = move |res: DebounceEventResult| {
         if let Ok(events) = res {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a closed channel means the pump is gone, and the batch has no reader"
-            )]
-            let _ = evt_tx.send(events);
+            // A closed channel means the pump is gone, and the batch has no reader.
+            match evt_tx.send(events) {
+                Ok(()) | Err(_) => {}
+            }
         }
     };
     let deb = match mode {
@@ -381,11 +380,10 @@ async fn pump(
     while let Some(batch) = evt_rx.recv().await {
         for rel in touched_dirs(&batch, &root, &watch_set) {
             // No subscribers → Err; ignored (a nudge with no listener is a no-op).
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a broadcast with no subscriber is an error, and a nudge to no one is fine"
-            )]
-            let _ = tx.send((repo.clone(), rel));
+            // A broadcast with no subscriber is an error, and a nudge to no one is fine.
+            match tx.send((repo.clone(), rel)) {
+                Ok(_) | Err(_) => {}
+            }
         }
     }
 }
@@ -479,7 +477,7 @@ fn rel_to_slug(rel: &Path) -> String {
 /// a connection's watched dirs in the SAME form the nudges carry, so its
 /// per-connection filter matches.
 pub fn norm_rel(rel: &str) -> String {
-    rel.replace('\\', "/").trim_matches('/').to_string()
+    rel.replace('\\', "/").trim_matches('/').to_owned()
 }
 
 /// Whether `rel` is a dir the HEAD watch holds: a gitdir in the standard

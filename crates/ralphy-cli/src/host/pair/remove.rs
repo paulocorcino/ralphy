@@ -17,7 +17,7 @@ use super::Session;
 fn peer_public_line(store: &Path) -> Result<Option<String>> {
     let public = PathBuf::from(format!("{}.pub", key_path_in(store).display()));
     match std::fs::read_to_string(&public) {
-        Ok(text) => Ok(Some(text.trim().to_string())),
+        Ok(text) => Ok(Some(text.trim().to_owned())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e).with_context(|| format!("reading {}", public.display())),
     }

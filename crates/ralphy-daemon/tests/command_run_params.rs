@@ -64,7 +64,7 @@ async fn run_command_argv_reaches_the_child() {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: "run".to_string(),
+            verb: "run".to_owned(),
             payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
         }))
         .into(),
@@ -129,7 +129,7 @@ async fn run_command_argv_reaches_the_child() {
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 2,
-            verb: "run".to_string(),
+            verb: "run".to_owned(),
             payload: serde_json::json!({
                 "repo": slug,
                 "agent": "kimi",
