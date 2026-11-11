@@ -176,7 +176,10 @@ mod tests {
         // else — a second filename here would be a second thing being read.
         let operator_reads: Vec<&str> = crate_src
             .match_indices("root?.join(")
-            .map(|(i, _)| &crate_src[i..crate_src[i..].find(')').unwrap() + i])
+            .map(|(i, _)| {
+                let call = crate_src.split_at(i).1;
+                call.split_once(')').expect("a call closes").0
+            })
             .collect();
         assert_eq!(
             operator_reads,

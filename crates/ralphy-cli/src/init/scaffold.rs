@@ -93,17 +93,17 @@ fn upsert_agent_skills_block(doc: &str, block: &str) -> String {
     // top-level heading (not just `## `) as the boundary means a following `# `
     // or `## ` sibling section is preserved rather than silently clobbered; a
     // deeper `### ` nests under our section and is replaced with it.
-    let after = &doc[start..];
+    let (head, after) = doc.split_at(start);
     let body_offset = after.find('\n').map_or(after.len(), |n| n + 1);
-    let end_rel = next_top_heading(&after[body_offset..]).map(|p| body_offset + p);
+    let end_rel = next_top_heading(after.split_at(body_offset).1).map(|p| body_offset + p);
 
     let mut out = String::new();
-    out.push_str(&doc[..start]);
+    out.push_str(head);
     out.push_str(block);
     out.push('\n');
     if let Some(end_rel) = end_rel {
         out.push('\n');
-        out.push_str(after[end_rel..].trim_start_matches('\n'));
+        out.push_str(after.split_at(end_rel).1.trim_start_matches('\n'));
     }
 
     out
@@ -130,7 +130,7 @@ fn next_top_heading(s: &str) -> Option<usize> {
     let mut offset = 0;
     for line in s.split_inclusive('\n') {
         let hashes = line.chars().take_while(|&c| c == '#').count();
-        if (hashes == 1 || hashes == 2) && line[hashes..].starts_with(' ') {
+        if (hashes == 1 || hashes == 2) && line.trim_start_matches('#').starts_with(' ') {
             return Some(offset);
         }
 

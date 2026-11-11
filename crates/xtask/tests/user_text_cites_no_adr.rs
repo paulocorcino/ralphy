@@ -121,7 +121,7 @@ fn production(text: &str) -> &str {
                 .peek()
                 .is_some_and(|next| next.trim_start().starts_with("mod "))
         {
-            return &text[..offset];
+            return text.split_at(offset).0;
         }
         offset += line.len();
     }

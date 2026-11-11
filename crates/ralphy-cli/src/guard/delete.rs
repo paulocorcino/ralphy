@@ -55,11 +55,12 @@ fn is_delete_flag(kind: &DeleteKind, tok: &str) -> bool {
         // cmd.exe switches: `/s`, `/q`, `/a:h`, … (also tolerate `-`).
         DeleteKind::DelRmdir => {
             tok.starts_with('-')
-                || (tok.starts_with('/')
-                    && tok.len() <= 4
-                    && tok[1..]
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == ':'))
+                || (tok.len() <= 4
+                    && tok.strip_prefix('/').is_some_and(|switch| {
+                        switch
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == ':')
+                    }))
         }
     }
 }

@@ -336,10 +336,13 @@ fn the_triage_command_includes_every_attachment_directory() {
     // `triage_issues` must pass the request's own images, and it is the
     // only verb that may widen the workspace this way.
     let src = crate::tests::production_text(include_str!("../tasks.rs"));
-    let triage = &src[src
-        .find("pub fn triage_issues(")
-        .expect("triage_issues must exist")..];
-    let triage = &triage[..triage.find("\n}").expect("triage_issues must end")];
+    let triage = src
+        .split_at(
+            src.find("pub fn triage_issues(")
+                .expect("triage_issues must exist"),
+        )
+        .1;
+    let (triage, _) = triage.split_once("\n}").expect("triage_issues must end");
     assert!(
         triage.contains(concat!(
             "command::add_include_",

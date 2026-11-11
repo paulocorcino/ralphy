@@ -315,7 +315,7 @@ mod tests {
                 rest.char_indices()
                     .map(|(i, _)| i)
                     .chain([rest.len()])
-                    .any(|i| glob(tail, &rest[i..]))
+                    .any(|i| glob(tail, rest.split_at(i).1))
             }
         }
     }

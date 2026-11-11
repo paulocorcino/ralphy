@@ -119,8 +119,8 @@ fn ui_literals(js: &str) -> BTreeSet<String> {
     let table =
         Regex::new(r"const (?:CAUSE|REFUSAL_TEXT)(?::[^=\n]*)? = \{").expect("a valid regex");
     for found in table.find_iter(js) {
-        let body = &js[found.end()..];
-        let body = &body[..body.find("};").unwrap_or(body.len())];
+        let body = js.split_at(found.end()).1;
+        let body = body.split_at(body.find("};").unwrap_or(body.len())).0;
         for line in body.lines() {
             if let Some(c) = key.captures(line) {
                 let k = c.get(1).or_else(|| c.get(2)).expect("one group matched");

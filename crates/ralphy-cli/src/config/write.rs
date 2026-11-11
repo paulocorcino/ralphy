@@ -291,7 +291,7 @@ pub(crate) fn unset(ws: &Workspace, key: &str) -> Result<()> {
         let slug = git::project_slug(ws.repo_root());
         let mut store = crate::events::config::EventsStore::load()?;
         // The field name is the key's suffix (`url` / `token`).
-        store.clear(&slug, &key["events.".len()..]);
+        store.clear(&slug, key.split_at("events.".len()).1);
         store.save()?;
         println!("{key}: unset");
         return Ok(());

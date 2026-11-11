@@ -46,7 +46,9 @@ pub(crate) fn parse_codex_reset_hint(text: &str) -> Option<String> {
         if let Some(pos) = lower.find("try again at ") {
             // Strip trailing sentence punctuation an error line leaves on the hint
             // (e.g. "… try again at <ts>.") so the hint is clean for the parser.
-            let rest = line[pos + "try again at ".len()..]
+            let rest = line
+                .split_at(pos + "try again at ".len())
+                .1
                 .trim()
                 .trim_end_matches('.')
                 .trim();

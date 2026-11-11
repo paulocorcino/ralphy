@@ -174,7 +174,7 @@ fn retry_after_field(event: &serde_json::Value) -> Option<String> {
 /// `lower` is the ASCII-lowercase of `msg`, so byte positions agree.
 fn retry_after_header(msg: &str, lower: &str) -> Option<String> {
     let pos = lower.find("retry-after:")?;
-    let rest = msg[pos + "retry-after:".len()..].trim();
+    let rest = msg.split_at(pos + "retry-after:".len()).1.trim();
     let hint = rest
         .split_whitespace()
         .next()
@@ -188,7 +188,7 @@ fn retry_after_header(msg: &str, lower: &str) -> Option<String> {
 fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
     for prefix in &["try again at ", "try again in "] {
         if let Some(pos) = lower.find(prefix) {
-            let rest = msg[pos + prefix.len()..].trim();
+            let rest = msg.split_at(pos + prefix.len()).1.trim();
             let hint: String = rest
                 .chars()
                 .take_while(|c| *c != '.' && *c != '\n')

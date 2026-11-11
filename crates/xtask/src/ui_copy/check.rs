@@ -349,8 +349,8 @@ fn has_term(text: &str, term: &str, whole_word: bool, case_sensitive: bool) -> b
         (text.to_ascii_lowercase(), term.to_ascii_lowercase())
     };
     hay.match_indices(&needle).any(|(at, m)| {
-        let before = hay[..at].chars().next_back();
-        let after = hay[at + m.len()..].chars().next();
+        let before = hay.split_at(at).0.chars().next_back();
+        let after = hay.split_at(at + m.len()).1.chars().next();
         let bounded =
             !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric);
         (!whole_word || bounded) && !in_code_token(&hay, at, at + m.len())
@@ -360,15 +360,19 @@ fn has_term(text: &str, term: &str, whole_word: bool, case_sensitive: bool) -> b
 fn in_code_token(text: &str, from: usize, to: usize) -> bool {
     // A byte index after the whitespace char: it can be wider than one byte
     // (U+00A0 from `&#160;`, which html.rs decodes after it squeezes).
-    let start = text[..from]
+    let start = text
+        .split_at(from)
+        .0
         .char_indices()
         .rev()
         .find(|(_, c)| c.is_whitespace())
         .map_or(0, |(k, c)| k + c.len_utf8());
-    let end = text[to..]
+    let end = text
+        .split_at(to)
+        .1
         .find(char::is_whitespace)
         .map_or(text.len(), |k| to + k);
-    let token = &text[start..end];
+    let token = text.get(start..end).expect("both ends are char boundaries");
     token.contains('/') || token.starts_with(['.', '<', '`'])
 }
 
@@ -380,8 +384,8 @@ fn has_contraction(text: &str, contraction: &str) -> bool {
     let c = contraction.to_lowercase();
     let suffix = c.starts_with('\'') || c.starts_with("n'");
     hay.match_indices(&c).any(|(at, m)| {
-        let before = hay[..at].chars().next_back();
-        let after = hay[at + m.len()..].chars().next();
+        let before = hay.split_at(at).0.chars().next_back();
+        let after = hay.split_at(at + m.len()).1.chars().next();
         let ends = !after.is_some_and(char::is_alphanumeric);
         if suffix {
             before.is_some_and(char::is_alphabetic) && ends

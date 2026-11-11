@@ -317,11 +317,11 @@ const ADAPTER_EMIT_SITES: &[AdapterEmitSite] = &[
 fn call_slices<'a>(src: &'a str, call: &str) -> Vec<&'a str> {
     let mut out = Vec::new();
     let mut from = 0usize;
-    while let Some(rel) = src[from..].find(call) {
+    while let Some(rel) = src.split_at(from).1.find(call) {
         let open = from + rel + call.len();
         let mut depth = 1usize;
         let mut end = open;
-        for (i, c) in src[open..].char_indices() {
+        for (i, c) in src.split_at(open).1.char_indices() {
             match c {
                 '(' => depth += 1,
                 ')' => {
@@ -334,7 +334,7 @@ fn call_slices<'a>(src: &'a str, call: &str) -> Vec<&'a str> {
                 _ => {}
             }
         }
-        out.push(&src[open..end]);
+        out.push(src.get(open..end).expect("`(` and `)` are one byte"));
         from = open;
     }
     out
@@ -345,7 +345,7 @@ fn call_slices<'a>(src: &'a str, call: &str) -> Vec<&'a str> {
 fn contains_in_order(slice: &str, fragments: &[&str]) -> bool {
     let mut from = 0usize;
     for f in fragments {
-        match slice[from..].find(f) {
+        match slice.split_at(from).1.find(f) {
             Some(rel) => from += rel + f.len(),
             None => return false,
         }

@@ -263,7 +263,10 @@ fn render_append_key_windows_user_and_administrator() {
     );
     assert!(admin.contains("/inheritance:r"), "{admin}");
     // cmd.exe cannot pass either inside the quoted script.
-    let script = &admin[admin.find('"').unwrap() + 1..admin.len() - 1];
+    let script = admin
+        .split_once('"')
+        .and_then(|(_, rest)| rest.strip_suffix('"'))
+        .expect("the script is quoted");
     assert!(!script.contains('"') && !script.contains('%'), "{script}");
 }
 

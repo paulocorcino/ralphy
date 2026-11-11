@@ -391,16 +391,18 @@ fn evidence_comment_flags_review_only_and_unmatched() {
     // The matched verified criterion must NOT carry a NEEDS REVIEW flag.
     // Split on the criterion text and check only the line that follows it.
     if let Some(idx) = comment.find("Verified and matched") {
-        let tail = &comment[idx..];
+        let tail = comment.split_at(idx).1;
         let line_end = tail.find('\n').unwrap_or(tail.len());
         // The criterion line plus the next evidence line must not contain the flag.
-        let two_lines_end = tail[line_end + 1..]
+        let two_lines_end = tail
+            .split_at(line_end + 1)
+            .1
             .find('\n')
             .map_or(tail.len(), |n| line_end + 1 + n);
         assert!(
-            !tail[..two_lines_end].contains("[NEEDS REVIEW"),
+            !tail.split_at(two_lines_end).0.contains("[NEEDS REVIEW"),
             "matched verified criterion must not be flagged: {}",
-            &tail[..two_lines_end]
+            tail.split_at(two_lines_end).0
         );
     }
 }

@@ -244,7 +244,7 @@ fn has_compliance(text: &str) -> bool {
             if in_comment {
                 match rest.find("-->") {
                     Some(end) => {
-                        rest = rest[end + 3..].trim();
+                        rest = rest.split_at(end + 3).1.trim();
                         in_comment = false;
                     }
                     None => rest = "",
@@ -252,7 +252,7 @@ fn has_compliance(text: &str) -> bool {
             } else {
                 match rest.find("<!--") {
                     Some(0) => {
-                        rest = &rest[4..];
+                        rest = rest.split_at(4).1;
                         in_comment = true;
                     }
                     Some(_) | None => return true,

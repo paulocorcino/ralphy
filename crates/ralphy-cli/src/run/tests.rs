@@ -20,7 +20,9 @@ fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
     // without a trailing comma.
     let args_at = |open: usize| -> &str {
         let mut depth = 1;
-        let len = code[open..]
+        let len = code
+            .split_at(open)
+            .1
             .char_indices()
             .find_map(|(j, c)| {
                 match c {
@@ -31,7 +33,7 @@ fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
                 (depth == 0).then_some(j)
             })
             .expect("a balanced call");
-        code[open..open + len].trim_end_matches(',')
+        code.split_at(open).1.split_at(len).0.trim_end_matches(',')
     };
     // Each phase resolves from its OWN flag and its own setting.
     for phase in ["plan", "exec"] {
@@ -48,7 +50,7 @@ fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
     // The executor and the split planner are each built with it.
     let builds: Vec<&str> = code
         .match_indices("build_agent(")
-        .filter(|(i, _)| !code[..*i].ends_with("fn"))
+        .filter(|(i, _)| !code.split_at(*i).0.ends_with("fn"))
         .map(|(i, m)| args_at(i + m.len()))
         .collect();
     assert!(

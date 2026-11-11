@@ -111,12 +111,12 @@ fn verbs(dispatch: &str) -> BTreeSet<String> {
     let start = dispatch
         .find(head)
         .expect("dispatch.rs has Verb::from_query");
-    let body = &dispatch[start..];
+    let body = dispatch.split_at(start).1;
     let end = body
         .find("_ => None")
         .expect("from_query ends with `_ => None`");
     let arm = Regex::new(r#""([^"]+)"\s*=>\s*Some\("#).expect("a valid regex");
-    arm.captures_iter(&body[..end])
+    arm.captures_iter(body.split_at(end).0)
         .map(|c| c[1].to_string())
         .collect()
 }

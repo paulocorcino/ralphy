@@ -451,9 +451,13 @@ mod tests {
                 .find(&arm)
                 .unwrap_or_else(|| panic!("no {arm} dispatch arm"))
                 + arm.len();
-            let end = code[start..].find("=>").map_or(code.len(), |i| start + i);
+            let end = code
+                .split_at(start)
+                .1
+                .find("=>")
+                .map_or(code.len(), |i| start + i);
             assert!(
-                code[start..end].contains(real_call),
+                code.split_at(end).0.split_at(start).1.contains(real_call),
                 "expected {real_call} inside the {arm} arm, not merely in the file"
             );
         }

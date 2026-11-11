@@ -263,7 +263,7 @@ fn production(text: &str) -> &str {
     while let Some(line) = lines.next() {
         if line.trim() == "#[cfg(test)]" && lines.peek().is_some_and(|next| opens_inline_mod(next))
         {
-            return &text[..offset];
+            return text.split_at(offset).0;
         }
         offset += line.len();
     }
