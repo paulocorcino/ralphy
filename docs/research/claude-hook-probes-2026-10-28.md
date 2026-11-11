@@ -68,7 +68,7 @@ program drove `claude.exe` through `ralphy_pty::PtySession` (ConPTY,
 was a new `git init` folder under `%TEMP%` with no entry in
 `~/.claude.json`. Command:
 
-```
+```text
 claude.exe --dangerously-skip-permissions --settings <s.json> --model haiku
 ```
 
@@ -151,7 +151,7 @@ part of the typed text.
 Measured on 2026-10-28, Windows 11, Claude Code 2.1.312, in an empty
 temporary folder. Each command got one user message (the M5 line) on stdin:
 
-```
+```text
 claude -p --model haiku --input-format stream-json --output-format stream-json --verbose
 ```
 

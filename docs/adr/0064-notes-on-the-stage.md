@@ -51,7 +51,7 @@ always means this ADR's document.
 ([ADR-0051 §10](./0051-consoles-stage-plane-and-fences.md) is the precedent:
 an existing `desk.toml` keeps loading). A note record is
 
-```
+```json
 { id, checkout, path, rect, locked }
 ```
 
@@ -75,7 +75,7 @@ text, and the popup reports the name its first save chose.)
 
 A note is one file with the extension `.note`:
 
-```
+```text
 "RNOT"  version u8 = 1  raw-deflate(markdown)
 ```
 
@@ -314,7 +314,7 @@ needed. A menu row with a second level made the list longer for no gain.
   was lost, recovers every note through the explorer — no scan-and-offer
   feature is needed.
 - **Missing file** (a branch switch, an `rm`): the card dims by opacity
-  (ADR-0035 §5), the body reads "file missing: <path>", the tools shrink to
+  (ADR-0035 §5), the body reads "file missing: \<path>", the tools shrink to
   *remove* and *point elsewhere*. It is never recreated on the operator's
   behalf.
 
@@ -456,7 +456,7 @@ the page, bundles and screenshots were scratch and were not kept.
 Implementing §3 measured two things the sketch did not survive. The container
 is now
 
-```
+```text
 "RNOT"  version u8 = 1  len u32le  mask(raw-deflate(markdown))
 ```
 
@@ -577,7 +577,7 @@ what anyone means by "a yellow note", and a card that *is* yellow needs a text
 colour chosen for it — the theme's `--text` is written for the dark ground. The
 front matter therefore carries three fields, each a closed set:
 
-```
+```text
 color: ochre | sage | rose | slate | plum | sand      the tone
 fill:  wash | solid                                   how much of it the ground takes
 ink:   default | light | dark | <any tone>            the text over it
@@ -610,7 +610,7 @@ an `h1` at the top of the body, one line under the identical text in the head.
 The operator's words: *deveria ficar apenas no título, não preciso disso no
 corpo do notes*. The name moves into the front-matter block beside `color`:
 
-```
+```text
 title: "Sprint 12: what is left"     the name, a quoted YAML scalar
 color: ochre | sage | …              the tone (unchanged)
 ```

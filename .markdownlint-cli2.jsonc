@@ -16,31 +16,10 @@
     "default": true,
     // MD013 (line length) is off by D9: it wraps prose and the repo does not wrap
     "MD013": false,
-    // debt: 2 sites
-    "MD001": false,
-    // debt: 24 sites
-    "MD022": false,
-    // debt: 12 sites
-    "MD024": false,
-    // debt: 17 sites
-    "MD025": false,
-    // debt: 4 sites
-    "MD026": false,
-    // debt: 2 sites
-    "MD028": false,
-    // debt: 8 sites
-    "MD029": false,
-    // debt: 5 sites
-    "MD032": false,
-    // debt: 219 sites
-    "MD033": false,
-    // debt: 12 sites
-    "MD036": false,
-    // debt: 147 sites
-    "MD040": false,
-    // debt: 1 sites
-    "MD041": false,
-    // debt: 9 sites
-    "MD056": false
+    // br breaks lines in the table cells of the converted papers in docs/research;
+    // p and img set the phone screenshots of the README side by side
+    "MD033": { "allowed_elements": ["br", "p", "img"] },
+    // debt: 1666 sites (new in markdownlint-cli2 0.24.0)
+    "MD060": false
   }
 }

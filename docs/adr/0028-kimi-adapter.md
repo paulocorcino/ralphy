@@ -51,7 +51,7 @@ ADR-0005 folded in for `opencode`.
 
 **Historical (`kimi-cli` 1.48) invocation shape, superseded by D5's 0.28 contract:**
 
-```
+```text
 kimi --work-dir <ws> --print --input-format text --output-format stream-json -y \
      -m kimi-code/kimi-for-coding   < <charter on stdin>
 ```
@@ -128,7 +128,7 @@ inert and there is no
 Typer subcommand parser, no Textual TUI, and no cp1252 charmap crash to guard
 against.** The validated 0.28 contract, live on both Windows and WSL:
 
-```
+```text
 kimi -p <charter> --output-format stream-json -m <model> --skills-dir <dir>
 ```
 
@@ -175,7 +175,7 @@ cross-platform WSL re-run confirmed the four *refusal* strings word-for-word —
 `--work-dir`, `--yolo`, `--auto`, prompt-mode-only — but did not separately
 re-capture this auth line on WSL):
 
-```
+```text
 error: failed to run prompt: auth.login_required:
 OAuth provider "managed:kimi-code" requires login before it can be used.
 ```

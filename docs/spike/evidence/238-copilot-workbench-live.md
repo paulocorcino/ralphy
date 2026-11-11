@@ -27,7 +27,7 @@ daemon's own wire codec (`protocol.rs`), i.e. exactly what the browser sends.
 `GET /ws/session?agent=copilot&repo=paulocorcino%2Fralphy`. The PTY opened,
 emitted `ESC[6n`, and drew once the probe answered the DSR as a terminal would:
 
-```
+```text
   ╭─╮╭─╮
   ╰─╯╰─╯  Copilot v1.0.71 uses AI.
   █ ▘▝ █  Check for mistakes.
@@ -39,7 +39,7 @@ C:\Dev\ralphy [⎇ feat/copilot]
 
 The daemon's child process list confirms the real binary, not a stand-in:
 
-```
+```text
 ProcessId : 14612
 Name      : copilot.exe
 cmd       : C:\Users\PICHAU\AppData\Local\Microsoft\WinGet\Links\copilot.EXE
@@ -53,13 +53,13 @@ first probe passed it and correctly got `pwsh`. The agent path is `agent=` alone
 `/ws/command`, verb `run`, payload `{repo, agent: "copilot", branchMode: "new"}`.
 The spawned child's command line, read back from WMI while it lived:
 
-```
+```text
 "C:\Dev\ralphy\target\debug\ralphy.exe" run --if-idle --agent copilot --branch-mode new
 ```
 
 The frames the daemon sent back:
 
-```
+```json
 {"id":1,"verb":"run","payload":{"pid":47928,"status":"spawned"}}
 {"id":1,"verb":"run","payload":{"chunk":"Error: ","status":"output"}}
 {"id":1,"verb":"run","payload":{"chunk":"`gh issue list --label ready-for-agent` failed: GraphQL: Could not resolve to a Repository with the name 'paulocorcino/ralphy-238-no-such-repo'. (repository)\n","status":"output"}}
@@ -90,7 +90,7 @@ Browser-driven (headless Chromium against `http://127.0.0.1:7357`):
 
 `GET /api/usage` over the live store, records per agent:
 
-```
+```text
 claude 1484 · codex 171 · opencode 110 · kimi 74 · copilot 26
 ```
 

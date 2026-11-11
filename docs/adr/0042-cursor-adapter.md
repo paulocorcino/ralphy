@@ -61,7 +61,7 @@ undoes this supersedes this paragraph.
 
 ## D2 — The prompt goes in on stdin
 
-```
+```text
 agent -p --model <id|auto> --force --output-format stream-json
       --resume <minted-uuid>   < <charter on stdin>
 ```

@@ -54,7 +54,7 @@ fn ci_installs_the_pinned_tsgolint() {
 /// The oxfmt of the format check of the `ui-tests` job of `ci.yml`, fetched
 /// by version and checksum, and of the format step of the gate. A new version
 /// formats some text in another way, so a raise is its own reformat commit.
-const OXFMT_VERSION: &str = "0.75.0";
+const OXFMT_VERSION: &str = "0.78.0";
 
 #[test]
 fn ci_installs_the_pinned_oxfmt() {
@@ -64,7 +64,7 @@ fn ci_installs_the_pinned_oxfmt() {
 /// The markdownlint-cli2 of the `checks` job of `ci.yml`, run by `npx`, and of
 /// the markdown step of the gate. A new version can find new sites, so a raise
 /// is its own commit.
-const MARKDOWNLINT_VERSION: &str = "0.18.1";
+const MARKDOWNLINT_VERSION: &str = "0.24.0";
 
 #[test]
 fn ci_installs_the_pinned_markdownlint() {
@@ -114,7 +114,7 @@ fn ci_uses_the_pinned_rust_toolchain() {
 
 /// The ast-grep of the `checks` job of `ci.yml`, fetched by version and
 /// checksum, and of the ast-grep steps of the gate, run by `npx`.
-const ASTGREP_VERSION: &str = "0.51.1";
+const ASTGREP_VERSION: &str = "0.51.2";
 
 #[test]
 fn ci_installs_the_pinned_ast_grep() {
@@ -156,6 +156,12 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("SHELLCHECK", "shellcheck"),
     ("PSSCRIPTANALYZER", "PSScriptAnalyzer"),
     ("MARKDOWNLINT", "markdownlint-cli2"),
+    ("YAMLLINT", "yamllint"),
+    ("HTMLVALIDATE", "html-validate"),
+    ("STYLELINT", "stylelint"),
+    ("TAPLO", "taplo"),
+    ("LYCHEE", "lychee"),
+    ("EDITORCONFIGCHECKER", "editorconfig-checker"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks

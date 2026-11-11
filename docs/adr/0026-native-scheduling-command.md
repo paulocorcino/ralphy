@@ -31,7 +31,7 @@ at all. Those are the decisions below.
 
 Scheduling is its own top-level command:
 
-```
+```sh
 ralphy schedule install <run|triage>
 ralphy schedule status
 ralphy schedule remove <run|triage|--all>
@@ -81,7 +81,7 @@ full space of timer configurations.
 `ralphy schedule install run --with-triage` registers **one** timer whose action
 is the chained pair, triage first:
 
-```
+```sh
 ralphy triage --yes ; ralphy run --if-idle
 ```
 

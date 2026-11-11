@@ -15,7 +15,7 @@ line, and a loose note `.ralphy/knowledge/issue-1.md`.
 
 ## Command
 
-```
+```text
 env -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
     ./target/debug/ralphy.exe consolidate --repo /tmp/ralphy-copilot-237 \
     --agent copilot --max-minutes 15
@@ -23,7 +23,7 @@ env -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_GITHUB_TOKEN \
 
 ## Output
 
-```
+```text
 Consolidating 1 note(s) into KNOWLEDGE.md: issue-1.md
 Done: KNOWLEDGE.md updated, 1 note(s) archived into .ralphy/knowledge/raw/.
 ```

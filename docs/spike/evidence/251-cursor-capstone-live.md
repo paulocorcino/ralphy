@@ -1,7 +1,7 @@
 # Live capstone — `ralphy run --agent cursor` end-to-end (#251)
 
 Raw-evidence companion to the accepted note
-[docs/adr/0042-cursor-validation.md](../adr/0042-cursor-validation.md). Where that
+[docs/adr/0042-cursor-validation.md](../../adr/0042-cursor-validation.md). Where that
 file records the verdict per phase, this one carries the numbers, commands and log
 lines behind it.
 
@@ -120,6 +120,6 @@ feasibility read, not a platform divergence. `permissionMode` is `default` on bo
 
 ## Follow-ups filed
 
-# 268 verify-gate nested-quote tokenizer (fixed `ce54f92`) · #269 per-issue under-count
+\#268 verify-gate nested-quote tokenizer (fixed `ce54f92`) · #269 per-issue under-count
 (consolidate pass dropped) · #270 harvest-aware budget (ADR-0038) · #271 logged-out
 stale-plan masks the auth stop.

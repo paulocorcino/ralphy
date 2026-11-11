@@ -29,8 +29,8 @@ env:
   ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
   MACHETE_VERSION: "0.9.2"
   MACHETE_SHA256: 48200087f54c55aabcd4db4af1e25742b49846c02a1b1bfa134711945b35b2e9
-  TYPOS_VERSION: "1.51.1"
-  TYPOS_SHA256: 93c301fd4120ff076e2cc2a6d6a61cab4a4bdb81899287c0938b452e56d1f454
+  TYPOS_VERSION: "1.52.2"
+  TYPOS_SHA256: 3b13d1291281d39d01822e54035636487a7a0f228e70097899b1e33aeb0e7e93
   # The tsgolint of the type-aware run of the `ui-tests` job: the npm tarball
   # of @oxlint-tsgolint/linux-x64. The type-aware step of `xtask gate` runs
   # the same version through npx, and `ci_installs_the_pinned_tsgolint`
@@ -41,13 +41,13 @@ env:
   # of `xtask gate` runs the same version through npx, and
   # `ci_installs_the_pinned_oxfmt` fails when the two differ. A new version
   # is its own reformat commit.
-  OXFMT_VERSION: "0.75.0"
-  OXFMT_SHA256: 6a111e38ab6edfe61b87deffbc95e461e3b7326d5d034bdee71ba92cdfd87641
+  OXFMT_VERSION: "0.78.0"
+  OXFMT_SHA256: ed43ec296f699a5bcbb1c1947e2aeb4271c3674e43dc6db463f8c1da4c9bf15f
   # The ast-grep of the `checks` job: the rules that read the shape of the code
   # (sgconfig.yml). The ast-grep steps of `xtask gate` run the same version
   # through npx, and `ci_installs_the_pinned_ast_grep` fails when the two differ.
-  ASTGREP_VERSION: "0.51.1"
-  ASTGREP_SHA256: 42514f77ae0c8a25d7d32154d31d3e7e16f3ab894f8ce76ce417de234ee49157
+  ASTGREP_VERSION: "0.51.2"
+  ASTGREP_SHA256: 40604c21c38d4c7581c56bdddeef277c56bf3c0113620aa96e78ae87e82366df
   # The shellcheck of the `checks` job: a release binary, pinned like actionlint.
   SHELLCHECK_VERSION: "0.11.0"
   SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
@@ -58,7 +58,28 @@ env:
   # The markdownlint-cli2 of the `checks` job. The markdownlint step of
   # `xtask gate` runs the same version through npx, and
   # `ci_installs_the_pinned_markdownlint` fails when the two differ.
-  MARKDOWNLINT_VERSION: "0.18.1"
+  MARKDOWNLINT_VERSION: "0.24.0"
+  # The yamllint of the `checks` job. The yamllint step of `xtask gate`
+  # runs the module installed on the machine.
+  YAMLLINT_VERSION: "1.38.0"
+  # The html-validate of the `checks` job. The html-validate step of
+  # `xtask gate` runs the same version through npx.
+  HTMLVALIDATE_VERSION: "11.21.0"
+  # The stylelint of the `checks` job. The stylelint step of `xtask gate`
+  # runs the same version through npx.
+  STYLELINT_VERSION: "18.0.0"
+  # The taplo of the `checks` job: a release binary, pinned by checksum.
+  # The taplo step of `xtask gate` run the taplo on PATH.
+  TAPLO_VERSION: "0.10.0"
+  TAPLO_SHA256: 8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
+  # The lychee of the `checks` job: a release binary, pinned by checksum.
+  # The lychee step of `xtask gate` runs the lychee on PATH.
+  LYCHEE_VERSION: "0.24.2"
+  LYCHEE_SHA256: 1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a
+  # The editorconfig-checker of the `checks` job: a release binary, pinned by
+  # checksum. The step of `xtask gate` runs the editorconfig-checker on PATH.
+  EDITORCONFIGCHECKER_VERSION: "4.0.2"
+  EDITORCONFIGCHECKER_SHA256: 44efaef3ed14c6ab52eb87481d78e5e5c204796dccf26e2f4598a61ba17f8003
 
 jobs:
   lint:
@@ -147,6 +168,49 @@ jobs:
       # off there and has a debt line.
       - name: Markdown (markdownlint)
         run: npx -y "markdownlint-cli2@${MARKDOWNLINT_VERSION}"
+
+      # The rules are in .yamllint.yml; a rule with sites left is off there
+      # and has a debt line.
+      - name: YAML (yamllint)
+        run: pipx run "yamllint==${YAMLLINT_VERSION}" -s .
+
+      # The rules are in .htmlvalidate.json; their reasons and debt counts
+      # are at the html-validate step of crates/xtask/src/gate/steps.rs.
+      - name: HTML (html-validate)
+        run: npx -y "html-validate@${HTMLVALIDATE_VERSION}" crates/ralphy-daemon/assets/ui
+
+      # The rules are in .stylelintrc.json; their reasons and debt counts
+      # are at the stylelint step of crates/xtask/src/gate/steps.rs.
+      - name: CSS (stylelint)
+        run: npx -y "stylelint@${STYLELINT_VERSION}" "crates/ralphy-daemon/assets/ui/styles/*.css"
+
+      # The files are in taplo.toml.
+      - name: TOML (taplo)
+        run: |
+          curl -fsSL -o taplo.gz "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-x86_64.gz"
+          echo "${TAPLO_SHA256}  taplo.gz" | sha256sum -c -
+          gunzip taplo.gz
+          chmod +x taplo
+          ./taplo check
+
+      - name: TOML format (taplo)
+        run: ./taplo fmt --check
+
+      # The rules are in .editorconfig, the settings in .editorconfig-checker.json.
+      - name: Text files (editorconfig-checker)
+        run: |
+          curl -fsSL -o ec.tar.gz "https://github.com/editorconfig-checker/editorconfig-checker/releases/download/v${EDITORCONFIGCHECKER_VERSION}/editorconfig-checker-linux-amd64.tar.gz"
+          echo "${EDITORCONFIGCHECKER_SHA256}  ec.tar.gz" | sha256sum -c -
+          tar -xzf ec.tar.gz editorconfig-checker
+          ./editorconfig-checker -no-color
+
+      # Offline: the settings are in lychee.toml.
+      - name: Local links (lychee)
+        run: |
+          curl -fsSL -o lychee.tar.gz "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${LYCHEE_SHA256}  lychee.tar.gz" | sha256sum -c -
+          tar -xzf lychee.tar.gz --strip-components=1 lychee-x86_64-unknown-linux-gnu/lychee
+          ./lychee --offline --no-progress .
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.
@@ -331,8 +395,8 @@ jobs:
       - name: No new clone against the base branch
         env:
           BASE_REF: ${{ github.base_ref }}
-          JSCPD_VERSION: "5.4.0"
-          JSCPD_SHA256: 4c2819a5663e5418fe5dcf0faceca7f05c1f080d3c87fd57cc4ccf99ce857194
+          JSCPD_VERSION: "5.4.3"
+          JSCPD_SHA256: a19d719331b21a047a7537f982566dabcf6d6e5f51581c3b80d9c420979cc92c
         run: |
           set -euo pipefail
           curl -sSLf -o jscpd.tar.gz "https://github.com/kucherenko/jscpd/releases/download/v${JSCPD_VERSION}/jscpd-linux-x64-gnu.tar.gz"

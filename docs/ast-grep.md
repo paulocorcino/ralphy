@@ -1,6 +1,6 @@
 # ast-grep
 
-ast-grep reads code as a syntax tree. `npx -y -p @ast-grep/cli@0.51.1 ast-grep`
+ast-grep reads code as a syntax tree. `npx -y -p @ast-grep/cli@0.51.2 ast-grep`
 runs it at the version the repo pins (below, `ast-grep`). It sees syntax only:
 no types, no imports, nothing across files. A match is a candidate; the
 compiler and the linters decide what it means.

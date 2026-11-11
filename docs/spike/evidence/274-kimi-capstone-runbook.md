@@ -2,7 +2,7 @@
 
 A trail-to-completion for the HITL deep re-validation of the `ralphy-agent-kimi`
 vendor (ADR-0028, issue **#274**). The first capstone ([#155](https://github.com/paulocorcino/ralphy/issues/155),
-note [0028-kimi-validation](../adr/0028-kimi-validation.md)) was already thorough —
+note [0028-kimi-validation](../../adr/0028-kimi-validation.md)) was already thorough —
 a real repo to a green close, the encoding fix, the `wire.jsonl` token harvest,
 live triage — so this pass is **narrow**: it closes only the Cursor-capstone
 ([#251](https://github.com/paulocorcino/ralphy/issues/251)) dimensions that note
@@ -15,7 +15,7 @@ captured numbers, commands and log lines move into
 `docs/evidence/274-kimi-capstone-live.md` (H2 phases mirroring
 `251-cursor-capstone-live.md` / `272-copilot-capstone-live.md`), raw per-command
 logs go to `docs/live/kimi-274-<probe>.log`, and the plan of record
-[`docs/adr/0028-kimi-revalidation.md`](../adr/0028-kimi-revalidation.md) is
+[`docs/adr/0028-kimi-revalidation.md`](../../adr/0028-kimi-revalidation.md) is
 rewritten from a plan into a note with its Status flipped **proposed→accepted**.
 **The plan file is the contract** — but see the drift ledger below.
 

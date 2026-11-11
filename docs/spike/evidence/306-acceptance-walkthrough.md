@@ -28,7 +28,7 @@ operator can see.
 
 Windows (the gate as run for this record):
 
-```
+```text
 python tests/browser/acceptance/wb_accept_306.py
 ```
 
@@ -36,7 +36,7 @@ Linux, in the pinned Playwright container against a Linux `ralphy` built in
 `rust:1.97` (`MSYS_NO_PATHCONV=1` is mandatory in git-bash on Windows, or `/w`
 is mangled into `W:/`):
 
-```
+```text
 MSYS_NO_PATHCONV=1 docker run --rm -v "C:/Dev/ralphy:/w" -w /w \
   -e CARGO_TARGET_DIR=/w/target/linux rust:1.97 \
   sh -c "cargo build -p ralphy-cli --bin ralphy && cargo build -p ralphy-daemon --bins"

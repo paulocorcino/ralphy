@@ -44,7 +44,7 @@ Monaco's theme API takes no CSS variables, so `wb-monaco.js` mirrors these hexes
 literally and must be changed in lockstep; `wb_monaco_308.py` asserts the editor
 ground, and is the backstop against that pair drifting apart.
 
-**Neutrals (the ramp)**
+#### Neutrals (the ramp)
 
 | Token          | Hex       | Role                                              |
 | -------------- | --------- | ------------------------------------------------- |
@@ -62,7 +62,7 @@ ground, and is the backstop against that pair drifting apart.
 | `text-log`     | `#cfc8bd` | Command-log body text                             |
 | `text-muted`   | `#a49c91` | Secondary text: paths, status, timestamps, labels |
 
-**Accents**
+#### Accents
 
 | Token             | Hex       | Role                                       |
 | ----------------- | --------- | ------------------------------------------ |

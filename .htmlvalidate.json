@@ -1,0 +1,14 @@
+{
+  "extends": ["html-validate:recommended"],
+  "rules": {
+    "void-style": "off",
+    "text-content": "off",
+    "empty-heading": "off",
+    "attribute-misuse": "off",
+    "no-implicit-button-type": "off",
+    "no-inline-style": "off",
+    "prefer-native-element": "off",
+    "autocomplete-password": "off",
+    "element-permitted-content": "off"
+  }
+}

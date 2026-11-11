@@ -1,8 +1,8 @@
 # Copilot adapter — live-validation capstone (#272)
 
 The HITL run-to-green of `ralphy-agent-copilot`, executed 2026-07-22 against a real
-repository. Companion to [ADR-0041](../adr/0041-copilot-adapter.md); the plan that
-drove it is [0041-copilot-validation.md](../adr/0041-copilot-validation.md) and the
+repository. Companion to [ADR-0041](../../adr/0041-copilot-adapter.md); the plan that
+drove it is [0041-copilot-validation.md](../../adr/0041-copilot-validation.md) and the
 operational trail is [272-copilot-capstone-runbook.md](./272-copilot-capstone-runbook.md).
 Raw per-command captures are under `docs/live/copilot-272-*.log`.
 

@@ -19,7 +19,7 @@ When `foo.rs` grows a directory of submodules, the module root stays a sibling
 file `foo.rs` and the submodules live under `foo/` — the Rust 2018 path style,
 no `mod.rs`:
 
-```
+```text
 src/
   init.rs        # module root: `mod` declarations + re-exports, thin
   init/

@@ -107,7 +107,7 @@ PATH=/usr/local/bin:/usr/bin:/bin:/home/you/.local/bin
 MAILTO=""
 ```
 
-### Traps
+### Traps on cron
 
 - **Working directory & PATH** — cron runs with a minimal environment (`PATH`
   is usually just `/usr/bin:/bin`) and no shell profile. `cd` into the repo
@@ -125,7 +125,7 @@ MAILTO=""
   to even start the second command while the first holds the flock (note
   `flock` guards the *invocation*, ralphy's `run.lock` guards the *repo*).
 
-### Verify it worked
+### Verify cron worked
 
 ```bash
 tail -20 "$HOME/ralphy-cron.log"
@@ -173,7 +173,7 @@ jobs:
           path: .ralphy/runs/
 ```
 
-### Traps
+### Traps on GitHub Actions
 
 - **Ephemeral runners** — each firing starts on a fresh runner with a fresh
   checkout, so `.ralphy/run.lock`'s PID check can only see runs *on that
@@ -195,7 +195,7 @@ jobs:
   repo settings; the run pushes branches and edits issues, so grant
   `contents: write` and `issues: write` explicitly (or use a PAT).
 
-### Verify it worked
+### Verify GitHub Actions worked
 
 Check the workflow run list for the scheduled firings; a deferred firing (only
 possible on a reused self-hosted workspace) logs

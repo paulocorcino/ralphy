@@ -435,7 +435,7 @@ HEAD diff.
   `security.folderTrust.enabled: true`. It dies **before any paid call**, and
   the message is the most actionable of any vendor:
 
-  ```
+  ```text
   Gemini CLI is not running in a trusted directory. To proceed, either use
   `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` environment variable,
   or trust this directory in interactive mode. For more details, see …
@@ -519,7 +519,7 @@ Order observed: `SessionStart` → `BeforeAgent` → `AfterAgent` → `SessionEn
 The two failure modes are distinguishable, which matters for diagnosing a hook
 that "does nothing". A hook whose command is malformed reports itself:
 
-```
+```text
 Hook system message: Warning: [eval]:1  … SyntaxError: Invalid or unexpected token
 Hook execution for AfterAgent: 0 succeeded, 1 failed (probe), total duration: 404ms
 [WARNING] Hook(s) [probe] failed for event AfterAgent.
@@ -907,7 +907,7 @@ Assistant thoughts and reasoning summaries"*.
 `<project_hash>` in the **path** is not a hash at all — it is the project
 directory's **basename**, with the real path in a sibling file:
 
-```
+```text
 ~/.gemini/tmp/fincal/.project_root            -> "c:\dev\fincal"
 ~/.gemini/tmp/fincal/chats/session-2026-07-21T00-56-ralphy-p.jsonl
 ```
@@ -937,7 +937,7 @@ a small event-sourced store, not a document:
 - `kind: "main"` on the header implies non-main session kinds — and 🔬 there is
   one: **a subagent invocation creates a nested session of its own.**
 
-  ```
+  ```text
   chats/session-2026-07-21T01-00-ralphy-p.jsonl          # kind: "main"
   chats/ralphy-probe-policy/78d80d17-….jsonl             # kind: "subagent", + "directories"
   ```
@@ -1275,7 +1275,7 @@ Ralphy never pushes and never opens PRs.
 This is the same axis Cursor introduced, but here it is **formalized, documented
 and quantified**. From `bundle\policies\yolo.toml` and `plan.toml` 🔬:
 
-```
+```text
 # Priority bands (tiers):
 # - Default policies (TOML):   1 + priority/1000
 # - Extension policies (TOML): 2 + priority/1000
@@ -1323,7 +1323,7 @@ outranks an *admin*-tier deny is untested (and almost certainly it does not).
 
 During P19, before the fatal exit, stderr carried:
 
-```
+```text
 YOLO mode is enabled. All tool calls will be automatically approved.
 Approval mode overridden to "default" because the current folder is not trusted.
 ```
@@ -1453,7 +1453,7 @@ finding in this spike that is a business risk rather than an engineering one.
   and returned via `stream-json` round-tripped **byte-exact** — Portuguese
   accents, CJK, and 4-byte astral-plane emoji alike:
 
-  ```
+  ```text
   RALPHY_ENC_HEAD / Acentuação: ção é í õ ü / CJK: 日本語テスト / Emoji: 📂🚀 / RALPHY_ENC_TAIL
   ```
 
@@ -1490,7 +1490,7 @@ Gemini is Node — so the question was whether a shell-tool grandchild survives.
 A run told to `ping -n 120 127.0.0.1` produced this, with the shell still
 running:
 
-```
+```text
 29936 cmd.exe    C:\WINDOWS\system32\cmd.exe /c "…\npm\gemini.cmd"    <- what Ralphy spawns
 └─ 45392 node.exe   …\@google\gemini-cli\…                            <- the npm shim's node
    └─ 26212 node.exe   C:\nodejs\node.exe --max-old-space-size=16344  <- self-relaunch
@@ -1685,7 +1685,7 @@ gemini -p "<override text>" --session-id ralphy-probe-p1p2p3p4p6 \
 
 Every single run, including successful ones, emitted this preamble on stderr:
 
-```
+```text
 Warning: 256-color support not detected. Using a terminal with at least 256-color support is recommended…
 YOLO mode is enabled. All tool calls will be automatically approved.
 YOLO mode is enabled. All tool calls will be automatically approved.
@@ -1695,7 +1695,7 @@ Ripgrep is not available. Falling back to GrepTool.
 Note the YOLO line is printed **twice**. A `stderr.is_empty()` health check
 would report every run as degraded.
 
-### Reproduction
+### Raw captures
 
 Raw captures live in `%TEMP%\gemini-probe\` for this session only. Live runs
 will use `C:\Dev\FinCal` on branch `afk/run-20260720-143515`; the probe

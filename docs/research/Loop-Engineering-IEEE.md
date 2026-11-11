@@ -226,14 +226,14 @@ Swapping agents is not enough. If the evaluator only reads code it judges “doe
 
 Claude Code turns this structure into a primitive with `/goal` : give an agent a condition and let it run until the condition is met. A representative evaluator setup and stop condition look like the following.
 
-```
+```text
 #Evaluatoragent(.claude/agents/reviewer.md)
 ROLE:Adversarialcodereviewer.
 ASSUME:thiscodeisBROKENuntilprovenotherwise.
 DONOTpraise.Findwhatfails.
 ```
 
-```
+```text
 CHECK,inorder:
 ```
 
@@ -251,21 +251,21 @@ CHECK,inorder:
 
 `4. Does behavior match the ticket?`
 
-```
+```text
 USEPlaywrightMCP:openthepage,click,
 ```
 
-```
+```text
 screenshot,inspecttheDOM.Judgebehavior,
 notintent.
 ```
 
-```
+```text
 VERDICT:PASSonlyifeverycheckholds.
 OtherwiseREJECT+listeachreason.
 ```
 
-```
+```text
 #Stopcondition,judgedbyafreshsmallmodel
 /goalalltestsintest/authpassandthelint
 stepisclean
@@ -484,7 +484,7 @@ Stripe’s pipeline is the endpoint, not the starting point. A first loop should
 
 _Step one: run a_ _`/loop` ._ Available after Claude Code v2.1.72, it reruns the same task on an interval. It is session-scoped, recurring tasks expire after seven days, and it runs on the local machine; turn the machine off and it stops.
 
-```
+```text
 /loop5mcheckthedeploy#fixed:every5min
 /loopcheckthedeploy#agentpacesitself
 /loop#runs.claude/loop.md
@@ -492,7 +492,7 @@ _Step one: run a_ _`/loop` ._ Available after Claude Code v2.1.72, it reruns the
 
 _Step two: read CI and issues; triage first._ Rerunning one line is not a loop. Give it a prompt to look at three things each morning and have it list what is worth handling. Scheduled plus auto-discovery is loop entry level. The discovery logic should live in a skill, not the schedule.
 
-```
+```text
 #.claude/skills/morning-triage/SKILL.md
 NAME:morning-triage
 WHEN:invokedeachmorningbyautomation.
@@ -526,11 +526,11 @@ the loop can run; the last four decide whether it gets into trouble once it does
 
 - `issues opened in the last 24h`
 
-```
+```text
 -commitsmergedsincethelastrun
 ```
 
-```
+```text
 JUDGE:foreachitem,isitworthactingon?
 Skipnoise.Keeponlyactionablefindings.
 ```
@@ -539,24 +539,24 @@ Skipnoise.Keeponlyactionablefindings.
 
 _Step three: add a state file._ Do not leave results in the chat window. Write every finding, and how far it has been handled, into a markdown file (or a Linear board). The agent forgets; the repo does not.
 
-|`# ./state/triage.md`<br>`(the loop’s memory)`|`# ./state/triage.md`<br>`(the loop’s memory)`|
-|---|---|
-|`| finding`<br>`| source`<br>`| status`|`|`|
-|`|----------------|----------|----------|`||
-|`| auth test flaky| CI #4821 | fixing`|`|`|
-|`| null deref`<br>`| issue 92 | PR open`|`|`|
-|`| stale dep`<br>`| commit a3| inbox`|`|`|
+`# ./state/triage.md` (the loop’s memory)
+
+| finding | source | status |
+|---|---|---|
+| auth test flaky | CI #4821 | fixing |
+| null deref | issue 92 | PR open |
+| stale dep | commit a3 | inbox |
 
 _Step four: add an evaluator._ The most critical step and the easiest to skip. Claude Code’s `/goal` (after v2.1.139) runs until a condition is met, with a different model judging whether it holds.
 
-```
+```text
 /goalalltestsintest/authpassandthelint
 stepisclean
 ```
 
 _Step five: add worktrees for parallelism._ Use `--worktree` (or `-w` ) to open an independent worktree per background agent so they do not step on each other.
 
-```
+```text
 #oneisolatedworktreeperfinding
 claude--worktreefix/auth-test"draftthefix"
 claude--worktreefix/null-deref"draftthefix"
@@ -594,7 +594,7 @@ The rest is not in this note; it is in the terminal.
 
 The discovery move depends on a skill rather than a wall of instructions, because a skill can be reused and maintained while a pasted prompt rots in a schedule nobody updates. The following is a fuller version of the morning-triage skill referenced throughout, annotated to show how each section serves a move.
 
-```
+```text
 #.claude/skills/morning-triage/SKILL.md
 ---
 name:morning-triage

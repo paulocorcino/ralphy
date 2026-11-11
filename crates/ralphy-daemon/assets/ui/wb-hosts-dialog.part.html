@@ -67,7 +67,7 @@
               <label class="run-label" for="host-address">Host</label>
               <label class="run-label" for="host-port">Port</label>
               <div class="host-field">
-                <input id="host-address" class="host-input" :value="addHost.alias || addHost.address"
+                <input type="text" id="host-address" class="host-input" :value="addHost.alias || addHost.address"
                        @input="addHostHost($event.target.value)"
                        autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
                 <span class="host-alias" x-show="addHost.aliases.length">
@@ -82,7 +82,7 @@
                   </select>
                 </span>
               </div>
-              <input id="host-port" class="host-input" :value="addHost.port" :readonly="!!addHost.alias"
+              <input type="text" id="host-port" class="host-input" :value="addHost.port" :readonly="!!addHost.alias"
                      @input="addHostType('port', $event.target.value)" placeholder="22" inputmode="numeric"
                      autocomplete="off" data-lpignore="true" data-1p-ignore />
             </div>
@@ -90,11 +90,11 @@
               <label class="run-label" for="host-user">User</label>
               <label class="run-label" for="host-password" x-show="addHost.signIn !== 'key'">Password</label>
               <label class="run-label" for="host-key-file" x-show="addHost.signIn === 'key'">Key file</label>
-              <input id="host-user" class="host-input" :value="addHost.user" :readonly="!!addHost.alias"
+              <input type="text" id="host-user" class="host-input" :value="addHost.user" :readonly="!!addHost.alias"
                      @input="addHostType('user', $event.target.value)"
                      autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
               <div class="host-field" x-show="addHost.signIn !== 'key'">
-                <input id="host-password" class="host-input" :class="{ 'host-secret': !hostSecretShown }"
+                <input type="text" id="host-password" class="host-input" :class="{ 'host-secret': !hostSecretShown }"
                        :type="hostSecretType()" :value="addHost.password" :disabled="!hostPasswordAllowed()"
                        @input="addHostType('password', $event.target.value)"
                        :placeholder="hostPasswordAllowed() ? '' : 'Needs https'"
@@ -108,7 +108,7 @@
                   <i class="bi" :class="hostSecretShown ? 'bi-eye-slash' : 'bi-eye'" aria-hidden="true"></i>
                 </button>
               </div>
-              <input id="host-key-file" class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
+              <input type="text" id="host-key-file" class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
                      @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key"
                      autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore />
               <span></span>
@@ -151,7 +151,7 @@
               <template x-if="hostNeedsName()">
                 <div class="host-next-act">
                   <label class="run-label" for="host-name">Name for the daemon on the host</label>
-                  <input id="host-name" class="host-input" :value="addHost.name" @input="addHostType('name', $event.target.value)"
+                  <input type="text" id="host-name" class="host-input" :value="addHost.name" @input="addHostType('name', $event.target.value)"
                          @keydown.enter="addHostCheckAgain()" autocomplete="off" spellcheck="false" />
                 </div>
               </template>

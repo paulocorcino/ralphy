@@ -41,7 +41,7 @@ amended below, not contradicted).
 
 A note is a file path, an optional line range, and a body. It renders as:
 
-```
+```text
 File: src/app.ts
 Line: 10
 User comment: "Needs validation"
@@ -61,7 +61,7 @@ Notes on a run's diff are sent to **the issue that run is working**:
 run's; otherwise the operator picks an issue from `board.list`. They land
 as one comment:
 
-```
+```text
 <!-- ralphy:review-notes -->
 ## Review notes
 

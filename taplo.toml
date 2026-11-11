@@ -1,0 +1,8 @@
+# The config of taplo, run by the taplo step of `xtask gate` and by CI:
+# `taplo check` (TOML syntax). `taplo fmt` writes the format.
+include = ["**/*.toml"]
+exclude = ["target/**", "worktrees/**", "**/node_modules/**", "**/fixtures/**"]
+
+[formatting]
+# The indent the repo's TOML files already use.
+indent_string = "    "

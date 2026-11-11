@@ -18,7 +18,7 @@
                 Enter the current 6-digit code to <span x-text="stepUp.label"></span></span>
             </div>
             <div class="sec-actions">
-              <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+              <input type="text" class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
                      placeholder="000000" x-model="stepUp.code"
                      @keydown.enter="submitStepUp()" @keydown.escape.stop="cancelStepUp()" />
               <button class="btn accent" @click="submitStepUp()"
@@ -110,7 +110,7 @@
                 <input class="set-input mono" type="text" :value="securityForm.secret" readonly @click="$el.select()" />
                 <label class="set-label">Enter the current 6-digit code to confirm</label>
                 <div class="sec-actions">
-                  <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                  <input type="text" class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
                          placeholder="000000" x-model="securityForm.confirmCode"
                          @keydown.enter="confirmTotp()" />
                   <button class="btn accent" @click="confirmTotp()"
@@ -170,7 +170,7 @@
           </section>
         </div>
         <div class="modal-foot">
-          
+
           <button class="btn" @click="closeSecurity()">Done</button>
         </div>
       </div>

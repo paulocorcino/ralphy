@@ -1,8 +1,7 @@
 # Runbook — local fleet live capstone (#353)
 
 A trail-to-completion for the HITL capstone of **local fleet federation**
-([ADR-0052](../adr/0052-local-fleet-federation.md), issue **#353**, parent PRD
-# 348). Slices #349–#352 shipped and are verified in CI with **two daemons on
+([ADR-0052](../../adr/0052-local-fleet-federation.md), issue **#353**, parent PRD #348). Slices #349–#352 shipped and are verified in CI with **two daemons on
 loopback on one OS**, deliberately, so no CI job depends on WSL existing. That
 leaves the real topology unproven. This is the run a human signs off before the
 feature is called done.
@@ -43,7 +42,7 @@ which bucket each finding landed in.
 | Forge remote | *(capture — push targets a real forge; Phase 3 spends real credentials)* |
 
 Setup is the documented one — [docs/daemon.md § *Local fleet: adding a WSL
-peer*](../daemon.md#local-fleet-adding-a-wsl-peer). Do **not** invent a
+peer*](../../daemon.md#local-fleet-adding-a-wsl-peer). Do **not** invent a
 different bring-up: if the documented path does not work, that is a finding.
 
 ---
@@ -120,7 +119,7 @@ correct; nothing unavailable is launchable. → `docs/live/fleet-353-roster.log`
 
 Sync verbs are `EffectClass::Mutate`, so they proxy through
 `POST /api/peer/command` and execute on the **owning** daemon
-([ADR-0052 §7](../adr/0052-local-fleet-federation.md)). Nothing about the
+([ADR-0052 §7](../../adr/0052-local-fleet-federation.md)). Nothing about the
 safety properties may differ from local.
 
 1. `sync.status` and `sync.fetch` on the peer repo.
@@ -132,7 +131,7 @@ safety properties may differ from local.
 4. **The remote-boundary denial is unchanged (AC2).** `config.set` /
    `config.unset` of `verify.command` must be refused through the proxy exactly
    as locally. The denial lives in argv composition
-   ([`dispatch.rs`](../../crates/ralphy-daemon/src/dispatch.rs) —
+   ([`dispatch.rs`](../../../crates/ralphy-daemon/src/dispatch.rs) —
    `EXEC_ADJACENT_KEYS`, `remotely_settable_key`), so both hops compose the same
    argv; the point of the live check is that **federation did not open a second
    path around it**. Try it both ways: the browser-facing socket with a
