@@ -113,6 +113,10 @@ impl PriceTable {
 
     /// The read-time USD cost of `tokens` priced as `model`, or `None` when the
     /// model is absent from every layer (logged once — never reported as `0`).
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a USD cost; a token count above 2^53 loses far less than a cent"
+    )]
     pub fn cost_usd(&self, model: &str, tokens: &TokenCounts) -> Option<f64> {
         let Some(price) = self.resolve(model) else {
             warn_unknown(model);

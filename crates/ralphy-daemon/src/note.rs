@@ -146,7 +146,8 @@ pub fn encode(markdown: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(markdown.len() / 3 + HEADER);
     out.extend_from_slice(MAGIC);
     out.push(VERSION);
-    out.extend_from_slice(&(markdown.len() as u32).to_le_bytes());
+    let len = u32::try_from(markdown.len()).unwrap_or(u32::MAX);
+    out.extend_from_slice(&len.to_le_bytes());
     let mut enc = DeflateEncoder::new(out, Compression::best());
     // Writing to a `Vec` is infallible; the only `Err` a `DeflateEncoder` can
     // surface here would come from its sink.
@@ -179,7 +180,7 @@ pub fn decode(bytes: &[u8]) -> Result<String, NoteError> {
     }
     let mut payload = body.to_vec();
     mask(&mut payload);
-    let mut text = Vec::with_capacity(len as usize);
+    let mut text = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
     DeflateDecoder::new(&payload[..])
         // The declared length bounds the allocation, so a header claiming
         // little and a stream producing much is refused, not held.
@@ -226,7 +227,7 @@ pub fn modified(root: &Path, rel: &str) -> Option<u64> {
     let at = std::fs::metadata(&path).ok()?.modified().ok()?;
     at.duration_since(std::time::UNIX_EPOCH)
         .ok()
-        .map(|since| since.as_millis() as u64)
+        .map(|since| u64::try_from(since.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Write `markdown` to the confined `rel` note under `root`, creating or

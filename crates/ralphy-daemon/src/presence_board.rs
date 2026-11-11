@@ -90,6 +90,11 @@ impl PresenceBoard {
         let last_input = match report.last_input {
             None => None,
             Some(at) if at.is_finite() => {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a float-to-int `as` saturates, and max(0.0) keeps it at or above 0"
+                )]
                 let idle = Duration::from_millis((report.now - at).max(0.0) as u64);
                 Some(received.checked_sub(idle).unwrap_or(SystemTime::UNIX_EPOCH))
             }
@@ -172,7 +177,8 @@ mod tests {
         let now = 9_000_000_000.0;
         json!({
             "visible": visible,
-            "lastInput": idle_secs.map(|s| now - (s * 1000) as f64),
+            "lastInput": idle_secs
+                .map(|s| now - f64::from(u32::try_from(s * 1000).expect("small"))),
             "now": now,
             "origin": "https://ralphy.example:8443",
         })

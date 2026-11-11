@@ -362,6 +362,10 @@ fn folder_size(dir: &Path) -> u64 {
         .sum()
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
+)]
 fn readable_size(bytes: u64) -> String {
     const MB: u64 = 1024 * 1024;
     if bytes < MB {

@@ -184,11 +184,11 @@ fn from_base64url(text: &str) -> Option<[u8; 16]> {
     let mut bits = 0;
     for c in text.bytes() {
         let value = BASE64URL.iter().position(|&a| a == c)?;
-        acc = ((acc << 6) | value as u32) & 0xfff;
+        acc = ((acc << 6) | u32::try_from(value).ok()?) & 0xfff;
         bits += 6;
         if bits >= 8 {
             bits -= 8;
-            *out.get_mut(len)? = (acc >> bits) as u8;
+            *out.get_mut(len)? = u8::try_from((acc >> bits) & 0xff).ok()?;
             len += 1;
         }
     }

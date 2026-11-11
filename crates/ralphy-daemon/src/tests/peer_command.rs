@@ -29,7 +29,10 @@ async fn peer_command_status(body: Vec<u8>) -> StatusCode {
 #[tokio::test]
 async fn peer_command_takes_a_4_mib_image() {
     let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR".to_vec();
-    png.resize(tree::MAX_IMAGE_BYTES as usize, 0);
+    png.resize(
+        usize::try_from(tree::MAX_IMAGE_BYTES).expect("4 MiB fits usize"),
+        0,
+    );
     let body = serde_json::json!({
         "id": 1,
         "verb": "image.write",

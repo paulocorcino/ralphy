@@ -102,6 +102,10 @@ pub(crate) fn fmt_usd_compact(usd: Option<f64>, partial: bool) -> String {
 
 /// Format a token count compactly for the footer: `1.2M`, `8.4k`, or a bare
 /// `912` under a thousand. One decimal place for the scaled forms.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
+)]
 pub(crate) fn fmt_tokens(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)

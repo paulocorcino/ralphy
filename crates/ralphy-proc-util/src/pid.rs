@@ -83,7 +83,7 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     use std::os::unix::ffi::OsStrExt;
 
     // PROC_PIDPATHINFO_MAXSIZE
-    let mut buf = vec![0u8; 4 * libc::PATH_MAX as usize];
+    let mut buf = vec![0u8; 4 * usize::try_from(libc::PATH_MAX).unwrap_or(1024)];
     // SAFETY: `buf` holds `buf.len()` writable bytes, the size passed.
     let written = unsafe {
         libc::proc_pidpath(
@@ -95,7 +95,7 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     if written <= 0 {
         return None;
     }
-    buf.truncate(written as usize);
+    buf.truncate(usize::try_from(written).ok()?);
     Some(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(&buf)))
 }
 
@@ -125,7 +125,7 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
             return None;
         }
         let mut buf = vec![0u16; 32_768];
-        let mut len = buf.len() as u32;
+        let mut len = u32::try_from(buf.len()).unwrap_or(u32::MAX);
         let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &raw mut len) != 0;
         CloseHandle(handle);
         if !ok {

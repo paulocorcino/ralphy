@@ -162,7 +162,8 @@ impl Score {
         let mut ops = Vec::new();
         let mut leaves = Vec::new();
         flatten(e, &mut ops, &mut leaves);
-        self.total += 1 + ops.windows(2).filter(|w| w[0] != w[1]).count() as u32;
+        let changes = ops.windows(2).filter(|w| w.first() != w.last()).count();
+        self.total += 1 + u32::try_from(changes).unwrap_or(u32::MAX);
         for leaf in leaves {
             self.visit_expr(leaf);
         }

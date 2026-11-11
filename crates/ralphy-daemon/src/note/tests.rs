@@ -127,7 +127,8 @@ fn decode_refuses_what_is_not_this_version_of_the_container() {
 fn decode_refuses_a_text_that_inflates_past_the_read_cap() {
     // A small file whose inflated text is over the cap: refused on OUTPUT
     // size, so the bomb is never held whole beyond one byte of slack.
-    let bomb = encode(&"a".repeat(MAX_READ_BYTES as usize + 1));
+    let max = usize::try_from(MAX_READ_BYTES).expect("2 MiB fits usize");
+    let bomb = encode(&"a".repeat(max + 1));
     assert!((bomb.len() as u64) < MAX_READ_BYTES, "{}", bomb.len());
     assert_eq!(decode(&bomb), Err(NoteError::TooLarge));
 }

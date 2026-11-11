@@ -9,7 +9,8 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     std::fs::write(peer_repo.path().join("note.txt"), "peer-side").unwrap();
     let png = b"\x89PNG\r\n\x1a\npeer-fixture";
     std::fs::write(peer_repo.path().join("pixel.png"), png).unwrap();
-    let mut large_png = vec![0_u8; ralphy_daemon::tree::MAX_IMAGE_BYTES as usize];
+    let max = usize::try_from(ralphy_daemon::tree::MAX_IMAGE_BYTES).expect("4 MiB fits usize");
+    let mut large_png = vec![0_u8; max];
     large_png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
     std::fs::write(peer_repo.path().join("large.png"), &large_png).unwrap();
     let runid = "01TESTRUNIDTESTRUNIDTE";

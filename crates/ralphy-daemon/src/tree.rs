@@ -318,6 +318,10 @@ pub const MAX_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 /// [`MAX_IMAGE_BYTES`] image (the largest payload a verb takes, `image.write`)
 /// plus 64 KiB for the JSON envelope. A larger message is refused before it is
 /// parsed (ADR-0072 D11).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "MAX_IMAGE_BYTES is 4 MiB, which fits usize on every target"
+)]
 pub const MAX_COMMAND_BYTES: usize = (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 64 * 1024;
 
 /// Read the confined `rel` file under `root` as an allowlisted image. The

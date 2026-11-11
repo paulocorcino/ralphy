@@ -4,6 +4,10 @@
 
 /// `part / whole` as `0.0..=1.0`, and `0.0` for an empty whole — a share of
 /// nothing is not a share, and `NaN` would reach a bar's width.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a share for a bar or a percentage; a loss above 2^53 is far below its precision"
+)]
 pub(crate) fn share_of(part: u64, whole: u64) -> f64 {
     if whole == 0 {
         0.0
@@ -66,6 +70,10 @@ pub(crate) fn volume_label(tokens: u64) -> String {
 /// Format a token count compactly: `1.2M`, `8.4k`, or a bare `912` under a
 /// thousand. Mirrors the CLI footer's `fmt_tokens` so the web and the terminal
 /// abbreviate identically.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a figure shown with one decimal; a loss above 2^53 is far below it"
+)]
 pub(crate) fn fmt_tokens(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)

@@ -142,10 +142,10 @@ fn read_session_tokens(db: &Path, session_id: &str) -> rusqlite::Result<(Tokens,
     let mut total = Tokens::default();
     let mut model = None;
     for (m, input, output, cache_read, cache_write) in rows.flatten() {
-        total.input += input.unwrap_or(0).max(0) as u64;
-        total.output += output.unwrap_or(0).max(0) as u64;
-        total.cache_read += cache_read.unwrap_or(0).max(0) as u64;
-        total.cache_creation += cache_write.unwrap_or(0).max(0) as u64;
+        total.input += u64::try_from(input.unwrap_or(0)).unwrap_or(0);
+        total.output += u64::try_from(output.unwrap_or(0)).unwrap_or(0);
+        total.cache_read += u64::try_from(cache_read.unwrap_or(0)).unwrap_or(0);
+        total.cache_creation += u64::try_from(cache_write.unwrap_or(0)).unwrap_or(0);
         if let Some(m) = m {
             model = Some(m);
         }
@@ -292,10 +292,10 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         });
 
         let agg = groups.entry((session_id.clone(), model)).or_default();
-        agg.tokens.input += input_tokens.unwrap_or(0).max(0) as u64;
-        agg.tokens.output += output_tokens.unwrap_or(0).max(0) as u64;
-        agg.tokens.cache_read += cache_read.unwrap_or(0).max(0) as u64;
-        agg.tokens.cache_creation += cache_write.unwrap_or(0).max(0) as u64;
+        agg.tokens.input += u64::try_from(input_tokens.unwrap_or(0)).unwrap_or(0);
+        agg.tokens.output += u64::try_from(output_tokens.unwrap_or(0)).unwrap_or(0);
+        agg.tokens.cache_read += u64::try_from(cache_read.unwrap_or(0)).unwrap_or(0);
+        agg.tokens.cache_creation += u64::try_from(cache_write.unwrap_or(0)).unwrap_or(0);
         agg.widen(created_at.as_deref());
     }
 

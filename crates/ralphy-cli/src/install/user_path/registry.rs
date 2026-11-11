@@ -1,7 +1,7 @@
 //! FFI: the per-user `Path` under `HKEY_CURRENT_USER\Environment`, and the
 //! broadcast that tells Explorer to reload it (ADR-0072 D13).
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
 use windows_sys::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
@@ -89,7 +89,7 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
         bail!("the user Path is not a text value (type {kind})");
     }
     let mut buf = vec![0u16; (bytes as usize).div_ceil(2)];
-    let mut size = (buf.len() * 2) as u32;
+    let mut size = u32::try_from(buf.len() * 2).unwrap_or(u32::MAX);
     // SAFETY: `buf` holds `size` bytes and outlives the call.
     let status = unsafe {
         RegQueryValueExW(
@@ -117,17 +117,10 @@ fn read(key: &Key, name: &[u16]) -> Result<(REG_VALUE_TYPE, String)> {
 #[expect(unsafe_code, reason = "FFI: RegSetValueExW")]
 fn write(key: &Key, name: &[u16], kind: REG_VALUE_TYPE, value: &str) -> Result<()> {
     let data = wide(value);
+    let size = u32::try_from(data.len() * 2).context("the user Path is too long to write")?;
     // SAFETY: `data` is NUL-terminated UTF-16 of `data.len() * 2` bytes.
-    let status = unsafe {
-        RegSetValueExW(
-            key.0,
-            name.as_ptr(),
-            0,
-            kind,
-            data.as_ptr().cast(),
-            (data.len() * 2) as u32,
-        )
-    };
+    let status =
+        unsafe { RegSetValueExW(key.0, name.as_ptr(), 0, kind, data.as_ptr().cast(), size) };
     if status != ERROR_SUCCESS {
         bail!("writing the user Path failed (error {status})");
     }

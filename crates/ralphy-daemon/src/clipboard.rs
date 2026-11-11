@@ -49,7 +49,10 @@ const MAX_SUFFIX: u32 = 100;
 /// oversized payload is refused without ever allocating its decode.
 pub fn decode_image(base64: Option<&str>) -> Result<(ImageType, Vec<u8>), &'static str> {
     let text = base64.ok_or("not an image")?;
-    let max_encoded = (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4;
+    let max_encoded = usize::try_from(MAX_IMAGE_BYTES)
+        .unwrap_or(usize::MAX)
+        .div_ceil(3)
+        * 4;
     if text.len() > max_encoded {
         return Err("too large");
     }
@@ -182,10 +185,11 @@ mod tests {
     fn decode_image_refuses_an_oversized_payload_before_decoding_it() {
         // One byte over the cap, as the browser would encode it.
         let mut big = PNG.to_vec();
-        big.resize((MAX_IMAGE_BYTES + 1) as usize, 0);
+        let max = usize::try_from(MAX_IMAGE_BYTES).expect("4 MiB fits usize");
+        big.resize(max + 1, 0);
         assert_eq!(decode_image(Some(&b64(&big))), Err("too large"));
         // Exactly at the cap is accepted — the bound is the read cap, not under it.
-        big.truncate(MAX_IMAGE_BYTES as usize);
+        big.truncate(max);
         assert!(decode_image(Some(&b64(&big))).is_ok());
     }
 

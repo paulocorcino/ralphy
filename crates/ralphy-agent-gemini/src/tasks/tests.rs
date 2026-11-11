@@ -180,7 +180,7 @@ fn finished(code: i32, stdout: &str) -> ralphy_adapter_support::HeadlessOutput {
     #[cfg(unix)]
     let exit = std::os::unix::process::ExitStatusExt::from_raw(code << 8);
     #[cfg(windows)]
-    let exit = std::os::windows::process::ExitStatusExt::from_raw(code as u32);
+    let exit = std::os::windows::process::ExitStatusExt::from_raw(code.cast_unsigned());
     ralphy_adapter_support::HeadlessOutput {
         stdout: stdout.to_owned(),
         stderr: String::new(),

@@ -222,7 +222,7 @@ async fn a_revoked_login_is_not_listed() {
     write_log(dir.path(), &revoked.to_string(), 1);
     let auth = AuthState::localhost();
     assert_eq!(notices(&auth, dir.path()).await.len(), 1);
-    auth.revoke_login(revoked, chrono::Utc::now().timestamp() as u64)
+    auth.revoke_login(revoked, chrono::Utc::now().timestamp().cast_unsigned())
         .expect("revoke the login");
     let list = notices(&auth, dir.path()).await;
     assert!(list.is_empty(), "{list:?}");

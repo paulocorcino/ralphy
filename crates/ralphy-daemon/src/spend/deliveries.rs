@@ -271,6 +271,10 @@ fn kpis(classified: &Classified, deliveries: &BTreeMap<u64, Accum>) -> Kpis {
     costs.sort_by(f64::total_cmp);
     let cost_floor = deliveries.values().any(|a| a.floor);
     let median = median(&costs);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a count of deliveries is far below 2^53, so it converts exactly"
+    )]
     let mean = (!costs.is_empty()).then(|| costs.iter().sum::<f64>() / costs.len() as f64);
 
     // Ledger only, both sides of the ratio: an interactive session is not a
