@@ -86,7 +86,10 @@ async fn get(store: &Path, uri: &str, bearer: Option<&str>) -> (u16, String) {
 
 fn daemon_id(body: &str) -> String {
     let json: serde_json::Value = serde_json::from_str(body).expect("a JSON body");
-    json["daemon_id"].as_str().expect("a daemon_id").to_owned()
+    json.get("daemon_id")
+        .and_then(serde_json::Value::as_str)
+        .expect("a daemon_id")
+        .to_owned()
 }
 
 #[tokio::test]

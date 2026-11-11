@@ -244,7 +244,7 @@ fn configure_raw_input() {
         // Non-canonical reads return as soon as one byte is there, never on a timer.
         attrs.c_cc[libc::VMIN] = 1;
         attrs.c_cc[libc::VTIME] = 0;
-        let _ = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const attrs);
+        let _: libc::c_int = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &raw const attrs);
     }
 }
 
