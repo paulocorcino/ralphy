@@ -3,6 +3,7 @@
 
 import type { MissingUsage, SpendRecord } from "./wb-spend-types.d.ts";
 import { CAUSE_COPY, EMPTY, ERROR, LOADING, READY } from "./wb-spend-copy.ts";
+import { textOr } from "./wb-fleet.ts";
 
 // The words a Ledger row shows for its kind and its unpriced cause. The row
 // keeps the keys (`kind`, `unpriced`) for filters and classes.
@@ -11,10 +12,7 @@ function causeWord(key: string | null | undefined): string {
   if (key == null || key === "") return "";
   return textOr(CAUSE_COPY[key]?.title, key);
 }
-// The text, or `fallback` when there is none or it is empty.
-export function textOr(value: string | undefined, fallback: string): string {
-  return value === undefined || value === "" ? fallback : value;
-}
+
 // An ISO time as the browser's local date and time; a value that does not
 // parse stays as it is.
 function localTime(ts: string | null | undefined): string {

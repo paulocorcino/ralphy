@@ -155,7 +155,7 @@ export function securityDialog() {
     // Whether the daemon will demand a fresh code for a posture downgrade: a
     // live TOTP seed is armed. A pending (unconfirmed) enrolment never counts.
     stepUpNeeded() {
-      return this.$store.connection.security.totpEnrolled === true;
+      return this.$store.connection.security.totpEnrolled;
     },
     // Ask the operator for the current 6-digit code before `label`. Resolves
     // to the code, to `""` when no seed is armed (nothing to ask), or to
@@ -165,7 +165,7 @@ export function securityDialog() {
       this.cancelStepUp();
       this.securityForm.stepUpError = "";
       this.stepUp = { open: true, code: "", label };
-      void this.$nextTick?.(() => document.querySelector<HTMLElement>(".step-up input")?.focus());
+      void this.$nextTick(() => document.querySelector<HTMLElement>(".step-up input")?.focus());
       return new Promise<string | null>((resolve) => {
         this._stepUpResolve = resolve;
       });
@@ -196,7 +196,7 @@ export function securityDialog() {
     // the throttle (amendment §D) — the same brake the login has.
     noteStepUpRefusal(r: Response) {
       if (r.status === 429) {
-        const wait = r.headers?.get?.("Retry-After") || "a few";
+        const wait = (r.headers.get("Retry-After") ?? "") || "a few";
         this.securityForm.stepUpError = `Too many attempts — wait ${wait} s and try again.`;
       } else if (r.status === 401) {
         this.securityForm.stepUpError =
@@ -217,7 +217,7 @@ export function securityDialog() {
         this.securityForm.totpError = "";
         this.securityForm.confirmCode = "";
         this.securityForm.otpauthUri = uri;
-        this.securityForm.secret = (uri.split("secret=")[1] || "").split("&")[0] ?? "";
+        this.securityForm.secret = (uri.split("secret=")[1] ?? "").split("&")[0] ?? "";
         this.securityForm.qrHtml = wbQr(uri);
       } catch {}
     },

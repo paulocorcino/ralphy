@@ -202,7 +202,7 @@ export function wbRuns() {
         confirmLabel: "Stop",
         danger: true,
       });
-      if (ok !== true) return;
+      if (!ok) return;
       this.runStopping = runid;
       try {
         const reply = await window.WBDaemon.observe("run.stop", {

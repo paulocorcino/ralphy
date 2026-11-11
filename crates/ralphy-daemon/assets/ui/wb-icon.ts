@@ -22,9 +22,10 @@ export function iconDirective(
   effect(() =>
     read((name) => {
       if (name === drawn) return;
-      if (drawn) el.classList.remove(`lucide-${drawn}`);
+      if (drawn !== null && drawn !== "") el.classList.remove(`lucide-${drawn}`);
       drawn = name;
-      const node = window.lucide?.icons[pascal(String(name))];
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a page may lack lucide
+      const node = window.lucide?.icons[pascal(name)];
       if (!node) {
         console.warn(`x-icon: no lucide icon named "${name}"`);
         el.replaceChildren();

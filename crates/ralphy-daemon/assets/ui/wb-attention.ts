@@ -82,8 +82,9 @@ export const LINK_BEAT_MS = 250;
 /** The console a page URL names: `?console=<daemon_id>/<session id>`. */
 export function consoleLinkOf(search: string) {
   const value = new URLSearchParams(search).get("console");
-  const cut = value ? value.lastIndexOf("/") : -1;
-  if (!value || cut <= 0) return null;
+  if (value === null) return null;
+  const cut = value.lastIndexOf("/");
+  if (cut <= 0) return null;
   const session = Number(value.slice(cut + 1));
   if (!Number.isInteger(session)) return null;
   return { daemon: value.slice(0, cut), session };
@@ -194,9 +195,9 @@ export function sessionOf(
   request: AttentionRequest,
   sessions: readonly HostedSession[] | null | undefined,
 ) {
-  if (!request.console) return null;
+  if (request.console === undefined || request.console === "") return null;
   const id = Number(request.console.slice(request.console.lastIndexOf("/") + 1));
-  return (sessions || []).find((s) => s.id === id && s.repo === request.repo) || null;
+  return (sessions ?? []).find((s) => s.id === id && s.repo === request.repo) ?? null;
 }
 
 export function wbAttention() {
@@ -261,11 +262,12 @@ export function wbAttention() {
       const link = this._link;
       if (!link) return;
       if (++this._linkTries > LINK_TRIES) return this.endLink();
-      if (!this.$store.projects.sessionsRead?.current) return;
-      const session = (this.$store.projects.liveSessions || []).find(
+      if (this.$store.projects.sessionsRead?.current !== true) return;
+      const session = this.$store.projects.liveSessions.find(
         (s) => s.id === link.session && s.daemon_id === link.daemon,
       );
-      if (!session?.record || this.showLinked(session.record)) this.endLink();
+      if (session === undefined || session.record === undefined) this.endLink();
+      else if (this.showLinked(session.record)) this.endLink();
     },
     // Show the window of the desk record `id`: `false` while it is not on
     // the desk yet.
@@ -301,7 +303,7 @@ export function wbAttention() {
     // so the browser shows a repeat of the same request once.
     announce(request: AttentionRequest) {
       if (!canNotify() || Notification.permission !== "granted") return;
-      const detail = request.detail ? `: ${request.detail}` : "";
+      const detail = (request.detail ?? "") === "" ? "" : `: ${request.detail}`;
       const note = new Notification(this.nameOf(request), {
         body: `${this.kindOf(request)}${detail}`,
         tag: request.id,
@@ -323,7 +325,8 @@ export function wbAttention() {
     nameOf(request: AttentionRequest) {
       const projects = this.$store.projects;
       const session = sessionOf(request, projects.liveSessions);
-      if (session?.name) return session.name;
+      const name = session?.name ?? "";
+      if (name !== "") return name;
       const project = projects.projects.find((p) => projects.repoRef(p) === request.repo);
       return project ? WBProject.projectName(project) : WBFleet.refSlug(request.repo);
     },
@@ -369,11 +372,13 @@ export function wbAttention() {
     // The operator opened the console that holds `target`: its `console-done`
     // requests end.
     focused(target: EventTarget | null) {
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a window has no closest
       const win = (target as Element | null)?.closest?.<ConsoleWin>(".session-window");
-      if (!win?._deskId) return;
+      const deskId = win?._deskId ?? "";
+      if (deskId === "") return;
       for (const request of this.requests) {
         const session = sessionOf(request, this.$store.projects.liveSessions);
-        if (request.kind === "console-done" && session?.record === win._deskId) {
+        if (request.kind === "console-done" && session?.record === deskId) {
           void this.finish(request);
         }
       }
@@ -396,8 +401,9 @@ export function wbAttention() {
     // Show the run of `request` in the Runs panel.
     openRun(request: AttentionRequest) {
       this.open = false;
-      if (!request.repo || !request.run) return;
-      sendWindow(window, "workbench:run-select", { repo: request.repo, runid: request.run });
+      const { repo, run } = request;
+      if (repo === undefined || repo === "" || run === undefined || run === "") return;
+      sendWindow(window, "workbench:run-select", { repo, runid: run });
     },
 
     // Show the console of `request`, as the Go-to picker shows a window: its
@@ -406,7 +412,7 @@ export function wbAttention() {
       this.open = false;
       if (request.kind === "console-done") void this.finish(request);
       const id = sessionOf(request, this.$store.projects.liveSessions)?.record;
-      if (id) this.reveal(id);
+      if (id !== undefined && id !== "") this.reveal(id);
     },
 
     // Show the console window of the desk record `id`.

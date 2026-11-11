@@ -35,7 +35,7 @@ function page(surfaces) {
   };
 }
 
-const z = (el) => parseInt(el.style.zIndex, 10);
+const z = (el) => Number(el.style.zIndex);
 
 test("a card and a window share one stack: the one focused last is on top", () => {
   const card = surface("note-card");

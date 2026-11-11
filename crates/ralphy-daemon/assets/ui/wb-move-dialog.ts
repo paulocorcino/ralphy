@@ -111,7 +111,7 @@ export function wbMoveDialog() {
     movePickBlocked() {
       return (
         this.movePick.busy ||
-        !!this.movePick.error ||
+        this.movePick.error !== "" ||
         this.movePick.dir === parentRel(this.movePick.from)
       );
     },

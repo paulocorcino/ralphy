@@ -11,7 +11,8 @@
 
 import type { SpendDoc, TitledIssue, Tokens, Unpriced } from "./wb-spend-types.d.ts";
 import { CAUSE_COPY, EMPTY, ERROR, LOADING, READY } from "./wb-spend-copy.ts";
-import { LEDGER_CAP, LEDGER_COLUMNS, boundMark, ledger, textOr } from "./wb-spend-ledger.ts";
+import { textOr } from "./wb-fleet.ts";
+import { LEDGER_CAP, LEDGER_COLUMNS, boundMark, ledger } from "./wb-spend-ledger.ts";
 
 // A daemon cause row plus its copy. An unknown key (a future fourth cause)
 // renders under its own name rather than vanishing — the gap must never get

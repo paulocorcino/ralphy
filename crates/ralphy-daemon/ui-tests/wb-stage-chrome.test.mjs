@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 import { createChrome } from "../assets/ui/wb-stage-chrome.ts";
 import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 
+// A CSS length in whole pixels, as `parseInt` reads it.
+const px = (value) => Number(/^-?\d+/u.exec(value)?.[0]);
+
 // An element with the few DOM members the chrome uses. Listeners are kept so a
 // test can fire them.
 function fakeElement(tag = "div") {
@@ -170,14 +173,14 @@ test("each new window without a record takes the next place in the free cascade"
   const lefts = [];
   for (let i = 0; i < 3; i++) {
     const { win } = buildChrome("shell", "~", null, "console");
-    lefts.push(parseInt(win.style.left, 10));
+    lefts.push(px(win.style.left));
   }
   assert.ok(lefts[0] < lefts[1] && lefts[1] < lefts[2], `cascade lefts ${lefts}`);
   // A record keeps its own rect and does not take a cascade place.
   const kept = buildChrome("shell", "~", { kind: "console", rect: { left: 7, top: 8, width: 300, height: 200 } }, "console");
   assert.equal(kept.win.style.left, "7px");
   const { win } = buildChrome("shell", "~", null, "console");
-  assert.ok(parseInt(win.style.left, 10) > lefts[2]);
+  assert.ok(px(win.style.left) > lefts[2]);
 });
 
 test("a deps member left out fails the call that needs it", () => {
@@ -203,7 +206,7 @@ function hostDeps(box, more = {}) {
 // The window's box must sit inside the fence's box, below its head band
 // (28px: the fake fence has no measured head).
 function assertInsideFence(win, fence) {
-  const box = ["left", "top", "width", "height"].map((k) => parseInt(win.style[k], 10));
+  const box = ["left", "top", "width", "height"].map((k) => px(win.style[k]));
   const [left, top, width, height] = box;
   assert.ok(left >= fence.left && left + width <= fence.left + fence.width, `x ${box} in ${JSON.stringify(fence)}`);
   assert.ok(top >= fence.top + 28 && top + height <= fence.top + fence.height, `y ${box} in ${JSON.stringify(fence)}`);
@@ -231,7 +234,7 @@ test("a window born with a focused fence lands inside it and relaxes the minimum
   ({ win } = createChrome(deps).buildChrome("shell", "~", null, "console"));
   assert.equal(win.style.minWidth, undefined);
   assert.equal(win.style.minHeight, undefined);
-  assert.equal(parseInt(win.style.left, 10) < 1000, true, win.style.left);
+  assert.equal(px(win.style.left) < 1000, true, win.style.left);
 });
 
 test("a record with a rect and max is maximized after the window is on the stage; a rect alone is not", () => {

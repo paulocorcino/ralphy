@@ -96,8 +96,8 @@ export function wireDetachedFence(window: Window, document: Document) {
     // The UNTRANSLATED snapshot, kept verbatim: it is what this window
     // hands back after the opener reloads, so the consoles return to the
     // boxes they were detached from whatever was done to them here.
-    MEMBERS = m.members || [];
-    document.title = windowTitle(m.fence.name || "fence");
+    MEMBERS = m.members ?? [];
+    document.title = windowTitle((m.fence.name ?? "") || "fence");
     WBConsole.mountDetached(m.fence, MEMBERS);
     addTools();
     openLink();
@@ -113,7 +113,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // unload — and its fold makes the doubled signal a no-op.
   window.addEventListener("beforeunload", () => {
     const to = opener();
-    if (to && fenceId) to.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
+    if (to && (fenceId ?? "") !== "") to.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
   });
 
   // ---- columns and a note on top (ADR-0051 §8, amended 2026-10-05) ----
@@ -138,7 +138,8 @@ export function wireDetachedFence(window: Window, document: Document) {
       WBColumns.flat(grid)[0] ??
       stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
     grid = ids.length >= 2 ? all : [];
-    paintGrid(all, { unmax: old && !ids.includes(old) ? old : null, raise: true });
+    const unmax = old !== undefined && old !== "" && !ids.includes(old) ? old : null;
+    paintGrid(all, { unmax, raise: true });
     WBConsole.focusColumn(first);
   }
   function restoreColumn(id: string) {
@@ -151,7 +152,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // maximize, and its Restore is still a column restore.
   function repaintColumns() {
     const head = WBColumns.flat(grid)[0];
-    if (!head) return;
+    if (head === undefined || head === "") return;
     const byId = new Map(consoles().map((w) => [w._deskId, w]));
     const headWin = byId.get(head);
     if (
@@ -176,8 +177,8 @@ export function wireDetachedFence(window: Window, document: Document) {
     const ids: (string | null | undefined)[] = [
       ...stageEl().querySelectorAll<HTMLElement>(".note-card"),
     ].map((el) => el.dataset.noteId);
-    const now = window.WBNotes?.onTopNow();
-    if (!ids.length || (now && ids.length === 1)) return;
+    const now = window.WBNotes.onTopNow();
+    if (ids.length === 0 || ((now ?? "") !== "" && ids.length === 1)) return;
     window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);
   }
 
@@ -259,9 +260,9 @@ export function wireDetachedFence(window: Window, document: Document) {
     // still reaches the opener after it reloads. `MEMBERS` learns the
     // name too, because it is what `popup-here` hands back.
     document.addEventListener("workbench:note-named", (e) => {
-      const noteId = e.detail?.id;
-      const path = e.detail?.path;
-      if (!noteId || typeof path !== "string") return;
+      const noteId = e.detail.id;
+      const path = e.detail.path;
+      if (noteId === "" || typeof path !== "string") return;
       MEMBERS = MEMBERS.map((m) => {
         if (m.kind !== "note" || m.id !== noteId) return m;
         const { draft, claim, ...rest } = m;
@@ -274,9 +275,9 @@ export function wireDetachedFence(window: Window, document: Document) {
     // this window closes with that write in flight, the opener knows
     // which file to read on re-attach.
     document.addEventListener("workbench:note-claimed", (e) => {
-      const noteId = e.detail?.id;
-      const claim = e.detail?.claim;
-      if (!noteId || typeof claim !== "string") return;
+      const noteId = e.detail.id;
+      const claim = e.detail.claim;
+      if (noteId === "" || typeof claim !== "string") return;
       MEMBERS = MEMBERS.map((m) => (m.kind === "note" && m.id === noteId ? { ...m, claim } : m));
       opener()?.postMessage({ type: "wb-note-claimed", noteId, claim }, PEER);
       LINK.post({ type: "popup-note-claimed", tab: TAB, fenceId, pid: PID, noteId, claim });
@@ -353,7 +354,7 @@ export function wireDetachedFence(window: Window, document: Document) {
       say("popup-beat");
       const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
       peer = out.state;
-      if (out.effects.some((x) => x.type === "peer-lost")) silent();
+      if (out.effects.length > 0) silent();
     }, LINK.HEARTBEAT_MS);
     let leaving = false;
 

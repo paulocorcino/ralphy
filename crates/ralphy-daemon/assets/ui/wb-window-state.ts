@@ -102,7 +102,7 @@ export const WBWindowState = (function () {
   // rather than quietly adding a twenty-seventh field nothing declares.
   function initWindow(win: HTMLElement, seed?: Partial<ConsoleWinFields>) {
     const born = Object.assign(win, FIELDS);
-    for (const name of Object.keys(seed || {})) {
+    for (const name of Object.keys(seed ?? {})) {
       if (!(name in FIELDS)) {
         throw new Error(`wb-window-state: unknown window field ${name}`);
       }
@@ -129,8 +129,8 @@ export const WBWindowState = (function () {
   // no session to watch, so `false` is the honest answer, not `undefined`.
   function watchingOf(win: ConsoleWin | null | undefined) {
     if (!win) return false;
-    if (win._term) return !!win._term.watching;
-    return !!win._dormantWatch;
+    if (win._term) return win._term.watching;
+    return win._dormantWatch === true;
   }
 
   // Which worktree this WINDOW's console lives in (ADR-0063). The daemon's

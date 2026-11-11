@@ -155,17 +155,17 @@ export function createSubscriptions({
       },
       onPush: (f) => {
         if (!["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
-        const p = f.payload || {};
-        if ((p.checkout || null) !== (checkout || null)) return;
+        const p = f.payload ?? {};
+        if ((p.checkout ?? "") !== (checkout ?? "")) return;
         treePush(f.verb, p);
       },
     });
     // A push of this checkout's tree: a dir it could not watch, a moved HEAD,
     // or a changed dir.
     function treePush(verb: string, p: PushPayload) {
-      if (verb === "tree.failed") onFailed?.(p.reason || "");
+      if (verb === "tree.failed") onFailed?.(p.reason ?? "");
       else if (verb === "head.dirty") onHead?.();
-      else onDirty(p.path || "");
+      else onDirty(p.path ?? "");
     }
     return {
       watch: (path: string) => {

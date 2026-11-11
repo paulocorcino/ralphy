@@ -58,8 +58,13 @@ const CAUSE: Record<string, string> = {
 function isError(reply: Reply) {
   return !reply || reply.status === "error";
 }
+// The words of a reply: its message, else its reason, else "".
+function replyWords(reply: Reply): string {
+  if (!reply) return "";
+  return (reply.message ?? "") || (reply.reason ?? "");
+}
 function message(reply: Reply, fallback: string) {
-  return (reply && (reply.message || reply.reason)) || fallback || "refused";
+  return replyWords(reply) || fallback || "refused";
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -94,14 +99,14 @@ function oneLine(text: string) {
 type Parts = { sentence: string } | { cause: string; rest: string[] };
 
 function parts(reply: Reply): Parts | null {
-  const raw = String((reply && (reply.message || reply.reason)) || "").trim();
+  const raw = replyWords(reply).trim();
   if (!raw) return null;
   const known = Object.hasOwn(CAUSE, raw) ? CAUSE[raw] : undefined;
   if (known !== undefined) return { cause: known, rest: [] };
   if (isSentence(raw) && !raw.startsWith("Error: ")) return { sentence: raw };
   const text = oneLine(raw).replace(/^(cannot|refusing to) [^:]+: /, "");
   const [head, ...rest] = text.split(" — ").map(bare).filter(Boolean);
-  return head ? { cause: head, rest } : null;
+  return head === undefined ? null : { cause: head, rest };
 }
 
 const tail = (rest: string[]) => rest.map((r) => ` ${capital(r)}.`).join("");
@@ -136,7 +141,7 @@ function why(reply: Reply, fallback: string) {
 
 // One line of a success report (`warning: …`) as a sentence.
 function sentence(line: string | null | undefined) {
-  const t = bare(String(line || ""));
+  const t = bare(line ?? "");
   return t ? `${capital(t)}.` : "";
 }
 
@@ -146,7 +151,7 @@ function sentence(line: string | null | undefined) {
 function readFold(prev: Read | null | undefined, outcome: Outcome): Read {
   const { ok, value, reason, at } = outcome;
   if (ok) return { value, goodAt: at, error: "", current: true };
-  if (prev?.goodAt) {
+  if (prev !== null && prev !== undefined && prev.goodAt !== 0) {
     return { value: prev.value, goodAt: prev.goodAt, error: reason as string, current: false };
   }
   return { value: null, goodAt: 0, error: reason as string, current: false };

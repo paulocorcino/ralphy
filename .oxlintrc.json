@@ -219,7 +219,9 @@
         "**/ui/wb-add-project*.ts",
         "**/ui/wb-hosts*.ts",
         "**/ui/wb-changes*.ts",
-        "**/ui/wb-device*.ts"
+        "**/ui/wb-device*.ts",
+        "**/ui/*.ts",
+        "**/ui-tests/**"
       ],
       "rules": {
         "typescript/strict-boolean-expressions": "error",

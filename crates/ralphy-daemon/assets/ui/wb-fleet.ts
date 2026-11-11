@@ -60,7 +60,7 @@ export type Group = GroupSeed & {
 type PeerIn = Omit<FleetPeer, "nudgeable" | "tunnel"> & { nudgeable?: boolean; tunnel?: boolean };
 
 // The text, or `fallback` when there is none or it is empty.
-function textOr(text: string | null | undefined, fallback: string): string {
+export function textOr(text: string | null | undefined, fallback: string): string {
   return text == null || text === "" ? fallback : text;
 }
 

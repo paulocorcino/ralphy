@@ -99,7 +99,7 @@ export function wbLogin() {
 
     _otpFill(text: string, el: HTMLElement) {
       const chars = text.replaceAll(/\D/gu, "").slice(0, 6).split("");
-      for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] || "";
+      for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] ?? "";
       this._otpSync();
       const boxes = this._otpBoxes(el);
       if (chars.length >= 6) this._otpAdvancePastLast(el);
@@ -137,7 +137,7 @@ export function wbLogin() {
     },
 
     otpPaste(e: ClipboardEvent & { target: HTMLInputElement }) {
-      const text = e.clipboardData?.getData("text") || "";
+      const text = e.clipboardData?.getData("text") ?? "";
       this._otpFill(text, e.target);
     },
 

@@ -73,9 +73,10 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     init() {
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.(
+      window.WBDaemon.onUnknownCheckout(
         (repo, name) => repo != null && this.checkoutGone(repo, name),
       );
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- kept as it was
       void window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
       // A branch refusal names an act against the project that WAS open.
       window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
@@ -102,21 +103,21 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // search read, and that a click chooses another.
     checkoutTitle(p: Project) {
       const name = this.checkoutOf(window.Alpine.store("projects").repoRef(p));
-      return name
-        ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
-        : "Files, changes and search show the primary tree. Click to choose a worktree.";
+      return name === null
+        ? "Files, changes and search show the primary tree. Click to choose a worktree."
+        : `Files, changes and search show worktree “${name}”. Click to choose another one.`;
     },
 
     branchChipTitle(p: Project) {
       const ref = window.Alpine.store("projects").repoRef(p);
-      return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+      return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] ?? null);
     },
     chipIcon(p: Project) {
       return WBProject.chipIcon(this.checkoutOf(window.Alpine.store("projects").repoRef(p)));
     },
     chipDirty(p: Project) {
       const ref = window.Alpine.store("projects").repoRef(p);
-      return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+      return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] ?? null);
     },
 
     // The Files bar's checkout chip (ADR-0063 amendment 2026-09-16 b): shown
@@ -124,25 +125,28 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // Files, Changes, diff and Find show), never where a console is launched.
     hasWorktrees(p: Project) {
       return WBProject.hasWorktrees(
-        this.worktreeListings[window.Alpine.store("projects").repoRef(p)] || null,
+        this.worktreeListings[window.Alpine.store("projects").repoRef(p)] ?? null,
       );
     },
 
     checkoutOf(ref: string | null | undefined) {
-      return (ref != null && this.checkouts[ref]) || null;
+      if (ref === null || ref === undefined) return null;
+      const name = this.checkouts[ref] ?? "";
+      return name === "" ? null : name;
     },
     chipLabel(p: Project) {
       const ref = window.Alpine.store("projects").repoRef(p);
-      return WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+      return WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] ?? null);
     },
     // The reactive map is REPLACED so Alpine sees it; persistence goes to the
     // desk mirror; the files remount an open tree built for another checkout.
     setCheckout(ref: string, name: string | null) {
       const next = { ...this.checkouts };
-      if (name) next[ref] = String(name);
+      if (name !== null && name !== "") next[ref] = name;
       else delete next[ref];
       this.checkouts = next;
-      window.WBConsole?.setCheckout?.(ref, name || null);
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's window has none
+      window.WBConsole?.setCheckout?.(ref, name === "" ? null : name);
       if (window.Alpine.store("projects").openSlug === ref) {
         sendWindow(window, "workbench:checkout-changed");
       }
@@ -164,7 +168,8 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // The listing of `ref` as every reader sees it: without a worktree whose
     // delete is in flight. `null` until a read lands.
     listingOf(ref: string | null | undefined): Listing | null {
-      return (ref && this.worktreeListings[ref]) || null;
+      if (ref === null || ref === undefined || ref === "") return null;
+      return this.worktreeListings[ref] ?? null;
     },
     // The chip needs the worktree's BRANCH, which only `worktree.list` knows:
     // one read per ref, `force` re-reads (after a branch act the chip
@@ -172,7 +177,8 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // that read, unless forced. A forced re-read that fails DROPS the cached
     // entry rather than showing the pre-act branch. Newest read of a ref wins.
     ensureWorktreeListing(ref: string | null | undefined, force = false): Promise<void> {
-      if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return Promise.resolve();
+      if (ref === null || ref === undefined || ref === "" || ref === "~") return Promise.resolve();
+      if (this.worktreeListings[ref] && !force) return Promise.resolve();
       const open = reading.get(ref);
       if (open && !force) return open;
       const read: Promise<void> = this._readListing(ref, force).finally(() => {
@@ -182,23 +188,24 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       return read;
     },
     async _readListing(ref: string, force: boolean): Promise<void> {
-      const seq = (this._listingSeq[ref] = (this._listingSeq[ref] || 0) + 1);
+      const seq = (this._listingSeq[ref] = (this._listingSeq[ref] ?? 0) + 1);
       const listing = await readWorktreeListing(ref);
       if (seq !== this._listingSeq[ref]) return; // superseded → the newer read owns it
       if (listing || force) this._storeListing(ref, listing);
     },
     _storeListing(ref: string, listing: Listing | null) {
-      const hidden = this._hidden[ref] || [];
+      const hidden = this._hidden[ref] ?? [];
       const shown =
-        listing && hidden.length
+        listing && hidden.length > 0
           ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) }
           : listing;
       this.worktreeListings = { ...this.worktreeListings, [ref]: shown };
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- a test's window has none
       window.WBConsole?.ingestWorktrees?.(ref);
     },
     // A delete of `name` started: the listing leaves it out at once.
     hideWorktree(ref: string, name: string) {
-      this._hidden = { ...this._hidden, [ref]: [...(this._hidden[ref] || []), name] };
+      this._hidden = { ...this._hidden, [ref]: [...(this._hidden[ref] ?? []), name] };
       const listing = this.worktreeListings[ref];
       if (listing) this._storeListing(ref, listing);
     },
@@ -206,24 +213,23 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     unhideWorktree(ref: string, name: string) {
       this._hidden = {
         ...this._hidden,
-        [ref]: (this._hidden[ref] || []).filter((n) => n !== name),
+        [ref]: (this._hidden[ref] ?? []).filter((n) => n !== name),
       };
     },
     // Copy the desk mirror's selections into the reactive map once the desk
     // has landed (boot, and again after a login under the `Session` policy),
     // and bring an already-open tree in line with what it now says.
     adoptDeskCheckouts() {
-      const open = window.Alpine.store("projects").openSlug;
-      const before = open ? this.checkoutOf(open) : null;
-      this.checkouts = window.WBConsole?.checkouts?.() || {};
-      if (open) sendWindow(window, "workbench:checkout-changed");
-      if (open) {
-        void this.ensureWorktreeListing(open);
-        // The desk can land AFTER the open's own reads: re-read under the
-        // restored selection, only when it differs (two git spawns otherwise).
-        if (this.checkoutOf(open) !== before) {
-          sendWindow(window, "workbench:changes-read", { ref: open });
-        }
+      const open = window.Alpine.store("projects").openSlug ?? "";
+      const before = open === "" ? null : this.checkoutOf(open);
+      this.checkouts = window.WBConsole.checkouts();
+      if (open === "") return;
+      sendWindow(window, "workbench:checkout-changed");
+      void this.ensureWorktreeListing(open);
+      // The desk can land AFTER the open's own reads: re-read under the
+      // restored selection, only when it differs (two git spawns otherwise).
+      if (this.checkoutOf(open) !== before) {
+        sendWindow(window, "workbench:changes-read", { ref: open });
       }
     },
   };
@@ -236,7 +242,8 @@ export type CheckoutsStore = ReturnType<typeof checkoutsStore>;
 async function readWorktreeListing(ref: string): Promise<Listing | null> {
   try {
     const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
-    if (reply && reply.status === "ok") return reply.checkouts || null;
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- tests answer null
+    if (reply?.status === "ok") return reply.checkouts ?? null;
   } catch {
     // A transport error reads as no listing, as a refusal does.
   }

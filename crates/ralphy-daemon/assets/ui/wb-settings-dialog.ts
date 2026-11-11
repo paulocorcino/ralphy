@@ -134,17 +134,16 @@ export function settingsDialog() {
       this.settings["consoles.key_bar"] = view?.keys ?? "unset";
       this.settings["notifications.browser"] = WBNotify.isOn();
       // The size the consoles show now: the key bar's A−/A+ write the same field.
-      this.settings["consoles.font_size"] =
-        window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
+      this.settings["consoles.font_size"] = window.WBConsole.fontSize();
       this.readSettings();
     },
     // The open repo's resolved config (`config.get`), merged over the schema
     // defaults; with no repo open the project groups are disabled.
     readSettings() {
-      if (this.$store.projects.openSlug) {
+      if ((this.$store.projects.openSlug ?? "") !== "") {
         window.WBDaemon.observe("config.get", { repo: this.$store.projects.openSlug })
           .then((reply) => {
-            const cfg = reply && reply.status === "ok" ? reply.config : null;
+            const cfg = reply.status === "ok" ? reply.config : null;
             // The defaults must not pass as the project's values (ADR-0070 D3).
             if (!cfg || typeof cfg !== "object") {
               this.settingsError = WBFail.failed(
@@ -189,7 +188,7 @@ export function settingsDialog() {
           this.deskHistory.rows = [];
           this.deskHistory.error =
             "Could not read the desk history: " +
-            `${refusal?.error || "the daemon gave no reason"}.`;
+            `${(refusal?.error ?? "") || "the daemon gave no reason"}.`;
           return;
         }
         const when = (ms: number) => new Date(ms).toLocaleString();
@@ -210,11 +209,12 @@ export function settingsDialog() {
           body: JSON.stringify(body),
         });
         if (r.ok) {
-          window.WBConsole?.reloadForRestoredDesk();
+          window.WBConsole.reloadForRestoredDesk();
           return;
         }
         const reply = await r.json().catch(() => null);
-        this.deskHistory.error = `${failLine}: ${reply?.error || "the daemon gave no reason"}.`;
+        const why = (reply?.error ?? "") || "the daemon gave no reason";
+        this.deskHistory.error = `${failLine}: ${why}.`;
       } catch {
         this.deskHistory.error = `${failLine}: the daemon did not answer.`;
       }
@@ -238,7 +238,7 @@ export function settingsDialog() {
           const refusal = r.ok ? null : await r.json().catch(() => null);
           this.deskHistory.error =
             "Could not download the desk layout: " +
-            `${refusal?.error || "the daemon gave no reason"}.`;
+            `${(refusal?.error ?? "") || "the daemon gave no reason"}.`;
           return;
         }
         const blob = new Blob([JSON.stringify(version, null, 2)], { type: "application/json" });
@@ -263,7 +263,7 @@ export function settingsDialog() {
       if (!file) return;
       this.deskHistory.error = "";
       const parsed = WBDeskHistory.parseUpload(await file.text());
-      if (parsed.cause) {
+      if (parsed.cause !== undefined) {
         this.deskHistory.error = `Could not upload the desk layout: ${parsed.cause}.`;
         return;
       }
@@ -282,15 +282,14 @@ export function settingsDialog() {
         window.WB.emit("setting-change", { project: null, key, value });
         return;
       }
-      if (this.$store.projects.openSlug && this.settingsError) {
+      const slug = this.$store.projects.openSlug ?? "";
+      if (slug !== "" && this.settingsError !== "") {
         this.$store.modals.flash(
           "Could not change the setting: the settings were not read. Open the settings again.",
         );
         return;
       }
-      if (this.$store.projects.openSlug) {
-        await writeProjectSetting(this, this.$store.projects.openSlug, key, value);
-      }
+      if (slug !== "") await writeProjectSetting(this, slug, key, value);
       window.WB.emit("setting-change", { project: this.$store.projects.openSlug, key, value });
     },
   });

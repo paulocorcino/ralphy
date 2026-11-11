@@ -143,7 +143,7 @@ export function wbPropertiesDialog() {
 
     propsRoot() {
       return (
-        this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root ||
+        this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root ??
         ""
       );
     },
@@ -208,7 +208,7 @@ export function wbPropertiesDialog() {
     // What a screen reader hears while the dialog waits and when it is done.
     propsStatus() {
       if (this.props.sizePending) return "Calculating the size of the folder…";
-      return this.props.open && this.props.isFolder && this.props.size
+      return this.props.open && this.props.isFolder && this.props.size !== null
         ? "The size of the folder is ready."
         : "";
     },
@@ -221,8 +221,9 @@ export function wbPropertiesDialog() {
     // undefined on an insecure non-loopback origin, so the call is optional-chained.
     propsCopy() {
       const lines = this.propsRows()
-        .filter((r) => !r.pending)
+        .filter((r) => r.pending !== true)
         .map((r) => `${r.label}: ${r.value}`);
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- absent on plain http
       navigator.clipboard?.writeText(lines.join("\n")).catch(() => {});
       this.props.copied = true;
     },

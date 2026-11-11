@@ -70,7 +70,7 @@ function fakeDeps(more = {}) {
     ...more,
   };
   const runTasks = () => {
-    while (tasks.length) tasks.shift()();
+    while (tasks.length > 0) tasks.shift()();
   };
   return { deps, tasks, runTasks };
 }

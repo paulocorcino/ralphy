@@ -156,7 +156,7 @@ export function wbBoard() {
         confirmLabel: "Discard",
         danger: true,
       });
-      if (ok !== true) return;
+      if (!ok) return;
       const slug = this.$store.projects.openSlug;
       try {
         const reply = await window.WBDaemon.write("plan.discard", { repo: slug });

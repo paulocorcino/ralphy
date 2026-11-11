@@ -380,7 +380,7 @@ export function wbChanges() {
       });
       // A read may have failed while the dialog was open: a discard cannot
       // be undone, so the lock is asked again.
-      if (ok !== true || this.$store.connection.writeLocked()) return;
+      if (!ok || this.$store.connection.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
