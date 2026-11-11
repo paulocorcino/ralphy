@@ -273,7 +273,7 @@ async fn an_unreachable_peer_is_marked_not_removed() {
 async fn a_non_loopback_descriptor_is_refused_without_dialling() {
     let mut d = descriptor(7257, "tok");
     d.address = "10.0.0.5".into();
-    let t0 = std::time::Instant::now();
+    let t0 = Instant::now();
     let status = probe(&d, me()).await;
     let elapsed = t0.elapsed();
     assert!(

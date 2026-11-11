@@ -45,7 +45,7 @@ pub(super) fn with_workspace_trusted(mut root: serde_json::Value, key: &str) -> 
     if let Some(obj) = root.as_object_mut() {
         let projects = obj.entry("projects").or_insert_with(|| json!({}));
         if let Some(projects) = projects.as_object_mut() {
-            let entry = projects.entry(key.to_string()).or_insert_with(|| json!({}));
+            let entry = projects.entry(key.to_owned()).or_insert_with(|| json!({}));
             if let Some(entry) = entry.as_object_mut() {
                 entry.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
             }

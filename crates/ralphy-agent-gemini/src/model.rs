@@ -68,10 +68,10 @@ pub fn is_pinnable_model(id: &str) -> bool {
 pub fn price_key(model: &str) -> String {
     let id = model.trim();
     match id {
-        _ if ROUTING_ALIASES.contains(&id) => ROUTED_KEY.to_string(),
-        "gemini-3-flash" => "gemini-3.5-flash".to_string(),
-        "gemini-3-pro-preview" => "gemini-3.1-pro-preview".to_string(),
-        other => other.to_string(),
+        _ if ROUTING_ALIASES.contains(&id) => ROUTED_KEY.to_owned(),
+        "gemini-3-flash" => "gemini-3.5-flash".to_owned(),
+        "gemini-3-pro-preview" => "gemini-3.1-pro-preview".to_owned(),
+        other => other.to_owned(),
     }
 }
 

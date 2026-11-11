@@ -7,8 +7,8 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
     first.require_token = false;
     first.autostart = false;
     let mut second = description("linux");
-    second.token = Some("host-tok".to_string());
-    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    second.token = Some("host-tok".to_owned());
+    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_owned());
     let mut fake = FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))
@@ -40,8 +40,8 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
 /// A ready Linux host whose daemon reports a socket.
 fn host_with_a_socket() -> FakeHost {
     let mut second = description("linux");
-    second.token = Some("host-tok".to_string());
-    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    second.token = Some("host-tok".to_owned());
+    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_owned());
     let mut first = second.clone();
     first.token = None;
     FakeHost::before_doctor()
@@ -61,10 +61,10 @@ fn a_socket_the_host_does_not_forward_falls_back_to_the_port() {
     let mut fake = host_with_a_socket();
     let tokens = std::cell::RefCell::new(Vec::new());
     let probe = |t: &TunnelSpec, token: Option<&str>| {
-        tokens.borrow_mut().push(token.map(str::to_string));
+        tokens.borrow_mut().push(token.map(str::to_owned));
         match t.peer_socket {
-            Some(_) => Err(NOT_FORWARDED.to_string()),
-            None => Ok(HOST_ID.to_string()),
+            Some(_) => Err(NOT_FORWARDED.to_owned()),
+            None => Ok(HOST_ID.to_owned()),
         }
     };
     let mut report = Report::text(Vec::new());
@@ -89,7 +89,7 @@ fn a_socket_the_host_does_not_forward_falls_back_to_the_port() {
     assert_eq!(written, vec![d.clone()]);
     assert_eq!(
         *tokens.borrow(),
-        vec![Some("host-tok".to_string()), Some("host-tok".to_string())]
+        vec![Some("host-tok".to_owned()), Some("host-tok".to_owned())]
     );
     let printed = String::from_utf8(report.into_inner()).unwrap();
     assert!(
@@ -106,8 +106,8 @@ fn a_port_that_belongs_to_another_account_fails_the_add_before_writing() {
     let store = tempfile::tempdir().unwrap();
     let mut fake = host_with_a_socket();
     let probe = |t: &TunnelSpec, _: Option<&str>| match t.peer_socket {
-        Some(_) => Err(NOT_FORWARDED.to_string()),
-        None => Ok("01ARZ3NDEKTSV4RRFFQ69G5FC1".to_string()),
+        Some(_) => Err(NOT_FORWARDED.to_owned()),
+        None => Ok("01ARZ3NDEKTSV4RRFFQ69G5FC1".to_owned()),
     };
     let err = add(
         &mut fake,
@@ -137,8 +137,8 @@ fn a_port_that_belongs_to_another_account_fails_the_add_before_writing() {
     let mut fake = host_with_a_socket();
     let refused = "a daemon answers there, but it refused this account's access token";
     let probe = |t: &TunnelSpec, _: Option<&str>| match t.peer_socket {
-        Some(_) => Err(NOT_FORWARDED.to_string()),
-        None => Err(refused.to_string()),
+        Some(_) => Err(NOT_FORWARDED.to_owned()),
+        None => Err(refused.to_owned()),
     };
     let err = add(
         &mut fake,
@@ -170,8 +170,8 @@ fn a_running_daemon_with_no_socket_is_restarted_to_get_one() {
     let first = description("linux");
     assert!(first.running && first.require_token && first.socket.is_none());
     let mut second = description("linux");
-    second.token = Some("host-tok".to_string());
-    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    second.token = Some("host-tok".to_owned());
+    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_owned());
     let mut fake = FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))

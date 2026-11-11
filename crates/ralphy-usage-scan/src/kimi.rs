@@ -47,7 +47,7 @@ pub fn scan_kimi(input: &KimiScan) -> Vec<InteractiveRecord> {
     let mut records: Vec<InteractiveRecord> = out
         .into_iter()
         .map(|((session_id, model), agg)| InteractiveRecord {
-            agent: "kimi".to_string(),
+            agent: "kimi".to_owned(),
             model,
             session_id,
             project: agg.project,
@@ -166,14 +166,14 @@ fn read_status_update(line: &str) -> Option<(Option<String>, Snap)> {
     // Unix seconds (float) → ms.
     let ts_ms = val
         .get("timestamp")
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .map(|s| (s * 1000.0) as i64);
     let total = tokens.input + tokens.output + tokens.cache_read + tokens.cache_creation;
     let key = payload
         .get("message_id")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
-        .map(str::to_string);
+        .map(str::to_owned);
     Some((
         key,
         Snap {
@@ -242,15 +242,14 @@ fn read_usage_record(line: &str) -> Option<UsageRecord> {
         i64_field(usage, "inputCacheRead"),
         i64_field(usage, "inputCacheCreation"),
     )?;
-    let model = val
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(|m| m.strip_prefix("kimi-code/").unwrap_or(m).to_string())
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    let model = val.get("model").and_then(|v| v.as_str()).map_or_else(
+        || DEFAULT_MODEL.to_owned(),
+        |m| m.strip_prefix("kimi-code/").unwrap_or(m).to_owned(),
+    );
     Some(UsageRecord {
         model,
         tokens,
-        ts_ms: val.get("time").and_then(|v| v.as_i64()),
+        ts_ms: val.get("time").and_then(serde_json::Value::as_i64),
     })
 }
 
@@ -311,9 +310,9 @@ fn read_config_model(kimi_dir: &Path) -> String {
     let model = fs::read_to_string(&path)
         .ok()
         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-        .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(str::to_string))
+        .and_then(|v| v.get("model").and_then(|m| m.as_str()).map(str::to_owned))
         .filter(|m| !m.is_empty());
-    model.unwrap_or_else(|| DEFAULT_MODEL.to_string())
+    model.unwrap_or_else(|| DEFAULT_MODEL.to_owned())
 }
 
 /// The session id a `wire.jsonl` belongs to (below `sessions_root`): the segment
@@ -330,18 +329,18 @@ fn session_id_from_path(path: &Path, sessions_root: &Path) -> String {
         .iter()
         .position(|&c| c == "subagents" || c == "agents")
     {
-        if idx > 0 {
-            return comps[idx - 1].to_string();
+        if let Some(parent) = idx.checked_sub(1).and_then(|i| comps.get(i).copied()) {
+            return parent.to_owned();
         }
     }
     path.parent()
         .and_then(|p| p.file_name())
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
-        .to_string()
+        .to_owned()
 }
 
-/// Resolve (project, actor_email) from the WORKSPACE segment (`sessions/<WORKSPACE>/…`)
+/// Resolve (project, `actor_email`) from the WORKSPACE segment (`sessions/<WORKSPACE>/…`)
 /// against `repos` via [`crate::attribution::find_repo`], caching the git email
 /// per matched slug.
 fn workspace_attribution(
@@ -351,10 +350,7 @@ fn workspace_attribution(
     email_cache: &mut HashMap<String, Option<String>>,
 ) -> (Option<String>, Option<String>) {
     let rel = file.strip_prefix(sessions_root).unwrap_or(file);
-    let workspace = rel
-        .components()
-        .filter_map(|c| c.as_os_str().to_str())
-        .next();
+    let workspace = rel.components().find_map(|c| c.as_os_str().to_str());
     let matched = workspace.and_then(|w| crate::attribution::find_repo(repos, w));
     let project = matched.map(|r| r.slug.clone());
     let actor_email = matched.and_then(|r| {
@@ -393,7 +389,9 @@ fn to_breakdown(
 
 /// A JSON object's `key` as `i64`, 0 when absent/non-numeric.
 fn i64_field(obj: &serde_json::Value, key: &str) -> i64 {
-    obj.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+    obj.get(key)
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0)
 }
 
 /// A unix-ms instant → RFC3339 UTC; empty string when absent or out of range.

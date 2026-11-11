@@ -79,7 +79,7 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
             job,
             JobObjectExtendedLimitInformation,
             std::ptr::from_ref(&info).cast(),
-            u32::try_from(std::mem::size_of_val(&info)).expect("the struct size fits u32"),
+            u32::try_from(size_of_val(&info)).expect("the struct size fits u32"),
         )
     };
     assert_ne!(set, FALSE, "allowing breakaway on the test job");
@@ -94,7 +94,9 @@ fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
     )
     .expect("spawning the stand-in daemon");
     let mut in_job = FALSE;
-    let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &mut in_job) };
+    // SAFETY: the child is alive until the kill below, and `job` is the job
+    // object created above; `in_job` is a valid out-parameter.
+    let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &raw mut in_job) };
     child.kill().expect("ending the stand-in daemon");
     child.wait().expect("reaping the stand-in daemon");
     unsafe { CloseHandle(job) };
@@ -137,12 +139,8 @@ fn record(dir: &Path, pid: u32) {
 
 #[test]
 fn an_unrecorded_invocation_falls_back_to_a_bare_daemon() {
-    assert_eq!(effective(&[]), vec!["daemon".to_string()]);
-    let recorded = vec![
-        "daemon".to_string(),
-        "--port".to_string(),
-        "8080".to_string(),
-    ];
+    assert_eq!(effective(&[]), vec!["daemon".to_owned()]);
+    let recorded = vec!["daemon".to_owned(), "--port".to_owned(), "8080".to_owned()];
     assert_eq!(
         effective(&recorded),
         recorded,

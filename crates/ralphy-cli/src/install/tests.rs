@@ -35,7 +35,7 @@ fn replacing_parks_the_old_binary_rather_than_deleting_it() {
     assert_eq!(std::fs::read(&dest).expect("read"), b"new");
     assert_eq!(std::fs::read(&parked).expect("read parked"), b"old");
     assert_eq!(parked.file_name().and_then(|n| n.to_str()), {
-        let mut expected = binary_name().to_string();
+        let mut expected = binary_name().to_owned();
         expected.push_str(".old");
         Some(expected).as_deref()
     });

@@ -44,8 +44,8 @@ fn modified_added_deleted_renamed_untracked() {
     assert_eq!(
         *find(&list, "new.txt"),
         Change {
-            path: "new.txt".to_string(),
-            original_path: Some("old.txt".to_string()),
+            path: "new.txt".to_owned(),
+            original_path: Some("old.txt".to_owned()),
             status: ChangeStatus::Renamed,
             index_status: Some(ChangeStatus::Renamed),
             worktree_status: None,
@@ -123,11 +123,11 @@ fn run_directory_only_change_is_clean_for_core_and_git_read() {
 
     std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
     std::fs::write(dir.join(".ralphy").join("x.txt"), "scratch\n").unwrap();
-    assert!(changes(&dir).unwrap().is_empty());
+    assert_eq!(changes(&dir).unwrap(), Vec::<Change>::new());
     assert!(!ralphy_git_read::dirty(&dir).unwrap());
 
     std::fs::write(dir.join("a.txt"), "a\n").unwrap();
-    assert!(!changes(&dir).unwrap().is_empty());
+    assert_ne!(changes(&dir).unwrap(), Vec::<Change>::new());
     assert!(ralphy_git_read::dirty(&dir).unwrap());
 
     remove_scratch(&dir);
@@ -363,7 +363,7 @@ fn a_merge_conflict_reads_as_conflicted() {
     assert_eq!(
         list,
         vec![Change {
-            path: "README.md".to_string(),
+            path: "README.md".to_owned(),
             original_path: None,
             status: ChangeStatus::Conflicted,
             index_status: None,

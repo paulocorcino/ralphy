@@ -108,14 +108,14 @@ fn carry_ledgers(sources: &[&str], to: &str) {
     for from in sources {
         match ralphy_core::ledger::rename_project(from, to) {
             Ok(true) => {
-                tracing::info!(from, to = %to, "usage ledger carried to the new project key")
+                tracing::info!(from, to = %to, "usage ledger carried to the new project key");
             }
             Ok(false) => {}
             Err(e) => {
                 tracing::warn!(
                     error = %e, from, to = %to,
                     "usage ledger not carried; the old file stays"
-                )
+                );
             }
         }
     }
@@ -287,12 +287,15 @@ mod tests {
         git(dir.path(), &["remote", "remove", "origin"]);
         let reg = register_or_migrate(&registry_path, &top).unwrap();
         assert_eq!(reg.slug, "o/r", "the forge key stays");
-        assert!(reg.migrated_from.is_empty());
+        assert_eq!(reg.migrated_from, Vec::<String>::new());
         let declined = reg.declined.expect("the hash key was declined");
         assert!(declined.starts_with("path-"));
         let store = registry::load_from(&registry_path).unwrap();
         assert_eq!(store.repos.len(), 1, "no hash entry inserted");
-        assert!(store.entry("o/r").unwrap().former_slugs.is_empty());
+        assert_eq!(
+            store.entry("o/r").unwrap().former_slugs,
+            Vec::<String>::new()
+        );
     }
 
     #[test]
@@ -317,12 +320,12 @@ mod tests {
 
         let reg = register_or_migrate(&registry_path, &top).unwrap();
         assert_eq!(reg.slug, "new/name");
-        assert_eq!(reg.migrated_from, vec!["old/name".to_string()]);
+        assert_eq!(reg.migrated_from, vec!["old/name".to_owned()]);
         let store = registry::load_from(&registry_path).unwrap();
         assert_eq!(store.repos.len(), 1);
         assert_eq!(
             store.entry("new/name").unwrap().former_slugs,
-            vec!["old/name".to_string()]
+            vec!["old/name".to_owned()]
         );
     }
 

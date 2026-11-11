@@ -126,8 +126,7 @@ impl Agent {
 
     fn resolve_program(self) -> OsString {
         self.locate_program()
-            .map(PathBuf::into_os_string)
-            .unwrap_or_else(|| self.program_name().into())
+            .map_or_else(|| self.program_name().into(), PathBuf::into_os_string)
     }
 }
 
@@ -258,7 +257,7 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
     // The trust flag would also run the project's own hooks with no trust
     // prompt (ADR-0085 amendment of 2026-10-29).
     if ralphy_proc_util::hook_form::codex_project_has_hooks(&spec.cwd) {
-        spec.unreported_reason = Some(crate::agent_state::CODEX_OWN_HOOKS_REASON.to_string());
+        spec.unreported_reason = Some(crate::agent_state::CODEX_OWN_HOOKS_REASON.to_owned());
         return;
     }
     if let Err(e) = files.create_status() {
@@ -280,9 +279,9 @@ fn add_codex_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::S
     spec.status = Some(files);
 }
 
-/// The OpenCode part of [`spec_with_status`]: the state plugin file, named
+/// The `OpenCode` part of [`spec_with_status`]: the state plugin file, named
 /// in `OPENCODE_CONFIG_CONTENT`, and `RALPHY_STATUS_FILE` (ADR-0085 D2). The
-/// config holds the plugin only: OpenCode merges it with the operator's own
+/// config holds the plugin only: `OpenCode` merges it with the operator's own
 /// config, so their settings and plugins still load. A failed write launches
 /// the console without the plugin, as for Claude.
 fn add_opencode_launch(spec: &mut SessionSpec, status: Option<crate::agent_state::StatusFiles>) {
@@ -386,8 +385,7 @@ fn claude_session_name(repo_slug: &str, console: Option<&str>) -> String {
     console
         .map(fold)
         .filter(|folded| !folded.is_empty())
-        .map(|folded| format!("wb-{folded}"))
-        .unwrap_or_else(|| console_name(repo_slug))
+        .map_or_else(|| console_name(repo_slug), |folded| format!("wb-{folded}"))
 }
 
 /// Fold `text` to lowercase `[a-z0-9]` joined by single dashes, trimmed.

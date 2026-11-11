@@ -144,7 +144,7 @@ fn discard_refuses_a_path_outside_the_change_set() {
     assert_eq!(
         refused,
         DiscardOutcome::NotInChangeSet {
-            path: "never-touched.txt".to_string()
+            path: "never-touched.txt".to_owned()
         }
     );
     assert_eq!(
@@ -220,7 +220,7 @@ fn discard_refuses_a_conflicted_path() {
     assert_eq!(
         refused,
         DiscardOutcome::Conflicted {
-            path: "f.txt".to_string()
+            path: "f.txt".to_owned()
         }
     );
     assert_eq!(
@@ -252,16 +252,16 @@ fn discard_refuses_a_mixed_batch_before_either_write() {
     let refused = discard(
         &dir,
         &[
-            "good.txt".to_string(),
-            "loose.txt".to_string(),
-            "never-touched.txt".to_string(),
+            "good.txt".to_owned(),
+            "loose.txt".to_owned(),
+            "never-touched.txt".to_owned(),
         ],
     )
     .unwrap();
     assert_eq!(
         refused,
         DiscardOutcome::NotInChangeSet {
-            path: "never-touched.txt".to_string()
+            path: "never-touched.txt".to_owned()
         }
     );
     assert_eq!(
@@ -290,7 +290,7 @@ fn discard_refuses_a_renames_original_path() {
     assert_eq!(
         refused,
         DiscardOutcome::NotInChangeSet {
-            path: "old.txt".to_string()
+            path: "old.txt".to_owned()
         },
         "the change set names the rename by its NEW path only"
     );
@@ -348,7 +348,7 @@ fn discard_refuses_a_staged_deletion() {
     assert_eq!(
         refused,
         DiscardOutcome::NothingInTheWorkingTree {
-            path: "f.txt".to_string()
+            path: "f.txt".to_owned()
         }
     );
     assert_eq!(
@@ -374,7 +374,7 @@ fn discard_runs_both_writes_for_a_mixed_batch() {
     std::fs::write(dir.join("loose.txt"), "loose\n").unwrap();
 
     assert_eq!(
-        discard(&dir, &["good.txt".to_string(), "loose.txt".to_string()]).unwrap(),
+        discard(&dir, &["good.txt".to_owned(), "loose.txt".to_owned()]).unwrap(),
         DiscardOutcome::Discarded {
             restored: 1,
             deleted: 1

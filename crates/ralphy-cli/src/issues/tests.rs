@@ -59,8 +59,8 @@ fn issue(number: u64, labels: &[&str], body: &str) -> Issue {
     Issue {
         number,
         title: format!("issue {number}"),
-        body: body.to_string(),
-        labels: labels.iter().map(|s| s.to_string()).collect(),
+        body: body.to_owned(),
+        labels: labels.iter().map(ToString::to_string).collect(),
         comments: Vec::new(),
     }
 }
@@ -68,20 +68,20 @@ fn issue(number: u64, labels: &[&str], body: &str) -> Issue {
 fn human() -> Vec<String> {
     ["needs-info", "wontfix"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
 fn spec(tokens: &[&str]) -> Vec<String> {
-    tokens.iter().map(|s| s.to_string()).collect()
+    tokens.iter().map(ToString::to_string).collect()
 }
 
 /// A structured comment for the `show_view` call sites.
 fn comment(author: &str, at: &str, body: &str) -> github::IssueComment {
     github::IssueComment {
-        author: author.to_string(),
-        created_at: at.to_string(),
-        body: body.to_string(),
+        author: author.to_owned(),
+        created_at: at.to_owned(),
+        body: body.to_owned(),
     }
 }
 
@@ -133,7 +133,7 @@ fn render_json_emits_full_key_set_and_fields_selects_subset() {
     assert_eq!(obj["queue_status"], "eligible");
 
     // `--fields number,queue_status` yields ONLY those two keys.
-    let fields = vec!["number".to_string(), "queue_status".to_string()];
+    let fields = vec!["number".to_owned(), "queue_status".to_owned()];
     let json = render_json(&view, Some(&fields)).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
     let obj = val[0].as_object().unwrap();
@@ -204,12 +204,12 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     // Seed the ledger: two rows for #7 (plan + execute) and an unrelated #8 row.
     let slug = "o/r";
     let rec = |issue: u64, phase: &str, out: u64| ralphy_core::ledger::LedgerRecord {
-        project: slug.to_string(),
+        project: slug.to_owned(),
         actor_email: "t@example.com".into(),
         actor_name: "T".into(),
         ralphy_version: "0.0.0".into(),
         issue,
-        phase: phase.to_string(),
+        phase: phase.to_owned(),
         agent: "scripted".into(),
         model: "claude-opus-4".into(),
         session_id: None,

@@ -89,7 +89,7 @@ fn planning_args(
         args.extend(["--model".into(), model.into()]);
     }
     args.extend(["-p".into(), "--dangerously-skip-permissions".into()]);
-    args.extend(STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
+    args.extend(STREAM_JSON_ARGS.iter().map(ToString::to_string));
     args.extend([
         "--settings".into(),
         settings_path.to_string_lossy().into_owned(),

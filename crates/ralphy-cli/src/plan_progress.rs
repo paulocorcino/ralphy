@@ -7,11 +7,11 @@
 
 mod watch;
 
-pub use watch::PlanFileWatch;
+pub(crate) use watch::PlanFileWatch;
 
 /// A checkbox step's status, in the ADR-0019 `plan.step` vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StepStatus {
+pub(crate) enum StepStatus {
     #[default]
     Open,
     Checked,
@@ -19,9 +19,9 @@ pub enum StepStatus {
 }
 
 impl StepStatus {
-    /// The wire word both consumers ship: the CloudEvents `data.status` and the
+    /// The wire word both consumers ship: the `CloudEvents` `data.status` and the
     /// snapshot document's `plan.steps[].status`.
-    pub fn wire(self) -> &'static str {
+    pub(crate) fn wire(self) -> &'static str {
         match self {
             StepStatus::Open => "open",
             StepStatus::Checked => "checked",
@@ -31,7 +31,7 @@ impl StepStatus {
 
     /// Parse a wire word back; anything unknown reads as `Open` — the permissive
     /// direction the poller's `static_status` has always taken.
-    pub fn from_wire(s: &str) -> StepStatus {
+    pub(crate) fn from_wire(s: &str) -> StepStatus {
         match s {
             "checked" => StepStatus::Checked,
             "noticed" => StepStatus::Noticed,
@@ -42,7 +42,7 @@ impl StepStatus {
 
 /// One checkbox step: its identity text (already normalized) and its status.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlanStep {
+pub(crate) struct PlanStep {
     pub text: String,
     pub status: StepStatus,
 }
@@ -52,7 +52,7 @@ pub struct PlanStep {
 /// `issue` is the arming key: while it is `None` the plan on disk belongs to no
 /// active issue (or to the PREVIOUS one) and must not be attributed to anybody.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PlanProgress {
+pub(crate) struct PlanProgress {
     pub issue: Option<u64>,
     pub steps: Vec<PlanStep>,
 }
@@ -61,7 +61,7 @@ pub struct PlanProgress {
 /// emphasis/code markers and collapse runs of whitespace — mirroring
 /// `ralphy_core::acceptance::normalize_ac`'s technique, kept crate-local so the poll
 /// does not widen a core API for one caller.
-pub fn normalize_step(s: &str) -> String {
+pub(crate) fn normalize_step(s: &str) -> String {
     let stripped: String = s
         .chars()
         .filter(|c| !matches!(c, '*' | '_' | '`'))
@@ -73,7 +73,7 @@ pub fn normalize_step(s: &str) -> String {
 /// `- [x]`/`- [X]` line is `checked`, a `- [!]` line is `noticed`. The text is
 /// normalized so a whitespace/emphasis edit that leaves a step's meaning unchanged
 /// is not a new step.
-pub fn parse_steps(md: &str) -> Vec<PlanStep> {
+pub(crate) fn parse_steps(md: &str) -> Vec<PlanStep> {
     md.lines()
         .filter_map(|line| {
             let t = line.trim_start();
@@ -96,7 +96,7 @@ pub fn parse_steps(md: &str) -> Vec<PlanStep> {
 /// The steps that MOVED to `checked`/`noticed` between two parses, looked up by
 /// normalized text. A step absent from `prev` that arrives already checked counts
 /// as a transition; a status that did not move, or moved backwards, yields nothing.
-pub fn transitions<'a>(prev: &[PlanStep], next: &'a [PlanStep]) -> Vec<&'a PlanStep> {
+pub(crate) fn transitions<'a>(prev: &[PlanStep], next: &'a [PlanStep]) -> Vec<&'a PlanStep> {
     next.iter()
         .filter(|step| {
             if step.status == StepStatus::Open {
@@ -104,8 +104,7 @@ pub fn transitions<'a>(prev: &[PlanStep], next: &'a [PlanStep]) -> Vec<&'a PlanS
             }
             prev.iter()
                 .find(|p| p.text == step.text)
-                .map(|p| p.status != step.status)
-                .unwrap_or(true)
+                .is_none_or(|p| p.status != step.status)
         })
         .collect()
 }
@@ -119,7 +118,7 @@ pub(crate) mod testutil {
 
     /// Bump a file's mtime forward so an mtime guard sees a change even when the
     /// two writes land in the same clock tick (coarse FS timestamps).
-    pub fn advance_mtime(path: &Path) {
+    pub(crate) fn advance_mtime(path: &Path) {
         let now = SystemTime::now() + Duration::from_secs(2);
         // Re-write with an explicit later mtime via a set_modified where available;
         // fall back to a spin until the OS mtime actually advances.

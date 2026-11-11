@@ -359,7 +359,7 @@ pub fn append(dir: &Path, desk: &DeskStore, reason: Reason, now: i64) -> Result<
     write(
         dir,
         &Version {
-            kind: VERSION_KIND.to_string(),
+            kind: VERSION_KIND.to_owned(),
             id,
             started_at: now,
             saved_at: now,

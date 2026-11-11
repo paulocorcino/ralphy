@@ -33,8 +33,8 @@ const UNKNOWN_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
 fn identity(id: &str) -> Identity {
     Identity {
         id: id.parse().expect("the test id parses"),
-        name: "daemon".to_string(),
-        avatar: "🐙".to_string(),
+        name: "daemon".to_owned(),
+        avatar: "🐙".to_owned(),
     }
 }
 
@@ -75,14 +75,14 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
 
 fn descriptor(id: &str, port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: "WSL: Ubuntu".to_string(),
+        environment: "WSL: Ubuntu".to_owned(),
         os: String::new(),
-        token: "peer-tok".to_string(),
+        token: "peer-tok".to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -95,7 +95,7 @@ async fn ask(port: u16, verb: &str, payload: serde_json::Value) -> Vec<serde_jso
     ws.send(Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id: 1,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             payload,
         }))
         .into(),
@@ -129,7 +129,7 @@ fn names(reply: &serde_json::Value) -> Vec<String> {
         .as_array()
         .unwrap_or_else(|| panic!("entries in {reply}"))
         .iter()
-        .filter_map(|e| e["name"].as_str().map(str::to_string))
+        .filter_map(|e| e["name"].as_str().map(str::to_owned))
         .collect()
 }
 
@@ -141,7 +141,7 @@ fn argv_lines(file: &Path) -> Vec<String> {
     std::fs::read_to_string(file)
         .unwrap_or_default()
         .lines()
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -167,7 +167,7 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
         identity(B_ID),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-tok".to_string()),
+            AuthPolicy::Bearer("peer-tok".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )
@@ -249,7 +249,7 @@ async fn registry_verbs_route_by_daemon_and_refuse_before_spawning() {
     // the page's own HTTP path for a command.
     let long = Command {
         id: 1,
-        verb: "project.add".to_string(),
+        verb: "project.add".to_owned(),
         payload: serde_json::json!({
             "path": format!("{}{}", local_repo.display(), "a".repeat(4096))
         }),

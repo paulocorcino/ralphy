@@ -5,10 +5,10 @@
 
 /// The `program` of a step that runs xtask itself: the gate starts its own
 /// program, so a step never has to build xtask while it runs.
-pub const XTASK: &str = "xtask";
+pub(super) const XTASK: &str = "xtask";
 
 /// One check that the gate runs.
-pub struct Step {
+pub(super) struct Step {
     /// The short name the table prints, and the name of the log file.
     pub name: &'static str,
     /// The names of the CI steps this step is the local form of.
@@ -41,7 +41,7 @@ const fn step(
 }
 
 /// The steps, quick ones first, so a fast failure is seen before the suite.
-pub const STEPS: &[Step] = &[
+pub(super) const STEPS: &[Step] = &[
     step(
         "fmt",
         &["Format check"],

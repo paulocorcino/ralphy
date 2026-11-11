@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn require_some_label_accepts_add() {
-        assert!(require_some_label(&["x".to_string()], &[]).is_ok());
+        assert!(require_some_label(&["x".to_owned()], &[]).is_ok());
     }
 
     #[test]

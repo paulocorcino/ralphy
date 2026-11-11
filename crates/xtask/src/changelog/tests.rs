@@ -10,8 +10,8 @@ fn a_fragment_parses_into_its_front_matter_and_its_prose() {
         id: id.into(),
         kind,
         text: text.into(),
-        topic: topic.map(str::to_string),
-        headline: headline.map(str::to_string),
+        topic: topic.map(str::to_owned),
+        headline: headline.map(str::to_owned),
     };
     // (case, file stem, fragment, expected entry)
     let rows = [
@@ -31,7 +31,7 @@ fn a_fragment_parses_into_its_front_matter_and_its_prose() {
             // CRLF is what a Windows editor writes.
             "windows line endings",
             "1",
-            "---\r\nkind: fix\r\n---\r\nIt no longer does that.\r\n".to_string(),
+            "---\r\nkind: fix\r\n---\r\nIt no longer does that.\r\n".to_owned(),
             entry("1", Kind::Fix, "It no longer does that.", None, None),
         ),
         (
@@ -44,7 +44,7 @@ headline: **Notes** — on the stage
 ---
 Prose.
 "
-            .to_string(),
+            .to_owned(),
             entry(
                 "1",
                 Kind::Feature,

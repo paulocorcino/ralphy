@@ -45,7 +45,7 @@ const SSH_OVERRIDE_ENV: &str = "RALPHY_DAEMON_SSH_OVERRIDE";
 /// a destination that starts with `-` from being read as an option.
 /// `ExitOnForwardFailure` does not cover a socket that refuses a connection:
 /// the forward is set up and the failure shows only when a client connects
-/// (measured 2026-10-02, OpenSSH_for_Windows_9.5p2 to OpenSSH_8.2p1).
+/// (measured 2026-10-02, `OpenSSH_for_Windows_9.5p2` to `OpenSSH_8.2p1`).
 pub fn tunnel_argv(ssh: &Path, spec: &TunnelSpec) -> Vec<String> {
     let target = match &spec.peer_socket {
         Some(socket) => socket.clone(),
@@ -53,23 +53,23 @@ pub fn tunnel_argv(ssh: &Path, spec: &TunnelSpec) -> Vec<String> {
     };
     let mut argv = vec![
         ssh.display().to_string(),
-        "-N".to_string(),
-        "-L".to_string(),
+        "-N".to_owned(),
+        "-L".to_owned(),
         format!("127.0.0.1:{}:{}", spec.local_port, target),
-        "-o".to_string(),
-        "BatchMode=yes".to_string(),
-        "-o".to_string(),
-        "ExitOnForwardFailure=yes".to_string(),
-        "-o".to_string(),
-        "ServerAliveInterval=15".to_string(),
-        "-o".to_string(),
-        "ServerAliveCountMax=3".to_string(),
+        "-o".to_owned(),
+        "BatchMode=yes".to_owned(),
+        "-o".to_owned(),
+        "ExitOnForwardFailure=yes".to_owned(),
+        "-o".to_owned(),
+        "ServerAliveInterval=15".to_owned(),
+        "-o".to_owned(),
+        "ServerAliveCountMax=3".to_owned(),
     ];
     if let Some(identity) = &spec.identity_file {
-        argv.push("-i".to_string());
+        argv.push("-i".to_owned());
         argv.push(identity.clone());
     }
-    argv.push("--".to_string());
+    argv.push("--".to_owned());
     argv.push(spec.destination.clone());
     argv
 }
@@ -228,7 +228,10 @@ impl Tunnels {
     /// The peer `daemon_id` answered through its tunnel: the next exit of its
     /// `ssh` is replaced at once.
     pub fn answered(&self, daemon_id: &str) {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.failing.remove(daemon_id);
     }
 
@@ -260,7 +263,10 @@ impl Tunnels {
 
     /// Whether the `ssh` this process holds for `daemon_id` is still running.
     pub fn is_alive(&self, daemon_id: &str) -> bool {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state
             .held
             .get_mut(daemon_id)
@@ -270,7 +276,10 @@ impl Tunnels {
     /// The last line the previous `ssh` to `daemon_id` wrote on its stderr
     /// before it exited, when it wrote one.
     pub fn last_said(&self, daemon_id: &str) -> Option<String> {
-        let state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.last_said.get(daemon_id).cloned()
     }
 
@@ -284,7 +293,10 @@ impl Tunnels {
     ) -> Result<Ensured> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future tunnel over it would be the worse failure.
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut state = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(running) = reap_held(&mut state, daemon_id, spec, now) {
             return Ok(running);
         }
@@ -294,7 +306,7 @@ impl Tunnels {
         let mut child = spawn()?;
         let said = watch_stderr(&mut child);
         state.held.insert(
-            daemon_id.to_string(),
+            daemon_id.to_owned(),
             Held {
                 child,
                 spec: spec.clone(),
@@ -358,7 +370,7 @@ fn record_exit(state: &mut State, daemon_id: &str, spec: &TunnelSpec, now: Insta
         state.last_said.get(daemon_id),
     );
     match said {
-        Some(line) => state.last_said.insert(daemon_id.to_string(), line),
+        Some(line) => state.last_said.insert(daemon_id.to_owned(), line),
         None => state.last_said.remove(daemon_id),
     };
 }
@@ -424,7 +436,7 @@ impl State {
     fn exited(&mut self, daemon_id: &str, spec: &TunnelSpec, now: Instant) -> Duration {
         let failing = self
             .failing
-            .entry(daemon_id.to_string())
+            .entry(daemon_id.to_owned())
             .or_insert_with(|| Failing {
                 spec: spec.clone(),
                 exits: 0,

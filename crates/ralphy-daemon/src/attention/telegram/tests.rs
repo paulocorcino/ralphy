@@ -23,16 +23,16 @@ fn request(kind: Kind, id: &str, since: SystemTime) -> AttentionRequest {
         Kind::ConsoleWaiting | Kind::ConsoleSilent | Kind::ConsoleDone
     );
     AttentionRequest {
-        id: id.to_string(),
+        id: id.to_owned(),
         kind,
-        vendor: "claude".to_string(),
-        console: console.then(|| "7".to_string()),
-        name: console.then(|| "fix login".to_string()),
-        repo: Some("owner/app".to_string()),
-        run: (!console).then(|| "01RUN".to_string()),
+        vendor: "claude".to_owned(),
+        console: console.then(|| "7".to_owned()),
+        name: console.then(|| "fix login".to_owned()),
+        repo: Some("owner/app".to_owned()),
+        run: (!console).then(|| "01RUN".to_owned()),
         issue: None,
         since: rfc3339(since),
-        detail: Some("permission: Bash".to_string()),
+        detail: Some("permission: Bash".to_owned()),
         dismissable: kind.dismissable(),
     }
 }
@@ -188,7 +188,7 @@ fn a_failed_send_is_tried_again() {
 
     fake.fail.store(false, Ordering::SeqCst);
     let third = tick(&mut sender, &path, &fake, &requests, at(136));
-    assert!(third.is_empty());
+    assert_eq!(third, Vec::<String>::new());
     assert_eq!(fake.count(), 1, "the next tick sends it");
 }
 
@@ -202,7 +202,7 @@ fn silent_consoles_and_runs_send_nothing() {
     // A run of this daemon sends its own message, even when this daemon
     // sends the runs of a peer with no bot.
     let ctx = Context {
-        runs_of: HashSet::from(["01PEER".to_string()]),
+        runs_of: HashSet::from(["01PEER".to_owned()]),
         ..Context::default()
     };
     let due = due(&requests, &HashSet::new(), false, at(600), &ctx);
@@ -212,8 +212,8 @@ fn silent_consoles_and_runs_send_nothing() {
 #[test]
 fn the_message_links_to_the_console() {
     let ctx = Context {
-        daemon_id: Some("01DAEMON".to_string()),
-        origin: Some("https://ralphy.example".to_string()),
+        daemon_id: Some("01DAEMON".to_owned()),
+        origin: Some("https://ralphy.example".to_owned()),
         ..Context::default()
     };
     let requests = [
@@ -259,7 +259,7 @@ fn a_unit_test_notifier_reaches_no_api() {
         PathBuf::from("peers"),
         None,
     );
-    let transport = (notifier.transport)("123:abc".to_string());
+    let transport = (notifier.transport)("123:abc".to_owned());
     let sent = transport.post("sendMessage", json!({ "chat_id": 42, "text": "x" }));
     let error = sent.expect_err("no API in a unit test");
     assert!(

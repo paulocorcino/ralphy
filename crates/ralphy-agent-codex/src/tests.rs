@@ -42,30 +42,32 @@ fn serialized_ledger_model(usage: &ralphy_core::Usage) -> String {
     };
     let value: serde_json::Value =
         serde_json::from_str(&ralphy_core::ledger::record_line(&record).unwrap()).unwrap();
-    value["model"].as_str().unwrap().to_string()
+    value["model"].as_str().unwrap().to_owned()
 }
 
 #[test]
 fn plan_and_execute_agent_paths_serialize_the_resolved_model() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = std::env::var_os("CODEX_HOME");
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("repo");
     let codex_home = temp.path().join("codex");
     let sessions = codex_home.join("sessions");
-    std::fs::create_dir_all(&repo).unwrap();
-    std::fs::create_dir_all(&sessions).unwrap();
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(&sessions).unwrap();
     std::env::set_var("CODEX_HOME", &codex_home);
     let ws = Workspace::new(&repo);
     let plan_path = ws.plan_path();
     let plan_rollout = sessions.join("rollout-plan.jsonl");
     let plan_agent = CodexAgent::new(Some("gpt-5-codex".into()), temp.path().join("plan-run"))
         .with_run_hook(move || {
-            std::fs::write(
+            fs::write(
                 &plan_path,
                 "# Plan\n## Execution model: high\n## Steps\n- [ ] implement\n",
             )?;
-            std::fs::write(&plan_rollout, rollout(10))?;
+            fs::write(&plan_rollout, rollout(10))?;
             Ok(clean_run())
         });
     let issue = Issue {
@@ -85,8 +87,8 @@ fn plan_and_execute_agent_paths_serialize_the_resolved_model() {
     let execute_agent =
         CodexAgent::new(Some("gpt-5-codex".into()), temp.path().join("execute-run")).with_run_hook(
             move || {
-                std::fs::write(&execute_rollout, rollout(20))?;
-                std::fs::write(&out_path, "RALPHY_DONE_EXIT\n")?;
+                fs::write(&execute_rollout, rollout(20))?;
+                fs::write(&out_path, "RALPHY_DONE_EXIT\n")?;
                 Ok(clean_run())
             },
         );
@@ -125,13 +127,15 @@ fn done_plan(ws: &Workspace) -> Plan {
 /// auth banner — and a genuinely failed one must still say `codex login`.
 #[test]
 fn a_clean_execute_outlives_its_own_auth_message_in_the_log() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = std::env::var_os("CODEX_HOME");
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("repo");
     let codex_home = temp.path().join("codex");
-    std::fs::create_dir_all(&repo).unwrap();
-    std::fs::create_dir_all(codex_home.join("sessions")).unwrap();
+    fs::create_dir_all(&repo).unwrap();
+    fs::create_dir_all(codex_home.join("sessions")).unwrap();
     std::env::set_var("CODEX_HOME", &codex_home);
     let ws = Workspace::new(&repo);
     let log = log_echoing_this_crates_auth_source();
@@ -143,7 +147,7 @@ fn a_clean_execute_outlives_its_own_auth_message_in_the_log() {
     let clean_log = log.clone();
     let green = CodexAgent::new(Some("gpt-5-codex".into()), temp.path().join("green-run"))
         .with_run_hook(move || {
-            std::fs::write(&sentinel, "RALPHY_DONE_EXIT\n")?;
+            fs::write(&sentinel, "RALPHY_DONE_EXIT\n")?;
             Ok(HeadlessRun {
                 log: clean_log.clone(),
                 ..clean_run()
@@ -209,7 +213,7 @@ fn unset_exec_effort_falls_back_to_the_tier_default() {
     // longer a flat `medium`. `xhigh`→Sol:high proves the high rung reaches
     // the argv unaided by an operator flag.
     let agent = CodexAgent::new(None, PathBuf::from("/run"));
-    let (model, tier_effort) = command::tier_to_model_effort(Some("xhigh"));
+    let (model, tier_effort) = tier_to_model_effort(Some("xhigh"));
     assert_eq!(agent.resolved_exec_effort(tier_effort), "high");
     let cmd = build_codex_command(
         model,
@@ -274,7 +278,7 @@ fn resolve_model_override_wins() {
     let overridden = CodexAgent::new(Some("gpt-5".into()), PathBuf::from("/run"));
     assert_eq!(overridden.resolve_model(CODEX_MODEL_SOL), "gpt-5");
     assert_eq!(
-        overridden.resolve_model(command::tier_to_model_effort(Some("low")).0),
+        overridden.resolve_model(tier_to_model_effort(Some("low")).0),
         "gpt-5"
     );
 }

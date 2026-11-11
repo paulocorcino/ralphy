@@ -21,7 +21,7 @@ async fn a_peer_console_on_a_channel_streams_and_resizes() {
 
     let resize = Frame::Command(Command {
         id: 0,
-        verb: "resize".to_string(),
+        verb: "resize".to_owned(),
         payload: serde_json::json!({ "rows": 40, "cols": 100 }),
     });
     page.send(1, &resize).await;

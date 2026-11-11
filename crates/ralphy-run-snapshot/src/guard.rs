@@ -136,7 +136,7 @@ mod tests {
         std::fs::create_dir_all(&run_dir).unwrap();
         drop(
             SnapshotGuard::new(dir.path(), "01NEVERWRITTEN").keep_final_in(&run_dir, |_| {
-                REPORTED.store(true, std::sync::atomic::Ordering::SeqCst)
+                REPORTED.store(true, std::sync::atomic::Ordering::SeqCst);
             }),
         );
         assert!(!final_snapshot_path(&run_dir).exists());

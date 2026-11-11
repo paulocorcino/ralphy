@@ -46,7 +46,7 @@ fn skip_csi(raw: &[u8], mut i: usize, out: &mut Vec<u8>) -> usize {
     while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
         i += 1;
     }
-    if matches!(raw.get(i), Some(b'C') | Some(b'H') | Some(b'f')) {
+    if matches!(raw.get(i), Some(b'C' | b'H' | b'f')) {
         out.push(b' ');
     }
     i + 1
@@ -68,7 +68,7 @@ fn skip_osc(raw: &[u8], mut i: usize) -> usize {
 
 /// Return `true` when raw interactive PTY output shows the logged-out REPL.
 /// The signature is the status-line pair `Not logged in · Run /login`
-/// (captured from CLI v2.1.198 — see tests/fixtures/login_tui_exec.log); the
+/// (captured from CLI v2.1.198 — see `tests/fixtures/login_tui_exec.log`); the
 /// headless banner says `Please run /login`, so `run /login` matches both.
 /// Both substrings are required, the same AND rule as [`crate::auth::is_claude_auth_error`].
 pub(super) fn is_login_tui_output(raw: &[u8]) -> bool {

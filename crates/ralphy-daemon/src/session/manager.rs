@@ -101,7 +101,7 @@ impl ManagedSession {
     ///
     /// LOCK ORDER: `kept`, then `session`. This is the one place that holds
     /// both; every other path takes one alone, so the order cannot deadlock.
-    /// `kept` is held across both resizes, so output at the new size (ConPTY
+    /// `kept` is held across both resizes, so output at the new size (`ConPTY`
     /// repaints at once) reaches the screen after its resize, and two racing
     /// resizes leave the PTY and the screen at the same size.
     fn resize(&self, rows: u16, cols: u16) -> Result<()> {
@@ -263,8 +263,7 @@ impl SessionManager {
             agent_state: None,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
         };
         let managed = Arc::new(ManagedSession {
             info,

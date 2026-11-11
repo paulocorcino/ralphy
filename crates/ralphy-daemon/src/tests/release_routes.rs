@@ -30,7 +30,7 @@ async fn api_about_route_reports_version_and_facts() {
 /// surface is deleted.
 #[test]
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
-    let html = super::INDEX_HTML;
+    let html = INDEX_HTML;
     let app = shell_family();
     let module = include_str!("../../assets/ui/wb-release.ts");
     let dialogs = include_str!("../../assets/ui/wb-release-dialogs.ts");
@@ -92,7 +92,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
             .next()
             .unwrap_or_default()
             .trim()
-            .to_string();
+            .to_owned();
         if !css.contains(&format!("{name}:")) {
             missing.push(name);
         }
@@ -195,7 +195,7 @@ async fn api_release_answers_from_the_cache_without_reaching_the_network() {
     // The watch is spawned by `serve`, never by `router`: building a router
     // must not reach the network, nor drop a cache beside the test.
     assert!(
-        !std::path::Path::new("releases.json").exists(),
+        !Path::new("releases.json").exists(),
         "a router built in a test must not have written a release cache"
     );
     // This tree's binary is built from a working copy, so it is ahead of its

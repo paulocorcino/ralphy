@@ -434,7 +434,7 @@ fn the_shell_family_lists_every_module_on_disk() {
     for cap in import.captures_iter(&main) {
         for part in cap[1].split(',') {
             if let Some(name) = part.split_whitespace().last() {
-                module_of.insert(name.to_string(), cap[2].to_string());
+                module_of.insert(name.to_owned(), cap[2].to_string());
             }
         }
     }
@@ -453,10 +453,10 @@ fn the_shell_family_lists_every_module_on_disk() {
         registered.contains("app.ts"),
         "main.ts must register the shell from app.ts"
     );
-    let mut expected = vec!["app.ts".to_string()];
+    let mut expected = vec!["app.ts".to_owned()];
     for front in ["wb-wire.ts", "wb-icon.ts"] {
         if dir.join(front).is_file() {
-            expected.push(front.to_string());
+            expected.push(front.to_owned());
         }
     }
     let rest: Vec<String> = registered

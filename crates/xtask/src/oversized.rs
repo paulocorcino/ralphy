@@ -109,7 +109,7 @@ impl Row {
     }
 }
 
-pub fn oversized_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn oversized_cmd(args: &[String]) -> Result<()> {
     match args {
         [] => {
             for row in &report(&repo_root())? {

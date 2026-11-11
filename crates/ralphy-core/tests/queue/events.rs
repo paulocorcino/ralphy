@@ -248,7 +248,7 @@ fn pins_blocked_and_split_vocabulary() {
     let queue = vec![issue_with_body(5, "## Blocked by\n- #2\n"), issue(7)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]);
     let tracker = RecordingTracker {
-        issue_labels: HashMap::from([(2u64, vec!["ready-for-human".to_string()])]),
+        issue_labels: HashMap::from([(2u64, vec!["ready-for-human".to_owned()])]),
         ..Default::default()
     };
     let (_r, events) = capture_run(|| {

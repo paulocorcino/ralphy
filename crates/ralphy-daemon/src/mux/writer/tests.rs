@@ -33,7 +33,7 @@ impl axum::serve::Listener for OneConnection {
 /// Returns the client and the writer.
 async fn connect() -> (Client, Writer) {
     let (server_io, client_io) = tokio::io::duplex(64 * 1024);
-    let (give, take) = tokio::sync::oneshot::channel::<Writer>();
+    let (give, take) = oneshot::channel::<Writer>();
     let give = Arc::new(Mutex::new(Some(give)));
     let app = axum::Router::new().route(
         "/",

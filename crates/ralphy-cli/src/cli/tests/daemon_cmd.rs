@@ -29,7 +29,7 @@ fn daemon_add_init_flag_parses() {
     let Some(daemon::DaemonCommand::Add { path, init, create }) = args.command else {
         panic!("expected `daemon add`");
     };
-    assert_eq!(path, std::path::PathBuf::from("."));
+    assert_eq!(path, PathBuf::from("."));
     assert!(init);
     assert!(!create, "a folder is created only when asked");
 

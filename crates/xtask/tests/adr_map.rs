@@ -73,7 +73,7 @@ fn the_closed_sets_match_the_template() {
 #[test]
 fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     let good = "# T\n\nStatus: accepted\nKind: structural\n\n## Compliance\n\n- D1: checked.\n";
-    assert!(format_errors("good.md", good).is_empty());
+    assert_eq!(format_errors("good.md", good), Vec::<String>::new());
 
     let status = format_errors("s.md", "Status: accepted (x)\nKind: feature\n");
     assert!(
@@ -93,7 +93,7 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     );
 
     let superseded = "Status: superseded by ADR-0070\nKind: process\n";
-    assert!(format_errors("x.md", superseded).is_empty());
+    assert_eq!(format_errors("x.md", superseded), Vec::<String>::new());
 
     let no_heading = format_errors("h.md", "Status: proposed\nKind: structural\n");
     assert!(
@@ -110,7 +110,7 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
     );
     let after_comment =
         "Status: proposed\nKind: structural\n\n## Compliance\n\n<!-- c --> - D1: x\n";
-    assert!(format_errors("a.md", after_comment).is_empty());
+    assert_eq!(format_errors("a.md", after_comment), Vec::<String>::new());
 
     let missing = format_errors("n.md", "# T\n");
     assert!(
@@ -134,17 +134,13 @@ fn the_architecture_map_cites_real_adrs_and_every_structural_one() {
 #[test]
 fn map_errors_catch_a_missing_and_an_uncited_adr() {
     let adrs = vec![
-        (1, "0001-a.md".to_string(), "Kind: structural\n".to_string()),
-        (
-            70,
-            "0070-b.md".to_string(),
-            "Kind: structural\n".to_string(),
-        ),
-        (71, "0071-c.md".to_string(), "Kind: feature\n".to_string()),
+        (1, "0001-a.md".to_owned(), "Kind: structural\n".to_owned()),
+        (70, "0070-b.md".to_owned(), "Kind: structural\n".to_owned()),
+        (71, "0071-c.md".to_owned(), "Kind: feature\n".to_owned()),
         (
             72,
-            "0072-d-validation.md".to_string(),
-            "Kind: structural\n".to_string(),
+            "0072-d-validation.md".to_owned(),
+            "Kind: structural\n".to_owned(),
         ),
     ];
     let errors = map_errors("see ADR-0001 and ADR-0999", &adrs);
@@ -281,7 +277,7 @@ fn adr_files(dir: &Path) -> Vec<(u32, String, String)> {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
-            .to_string();
+            .to_owned();
         if let Some(c) = numbered.captures(&name) {
             let number = c[1]
                 .parse()

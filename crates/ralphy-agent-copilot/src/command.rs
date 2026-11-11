@@ -181,7 +181,7 @@ mod tests {
             assert_eq!(args[i.unwrap() + 1], val, "value after {flag}: {args:?}");
         };
         assert!(
-            args.contains(&"--allow-all-tools".to_string()),
+            args.contains(&"--allow-all-tools".to_owned()),
             "argv: {args:?}"
         );
         pos("--output-format", "json");
@@ -235,7 +235,7 @@ mod tests {
                 .into_iter()
                 .filter(|a| a.starts_with("--deny-tool"))
                 .collect();
-            let mut want = vec!["--deny-tool=shell(git push:*)".to_string()];
+            let mut want = vec!["--deny-tool=shell(git push:*)".to_owned()];
             for verb in [
                 "create", "edit", "ready", "reopen", "review", "comment", "merge", "close",
             ] {

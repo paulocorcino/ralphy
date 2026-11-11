@@ -11,7 +11,7 @@
 //! names a path, first write the child's view of `RALPHY_DAEMON_TOKEN`,
 //! `RALPHY_DAEMON_ID`, `RALPHY_TELEGRAM_TOKEN` and `RALPHY_EVENTS_TOKEN` there
 //! (newline-separated) — one dump proving that no secret reached this child
-//! AND that the dispatch-path daemon_id injection did.
+//! AND that the dispatch-path `daemon_id` injection did.
 //! `RALPHY_TEST_SLEEP_MS` delays the exit (lets a test drop the client mid-run);
 //! `RALPHY_TEST_DONE_FILE` names a path the child writes `dispatch-done` to just
 //! before exiting (a sentinel proving it ran to completion after a disconnect).

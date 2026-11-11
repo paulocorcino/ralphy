@@ -13,8 +13,8 @@ use ralphy_core::verify::run;
 /// (no shell), so this is exactly what a plan's `## Verify` line becomes.
 fn child_argv(mode: &str) -> Vec<String> {
     vec![
-        env!("CARGO_BIN_EXE_verify_test_child").to_string(),
-        mode.to_string(),
+        env!("CARGO_BIN_EXE_verify_test_child").to_owned(),
+        mode.to_owned(),
     ]
 }
 

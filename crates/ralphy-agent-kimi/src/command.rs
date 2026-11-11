@@ -46,9 +46,7 @@ pub(crate) fn build_kimi_command(
 /// (ADR-0028 D4) — mirrors [`resolve_init_kimi_model`]'s sibling on Codex minus
 /// the `codex_config_model` lookup.
 pub(crate) fn resolve_init_kimi_model(model: Option<&str>) -> String {
-    model
-        .map(str::to_string)
-        .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_string())
+    model.map_or_else(|| DEFAULT_KIMI_MODEL.to_owned(), str::to_owned)
 }
 
 /// Build the headless `kimi` command for an `init` one-shot session

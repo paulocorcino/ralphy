@@ -11,16 +11,16 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use ralphy_daemon::telegram_state::{self, legacy};
-pub use ralphy_telegram::config::{effective_token, TelegramConfig, TOKEN_ENV};
+pub(crate) use ralphy_telegram::config::{effective_token, TelegramConfig, TOKEN_ENV};
 
 /// Where the config lives: `telegram.toml` in the daemon store.
-pub fn path() -> Result<PathBuf> {
+pub(crate) fn path() -> Result<PathBuf> {
     telegram_state::config_path()
 }
 
 /// The config, after the one-time copy of the old file into the store, or
 /// `None` when no bot is set up.
-pub fn load() -> Result<Option<TelegramConfig>> {
+pub(crate) fn load() -> Result<Option<TelegramConfig>> {
     if let Err(e) = legacy::take_legacy_config() {
         eprintln!("warning: the old Telegram settings were not copied: {e}");
     }
@@ -28,19 +28,19 @@ pub fn load() -> Result<Option<TelegramConfig>> {
 }
 
 /// Write `cfg` to the store owner-only, creating the store folder.
-pub fn save(cfg: &TelegramConfig) -> Result<()> {
+pub(crate) fn save(cfg: &TelegramConfig) -> Result<()> {
     telegram_state::store::save_to(cfg, &path()?)
 }
 
 /// Remove the stored config, and the old file when this is the operator's
 /// store, so the removed bot is not copied back. A missing file is success.
-pub fn delete() -> Result<()> {
+pub(crate) fn delete() -> Result<()> {
     telegram_state::store::remove_from(&ralphy_daemon::auth::store_dir()?)
 }
 
 /// Mask a bot token for display, revealing only a short suffix so a `status`
 /// readout never leaks the secret.
-pub fn masked_token(token: &str) -> String {
+pub(crate) fn masked_token(token: &str) -> String {
     const SUFFIX: usize = 4;
     let chars: Vec<char> = token.chars().collect();
     if chars.len() <= SUFFIX {

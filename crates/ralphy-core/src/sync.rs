@@ -85,7 +85,7 @@ fn tracking_of(repo: &Path, head: &Head) -> Result<Option<Tracking>> {
     if !up.status.success() {
         return Ok(None);
     }
-    let upstream = String::from_utf8_lossy(&up.stdout).trim().to_string();
+    let upstream = String::from_utf8_lossy(&up.stdout).trim().to_owned();
     let range = format!("{upstream}...HEAD");
     let counts = git(repo, &["rev-list", "--left-right", "--count", &range])
         .with_context(|| format!("counting commits between HEAD and {upstream}"))?;
@@ -157,7 +157,7 @@ impl FetchOutcome {
         match self {
             FetchOutcome::Fetched { .. } => None,
             FetchOutcome::NoRemote => {
-                Some("cannot fetch: this branch has no remote to fetch from".to_string())
+                Some("cannot fetch: this branch has no remote to fetch from".to_owned())
             }
         }
     }
@@ -204,7 +204,7 @@ fn remote_for_head(repo: &Path) -> Result<Option<String>> {
         let key = format!("branch.{name}.remote");
         let out = raw(repo, &["config", "--get", &key])?;
         if out.status.success() {
-            let configured = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let configured = String::from_utf8_lossy(&out.stdout).trim().to_owned();
             if !configured.is_empty() {
                 return Ok(Some(configured));
             }
@@ -217,10 +217,10 @@ fn remote_for_head(repo: &Path) -> Result<Option<String>> {
         .filter(|r| !r.is_empty())
         .collect();
     if remotes.contains(&"origin") {
-        return Ok(Some("origin".to_string()));
+        return Ok(Some("origin".to_owned()));
     }
     Ok(match remotes.as_slice() {
-        [only] => Some((*only).to_string()),
+        [only] => Some((*only).to_owned()),
         _ => None,
     })
 }
@@ -245,10 +245,10 @@ impl PullOutcome {
         Some(match self {
             PullOutcome::UpToDate | PullOutcome::FastForwarded { .. } => return None,
             PullOutcome::NoUpstream => {
-                "cannot pull: this branch has no upstream — nothing to pull from".to_string()
+                "cannot pull: this branch has no upstream — nothing to pull from".to_owned()
             }
             PullOutcome::DetachedHead => {
-                "cannot pull: HEAD is detached — check out a branch first".to_string()
+                "cannot pull: HEAD is detached — check out a branch first".to_owned()
             }
             PullOutcome::Diverged { ahead, behind } => format!(
                 "cannot fast-forward: the branch and its upstream have diverged ({ahead} ahead, \
@@ -257,7 +257,7 @@ impl PullOutcome {
             PullOutcome::WorkingTreeBlocked => {
                 "cannot fast-forward: local changes would be overwritten — commit, stash or \
                 discard them first"
-                    .to_string()
+                    .to_owned()
             }
         })
     }
@@ -359,11 +359,9 @@ impl PushOutcome {
     pub fn reason(&self) -> Option<String> {
         Some(match self {
             PushOutcome::Pushed { .. } | PushOutcome::UpToDate => return None,
-            PushOutcome::NoRemote => {
-                "cannot push: this branch has no remote to push to".to_string()
-            }
+            PushOutcome::NoRemote => "cannot push: this branch has no remote to push to".to_owned(),
             PushOutcome::DetachedHead => {
-                "cannot push: HEAD is detached — check out a branch first".to_string()
+                "cannot push: HEAD is detached — check out a branch first".to_owned()
             }
             PushOutcome::Rejected { remote } => format!(
                 "cannot push: {remote} has commits this branch does not — pull first, then push \

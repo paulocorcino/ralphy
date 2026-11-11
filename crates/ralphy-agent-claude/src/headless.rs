@@ -30,7 +30,7 @@ pub(crate) fn headless_args(
     effort: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec!["-p".into(), "--dangerously-skip-permissions".into()];
-    args.extend(crate::STREAM_JSON_ARGS.iter().map(|flag| flag.to_string()));
+    args.extend(crate::STREAM_JSON_ARGS.iter().map(ToString::to_string));
     args.extend([
         "--settings".into(),
         settings.to_string_lossy().into_owned(),
@@ -88,7 +88,7 @@ impl ClaudeAgent {
         // rather than being killed on the wall timeout") is `!timed_out` — NOT the
         // runner's `exited_cleanly` (a *successful* exit); the D10 auth bail stays
         // inline here.
-        let log_path = self.run_dir.join(format!("exec-{}.out", call_index));
+        let log_path = self.run_dir.join(format!("exec-{call_index}.out"));
         let prompt = user_message(PROMPT_EXECUTE);
         let r = HeadlessCall::new(cmd, &prompt, timeout, &log_path)
             .hold_prompt(gate)
@@ -228,7 +228,7 @@ pub(crate) fn classify_outcome(
         if f == "DONE" {
             done = true;
         } else if let Some(reason) = f.strip_prefix("BLOCKED") {
-            blocked = Some(reason.trim().to_string());
+            blocked = Some(reason.trim().to_owned());
         }
     }
     classify(CompletionSignals {

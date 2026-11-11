@@ -46,7 +46,7 @@ fn enroll_totp_is_mint_once_with_ralphy_uri() {
             .nth(1)
             .and_then(|s| s.split('&').next())
             .unwrap()
-            .to_string()
+            .to_owned()
     };
     let (uri2, minted2) = enroll_totp_at(dir.path()).unwrap();
     assert!(!minted2, "second enrol does not re-mint");

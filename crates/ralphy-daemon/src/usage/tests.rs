@@ -10,14 +10,14 @@ fn write_ledger(dir: &Path, name: &str, content: &str) {
 
 fn descriptor(id: &str, environment: &str) -> crate::peer::PeerDescriptor {
     crate::peer::PeerDescriptor {
-        daemon_id: id.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: id.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port: 1,
-        environment: environment.to_string(),
+        environment: environment.to_owned(),
         os: String::new(),
-        token: "token".to_string(),
+        token: "token".to_owned(),
         protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -27,7 +27,7 @@ fn descriptor(id: &str, environment: &str) -> crate::peer::PeerDescriptor {
 #[test]
 fn fleet_fold_stamps_sources_and_names_failed_or_malformed_peers() {
     let local = UsageContribution {
-        daemon_id: Some("local".to_string()),
+        daemon_id: Some("local".to_owned()),
         records: vec![serde_json::json!({
             "session_id": "local-session",
             "daemon_id": "run-emitted"
@@ -35,7 +35,7 @@ fn fleet_fold_stamps_sources_and_names_failed_or_malformed_peers() {
         interactive: vec![],
     };
     let peer = UsageContribution {
-        daemon_id: Some("untrusted-response-id".to_string()),
+        daemon_id: Some("untrusted-response-id".to_owned()),
         records: vec![serde_json::json!({ "session_id": "peer-session" })],
         interactive: vec![serde_json::json!({
             "session_id": "peer-existing",
@@ -51,7 +51,7 @@ fn fleet_fold_stamps_sources_and_names_failed_or_malformed_peers() {
             (descriptor("malformed", "Linux"), malformed),
             (
                 descriptor("failed", "Windows"),
-                Err("connection refused".to_string()),
+                Err("connection refused".to_owned()),
             ),
         ],
         [],
@@ -70,14 +70,14 @@ fn fleet_fold_stamps_sources_and_names_failed_or_malformed_peers() {
 #[test]
 fn fleet_fold_names_incompatible_announced_peers() {
     let rejected = crate::peer::PeerReject::IncompatibleVersion {
-        file: "peer.toml".to_string(),
-        daemon_id: "old-peer".to_string(),
-        environment: "WSL: Debian".to_string(),
+        file: "peer.toml".to_owned(),
+        daemon_id: "old-peer".to_owned(),
+        environment: "WSL: Debian".to_owned(),
         theirs: crate::peer::PEER_PROTOCOL_VERSION - 1,
     };
     let fleet = fold_fleet_usage(
         UsageContribution {
-            daemon_id: Some("local".to_string()),
+            daemon_id: Some("local".to_owned()),
             records: vec![],
             interactive: vec![],
         },
@@ -97,7 +97,7 @@ fn fleet_fold_names_incompatible_announced_peers() {
 #[test]
 fn scoping_to_a_project_keeps_only_its_rows_and_never_touches_missing() {
     let mut fleet = FleetUsage {
-        daemon_id: Some("local".to_string()),
+        daemon_id: Some("local".to_owned()),
         records: vec![
             serde_json::json!({ "project": "owner/repo", "session_id": "a" }),
             serde_json::json!({ "project": "other/repo", "session_id": "b" }),
@@ -109,9 +109,9 @@ fn scoping_to_a_project_keeps_only_its_rows_and_never_touches_missing() {
             serde_json::json!({ "project": "owner/repo", "session_id": "i2" }),
         ],
         missing: vec![MissingUsageContribution {
-            daemon_id: "peer".to_string(),
-            environment: "WSL: Ubuntu-22.04".to_string(),
-            why: "connecting".to_string(),
+            daemon_id: "peer".to_owned(),
+            environment: "WSL: Ubuntu-22.04".to_owned(),
+            why: "connecting".to_owned(),
         }],
     };
 
@@ -132,7 +132,9 @@ fn scoping_to_a_project_keeps_only_its_rows_and_never_touches_missing() {
 /// default. Env is process-global, so the three legs run in one test.
 #[test]
 fn copilot_db_path_prefers_the_env_override() {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = (
         std::env::var_os("RALPHY_COPILOT_DB"),
         std::env::var_os("COPILOT_HOME"),
@@ -175,7 +177,9 @@ fn copilot_db_path_prefers_the_env_override() {
 /// it, while the test-only `$RALPHY_CURSOR_DIR` still wins.
 #[test]
 fn cursor_dir_path_ignores_the_scratch_config_dir() {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = (
         std::env::var_os("CURSOR_CONFIG_DIR"),
         std::env::var_os("RALPHY_CURSOR_DIR"),
@@ -223,7 +227,9 @@ fn cursor_dir_path_ignores_the_scratch_config_dir() {
 /// test-only `$RALPHY_GEMINI_DIR` still wins.
 #[test]
 fn gemini_dir_path_ignores_ralphys_own_cli_home() {
-    let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let restore = (
         std::env::var_os("GEMINI_CLI_HOME"),
         std::env::var_os("RALPHY_GEMINI_DIR"),

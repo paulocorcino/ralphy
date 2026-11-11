@@ -163,7 +163,7 @@ fn hand_over(
         .map_err(|e| format!("could not start the update: {e:#}"))?;
     let output = child
         .take_output()
-        .ok_or_else(|| "the update started with no output to read".to_string())?;
+        .ok_or_else(|| "the update started with no output to read".to_owned())?;
 
     let mut last: Vec<String> = Vec::new();
     for line in BufReader::new(output).lines() {
@@ -182,7 +182,7 @@ fn hand_over(
         .wait()
         .map_err(|e| format!("waiting for the update: {e:#}"))?;
     if last.is_empty() {
-        let code = code.map_or_else(|| "none".to_string(), |c| c.to_string());
+        let code = code.map_or_else(|| "none".to_owned(), |c| c.to_string());
         return Err(format!(
             "the update stopped with no message (exit code {code})"
         ));
@@ -230,7 +230,7 @@ mod tests {
             _daemon_id: Option<&str>,
         ) -> anyhow::Result<Box<dyn dispatch::Child>> {
             let mut argv = self.argv.lock().expect("the argv lock is never poisoned");
-            *argv = args.iter().map(|a| a.to_string()).collect();
+            *argv = args.iter().map(ToString::to_string).collect();
             Ok(Box::new(Scripted {
                 output: Some(self.text.as_bytes().to_vec()),
                 code: self.code,

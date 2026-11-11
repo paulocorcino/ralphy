@@ -61,7 +61,7 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
             // while the sink's Mutex is held.
             let captured = Captured {
                 level: fields.level,
-                target: event.metadata().target().to_string(),
+                target: event.metadata().target().to_owned(),
                 message: fields.message.clone(),
                 fields,
             };

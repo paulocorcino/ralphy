@@ -7,7 +7,7 @@ mod remove;
 
 fn entry(path: &str) -> Entry {
     Entry {
-        path: path.to_string(),
+        path: path.to_owned(),
         ..Entry::default()
     }
 }
@@ -58,7 +58,7 @@ fn select_workbench_keeps_only_single_segment_children() {
         .into_iter()
         .map(|(name, _)| name)
         .collect();
-    assert_eq!(names, vec!["wt-a".to_string()]);
+    assert_eq!(names, vec!["wt-a".to_owned()]);
 }
 
 fn tmp(name: &str) -> PathBuf {

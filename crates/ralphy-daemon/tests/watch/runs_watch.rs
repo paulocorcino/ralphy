@@ -58,7 +58,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
             .await
             .expect("serve the test app");
     });
-    (port, slug.to_string(), root)
+    (port, slug.to_owned(), root)
 }
 
 /// Send a subscription command for `repo` over the open socket. The `runs.*`
@@ -66,7 +66,7 @@ async fn serve_repo() -> (u16, String, PathBuf) {
 async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
     let frame = Frame::Command(Command {
         id: 0,
-        verb: verb.to_string(),
+        verb: verb.to_owned(),
         payload: serde_json::json!({ "repo": repo, "path": path }),
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
@@ -102,7 +102,13 @@ async fn recv_verb_within(ws: &mut Ws, verb: &str, dur: Duration) -> Option<Stri
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 if cmd.verb == verb {
-                    return Some(cmd.payload["repo"].as_str().unwrap_or("").to_string());
+                    return Some(
+                        cmd.payload
+                            .get("repo")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_owned(),
+                    );
                 }
             }
         }

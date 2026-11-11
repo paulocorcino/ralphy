@@ -94,7 +94,7 @@ impl Gap {
                     let cause = self.of(key);
                     let share = share_of(cause, tokens);
                     UnpricedCause {
-                        key: (*key).to_string(),
+                        key: (*key).to_owned(),
                         tokens: cause,
                         label: fmt_tokens(cause),
                         share,

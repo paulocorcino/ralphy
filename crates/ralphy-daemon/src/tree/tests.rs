@@ -87,8 +87,8 @@ fn list_filters_noise() {
         .into_iter()
         .map(|e| e.name)
         .collect();
-    assert!(names.contains(&"visible.txt".to_string()));
-    assert!(!names.contains(&"node_modules".to_string()));
+    assert!(names.contains(&"visible.txt".to_owned()));
+    assert!(!names.contains(&"node_modules".to_owned()));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn read_refuses_binary() {
     assert_eq!(read(root.path(), "bin.dat"), Err(ReadError::Binary));
     // Latin-1 bytes are text now (the fallback page), not binary.
     fs::write(root.path().join("latin.txt"), b"\xA7").unwrap();
-    assert_eq!(read(root.path(), "latin.txt"), Ok("§".to_string()));
+    assert_eq!(read(root.path(), "latin.txt"), Ok("§".to_owned()));
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn read_refuses_oversized() {
 fn read_returns_text() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("f.txt"), b"hello world").unwrap();
-    assert_eq!(read(root.path(), "f.txt"), Ok("hello world".to_string()));
+    assert_eq!(read(root.path(), "f.txt"), Ok("hello world".to_owned()));
 }
 
 #[test]

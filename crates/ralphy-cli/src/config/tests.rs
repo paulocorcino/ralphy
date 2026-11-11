@@ -219,7 +219,8 @@ fn get_json_round_trips() {
     assert_eq!(v["branch_mode"], "new", "the set value round-trips: {v}");
     // Every supported key is present; an unset one is JSON null, not missing.
     assert!(
-        v.get("opencode.model").map(|x| x.is_null()) == Some(true),
+        v.get("opencode.model")
+            .is_some_and(serde_json::Value::is_null),
         "opencode.model present as null: {v}"
     );
     // The object parses as a plain map (the daemon Query verb re-parses it).

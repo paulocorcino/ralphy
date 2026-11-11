@@ -74,7 +74,7 @@ fn require_token_on_then_off() {
     assert!(marker.exists(), "`on` writes the marker");
     let token = std::fs::read_to_string(&token_file).expect("`on` creates the access token");
     let token = token.trim();
-    assert!(!token.is_empty());
+    assert_ne!(token, "");
     assert!(
         !stdout.contains(token),
         "the token is never printed: {stdout}"
@@ -143,7 +143,7 @@ fn rotate_token_changes_the_token() {
     assert!(out.status.success(), "stderr: {}", text(&out.stderr));
     let after = std::fs::read_to_string(&token_file).unwrap();
     assert_ne!(before.trim(), after.trim());
-    assert!(!after.trim().is_empty());
+    assert_ne!(after.trim(), "");
     assert!(
         !stdout.contains(after.trim()),
         "the token is never printed: {stdout}"

@@ -1,6 +1,6 @@
 //! `ralphy-pty` — shared PTY crate backed by `portable-pty`.
 //!
-//! It opens a child process inside a pseudo-terminal (ConPTY on Windows),
+//! It opens a child process inside a pseudo-terminal (`ConPTY` on Windows),
 //! streams the TTY-rendered output, and feeds it input. This is the
 //! load-bearing capability that replaces the ps1's "new console window" trick,
 //! and the future home of the on-screen / Tauri terminal and supervised

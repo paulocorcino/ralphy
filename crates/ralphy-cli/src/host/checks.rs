@@ -204,7 +204,7 @@ pub(crate) fn evaluate(
     let os = facts.os;
     let (ralphy_check, described) = ralphy_check(ralphy, destination);
     let mut checks = vec![ralphy_check];
-    let pending = || (Pending, "waits for Ralphy on the host".to_string());
+    let pending = || (Pending, "waits for Ralphy on the host".to_owned());
 
     let (status, text) = match described {
         None => pending(),
@@ -214,10 +214,10 @@ pub(crate) fn evaluate(
 
     let (status, text) = match described {
         None => pending(),
-        Some(d) if d.autostart => (Pass, "the daemon starts by itself".to_string()),
+        Some(d) if d.autostart => (Pass, "the daemon starts by itself".to_owned()),
         Some(_) => (
             Fix(HostOp::InstallAutostart),
-            "the daemon does not start by itself: Ralphy installs its autostart".to_string(),
+            "the daemon does not start by itself: Ralphy installs its autostart".to_owned(),
         ),
     };
     checks.push(HostCheck::new(CheckId::Autostart, status, text));
@@ -226,12 +226,12 @@ pub(crate) fn evaluate(
 
     let (status, text) = match described {
         None => pending(),
-        Some(d) if d.require_token => (Pass, "the daemon asks for its access token".to_string()),
+        Some(d) if d.require_token => (Pass, "the daemon asks for its access token".to_owned()),
         Some(_) => (
             Fix(HostOp::RequireTokenOn),
             "the daemon does not ask for its access token on this computer's tunnel: \
              Ralphy turns this on"
-                .to_string(),
+                .to_owned(),
         ),
     };
     checks.push(HostCheck::new(CheckId::RequireToken, status, text));
@@ -281,7 +281,7 @@ fn ralphy_check<'a>(
         old if old.is_newer() => (
             HostCheck::new(
                 CheckId::Ralphy,
-                Copy("ralphy update".to_string()),
+                Copy("ralphy update".to_owned()),
                 "the Ralphy on the host is newer than this one: update Ralphy on this computer",
             ),
             None,
@@ -300,7 +300,7 @@ fn ralphy_check<'a>(
 fn user_check(facts: &HostFacts, os: HostOs) -> HostCheck {
     use CheckStatus::{Pass, Warn};
     let (status, text) = if facts.uid == Some(0) {
-        (Warn, "signed in as root: use a normal user".to_string())
+        (Warn, "signed in as root: use a normal user".to_owned())
     } else if os == HostOs::Windows && facts.windows_admin {
         (
             Pass,
@@ -310,7 +310,7 @@ fn user_check(facts: &HostFacts, os: HostOs) -> HostCheck {
             ),
         )
     } else {
-        (Pass, "signed in as a normal user".to_string())
+        (Pass, "signed in as a normal user".to_owned())
     };
     HostCheck::new(CheckId::User, status, text)
 }
@@ -321,11 +321,11 @@ fn git_check(facts: &HostFacts, os: HostOs) -> HostCheck {
     let (status, text) = match (facts.git, os) {
         (Some(true), _) => (Pass, "Git is installed"),
         (Some(false), HostOs::MacOs) => (
-            Copy("xcode-select --install".to_string()),
+            Copy("xcode-select --install".to_owned()),
             "Git is not installed. Ralphy needs it for every project",
         ),
         (Some(false), HostOs::Windows) => (
-            Copy("winget install --id Git.Git -e".to_string()),
+            Copy("winget install --id Git.Git -e".to_owned()),
             "Git is not installed. Ralphy needs it for every project",
         ),
         (Some(false), HostOs::Linux) => (
@@ -348,7 +348,7 @@ fn name_check(
     let taken = |n: &str| fleet_names.iter().any(|f| f == n);
     let used = |n: &str| {
         (
-            CheckStatus::Copy("ralphy daemon setup --name <other-name> --avatar 1".to_string()),
+            CheckStatus::Copy("ralphy daemon setup --name <other-name> --avatar 1".to_owned()),
             format!("another daemon in the fleet is already named {n}"),
         )
     };
@@ -370,7 +370,7 @@ fn name_check(
                 ),
                 None => (
                     CheckStatus::Copy(format!("ralphy host add {destination} --name <name>")),
-                    "the daemon on the host has no name".to_string(),
+                    "the daemon on the host has no name".to_owned(),
                 ),
             },
             Some(Err(e)) => (

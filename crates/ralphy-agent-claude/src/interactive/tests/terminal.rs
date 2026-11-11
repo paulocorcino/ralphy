@@ -30,7 +30,7 @@ fn scan_dsr_request_detects_split_sequence() {
 }
 
 /// Raw PTY bytes of a logged-out interactive session (CLI v2.1.198),
-/// captured on Windows ConPTY: the REPL renders with a
+/// captured on Windows `ConPTY`: the REPL renders with a
 /// `Not logged in · Run /login` status line whose words are separated by
 /// cursor-forward escapes, not spaces.
 const LOGIN_TUI_FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/login_tui_exec.log");

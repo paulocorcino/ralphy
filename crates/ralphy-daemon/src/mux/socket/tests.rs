@@ -31,7 +31,7 @@ fn page(
             host: SessionHost {
                 peers_dir: store.join("peers"),
                 identity: None,
-                environment: "test".to_string(),
+                environment: "test".to_owned(),
                 bound_port: 0,
                 sessions: Arc::new(crate::session::SessionManager::new()),
                 registry_path: store.join("repos.toml"),
@@ -41,7 +41,7 @@ fn page(
             watchers: Arc::new(crate::watch::WatcherManager::new(crate::watch::MAX_WATCHES)),
             run_exits: broadcast::channel(4).0,
         },
-        login: Login::now(crate::auth::AuthState::localhost()),
+        login: Login::now(auth::AuthState::localhost()),
         held: super::super::Hold::none(),
     }
 }
@@ -75,7 +75,7 @@ type Ws =
 async fn connect(
     sessions: broadcast::Receiver<()>,
     pushes: broadcast::Receiver<Push>,
-) -> (Ws, tokio::sync::watch::Sender<bool>) {
+) -> (Ws, watch::Sender<bool>) {
     connect_on(sessions, pushes, presence_board::Shared::default()).await
 }
 
@@ -84,8 +84,8 @@ async fn connect_on(
     sessions: broadcast::Receiver<()>,
     pushes: broadcast::Receiver<Push>,
     board: presence_board::Shared,
-) -> (Ws, tokio::sync::watch::Sender<bool>) {
-    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+) -> (Ws, watch::Sender<bool>) {
+    let (stop_tx, stop_rx) = watch::channel(false);
     let app = one_page(page(sessions, pushes, board, stop_rx), None);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -107,7 +107,7 @@ async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) 
     use tokio_tungstenite::tungstenite::Message as Wire;
     let mut commands = Vec::new();
     let mut beats = 0;
-    let deadline = tokio::time::Instant::now() + within;
+    let deadline = Instant::now() + within;
     loop {
         let msg = match tokio::time::timeout_at(deadline, ws.next()).await {
             Err(_) => return (commands, beats, false),
@@ -121,7 +121,7 @@ async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) 
                     panic!("an unexpected frame: {other:?}")
                 }
             },
-            None | Some(Ok(Wire::Close(_))) | Some(Err(_)) => return (commands, beats, true),
+            None | Some(Ok(Wire::Close(_)) | Err(_)) => return (commands, beats, true),
             Some(Ok(_)) => {}
         }
     }
@@ -137,7 +137,7 @@ fn count(commands: &[Command], verb: &str) -> usize {
 async fn a_lagged_push_receiver_sends_every_push_once() {
     let (_sessions_tx, sessions) = broadcast::channel(4);
     let (pushes_tx, pushes) = broadcast::channel(1);
-    let tab = Some("t1".to_string());
+    let tab = Some("t1".to_owned());
     // Two pushes on a bus that holds one: the receiver lags by one.
     for _ in 0..2 {
         pushes_tx.send(Push::Desk { tab: tab.clone() }).unwrap();
@@ -203,7 +203,7 @@ async fn open_unknown_kind(ws: &mut Ws, channel: u32) {
     use tokio_tungstenite::tungstenite::Message as Wire;
     let frame = Frame::Command(Command {
         id: 0,
-        verb: "channel.open".to_string(),
+        verb: "channel.open".to_owned(),
         payload: serde_json::json!({ "channel": channel, "kind": "no-such-kind" }),
     });
     ws.send(Wire::Binary(protocol::encode(&frame).into()))
@@ -218,7 +218,7 @@ fn closed(commands: &[Command]) -> Vec<(u64, String)> {
         .filter(|c| c.verb == "channel.closed")
         .map(|c| {
             let channel = c.payload["channel"].as_u64().unwrap();
-            (channel, c.payload["reason"].as_str().unwrap().to_string())
+            (channel, c.payload["reason"].as_str().unwrap().to_owned())
         })
         .collect()
 }
@@ -231,7 +231,7 @@ async fn a_revoked_login_opens_no_channel() {
     let (_sessions_tx, sessions) = broadcast::channel(4);
     let (_pushes_tx, pushes) = broadcast::channel(4);
     let (_stop, shutdown) = watch::channel(false);
-    let auth = crate::auth::AuthState::localhost();
+    let auth = auth::AuthState::localhost();
     let login = crate::cookie::LoginId::mint();
     let mut served = page(
         sessions,
@@ -250,26 +250,26 @@ async fn a_revoked_login_opens_no_channel() {
 
     open_unknown_kind(&mut ws, 1).await;
     let (commands, _, ended) = read_for(&mut ws, Duration::from_millis(500)).await;
-    assert_eq!(closed(&commands), [(1, "refused".to_string())]);
+    assert_eq!(closed(&commands), [(1, "refused".to_owned())]);
     assert!(!ended, "before the revoke the socket stays open");
 
     auth.revoke_login(login, crate::routes::now_unix())
         .expect("revoke the login");
     open_unknown_kind(&mut ws, 2).await;
     let (commands, _, ended) = read_for(&mut ws, Duration::from_secs(5)).await;
-    assert_eq!(closed(&commands), [(2, "refused".to_string())]);
+    assert_eq!(closed(&commands), [(2, "refused".to_owned())]);
     assert!(ended, "after the revoke the open ends the socket");
 }
 
 /// The board's answer within `within`: whether the operator is present.
 async fn present_within(board: &presence_board::Shared, want: bool, within: Duration) -> bool {
-    let deadline = tokio::time::Instant::now() + within;
+    let deadline = Instant::now() + within;
     loop {
         let now = std::time::SystemTime::now();
         if board.lock().unwrap().present(now) == want {
             return true;
         }
-        if tokio::time::Instant::now() > deadline {
+        if Instant::now() > deadline {
             return false;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -288,7 +288,7 @@ async fn a_page_report_on_the_presence_socket_sets_presence() {
         Wire::Binary(
             protocol::encode(&Frame::Command(Command {
                 id: 0,
-                verb: "presence.report".to_string(),
+                verb: "presence.report".to_owned(),
                 payload,
             }))
             .into(),

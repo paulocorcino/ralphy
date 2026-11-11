@@ -30,11 +30,11 @@ enum Outcome {
 impl Outcome {
     fn label(self) -> String {
         match self {
-            Outcome::Passed => "ok".to_string(),
+            Outcome::Passed => "ok".to_owned(),
             Outcome::Failed(Some(code)) => format!("FAILED ({code})"),
-            Outcome::Failed(None) => "FAILED (signal)".to_string(),
-            Outcome::Missing => "MISSING".to_string(),
-            Outcome::Skipped => "skipped".to_string(),
+            Outcome::Failed(None) => "FAILED (signal)".to_owned(),
+            Outcome::Missing => "MISSING".to_owned(),
+            Outcome::Skipped => "skipped".to_owned(),
         }
     }
 
@@ -182,7 +182,7 @@ fn run_all(root: &Path, steps: &[Step], options: &Options, xtask: &Path) -> Resu
     Ok(outcomes)
 }
 
-pub fn gate_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn gate_cmd(args: &[String]) -> Result<()> {
     let options = parse_args(args)?;
     let root = workspace_root();
     let dir = log_dir(&root);

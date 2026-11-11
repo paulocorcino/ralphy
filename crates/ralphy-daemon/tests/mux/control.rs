@@ -149,7 +149,7 @@ async fn a_bare_frame_past_the_report_cap_closes_the_socket() {
     let mut ws = connect(&daemon).await;
     let bytes = protocol::encode(&Frame::Command(protocol::Command {
         id: 0,
-        verb: "presence.report".to_string(),
+        verb: "presence.report".to_owned(),
         payload: big,
     }));
     send_on(&mut ws, 2, &bytes).await;

@@ -30,7 +30,7 @@ fn well_shaped_key(key: &str) -> bool {
 ///   purpose: Copilot's credentialled builtin MCP server that can open a PR on
 ///   its own (ADR-0041 D7), Cursor's upload of the repository to the vendor
 ///   (ADR-0042 D6). The long key IS the gesture; a checkbox is not.
-/// - `events.token` is the bearer every CloudEvent carries to the sink: set
+/// - `events.token` is the bearer every `CloudEvent` carries to the sink: set
 ///   remotely, it redirects the run's telemetry credential.
 /// - `queue.trust_all_comments` lets a comment by any GitHub account reach the
 ///   agent's prompt: set remotely, it opens the prompt to strangers
@@ -69,14 +69,14 @@ fn remotely_settable_key(key: &str) -> bool {
     reason = "a verb this builder does not serve is refused, which fails closed"
 )]
 pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
-    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let owned = |parts: &[&str]| parts.iter().map(ToString::to_string).collect::<Vec<_>>();
     let key = || -> Result<String, ArgvError> {
         let key = payload
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or(ArgvError::BadParam("key"))?;
         if remotely_settable_key(key) {
-            Ok(key.to_string())
+            Ok(key.to_owned())
         } else {
             Err(ArgvError::BadParam("key"))
         }
@@ -95,17 +95,17 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
                 .filter(|v| !v.is_empty())
                 .ok_or(ArgvError::BadParam("value"))?;
             Ok(vec![
-                "config".to_string(),
-                "set".to_string(),
-                "--".to_string(),
+                "config".to_owned(),
+                "set".to_owned(),
+                "--".to_owned(),
                 key,
-                value.to_string(),
+                value.to_owned(),
             ])
         }
         Verb::ConfigUnset => Ok(vec![
-            "config".to_string(),
-            "unset".to_string(),
-            "--".to_string(),
+            "config".to_owned(),
+            "unset".to_owned(),
+            "--".to_owned(),
             key()?,
         ]),
         // Non-config verbs never route here (`execute_oneshot` picks the branch

@@ -6,7 +6,7 @@ use super::*;
 /// though no decoder arm reads it. The empty string every adapter uses for an
 /// absent model/effort decodes to `None` — the shape opencode's `?None`
 /// rendered (the encoding-skew collapse). ADR-0044 D9: a `variant` value never
-/// populates `effort` (OpenCode's dialect rides its own field), and a real
+/// populates `effort` (`OpenCode`'s dialect rides its own field), and a real
 /// effort rung lands in `effort`, not `variant`.
 #[test]
 fn roundtrip_planning() {

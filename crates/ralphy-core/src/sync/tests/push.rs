@@ -32,7 +32,7 @@ fn remote_ref(remote: &Path, name: &str) -> Option<String> {
     let out = raw(remote, &["rev-parse", "--verify", "--quiet", name]).unwrap();
     out.status
         .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
 
 fn branch_off(repo: &Path, name: &str) {
@@ -79,8 +79,8 @@ fn push_publishes_a_branch_with_no_upstream_and_sets_one() {
     assert_eq!(
         outcome,
         PushOutcome::Pushed {
-            remote: "origin".to_string(),
-            branch: "feat/x".to_string(),
+            remote: "origin".to_owned(),
+            branch: "feat/x".to_owned(),
             set_upstream: true,
         }
     );
@@ -99,7 +99,7 @@ fn push_publishes_a_branch_with_no_upstream_and_sets_one() {
     assert_eq!(
         st.tracking,
         Some(Tracking {
-            upstream: "origin/feat/x".to_string(),
+            upstream: "origin/feat/x".to_owned(),
             ahead: 0,
             behind: 0,
         })
@@ -152,7 +152,7 @@ fn push_refuses_a_remote_that_moved_on() {
     assert_eq!(
         outcome,
         PushOutcome::Rejected {
-            remote: "origin".to_string()
+            remote: "origin".to_owned()
         }
     );
     assert!(
@@ -219,9 +219,9 @@ fn an_auth_failure_is_a_refusal_not_a_rejection() {
         "fatal: unable to access: The requested URL returned error: 403 Forbidden",
     ] {
         assert_eq!(
-            classify_push_failure(stderr, "origin".to_string()),
+            classify_push_failure(stderr, "origin".to_owned()),
             PushOutcome::AuthFailed {
-                remote: "origin".to_string()
+                remote: "origin".to_owned()
             },
             "stderr: {stderr}"
         );
@@ -231,16 +231,16 @@ fn an_auth_failure_is_a_refusal_not_a_rejection() {
     assert_eq!(
         classify_push_failure(
             "! [rejected] feat -> feat (fetch first)",
-            "origin".to_string()
+            "origin".to_owned()
         ),
         PushOutcome::Rejected {
-            remote: "origin".to_string()
+            remote: "origin".to_owned()
         }
     );
     assert_eq!(
-        classify_push_failure("something nobody modelled", "origin".to_string()),
+        classify_push_failure("something nobody modelled", "origin".to_owned()),
         PushOutcome::Rejected {
-            remote: "origin".to_string()
+            remote: "origin".to_owned()
         }
     );
 }

@@ -106,7 +106,7 @@ impl PeerStatus {
                     .unwrap_or_default();
                 let next = match retry_in {
                     Some(wait) => format!("Ralphy tries again in {}.", in_words(*wait)),
-                    None => "Ralphy is opening it again.".to_string(),
+                    None => "Ralphy is opening it again.".to_owned(),
                 };
                 format!("The tunnel to {host} is closed{said}. {next}")
             }
@@ -122,10 +122,10 @@ impl PeerStatus {
 fn in_words(wait: Duration) -> String {
     let secs = wait.as_secs().max(1);
     match secs {
-        1 => "1 second".to_string(),
+        1 => "1 second".to_owned(),
         2..=59 => format!("{secs} seconds"),
         _ => match secs.div_ceil(60) {
-            1 => "1 minute".to_string(),
+            1 => "1 minute".to_owned(),
             minutes => format!("{minutes} minutes"),
         },
     }

@@ -162,8 +162,8 @@ fn spawn_argv_run_composes_validated_flags() {
 /// never a binary name such as `cursor-agent` (#248).
 #[test]
 fn spawn_argv_carries_every_agent_through_to_the_agent_flag() {
-    for a in crate::session::Agent::ALL {
-        let flag = crate::dispatch::agent_flag(a);
+    for a in Agent::ALL {
+        let flag = agent_flag(a);
         assert_eq!(
             flag,
             format!("{a:?}").to_lowercase(),

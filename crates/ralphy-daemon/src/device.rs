@@ -16,19 +16,19 @@ use sha1::Sha1;
 use crate::{cookie, owner_only};
 
 /// The device cookie name.
-pub const COOKIE_NAME: &str = "ralphy_device";
+pub(crate) const COOKIE_NAME: &str = "ralphy_device";
 
 /// The device cookie's lifetime: 400 days, the longest a browser keeps a
 /// cookie (Chrome caps `Max-Age` there).
-pub const COOKIE_MAX_AGE_SECS: u64 = 400 * 24 * 3600;
+pub(crate) const COOKIE_MAX_AGE_SECS: u64 = 400 * 24 * 3600;
 
 /// One device's ID.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DeviceId([u8; 16]);
+pub(crate) struct DeviceId([u8; 16]);
 
 impl DeviceId {
     /// A new random ID.
-    pub fn mint() -> DeviceId {
+    pub(crate) fn mint() -> DeviceId {
         let mut bytes = [0u8; 16];
         getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a device ID");
         DeviceId(bytes)
@@ -54,16 +54,16 @@ impl fmt::Debug for DeviceId {
 }
 
 /// The key that signs device cookies.
-pub struct DeviceKey(Vec<u8>);
+pub(crate) struct DeviceKey(Vec<u8>);
 
 /// The `daemon-device-key` path inside `dir`.
-pub fn key_path_in(dir: &Path) -> PathBuf {
+pub(crate) fn key_path_in(dir: &Path) -> PathBuf {
     dir.join("daemon-device-key")
 }
 
 impl DeviceKey {
     /// Read the key at `path`, or create it owner-only when it is absent.
-    pub fn load_or_create(path: &Path) -> Result<DeviceKey> {
+    pub(crate) fn load_or_create(path: &Path) -> Result<DeviceKey> {
         match std::fs::read_to_string(path) {
             Ok(text) => from_hex(text.trim())
                 .filter(|b| b.len() == 32)
@@ -91,13 +91,13 @@ impl DeviceKey {
     }
 
     /// The cookie value for `id`: `1.<id>.<mac>`.
-    pub fn sign(&self, id: DeviceId) -> String {
+    pub(crate) fn sign(&self, id: DeviceId) -> String {
         format!("1.{id}.{}", self.mac_hex(id))
     }
 
     /// The ID a cookie value carries, or `None` when it is malformed or its MAC
     /// does not match.
-    pub fn verify(&self, value: &str) -> Option<DeviceId> {
+    pub(crate) fn verify(&self, value: &str) -> Option<DeviceId> {
         let mut parts = value.splitn(3, '.');
         let (Some("1"), Some(hex), Some(mac)) = (parts.next(), parts.next(), parts.next()) else {
             return None;
@@ -107,14 +107,14 @@ impl DeviceKey {
     }
 
     /// The device ID of a request's `Cookie:` header, or `None`.
-    pub fn id_in_cookie_header(&self, header: Option<&str>) -> Option<DeviceId> {
+    pub(crate) fn id_in_cookie_header(&self, header: Option<&str>) -> Option<DeviceId> {
         self.verify(cookie::named_value(header, COOKIE_NAME)?)
     }
 }
 
 /// The `Set-Cookie` value that gives a browser its device cookie. `Secure`
 /// follows the same rule as the session cookie.
-pub fn set_cookie_value(value: &str, secure: bool) -> String {
+pub(crate) fn set_cookie_value(value: &str, secure: bool) -> String {
     format!(
         "{COOKIE_NAME}={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={COOKIE_MAX_AGE_SECS}{}",
         if secure { "; Secure" } else { "" }

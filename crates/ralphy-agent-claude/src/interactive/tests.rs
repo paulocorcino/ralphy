@@ -135,7 +135,7 @@ fn only_an_ended_session_has_a_transcript_to_read() {
     assert_eq!(ended_transcript(false, Some(dir.path()), since), None);
     assert_eq!(
         ended_transcript(true, Some(dir.path()), since),
-        Some("{\"type\":\"system\"}".to_string())
+        Some("{\"type\":\"system\"}".to_owned())
     );
 }
 

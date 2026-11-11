@@ -6,7 +6,7 @@ fn plan_with(recommended: Option<&str>) -> Plan {
     Plan {
         path: PathBuf::from("/x/plan.md"),
         open_steps: 3,
-        recommended_model: recommended.map(str::to_string),
+        recommended_model: recommended.map(str::to_owned),
         usage: Usage::default(),
         session_id: None,
     }
@@ -14,9 +14,9 @@ fn plan_with(recommended: Option<&str>) -> Plan {
 
 fn agent_with(exec_model: Option<&str>, default: &str) -> ClaudeAgent {
     ClaudeAgent::new(None, None, PathBuf::from("/run")).with_exec_config(
-        exec_model.map(str::to_string),
+        exec_model.map(str::to_owned),
         Some("medium".into()),
-        default.to_string(),
+        default.to_owned(),
         45,
         true,
         false,
@@ -221,8 +221,8 @@ fn the_status_hooks_match_the_shared_event_list() {
         .iter()
         .map(|e| {
             (
-                e["event"].as_str().unwrap().to_string(),
-                e["matcher"].as_str().unwrap().to_string(),
+                e["event"].as_str().unwrap().to_owned(),
+                e["matcher"].as_str().unwrap().to_owned(),
             )
         })
         .collect();
@@ -232,8 +232,8 @@ fn the_status_hooks_match_the_shared_event_list() {
         .map(|(event, entry)| {
             assert_eq!(entry["hooks"][0], status, "{event}");
             (
-                event.to_string(),
-                entry["matcher"].as_str().unwrap().to_string(),
+                event.to_owned(),
+                entry["matcher"].as_str().unwrap().to_owned(),
             )
         })
         .collect();
@@ -300,9 +300,9 @@ fn the_written_settings_files_carry_the_status_hooks() {
 /// What a hook entry runs, whatever its form: `command`, then `args`
 /// joined by spaces.
 fn hook_text(hook: &serde_json::Value) -> String {
-    let mut parts = vec![hook["command"].as_str().unwrap_or_default().to_string()];
+    let mut parts = vec![hook["command"].as_str().unwrap_or_default().to_owned()];
     if let Some(args) = hook["args"].as_array() {
-        parts.extend(args.iter().filter_map(|a| a.as_str().map(str::to_string)));
+        parts.extend(args.iter().filter_map(|a| a.as_str().map(str::to_owned)));
     }
     parts.join(" ")
 }

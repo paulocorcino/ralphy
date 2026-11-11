@@ -42,7 +42,7 @@ pub(super) fn scan_accesses(
             continue;
         }
         if let Some(name) = member_name(toks, j).filter(|n| known.contains_key(n)) {
-            out.push((name.to_string(), writes(toks, j, j + 2)));
+            out.push((name.to_owned(), writes(toks, j, j + 2)));
         }
     }
 }

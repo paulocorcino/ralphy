@@ -151,7 +151,7 @@ pub fn find(
 fn find_hit(root: &Path, entry: &ignore::DirEntry) -> Option<FindHit> {
     Some(FindHit {
         path: rel_of(root, entry)?,
-        dir: entry.file_type().map(|t| t.is_dir()).unwrap_or(false),
+        dir: entry.file_type().is_some_and(|t| t.is_dir()),
     })
 }
 
@@ -259,7 +259,7 @@ fn collect_hits(
             reply.truncated = true;
             return;
         }
-        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
             continue;
         }
         let Some(count) = count_in(entry.path(), matcher.re, matcher.fallback) else {

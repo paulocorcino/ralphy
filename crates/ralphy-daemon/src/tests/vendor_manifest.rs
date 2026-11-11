@@ -14,7 +14,7 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
         .cloned()
         .unwrap_or_default();
     if libraries.is_empty() {
-        problems.push("the manifest lists no libraries".to_string());
+        problems.push("the manifest lists no libraries".to_owned());
     }
     for lib in &libraries {
         for key in ["name", "version", "source"] {
@@ -27,7 +27,7 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
                 problems.push(format!("{f}: an entry needs `path` and `sha256`"));
                 continue;
             };
-            if entries.insert(path.to_string(), sha.to_string()).is_some() {
+            if entries.insert(path.to_owned(), sha.to_owned()).is_some() {
                 problems.push(format!("{path}: listed twice in the manifest"));
             }
         }
@@ -56,10 +56,10 @@ fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> 
 /// version and source the vulnerability scan reads (ADR-0072 D12).
 #[test]
 fn vendored_files_match_the_manifest() {
-    fn walk(dir: &include_dir::Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
+    fn walk(dir: &Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
         for f in dir.files() {
             let path = f.path().to_string_lossy().replace('\\', "/");
-            let rel = path.strip_prefix("vendor/").unwrap_or(&path).to_string();
+            let rel = path.strip_prefix("vendor/").unwrap_or(&path).to_owned();
             if rel != "manifest.json" {
                 out.push((rel, f.contents().to_vec()));
             }
@@ -92,10 +92,10 @@ fn vendored_files_match_the_manifest() {
         "{problems:?}"
     );
     let mut extra = files.clone();
-    extra.push(("stray.js".to_string(), b"x".to_vec()));
+    extra.push(("stray.js".to_owned(), b"x".to_vec()));
     assert_eq!(
         check_manifest(&extra, &manifest),
-        vec!["stray.js: not in the manifest".to_string()]
+        vec!["stray.js: not in the manifest".to_owned()]
     );
     let missing = &files[1..];
     assert_eq!(

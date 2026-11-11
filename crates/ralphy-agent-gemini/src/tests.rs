@@ -180,7 +180,7 @@ fn execute_is_plan_agnostic_and_bounds_the_commit() {
     let param = code
         .split_once("fnexecute(&self,")
         .and_then(|(_, rest)| rest.split_once(":&Plan"))
-        .map(|(name, _)| name.to_string())
+        .map(|(name, _)| name.to_owned())
         .expect("execute takes the plan as its first argument");
     assert!(
         !body.contains(&format!("{param}.")) && !body.contains(&format!("({param}")),
@@ -245,7 +245,7 @@ fn ralphy_adds_no_retry_of_its_own() {
 #[test]
 fn no_tests_directory() {
     assert!(
-        !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).exists(),
+        !Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).exists(),
         "adapter tests stay inline (ADR-0040 Tier 1)"
     );
 }
@@ -279,7 +279,7 @@ fn run_accounting_never_reads_the_session_store() {
 #[test]
 fn budget_setters_reach_the_issue_deadline() {
     let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
-    let agent = GeminiAgent::new(None, std::path::PathBuf::from("/run"))
+    let agent = GeminiAgent::new(None, PathBuf::from("/run"))
         .with_max_minutes_per_issue(120)
         .with_run_deadline(Some(run_deadline));
     assert_eq!(agent.budget.max_minutes_per_issue, 120);

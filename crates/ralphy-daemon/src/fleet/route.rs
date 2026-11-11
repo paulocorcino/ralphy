@@ -40,7 +40,7 @@ pub fn route<'a>(repo_ref: &'a str, local_id: &str, peers: &'a [PeerDescriptor])
 /// Render a failed peer operation with the peer's environment attached.
 pub fn peer_unreachable(peer: &PeerDescriptor, why: &str) -> String {
     crate::peer::client::PeerStatus::Unreachable {
-        why: why.to_string(),
+        why: why.to_owned(),
     }
     .diagnosis(&peer.environment)
 }
@@ -59,5 +59,5 @@ pub fn unknown_daemon(daemon_id: &str, rejects: &[PeerReject]) -> String {
         }
         .diagnosis(environment);
     }
-    "the environment of this project is not in the list".to_string()
+    "the environment of this project is not in the list".to_owned()
 }

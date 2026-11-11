@@ -86,7 +86,7 @@ fn no_form_carries_the_verbatim_prefix() {
 fn a_shell_form_reason_is_logged_once_per_binary() {
     let dir = tempfile::tempdir().expect("temp dir");
     let bin = dir.path().join("claude");
-    let reason = hook(Some("2.1.138 (Claude Code)")).reason().to_string();
+    let reason = hook(Some("2.1.138 (Claude Code)")).reason().to_owned();
     assert!(first_warning(&bin, &reason), "the first hook logs");
     assert!(!first_warning(&bin, &reason), "the second hook does not");
     let other = dir.path().join("other-claude");

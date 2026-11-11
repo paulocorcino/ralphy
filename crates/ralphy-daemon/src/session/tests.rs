@@ -48,13 +48,13 @@ async fn evict_token_carries_its_reason_before_waking() {
 fn session_info_serialises_checkout_only_when_present() {
     let info = |checkout: Option<&str>| SessionInfo {
         id: 1,
-        repo: "owner/ralphy".to_string(),
-        agent: "claude".to_string(),
-        kind: "agent".to_string(),
+        repo: "owner/ralphy".to_owned(),
+        agent: "claude".to_owned(),
+        kind: "agent".to_owned(),
         started_at: 1,
         environment: None,
         name: None,
-        checkout: checkout.map(str::to_string),
+        checkout: checkout.map(str::to_owned),
         record: None,
         agent_state: None,
     };
@@ -68,7 +68,7 @@ fn session_info_serialises_checkout_only_when_present() {
 /// appends every write to `sink`: a child that does not read its input.
 struct Stuck {
     gate: Option<std::sync::mpsc::Receiver<()>>,
-    sink: std::sync::Arc<Mutex<Vec<u8>>>,
+    sink: Arc<Mutex<Vec<u8>>>,
 }
 
 impl std::io::Write for Stuck {
@@ -87,7 +87,7 @@ impl std::io::Write for Stuck {
 #[test]
 fn input_send_does_not_wait_for_a_child_that_does_not_read() {
     let (open, gate) = std::sync::mpsc::channel();
-    let sink = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::new(Mutex::new(Vec::new()));
     let input = Input::start(Box::new(Stuck {
         gate: Some(gate),
         sink: sink.clone(),

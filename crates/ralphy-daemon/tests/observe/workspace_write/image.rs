@@ -70,7 +70,7 @@ async fn image_write_never_overwrites_an_earlier_drop() {
         )
         .await;
         assert_eq!(replies[0]["status"], "ok");
-        paths.push(replies[0]["path"].as_str().unwrap().to_string());
+        paths.push(replies[0]["path"].as_str().unwrap().to_owned());
     }
     assert_ne!(paths[0], paths[1]);
     assert!(paths.iter().all(|p| p.ends_with(".jpg")), "{paths:?}");

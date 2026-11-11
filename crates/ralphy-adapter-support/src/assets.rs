@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 /// own no `.gitignore` concern (Claude's plugin dir is already inside `.ralphy`
 /// which carries its own ignore rules); it is `Some(dir)` for adapters that
 /// materialize into a directory the executor might otherwise commit
-/// (Codex → `.agents`, OpenCode → `.ralphy`).
+/// (Codex → `.agents`, `OpenCode` → `.ralphy`).
 pub fn materialize_assets(
     asset: &include_dir::Dir,
     dest_dir: &Path,
@@ -92,7 +92,7 @@ fn retry_transient_fs<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T>
 /// shapes a still-open handle takes on Windows (see [`retry_transient_fs`]).
 #[cfg(windows)]
 fn is_transient_lock(e: &io::Error) -> bool {
-    matches!(e.raw_os_error(), Some(5) | Some(32))
+    matches!(e.raw_os_error(), Some(5 | 32))
 }
 
 #[cfg(not(windows))]

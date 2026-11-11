@@ -20,7 +20,7 @@ pub(crate) enum PlanScript {
 /// clock records only the text, so no test here needs the instant.
 pub(crate) fn reset_text(text: &str) -> Option<ResetAt> {
     Some(ResetAt {
-        text: text.to_string(),
+        text: text.to_owned(),
         at: None,
     })
 }
@@ -345,7 +345,7 @@ pub(crate) struct RecordingTracker {
 
 impl IssueTracker for RecordingTracker {
     fn close(&self, number: u64, comment: &str) -> anyhow::Result<()> {
-        self.closes.borrow_mut().push((number, comment.to_string()));
+        self.closes.borrow_mut().push((number, comment.to_owned()));
         Ok(())
     }
 
@@ -365,19 +365,19 @@ impl IssueTracker for RecordingTracker {
     }
 
     fn comment(&self, number: u64, body: &str) -> anyhow::Result<()> {
-        self.comments.borrow_mut().push((number, body.to_string()));
+        self.comments.borrow_mut().push((number, body.to_owned()));
         Ok(())
     }
 
     fn add_label(&self, number: u64, label: &str) -> anyhow::Result<()> {
-        self.labels.borrow_mut().push((number, label.to_string()));
+        self.labels.borrow_mut().push((number, label.to_owned()));
         Ok(())
     }
 
     fn remove_label(&self, number: u64, label: &str) -> anyhow::Result<()> {
         self.removed_labels
             .borrow_mut()
-            .push((number, label.to_string()));
+            .push((number, label.to_owned()));
         Ok(())
     }
 

@@ -87,12 +87,12 @@ impl Answers {
     fn decide(&mut self, prompt: &str) -> bool {
         match &self.served {
             None if is_password_prompt(prompt) => {
-                self.served = Some(prompt.to_string());
+                self.served = Some(prompt.to_owned());
                 true
             }
             Some(first) if first == prompt => false,
             _ => {
-                self.unhandled.get_or_insert_with(|| prompt.to_string());
+                self.unhandled.get_or_insert_with(|| prompt.to_owned());
                 false
             }
         }
@@ -143,14 +143,14 @@ pub(crate) fn serve<T>(
 fn askpass_env(port: u16, nonce: &str) -> Result<Vec<(String, String)>> {
     let exe = std::env::current_exe().context("finding this ralphy binary")?;
     let mut env = vec![
-        ("SSH_ASKPASS".to_string(), exe.display().to_string()),
-        ("SSH_ASKPASS_REQUIRE".to_string(), "force".to_string()),
-        (ASKPASS_ENV.to_string(), format!("{port}:{nonce}")),
+        ("SSH_ASKPASS".to_owned(), exe.display().to_string()),
+        ("SSH_ASKPASS_REQUIRE".to_owned(), "force".to_owned()),
+        (ASKPASS_ENV.to_owned(), format!("{port}:{nonce}")),
     ];
     // OpenSSH before 8.4 ignores SSH_ASKPASS_REQUIRE and uses askpass only
     // when DISPLAY is set.
     if std::env::var_os("DISPLAY").is_none() {
-        env.push(("DISPLAY".to_string(), ":0".to_string()));
+        env.push(("DISPLAY".to_owned(), ":0".to_owned()));
     }
     Ok(env)
 }
@@ -288,7 +288,7 @@ pub(crate) fn add_peer_key(
             .contains("S-1-5-32-544");
     let op = HostOp::AppendKey {
         admin,
-        body: body.to_string(),
+        body: body.to_owned(),
     };
     let line = format!("{}\n", public_line.trim());
     let added = run(&render(Some(os), &op)?, line.as_bytes())?;

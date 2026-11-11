@@ -32,7 +32,7 @@ fn render_card_names_blocker_on_dependency_skip() {
     let mut state = RunState::new("repo · 1 issues", 1);
     state.apply(RunEvent::Skipped {
         number: 140,
-        kind: crate::runstate::SkipKind::BlockedBy,
+        kind: SkipKind::BlockedBy,
         label: None,
         blockers: vec![139],
     });
@@ -42,7 +42,7 @@ fn render_card_names_blocker_on_dependency_skip() {
     let mut bare = RunState::new("repo · 1 issues", 1);
     bare.apply(RunEvent::Skipped {
         number: 141,
-        kind: crate::runstate::SkipKind::BlockedBy,
+        kind: SkipKind::BlockedBy,
         label: None,
         blockers: vec![],
     });

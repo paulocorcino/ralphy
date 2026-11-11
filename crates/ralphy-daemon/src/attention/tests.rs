@@ -4,18 +4,18 @@ use crate::agent_state::AgentState;
 fn console(id: u64, state: Option<&str>, detail: Option<&str>) -> SessionInfo {
     SessionInfo {
         id,
-        repo: "owner/r".to_string(),
-        agent: "claude".to_string(),
-        kind: "agent".to_string(),
+        repo: "owner/r".to_owned(),
+        agent: "claude".to_owned(),
+        kind: "agent".to_owned(),
         started_at: 1,
         environment: None,
         name: None,
         checkout: None,
         record: None,
         agent_state: state.map(|s| AgentState {
-            state: Some(s.to_string()),
-            since: "2026-10-28T10:00:00-03:00".to_string(),
-            detail: detail.map(str::to_string),
+            state: Some(s.to_owned()),
+            since: "2026-10-28T10:00:00-03:00".to_owned(),
+            detail: detail.map(str::to_owned),
             source: None,
             reason: None,
         }),
@@ -24,15 +24,15 @@ fn console(id: u64, state: Option<&str>, detail: Option<&str>) -> SessionInfo {
 
 fn peer_request() -> AttentionRequest {
     AttentionRequest {
-        id: "console:3".to_string(),
+        id: "console:3".to_owned(),
         kind: Kind::ConsoleWaiting,
-        vendor: "claude".to_string(),
-        console: Some("owner/r#3".to_string()),
+        vendor: "claude".to_owned(),
+        console: Some("owner/r#3".to_owned()),
         name: None,
-        repo: Some("owner/r".to_string()),
+        repo: Some("owner/r".to_owned()),
         run: None,
         issue: None,
-        since: "2026-10-28T10:00:00-03:00".to_string(),
+        since: "2026-10-28T10:00:00-03:00".to_owned(),
         detail: None,
         dismissable: false,
     }
@@ -86,20 +86,20 @@ fn only_a_waiting_console_opens_a_request() {
 
 fn run(runid: &str, phase: &str, agent: Option<(&str, Option<&str>)>) -> RunSource {
     let mut snapshot = RunSnapshot {
-        runid: runid.to_string(),
-        plan_agent: "claude".to_string(),
-        exec_agent: "codex".to_string(),
+        runid: runid.to_owned(),
+        plan_agent: "claude".to_owned(),
+        exec_agent: "codex".to_owned(),
         ..RunSnapshot::default()
     };
-    snapshot.phase.state = phase.to_string();
+    snapshot.phase.state = phase.to_owned();
     snapshot.phase.active = Some(71);
     snapshot.phase.agent = agent.map(|(state, detail)| ralphy_run_snapshot::AgentBlock {
-        state: state.to_string(),
-        since: "2026-10-28T11:00:00-03:00".to_string(),
-        detail: detail.map(str::to_string),
+        state: state.to_owned(),
+        since: "2026-10-28T11:00:00-03:00".to_owned(),
+        detail: detail.map(str::to_owned),
     });
     RunSource {
-        repo: "owner/r".to_string(),
+        repo: "owner/r".to_owned(),
         snapshot,
     }
 }
@@ -157,7 +157,7 @@ fn a_silent_console_is_one_request() {
     let reason = "No hook event reached Ralphy.";
     let mut info = console(3, None, None);
     info.agent_state = Some(AgentState::silent(
-        reason.to_string(),
+        reason.to_owned(),
         std::time::SystemTime::UNIX_EPOCH,
     ));
     let got = list(&[info], &RunsRead::default(), &|_| false);
@@ -181,11 +181,11 @@ fn a_console_with_no_state_source_by_design_is_no_request() {
     let mut by_design = console(4, None, None);
     by_design.agent_state = Some(AgentState::unreported(
         Unreported::NoSource,
-        "This project has its own Codex hooks.".to_string(),
+        "This project has its own Codex hooks.".to_owned(),
         at,
     ));
     let mut went_silent = console(5, None, None);
-    went_silent.agent_state = Some(AgentState::silent("No hook event.".to_string(), at));
+    went_silent.agent_state = Some(AgentState::silent("No hook event.".to_owned(), at));
     let got = list(&[by_design, went_silent], &RunsRead::default(), &|_| false);
     let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, ["console:5"], "{got:?}");
@@ -195,18 +195,18 @@ fn a_console_with_no_state_source_by_design_is_no_request() {
 /// whose issues are `(number, status)`.
 fn finished(repo: &str, stamp: &str, started: &str, issues: &[(u64, &str)]) -> FinishedRun {
     FinishedRun {
-        repo: repo.to_string(),
-        stamp: stamp.to_string(),
-        ended: "2026-10-28T12:00:00Z".to_string(),
+        repo: repo.to_owned(),
+        stamp: stamp.to_owned(),
+        ended: "2026-10-28T12:00:00Z".to_owned(),
         snapshot: RunSnapshot {
             runid: format!("01{stamp}"),
-            exec_agent: "codex".to_string(),
-            started_at: started.to_string(),
+            exec_agent: "codex".to_owned(),
+            started_at: started.to_owned(),
             issues: issues
                 .iter()
                 .map(|&(number, status)| IssueBlock {
                     number,
-                    status: status.to_string(),
+                    status: status.to_owned(),
                     ..IssueBlock::default()
                 })
                 .collect(),
@@ -285,13 +285,13 @@ fn a_new_run_of_the_same_issue_ends_the_request() {
         old(),
         finished("owner/r", "20261028-110000", later, &[(71, "done")]),
     ]);
-    assert!(list(&[], &runs, &|_| false).is_empty());
+    assert_eq!(list(&[], &runs, &|_| false), Vec::<AttentionRequest>::new());
     // So does a live run that works it.
     let mut working = run("01LIVE", "executing", None);
-    working.snapshot.started_at = later.to_string();
+    working.snapshot.started_at = later.to_owned();
     working.snapshot.issues = vec![IssueBlock {
         number: 71,
-        status: "executing".to_string(),
+        status: "executing".to_owned(),
         ..IssueBlock::default()
     }];
     let runs = RunsRead {
@@ -299,9 +299,9 @@ fn a_new_run_of_the_same_issue_ends_the_request() {
         finished: vec![old()],
         ..RunsRead::default()
     };
-    assert!(list(&[], &runs, &|_| false).is_empty());
+    assert_eq!(list(&[], &runs, &|_| false), Vec::<AttentionRequest>::new());
     // The same number in another repo does not.
-    working.repo = "owner/other".to_string();
+    working.repo = "owner/other".to_owned();
     let runs = RunsRead {
         live: vec![working],
         finished: vec![

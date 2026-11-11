@@ -37,9 +37,7 @@ pub fn locate_gemini() -> Option<PathBuf> {
 /// What a `Command` is constructed with. Falls back to the bare name so the spawn
 /// failure names the vendor rather than an empty path.
 pub(crate) fn resolve_gemini_program() -> OsString {
-    locate_gemini()
-        .map(PathBuf::into_os_string)
-        .unwrap_or_else(|| NAME.into())
+    locate_gemini().map_or_else(|| NAME.into(), PathBuf::into_os_string)
 }
 
 /// Refuse a prompt the vendor would silently truncate (D2).
@@ -167,7 +165,7 @@ pub(crate) fn scrubbed_names<'a>(
             let u = n.to_ascii_uppercase();
             !keep.iter().any(|k| k.eq_ignore_ascii_case(&u))
         })
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 
@@ -189,7 +187,7 @@ pub(crate) fn apply_auth_env<I, S>(
     S: AsRef<str>,
 {
     let keep = allowed_auth_vars(auth_type);
-    let names: Vec<String> = parent.map(|s| s.as_ref().to_string()).collect();
+    let names: Vec<String> = parent.map(|s| s.as_ref().to_owned()).collect();
     for name in scrubbed_names(names.iter().map(String::as_str), keep) {
         cmd.env_remove(&name);
     }

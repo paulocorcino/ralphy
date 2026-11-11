@@ -154,9 +154,10 @@ pub const RUN_STOPPED_MSG: &str = "operator stop — halting run";
 /// decode as a real issue number under the `unwrap_or(0)` the decoder applies to
 /// every other message.
 pub fn run_stopped(number: Option<u64>) {
-    match number {
-        Some(number) => info!(number, "{}", RUN_STOPPED_MSG),
-        None => info!("{}", RUN_STOPPED_MSG),
+    if let Some(number) = number {
+        info!(number, "{}", RUN_STOPPED_MSG);
+    } else {
+        info!("{}", RUN_STOPPED_MSG);
     }
 }
 
@@ -372,7 +373,7 @@ pub const RUN_FINISHED_MSG: &str = "run finished";
 /// note it emits `up/cr/cw/out` but deliberately NO `model`: a run spans models.
 /// `issues_json` is the run's own per-issue rollup (a JSON array of
 /// `{number, status, kind?, blocked_by?, review_only?}`), the SAME fold the four scalars come
-/// from — the CloudEvents envelope prefers it over the console's folded state,
+/// from — the `CloudEvents` envelope prefers it over the console's folded state,
 /// which a dropped event can starve. `""` means a legacy/no-work emission with no
 /// rollup; the envelope then falls back to the fold.
 #[expect(

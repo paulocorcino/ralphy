@@ -235,7 +235,7 @@ fn setup_identity(path: &Path, name: &str, avatar: usize, out: &mut impl Write) 
     let name = validate_name(name)?;
     let avatar = avatar_by_number(avatar)
         .with_context(|| format!("pick an avatar number from 1 to {}", AVATARS.len()))?;
-    let id = identity::baptize(path, name, avatar.to_string())?;
+    let id = identity::baptize(path, name, avatar.to_owned())?;
     writeln!(out, "baptized: {}", format_status_line(&id))?;
     Ok(())
 }
@@ -437,7 +437,7 @@ fn baptize_console<R: BufRead, W: Write>(
         out.flush()?;
         let line = read_line(&mut input)?;
         match line.trim().parse::<usize>().ok().and_then(avatar_by_number) {
-            Some(emoji) => break emoji.to_string(),
+            Some(emoji) => break emoji.to_owned(),
             None => writeln!(out, "  pick a number from 1 to {}", AVATARS.len())?,
         }
     };
@@ -470,7 +470,7 @@ fn init_tracing() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
-        .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
+        .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_owned()))
         .with_ansi(std::io::stderr().is_terminal())
         .with_writer(std::io::stderr)
         .init();

@@ -6,7 +6,7 @@
 //! The seam is thin: `on_event` calls `runstate::event_to_runevent` to decode the
 //! raw tracing event into a [`RunEvent`], then hands it to a dedicated render thread
 //! over a channel. ALL terminal I/O lives on that thread ([`Renderer`]), so a stalled
-//! console write (e.g. Windows QuickEdit text selection pausing output) can only
+//! console write (e.g. Windows `QuickEdit` text selection pausing output) can only
 //! freeze the UI, never the run thread that emitted the log line. The renderer owns
 //! the side effects — timestamps, per-issue duration, and writing through
 //! `indicatif`'s `MultiProgress` so warn/error lines never corrupt live output.
@@ -55,7 +55,7 @@ impl LiveState {
 /// The console presenter: a `tracing` Layer that renders the run's lifecycle. Its
 /// `on_event` only decodes and forwards; the drawing runs on a separate [`Renderer`]
 /// thread, so a wedged console write never blocks the run.
-pub struct Presenter {
+pub(crate) struct Presenter {
     /// Hands each decoded event to the render thread. The `Mutex` exists only so the
     /// `Layer` stays `Sync`; it is held for a single non-blocking `send`, never across
     /// terminal I/O — that is the freeze fix.
@@ -74,7 +74,7 @@ enum PresenterMsg {
 }
 
 /// The render half of the presenter: owns all terminal I/O and the live state, and
-/// runs on its own thread so a stalled console write (e.g. Windows QuickEdit text
+/// runs on its own thread so a stalled console write (e.g. Windows `QuickEdit` text
 /// selection pausing output) freezes only the UI, never the run.
 struct Renderer {
     multi: MultiProgress,
@@ -88,7 +88,7 @@ struct Renderer {
 impl Presenter {
     /// Build a presenter, auto-detecting the terminal: styled (colour + emoji)
     /// on an attended TTY without `NO_COLOR`, else a plain clean-line renderer.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let is_tty = console::Term::stderr().is_term();
         let no_color = std::env::var_os("NO_COLOR").is_some();
         let styled = is_tty && !no_color;
@@ -122,12 +122,17 @@ impl Presenter {
     /// A teardown handle over the shared live region. `init_tracing` hands this to
     /// `run_cmd` so the queue bar is flushed to `N/N` and the live region cleared
     /// before the summary prints (ADR-0006: the presenter owns teardown).
-    pub fn handle(&self) -> PresenterHandle {
+    pub(crate) fn handle(&self) -> PresenterHandle {
         PresenterHandle {
             multi: self.multi.clone(),
             state: Arc::clone(&self.state),
             color: self.color,
-            flush: Some(self.tx.lock().unwrap_or_else(|e| e.into_inner()).clone()),
+            flush: Some(
+                self.tx
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone(),
+            ),
             edge: Arc::new(Mutex::new(crate::ui::EdgeNoticeState::default())),
         }
     }
@@ -176,7 +181,10 @@ impl Renderer {
     /// No-op off a colour TTY or when no active bar exists.
     fn tick(&self) {
         if self.opts.color {
-            let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            let s = self
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             repaint_active_bar(&s, self.opts);
         }
     }
@@ -187,7 +195,10 @@ impl Renderer {
         let ts = Local::now();
         // Recover from poison rather than panic: this runs inside `on_event`, so a
         // panic here would corrupt the run on a tracing call.
-        let mut s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut s = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let extra = self.drive(&mut s, &event);
 
@@ -416,8 +427,8 @@ fn repaint_active_bar(s: &LiveState, opts: RenderOpts) {
         .run
         .degraded
         .then(|| pick("🔄", "[api-retry]", opts.emoji));
-    let width = fit::terminal_width()
-        .saturating_sub(retry_prefix.map(|p| fit::display_width(p) + 1).unwrap_or(0));
+    let width =
+        fit::terminal_width().saturating_sub(retry_prefix.map_or(0, |p| fit::display_width(p) + 1));
     let line = render_active_line(
         phase,
         entry.number,
@@ -445,7 +456,7 @@ impl Default for Presenter {
 }
 
 mod handle;
-pub use handle::PresenterHandle;
+pub(crate) use handle::PresenterHandle;
 
 impl<S: Subscriber> Layer<S> for Presenter {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {

@@ -72,7 +72,7 @@ fn descriptor(port: u16) -> peer::PeerDescriptor {
 }
 
 /// The fleet body, read from `fleet_route` with `cache` as its memory.
-async fn fleet(dir: &std::path::Path, cache: &PeerRepoCache) -> serde_json::Value {
+async fn fleet(dir: &Path, cache: &PeerRepoCache) -> serde_json::Value {
     let resp = fleet_route(
         dir.join("repos.toml"),
         dir.join("peers"),
@@ -97,7 +97,7 @@ fn peer_slugs(body: &serde_json::Value) -> Vec<String> {
         .unwrap()
         .iter()
         .filter(|r| r["local"] == false)
-        .map(|r| r["slug"].as_str().unwrap().to_string())
+        .map(|r| r["slug"].as_str().unwrap().to_owned())
         .collect()
 }
 

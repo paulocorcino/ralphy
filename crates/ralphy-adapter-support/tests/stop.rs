@@ -29,7 +29,9 @@ struct StopFlagGuard(
 
 impl StopFlagGuard {
     fn acquire() -> Self {
-        let lock = STOP_FLAG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = STOP_FLAG_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         ralphy_core::stop::clear();
         Self(lock)
     }

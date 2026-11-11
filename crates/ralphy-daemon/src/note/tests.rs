@@ -101,7 +101,7 @@ fn a_tampered_header_is_not_a_note() {
     assert_eq!(decode(&long), Err(NoteError::NotNote));
     // An unmasked payload is not a stream at all.
     let mut naked = good.clone();
-    super::mask(&mut naked[HEADER..]);
+    mask(&mut naked[HEADER..]);
     assert_eq!(decode(&naked), Err(NoteError::NotNote));
 }
 

@@ -8,7 +8,7 @@ use http_body_util::BodyExt;
 /// A cache that holds one peer which re-keyed `path-abc` to `owner/repo`.
 fn cache_with_a_renamed_peer_repo() -> PeerRepoCache {
     let repos: PeerRepoStore = [(
-        "owner/repo".to_string(),
+        "owner/repo".to_owned(),
         PeerRepoRow {
             path: "/home/repo".into(),
             reachable: true,
@@ -25,7 +25,7 @@ fn cache_with_a_renamed_peer_repo() -> PeerRepoCache {
         ..PeerMemory::default()
     };
     Arc::new(std::sync::Mutex::new(HashMap::from([(
-        "peer1".to_string(),
+        "peer1".to_owned(),
         memory,
     )])))
 }

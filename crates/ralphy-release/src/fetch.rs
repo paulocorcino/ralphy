@@ -26,7 +26,7 @@ pub const DEFAULT_RELEASES_URL: &str =
 /// Cache freshness window: four reads a day is enough to notice a release cut
 /// this morning, and far enough inside the unauthenticated rate limit (60 per
 /// hour per address) that it cannot contribute to exhausting it.
-pub const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+pub const CACHE_TTL: Duration = Duration::from_hours(6);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
@@ -130,9 +130,7 @@ pub fn load(cache_path: &Path) -> Vec<Release> {
 /// crate's switch so an air-gapped operator turns off every outbound read the
 /// same way.
 pub fn offline_env() -> bool {
-    std::env::var("RALPHY_RELEASE_OFFLINE")
-        .ok()
-        .is_some_and(|v| v.trim() == "1")
+    std::env::var("RALPHY_RELEASE_OFFLINE").is_ok_and(|v| v.trim() == "1")
 }
 
 fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {

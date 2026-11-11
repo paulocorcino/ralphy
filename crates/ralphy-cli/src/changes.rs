@@ -17,6 +17,7 @@
 //! exit to `{"status":"ok"}` and discards stdout), so the outcome's own prose is
 //! carried on stderr by exiting non-zero.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
@@ -165,7 +166,11 @@ fn changes_discard(args: ChangesPathArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "changes discard")?;
     match ralphy_core::worktree::discard(&repo_root, &args.path)? {
         DiscardOutcome::Discarded { restored, deleted } => {
-            println!("Discarded {restored} path(s), deleted {deleted} untracked path(s).")
+            writeln!(
+                std::io::stdout(),
+                "Discarded {restored} path(s), deleted {deleted} untracked path(s)."
+            )
+            .expect("the report goes to stdout, as println! sent it");
         }
         refused @ (DiscardOutcome::NoPaths
         | DiscardOutcome::NotInChangeSet { .. }
@@ -181,7 +186,7 @@ fn changes_discard(args: ChangesPathArgs) -> anyhow::Result<()> {
 }
 
 fn status_word(status: ralphy_core::ChangeStatus) -> &'static str {
-    use ralphy_core::ChangeStatus::*;
+    use ralphy_core::ChangeStatus::{Added, Conflicted, Deleted, Modified, Renamed, Untracked};
     match status {
         Modified => "modified",
         Added => "added",

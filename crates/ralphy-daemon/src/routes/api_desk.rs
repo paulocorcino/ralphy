@@ -56,7 +56,7 @@ impl TabSeqs {
     /// Remember `seq` as the last one taken from `tab`, newest first.
     fn record(&mut self, tab: &str, seq: u64) {
         self.0.retain(|(t, _)| t != tab);
-        self.0.push_front((tab.to_string(), seq));
+        self.0.push_front((tab.to_owned(), seq));
         self.0.truncate(TAB_SEQS);
     }
 }
@@ -223,7 +223,7 @@ fn put_reply(store: &desk::DeskStore, refused: &[desk::apply::Refusal]) -> Respo
         Err(e) => return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
     };
     if let Some(map) = body.as_object_mut() {
-        map.insert("refused".to_string(), serde_json::json!(refused));
+        map.insert("refused".to_owned(), serde_json::json!(refused));
     }
     Json(body).into_response()
 }

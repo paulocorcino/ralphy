@@ -112,9 +112,9 @@ async fn a_watcher_gets_the_same_replay_as_the_writer() {
     let manager = Arc::new(SessionManager::new());
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -214,9 +214,9 @@ async fn a_resize_gives_the_screen_the_clamped_session_size() {
     let manager = Arc::new(SessionManager::new());
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,
@@ -252,9 +252,9 @@ async fn a_resize_by_the_writer_reaches_every_attachment() {
     let manager = Arc::new(SessionManager::new());
     let (id, writer) = manager
         .spawn_attached(
-            "~".to_string(),
-            "console".to_string(),
-            "console".to_string(),
+            "~".to_owned(),
+            "console".to_owned(),
+            "console".to_owned(),
             None,
             None,
             None,

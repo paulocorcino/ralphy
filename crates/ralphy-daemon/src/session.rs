@@ -133,15 +133,12 @@ impl Session {
     }
 
     /// Whether the child has already exited (non-blocking). The pump polls this
-    /// so a SELF-exited child ends the session: on Windows ConPTY the output pipe
+    /// so a SELF-exited child ends the session: on Windows `ConPTY` the output pipe
     /// EOFs only when the master is dropped, NOT when the child dies, so the reader
     /// would otherwise never end after a `quit`. A closed session counts as exited.
     pub fn has_exited(&mut self) -> bool {
         match self.pty.as_mut() {
-            Some(pty) => pty
-                .try_wait()
-                .map(|status| status.is_some())
-                .unwrap_or(true),
+            Some(pty) => pty.try_wait().map_or(true, |status| status.is_some()),
             None => true,
         }
     }
@@ -156,7 +153,7 @@ impl Session {
 
     /// Terminate the child's whole process tree and close the PTY. A plain
     /// direct-child kill would leave a grandchild holding the PTY slave open, so
-    /// kill by pid across the tree; then drop the master so ConPTY (Windows) and
+    /// kill by pid across the tree; then drop the master so `ConPTY` (Windows) and
     /// the slave (Unix) both reach EOF, ending the reader thread — its sender
     /// drops and the output channel yields `None`. Idempotent.
     pub fn close(&mut self) {

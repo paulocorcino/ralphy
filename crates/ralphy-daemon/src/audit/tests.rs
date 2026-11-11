@@ -14,7 +14,7 @@ fn prune_removes_the_lines_older_than_the_retention() {
     let now = 2_000_000_000;
     let text = [
         line_at(now - RETENTION_SECS - 1, "old"),
-        "not json".to_string(),
+        "not json".to_owned(),
         line_at(now - RETENTION_SECS, "edge"),
         line_at(now, "new"),
     ]
@@ -57,8 +57,8 @@ fn server_facts_read_the_front_and_the_client_hints() {
     assert_eq!(
         facts.client_hints,
         [
-            ("brands".to_string(), "\"Chromium\";v=\"148\"".to_string()),
-            ("model".to_string(), "\"moto g(30)\"".to_string()),
+            ("brands".to_owned(), "\"Chromium\";v=\"148\"".to_owned()),
+            ("model".to_owned(), "\"moto g(30)\"".to_owned()),
         ]
     );
     assert_eq!(facts.user_agent.unwrap().len(), MAX_HEADER_CHARS);
@@ -140,7 +140,7 @@ mod logins {
             device,
             login: Some(login),
             actor: Actor::Device,
-            ip: Some("203.0.113.9".to_string()),
+            ip: Some("203.0.113.9".to_owned()),
         }
     }
 
@@ -148,17 +148,17 @@ mod logins {
         ConsoleRecord {
             kind: ConsoleKind::Launch,
             session: Some(7),
-            agent: Some("console".to_string()),
-            repo: Some("ralphy".to_string()),
+            agent: Some("console".to_owned()),
+            repo: Some("ralphy".to_owned()),
             peer: None,
-            holder: Some("tab-1".to_string()),
+            holder: Some("tab-1".to_owned()),
         }
     }
 
     fn switch() -> Command {
         Command {
             id: 1,
-            verb: "branch.switch".to_string(),
+            verb: "branch.switch".to_owned(),
             payload: serde_json::json!({"repo": "ralphy", "name": "b"}),
         }
     }
@@ -333,7 +333,7 @@ mod logins {
 ",
         )
         .unwrap();
-        let listed = super::super::logins::notices(&path, now, None, |_| false).unwrap();
+        let listed = logins::notices(&path, now, None, |_| false).unwrap();
         let logins: Vec<String> = listed.iter().map(|n| n.login.clone()).collect();
         assert_eq!(
             logins,
@@ -349,7 +349,7 @@ mod logins {
         let mut bus = pushes.subscribe();
         let audit =
             Arc::new(Audit::in_dir(Some(dir.path().to_path_buf())).with_pushes(pushes.clone()));
-        let pushed = |bus: &mut tokio::sync::broadcast::Receiver<crate::routes::Push>| {
+        let drained = |bus: &mut tokio::sync::broadcast::Receiver<Push>| {
             let mut verbs = Vec::new();
             while let Ok(p) = bus.try_recv() {
                 verbs.push(p.verb());
@@ -361,12 +361,12 @@ mod logins {
         signed_in(&audit, login, Some(own));
         socket(&audit, login, Some(own)).console(&launch());
         assert!(
-            pushed(&mut bus).is_empty(),
+            drained(&mut bus).is_empty(),
             "a use from the login's own device"
         );
         socket(&audit, login, Some(other)).console(&launch());
         assert_eq!(
-            pushed(&mut bus),
+            drained(&mut bus),
             ["logins.dirty"],
             "the login_other_device line"
         );
@@ -374,12 +374,12 @@ mod logins {
         audit
             .dismiss_notice(&login, Some(&other), Actor::Device)
             .unwrap();
-        assert_eq!(pushed(&mut bus), ["logins.dirty"], "the dismissal");
+        assert_eq!(drained(&mut bus), ["logins.dirty"], "the dismissal");
         audit
             .dismiss_notice(&login, Some(&other), Actor::Device)
             .unwrap();
         assert!(
-            pushed(&mut bus).is_empty(),
+            drained(&mut bus).is_empty(),
             "a second dismissal changes nothing"
         );
     }

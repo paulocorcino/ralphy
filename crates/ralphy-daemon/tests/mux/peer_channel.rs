@@ -65,14 +65,14 @@ struct Peer {
 
 fn descriptor(port: u16) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: PEER_ID.to_string(),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
-        address: "127.0.0.1".to_string(),
+        daemon_id: PEER_ID.to_owned(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
+        address: "127.0.0.1".to_owned(),
         port,
-        environment: ENVIRONMENT.to_string(),
+        environment: ENVIRONMENT.to_owned(),
         os: String::new(),
-        token: TOKEN.to_string(),
+        token: TOKEN.to_owned(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
         nudge: None,
@@ -100,11 +100,11 @@ async fn peer() -> Peer {
     registry::save_to(&repos, &registry_path).expect("save the registry");
     let identity = Identity {
         id: PEER_ID.parse().expect("the test id parses"),
-        name: "peer".to_string(),
-        avatar: "🐙".to_string(),
+        name: "peer".to_owned(),
+        avatar: "🐙".to_owned(),
     };
     let auth = AuthState::fixed(
-        AuthPolicy::Bearer(TOKEN.to_string()),
+        AuthPolicy::Bearer(TOKEN.to_owned()),
         SessionEpoch::in_memory_detached(),
     );
     let (listener, port) = bind().await;
@@ -173,9 +173,11 @@ impl Screen {
                 self.take(channel, event).await;
             }
         };
-        if tokio::time::timeout(WITHIN, read).await.is_err() {
-            panic!("{needle:?} on the console: {}", self.shown());
-        }
+        assert!(
+            tokio::time::timeout(WITHIN, read).await.is_ok(),
+            "{needle:?} on the console: {}",
+            self.shown()
+        );
     }
 
     async fn take(&mut self, channel: &mut PeerChannel, event: PeerEvent) {
@@ -247,7 +249,7 @@ async fn a_peer_channel_open_the_peer_refuses_reads_as_refused() {
     assert_eq!(
         next(&mut channel).await,
         PeerEvent::Closed {
-            reason: "refused".to_string()
+            reason: "refused".to_owned()
         }
     );
 }
@@ -292,7 +294,7 @@ async fn a_peer_channel_sends_a_frame_past_one_piece_whole() {
     let (_opened, mut screen) = ready(&mut channel).await;
     let resize = protocol::encode(&Frame::Command(Command {
         id: 0,
-        verb: "resize".to_string(),
+        verb: "resize".to_owned(),
         payload: serde_json::json!({ "rows": 40, "cols": 100, "pad": "x".repeat(PIECE_CAP) }),
     }));
     assert!(resize.len() > PIECE_CAP, "{} bytes", resize.len());

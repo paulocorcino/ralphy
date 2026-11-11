@@ -103,11 +103,11 @@ fn patch_blocked_by(body: &str, blocked_numbers: &[u64]) -> String {
     const PLACEHOLDER: &str = "BLOCKED_BY_PLACEHOLDER";
 
     if !body.contains(PLACEHOLDER) {
-        return body.to_string();
+        return body.to_owned();
     }
 
     let replacement = if blocked_numbers.is_empty() {
-        "None - can start immediately".to_string()
+        "None - can start immediately".to_owned()
     } else {
         blocked_numbers
             .iter()
@@ -126,7 +126,7 @@ pub(crate) fn resolve_triage_label(repo: &Path) -> String {
     triage_doc
         .as_deref()
         .and_then(|d| github::parse_triage_mapping(d, "ready-for-agent"))
-        .unwrap_or_else(|| "ready-for-agent".to_string())
+        .unwrap_or_else(|| "ready-for-agent".to_owned())
 }
 
 /// Resolve the human-return label an `escalate` verdict swaps in (ADR-0018 §3)
@@ -139,7 +139,7 @@ pub(crate) fn resolve_human_label(repo: &Path) -> String {
     triage_doc
         .as_deref()
         .and_then(|d| github::parse_triage_mapping(d, "ready-for-human"))
-        .unwrap_or_else(|| "ready-for-human".to_string())
+        .unwrap_or_else(|| "ready-for-human".to_owned())
 }
 
 /// Publish a confirmed draft, threading the [`InitState`] checkpoint so a crash
@@ -434,7 +434,7 @@ mod tests {
                 Ok(999)
             },
             |title, body, _labels, milestone| {
-                issue_titles.push(title.to_string());
+                issue_titles.push(title.to_owned());
                 // The 3rd issue is blocked_by index 1 → must resolve to the
                 // persisted #102, proving blocked-by resolves against the prefix.
                 assert!(body.contains("- #102"), "blocked-by resolved:\n{body}");
@@ -444,7 +444,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(issue_titles, vec!["slice three".to_string()]);
+        assert_eq!(issue_titles, vec!["slice three".to_owned()]);
         assert_eq!(ms_calls, 0, "milestone must NOT be recreated");
         assert_eq!(state.created_issues, vec![101, 102, 103]);
         assert!(save_calls >= 1, "save must fire after the create");
@@ -469,7 +469,7 @@ mod tests {
                 Ok(1)
             },
             |title, _body, _labels, milestone| {
-                issue_titles.push(title.to_string());
+                issue_titles.push(title.to_owned());
                 assert_eq!(milestone, Some("v1"));
                 let n = next;
                 next += 1;
@@ -482,9 +482,9 @@ mod tests {
         assert_eq!(
             issue_titles,
             vec![
-                "slice one".to_string(),
-                "slice two".to_string(),
-                "slice three".to_string()
+                "slice one".to_owned(),
+                "slice two".to_owned(),
+                "slice three".to_owned()
             ]
         );
         assert_eq!(state.created_issues, vec![200, 201, 202]);

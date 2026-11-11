@@ -78,16 +78,13 @@ pub(in crate::routes) fn require_fresh_totp(
     let fresh = seed
         .matched_step(code, now, 1)
         .filter(|step| state.last_step().is_none_or(|last| *step > last));
-    match fresh {
-        Some(step) => {
-            state.record_step(step);
-            state.throttle_record(true);
-            Ok(())
-        }
-        None => {
-            state.throttle_record(false);
-            Err(Refusal::BadCredential)
-        }
+    if let Some(step) = fresh {
+        state.record_step(step);
+        state.throttle_record(true);
+        Ok(())
+    } else {
+        state.throttle_record(false);
+        Err(Refusal::BadCredential)
     }
 }
 

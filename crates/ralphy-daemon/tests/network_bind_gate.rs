@@ -47,9 +47,9 @@ fn fresh_router(bound: &str) -> axum::Router {
     let bound: SocketAddr = bound.parse().expect("a valid bound address");
     let auth = AuthState::boot(
         bound,
-        Some(TOKEN.to_string()),
+        Some(TOKEN.to_owned()),
         SessionEpoch::in_memory_detached(),
-        &[DECLARED.to_string(), TUNNEL.to_string()],
+        &[DECLARED.to_owned(), TUNNEL.to_owned()],
     )
     .expect("a bind with a token must boot");
     router(

@@ -1,5 +1,5 @@
 //! The cognitive complexity of Rust functions, read from the source text
-//! (ADR-0081, amendment 2026-10-12). The rules are those of the SonarSource
+//! (ADR-0081, amendment 2026-10-12). The rules are those of the `SonarSource`
 //! specification ("Cognitive Complexity", G. Ann Campbell, 2018):
 //!
 //! - `if`, `match`, `for`, `while`, `loop`, a `let … else` and a
@@ -378,12 +378,11 @@ fn declared(items: &[Item], file: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> 
     });
     for m in mods {
         let name = m.ident.to_string();
-        match &m.content {
-            Some((_, inner)) => declared(inner, file, &dir.join(&name), out)?,
-            None => {
-                let child = module_file(m, &name, file, dir);
-                walk(&child, &module_dir(&child), out)?;
-            }
+        if let Some((_, inner)) = &m.content {
+            declared(inner, file, &dir.join(&name), out)?;
+        } else {
+            let child = module_file(m, &name, file, dir);
+            walk(&child, &module_dir(&child), out)?;
         }
     }
     Ok(())

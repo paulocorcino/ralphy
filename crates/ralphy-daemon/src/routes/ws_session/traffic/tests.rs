@@ -2,7 +2,7 @@ use super::*;
 
 fn traffic(now: Instant) -> Traffic {
     let tab = Tab {
-        holder: Some("tab-1".to_string()),
+        holder: Some("tab-1".to_owned()),
         ..Tab::default()
     };
     Traffic::local(1, tab, now)
@@ -26,7 +26,7 @@ fn the_keys_name_the_session_or_the_peer_and_the_tab() {
     let now = Instant::now();
     let device = DeviceId::mint();
     let tab = Tab {
-        holder: Some("tab-a".to_string()),
+        holder: Some("tab-a".to_owned()),
         device: Some(device),
         ..Tab::default()
     };
@@ -41,8 +41,8 @@ fn the_keys_name_the_session_or_the_peer_and_the_tab() {
     assert_eq!(written.len(), 32);
     assert!(written.bytes().all(|b| b.is_ascii_hexdigit()), "{written}");
     let relayed = Traffic::peer(
-        "01PEER".to_string(),
-        "Ubuntu".to_string(),
+        "01PEER".to_owned(),
+        "Ubuntu".to_owned(),
         Tab::default(),
         now,
     );
@@ -73,8 +73,8 @@ fn the_keys_carry_the_link_the_page_reported() {
 }
 
 fn command(json: &str) -> Command {
-    match crate::protocol::decode(&[&[0x02], json.as_bytes()].concat()) {
-        Ok(crate::protocol::Frame::Command(cmd)) => cmd,
+    match protocol::decode(&[&[0x02], json.as_bytes()].concat()) {
+        Ok(Frame::Command(cmd)) => cmd,
         other => panic!("not a command frame: {other:?}"),
     }
 }
@@ -138,8 +138,8 @@ fn a_page_shown_again_clears_hidden_but_not_dormant() {
 
 fn peer() -> Traffic {
     Traffic::peer(
-        "01PEER".to_string(),
-        "Mac".to_string(),
+        "01PEER".to_owned(),
+        "Mac".to_owned(),
         Tab::default(),
         Instant::now(),
     )

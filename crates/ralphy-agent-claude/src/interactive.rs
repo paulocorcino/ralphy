@@ -133,11 +133,10 @@ impl ClaudeAgent {
         let status = crate::status::Watcher::start(&self.run_dir)?;
 
         // The Stop hook learns the flag path from an env var the PTY child inherits.
-        let rc_name = self
-            .run_dir
-            .file_name()
-            .map(|s| format!("ralphy-{}", s.to_string_lossy()))
-            .unwrap_or_else(|| "ralphy".into());
+        let rc_name = self.run_dir.file_name().map_or_else(
+            || "ralphy".into(),
+            |s| format!("ralphy-{}", s.to_string_lossy()),
+        );
 
         // A closure, so the respawn loop rebuilds an IDENTICAL command: the second
         // child resumes from the on-disk `plan.md` (see `prompt.execute.md`).
@@ -405,10 +404,7 @@ impl<'a> SessionPump<'a> {
         if self.idle_watch.expired(&self.idle_beat, Instant::now()) {
             // The headless path calls the same helper (docs/adr/0038).
             ralphy_core::emit::idle_reaped(
-                self.idle_watch
-                    .window()
-                    .map(|w| w.as_secs() / 60)
-                    .unwrap_or(0),
+                self.idle_watch.window().map_or(0, |w| w.as_secs() / 60),
             );
             return Ok(Some(SessionExit::TimedOut));
         }

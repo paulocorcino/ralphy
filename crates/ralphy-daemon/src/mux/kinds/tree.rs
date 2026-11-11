@@ -135,7 +135,7 @@ mod tests {
 
         let watch_frame = protocol::encode(&Frame::Command(Command {
             id: 0,
-            verb: "watch".to_string(),
+            verb: "watch".to_owned(),
             payload: serde_json::json!({ "repo": SLUG, "path": "" }),
         }));
         assert_eq!(

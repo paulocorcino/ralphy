@@ -134,7 +134,7 @@ fn render_plain_notice_shows_warn_and_error_glyphs() {
     let warn_line = render_plain_line(
         &RunEvent::Notice {
             level: Level::WARN,
-            message: "could not return to 'main'".to_string(),
+            message: "could not return to 'main'".to_owned(),
         },
         &ts,
         None,
@@ -149,7 +149,7 @@ fn render_plain_notice_shows_warn_and_error_glyphs() {
     let error_line = render_plain_line(
         &RunEvent::Notice {
             level: Level::ERROR,
-            message: "boom".to_string(),
+            message: "boom".to_owned(),
         },
         &ts,
         None,
@@ -168,7 +168,7 @@ fn render_plain_sleep_started_ended_deadline_return_some_and_executing_none() {
 
     let sleep_start = render_plain_line(
         &RunEvent::SleepStarted {
-            reset: "15:30".to_string(),
+            reset: "15:30".to_owned(),
             target_epoch: 1_000_000,
         },
         &ts,
@@ -225,7 +225,7 @@ fn styled_sleep_started_is_live_region_only() {
         .single()
         .unwrap();
     let event = RunEvent::SleepStarted {
-        reset: "08:10".to_string(),
+        reset: "08:10".to_owned(),
         target_epoch: 1_000_000,
     };
     let styled = RenderOpts {
@@ -337,7 +337,7 @@ fn render_plain_skipped_shows_skip_label() {
         &RunEvent::Skipped {
             number: 9,
             kind: SkipKind::HumanReturn,
-            label: Some("needs-info".to_string()),
+            label: Some("needs-info".to_owned()),
             blockers: vec![],
         },
         &ts,

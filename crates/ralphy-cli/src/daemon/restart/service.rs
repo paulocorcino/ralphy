@@ -93,9 +93,9 @@ fn launchd_plan(recorded: Option<u32>, agent: Option<Option<u32>>) -> LaunchdPla
 #[cfg(any(target_os = "macos", test))]
 fn kickstart_argv(uid: &str) -> Vec<String> {
     vec![
-        "launchctl".to_string(),
-        "kickstart".to_string(),
-        "-k".to_string(),
+        "launchctl".to_owned(),
+        "kickstart".to_owned(),
+        "-k".to_owned(),
         format!("gui/{uid}/{LAUNCHD_LABEL}"),
     ]
 }

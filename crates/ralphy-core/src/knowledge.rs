@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn loose_notes_empty_without_knowledge_dir() {
         let ws = temp_ws("empty");
-        assert!(loose_notes(&ws).is_empty());
+        assert_eq!(loose_notes(&ws), Vec::<PathBuf>::new());
         remove_scratch(ws.repo_root());
     }
 

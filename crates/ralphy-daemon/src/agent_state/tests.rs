@@ -200,8 +200,8 @@ fn console_settings_match_the_shared_event_list() {
         .iter()
         .map(|e| {
             (
-                e["event"].as_str().unwrap().to_string(),
-                e["matcher"].as_str().unwrap().to_string(),
+                e["event"].as_str().unwrap().to_owned(),
+                e["matcher"].as_str().unwrap().to_owned(),
             )
         })
         .collect();
@@ -219,7 +219,7 @@ fn console_settings_match_the_shared_event_list() {
             assert_eq!(list[0]["hooks"][0], hook.entry(), "{event}");
             (
                 event.clone(),
-                list[0]["matcher"].as_str().unwrap().to_string(),
+                list[0]["matcher"].as_str().unwrap().to_owned(),
             )
         })
         .collect();
@@ -265,7 +265,7 @@ fn console_hooks_name_the_binary_without_the_verbatim_prefix() {
     );
 }
 
-/// Claude and Codex have hooks, OpenCode has its state plugin; no other
+/// Claude and Codex have hooks, `OpenCode` has its state plugin; no other
 /// agent gives a state. The match names every variant, so a new agent
 /// has to choose.
 #[test]
@@ -326,7 +326,7 @@ fn status_files_are_written_under_the_sessions_dir_and_removed_together() {
     assert!(!plugin.exists() && !opencode.status.exists());
 }
 
-/// An OpenCode console whose plugin wrote no line in the 31 s after the
+/// An `OpenCode` console whose plugin wrote no line in the 31 s after the
 /// operator's first input is silent; the plugin's first line alone,
 /// which changes no state, is enough to show that it runs (ADR-0085 D9).
 #[test]

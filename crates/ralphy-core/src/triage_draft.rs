@@ -90,8 +90,7 @@ impl TriageItem {
         let has_comment = self
             .comment
             .as_deref()
-            .map(|c| !c.trim().is_empty())
-            .unwrap_or(false);
+            .is_some_and(|c| !c.trim().is_empty());
         match self.verdict {
             TriageVerdict::Promote if !has_comment => Some(format!(
                 "#{}: promote needs an evidence-stamp comment",

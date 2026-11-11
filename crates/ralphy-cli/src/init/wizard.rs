@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The typed config the interactive Q&A captures — the dev's confirmed/corrected
 /// view of the [`DiagnosisReport`]. Each field mirrors a report field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InitConfig {
+pub(crate) struct InitConfig {
     pub repo_kind: RepoKind,
     pub language_build: Option<String>,
     pub backlog_location: Option<String>,
@@ -20,7 +20,7 @@ pub struct InitConfig {
 /// (ADR-0012 stage 9). Recorded so a re-run skips a stage already done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Stage {
+pub(crate) enum Stage {
     Diagnose,
     Git,
     Scaffold,
@@ -35,7 +35,7 @@ pub enum Stage {
 /// numbers already published, so a re-run NEVER recreates them. `#[serde(default)]`
 /// on every field keeps an older checkpoint loadable as the schema grows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InitState {
+pub(crate) struct InitState {
     #[serde(default)]
     pub completed: Vec<Stage>,
     #[serde(default)]
@@ -49,7 +49,7 @@ pub struct InitState {
 impl InitState {
     /// Load the checkpoint from `<repo>/.ralphy/init-state.json`, or a fresh
     /// default when the file does not exist (a first run).
-    pub fn load(ws: &Workspace) -> Result<Self> {
+    pub(crate) fn load(ws: &Workspace) -> Result<Self> {
         let path = ws.init_state_path();
         if !path.exists() {
             return Ok(Self::default());
@@ -61,7 +61,7 @@ impl InitState {
     }
 
     /// Persist the checkpoint under `.ralphy/`, mirroring [`persist_report`].
-    pub fn save(&self, ws: &Workspace) -> Result<()> {
+    pub(crate) fn save(&self, ws: &Workspace) -> Result<()> {
         std::fs::create_dir_all(ws.ralphy_dir()).context("creating .ralphy dir")?;
         let json = serde_json::to_string_pretty(self).context("serializing init state")?;
         std::fs::write(ws.init_state_path(), json).context("writing .ralphy/init-state.json")?;
@@ -69,12 +69,12 @@ impl InitState {
     }
 
     /// Whether `stage` has already completed.
-    pub fn is_done(&self, s: Stage) -> bool {
+    pub(crate) fn is_done(&self, s: Stage) -> bool {
         self.completed.contains(&s)
     }
 
     /// Record `stage` as completed (idempotent — never duplicated).
-    pub fn mark(&mut self, s: Stage) {
+    pub(crate) fn mark(&mut self, s: Stage) {
         if !self.completed.contains(&s) {
             self.completed.push(s);
         }
@@ -86,7 +86,7 @@ impl InitState {
 /// dev confirms (empty input) or overrides. `clearable` is true for optional
 /// fields that `none` can blank — it tailors the per-question keep/clear hint.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Question {
+pub(crate) struct Question {
     pub label: String,
     pub help: String,
     pub default: String,

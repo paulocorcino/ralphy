@@ -48,7 +48,7 @@ fn terminal(data: &[u8]) -> Message {
     )
 }
 
-/// Read until `needle` (or 10s), answering the ConPTY startup `ESC[6n`.
+/// Read until `needle` (or 10s), answering the `ConPTY` startup `ESC[6n`.
 async fn read_until(ws: &mut Ws, needle: &str) -> String {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();
@@ -138,7 +138,7 @@ async fn http_request(port: u16, method: &str, path: &str) -> String {
         .expect("reading the response");
     let text = String::from_utf8_lossy(&buf).into_owned();
     text.split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
+        .map(|(_, b)| b.to_owned())
         .unwrap_or_default()
 }
 

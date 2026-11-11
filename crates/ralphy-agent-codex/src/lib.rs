@@ -152,9 +152,9 @@ impl CodexAgent {
     /// Amendment 2026-07-10).
     fn resolve_model(&self, routed: &str) -> String {
         if let Some(m) = self.model.as_deref() {
-            return m.to_string();
+            return m.to_owned();
         }
-        codex_config_model().unwrap_or_else(|| routed.to_string())
+        codex_config_model().unwrap_or_else(|| routed.to_owned())
     }
 
     /// Planning-phase effort for argv/emit: operator flag, else vendor default.

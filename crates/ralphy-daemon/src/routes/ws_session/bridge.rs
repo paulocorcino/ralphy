@@ -25,7 +25,7 @@ use crate::{protocol, session};
 /// The browser answers every ping with a pong from its network stack, even
 /// in a background tab, so a browser that has sent NOTHING for
 /// `silent_after` is gone. A send succeeding proves nothing: a tunnel agent
-/// (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
+/// (measured: `TunnelDeck` for dev tunnels, 2026-09-22) keeps its leg to the
 /// daemon open for minutes after the browser behind it vanished, and that
 /// leg would hold a console's writer slot against the page's own reattach.
 #[derive(Clone, Copy, Debug)]

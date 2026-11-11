@@ -32,7 +32,7 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         identity(B_ID, "peer"),
         peer_registry,
         AuthState::fixed(
-            AuthPolicy::Bearer("peer-tok".to_string()),
+            AuthPolicy::Bearer("peer-tok".to_owned()),
             SessionEpoch::in_memory_detached(),
         ),
     )

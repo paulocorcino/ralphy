@@ -1,6 +1,7 @@
 //! Repo-label vocabulary: the canonical Ralphy label set, planning/applying
 //! label actions against a repository, and the queue/human-return label sets.
 
+use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -28,7 +29,7 @@ pub fn parse_triage_mapping(doc: &str, canonical: &str) -> Option<String> {
         // second data columns. Skip separator rows (|---|---|).
         let is_separator = |s: &str| s.trim_matches(['-', ':', ' ']).is_empty() && !s.is_empty();
         if cells.len() >= 4 && cells[1] == canonical && !is_separator(cells[2]) {
-            let mapped = cells[2].to_string();
+            let mapped = cells.get(2).copied().unwrap_or_default().to_owned();
             if !mapped.is_empty() {
                 return Some(mapped);
             }
@@ -65,7 +66,7 @@ fn normalize_color(c: &str) -> String {
 pub fn ralphy_label_specs(triage_doc: Option<&str>) -> Vec<LabelSpec> {
     let doc = triage_doc.unwrap_or("");
     let resolve = |canonical: &str| -> String {
-        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_string())
+        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_owned())
     };
 
     // Colour is a signal, not decoration: labels in the same family share a hue,
@@ -171,14 +172,14 @@ pub fn plan_label_actions(
                 Some((_, existing_color)) => {
                     let norm_existing = normalize_color(existing_color);
                     let norm_desired = normalize_color(&spec.color);
-                    if norm_existing != norm_desired {
+                    if norm_existing == norm_desired {
+                        LabelAction::Skip(spec.name.clone())
+                    } else {
                         LabelAction::UpdateColor {
                             name: spec.name.clone(),
                             from: norm_existing,
                             to: norm_desired,
                         }
-                    } else {
-                        LabelAction::Skip(spec.name.clone())
                     }
                 }
             }
@@ -205,9 +206,9 @@ fn label_edit_argv(name: &str, color: &str) -> Vec<String> {
     vec![
         "label".into(),
         "edit".into(),
-        name.to_string(),
+        name.to_owned(),
         "--color".into(),
-        color.to_string(),
+        color.to_owned(),
     ]
 }
 
@@ -236,6 +237,9 @@ pub fn list_repo_labels(repo_root: &Path) -> Result<Vec<(String, String)>> {
 
 /// Render a human-readable plan of label actions: one tagged line per action
 /// plus a summary.
+// Writing to a String cannot fail, so a failed write is a broken invariant.
+const WRITE_TO_STRING: &str = "a write to a String does not fail";
+
 pub fn format_label_plan(actions: &[LabelAction]) -> String {
     let mut out = String::new();
     let mut n_create = 0usize;
@@ -245,22 +249,23 @@ pub fn format_label_plan(actions: &[LabelAction]) -> String {
         match action {
             LabelAction::Create(spec) => {
                 n_create += 1;
-                out.push_str(&format!("  create  {}\n", spec.name));
+                writeln!(out, "  create  {}", spec.name).expect(WRITE_TO_STRING);
             }
             LabelAction::UpdateColor { name, from, to } => {
                 n_update += 1;
-                out.push_str(&format!("  update  {} ({} → {})\n", name, from, to));
+                writeln!(out, "  update  {name} ({from} → {to})").expect(WRITE_TO_STRING);
             }
             LabelAction::Skip(name) => {
                 n_skip += 1;
-                out.push_str(&format!("  skip    {}\n", name));
+                writeln!(out, "  skip    {name}").expect(WRITE_TO_STRING);
             }
         }
     }
-    out.push_str(&format!(
-        "labels: {} to create, {} to update, {} unchanged\n",
-        n_create, n_update, n_skip
-    ));
+    writeln!(
+        out,
+        "labels: {n_create} to create, {n_update} to update, {n_skip} unchanged"
+    )
+    .expect(WRITE_TO_STRING);
     out
 }
 
@@ -281,7 +286,7 @@ pub fn apply_label_actions(actions: &[LabelAction], repo_root: &Path) -> Result<
             LabelAction::UpdateColor { name, to, .. } => {
                 let argv = label_edit_argv(name, to);
                 let args: Vec<&str> = argv.iter().map(String::as_str).collect();
-                gh_output(&format!("gh label edit {}", name), || {
+                gh_output(&format!("gh label edit {name}"), || {
                     let mut cmd = gh(repo_root);
                     cmd.args(&args);
                     cmd
@@ -325,15 +330,15 @@ pub fn resolve_queue_labels(explicit: &[String], repo_root: &Path) -> Vec<String
 pub fn human_return_labels(triage_doc: Option<&str>) -> Vec<String> {
     let doc = triage_doc.unwrap_or("");
     let resolve = |canonical: &str| -> String {
-        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_string())
+        parse_triage_mapping(doc, canonical).unwrap_or_else(|| canonical.to_owned())
     };
     let mut labels = vec![
         resolve("ready-for-human"),
-        "HITL".to_string(),
+        "HITL".to_owned(),
         resolve("needs-info"),
         resolve("needs-triage"),
         resolve("wontfix"),
-        TRIAGE_AGENT_LABEL.to_string(),
+        TRIAGE_AGENT_LABEL.to_owned(),
     ];
     let mut seen = std::collections::HashSet::new();
     labels.retain(|l| seen.insert(l.clone()));

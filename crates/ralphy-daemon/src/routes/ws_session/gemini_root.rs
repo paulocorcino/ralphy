@@ -26,13 +26,13 @@ pub(crate) async fn ensure(root: &Path, daemon_id: &str) -> Result<(), String> {
         return Ok(());
     }
     let argv = dispatch::gemini_root_argv();
-    let daemon_id = Some(daemon_id.to_string()).filter(|id| !id.is_empty());
+    let daemon_id = Some(daemon_id.to_owned()).filter(|id| !id.is_empty());
     match collect_config(argv, root.to_path_buf(), daemon_id).await {
         Collected::Done(Some(0), _) => {}
         Collected::Done(code, out) => {
             return Err(failure_reason(&out).unwrap_or_else(|| match code {
                 Some(code) => format!("gemini: preparing its configuration failed (exit {code})"),
-                None => "gemini: preparing its configuration was stopped".to_string(),
+                None => "gemini: preparing its configuration was stopped".to_owned(),
             }))
         }
         Collected::Failed(e) => {

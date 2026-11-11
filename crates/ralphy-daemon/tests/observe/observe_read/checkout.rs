@@ -262,7 +262,7 @@ async fn watch_checkout(ws: &mut page::Channel, slug: &str, checkout: &str) {
 async fn send_watch(ws: &mut page::Channel, payload: serde_json::Value) {
     let frame = Frame::Command(Command {
         id: 0,
-        verb: "watch".to_string(),
+        verb: "watch".to_owned(),
         payload,
     });
     ws.send(Message::Binary(protocol::encode(&frame).into()))
@@ -331,7 +331,7 @@ async fn a_symlinked_checkout_gets_no_watch() {
     std::fs::write(root.join(".ralphy/worktrees/wt-a/f.txt"), b"x").expect("write f.txt");
     assert_eq!(
         dirty_checkout(&mut ws, Duration::from_secs(10)).await,
-        Some("wt-a".to_string()),
+        Some("wt-a".to_owned()),
         "the normal worktree is still watched"
     );
 }

@@ -5,7 +5,7 @@ fn paired_store() -> (tempfile::TempDir, PeerDescriptor) {
     let store = tempfile::tempdir().unwrap();
     let key = ensure_peer_key(store.path(), fake_keygen).unwrap();
     let mut d = description("linux");
-    d.token = Some("host-tok".to_string());
+    d.token = Some("host-tok".to_owned());
     let host =
         peer::paired_descriptor(&d, "svrapp", 7402, Some(key.path.display().to_string())).unwrap();
     peer::write_descriptor(store.path(), &host).unwrap();

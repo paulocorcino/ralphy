@@ -83,7 +83,7 @@ mod tests {
             number: 1,
             title: "test".into(),
             body: String::new(),
-            labels: labels.iter().map(|s| s.to_string()).collect(),
+            labels: labels.iter().map(ToString::to_string).collect(),
             comments: vec![],
         }
     }

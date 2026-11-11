@@ -208,7 +208,7 @@ pub(super) fn open(
     }
     let open = Frame::Command(Command {
         id,
-        verb: SESSION_OPEN.to_string(),
+        verb: SESSION_OPEN.to_owned(),
         payload,
     });
     outbox.frame(protocol::encode(&open));
@@ -291,7 +291,7 @@ fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
 pub(super) fn send_size(outbox: &mut Outbox, id: session::SessionId, (rows, cols): (u16, u16)) {
     let frame = Frame::Command(Command {
         id,
-        verb: SESSION_SIZE.to_string(),
+        verb: SESSION_SIZE.to_owned(),
         payload: serde_json::json!({ "rows": rows, "cols": cols }),
     });
     outbox.frame(protocol::encode(&frame));

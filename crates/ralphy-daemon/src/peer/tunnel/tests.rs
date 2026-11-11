@@ -7,7 +7,7 @@ fn spec(identity_file: Option<&str>) -> TunnelSpec {
         peer_port: 7257,
         peer_socket: None,
         local_port: 7401,
-        identity_file: identity_file.map(str::to_string),
+        identity_file: identity_file.map(str::to_owned),
     }
 }
 
@@ -110,7 +110,7 @@ fn ssh_falls_back_to_path_without_a_system_openssh() {
 #[test]
 #[ignore = "a child process of another test"]
 fn tunnel_stand_in() {
-    std::thread::sleep(std::time::Duration::from_secs(120));
+    std::thread::sleep(Duration::from_secs(120));
 }
 
 fn stand_in() -> Result<Child> {
@@ -369,8 +369,8 @@ fn a_tunnel_keeps_the_last_words_of_the_ssh_before_it() {
 
 #[test]
 fn a_close_is_quiet_only_at_the_longest_wait_with_the_same_words() {
-    let said = Some("ssh: connect to host 10.1.1.4 port 22: Connection timed out".to_string());
-    let other = Some("Permission denied (publickey).".to_string());
+    let said = Some("ssh: connect to host 10.1.1.4 port 22: Connection timed out".to_owned());
+    let other = Some("Permission denied (publickey).".to_owned());
     let longest = Duration::from_secs(600);
     assert!(quiet_close(longest, said.as_ref(), said.as_ref()));
     assert!(!quiet_close(longest, said.as_ref(), other.as_ref()));
@@ -396,7 +396,7 @@ fn a_waiting_tunnel_is_closed_and_says_when_it_tries_again() {
     );
     let d = closed.diagnosis("Linux");
     assert!(d.ends_with("Ralphy tries again in 4 minutes."), "got: {d}");
-    let said = Some("Connection timed out".to_string());
+    let said = Some("Connection timed out".to_owned());
     let soon = classify_tunnel("svrapp", Ok(waiting(30)), "refused".into(), said);
     assert_eq!(
         soon.diagnosis("Linux"),

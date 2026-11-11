@@ -74,7 +74,7 @@ fn resolve_slug_treats_a_dot_project_as_a_path_not_a_literal_slug() {
         slug, ".",
         "`.` must be resolved, not used as a literal slug"
     );
-    assert!(!slug.is_empty());
+    assert_ne!(slug, "");
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn render_table_balance_carries_tokens_and_usd() {
         ),
     ];
     let lines = render_table(&rows, None, &PriceTable::defaults());
-    assert_eq!(lines, vec!["balance: 2.1M tok · ~$25.50".to_string()]);
+    assert_eq!(lines, vec!["balance: 2.1M tok · ~$25.50".to_owned()]);
 }
 
 #[test]

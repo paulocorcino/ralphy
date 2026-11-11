@@ -55,7 +55,7 @@ pub fn classify_format(filename: &str) -> FormatClass {
         .rsplit('.')
         .next()
         .filter(|e| !e.is_empty() && *e != filename)
-        .map(|e| e.to_ascii_lowercase());
+        .map(str::to_ascii_lowercase);
     match ext.as_deref() {
         Some(e) if FREE_TEXT_EXTS.contains(&e) => FormatClass::FreeText,
         Some(e) if STRUCTURED_EXTS.contains(&e) => FormatClass::Structured,
@@ -70,7 +70,7 @@ pub fn classify_format(filename: &str) -> FormatClass {
 /// content sniffing — never an acceptance on its own: the bytes still have to
 /// prove they are an allowlisted image ([`sniff_image_ext`]) or the attachment is
 /// denied exactly as before (ADR-0025 §3.2 amendment).
-pub fn is_extensionless_asset(url: &str) -> bool {
+pub(crate) fn is_extensionless_asset(url: &str) -> bool {
     // Scheme-agnostic on purpose: the extractor's regex admits `http` too, and a
     // candidate that slips past here would be silently denied, not silently let in.
     url.contains(ASSET_PATH_SEGMENT) && !filename_from_url(url).contains('.')
@@ -81,7 +81,7 @@ pub fn is_extensionless_asset(url: &str) -> bool {
 /// yields a class, so an extensionless asset that is anything else (HTML, a zip,
 /// a video) stays `denied format`. Stricter than the name-based path — a `.png`
 /// name is believed, these bytes must prove it.
-pub fn sniff_image_ext(bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn sniff_image_ext(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Some("png");
     }
@@ -107,13 +107,13 @@ pub fn extract_user_attachment_links(body: &str, comments: &[String]) -> Vec<Str
     let re = Regex::new(r"https?://github\.com/user-attachments/\S+").expect("static regex");
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    let sources = std::iter::once(body).chain(comments.iter().map(|s| s.as_str()));
+    let sources = std::iter::once(body).chain(comments.iter().map(String::as_str));
     for text in sources {
         for m in re.find_iter(text) {
             let url = m
                 .as_str()
                 .trim_end_matches([')', ']', '}', '>', ',', '.', ';', '!', '?', '"', '\'', '`'])
-                .to_string();
+                .to_owned();
             if seen.insert(url.clone()) {
                 out.push(url);
             }
@@ -226,9 +226,9 @@ fn filename_from_url(url: &str) -> String {
     // The final component across BOTH separators; `.`/`..`/empty/`C:` are rejected.
     let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
     if name.is_empty() || name == "." || name == ".." || name.contains(':') {
-        "attachment".to_string()
+        "attachment".to_owned()
     } else {
-        name.to_string()
+        name.to_owned()
     }
 }
 
@@ -237,8 +237,7 @@ fn http_code(err: &str) -> String {
     Regex::new(r"HTTP (\d{3})")
         .expect("static regex")
         .captures(err)
-        .map(|c| c[1].to_string())
-        .unwrap_or_else(|| "error".to_string())
+        .map_or_else(|| "error".to_owned(), |c| c[1].to_string())
 }
 
 /// Apply the by-category size policy to already-downloaded, non-login bytes
@@ -338,7 +337,7 @@ fn admitted_class(
     }
     if class == FormatClass::Denied {
         return Err(AttachmentOutcome::NotFetched {
-            reason: "denied format".to_string(),
+            reason: "denied format".to_owned(),
         });
     }
     // Gate images on adapter capability before spending a download (ADR-0025 §4).
@@ -359,7 +358,7 @@ fn store_download(
 ) -> AttachmentOutcome {
     if looks_like_login_html(None, &bytes) {
         return AttachmentOutcome::NotFetched {
-            reason: "auth".to_string(),
+            reason: "auth".to_owned(),
         };
     }
     // Resolve the provisional class by content, and give the file the extension
@@ -370,7 +369,7 @@ fn store_download(
             Some(ext) => name = format!("{name}.{ext}"),
             None => {
                 return AttachmentOutcome::NotFetched {
-                    reason: "denied format".to_string(),
+                    reason: "denied format".to_owned(),
                 }
             }
         }
@@ -379,7 +378,7 @@ fn store_download(
         Ok(p) => p,
         Err(reason) => {
             return AttachmentOutcome::NotFetched {
-                reason: reason.to_string(),
+                reason: reason.to_owned(),
             };
         }
     };
@@ -418,7 +417,7 @@ fn written_name_and_image(
 ) {
     if let AttachmentOutcome::Fetched { path } = outcome {
         if let Some(written) = path.file_name().and_then(|n| n.to_str()) {
-            *name = written.to_string();
+            written.clone_into(name);
         }
         if classify_format(name) == FormatClass::Image {
             image_paths.push(path.clone());
@@ -442,7 +441,7 @@ fn fetch_issue_entries(
             fetch_one(repo, issue_dir, &url, images)
         } else {
             AttachmentOutcome::NotFetched {
-                reason: "attachment cap reached".to_string(),
+                reason: "attachment cap reached".to_owned(),
             }
         };
         written_name_and_image(&outcome, &mut name, image_paths);

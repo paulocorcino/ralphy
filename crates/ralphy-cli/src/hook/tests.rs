@@ -115,7 +115,7 @@ fn status_line_keeps_the_d8_fields_and_drops_tool_input() {
         r#"{"hook_event_name":"Elicitation","mcp_server_name":"git","message":"which color?"}"#;
     for (vendor, payload) in [
         (HookVendor::Claude, asks("AskUserQuestion")),
-        (HookVendor::Claude, elicitation.to_string()),
+        (HookVendor::Claude, elicitation.to_owned()),
         (HookVendor::Codex, asks("request_user_input")),
         (HookVendor::OpenCode, asks("question")),
     ] {
@@ -161,7 +161,7 @@ fn transcript_fallback_when_inline_blank_or_absent() {
     for (case, payload) in rows {
         let got = classify_stop(payload, |p| {
             assert_eq!(p, "/x/t.jsonl", "{case}");
-            Some("done now RALPHY_DONE_EXIT".to_string())
+            Some("done now RALPHY_DONE_EXIT".to_owned())
         });
         assert_eq!(got, Some(FlagWrite::Done), "{case}");
     }
@@ -174,7 +174,7 @@ fn blocked_reason_extracted() {
     let got = classify_stop(payload, |_| None);
     assert_eq!(
         got,
-        Some(FlagWrite::Blocked("needs a missing API key".to_string()))
+        Some(FlagWrite::Blocked("needs a missing API key".to_owned()))
     );
     assert_eq!(got.unwrap().contents(), "BLOCKED needs a missing API key");
 }
@@ -249,5 +249,5 @@ fn transcript_missing_file_gives_none() {
 }
 
 fn json_str(s: &str) -> String {
-    serde_json::Value::String(s.to_string()).to_string()
+    Value::String(s.to_owned()).to_string()
 }

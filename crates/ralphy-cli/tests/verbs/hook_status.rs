@@ -48,7 +48,7 @@ fn run_as(args: &[&str], env: Option<&std::path::Path>, payload: &str) -> (i32, 
         let status = child.wait().expect("waiting for the hook");
         let mut rest = String::new();
         stdout.read_to_string(&mut rest).expect("reading the rest");
-        return (status.code().unwrap_or(-1), first.trim().to_string());
+        return (status.code().unwrap_or(-1), first.trim().to_owned());
     }
     child
         .stdin
@@ -59,7 +59,7 @@ fn run_as(args: &[&str], env: Option<&std::path::Path>, payload: &str) -> (i32, 
     let out = child.wait_with_output().expect("waiting for the hook");
     (
         out.status.code().unwrap_or(-1),
-        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        String::from_utf8_lossy(&out.stdout).trim().to_owned(),
     )
 }
 
@@ -115,7 +115,7 @@ fn lines_of(path: &std::path::Path) -> Vec<String> {
     std::fs::read_to_string(path)
         .unwrap_or_default()
         .lines()
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect()
 }
 

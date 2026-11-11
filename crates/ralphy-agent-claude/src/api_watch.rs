@@ -194,7 +194,7 @@ mod tests {
             ApiWatchAction::Degraded
         );
         assert_eq!(
-            w.poll(t0 + Duration::from_secs(17 * 60), false),
+            w.poll(t0 + Duration::from_mins(17), false),
             ApiWatchAction::Respawn
         );
     }
@@ -239,7 +239,7 @@ mod tests {
         w.feed(healthy);
         let t0 = Instant::now();
         assert_eq!(
-            w.poll(t0 + Duration::from_secs(20 * 60), false),
+            w.poll(t0 + Duration::from_mins(20), false),
             ApiWatchAction::None
         );
     }

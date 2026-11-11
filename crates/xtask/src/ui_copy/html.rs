@@ -264,7 +264,7 @@ fn flush_text(
         concatenated: false,
         area: area_of(stack),
         fragments: vec![decoded, raw],
-        anchor: Some(">".to_string()),
+        anchor: Some(">".to_owned()),
         continues,
     });
     true
@@ -306,7 +306,7 @@ fn attribute(attr: &Attr, area: Option<&str>, out: &mut Vec<Found>) {
         _ => {}
     }
     for found in &mut out[start..] {
-        found.area = area.map(str::to_string);
+        found.area = area.map(str::to_owned);
     }
 }
 
@@ -325,11 +325,11 @@ fn landmark(name: &str, attrs: &[Attr]) -> Option<String> {
         return None;
     }
     if let Some(label) = label {
-        return Some(label.to_string());
+        return Some(label.to_owned());
     }
     Some(match class.split_whitespace().last() {
         Some(last) => format!("{name}.{last}"),
-        None => name.to_string(),
+        None => name.to_owned(),
     })
 }
 

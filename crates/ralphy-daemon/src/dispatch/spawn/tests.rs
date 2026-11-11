@@ -4,8 +4,8 @@ use std::sync::Mutex;
 
 /// Records what `dispatch` asked to spawn and hands back a child with a preset
 /// exit code — no OS process touched, so the argv mapping is asserted purely.
-/// One recorded spawn: (program, argv, cwd, daemon_id).
-type SpawnCall = (OsString, Vec<String>, std::path::PathBuf, Option<String>);
+/// One recorded spawn: (program, argv, cwd, `daemon_id`).
+type SpawnCall = (OsString, Vec<String>, PathBuf, Option<String>);
 
 #[derive(Default)]
 struct FakeSpawner {
@@ -25,7 +25,7 @@ impl Child for FakeChild {
     fn wait(&mut self) -> Result<Option<i32>> {
         Ok(Some(self.code))
     }
-    fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
+    fn take_output(&mut self) -> Option<Box<dyn Read + Send>> {
         self.output
             .take()
             .map(|b| Box::new(std::io::Cursor::new(b)) as _)
@@ -42,7 +42,7 @@ impl Spawner for FakeSpawner {
     ) -> Result<Box<dyn Child>> {
         self.calls.lock().unwrap().push((
             program.to_os_string(),
-            args.iter().map(|a| a.to_string()).collect(),
+            args.iter().map(ToString::to_string).collect(),
             cwd.to_path_buf(),
             daemon_id.map(str::to_owned),
         ));
@@ -105,7 +105,7 @@ fn daemon_id_is_forwarded_to_the_spawner() {
     assert_eq!(calls[0].1, argv, "the composed argv must reach the spawner");
     assert_eq!(
         calls[0].3,
-        Some("01FWD00000000000000000000".to_string()),
+        Some("01FWD00000000000000000000".to_owned()),
         "the daemon_id must reach the spawner"
     );
     // The program is a resolved exe, never a shell.
@@ -120,7 +120,7 @@ struct HeldPipe {
     hold: std::sync::mpsc::Receiver<()>,
 }
 
-impl std::io::Read for HeldPipe {
+impl Read for HeldPipe {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.first {
             self.first = false;
@@ -141,7 +141,7 @@ impl std::io::Read for HeldPipe {
 /// output is `output`.
 struct GatedChild {
     exit: std::sync::mpsc::Receiver<()>,
-    output: Option<Box<dyn std::io::Read + Send>>,
+    output: Option<Box<dyn Read + Send>>,
 }
 
 impl Child for GatedChild {
@@ -156,7 +156,7 @@ impl Child for GatedChild {
         let _ = self.exit.recv();
         Ok(Some(0))
     }
-    fn take_output(&mut self) -> Option<Box<dyn std::io::Read + Send>> {
+    fn take_output(&mut self) -> Option<Box<dyn Read + Send>> {
         self.output.take()
     }
 }
@@ -225,7 +225,7 @@ fn call_within(
         spawner,
         OsString::from("ralphy"),
         vec!["config".into()],
-        std::path::PathBuf::from("."),
+        PathBuf::from("."),
         None,
         slots,
         Duration::from_millis(200),

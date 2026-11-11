@@ -134,7 +134,7 @@ pub(crate) struct Pin {
     pub(crate) needles: Vec<String>,
 }
 
-pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn asset_pins_cmd(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut verbose = false;
     let mut it = args.iter();
@@ -421,8 +421,7 @@ pub(crate) fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
 }
 
 #[cfg(test)]

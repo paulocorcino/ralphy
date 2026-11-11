@@ -288,7 +288,7 @@ fn the_resume_path_is_gated_on_a_fresh_login_verdict() {
 #[test]
 fn no_adapter_side_retry_of_a_quota_stop() {
     fn sources(dir: &std::path::Path, out: &mut Vec<String>) {
-        for entry in std::fs::read_dir(dir).expect("readable src dir") {
+        for entry in fs::read_dir(dir).expect("readable src dir") {
             let path = entry.expect("entry").path();
             if path.is_dir() {
                 sources(&path, out);
@@ -296,8 +296,8 @@ fn no_adapter_side_retry_of_a_quota_stop() {
                 // A sibling test module (ADR-0022 §3) carries no `#[cfg(test)]`
                 // marker of its own; it is test code, not production.
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                let body = std::fs::read_to_string(&path).expect("read source");
-                out.push(crate::tests::production_text(&body).to_string());
+                let body = fs::read_to_string(&path).expect("read source");
+                out.push(production_text(&body).to_owned());
             }
         }
     }
@@ -342,7 +342,7 @@ fn no_tests_directory() {
 #[test]
 fn budget_setters_reach_the_issue_deadline() {
     let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
-    let agent = CursorAgent::new(None, std::path::PathBuf::from("/run"))
+    let agent = CursorAgent::new(None, PathBuf::from("/run"))
         .with_max_minutes_per_issue(120)
         .with_run_deadline(Some(run_deadline));
     assert_eq!(agent.budget.max_minutes_per_issue, 120);

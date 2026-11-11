@@ -143,7 +143,7 @@ fn copilot_missing_db_is_zero() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
     assert_eq!(
         session_tokens(
             Path::new("does-not-exist-anywhere-session-store.db"),
@@ -164,6 +164,6 @@ fn copilot_corrupt_db_degrades_to_zero() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
     assert_eq!(session_tokens(&path, "ses_x"), (Tokens::default(), None));
 }

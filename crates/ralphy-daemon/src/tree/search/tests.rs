@@ -74,9 +74,9 @@ fn find_refuses_a_query_shorter_than_the_floor() {
     let dir = tempfile::tempdir().unwrap();
     seed(dir.path());
     let reply = find(dir.path(), "t", &SearchBudget::default()).unwrap();
-    assert!(reply.hits.is_empty());
+    assert_eq!(reply.hits, Vec::<FindHit>::new());
     let reply = find(dir.path(), "  ", &SearchBudget::default()).unwrap();
-    assert!(reply.hits.is_empty());
+    assert_eq!(reply.hits, Vec::<FindHit>::new());
 }
 
 #[test]
@@ -101,7 +101,7 @@ fn find_stops_at_the_deadline_and_says_so() {
         deadline: Duration::ZERO,
     };
     let reply = find(dir.path(), "task", &budget).unwrap();
-    assert!(reply.hits.is_empty());
+    assert_eq!(reply.hits, Vec::<FindHit>::new());
     assert!(reply.truncated);
 }
 

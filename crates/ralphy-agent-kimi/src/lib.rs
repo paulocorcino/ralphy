@@ -3,7 +3,7 @@
 //! the `stream-json` final-text parser, and the signal→[`ralphy_core::Outcome`] mapping — is
 //! confined here. See docs/adr/0028.
 //!
-//! Like the Codex and OpenCode adapters (and unlike Claude's live PTY session),
+//! Like the Codex and `OpenCode` adapters (and unlike Claude's live PTY session),
 //! Kimi needs no interactive session: `plan` and `execute` both run headless
 //! `kimi -p <charter>` with the charter on argv, and completion is detected from
 //! the `RALPHY_DONE_EXIT`/`RALPHY_BLOCKED_EXIT` sentinels parsed out of the final
@@ -135,7 +135,7 @@ impl KimiAgent {
     fn resolve_model(&self) -> String {
         self.model
             .clone()
-            .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_string())
+            .unwrap_or_else(|| DEFAULT_KIMI_MODEL.to_owned())
     }
 }
 

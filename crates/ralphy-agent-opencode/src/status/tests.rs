@@ -1,4 +1,4 @@
-//! The tests of the OpenCode map and of a run's watcher.
+//! The tests of the `OpenCode` map and of a run's watcher.
 
 use super::*;
 
@@ -28,7 +28,7 @@ fn fold_matches_the_shared_mapping_fixture() {
                 serde_json::json!({
                     "state": o.state.as_str(),
                     "detail": o.detail,
-                    "cause": o.cause.map(|c| c.as_str()),
+                    "cause": o.cause.map(agent_state::Cause::as_str),
                     "ts": o.ts,
                 })
             });
@@ -144,8 +144,5 @@ fn an_opencode_run_emits_the_agent_state_of_its_plugin() {
     };
     ralphy_core::Agent::execute(&agent, &plan, &ws).expect("the execute ends");
     let got = sink.lock().expect("sink").clone();
-    assert_eq!(
-        got,
-        [("waiting".to_string(), "permission: bash".to_string())]
-    );
+    assert_eq!(got, [("waiting".to_owned(), "permission: bash".to_owned())]);
 }

@@ -4,7 +4,7 @@
 use super::*;
 
 /// #308 pins the editor swap where it can actually regress: the embedded
-/// asset tree. Monaco is vendored, CodeMirror is gone, and the four heavy
+/// asset tree. Monaco is vendored, `CodeMirror` is gone, and the four heavy
 /// language workers stay excluded (the exclusion rule is prefix-based
 /// because Monaco 0.56 ships content-hashed chunk names).
 #[test]
@@ -104,7 +104,7 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
 /// `usage.rs:544` exist, so `cargo test` reds after a deletion.
 #[test]
 fn the_changes_section_renders_a_status_marked_list() {
-    let html = super::INDEX_HTML;
+    let html = INDEX_HTML;
     assert!(
         html.contains(r#"class="changes-list""#),
         "index.html must render the changes-list"
@@ -209,7 +209,7 @@ fn the_changes_section_renders_a_status_marked_list() {
 /// path is precisely the mis-tap PRD #297 refused to ship.
 #[test]
 fn the_discard_control_is_pinned_in_the_markup() {
-    let html = super::INDEX_HTML;
+    let html = INDEX_HTML;
 
     for pin in [
         r#"data-act="discard""#,
@@ -240,7 +240,7 @@ fn the_discard_control_is_pinned_in_the_markup() {
     // the only thing proving it. The staged
     // list is the block between its `x-for` key and that list's close.
     let staged_from = html
-        .find(r#"'s:' + c.path"#)
+        .find(r"'s:' + c.path")
         .expect("index.html must keep the staged group's x-for key");
     let staged_block = &html[staged_from..];
     let staged_end = staged_block
@@ -266,7 +266,7 @@ fn the_discard_control_is_pinned_in_the_markup() {
 /// the only symptom is an alarm that stays quiet.
 #[test]
 fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
-    let html = super::INDEX_HTML;
+    let html = INDEX_HTML;
     assert!(
         html.contains(r#":class="{ stale: $store.connection.presenceStale }""#),
         "the uptime must bind the DERIVED flag"
@@ -317,9 +317,9 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // The popups load `wb-file-viewer.ts`/`wb-console.ts`, which now call the
     // fold — without the import or tag the label silently falls back to the
     // ref in exactly the two windows nobody tests by hand.
-    for page in [super::DETACHED_HTML, super::DETACHED_FENCE_HTML] {
+    for page in [DETACHED_HTML, DETACHED_FENCE_HTML] {
         assert!(
-            with_module_imports(tag_references(page)).contains(&"wb-fleet.js".to_string()),
+            with_module_imports(tag_references(page)).contains(&"wb-fleet.js".to_owned()),
             "a detached popup must load the fold it calls"
         );
     }
@@ -336,7 +336,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // ten call sites satisfy
     // that substring, so it would stay green with every one of these
     // surfaces reverted to the raw ref.
-    let html = super::INDEX_HTML;
+    let html = INDEX_HTML;
     for pin in [
         concat!(
             r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? "#,

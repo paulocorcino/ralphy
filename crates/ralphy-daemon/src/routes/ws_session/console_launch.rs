@@ -22,7 +22,7 @@ impl Open {
             .map(str::to_owned);
         // The label the session list and the desk record carry: the command
         // for a startup-command console, `console` for the bare shell.
-        let agent_label = command.clone().unwrap_or_else(|| "console".to_string());
+        let agent_label = command.clone().unwrap_or_else(|| "console".to_owned());
         match self.place().await {
             None | Some(Placement::Local) => self.spawn_console(command, agent_label).await,
             Some(Placement::Peer {
@@ -74,7 +74,7 @@ impl Open {
         };
         let cwd = session::console_cwd(repo_path);
         let spec = session::console_spec(cwd, 24, 80, command.as_deref());
-        let repo_label = self.query.repo.clone().unwrap_or_else(|| "~".to_string());
+        let repo_label = self.query.repo.clone().unwrap_or_else(|| "~".to_owned());
         let (_claim, joined) = self.claim_and_join().await;
         if let Some(joined) = joined {
             return joined;
@@ -84,7 +84,7 @@ impl Open {
             .spawn_attached(
                 repo_label,
                 agent_label,
-                "console".to_string(),
+                "console".to_owned(),
                 None,
                 None,
                 self.record.clone(),

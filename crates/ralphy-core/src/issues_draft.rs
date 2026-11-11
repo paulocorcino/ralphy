@@ -102,6 +102,6 @@ mod tests {
         assert!(draft.milestone.is_none());
         assert!(draft.prd_path.is_none());
         assert_eq!(draft.issue_count(), 1);
-        assert!(draft.issues[0].blocked_by.is_empty());
+        assert_eq!(draft.issues[0].blocked_by, Vec::<usize>::new());
     }
 }

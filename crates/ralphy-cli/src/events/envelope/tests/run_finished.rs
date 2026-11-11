@@ -87,7 +87,7 @@ fn run_finished_maps_outcome_totals_without_subject() {
 /// than hand-building the typed event.
 fn decode_run_finished(summary: &crate::run::summary::RunSummary) -> RunEvent {
     let f = crate::runstate::EventFields {
-        outcome: Some(summary.outcome.to_string()),
+        outcome: Some(summary.outcome.to_owned()),
         issues_done: Some(summary.done),
         issues_skipped: Some(summary.skipped),
         issues_total: Some(summary.total),

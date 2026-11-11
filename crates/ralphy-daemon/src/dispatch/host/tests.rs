@@ -93,7 +93,7 @@ fn a_password_adds_the_stdin_flag_and_never_enters_the_argv() {
     }
     let empty = json!({"destination": "svrapp", "password": ""});
     assert!(host_password(Verb::HostAdd, &empty).unwrap().is_none());
-    assert!(!argv(Verb::HostAdd, empty).contains(&"--password-stdin".to_string()));
+    assert!(!argv(Verb::HostAdd, empty).contains(&"--password-stdin".to_owned()));
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn host_argv_remove_rotates_only_when_asked() {
         json!({"host": id, "rotate_token": false}),
         json!({"host": id}),
     ] {
-        assert!(!argv(Verb::HostRemove, payload).contains(&"--rotate-token".to_string()));
+        assert!(!argv(Verb::HostRemove, payload).contains(&"--rotate-token".to_owned()));
     }
     assert_eq!(
         host_argv(
@@ -189,11 +189,11 @@ fn host_argv_pins_every_limit() {
             "{payload}"
         );
     };
-    for dest in ["a\u{0}b".to_string(), "\u{7f}".to_string(), "x".repeat(256)] {
+    for dest in ["a\u{0}b".to_owned(), "\u{7f}".to_owned(), "x".repeat(256)] {
         refused(Verb::HostKey, json!({"destination": dest}), "destination");
     }
     assert!(host_argv(Verb::HostKey, &json!({"destination": "x".repeat(255)})).is_ok());
-    for name in ["a b".to_string(), "a\u{1}".to_string(), "n".repeat(65)] {
+    for name in ["a b".to_owned(), "a\u{1}".to_owned(), "n".repeat(65)] {
         refused(
             Verb::HostAdd,
             json!({"destination": "svrapp", "name": name}),

@@ -40,7 +40,7 @@ fn fixture_body() -> String {
 }
   }
 }"#
-    .to_string()
+    .to_owned()
 }
 
 fn http_response(status: u16, body: &str) -> Vec<u8> {
@@ -75,7 +75,7 @@ fn read_request_line(stream: &mut std::net::TcpStream) -> String {
         .lines()
         .next()
         .unwrap_or("")
-        .to_string()
+        .to_owned()
 }
 
 /// Bind `127.0.0.1:0` and serve `response` up to `max_accepts` times, or
@@ -281,7 +281,7 @@ fn a_failed_fetch_falls_back_and_leaves_the_cache_alone() {
         let server = served.map(|(status, body)| serve_n(http_response(status, body), 4));
         let url = match &server {
             Some((port, ..)) => format!("http://127.0.0.1:{port}/api.json"),
-            None => "http://127.0.0.1:1/api.json".to_string(),
+            None => "http://127.0.0.1:1/api.json".to_owned(),
         };
 
         refresh_if_stale(&opts(&url, &cache, false, false));

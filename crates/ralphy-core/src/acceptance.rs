@@ -51,9 +51,9 @@ pub fn parse_ledger(md: &str) -> Vec<Verdict> {
             _ => VerdictKind::ReviewOnly,
         };
         verdicts.push(Verdict {
-            criterion: cap[2].trim().to_string(),
+            criterion: cap[2].trim().to_owned(),
             kind,
-            evidence: cap[3].trim().to_string(),
+            evidence: cap[3].trim().to_owned(),
         });
     }
     verdicts
@@ -85,7 +85,7 @@ fn normalize_ac(s: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .trim_end_matches(['.', ';', ':', ','])
-        .to_string()
+        .to_owned()
 }
 
 /// Collect the checkbox list items of a body as *logical* bullets: each item
@@ -144,7 +144,7 @@ fn continuation(line: &str) -> Option<&str> {
 /// drop those ticks. Review-only verdicts are never ticked. Already-ticked
 /// lines are left untouched.
 pub fn apply_ledger(body: &str, verdicts: &[Verdict]) -> TickResult {
-    let mut body_lines: Vec<String> = body.lines().map(str::to_string).collect();
+    let mut body_lines: Vec<String> = body.lines().map(str::to_owned).collect();
     let had_trailing_newline = body.ends_with('\n');
     let mut ticked = Vec::new();
     let mut unmatched = Vec::new();

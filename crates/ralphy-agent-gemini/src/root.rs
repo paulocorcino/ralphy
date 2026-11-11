@@ -73,7 +73,7 @@ pub(crate) fn operator_auth_type(root: Option<&Path>) -> Option<String> {
         .get("auth")?
         .get("selectedType")?
         .as_str()
-        .map(str::to_string)
+        .map(str::to_owned)
 }
 
 /// The minimal settings document Ralphy writes into its own root.
@@ -130,9 +130,7 @@ pub(crate) fn ensure(base: &Path) -> Result<GeminiRoot> {
         "{}\n",
         serde_json::to_string_pretty(&settings_document(auth_type.as_deref()))?
     );
-    let differs = std::fs::read_to_string(&settings)
-        .map(|s| s != want)
-        .unwrap_or(true);
+    let differs = std::fs::read_to_string(&settings).map_or(true, |s| s != want);
     if differs {
         std::fs::write(&settings, &want)
             .with_context(|| format!("writing {}", settings.display()))?;
@@ -204,7 +202,7 @@ fn session_stem(path: &Path) -> Option<&str> {
     }
     let is_session_file = matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("json") | Some("jsonl")
+        Some("json" | "jsonl")
     );
     if !is_session_file {
         return None;
@@ -219,9 +217,7 @@ fn add_to_group(
     mtime: std::time::SystemTime,
     path: &Path,
 ) {
-    let group = groups
-        .entry(stem.to_string())
-        .or_insert((mtime, Vec::new()));
+    let group = groups.entry(stem.to_owned()).or_insert((mtime, Vec::new()));
     group.0 = group.0.max(mtime);
     group.1.push(path.to_path_buf());
 }

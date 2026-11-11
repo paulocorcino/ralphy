@@ -146,7 +146,7 @@ fn parse_rest_comments_extracts_ids_and_bodies() {
         ]"#;
     let got = parse_rest_comments(json).expect("parse");
     assert_eq!(got.len(), 2);
-    assert_eq!(got[0], (111, "first".to_string()));
+    assert_eq!(got[0], (111, "first".to_owned()));
     assert_eq!(got[1].0, 222);
     assert!(got[1].1.contains("consolidated-spec"));
 }
@@ -154,14 +154,14 @@ fn parse_rest_comments_extracts_ids_and_bodies() {
 #[test]
 fn find_marked_comment_matches_marker_only() {
     let comments = vec![
-        (1u64, "just chatter".to_string()),
+        (1u64, "just chatter".to_owned()),
         (
             2u64,
-            "<!-- ralphy:consolidated-spec -->\nthe spec".to_string(),
+            "<!-- ralphy:consolidated-spec -->\nthe spec".to_owned(),
         ),
         (
             3u64,
-            "another <!-- ralphy:consolidated-spec --> later".to_string(),
+            "another <!-- ralphy:consolidated-spec --> later".to_owned(),
         ),
     ];
     // First marked comment wins; unmarked comments are skipped.

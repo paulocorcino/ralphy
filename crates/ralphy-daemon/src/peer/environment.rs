@@ -12,11 +12,11 @@ pub fn environment_label(wsl_distro: Option<&str>, os: &str, release: Option<&st
         return format!("WSL: {d}");
     }
     match (os, release) {
-        ("windows", _) => "Windows".to_string(),
-        (_, Some(release)) => release.to_string(),
-        ("linux", None) => "Linux".to_string(),
-        ("macos", None) => "macOS".to_string(),
-        (other, None) => other.to_string(),
+        ("windows", _) => "Windows".to_owned(),
+        (_, Some(release)) => release.to_owned(),
+        ("linux", None) => "Linux".to_owned(),
+        ("macos", None) => "macOS".to_owned(),
+        (other, None) => other.to_owned(),
     }
 }
 
@@ -28,12 +28,12 @@ pub fn linux_release(os_release: &str) -> Option<String> {
         os_release.lines().find_map(|line| {
             let value = line.trim().strip_prefix(key)?.strip_prefix('=')?;
             let value = value.trim().trim_matches(|c| c == '"' || c == '\'');
-            (!value.is_empty()).then(|| value.to_string())
+            (!value.is_empty()).then(|| value.to_owned())
         })
     };
     let name = field("NAME")?;
     // Debian's NAME is `Debian GNU/Linux`; the family is already in the icon.
-    let name = name.strip_suffix(" GNU/Linux").unwrap_or(&name).to_string();
+    let name = name.strip_suffix(" GNU/Linux").unwrap_or(&name).to_owned();
     Some(match field("VERSION_ID") {
         Some(version) => format!("{name} {version}"),
         None => name,

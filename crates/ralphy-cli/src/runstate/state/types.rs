@@ -7,7 +7,7 @@ use crate::runstate::{SkipKind, UsageLite};
 /// bundle verdict awaiting a human split) and ⛔ blocked (a `Blocked` execution
 /// outcome) from a generic non-green stop.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IssueStatus {
+pub(crate) enum IssueStatus {
     Planning,
     Executing,
     /// A plan-only pass superseded by the next `issue started` (a dry run): the
@@ -28,7 +28,7 @@ pub enum IssueStatus {
 
 impl IssueStatus {
     /// Whether this is a terminal status (the issue will not change further).
-    pub fn is_terminal(&self) -> bool {
+    pub(crate) fn is_terminal(&self) -> bool {
         matches!(
             self,
             IssueStatus::Planned
@@ -46,7 +46,7 @@ impl IssueStatus {
     /// `Some(name)` for a terminal status (one of `planned|done|skipped|blocked|
     /// infeasible|needs_split|non_green|hitl`), `None` for the non-terminal
     /// `Planning`/`Executing` — the rollup includes only terminal entries.
-    pub fn status_wire(&self) -> Option<&'static str> {
+    pub(crate) fn status_wire(&self) -> Option<&'static str> {
         match self {
             IssueStatus::Planned => Some("planned"),
             IssueStatus::Done => Some("done"),
@@ -64,14 +64,14 @@ impl IssueStatus {
 /// An active usage-limit sleep: the reset-time hint shown on the card and the
 /// Unix-seconds wake anchor the live countdown is computed against.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SleepState {
+pub(crate) struct SleepState {
     pub reset: String,
     pub target_epoch: i64,
 }
 
 /// One issue in the run, in queue order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueEntry {
+pub(crate) struct IssueEntry {
     pub number: u64,
     pub title: String,
     pub status: IssueStatus,
@@ -110,7 +110,7 @@ pub struct IssueEntry {
 /// `RunState::queue` field — kept OUT of `RunState::issues` so the Telegram card
 /// fold (which iterates `issues`) never renders not-yet-started issues.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct QueueRef {
+pub(crate) struct QueueRef {
     pub number: u64,
     pub title: String,
 }
@@ -119,7 +119,7 @@ pub struct QueueRef {
 /// `waiting`, `done` or `unknown`, with when it began and what a `waiting`
 /// agent asks.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentState {
+pub(crate) struct AgentState {
     pub state: String,
     pub since: String,
     pub detail: Option<String>,
@@ -127,7 +127,7 @@ pub struct AgentState {
 
 /// A tally of issues by terminal/active status, for the card's counter line.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Counts {
+pub(crate) struct Counts {
     /// Plan-only passes superseded by the next issue (a dry run).
     pub planned: usize,
     pub done: usize,

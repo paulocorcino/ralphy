@@ -41,7 +41,7 @@ pub(crate) fn parse_cursor_usage(stdout: &str, model: Option<&str>) -> Usage {
         let Some(tu) = value.get("usage") else {
             continue;
         };
-        let field = |k: &str| tu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let field = |k: &str| tu.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
         usage.input += field("inputTokens");
         usage.output += field("outputTokens");
         usage.cache_read += field("cacheReadTokens");

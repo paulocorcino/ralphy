@@ -165,7 +165,7 @@ mod tests {
     fn every_frame_round_trips() {
         let presence = |name: Option<&str>| {
             Frame::Presence(Presence {
-                name: name.map(str::to_string),
+                name: name.map(str::to_owned),
                 avatar: Some("🐙".into()),
                 uptime_secs: 42,
                 build: Some("v1+abc".into()),
@@ -273,7 +273,7 @@ mod tests {
                 "terminal frame too short for an 8-byte session id",
             ),
             (
-                FrameError::BadJson("eof".to_string()),
+                FrameError::BadJson("eof".to_owned()),
                 "malformed frame JSON: eof",
             ),
             (

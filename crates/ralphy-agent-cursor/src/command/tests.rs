@@ -232,9 +232,7 @@ fn locate_cursor_delegates_to_the_shared_vendor_locator() {
     assert_eq!(locate_cursor(), ralphy_proc_util::cursor::locate_cursor());
     assert_eq!(
         resolve_cursor_program(),
-        locate_cursor()
-            .map(PathBuf::into_os_string)
-            .unwrap_or_else(|| NAMES[0].into())
+        locate_cursor().map_or_else(|| NAMES[0].into(), PathBuf::into_os_string)
     );
 }
 
@@ -256,7 +254,7 @@ mod shell_pin;
 ///
 /// It drives the production builder (`build_cursor_command`) so the pin under
 /// test is the shipped one, in a throwaway git repo (no trace, unlike touching
-/// the lab repo), and forces the exact POSIX heredoc commit that ParserErrors
+/// the lab repo), and forces the exact POSIX heredoc commit that `ParserErrors`
 /// under PowerShell. The discriminator is the vendor's `ps-script` PowerShell
 /// wrapper: under the git-bash pin it is never created; strip the pin (the
 /// pre-fix state) and it reappears.

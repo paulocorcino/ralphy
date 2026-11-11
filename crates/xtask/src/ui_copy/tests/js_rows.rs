@@ -145,14 +145,17 @@ fn a_function_named_in_copy_helpers_returns_copy() {
   }
   function other() { return "not a helper"; }
 "#;
-    let helpers = vec!["note".to_string()];
+    let helpers = vec!["note".to_owned()];
     let fns = CopyFns {
         helpers: &helpers,
         calls: &[],
     };
     let out = rows_of("wb-file-search.js", js, &[], fns);
     assert_eq!(seen(&out), vec![("js:helper", "no matches")]);
-    assert!(seen(&rows("wb-file-search.js", js)).is_empty());
+    assert_eq!(
+        seen(&rows("wb-file-search.js", js)),
+        Vec::<(&str, &str)>::new()
+    );
 }
 
 #[test]
@@ -195,7 +198,7 @@ fn a_call_named_in_copy_calls_gives_its_listed_argument() {
             ("js:call", "Renamed"),
         ]
     );
-    assert!(seen(&rows("wb-notes.js", js)).is_empty());
+    assert_eq!(seen(&rows("wb-notes.js", js)), Vec::<(&str, &str)>::new());
 }
 
 #[test]

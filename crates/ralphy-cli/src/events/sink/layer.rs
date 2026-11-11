@@ -14,12 +14,12 @@ const QUEUE_CAPACITY: usize = 1000;
 const SELF_TARGET_MARKER: &str = "events::sink";
 
 /// A sink ring with the ADR-0019 ~1000-event bound.
-pub fn new_queue() -> Arc<EventQueue> {
+pub(crate) fn new_queue() -> Arc<EventQueue> {
     Arc::new(EventQueue::with_capacity(QUEUE_CAPACITY))
 }
 
 /// The sink's `tracing` Layer: a [`DeliveryLayer`] over the sink ring, tagged with
 /// the sink's own target so a runtime `warn!` never feeds back into the ring.
-pub fn new_events_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
+pub(crate) fn new_events_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
     DeliveryLayer::new(queue, SELF_TARGET_MARKER)
 }

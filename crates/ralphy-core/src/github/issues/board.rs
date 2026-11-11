@@ -54,7 +54,7 @@ struct GhBoardIssue {
 /// four board lanes and the drawer need. `state` is `"open"`/`"closed"`; `reason`
 /// is the lowercased `stateReason` (populated only for closed issues); `blocked_by`
 /// is parsed from the body's `## Blocked by` section (empty for the body-less
-/// closed read). Snake_case on the wire, matching the project's JSON convention.
+/// closed read). `Snake_case` on the wire, matching the project's JSON convention.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct BoardIssue {
     pub number: u64,
@@ -76,7 +76,7 @@ impl GhBoardIssue {
         BoardIssue {
             number: self.number,
             title: self.title,
-            state: state.to_string(),
+            state: state.to_owned(),
             reason: self.state_reason.map(|s| s.to_lowercase()),
             labels: self.labels.into_iter().map(|l| l.name).collect(),
             assignees: self.assignees.into_iter().map(|a| a.login).collect(),
@@ -179,20 +179,20 @@ pub fn list_issue_meta(
     let mut by_number: BTreeMap<u64, IssueMeta> = BTreeMap::new();
     for label in labels {
         let mut args = vec![
-            "issue".to_string(),
-            "list".to_string(),
-            "--label".to_string(),
-            label.to_string(),
-            "--state".to_string(),
-            "open".to_string(),
-            "--json".to_string(),
-            "number,assignees,stateReason".to_string(),
-            "--limit".to_string(),
-            "100".to_string(),
+            "issue".to_owned(),
+            "list".to_owned(),
+            "--label".to_owned(),
+            label.clone(),
+            "--state".to_owned(),
+            "open".to_owned(),
+            "--json".to_owned(),
+            "number,assignees,stateReason".to_owned(),
+            "--limit".to_owned(),
+            "100".to_owned(),
         ];
         if let Some(a) = assignee {
-            args.push("--assignee".to_string());
-            args.push(a.to_string());
+            args.push("--assignee".to_owned());
+            args.push(a.to_owned());
         }
         let out = gh_output(&format!("gh issue list --label {label} (meta)"), || {
             let mut cmd = gh(repo_root);

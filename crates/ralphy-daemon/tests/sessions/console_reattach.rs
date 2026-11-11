@@ -28,7 +28,7 @@ fn terminal(data: &[u8]) -> Message {
 }
 
 /// Read decoded terminal output until `needle` appears (or 10s). When
-/// `answer_cursor`, plays the terminal emulator by answering the ConPTY
+/// `answer_cursor`, plays the terminal emulator by answering the `ConPTY`
 /// startup `ESC[6n` so the child unblocks on Windows. On a REATTACH the
 /// child is already past startup and the replayed scrollback carries that
 /// startup `ESC[6n` as history — re-answering it would inject a stray
@@ -95,7 +95,7 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
         .unwrap_or(0);
     let body = text
         .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
+        .map(|(_, b)| b.to_owned())
         .unwrap_or_default();
     (status, body)
 }

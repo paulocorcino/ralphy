@@ -66,8 +66,8 @@ impl Refuser {
     pub(crate) fn new(session: Option<u64>, daemon_id: &str, environment: &str, tab: Tab) -> Self {
         Self {
             session,
-            daemon_id: daemon_id.to_string(),
-            environment: environment.to_string(),
+            daemon_id: daemon_id.to_owned(),
+            environment: environment.to_owned(),
             tab,
         }
     }
@@ -112,7 +112,7 @@ impl Refuser {
         );
         Told::End(self.end(
             SUPERSEDED,
-            "a newer connection from this tab has the console".to_string(),
+            "a newer connection from this tab has the console".to_owned(),
         ))
     }
 

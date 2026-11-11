@@ -46,7 +46,7 @@ impl StatusLine {
             v.get(name)
                 .and_then(Value::as_str)
                 .filter(|s| !s.is_empty())
-                .map(str::to_string)
+                .map(str::to_owned)
         };
         Some(StatusLine {
             event: field("event").unwrap_or_default(),

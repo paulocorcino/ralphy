@@ -24,12 +24,12 @@ use chrono::Local;
 
 use super::client::{BotClient, Transport};
 use crate::delivery::{spawn_worker, DeliveryEngine, DeliveryLayer, WorkerHandle};
-pub use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
+pub(crate) use crate::delivery::{EventQueue, WorkerHandle as NotifierHandle};
 use crate::runstate::{RunEvent, RunState};
 
 mod render;
 
-pub use render::{
+pub(crate) use render::{
     derive_title, render_card, render_degraded_push, render_idle_reaped_push, render_recover_push,
     render_sleep_push, render_waiting_push,
 };
@@ -52,7 +52,7 @@ const SELF_TARGET_MARKER: &str = "telegram::notifier";
 
 /// The notifier's `tracing` Layer: a [`DeliveryLayer`] over the shared ring, tagged
 /// with the notifier's own target so a runtime `warn!` never feeds back into the ring.
-pub fn new_notifier_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
+pub(crate) fn new_notifier_layer(queue: Arc<EventQueue>) -> DeliveryLayer {
     DeliveryLayer::new(queue, SELF_TARGET_MARKER)
 }
 
@@ -101,7 +101,7 @@ struct TelegramEngine<T: Transport> {
     /// call — the ~60s idle refresh alone would otherwise `warn!` once a minute
     /// forever — so the first failure warns concisely and every later one is
     /// silent, until a success clears the gate (a genuinely new drop warns again).
-    /// Mirrors the CloudEvents sink's warn-once discipline (`events::sink`).
+    /// Mirrors the `CloudEvents` sink's warn-once discipline (`events::sink`).
     net_warned: bool,
 }
 
@@ -372,13 +372,13 @@ fn short_reason(e: &anyhow::Error) -> String {
     let full = format!("{e:#}");
     let low = full.to_lowercase();
     if low.contains("dns failed") || low.contains("resolve dns") {
-        return "network unreachable (DNS)".to_string();
+        return "network unreachable (DNS)".to_owned();
     }
     if low.contains("os error 10060") || low.contains("timed out") || low.contains("timeout") {
-        return "network unreachable (timeout)".to_string();
+        return "network unreachable (timeout)".to_owned();
     }
     if low.contains("network error") || low.contains("connection") || low.contains("connect") {
-        return "network unreachable".to_string();
+        return "network unreachable".to_owned();
     }
     // Not a recognised network drop: keep just the first line so a genuine API
     // rejection (bad token, chat gone) is still legible without the chain dump.
@@ -386,7 +386,7 @@ fn short_reason(e: &anyhow::Error) -> String {
         .next()
         .unwrap_or("send failed")
         .trim()
-        .to_string()
+        .to_owned()
 }
 
 /// The worker's edit gate, factored out so the ~60s cadence is testable without
@@ -402,7 +402,7 @@ fn should_edit(changed: bool, since_last_edit: Duration, interval: Duration) -> 
 
 /// Whether a run should notify: only when configured AND not `--no-telegram` AND
 /// not `--dry-run` (ADR-0007 D1/D7).
-pub fn should_notify(configured: bool, no_telegram: bool, dry_run: bool) -> bool {
+pub(crate) fn should_notify(configured: bool, no_telegram: bool, dry_run: bool) -> bool {
     configured && !no_telegram && !dry_run
 }
 
@@ -419,7 +419,7 @@ fn detach_warn() {
 /// a single `warn!` and return `None` (the run proceeds without notifications —
 /// ADR-0007 D7). The returned [`WorkerHandle`] holds the shutdown signal and the
 /// worker's join handle.
-pub fn try_start_notifier<T: Transport + Send + 'static>(
+pub(crate) fn try_start_notifier<T: Transport + Send + 'static>(
     client: BotClient<T>,
     chat_id: i64,
     state: RunState,

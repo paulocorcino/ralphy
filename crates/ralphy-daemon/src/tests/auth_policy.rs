@@ -115,7 +115,7 @@ async fn session_policy_login_flow() {
         .get(header::SET_COOKIE)
         .and_then(|v| v.to_str().ok())
         .expect("a Set-Cookie header")
-        .to_string();
+        .to_owned();
     assert!(
         set_cookie.contains("ralphy_session="),
         "cookie name: {set_cookie}"
@@ -127,7 +127,7 @@ async fn session_policy_login_flow() {
     );
 
     // The cookie value is everything up to the first attribute `;`.
-    let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
+    let cookie_pair = set_cookie.split(';').next().unwrap().to_owned();
 
     // 4. That cookie authorizes a follow-up request.
     let resp = session_router("tok")
@@ -174,7 +174,7 @@ async fn remember_me_mints_a_week_long_cookie_that_authorizes() {
         remembered.contains("Max-Age=604800"),
         "remember=true → 7-day idle: {remembered}"
     );
-    let cookie_pair = remembered.split(';').next().unwrap().to_string();
+    let cookie_pair = remembered.split(';').next().unwrap().to_owned();
     assert!(
         cookie_pair.contains(".r."),
         "the value carries the remembered kind: {cookie_pair}"
@@ -202,7 +202,7 @@ async fn remember_me_mints_a_week_long_cookie_that_authorizes() {
 #[tokio::test]
 async fn api_session_reports_the_policy_and_whether_authed() {
     type HeaderPair = (header::HeaderName, String);
-    let get_session = |router: axum::Router, header: Option<HeaderPair>| async move {
+    let get_session = |router: Router, header: Option<HeaderPair>| async move {
         let mut request = Request::builder().uri("/api/session");
         if let Some((name, value)) = header {
             request = request.header(name, value);
@@ -233,8 +233,8 @@ async fn api_session_reports_the_policy_and_whether_authed() {
         .get(header::SET_COOKIE)
         .and_then(|v| v.to_str().ok())
         .expect("a Set-Cookie header")
-        .to_string();
-    let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
+        .to_owned();
+    let cookie_pair = set_cookie.split(';').next().unwrap().to_owned();
     let bearer = router(
         None,
         PathBuf::from("does-not-exist"),

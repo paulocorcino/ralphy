@@ -169,7 +169,7 @@ const UNIX_COMMIT_BINARY: &str = concat!(
 pub(crate) fn quote_posix(word: &str) -> String {
     let safe = |c: char| c.is_ascii_alphanumeric() || "_./:=@%+,-".contains(c);
     if !word.is_empty() && word.chars().all(safe) {
-        return word.to_string();
+        return word.to_owned();
     }
     format!("'{}'", word.replace('\'', r"'\''"))
 }
@@ -184,7 +184,7 @@ pub(crate) fn quote_cmd(word: &str) -> Result<String> {
     if word.is_empty() || word.chars().any(|c| c == ' ' || "&|<>(),;=".contains(c)) {
         return Ok(format!("\"{word}\""));
     }
-    Ok(word.to_string())
+    Ok(word.to_owned())
 }
 
 // The line comes on standard input; the body is checked as base64 before it
@@ -233,8 +233,8 @@ pub(crate) fn keys_path(os: HostOs, admin: bool) -> &'static str {
 /// detect the OS, so they need none.
 pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
     match op {
-        HostOp::Uname => return Ok("uname -s".to_string()),
-        HostOp::WindowsVer => return Ok("cmd /c ver".to_string()),
+        HostOp::Uname => return Ok("uname -s".to_owned()),
+        HostOp::WindowsVer => return Ok("cmd /c ver".to_owned()),
         HostOp::Probe
         | HostOp::Describe { .. }
         | HostOp::Doctor
@@ -258,7 +258,7 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
     let windows = os == HostOs::Windows;
     let script = match op {
         HostOp::Uname | HostOp::WindowsVer => unreachable!("answered above"),
-        HostOp::Probe => probe_script(os).to_string(),
+        HostOp::Probe => probe_script(os).to_owned(),
         HostOp::Describe { with_token } => {
             let args = if *with_token {
                 "daemon describe --with-token"
@@ -274,7 +274,7 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             if os != HostOs::Linux {
                 bail!("lingering exists only on Linux");
             }
-            "loginctl enable-linger".to_string()
+            "loginctl enable-linger".to_owned()
         }
         HostOp::RequireTokenOn => ralphy(os, "daemon require-token on"),
         HostOp::Restart => ralphy(os, "daemon restart"),
@@ -299,10 +299,10 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             |path| format!(": > {path}"),
         )?,
         HostOp::AppendKey { admin, body } => append_key_script(os, *admin, body)?,
-        HostOp::WriteBinary if windows => WINDOWS_WRITE_BINARY.to_string(),
-        HostOp::WriteBinary => UNIX_WRITE_BINARY.to_string(),
-        HostOp::CommitBinary if windows => WINDOWS_COMMIT_BINARY.to_string(),
-        HostOp::CommitBinary => UNIX_COMMIT_BINARY.to_string(),
+        HostOp::WriteBinary if windows => WINDOWS_WRITE_BINARY.to_owned(),
+        HostOp::WriteBinary => UNIX_WRITE_BINARY.to_owned(),
+        HostOp::CommitBinary if windows => WINDOWS_COMMIT_BINARY.to_owned(),
+        HostOp::CommitBinary => UNIX_COMMIT_BINARY.to_owned(),
         HostOp::Installed(op) if windows => format!("{WINDOWS_INSTALLED} {}", op.args()),
         HostOp::Installed(op) => format!("{UNIX_INSTALLED} {}", op.args()),
     };
@@ -360,7 +360,7 @@ fn append_key_script(os: HostOs, admin: bool, body: &str) -> Result<String> {
         (format!("'{}'", keys_path(os, true)), WINDOWS_ADMIN_ACL)
     } else {
         (
-            r"Join-Path $env:USERPROFILE '.ssh\authorized_keys'".to_string(),
+            r"Join-Path $env:USERPROFILE '.ssh\authorized_keys'".to_owned(),
             "",
         )
     };

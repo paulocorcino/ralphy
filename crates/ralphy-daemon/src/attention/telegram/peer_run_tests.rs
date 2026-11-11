@@ -16,17 +16,17 @@ use super::*;
 fn run_waiting(open_secs: u64) -> AttentionRequest {
     let since = SystemTime::now() - Duration::from_secs(open_secs);
     AttentionRequest {
-        id: "run:01RUN".to_string(),
+        id: "run:01RUN".to_owned(),
         kind: Kind::RunWaiting,
-        vendor: "codex".to_string(),
+        vendor: "codex".to_owned(),
         console: None,
         name: None,
-        repo: Some("owner/app".to_string()),
-        run: Some("01RUN".to_string()),
-        issue: Some("71".to_string()),
+        repo: Some("owner/app".to_owned()),
+        run: Some("01RUN".to_owned()),
+        issue: Some("71".to_owned()),
         since: chrono::DateTime::<chrono::Utc>::from(since)
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        detail: Some("permission: Bash".to_string()),
+        detail: Some("permission: Bash".to_owned()),
         dismissable: false,
     }
 }

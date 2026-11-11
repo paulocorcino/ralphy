@@ -110,7 +110,7 @@ fn sort_by_ts(records: &mut [serde_json::Value]) {
             v.get("ts")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
-                .to_string()
+                .to_owned()
         };
         ts(a).cmp(&ts(b))
     });
@@ -150,7 +150,7 @@ pub fn codex_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".codex"))
 }
 
-/// The OpenCode SQLite store: `$RALPHY_OPENCODE_DB` when set (tests point it at a
+/// The `OpenCode` SQLite store: `$RALPHY_OPENCODE_DB` when set (tests point it at a
 /// temp file), else `<home>/.local/share/opencode/opencode.db` (USERPROFILE on
 /// Windows, HOME elsewhere). Mirrors the adapter's `opencode_db_path` and
 /// [`codex_dir_path`]; `None` when no home directory can be resolved.
@@ -269,13 +269,13 @@ pub fn gemini_dir_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".gemini"))
 }
 
-/// Scan the Claude, Codex, OpenCode, Kimi, Copilot, Cursor AND Gemini stores for
+/// Scan the Claude, Codex, `OpenCode`, Kimi, Copilot, Cursor AND Gemini stores for
 /// interactive usage records, excluding sessions the ledger already owns (their
 /// `session_id` appears in `run_records`), and serialize each to JSON
 /// (ADR-0033 §2/§6). `registry.repos` supplies the project/actor attribution.
 /// Read-only: no scan writes (the Copilot scan reads a private copy, never the
 /// live store). The Codex records are chained after the Claude ones, then the
-/// OpenCode ones, then the Kimi ones, then the Copilot ones, then the Cursor
+/// `OpenCode` ones, then the Kimi ones, then the Copilot ones, then the Cursor
 /// ones — whose `tokens` is always `null` (ADR-0042 D11: no count exists) — then
 /// the Gemini ones, whose counts are a LOWER BOUND (ADR-0043 D10: the router's
 /// tokens never reach disk).
@@ -288,7 +288,7 @@ pub fn interactive_records(
     let run_session_ids: HashSet<String> = run_records
         .iter()
         .filter_map(|r| r.get("session_id").and_then(|v| v.as_str()))
-        .map(str::to_string)
+        .map(str::to_owned)
         .collect();
     let repos: Vec<RegisteredRepo> = registry
         .repos

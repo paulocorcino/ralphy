@@ -107,7 +107,7 @@ async fn project_add_reply(
 fn cli_message(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
     let text = text.trim();
-    text.strip_prefix("Error: ").unwrap_or(text).to_string()
+    text.strip_prefix("Error: ").unwrap_or(text).to_owned()
 }
 
 /// `daemon add` wrote the registry; read it back for the slug and the path it

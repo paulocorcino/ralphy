@@ -168,8 +168,8 @@ fn attributes_a_linked_worktree_cwd_to_its_repo() {
     let repo = root.join("repo");
     let wt = root.join("wt");
     let repo_fwd = repo.to_string_lossy().replace('\\', "/");
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(
+    fs::create_dir_all(&wt).unwrap();
+    fs::write(
         wt.join(".git"),
         format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
     )
@@ -287,7 +287,7 @@ fn excludes_run_owned_by_rollout_stem() {
         ),
     );
     let mut runs = HashSet::new();
-    runs.insert("rollout-run".to_string()); // the file STEM, not the meta id
+    runs.insert("rollout-run".to_owned()); // the file STEM, not the meta id
 
     let records = scan_codex(&CodexScan {
         codex_dir: root,
@@ -409,7 +409,7 @@ fn excludes_run_owned_by_session_meta_id() {
         ),
     );
     let mut runs = HashSet::new();
-    runs.insert("run-meta".to_string()); // the meta id, not the file stem
+    runs.insert("run-meta".to_owned()); // the meta id, not the file stem
 
     let records = scan_codex(&CodexScan {
         codex_dir: root,
@@ -417,7 +417,7 @@ fn excludes_run_owned_by_session_meta_id() {
         repos: &[],
         since: None,
     });
-    assert!(records.is_empty());
+    assert_eq!(records, Vec::<InteractiveRecord>::new());
 }
 
 #[test]

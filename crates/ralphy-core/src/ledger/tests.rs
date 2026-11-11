@@ -129,7 +129,9 @@ fn read_rows_parses_mixed_session_id() {
 
 #[test]
 fn append_then_project_total_round_trips() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Point the ledger root at a unique temp dir so production is untouched.
     let dir = std::env::temp_dir().join(format!(
         "ralphy-ledger-{}-{:x}",
@@ -174,7 +176,9 @@ fn append_then_project_total_round_trips() {
 /// zero-token pass writes nothing at all.
 #[test]
 fn append_run_phase_records_a_run_level_consolidate_line() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = std::env::temp_dir().join(format!("ralphy-ledger-runphase-{}", std::process::id()));
     remove_scratch(&dir);
     std::env::set_var("RALPHY_USAGE_DIR", &dir);
@@ -230,7 +234,9 @@ fn append_run_phase_records_a_run_level_consolidate_line() {
 
 #[test]
 fn read_project_rows_projects_only_unknown_session_rows_without_rewriting_jsonl() {
-    let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _env = ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("RALPHY_USAGE_DIR", dir.path());
     let ledger = dir.path().join("owner-repo.jsonl");

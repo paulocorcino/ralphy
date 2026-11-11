@@ -67,9 +67,9 @@ impl Finding {
     fn new(cap: Capability, path: &str, line: Option<u32>, detail: &str) -> Self {
         Finding {
             cap,
-            path: path.to_string(),
+            path: path.to_owned(),
             line,
-            detail: detail.to_string(),
+            detail: detail.to_owned(),
         }
     }
 }
@@ -85,10 +85,10 @@ pub(crate) struct FileDiff {
     pub(crate) removed: Vec<String>,
 }
 
-pub fn capabilities_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn capabilities_cmd(args: &[String]) -> Result<()> {
     let mut repo: Option<PathBuf> = None;
     let mut base: Option<String> = None;
-    let mut head = "HEAD".to_string();
+    let mut head = "HEAD".to_owned();
     let mut github = false;
     let mut check = false;
     let mut it = args.iter();
@@ -121,7 +121,7 @@ pub fn capabilities_cmd(args: &[String]) -> Result<()> {
 /// Every finding in the change from the merge base of `base` and `head` to
 /// `head`.
 fn scan(repo: &Path, base: &str, head: &str) -> Result<Vec<Finding>> {
-    let merge_base = git(repo, &["merge-base", base, head])?.trim().to_string();
+    let merge_base = git(repo, &["merge-base", base, head])?.trim().to_owned();
     let diff = git(
         repo,
         &[
@@ -203,7 +203,7 @@ pub(crate) fn parse_diff(diff: &str) -> Vec<FileDiff> {
         if let Some(rest) = line.strip_prefix("diff --git ") {
             let path = rest.rsplit_once(" b/").map_or(rest, |(_, b)| b);
             files.push(FileDiff {
-                path: path.to_string(),
+                path: path.to_owned(),
                 ..FileDiff::default()
             });
             next_line = None;
@@ -232,10 +232,10 @@ fn read_file_line(file: &mut FileDiff, line: &str, next_line: &mut Option<u32>) 
         return;
     };
     if let Some(text) = line.strip_prefix('+') {
-        file.added.push((*number, text.to_string()));
+        file.added.push((*number, text.to_owned()));
         *number += 1;
     } else if let Some(text) = line.strip_prefix('-') {
-        file.removed.push(text.to_string());
+        file.removed.push(text.to_owned());
     }
 }
 
@@ -258,7 +258,7 @@ fn annotation(f: &Finding) -> String {
 
 fn to_markdown(findings: &[Finding]) -> String {
     if findings.is_empty() {
-        return "No new capabilities.\n".to_string();
+        return "No new capabilities.\n".to_owned();
     }
     let mut out = format!(
         "## New capabilities\n\n{} finding(s). Read these lines before the change merges.\n\n\

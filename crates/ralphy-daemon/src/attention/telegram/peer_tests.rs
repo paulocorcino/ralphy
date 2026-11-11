@@ -37,7 +37,7 @@ impl Transport for Texts {
 
     fn post(&self, method: &str, body: Value) -> Result<Value> {
         assert_eq!(method, "sendMessage");
-        let text = body["text"].as_str().unwrap_or_default().to_string();
+        let text = body["text"].as_str().unwrap_or_default().to_owned();
         self.0.lock().expect("the texts lock").push(text);
         Ok(json!({ "ok": true, "result": { "message_id": 1 } }))
     }
@@ -79,7 +79,7 @@ pub(super) fn main_daemon(with_bot: bool) -> Main {
         config.clone(),
         (board, claim.clone()),
         peers_dir.clone(),
-        Some(MAIN.to_string()),
+        Some(MAIN.to_owned()),
     );
     let fake = texts.clone();
     notifier.transport = Arc::new(move |_token| AnyTransport(Box::new(fake.clone())));
@@ -87,7 +87,7 @@ pub(super) fn main_daemon(with_bot: bool) -> Main {
         config,
         claim,
         peers_dir,
-        daemon_id: MAIN.to_string(),
+        daemon_id: MAIN.to_owned(),
     };
     Main {
         store,
@@ -101,14 +101,14 @@ impl Main {
     /// Put the peer on `port` in the main's peers folder.
     pub(super) fn announce(&self, port: u16) {
         let descriptor = PeerDescriptor {
-            daemon_id: PEER.to_string(),
-            name: "peer".to_string(),
-            avatar: "🐙".to_string(),
-            address: "127.0.0.1".to_string(),
+            daemon_id: PEER.to_owned(),
+            name: "peer".to_owned(),
+            avatar: "🐙".to_owned(),
+            address: "127.0.0.1".to_owned(),
             port,
-            environment: "WSL: Ubuntu".to_string(),
+            environment: "WSL: Ubuntu".to_owned(),
             os: String::new(),
-            token: TOKEN.to_string(),
+            token: TOKEN.to_owned(),
             protocol_version: PEER_PROTOCOL_VERSION,
             tunnel: None,
             nudge: None,
@@ -131,17 +131,17 @@ impl Main {
 fn waiting(open_secs: u64) -> AttentionRequest {
     let since = SystemTime::now() - Duration::from_secs(open_secs);
     AttentionRequest {
-        id: "console:7".to_string(),
+        id: "console:7".to_owned(),
         kind: Kind::ConsoleWaiting,
-        vendor: "claude".to_string(),
-        console: Some("7".to_string()),
-        name: Some("fix login".to_string()),
-        repo: Some("owner/app".to_string()),
+        vendor: "claude".to_owned(),
+        console: Some("7".to_owned()),
+        name: Some("fix login".to_owned()),
+        repo: Some("owner/app".to_owned()),
         run: None,
         issue: None,
         since: chrono::DateTime::<chrono::Utc>::from(since)
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        detail: Some("permission: Bash".to_string()),
+        detail: Some("permission: Bash".to_owned()),
         dismissable: false,
     }
 }
@@ -184,7 +184,7 @@ use axum::response::IntoResponse as _;
 
 /// A daemon router as a peer: its own store in `home`, a bot when
 /// `with_bot`, the peer token.
-pub(super) async fn real_peer(home: &std::path::Path, with_bot: bool) -> u16 {
+pub(super) async fn real_peer(home: &Path, with_bot: bool) -> u16 {
     let config = home.join("telegram.toml");
     if with_bot {
         std::fs::write(&config, BOT).expect("write the config");
@@ -193,8 +193,8 @@ pub(super) async fn real_peer(home: &std::path::Path, with_bot: bool) -> u16 {
     let app = crate::router(
         Some(crate::identity::Identity {
             id: PEER.parse().expect("a daemon id"),
-            name: "peer".to_string(),
-            avatar: "🐙".to_string(),
+            name: "peer".to_owned(),
+            avatar: "🐙".to_owned(),
         }),
         home.join("repos.toml"),
         PathBuf::from("does-not-exist"),
@@ -205,7 +205,7 @@ pub(super) async fn real_peer(home: &std::path::Path, with_bot: bool) -> u16 {
         Instant::now(),
         shutdown,
         AuthState::fixed(
-            AuthPolicy::Bearer(TOKEN.to_string()),
+            AuthPolicy::Bearer(TOKEN.to_owned()),
             crate::epoch::SessionEpoch::in_memory_detached(),
         ),
     );
@@ -236,7 +236,7 @@ async fn a_peer_through_its_main_sends_nothing() {
         .claim
         .lock()
         .expect("the claim lock")
-        .take("m".to_string(), SystemTime::now());
+        .take("m".to_owned(), SystemTime::now());
     for _ in 0..3 {
         peer.tick(&[waiting(600)]).await;
     }
@@ -273,7 +273,7 @@ async fn the_main_sends_a_peer_console_request_once() {
     main.announce(port);
     assert_eq!(
         claim_once(&main.claimer).await,
-        vec![(PEER.to_string(), Claimed::Taken)]
+        vec![(PEER.to_owned(), Claimed::Taken)]
     );
 
     main.tick(&[]).await;
@@ -322,7 +322,7 @@ async fn a_page_on_the_peer_counts_as_present() {
     let now = 1_000_000.0;
     let report = protocol::encode(&protocol::Frame::Command(protocol::Command {
         id: 0,
-        verb: "presence.report".to_string(),
+        verb: "presence.report".to_owned(),
         payload: json!({
             "visible": true,
             "lastInput": now,
@@ -391,7 +391,7 @@ async fn an_old_peer_does_not_break_the_main() {
         let _logging = tracing::subscriber::set_default(subscriber);
         claim_once(&main.claimer).await
     };
-    assert_eq!(claims, vec![(PEER.to_string(), Claimed::OldPeer)]);
+    assert_eq!(claims, vec![(PEER.to_owned(), Claimed::OldPeer)]);
     let logged = String::from_utf8_lossy(&log.0.lock().expect("the log lock")).into_owned();
     assert!(logged.contains("older version"), "{logged}");
     assert!(!logged.contains("WARN"), "{logged}");

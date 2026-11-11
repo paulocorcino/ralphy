@@ -26,7 +26,7 @@ fn command(id: u64, verb: &str, slug: &str) -> Message {
     Message::Binary(
         protocol::encode(&Frame::Command(Command {
             id,
-            verb: verb.to_string(),
+            verb: verb.to_owned(),
             // `run` now requires validated closed-enum params (#191); triage/push
             // ignore them.
             payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),

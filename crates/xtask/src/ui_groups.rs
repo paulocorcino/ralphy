@@ -123,7 +123,7 @@ const MUTATORS: &[&str] = &[
     "push", "splice", "set", "delete", "add", "clear", "unshift", "pop", "shift", "sort",
 ];
 
-pub fn ui_groups_cmd(args: &[String]) -> Result<()> {
+pub(crate) fn ui_groups_cmd(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut verbose = false;
     let mut it = args.iter();
@@ -275,7 +275,7 @@ fn bounds(toks: &[Token]) -> Result<Bounds> {
 /// inside the object literal.
 fn sections(app: &str, toks: &[Token], bounds: &Bounds) -> Result<Vec<Section>> {
     let mut sections = vec![Section {
-        name: "(top)".to_string(),
+        name: "(top)".to_owned(),
         group: Group::Core,
         line: toks[bounds.start].line,
     }];
@@ -289,7 +289,7 @@ fn sections(app: &str, toks: &[Token], bounds: &Bounds) -> Result<Vec<Section>> 
                 format!("the heading {name:?} at app.ts:{number} has no group in SECTIONS")
             })?;
             sections.push(Section {
-                name: name.to_string(),
+                name: name.to_owned(),
                 group,
                 line: number,
             });

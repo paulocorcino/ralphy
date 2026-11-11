@@ -44,10 +44,10 @@ pub(crate) fn parse_scan(text: &str) -> Vec<ScanLine> {
         .filter_map(|l| {
             let mut fields = l.split_whitespace();
             Some(ScanLine {
-                host_field: fields.next()?.to_string(),
-                kind: fields.next()?.to_string(),
-                blob: fields.next()?.to_string(),
-                raw: l.to_string(),
+                host_field: fields.next()?.to_owned(),
+                kind: fields.next()?.to_owned(),
+                blob: fields.next()?.to_owned(),
+                raw: l.to_owned(),
             })
         })
         .collect()
@@ -71,7 +71,7 @@ pub(crate) fn lines_matching(scan: &[ScanLine], fp: &str, dest: &str) -> Result<
 /// `[host]:port`.
 pub(crate) fn known_name(hostname: &str, port: u16) -> String {
     if port == 22 {
-        hostname.to_string()
+        hostname.to_owned()
     } else {
         format!("[{hostname}]:{port}")
     }
@@ -115,7 +115,7 @@ fn is_known(keygen: &Path, r: &Resolved) -> Result<bool> {
 /// The host key `ssh` negotiates with `dest`, as `known_hosts` lines. `ssh`
 /// records it into a throwaway file and then offers no sign-in method, so
 /// nothing signs in. `ssh-keyscan` is not used: the one in Windows
-/// (OpenSSH_for_Windows 9.5p2) reads no key from an OpenSSH 10 server
+/// (`OpenSSH_for_Windows` 9.5p2) reads no key from an OpenSSH 10 server
 /// (`choose_kex: unsupported KEX method sntrup761x25519-sha512@openssh.com`).
 fn scan(ssh: &Path, dest: &str) -> Result<Vec<ScanLine>> {
     let dir = std::env::temp_dir().join(format!("ralphy-hostkey-{}", ulid::Ulid::new()));

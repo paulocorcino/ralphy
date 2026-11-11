@@ -238,7 +238,7 @@ pub(super) fn snapshot_guard(
 /// Spawn the `"ralphy-snapshot"` worker draining `queue` through a
 /// [`SnapshotEngine`]. A spawn failure leaves the installed Layer inert (the ring
 /// just fills and drops) rather than aborting the run.
-pub fn try_start_snapshot(
+pub(super) fn try_start_snapshot(
     ctx: SnapshotCtx,
     state: RunState,
     repo_root: PathBuf,

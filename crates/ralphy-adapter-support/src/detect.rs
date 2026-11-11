@@ -31,7 +31,7 @@ pub fn auth_error(text: &str, markers: &[&[&str]]) -> bool {
 /// as a JSON object/value; `pick` inspects the parsed value and returns `Some`
 /// when it is the event being looked for. `None` when no line matches.
 ///
-/// This is the shared scaffold under Claude's transcript limit scan and OpenCode's
+/// This is the shared scaffold under Claude's transcript limit scan and `OpenCode`'s
 /// error-event limit scan — both walk the stream line by line, parse each JSON
 /// record, and stop at the first that matches a vendor-specific predicate.
 pub fn scan_json_lines<T>(
@@ -57,7 +57,7 @@ pub fn scan_json_lines<T>(
 /// The vendor supplies both halves: `is_limit` decides whether `text` shows a
 /// usage limit at all, and `reset_hint` extracts the (best-effort) reset from
 /// that vendor's own format. Used by the text-based Claude and Codex detectors;
-/// OpenCode's structural JSON parser produces the same shape via [`scan_json_lines`].
+/// `OpenCode`'s structural JSON parser produces the same shape via [`scan_json_lines`].
 pub fn detect_limit(
     text: &str,
     is_limit: impl Fn(&str) -> bool,
@@ -105,7 +105,7 @@ mod tests {
         );
         let got = scan_json_lines(stream, |v| {
             (v.get("type").and_then(|t| t.as_str()) == Some("target"))
-                .then(|| v.get("v").and_then(|n| n.as_u64()))
+                .then(|| v.get("v").and_then(serde_json::Value::as_u64))
                 .flatten()
         });
         assert_eq!(got, Some(7));

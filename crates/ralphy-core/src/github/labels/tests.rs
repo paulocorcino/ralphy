@@ -64,9 +64,9 @@ fn runner_applied_labels_are_all_in_the_init_roster() {
         .map(|s| s.name)
         .collect();
     for label in [
-        crate::runner::NEEDS_SPLIT_LABEL,
-        crate::runner::NEEDS_HUMAN_REVIEW_LABEL,
-        crate::runner::TRIAGE_AGENT_LABEL,
+        NEEDS_SPLIT_LABEL,
+        NEEDS_HUMAN_REVIEW_LABEL,
+        TRIAGE_AGENT_LABEL,
         crate::runner::STOP_BEFORE_LABEL,
     ] {
         assert!(
@@ -121,7 +121,7 @@ fn no_spec_collides_with_a_github_default_colour() {
 #[test]
 fn needs_human_review_is_not_a_human_return_label() {
     assert!(
-        !human_return_labels(None).contains(&NEEDS_HUMAN_REVIEW_LABEL.to_string()),
+        !human_return_labels(None).contains(&NEEDS_HUMAN_REVIEW_LABEL.to_owned()),
         "needs-human-review must stay out of the human-gate path"
     );
 }
@@ -167,12 +167,12 @@ fn human_return_labels_resolves_roles_and_keeps_fixed_names() {
     assert_eq!(
         got,
         vec![
-            "ready-for-human".to_string(),
-            "HITL".to_string(),
-            "waiting-reporter".to_string(),
-            "needs-triage".to_string(),
-            "wontfix".to_string(),
-            "triage-agent".to_string(),
+            "ready-for-human".to_owned(),
+            "HITL".to_owned(),
+            "waiting-reporter".to_owned(),
+            "needs-triage".to_owned(),
+            "wontfix".to_owned(),
+            "triage-agent".to_owned(),
         ],
         "role names resolve through the mapping; HITL and triage-agent stay fixed"
     );
@@ -181,10 +181,10 @@ fn human_return_labels_resolves_roles_and_keeps_fixed_names() {
 #[test]
 fn human_return_labels_defaults_to_canonical_without_doc() {
     let got = human_return_labels(None);
-    assert!(got.contains(&"ready-for-human".to_string()));
-    assert!(got.contains(&"needs-info".to_string()));
-    assert!(got.contains(&"triage-agent".to_string()));
-    assert!(got.contains(&"HITL".to_string()));
+    assert!(got.contains(&"ready-for-human".to_owned()));
+    assert!(got.contains(&"needs-info".to_owned()));
+    assert!(got.contains(&"triage-agent".to_owned()));
+    assert!(got.contains(&"HITL".to_owned()));
 }
 
 #[test]
@@ -318,8 +318,8 @@ fn parse_label_list_reads_name_and_color_pairs() {
     assert_eq!(
         pairs,
         vec![
-            ("AFK".to_string(), "f9d0c4".to_string()),
-            ("stop-before".to_string(), "d93f0b".to_string()),
+            ("AFK".to_owned(), "f9d0c4".to_owned()),
+            ("stop-before".to_owned(), "d93f0b".to_owned()),
         ]
     );
 }
@@ -368,7 +368,7 @@ fn format_label_plan_contains_names_and_summary() {
 
 #[test]
 fn resolve_queue_labels_explicit_set_returned_verbatim() {
-    let explicit = vec!["my-label".to_string(), "other-label".to_string()];
+    let explicit = vec!["my-label".to_owned(), "other-label".to_owned()];
     let result = resolve_queue_labels(&explicit, Path::new("/nonexistent"));
     assert_eq!(result, explicit, "explicit set should be returned verbatim");
 }
