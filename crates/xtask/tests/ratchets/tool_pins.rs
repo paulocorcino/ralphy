@@ -161,6 +161,7 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("STYLELINT", "stylelint"),
     ("TAPLO", "taplo"),
     ("LYCHEE", "lychee"),
+    ("EDITORCONFIGCHECKER", "editorconfig-checker"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks

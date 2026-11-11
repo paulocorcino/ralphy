@@ -181,9 +181,24 @@ pub const STEPS: &[Step] = &[
         ],
     ),
     // taplo.toml holds the files; `ci.yml` fetches the release binary at
-    // `TAPLO_VERSION`. No `taplo fmt --check` yet: on Windows the TOML files
-    // check out with CRLF, which taplo reports as a format change.
+    // `TAPLO_VERSION`. `.gitattributes` checks every TOML file out with LF.
     step("taplo", &["TOML (taplo)"], "taplo", &["check"]),
+    step(
+        "taplo-fmt",
+        &["TOML format (taplo)"],
+        "taplo",
+        &["fmt", "--check"],
+    ),
+    // .editorconfig holds the rules, .editorconfig-checker.json the settings;
+    // `ci.yml` fetches the release binary at `EDITORCONFIGCHECKER_VERSION`.
+    // Debt: 16 sites in the files the settings exclude by name (trailing
+    // whitespace in prompts, a missing final newline, a test with raw bytes).
+    step(
+        "editorconfig-checker",
+        &["Text files (editorconfig-checker)"],
+        "editorconfig-checker",
+        &["-no-color"],
+    ),
     // lychee.toml holds the settings (offline); `ci.yml` fetches the release
     // binary at `LYCHEE_VERSION`.
     step(

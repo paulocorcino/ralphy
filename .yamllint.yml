@@ -11,9 +11,9 @@ ignore: |
 rules:
   # No file of the repo is a stream of documents, and GitHub reads none of it.
   document-start: disable
-  # Git checks a YAML file out with CRLF on Windows and with LF on Linux.
+  # .gitattributes checks every text file out with LF.
   new-lines:
-    type: platform
+    type: unix
   # `on:` is the trigger key of a workflow, not a boolean.
   truthy:
     check-keys: false

@@ -200,6 +200,7 @@ REGISTRY = {  # tool name in an `As of` line -> where its latest stable release 
     "PSScriptAnalyzer": "github:PowerShell/PSScriptAnalyzer", "yamllint": "pypi:yamllint",
     "html-validate": "npm:html-validate", "stylelint": "npm:stylelint", "taplo": "github:tamasfe/taplo",
     "lychee": "github:lycheeverse/lychee",
+    "editorconfig-checker": "github:editorconfig-checker/editorconfig-checker",
 }
 _ASOF = re.compile(r"^As of (\d{4}-\d{2}-\d{2}): (.*?\.)(?:\s|$)", re.M)
 _PAIR = re.compile(r"([A-Za-z][\w.-]*) v?(\d+(?:\.\d+)*)\b")
