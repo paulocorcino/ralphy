@@ -34,18 +34,16 @@ pub fn materialize_assets(
             .unwrap_or("asset"),
         std::process::id()
     ));
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "a leftover is usually absent; create_dir_all below reports a real failure"
-    )]
-    let _ = fs::remove_dir_all(&staging); // clear any leftover from a crashed run
+    // clear a leftover from a crashed run; create_dir_all below reports a real failure
+    if let Err(e) = fs::remove_dir_all(&staging) {
+        tracing::debug!("could not clear the asset staging leftover: {e}");
+    }
     fs::create_dir_all(&staging).context("creating the asset staging directory")?;
     if let Err(e) = asset.extract(&staging) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the extract error is the one to return; a failed cleanup would mask it"
-        )]
-        let _ = fs::remove_dir_all(&staging);
+        // the extract error is the one to return; a failed cleanup would mask it
+        if let Err(e) = fs::remove_dir_all(&staging) {
+            tracing::warn!("could not clean the asset staging directory: {e}");
+        }
         return Err(e).context("extracting the embedded asset tree");
     }
     if dest_dir.exists() {

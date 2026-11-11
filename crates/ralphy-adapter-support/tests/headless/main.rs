@@ -25,11 +25,10 @@ const LEAK_MARKER: &str = "output-before-the-leak";
 /// Remove a scratch file a test made. It may be gone already, and a leftover
 /// file in the temp dir fails nothing.
 fn remove_scratch(file: &std::path::Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "cleanup of a test file that may be gone, and no test reads it after"
-    )]
-    let _ = std::fs::remove_file(file);
+    // cleanup of a test file that may be gone, and no test reads it after
+    match std::fs::remove_file(file) {
+        Ok(()) | Err(_) => {}
+    }
 }
 
 /// Build a `Command` for the helper child in the given `mode`, with stdin/stdout/

@@ -63,11 +63,10 @@ pub(crate) fn ensure_dir(dir: &Path) {
 /// output. The file is usually absent, and a leftover that cannot be removed is
 /// overwritten or reported by the step that writes it.
 pub(crate) fn remove_stale_file(file: &Path) {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the file is usually absent, and the step that writes it reports a real failure"
-    )]
-    let _ = fs::remove_file(file);
+    // the file is usually absent, and the step that writes it reports a real failure
+    if let Err(e) = fs::remove_file(file) {
+        tracing::debug!("could not remove the old file: {e}");
+    }
 }
 
 /// Drive the shared plan shell. FIRST checks the resume short-circuit: when
@@ -151,11 +150,10 @@ fn stamp_plan_trailer(plan_path: &Path, issue_number: u64) {
     out.push_str("\n\n");
     out.push_str(&crate::resume::plan_trailer(issue_number));
     out.push('\n');
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "best-effort: a failed write only forgoes resume and never fails the plan"
-    )]
-    let _ = fs::write(plan_path, out);
+    // best-effort: a failed write only forgoes resume and never fails the plan
+    if let Err(e) = fs::write(plan_path, out) {
+        tracing::warn!("could not write the plan file: {e}");
+    }
 }
 
 /// The paths and auth wording for a [`run_exec_session`] call — no plan/charter,
