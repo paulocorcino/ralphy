@@ -102,11 +102,11 @@ export function applyLook(el: NoteCard, style: Partial<NoteLook> | null | undefi
   el._noteInk = inkOf(style?.ink);
   el._noteFont = fontOf(style?.font);
   el._noteSize = sizeOf(style?.size);
-  el.dataset.tone = el._noteTone;
-  el.dataset.fill = el._noteFill;
-  el.dataset.ink = el._noteInk;
-  el.dataset.font = el._noteFont;
-  el.dataset.size = el._noteSize;
+  el.dataset["tone"] = el._noteTone;
+  el.dataset["fill"] = el._noteFill;
+  el.dataset["ink"] = el._noteInk;
+  el.dataset["font"] = el._noteFont;
+  el.dataset["size"] = el._noteSize;
 }
 
 // What that card is wearing, as the shape every writer takes.

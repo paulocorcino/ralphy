@@ -52,7 +52,7 @@ export function createNoteMenus(deps: NoteMenusDeps) {
   }
   function toggleMenu(el: NoteCard) {
     openDrop(el, ".note-menu-card:not(.note-anchors)", ".note-more", (menu) => {
-      const record = recordOf(el.dataset.noteId);
+      const record = recordOf(el.dataset["noteId"]);
       // Only a saved note in the PRIMARY tree has file actions: a worktree note
       // cannot be renamed or deleted yet (ADR-0064, amendment: `note.write` is
       // the only Write verb that crosses the worktree gate).

@@ -75,7 +75,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
   function buildDiff(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer diff-viewer";
-    el.dataset.tabId = rec.id;
+    el.dataset["tabId"] = rec.id;
     el.style.display = "none";
     // Find ONLY: no Save, no Reload, no disk badge, no Detach. This surface is
     // read-only by design (#311) — no commit, discard or staging control — and a
@@ -114,7 +114,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
   function buildImage(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer image-viewer";
-    el.dataset.tabId = rec.id;
+    el.dataset["tabId"] = rec.id;
     el.style.display = "none";
     el.innerHTML = `
       <div class="viewer-toolbar">
@@ -183,7 +183,7 @@ export function createViewerReadOnly(deps: ViewerReadOnlyDeps) {
   function buildRefused(rec: RefusedRecord) {
     const el = document.createElement("div");
     el.className = "viewer refused-viewer";
-    el.dataset.tabId = rec.id;
+    el.dataset["tabId"] = rec.id;
     el.style.display = "none";
     el.innerHTML = `
       <div class="viewer-toolbar">

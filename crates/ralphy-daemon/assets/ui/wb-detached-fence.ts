@@ -28,11 +28,12 @@ type FenceOpen = {
 /** Whether `v` is the opener's answer to "ready". The opener can be an older
  * build than this page, which the daemon served when the window opened. */
 export function isFenceOpen(v: unknown): v is FenceOpen {
-  if (!isRecord(v) || v.type !== "wb-fence-open") return false;
+  if (!isRecord(v) || v["type"] !== "wb-fence-open") return false;
   return (
-    isOpenedFence(v.fence) &&
-    (v.members === undefined || (Array.isArray(v.members) && v.members.every(isPopupMember))) &&
-    (v.tab === undefined || isNullableString(v.tab))
+    isOpenedFence(v["fence"]) &&
+    (v["members"] === undefined ||
+      (Array.isArray(v["members"]) && v["members"].every(isPopupMember))) &&
+    (v["tab"] === undefined || isNullableString(v["tab"]))
   );
 }
 
@@ -40,9 +41,9 @@ export function isFenceOpen(v: unknown): v is FenceOpen {
 function isOpenedFence(fence: unknown) {
   return (
     isRecord(fence) &&
-    typeof fence.id === "string" &&
-    isOptionalString(fence.name) &&
-    (fence.rect == null || isPartialRect(fence.rect))
+    typeof fence["id"] === "string" &&
+    isOptionalString(fence["name"]) &&
+    (fence["rect"] == null || isPartialRect(fence["rect"]))
   );
 }
 
@@ -179,7 +180,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   function nextNoteOnTop() {
     const ids: (string | null | undefined)[] = [
       ...stageEl().querySelectorAll<HTMLElement>(".note-card"),
-    ].map((el) => el.dataset.noteId);
+    ].map((el) => el.dataset["noteId"]);
     const now = window.WBNotes.onTopNow();
     if (ids.length === 0 || ((now ?? "") !== "" && ids.length === 1)) return;
     window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);

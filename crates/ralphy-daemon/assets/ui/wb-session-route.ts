@@ -185,7 +185,7 @@ export const WBSessionRoute = (function () {
     const out: SessionPayload = { id: opts.id };
     if (opts.repo !== undefined && opts.repo !== "") out["repo"] = opts.repo;
     if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) {
-      out.since = opts.since;
+      out["since"] = opts.since;
     }
     if (opts.takeover === true) out["takeover"] = 1;
     // A watcher claims nothing, so it names no holder.
@@ -209,7 +209,7 @@ export const WBSessionRoute = (function () {
       out["checkout"] = opts.checkout;
     }
     // The console name: the daemon folds it into Claude's session name.
-    if (typeof opts.name === "string" && opts.name) out.name = opts.name;
+    if (typeof opts.name === "string" && opts.name) out["name"] = opts.name;
     return { ...out, ...recordFields(opts.record), ...holderFields(opts.holder, opts.attempt) };
   }
 
@@ -221,11 +221,13 @@ export const WBSessionRoute = (function () {
     if (!link) return out;
     const { effectiveType, rtt, downlink } = link;
     if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType)) {
-      out.net = effectiveType;
+      out["net"] = effectiveType;
     }
-    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) out.net_rtt = String(rtt);
+    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) {
+      out["net_rtt"] = String(rtt);
+    }
     if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0) {
-      out.net_down = String(downlink);
+      out["net_down"] = String(downlink);
     }
     return out;
   }

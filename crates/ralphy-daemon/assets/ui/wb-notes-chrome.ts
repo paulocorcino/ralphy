@@ -148,7 +148,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     lock.className = "note-lock";
     lock.type = "button";
     lock.addEventListener("click", () => {
-      const r = recordOf(el.dataset.noteId);
+      const r = recordOf(el.dataset["noteId"]);
       patch(el.dataset["noteId"], { locked: r?.locked !== true });
       render();
     });
@@ -340,7 +340,7 @@ export function createNoteChrome(deps: NoteChromeDeps) {
     const handles = DIRS.map((d) => {
       const h = document.createElement("div");
       h.className = d === "se" ? "note-edge note-grip" : "note-edge";
-      h.dataset.dir = d;
+      h.dataset["dir"] = d;
       h.addEventListener(
         "pointerdown",
         consoleHost?.startResize(el, d, {

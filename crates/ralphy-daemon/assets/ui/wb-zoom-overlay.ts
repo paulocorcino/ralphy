@@ -139,7 +139,7 @@ function buildBar(doc: Document) {
     const button = doc.createElement("button");
     button.type = "button";
     button.className = "zoom-bar-btn";
-    button.dataset.zoom = item.act;
+    button.dataset["zoom"] = item.act;
     button.title = item.label;
     button.setAttribute("aria-label", item.label);
     const text = item.text ?? "";

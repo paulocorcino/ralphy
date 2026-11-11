@@ -106,7 +106,7 @@ export function createNotePalette(deps: NotePaletteDeps) {
         const b = document.createElement("button");
         b.className = cls;
         b.type = "button";
-        b.dataset.name = name;
+        b.dataset["name"] = name;
         b.title = SWATCH_NAME[name] ?? name;
         if (text) b.textContent = text(name);
         b.setAttribute("aria-label", label + ": " + (SWATCH_NAME[name] ?? name));
@@ -140,9 +140,9 @@ export function createNotePalette(deps: NotePaletteDeps) {
       ["ink", "note-swatch-ink"],
       ["font", "note-swatch-font"],
       ["size", "note-swatch-size"],
-    ]) {
+    ] as const) {
       for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
-        b.classList.toggle("is-on", b.dataset.name === have[key as keyof NoteLook]);
+        b.classList.toggle("is-on", b.dataset["name"] === have[key]);
       }
     }
   }

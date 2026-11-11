@@ -69,7 +69,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     // Indexed, not selected: an id is daemon data and one quote in it would
     // throw a SyntaxError out of the whole render (`renderFences`' lesson).
     for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      if (el.dataset.noteId === id) return el;
+      if (el.dataset["noteId"] === id) return el;
     }
     return null;
   }
@@ -103,7 +103,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // the whole set, so a fence carrying six cards uploads once.
   function persistCards(els: NoteCard | NoteCard[]) {
     const list = Array.isArray(els) ? els : [els];
-    const moved = new Map(list.filter(Boolean).map((el) => [el.dataset.noteId, rectOf(el)]));
+    const moved = new Map(list.filter(Boolean).map((el) => [el.dataset["noteId"], rectOf(el)]));
     if (moved.size === 0) return;
     const next = (consoleHost?.notes() ?? []).map((n) => {
       const rect = moved.get(n.id);
@@ -336,7 +336,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   function cardNodes(st: HTMLElement): CardNodes {
     const nodes: CardNodes = new Map();
     for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      nodes.set(el.dataset.noteId as string, el);
+      const id = el.dataset["noteId"];
+      if (id !== undefined) nodes.set(id, el);
     }
     return nodes;
   }

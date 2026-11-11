@@ -20,14 +20,16 @@ export type FencePopupMessage =
  * the popup's page when it opens, so it can be a newer build than this tab. */
 export function isFencePopupMessage(v: unknown): v is FencePopupMessage {
   if (!isRecord(v)) return false;
-  switch (v.type) {
+  switch (v["type"]) {
     case "wb-fence-ready":
     case "wb-emit":
     case "wb-fence-reattach":
       return true;
     case "wb-note-named":
     case "wb-note-claimed":
-      return isOptionalString(v.noteId) && isOptionalString(v.path) && isOptionalString(v.claim);
+      return (
+        isOptionalString(v["noteId"]) && isOptionalString(v["path"]) && isOptionalString(v["claim"])
+      );
     default:
       return false;
   }

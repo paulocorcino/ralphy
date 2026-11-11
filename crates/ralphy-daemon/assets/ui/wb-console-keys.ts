@@ -152,7 +152,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       // Not in the tab order: a keyboard user already has these keys.
       b.tabIndex = -1;
       b.className = "session-key" + (cls !== undefined && cls !== "" ? " " + cls : "");
-      b.dataset.key = name;
+      b.dataset["key"] = name;
       b.title = title;
       if (icon !== undefined && icon !== "") {
         const i = document.createElement("i");
@@ -265,7 +265,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
       const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-key]");
       if (!btn) return;
       e.stopPropagation();
-      const name = btn.dataset.key;
+      const name = btn.dataset["key"];
       // The clipboard READ goes first, before any focus move: Safari grants
       // it only to a call made synchronously inside the tap. `term.paste`
       // then rides `onData → sendInput`, so a watcher's paste is refused

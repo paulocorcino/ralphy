@@ -152,7 +152,7 @@ export function createViewerCode(deps: ViewerCodeDeps) {
   function buildCode(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer code-viewer";
-    el.dataset.tabId = rec.id;
+    el.dataset["tabId"] = rec.id;
     el.style.display = "none";
     el.innerHTML = `
       <div class="viewer-toolbar">

@@ -26,7 +26,7 @@ export function feed(
     }
     // The one unchecked step: the daemon runs its own `ralphy` executable,
     // so a line is an event of the same build, as a reply of `apiFetch` is.
-    if (isRecord(parsed) && typeof parsed.event === "string") {
+    if (isRecord(parsed) && typeof parsed["event"] === "string") {
       events.push(parsed as Progress);
     }
   }

@@ -79,7 +79,7 @@ function markdownBody(article: Element, content: string, uid: number, doc: Docum
     if (!pre) return;
     const holder = doc.createElement("div");
     holder.className = "mermaid";
-    holder.dataset.src = code.textContent;
+    holder.dataset["src"] = code.textContent;
     holder.id = `mmd-${uid}-${i}`;
     pre.replaceWith(holder);
     pending.push(holder);
@@ -93,7 +93,7 @@ function diagramBody(article: Element, content: string, uid: number, doc: Docume
   const holder = doc.createElement("div");
   holder.className = "mermaid";
   holder.id = `mmd-${uid}-0`;
-  holder.dataset.src = content;
+  holder.dataset["src"] = content;
   article.append(holder);
   return [holder];
 }

@@ -91,7 +91,7 @@ function refNode(ctx: Ctx, ep: DbmlEndpoint, arrow: string): HTMLElement {
 function columnRow(ctx: Ctx, column: DbmlColumn, out: DbmlRef[]) {
   const { doc } = ctx;
   const row = el(doc, "tr", "dbml-col");
-  row.dataset.col = column.name;
+  row.dataset["col"] = column.name;
   const name = el(doc, "td", "dbml-col-name");
   name.title = (column.note ?? "") === "" ? column.name : `${column.name}: ${column.note}`;
   if (column.pk) name.append(el(doc, "i", "bi bi-key"), " ");
@@ -143,13 +143,13 @@ function clearMarks(article: Element) {
 function toggleMark(ctx: Ctx, row: HTMLElement) {
   const wasOrigin = row.classList.contains("dbml-origin");
   clearMarks(ctx.article);
-  const table = row.closest<HTMLElement>(".dbml-card")?.dataset.table;
+  const table = row.closest<HTMLElement>(".dbml-card")?.dataset["table"];
   if (wasOrigin || table === undefined) return;
   row.classList.add("dbml-origin");
-  const same = sameColumns(ctx.schema, table, row.dataset.col ?? "");
+  const same = sameColumns(ctx.schema, table, row.dataset["col"] ?? "");
   for (const card of ctx.article.querySelectorAll<HTMLElement>(".dbml-card")) {
     const rows = [...card.querySelectorAll<HTMLElement>("tr.dbml-col")].filter((r) =>
-      same.has(colKey(card.dataset.table ?? "", r.dataset.col ?? "")),
+      same.has(colKey(card.dataset["table"] ?? "", r.dataset["col"] ?? "")),
     );
     for (const r of rows) r.classList.add("dbml-same");
     if (rows.length > 0) setOpen(card, true);
@@ -183,7 +183,7 @@ function cardHead(ctx: Ctx, table: DbmlTable) {
 function buildCard(ctx: Ctx, table: DbmlTable) {
   const { doc } = ctx;
   const box = el(doc, "div", "dbml-card");
-  box.dataset.table = table.name;
+  box.dataset["table"] = table.name;
   tableOfCard.set(box, table);
   box.append(cardHead(ctx, table));
   if (table.note !== null && table.note !== "") box.append(el(doc, "p", "dbml-note", table.note));
@@ -240,7 +240,9 @@ let drawCount = 0;
 // The tables of the checked boxes, in the order of the page.
 function selected(ctx: Ctx) {
   const boxes = ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick:checked");
-  return [...boxes].flatMap((box) => box.closest<HTMLElement>(".dbml-card")?.dataset.table ?? []);
+  return [...boxes].flatMap(
+    (box) => box.closest<HTMLElement>(".dbml-card")?.dataset["table"] ?? [],
+  );
 }
 
 // The text and state of the draw button follow the size of the selection.

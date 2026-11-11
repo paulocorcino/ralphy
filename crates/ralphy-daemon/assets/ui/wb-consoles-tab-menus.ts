@@ -106,7 +106,7 @@ export function wbConsoleMenus() {
     },
     openConsoleRun() {
       this.consoleRunOpen = true;
-      void this.$nextTick(() => this.$refs.consoleRun?.focus());
+      void this.$nextTick(() => this.$refs["consoleRun"]?.focus());
     },
     // Cancel keeps the menu open: Esc undoes only the field.
     closeConsoleRun() {

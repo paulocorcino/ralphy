@@ -43,15 +43,15 @@ export function isPartialRect(v: unknown): v is Partial<Rect> {
  * opened it post members to each other, and either one can be a page of
  * another build: the daemon serves the popup's page when it opens. */
 export function isPopupMember(v: unknown): v is PopupMember {
-  if (!isRecord(v) || typeof v.id !== "string") return false;
+  if (!isRecord(v) || typeof v["id"] !== "string") return false;
   return (
-    [v.kind, v.agent, v.repo, v.consoleName, v.claim].every(
+    [v["kind"], v["agent"], v["repo"], v["consoleName"], v["claim"]].every(
       (f) => f == null || typeof f === "string",
     ) &&
-    isOptionalString(v.path) &&
-    isOptionalString(v.draft) &&
-    (v.session == null || typeof v.session === "number") &&
-    (v.rect === undefined || isPartialRect(v.rect))
+    isOptionalString(v["path"]) &&
+    isOptionalString(v["draft"]) &&
+    (v["session"] == null || typeof v["session"] === "number") &&
+    (v["rect"] === undefined || isPartialRect(v["rect"]))
   );
 }
 

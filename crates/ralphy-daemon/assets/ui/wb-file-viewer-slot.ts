@@ -130,7 +130,7 @@ export function createViewerSlot(deps: ViewerSlotDeps) {
     if (!model) return;
     const el = document.createElement("div");
     el.className = "viewer code-viewer mirror-viewer";
-    el.dataset.mirrorOf = rec.id;
+    el.dataset["mirrorOf"] = rec.id;
     // `.viewer` takes its `display` inline (paint sets flex/none per pane):
     // without it the body has no flex to fill and Monaco mounts 0px tall.
     el.style.display = "flex";

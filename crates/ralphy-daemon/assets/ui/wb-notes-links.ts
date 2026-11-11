@@ -74,7 +74,7 @@ export function installLinks(deps: NoteLinksDeps) {
       return;
     }
     ev.preventDefault();
-    requestOpen(recordOf(el.dataset.noteId), target);
+    requestOpen(recordOf(el.dataset["noteId"]), target);
   }
 
   return function installOn(el: NoteCard) {

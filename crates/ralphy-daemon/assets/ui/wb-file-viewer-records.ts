@@ -69,14 +69,14 @@ export type OpenSpec = {
 export function isFileDescriptor(v: unknown): v is FileDescriptor {
   return (
     isRecord(v) &&
-    typeof v.project === "string" &&
-    typeof v.label === "string" &&
-    typeof v.path === "string" &&
-    typeof v.ftype === "string" &&
-    typeof v.content === "string" &&
-    isNullableString(v.checkout) &&
-    isOptionalString(v.encoding) &&
-    typeof v.bom === "boolean"
+    typeof v["project"] === "string" &&
+    typeof v["label"] === "string" &&
+    typeof v["path"] === "string" &&
+    typeof v["ftype"] === "string" &&
+    typeof v["content"] === "string" &&
+    isNullableString(v["checkout"]) &&
+    isOptionalString(v["encoding"]) &&
+    typeof v["bom"] === "boolean"
   );
 }
 
@@ -85,10 +85,10 @@ export function isFileDescriptor(v: unknown): v is FileDescriptor {
 export function isOpenRequest(v: unknown): v is OpenRequest {
   return (
     isRecord(v) &&
-    isNullableString(v.project) &&
-    typeof v.path === "string" &&
-    isNullableString(v.checkout) &&
-    isOptionalString(v.fragment) &&
-    (v.as === undefined || v.as === "bytes")
+    isNullableString(v["project"]) &&
+    typeof v["path"] === "string" &&
+    isNullableString(v["checkout"]) &&
+    isOptionalString(v["fragment"]) &&
+    (v["as"] === undefined || v["as"] === "bytes")
   );
 }

@@ -62,14 +62,14 @@ export type DetachMessage = {
  * origin hears the channel, and one of them can be a page of another build
  * (a popup the daemon served after an update). */
 export function isDetachMessage(v: unknown): v is DetachMessage {
-  if (!isRecord(v) || typeof v.type !== "string" || !isNullableString(v.tab)) return false;
+  if (!isRecord(v) || typeof v["type"] !== "string" || !isNullableString(v["tab"])) return false;
   return (
-    isOptionalNullableString(v.fenceId) &&
-    isOptionalNullableString(v.pid) &&
-    isDetachMembers(v.members) &&
-    isOptionalString(v.noteId) &&
-    isOptionalString(v.path) &&
-    isOptionalString(v.claim)
+    isOptionalNullableString(v["fenceId"]) &&
+    isOptionalNullableString(v["pid"]) &&
+    isDetachMembers(v["members"]) &&
+    isOptionalString(v["noteId"]) &&
+    isOptionalString(v["path"]) &&
+    isOptionalString(v["claim"])
   );
 }
 
@@ -87,9 +87,9 @@ function isDetachMembers(members: unknown) {
       members.every(
         (m) =>
           isRecord(m) &&
-          typeof m.id === "string" &&
-          (m.kind == null || typeof m.kind === "string") &&
-          isOptionalString(m.path),
+          typeof m["id"] === "string" &&
+          (m["kind"] == null || typeof m["kind"] === "string") &&
+          isOptionalString(m["path"]),
       ))
   );
 }
@@ -111,16 +111,16 @@ export const WBDetachLink = (function () {
       const raw = sessionStorage.getItem(KEY);
       if (raw === null) return null;
       const rec: unknown = JSON.parse(raw);
-      if (!isRecord(rec) || rec.v !== 1) return null;
+      if (!isRecord(rec) || rec["v"] !== 1) return null;
       const members: Record<string, string[]> = {};
-      for (const [id, ids] of Object.entries(isRecord(rec.members) ? rec.members : {})) {
+      for (const [id, ids] of Object.entries(isRecord(rec["members"]) ? rec["members"] : {})) {
         if (Array.isArray(ids)) members[id] = ids.filter((w): w is string => typeof w === "string");
       }
       return {
         v: 1,
-        tab: typeof rec.tab === "string" ? rec.tab : null,
-        fences: Array.isArray(rec.fences)
-          ? rec.fences.filter((f): f is string => typeof f === "string")
+        tab: typeof rec["tab"] === "string" ? rec["tab"] : null,
+        fences: Array.isArray(rec["fences"])
+          ? rec["fences"].filter((f): f is string => typeof f === "string")
           : [],
         members,
       };

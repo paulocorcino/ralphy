@@ -57,7 +57,7 @@ export function refreshEncodingPill(rec: ViewerRecord) {
 
 function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
   for (const item of menu.querySelectorAll<HTMLElement>(".enc-item")) {
-    const i = Number(item.dataset.reopen ?? item.dataset.savewith);
+    const i = Number(item.dataset["reopen"] ?? item.dataset["savewith"]);
     const row = ENCODINGS[i];
     if (!row) continue;
     const [, name, bom] = row;
@@ -126,10 +126,10 @@ export function createViewerEncoding(deps: ViewerEncodingDeps) {
       if (!item) return;
       ev.stopPropagation();
       close();
-      const encoding = ENCODINGS[Number(item.dataset.reopen ?? item.dataset.savewith)];
+      const encoding = ENCODINGS[Number(item.dataset["reopen"] ?? item.dataset["savewith"])];
       if (!encoding) return;
-      if (item.dataset.reopen != null) reopenWith(rec, encoding);
-      else if (item.dataset.savewith != null) saveWith(rec, encoding);
+      if (item.dataset["reopen"] != null) reopenWith(rec, encoding);
+      else if (item.dataset["savewith"] != null) saveWith(rec, encoding);
     };
   }
 

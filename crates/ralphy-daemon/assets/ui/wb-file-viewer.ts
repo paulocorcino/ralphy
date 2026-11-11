@@ -395,7 +395,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       rec.id = id;
       rec.path = path;
       map.set(id, rec);
-      if (rec.el) rec.el.dataset.tabId = id;
+      if (rec.el) rec.el.dataset["tabId"] = id;
       if (rec.el) setPathLabel(rec.el, rec);
     },
 

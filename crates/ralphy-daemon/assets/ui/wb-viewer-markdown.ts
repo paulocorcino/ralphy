@@ -123,8 +123,8 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
   function buildMarkdown(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer md-viewer";
-    el.dataset.tabId = rec.id;
-    el.dataset.kind = rec.kind;
+    el.dataset["tabId"] = rec.id;
+    el.dataset["kind"] = rec.kind;
     el.style.display = "none";
     el.innerHTML = `
       <div class="viewer-toolbar">
@@ -342,7 +342,7 @@ export function createViewerMarkdown(deps: ViewerMarkdownDeps) {
     rec.mermaidPending = [];
     pending.forEach((holder) => {
       // `drawDiagram` returns the SVG already sanitized.
-      drawDiagram(window, holder.id + "-svg", holder.dataset.src ?? "")
+      drawDiagram(window, holder.id + "-svg", holder.dataset["src"] ?? "")
         .then((svg) => (holder.innerHTML = svg))
         .catch((err: unknown) => {
           holder.classList.add("mermaid-error");

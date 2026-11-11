@@ -44,7 +44,7 @@ export function showPeerDown(
     btn.className = "session-reconnect";
     btn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
-      if (btn.dataset.act === "wake") void wakePeerNow()?.(peerDaemon);
+      if (btn.dataset["act"] === "wake") void wakePeerNow()?.(peerDaemon);
       else readFleetNow()?.();
     });
     strip.append(text, detail, btn);
@@ -77,7 +77,7 @@ export function showParked(document: Document, win: ConsoleWin): HTMLElement {
   hint.className = "session-parked-hint";
   const btn = document.createElement("button");
   btn.className = "session-reconnect";
-  btn.dataset.act = "take-over";
+  btn.dataset["act"] = "take-over";
   btn.textContent = "Take over";
   btn.addEventListener("click", (e: MouseEvent) => {
     e.stopPropagation();

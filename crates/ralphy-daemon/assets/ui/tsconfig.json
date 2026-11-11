@@ -27,6 +27,7 @@
     // before the value is used.
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
     // The lint gate: the checks that cost nothing when they came on. Two
     // more come with docs/lint/lint-transition.md.
     "noUnusedLocals": true,
