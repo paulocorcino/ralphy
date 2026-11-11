@@ -71,5 +71,7 @@ export async function liveSessionFor(reads: LiveReads, win: ConsoleWin, record: 
     .filter((w) => w !== win && !w.classList.contains("placeholder"))
     .map((w) => ({ id: sessionIdOf(w), repo: w._deskRepo }))
     .filter((h) => h.id != null);
+  // `undefined` (not known) differs from `null`; `return undefined` breaks no-useless-undefined.
+  // oxlint-disable-next-line typescript/consistent-return -- see the line above
   return placeholderSession({ layout, sessions, recordId: win._deskId, held });
 }

@@ -192,8 +192,16 @@
     // Phase 10 (promises and void): the module groups at 0 sites. The entry
     // goes when the last group is at 0.
     {
-      "files": ["**/ui-tests/**"],
+      "files": [
+        "**/ui-tests/**",
+        "**/assets/ui/app.ts",
+        "**/assets/ui/wb-console*.ts",
+        "**/assets/ui/wb-[a-b]*.ts"
+      ],
       "rules": {
+        "typescript/no-confusing-void-expression": "error",
+        "typescript/strict-void-return": "error",
+        "typescript/consistent-return": "error",
         "require-await": "error",
         "no-promise-executor-return": "error",
         "promise/always-return": "error",

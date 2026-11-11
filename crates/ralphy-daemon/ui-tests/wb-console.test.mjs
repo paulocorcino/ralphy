@@ -809,7 +809,7 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
 // need a real DOM, so the wiring is pinned on the source.
 test("a restart and a placeholder's Launch mark the console as relaunching", () => {
   assert.match(SRC, /markRelaunch\(carry\.id, discard\);/);
-  assert.match(SRC, /markRelaunch\(carry\.id, \(\) => drop\(true\)\);/);
+  assert.match(SRC, /markRelaunch\(carry\.id, \(\) => \{\s*drop\(true\);\s*\}\);/u);
   assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\.id\);/u);
 });
 

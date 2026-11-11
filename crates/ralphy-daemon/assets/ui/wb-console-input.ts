@@ -258,9 +258,10 @@ export function pasteAfterRead<T extends PasteTerm>(
   return (
     read
       .then(({ image, text }) => {
-        if (!attached()) return;
+        if (!attached()) return null;
         if (image) t.pasteImage(image);
         else if (text !== undefined && text !== "") t.term.paste(text);
+        return null;
       })
       // The key bar shows nothing for a refused or failed read.
       .catch(() => {})

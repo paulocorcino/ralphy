@@ -109,10 +109,15 @@ export function addProjectDialog() {
         const payload = WBAddProject.request(this.addProject);
         this.addProjectStep({ type: "sent", seq });
         clearTimeout(this._addProjectSlow);
-        this._addProjectSlow = setTimeout(() => this.addProjectStep({ type: "slow", seq }), 300);
+        this._addProjectSlow = setTimeout(() => {
+          this.addProjectStep({ type: "slow", seq });
+        }, 300);
         window.WBDaemon.observe("dir.list", payload)
-          .then((reply) => this.addProjectStep({ type: "reply", seq, reply }))
-          .catch((e: unknown) =>
+          .then((reply) => {
+            this.addProjectStep({ type: "reply", seq, reply });
+            return null;
+          })
+          .catch((e: unknown) => {
             this.addProjectStep({
               type: "reply",
               seq,
@@ -120,8 +125,8 @@ export function addProjectDialog() {
                 status: "error",
                 message: e instanceof Error && e.message ? e.message : String(e),
               },
-            }),
-          );
+            });
+          });
       }, delay);
     },
     async addProjectSubmit() {

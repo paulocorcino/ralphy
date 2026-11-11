@@ -148,7 +148,10 @@ export function frameQueue(
       end({ kind: "replay-lost" });
     }, DECODE_DEADLINE_MS);
     decode(event.bytes).then(
-      (decoded) => end({ ...event, bytes: decoded }),
+      (decoded) => {
+        end({ ...event, bytes: decoded });
+        return null;
+      },
       // The replay is lost, not the console: the live stream goes on.
       (error: unknown) => {
         console.warn("console replay did not decode:", error);

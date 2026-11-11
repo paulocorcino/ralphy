@@ -20,9 +20,13 @@ export function wbAccount() {
     avatarMenu: false,
 
     init() {
-      window.addEventListener("workbench:menus-close", () => this.closeAvatarMenu());
+      window.addEventListener("workbench:menus-close", () => {
+        this.closeAvatarMenu();
+      });
       // Log off (the store `connection`) closes the menu it was chosen from.
-      window.addEventListener("workbench:log-off", () => this.closeAvatarMenu());
+      window.addEventListener("workbench:log-off", () => {
+        this.closeAvatarMenu();
+      });
     },
 
     // ONE dropdown at a time: the menu hears `workbench:menus-close` (sent by

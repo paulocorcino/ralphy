@@ -13,9 +13,11 @@ import type { BoardRow } from "./wb-shell-types.d.ts";
 export function boardFold(slug: string, timeoutMs: number) {
   return Promise.race([
     window.WBDaemon.observe("board.list", { repo: slug }),
-    new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error("board fold timed out")), timeoutMs),
-    ),
+    new Promise<never>((_, rej) => {
+      setTimeout(() => {
+        rej(new Error("board fold timed out"));
+      }, timeoutMs);
+    }),
   ]);
 }
 

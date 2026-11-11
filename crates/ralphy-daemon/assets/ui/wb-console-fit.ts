@@ -103,9 +103,13 @@ export function createFit({ term, body, fitAddon, socket, covered, focused, watc
   const fit = { fit: request };
   // The only ResizeObserver of the console's terminal. It calls through the
   // handle's door, so every refit request goes through one door.
-  const ro = new ResizeObserver(() => fit.fit());
+  const ro = new ResizeObserver(() => {
+    fit.fit();
+  });
   ro.observe(body);
-  term.onResize(() => send());
+  term.onResize(() => {
+    send();
+  });
 
   return {
     fit,

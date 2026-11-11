@@ -117,7 +117,10 @@ export function wireTouch(deps: TouchDeps) {
   };
   // One scroll step, timed for the scroll probe when there is one.
   const timedFlush = (input: "touch" | "glide") => {
-    if (!probe) return flushScroll();
+    if (!probe) {
+      flushScroll();
+      return;
+    }
     const started = performance.now();
     flushScroll();
     probe.moved(input);
@@ -125,7 +128,11 @@ export function wireTouch(deps: TouchDeps) {
   };
   const scrollByPixels = (dy: number) => {
     touchAccum += touchScrollLines(dy, cellHeight());
-    if (!scrollRaf) scrollRaf = requestAnimationFrame(() => timedFlush("touch"));
+    if (!scrollRaf) {
+      scrollRaf = requestAnimationFrame(() => {
+        timedFlush("touch");
+      });
+    }
   };
   const stopScroll = () => {
     if (scrollRaf) cancelAnimationFrame(scrollRaf);

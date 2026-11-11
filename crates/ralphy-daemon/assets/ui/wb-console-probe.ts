@@ -112,6 +112,7 @@ export function createScrollProbe(deps: ScrollProbeDeps) {
         on = reply.status === "ok";
         if (on) flush();
         else queue = [];
+        return null;
       },
       // A daemon that could not be asked has no probe for this load.
       () => {
@@ -126,12 +127,12 @@ export function createScrollProbe(deps: ScrollProbeDeps) {
     const batch = queue.slice(0, MAX_RECORDS);
     queue = queue.slice(MAX_RECORDS);
     sending = true;
-    const done = () => {
+    const afterSend = () => {
       sending = false;
       flush();
     };
     // A refused or lost batch is dropped: the probe never retries.
-    deps.send(batch).then(done, done);
+    deps.send(batch).then(afterSend, afterSend);
   }
 
   function watch(term: XtermTerminal, place: ScrollPlace) {

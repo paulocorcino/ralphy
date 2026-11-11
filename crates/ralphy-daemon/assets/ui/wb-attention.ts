@@ -41,6 +41,7 @@ import { sendWindow } from "./wb-events.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBNotify, canNotify } from "./wb-notify.ts";
 import { WBProject } from "./wb-project.ts";
+import { showConsoleWindow } from "./wb-console-place.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
 /** The kind of a request (`attention::Kind`). */
@@ -220,15 +221,23 @@ export function wbAttention() {
     init() {
       void this.read();
       this._link = consoleLinkOf(window.location.search);
-      if (this._link) this._linkTimer = window.setInterval(() => this.openLink(), LINK_BEAT_MS);
+      if (this._link) {
+        this._linkTimer = window.setInterval(() => {
+          this.openLink();
+        }, LINK_BEAT_MS);
+      }
       window.addEventListener("workbench:attention-reread", () => {
         void this.read();
       });
       window.addEventListener("workbench:logged-in", () => {
         void this.read();
       });
-      window.addEventListener("workbench:menus-close", () => this.close());
-      document.addEventListener("focusin", (e) => this.focused(e.target));
+      window.addEventListener("workbench:menus-close", () => {
+        this.close();
+      });
+      document.addEventListener("focusin", (e) => {
+        this.focused(e.target);
+      });
       window.setInterval(() => {
         this.now = Date.now();
       }, 60000);
@@ -261,7 +270,10 @@ export function wbAttention() {
     openLink() {
       const link = this._link;
       if (!link) return;
-      if (++this._linkTries > LINK_TRIES) return this.endLink();
+      if (++this._linkTries > LINK_TRIES) {
+        this.endLink();
+        return;
+      }
       if (this.$store.projects.sessionsRead?.current !== true) return;
       const session = this.$store.projects.liveSessions.find(
         (s) => s.id === link.session && s.daemon_id === link.daemon,
@@ -308,7 +320,11 @@ export function wbAttention() {
         body: `${this.kindOf(request)}${detail}`,
         tag: request.id,
       });
-      note.onclick = () => window.focus();
+      // The one handler of a new object, and the ui-tests' fakes have no addEventListener.
+      // oxlint-disable-next-line unicorn/prefer-add-event-listener -- see the line above
+      note.onclick = () => {
+        window.focus();
+      };
     },
 
     toggle() {
@@ -417,13 +433,13 @@ export function wbAttention() {
 
     // Show the console window of the desk record `id`.
     reveal(id: string) {
-      const tab = this.$store.tabs.tabOf(id);
-      if (tab) {
-        this.$store.tabs.activate(tab.id);
-        return;
-      }
-      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
-      void this.$nextTick(() => WBConsole.reveal(id));
+      showConsoleWindow(
+        this.$store.tabs,
+        (reveal) => {
+          void this.$nextTick(reveal);
+        },
+        id,
+      );
     },
   });
 }
