@@ -18,6 +18,8 @@
     "MD013": false,
     // br breaks lines in the table cells of the converted papers in docs/research;
     // p and img set the phone screenshots of the README side by side
-    "MD033": { "allowed_elements": ["br", "p", "img"] }
+    "MD033": { "allowed_elements": ["br", "p", "img"] },
+    // debt: 1666 sites (new in markdownlint-cli2 0.24.0)
+    "MD060": false
   }
 }

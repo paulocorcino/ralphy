@@ -139,7 +139,7 @@ pub(super) const STEPS: &[Step] = &[
         "markdownlint",
         &["Markdown (markdownlint)"],
         "npx",
-        &["-y", "markdownlint-cli2@0.18.1"],
+        &["-y", "markdownlint-cli2@0.24.0"],
     ),
     // The module installed on the machine, as for PSScriptAnalyzer:
     // `ci.yml` installs `YAMLLINT_VERSION`.
@@ -221,7 +221,7 @@ pub(super) const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "@ast-grep/cli@0.51.1",
+            "@ast-grep/cli@0.51.2",
             "ast-grep",
             "scan",
             "--error=unused-suppression",
@@ -234,7 +234,7 @@ pub(super) const STEPS: &[Step] = &[
         &[
             "-y",
             "-p",
-            "@ast-grep/cli@0.51.1",
+            "@ast-grep/cli@0.51.2",
             "ast-grep",
             "test",
             "--skip-snapshot-tests",
@@ -306,7 +306,7 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "oxfmt@0.75.0",
+            "oxfmt@0.78.0",
             "--check",
             "crates/ralphy-daemon/assets/ui/*.ts",
         ],
@@ -317,7 +317,7 @@ pub(super) const STEPS: &[Step] = &[
         "npx",
         &[
             "-y",
-            "jscpd@5.4.0",
+            "jscpd@5.4.3",
             "--baseline-from-ref",
             "main",
             "--fail-on-new-clones",
