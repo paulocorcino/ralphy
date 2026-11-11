@@ -68,6 +68,10 @@ env:
   # The stylelint of the `checks` job. The stylelint step of `xtask gate`
   # runs the same version through npx.
   STYLELINT_VERSION: "18.0.0"
+  # The taplo of the `checks` job: a release binary, pinned by checksum.
+  # The taplo step of `xtask gate` run the taplo on PATH.
+  TAPLO_VERSION: "0.10.0"
+  TAPLO_SHA256: 8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
 
 jobs:
   lint:
@@ -171,6 +175,15 @@ jobs:
       # are at the stylelint step of crates/xtask/src/gate/steps.rs.
       - name: CSS (stylelint)
         run: npx -y "stylelint@${STYLELINT_VERSION}" "crates/ralphy-daemon/assets/ui/styles/*.css"
+
+      # The files are in taplo.toml.
+      - name: TOML (taplo)
+        run: |
+          curl -fsSL -o taplo.gz "https://github.com/tamasfe/taplo/releases/download/${TAPLO_VERSION}/taplo-linux-x86_64.gz"
+          echo "${TAPLO_SHA256}  taplo.gz" | sha256sum -c -
+          gunzip taplo.gz
+          chmod +x taplo
+          ./taplo check
 
       # A dependency in a Cargo.toml that no source file names. The binary
       # sits in the working directory, so `cargo machete` finds it on PATH.

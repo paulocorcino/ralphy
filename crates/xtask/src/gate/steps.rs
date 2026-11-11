@@ -180,6 +180,10 @@ pub const STEPS: &[Step] = &[
             "crates/ralphy-daemon/assets/ui/styles/*.css",
         ],
     ),
+    // taplo.toml holds the files; `ci.yml` fetches the release binary at
+    // `TAPLO_VERSION`. No `taplo fmt --check` yet: on Windows the TOML files
+    // check out with CRLF, which taplo reports as a format change.
+    step("taplo", &["TOML (taplo)"], "taplo", &["check"]),
     // CI runs gitleaks in `security.yml`, with its own action.
     step(
         "gitleaks",

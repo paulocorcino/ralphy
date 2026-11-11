@@ -159,6 +159,7 @@ const PIN_NAMES: &[(&str, &str)] = &[
     ("YAMLLINT", "yamllint"),
     ("HTMLVALIDATE", "html-validate"),
     ("STYLELINT", "stylelint"),
+    ("TAPLO", "taplo"),
 ];
 
 /// The name of the tool of `<key>_VERSION`. A key that `PIN_NAMES` lacks
