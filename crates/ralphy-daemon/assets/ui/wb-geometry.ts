@@ -47,17 +47,17 @@ type ClientBox = { left: number; top: number; right: number; bottom: number };
 export const WBGeometry = (function () {
   // A point; a missing point or coordinate reads 0.
   function pointOf(point: Partial<Point> | null | undefined) {
-    return { x: point?.x || 0, y: point?.y || 0 };
+    return { x: point?.x ?? 0, y: point?.y ?? 0 };
   }
 
   // The four edges of a rect; a missing rect or field reads 0.
   function edgesOf(r: Partial<Rect> | null | undefined) {
-    const left = r?.left || 0;
-    const top = r?.top || 0;
-    return { left, top, right: left + (r?.width || 0), bottom: top + (r?.height || 0) };
+    const left = r?.left ?? 0;
+    const top = r?.top ?? 0;
+    return { left, top, right: left + (r?.width ?? 0), bottom: top + (r?.height ?? 0) };
   }
 
-  function rectsOverlap(a: Partial<Rect>, b: Partial<Rect>) {
+  function rectsOverlap(a: Partial<Rect>, b: Partial<Rect> | null | undefined) {
     const p = edgesOf(a);
     const q = edgesOf(b);
     return p.left < q.right && p.right > q.left && p.top < q.bottom && p.bottom > q.top;
@@ -77,8 +77,8 @@ export const WBGeometry = (function () {
 
   function titleBarPoint(rect: Rect | undefined) {
     return {
-      x: (rect?.left || 0) + (rect?.width || 0) / 2,
-      y: (rect?.top || 0) + Math.min(TITLE_MID, (rect?.height || 0) / 2),
+      x: (rect?.left ?? 0) + (rect?.width ?? 0) / 2,
+      y: (rect?.top ?? 0) + Math.min(TITLE_MID, (rect?.height ?? 0) / 2),
     };
   }
 
@@ -96,12 +96,15 @@ export const WBGeometry = (function () {
   // `break` is the second half of "exactly one": half-open containment makes the
   // fences disjoint as point sets, and this makes the fold's own answer so even
   // if a stored rect pair ever overlaps.
-  function fenceMembership(fences: readonly Placed[], windows: readonly Placed[]) {
-    const list = fences || [];
+  function fenceMembership(
+    fences: readonly Placed[] | null | undefined,
+    windows: readonly Placed[] | null | undefined,
+  ) {
+    const list = fences ?? [];
     const out: Record<string, string[]> = {};
     for (const f of list) out[f.id] = [];
-    for (const w of windows || []) {
-      const c = titleBarPoint(w?.rect);
+    for (const w of windows ?? []) {
+      const c = titleBarPoint(w.rect);
       for (const f of list) {
         if (rectHolds(f.rect, c)) {
           out[f.id]?.push(w.id);
@@ -117,9 +120,9 @@ export const WBGeometry = (function () {
   // whose a window is. `null` when no fence holds its title bar point. This is what a
   // gesture consults to ask "is the fence under this window locked?". A missing
   // rect is read at the origin, as `titleBarPoint` reads it.
-  function fenceOf(fences: readonly DeskFence[], rect: Rect | undefined) {
+  function fenceOf(fences: readonly DeskFence[] | null | undefined, rect: Rect | undefined) {
     const c = titleBarPoint(rect);
-    for (const f of fences || []) {
+    for (const f of fences ?? []) {
       if (rectHolds(f.rect, c)) return f;
     }
     return null;
@@ -129,9 +132,12 @@ export const WBGeometry = (function () {
   // `rectsOverlap` the spawn rule uses, so abutting fences stay buildable and
   // one predicate answers for create, move and resize alike. A candidate is
   // never compared with itself — a move must not refuse its own start rect.
-  function fenceFits(fences: readonly Placed[], candidate: Placed) {
-    const rect = candidate?.rect || {};
-    return !(fences || []).some((f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}));
+  function fenceFits(
+    fences: readonly Placed[] | null | undefined,
+    candidate: Placed | null | undefined,
+  ) {
+    const rect = candidate?.rect ?? {};
+    return !(fences ?? []).some((f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect));
   }
 
   // The move delta a fence and the members it carries may actually take: the
@@ -139,13 +145,17 @@ export const WBGeometry = (function () {
   // (issue #336) and grows right and down only, so a negative coordinate is not
   // a position — it is a lost window. The MEMBERS are in the fold too: one can
   // sit further left than the fence that carries it.
-  function fenceMoveDelta(delta: Delta, fenceRect: Rect, memberRects: readonly Rect[]) {
-    const members = memberRects || [];
-    const minLeft = Math.min(fenceRect?.left || 0, ...members.map((r) => r?.left || 0));
-    const minTop = Math.min(fenceRect?.top || 0, ...members.map((r) => r?.top || 0));
+  function fenceMoveDelta(
+    delta: Delta | null | undefined,
+    fenceRect: Rect | null | undefined,
+    memberRects: readonly (Rect | null | undefined)[] | null | undefined,
+  ) {
+    const members = memberRects ?? [];
+    const minLeft = Math.min(fenceRect?.left ?? 0, ...members.map((r) => r?.left ?? 0));
+    const minTop = Math.min(fenceRect?.top ?? 0, ...members.map((r) => r?.top ?? 0));
     return {
-      dx: Math.max(delta?.dx || 0, -minLeft),
-      dy: Math.max(delta?.dy || 0, -minTop),
+      dx: Math.max(delta?.dx ?? 0, -minLeft),
+      dy: Math.max(delta?.dy ?? 0, -minTop),
     };
   }
 
@@ -157,23 +167,23 @@ export const WBGeometry = (function () {
   // ONE clamp per axis: the final `Math.max(0, …)` stops a viewport bigger than
   // the extent asking for a negative offset. Flooring the ceiling too would
   // make that floor unfalsifiable by the table's negative control.
-  function clampOffset(offset: Offset, viewport: Size, extent: Size) {
+  function clampOffset(offset: Offset | null | undefined, viewport: Size, extent: Size) {
     const v = sizeOrZero(viewport);
     const e = sizeOrZero(extent);
     return {
-      left: Math.max(0, Math.min(offset?.left || 0, e.width - v.width)),
-      top: Math.max(0, Math.min(offset?.top || 0, e.height - v.height)),
+      left: Math.max(0, Math.min(offset?.left ?? 0, e.width - v.width)),
+      top: Math.max(0, Math.min(offset?.top ?? 0, e.height - v.height)),
     };
   }
 
   // A size whose missing side reads 0.
   function sizeOrZero(size: Partial<Size> | null | undefined) {
-    return { width: size?.width || 0, height: size?.height || 0 };
+    return { width: size?.width ?? 0, height: size?.height ?? 0 };
   }
 
   // A rect whose missing edge or side reads 0.
   function rectOrZero(rect: Partial<Rect> | null | undefined) {
-    return { left: rect?.left || 0, top: rect?.top || 0, ...sizeOrZero(rect) };
+    return { left: rect?.left ?? 0, top: rect?.top ?? 0, ...sizeOrZero(rect) };
   }
 
   function bringIntoView(target: Rect, viewport: Size, extent: Size) {
@@ -190,10 +200,15 @@ export const WBGeometry = (function () {
   // keeps CENTRING for the Go-to picker (#337 pins it).
   const VIEW_INSET = 24;
 
-  function anchorIntoView(target: Offset, viewport: Size, extent: Size, inset?: number | null) {
-    const pad = inset == null ? VIEW_INSET : inset;
+  function anchorIntoView(
+    target: Offset | null | undefined,
+    viewport: Size,
+    extent: Size,
+    inset?: number | null,
+  ) {
+    const pad = inset ?? VIEW_INSET;
     return clampOffset(
-      { left: (target?.left || 0) - pad, top: (target?.top || 0) - pad },
+      { left: (target?.left ?? 0) - pad, top: (target?.top ?? 0) - pad },
       viewport,
       extent,
     );
@@ -207,9 +222,9 @@ export const WBGeometry = (function () {
 
   // The bounding box of a set of stage-relative rects; all zeros for none, so an
   // empty desk centres on the pinned origin rather than on nothing.
-  function bboxOf(rects: readonly Rect[]) {
-    const list = rects || [];
-    if (!list.length) return { left: 0, top: 0, width: 0, height: 0 };
+  function bboxOf(rects: readonly Rect[] | null | undefined) {
+    const list = rects ?? [];
+    if (list.length === 0) return { left: 0, top: 0, width: 0, height: 0 };
     let left = Infinity;
     let top = Infinity;
     let right = -Infinity;
@@ -232,7 +247,7 @@ export const WBGeometry = (function () {
   // checked before it is used.
   function viewLanding(
     stored: { left?: unknown; top?: unknown } | null | undefined,
-    rects: readonly Rect[],
+    rects: readonly Rect[] | null | undefined,
     viewport: Size,
     extent: Size,
   ) {
@@ -255,9 +270,9 @@ export const WBGeometry = (function () {
   }
 
   // Whether some rect intersects the viewport placed at `at`.
-  function showsWork(rects: readonly Rect[], at: Offset, viewport: Size) {
+  function showsWork(rects: readonly Rect[] | null | undefined, at: Offset, viewport: Size) {
     const v = sizeOrZero(viewport);
-    return (rects || []).some((rect) => {
+    return (rects ?? []).some((rect) => {
       const r = rectOrZero(rect);
       return (
         r.left < at.left + v.width &&
@@ -275,10 +290,10 @@ export const WBGeometry = (function () {
   // A client rect's edges; a missing viewport or edge reads 0.
   function clientBox(viewport: Partial<ClientBox> | null | undefined) {
     return {
-      left: viewport?.left || 0,
-      top: viewport?.top || 0,
-      right: viewport?.right || 0,
-      bottom: viewport?.bottom || 0,
+      left: viewport?.left ?? 0,
+      top: viewport?.top ?? 0,
+      right: viewport?.right ?? 0,
+      bottom: viewport?.bottom ?? 0,
     };
   }
   // The auto-pan rule, pure. `viewport` is a CLIENT rect; `pointer` is a client
@@ -291,8 +306,8 @@ export const WBGeometry = (function () {
     band?: number | null,
     step?: number | null,
   ) {
-    const b = band == null ? PAN_BAND : band;
-    const s = step == null ? PAN_STEP : step;
+    const b = band ?? PAN_BAND;
+    const s = step ?? PAN_STEP;
     const press = (v: number) => Math.max(0, Math.min(v, b));
     const axis = (near: number, far: number) => Math.round((s * (far - near)) / b);
     const at = pointOf(pointer);
@@ -309,8 +324,12 @@ export const WBGeometry = (function () {
   // match a console to whatever fence covers the translated point. A detached
   // fence's members move freely there; the fence's lock holds again on the
   // stage when they come home. Note cards follow the same rule.
-  function fenceHolds(records: readonly DeskFence[], rect: Rect, popup: boolean) {
-    return !popup && !!fenceOf(records, rect)?.locked;
+  function fenceHolds(
+    records: readonly DeskFence[] | null | undefined,
+    rect: Rect,
+    popup: boolean,
+  ) {
+    return !popup && fenceOf(records, rect)?.locked === true;
   }
   // `.session-window`'s CSS floor (`styles.css`, pinned by
   // `shell_arranges_into_the_fence`). It OUTRANKS an inline width (MEASURED: a
@@ -327,11 +346,11 @@ export const WBGeometry = (function () {
   const SPAWN_STEP = 24;
 
   function spawnRectIn(fence: Partial<Rect> | null | undefined, index: number, headH: number) {
-    const f = fence || {};
-    const fl = f.left || 0;
-    const ft = f.top || 0;
-    const fw = f.width || 0;
-    const fh = f.height || 0;
+    const f = fence ?? {};
+    const fl = f.left ?? 0;
+    const ft = f.top ?? 0;
+    const fw = f.width ?? 0;
+    const fh = f.height ?? 0;
     const head = headH || 0;
     const width = Math.max(1, Math.min(560, fw - SPAWN_PAD * 2));
     const height = Math.max(1, Math.min(340, fh - head - SPAWN_PAD * 2));
@@ -359,13 +378,13 @@ export const WBGeometry = (function () {
   function freeSpawnRect(
     view: Partial<Rect> | null | undefined,
     index: number,
-    fences: readonly DeskFence[],
+    fences: readonly DeskFence[] | null | undefined,
   ) {
-    const v = view || {};
+    const v = view ?? {};
     const { width, height } = spawnSize(v);
     const at = (k: number) => ({
-      left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
-      top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
+      left: Math.max(0, v.left ?? 0) + 30 + (k % 8) * SPAWN_STEP,
+      top: Math.max(0, v.top ?? 0) + 20 + (k % 8) * SPAWN_STEP,
       width,
       height,
     });
@@ -380,19 +399,22 @@ export const WBGeometry = (function () {
   // The size of a console born outside a fence. An unmeasurable viewport is a
   // tab still `display:none`: plain caps.
   function spawnSize(v: Partial<Rect>) {
+    const w = v.width ?? 0;
+    const h = v.height ?? 0;
     return {
-      width: v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560,
-      height: v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340,
+      width: w === 0 ? 560 : Math.max(WIN_MIN_W, Math.min(560, Math.round(w * 0.62))),
+      height: h === 0 ? 340 : Math.max(WIN_MIN_H, Math.min(340, Math.round(h * 0.6))),
     };
   }
 
   // Move `rect` right of each locked fence that holds it. Each step leaves one
   // fence behind for good, so the walk ends within one step per fence.
-  function pastLockedFences(fences: readonly DeskFence[], rect: Rect) {
-    for (let i = 0; i <= (fences || []).length; i++) {
+  function pastLockedFences(fences: readonly DeskFence[] | null | undefined, rect: Rect) {
+    for (let i = 0; i <= (fences ?? []).length; i++) {
       const held = fenceOf(fences, rect);
-      if (!held?.locked) break;
-      rect.left = (held.rect?.left || 0) + (held.rect?.width || 0) + SPAWN_PAD;
+      if (held?.locked !== true) break;
+      const r = rectOrZero(held.rect);
+      rect.left = r.left + r.width + SPAWN_PAD;
     }
     return rect;
   }

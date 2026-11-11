@@ -25,7 +25,7 @@ export function sepOf(state: State) {
 // A path the daemon answered, or else the text in the field.
 function pathSample(state: State) {
   const l = state.listing;
-  return l?.start || l?.dir?.path || state.text || "";
+  return (l?.start ?? "") || (l?.dir?.path ?? "") || state.text;
 }
 
 function isSep(c: string) {
@@ -55,8 +55,8 @@ export function mapWsl(text: string, peers: Peer[] | null | undefined) {
   const distro = m?.[1];
   if (!m || distro === undefined) return null;
   const rest = ((m[2] ?? "") || "/").replaceAll("\\", "/");
-  const peer = (peers || []).find((p) => {
-    const named = /^WSL: (.+)$/i.exec(p.environment || "")?.[1];
+  const peer = (peers ?? []).find((p) => {
+    const named = /^WSL: (.+)$/iu.exec(p.environment ?? "")?.[1];
     return named !== undefined && named.toLowerCase() === distro.toLowerCase();
   });
   if (!peer) return { missing: distro };

@@ -213,7 +213,10 @@
         "**/ui/wb-board*.ts",
         "**/ui/wb-file*.ts",
         "**/ui/wb-viewer*.ts",
-        "**/ui/wb-stage*.ts"
+        "**/ui/wb-stage*.ts",
+        "**/ui/wb-geometry*.ts",
+        "**/ui/wb-project*.ts",
+        "**/ui/wb-add-project*.ts"
       ],
       "rules": {
         "typescript/strict-boolean-expressions": "error",

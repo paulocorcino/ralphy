@@ -54,8 +54,13 @@ export type Worktree = { name: string; path: string; branch: string; base: strin
 /** The `checkouts` of a `worktree.list` reply for one repo. */
 export type Listing = { primary: string; worktrees: Worktree[] };
 
+// Whether `s` holds text: neither missing nor empty.
+function isSet(s: string | null | undefined): s is string {
+  return s !== undefined && s !== null && s !== "";
+}
+
 function repoLabel(p: Project) {
-  return (projectName(p).split("/").pop() || p.slug).toUpperCase();
+  return ((projectName(p).split("/").pop() ?? "") || p.slug).toUpperCase();
 }
 
 // What the operator calls the project: the daemon's `name` (`owner/repo`, or
@@ -76,7 +81,7 @@ function projectTitle(p: Project) {
 // one of those.
 function rowTitle(p: Project) {
   const who = projectTitle(p);
-  if (p.daemon) {
+  if (isSet(p.daemon)) {
     return `${who} · ${p.env}`;
   }
   const label = headLabel(p);
@@ -88,7 +93,7 @@ function rowTitle(p: Project) {
 // detached HEAD (as the Changes panel names it), else nothing.
 function headLabel(p: Project) {
   if (p.branch) return p.branch;
-  if (p.head && p.head.kind === "detached") return p.head.sha || "";
+  if (p.head && p.head.kind === "detached") return p.head.sha ?? "";
   return "";
 }
 
@@ -122,8 +127,8 @@ function branchChipTitle(
 // The `worktree.list` entry of the selected checkout, or `null` when there is
 // no selection or the listing has not landed.
 function checkoutEntry(checkout: string | null | undefined, listing: Listing | null | undefined) {
-  if (!checkout || !listing || !Array.isArray(listing.worktrees)) return null;
-  return listing.worktrees.find((w) => w && w.name === checkout) || null;
+  if (!isSet(checkout) || !listing || !Array.isArray(listing.worktrees)) return null;
+  return listing.worktrees.find((w) => w.name === checkout) ?? null;
 }
 
 // The forge link for one issue, or `null` when there is nothing honest to
@@ -140,7 +145,7 @@ function issueUrl(remoteUrl: string | null | undefined, number: number) {
 // `github.com` must BE the host (after an optional scheme and user), not a
 // part of another host's name or path.
 function githubRemote(remoteUrl: string | null | undefined) {
-  return (remoteUrl || "").match(
+  return (remoteUrl ?? "").match(
     /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/,
   );
 }
@@ -153,7 +158,7 @@ function isGitHubRemote(remoteUrl: string | null | undefined) {
 // Whether the repo has a worktree at all — what shows the Files bar's
 // checkout chip, and nothing else (ADR-0063 amendment 2026-09-16 b).
 function hasWorktrees(listing: Listing | null | undefined) {
-  return !!listing && Array.isArray(listing.worktrees) && listing.worktrees.length > 0;
+  return listing != null && Array.isArray(listing.worktrees) && listing.worktrees.length > 0;
 }
 
 // The console's "new worktree" prompt gate (#405, reshaped 2026-09-16):
@@ -165,13 +170,13 @@ function hasWorktrees(listing: Listing | null | undefined) {
 // ever answered.
 function worktreeCreateRow(
   listing: Pick<Listing, "worktrees"> | null | undefined,
-  base: string,
-  name: string,
+  baseArg: string | null | undefined,
+  nameArg: string | null | undefined,
 ) {
   if (!listing || !Array.isArray(listing.worktrees)) return null;
-  base = String(base || "");
+  const base = baseArg ?? "";
   if (!base || base === "HEAD") return null;
-  name = String(name || "").trim();
+  const name = (nameArg ?? "").trim();
   if (worktreeNameProblem(listing, name)) return null;
   return { label: `Create worktree “${name}” from ${base}`, base, name };
 }
@@ -180,8 +185,8 @@ function worktreeCreateRow(
 // refuse taken out, so a refused key never shows in the field. What a mask
 // cannot know while the name is typed (a final "." or ".lock", "@" alone, a
 // taken name) stays with `worktreeNameProblem`, checked on submit.
-function maskWorktreeName(raw: string) {
-  return String(raw || "")
+function maskWorktreeName(raw: string | null | undefined) {
+  return (raw ?? "")
     .replaceAll(/[\s\u0000-\u001F\u007F/\\~^:?*[]/gu, "")
     .replace(/^[-.]+/, "")
     .replaceAll(/\.{2,}/gu, ".")
@@ -191,8 +196,11 @@ function maskWorktreeName(raw: string) {
 // Why the daemon would refuse `name` as a new worktree, or "" when it would
 // take it. The rules are the daemon's `well_shaped_ref` (dispatch/argv.rs)
 // plus one path segment (no "/"), so the prompt refuses before any send.
-function worktreeNameProblem(listing: Pick<Listing, "worktrees"> | null | undefined, name: string) {
-  name = String(name || "").trim();
+function worktreeNameProblem(
+  listing: Pick<Listing, "worktrees"> | null | undefined,
+  raw: string | null | undefined,
+) {
+  const name = (raw ?? "").trim();
   if (!name) return "Enter a name.";
   if (name.startsWith("-")) return "The name cannot start with “-”.";
   return charProblem(name) || shapeProblem(name) || takenProblem(listing, name);
@@ -224,7 +232,7 @@ function takenProblem(listing: Pick<Listing, "worktrees"> | null | undefined, na
   if (
     listing &&
     Array.isArray(listing.worktrees) &&
-    listing.worktrees.some((w) => w && w.name === name)
+    listing.worktrees.some((w) => w.name === name)
   ) {
     return `A worktree named “${name}” already exists.`;
   }
@@ -249,7 +257,7 @@ function chipLabel(
   checkout: string | null | undefined,
   listing: Listing | null | undefined,
 ) {
-  if (!checkout) return headLabel(p);
+  if (!isSet(checkout)) return headLabel(p);
   const entry = checkoutEntry(checkout, listing);
   if (!entry) return checkout;
   return entry.branch || "HEAD";
@@ -258,7 +266,7 @@ function chipLabel(
 // The chip's icon: a worktree's branch is drawn inside a folder, so the row
 // shows that it is not the primary tree.
 function chipIcon(checkout: string | null | undefined) {
-  return checkout ? "folder-git-2" : "git-branch";
+  return isSet(checkout) ? "folder-git-2" : "git-branch";
 }
 
 // The chip's dirty dot: the selected worktree's dirtiness when one is
@@ -268,9 +276,9 @@ function chipDirty(
   checkout: string | null | undefined,
   listing: Listing | null | undefined,
 ) {
-  if (!checkout) return !!p.dirty;
+  if (!isSet(checkout)) return p.dirty;
   const entry = checkoutEntry(checkout, listing);
-  return !!entry && entry.dirty === true;
+  return entry !== null && entry.dirty;
 }
 
 // ---- the agent's state as a dot (ADR-0059 §5/§6) -----------------------
@@ -292,9 +300,9 @@ const STATE_RANK: Record<string, number> = {
 function agentStateOf(sessions: HostedSession[] | null | undefined) {
   let best: string | null = null;
   let bestRank = 0;
-  for (const s of sessions || []) {
-    const state = agentDotOf(s?.agent_state).state;
-    if (!state || !(state in STATE_RANK)) continue;
+  for (const s of sessions ?? []) {
+    const state = agentDotOf(s.agent_state).state;
+    if (state === null || !(state in STATE_RANK)) continue;
     const rank = STATE_RANK[state];
     if (rank === undefined) continue;
     if (best === null || rank > bestRank) {
@@ -323,7 +331,7 @@ function agentDotOf(block: AgentStateBlock | null | undefined): {
 // The reason of the first silent console, for the tooltip of a dot that shows
 // `silent`.
 function silentReasonOf(sessions: HostedSession[] | null | undefined) {
-  const silent = (sessions || []).find((s) => agentDotOf(s?.agent_state).state === "silent");
+  const silent = (sessions ?? []).find((s) => agentDotOf(s.agent_state).state === "silent");
   return silent?.agent_state?.reason;
 }
 
@@ -331,7 +339,7 @@ function silentReasonOf(sessions: HostedSession[] | null | undefined) {
 // agent, outrank `live` (ADR-0059); no session is `idle`.
 function projectDotOf(mine: HostedSession[]): { state: string; detail?: string } {
   const seen = agentStateOf(mine);
-  if (!mine.length) return { state: "idle" };
+  if (mine.length === 0) return { state: "idle" };
   if (seen === "silent") return { state: seen, detail: silentReasonOf(mine) };
   return { state: seen === "waiting" ? seen : "live" };
 }
@@ -344,10 +352,12 @@ function worktreeStates(
   mine: HostedSession[] | null | undefined,
 ) {
   const out: Record<string, string> = {};
-  for (const row of rows || []) {
-    const here = (mine || []).filter((s) => (row.primary ? !s.checkout : s.checkout === row.name));
+  for (const row of rows ?? []) {
+    const here = (mine ?? []).filter((s) =>
+      row.primary ? !isSet(s.checkout) : s.checkout === row.name,
+    );
     const state = agentStateOf(here);
-    if (state) out[row.name] = state;
+    if (state !== null) out[row.name] = state;
   }
   return out;
 }
@@ -357,8 +367,8 @@ function worktreeStates(
 // name against the pointer file on every read), the same name on anything
 // else. A refused write or a missing file is not a reason to drop it.
 function checkoutAfter(checkout: string | null | undefined, reply: DaemonReply | null | undefined) {
-  if (!checkout) return null;
-  const unknown = reply && reply.status === "error" && reply.message === "unknown checkout";
+  if (!isSet(checkout)) return null;
+  const unknown = reply?.status === "error" && reply.message === "unknown checkout";
   return unknown ? null : checkout;
 }
 
@@ -370,9 +380,9 @@ function checkoutAfterListing(
   checkout: string | null | undefined,
   listing: Listing | null | undefined,
 ) {
-  if (!checkout) return null;
+  if (!isSet(checkout)) return null;
   if (!listing || !Array.isArray(listing.worktrees)) return checkout;
-  return listing.worktrees.some((w) => w && w.name === checkout) ? checkout : null;
+  return listing.worktrees.some((w) => w.name === checkout) ? checkout : null;
 }
 
 export const WBProject = {

@@ -110,13 +110,13 @@ function initial(): State {
 // answer is shown but cannot be chosen.
 function places(peers: Peer[] | null | undefined) {
   const list = [{ id: "", label: "This computer", disabled: false, reason: "" }];
-  for (const p of peers || []) {
+  for (const p of peers ?? []) {
     const reachable = p.state === "reachable";
     list.push({
       id: p.daemon_id,
-      label: p.environment ? `${p.name} (${p.environment})` : p.name,
+      label: (p.environment ?? "") === "" ? p.name : `${p.name} (${p.environment})`,
       disabled: !reachable,
-      reason: reachable ? "" : p.diagnosis || "This computer does not answer.",
+      reason: reachable ? "" : (p.diagnosis ?? "") || "This computer does not answer.",
     });
   }
   return list;
@@ -148,8 +148,14 @@ function target(state: State): Target {
   const text = state.text;
   const sep = sepOf(state);
   if (!endsWithSep(text)) return entryTarget(state, dir, text, sep);
-  const repo = !!dir.root && samePath(dir.root, dir.path, sep);
-  return finalTarget(dir.path, repo, !!dir.added, dir.root && !repo ? dir.root : null);
+  return folderTarget(dir, sep);
+}
+
+// The folder `dir` itself, named by a text that ends with a separator.
+function folderTarget(dir: ListedDir, sep: string): Target {
+  const root = dir.root ?? "";
+  const repo = root !== "" && samePath(root, dir.path, sep);
+  return finalTarget(dir.path, repo, dir.added, root !== "" && !repo ? root : null);
 }
 
 // The newest listing answers the text in the field, for a chosen place with
@@ -169,7 +175,7 @@ function entryTarget(state: State, dir: ListedDir, text: string, sep: string): T
   const entry = listed(state).find((e) => sameName(e.name, name, sep));
   // The parent folder exists: the last name can be created there. Not
   // inside a repo, where a new repository would sit in another one.
-  if (!entry && !dir.root && name.trim()) return createTarget(dir, name, sep);
+  if (!entry && (dir.root ?? "") === "" && name.trim()) return createTarget(dir, name, sep);
   if (!entry) {
     return {
       action: "missing",
@@ -184,7 +190,7 @@ function entryTarget(state: State, dir: ListedDir, text: string, sep: string): T
 
 // A folder the daemon listed in the folder `dir`.
 function listedTarget(dir: ListedDir, entry: Row, sep: string): Target {
-  if (entry.error) {
+  if ((entry.error ?? "") !== "") {
     return {
       action: "unreadable",
       label: "Cannot read this folder",
@@ -193,8 +199,9 @@ function listedTarget(dir: ListedDir, entry: Row, sep: string): Target {
       init: false,
     };
   }
-  const added = entry.added || (!entry.repo && !!dir.root && !!dir.added);
-  const inside = !entry.repo && dir.root ? dir.root : null;
+  const root = dir.root ?? "";
+  const added = entry.added || (!entry.repo && root !== "" && dir.added);
+  const inside = !entry.repo && root !== "" ? root : null;
   return finalTarget(withSep(dir.path, sep) + entry.name, entry.repo, added, inside);
 }
 
@@ -228,7 +235,7 @@ function finalTarget(path: string, repo: boolean, added: boolean, inside: string
   path = path.length > 3 ? path.replace(/[\\/]+$/, "") : path;
   if (added) return { action: "added", label: "Already in Projects", help: "", path, init: false };
   if (repo) return { action: "add", label: "Add project", help: "", path, init: false };
-  if (inside) {
+  if (inside !== null) {
     return {
       action: "root",
       label: `Add ${basename(inside)}`,
@@ -289,7 +296,7 @@ function addPayload(state: State) {
     path: t.path,
     init: t.init,
   };
-  if (t.create) payload.create = true;
+  if (t.create === true) payload.create = true;
   return payload;
 }
 
@@ -317,12 +324,12 @@ function reset(state: State, patch: Partial<State>) {
 function next(state: State, ev: Step) {
   switch (ev.type) {
     case "open":
-      return reset(initial(), { open: true, daemon: ev.daemon || "" });
+      return reset(initial(), { open: true, daemon: ev.daemon ?? "" });
     case "close":
       return Object.assign({}, state, { open: false });
     case "where":
       if (state.adding) return state;
-      return reset(state, { daemon: ev.daemon || "" });
+      return reset(state, { daemon: ev.daemon ?? "" });
     case "text":
       return nextText(state, ev);
     case "sent":
@@ -347,7 +354,7 @@ function next(state: State, ev: Step) {
     case "addFailed":
       return Object.assign({}, state, {
         adding: false,
-        error: ev.message || "The project was not added.",
+        error: (ev.message ?? "") || "The project was not added.",
       });
     default:
       return state;

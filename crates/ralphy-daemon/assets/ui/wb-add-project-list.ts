@@ -7,7 +7,7 @@ import { endsWithSep, parentText } from "./wb-add-project-path.ts";
 
 // The folders the daemon listed.
 export function listed(state: State): Row[] {
-  return (state.listing && state.listing.entries) || [];
+  return state.listing?.entries ?? [];
 }
 
 // The text that lists the folder above the listed one: its parent, or ""
