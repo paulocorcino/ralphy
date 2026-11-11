@@ -226,11 +226,12 @@ export function wbBranchDialog() {
       const prevBranch = p?.branch;
       const prevBranches = p ? [...(p.branches || [])] : undefined;
       // A fresh branch is checked out onto.
-      if (p)
+      if (p) {
         this.$store.projects.setRowGit(p, {
           branches: [...(p.branches || []), name],
           branch: name,
         });
+      }
       window.WB.emit("branch-create", { project: slug, name, from, checkout });
       void this._mutateBranch("branch.create", slug, name, () => {
         if (p) this.$store.projects.setRowGit(p, { branch: prevBranch, branches: prevBranches });
@@ -300,15 +301,17 @@ export function wbBranchDialog() {
     _reportRemoval(slug: string, name: string, failure: string | null) {
       const listing = this.$store.checkouts.worktreeListings[slug];
       const ck = this.$store.checkouts.checkoutOf(slug);
-      if (ck && WBProject.checkoutAfterListing(ck, listing) === null)
+      if (ck !== null && WBProject.checkoutAfterListing(ck, listing) === null) {
         this.$store.checkouts.checkoutGone(slug, ck);
+      }
       const kept = !listing || listing.worktrees.some((x) => x && x.name === name);
-      if (failure && kept)
+      const reason = failure === "" ? null : failure;
+      if (reason !== null && kept) {
         void window.WBConsole.askNotice({
           title: `Could not delete worktree ${name}`,
-          message: failure,
+          message: reason,
         });
-      else this.$store.modals.flash(failure || `Worktree ${name} deleted`);
+      } else this.$store.modals.flash(reason ?? `Worktree ${name} deleted`);
     },
 
     // Await a `branch.*` Mutate; on a `{status:"error"}` refusal (a held

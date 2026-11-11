@@ -70,8 +70,9 @@ export function createNoteReports(deps: NoteReportDeps) {
       !entry ||
       !isDetached(id) ||
       !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })
-    )
+    ) {
       return;
+    }
     entry.members = entry.members.map((x) =>
       x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
     );

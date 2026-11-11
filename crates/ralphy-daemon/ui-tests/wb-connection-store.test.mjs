@@ -17,7 +17,7 @@ const VISIBLE = { document: { visibilityState: "visible", hasFocus: () => true }
 function storeOnly() {
   const events = [];
   globalThis.window = {
-    Alpine: { store: () => undefined },
+    Alpine: { store: () => {} },
     addEventListener() {},
     dispatchEvent: (e) => (events.push(e.type), true),
   };
@@ -102,7 +102,7 @@ test("fmtUptime steps down through the units and never renders a negative", () =
   // both render as zero rather than as "-1s" or "NaNs".
   assert.equal(s.fmtUptime(-5), "0s");
   assert.equal(s.fmtUptime(null), "0s");
-  assert.equal(s.fmtUptime(undefined), "0s");
+  assert.equal(s.fmtUptime(), "0s");
 });
 
 // The binding cannot see ticks STOP; the clock that `init` starts must.

@@ -6,14 +6,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { assembledPage, bindingNames, loadComponent, partMarkup, UI, withoutComments } from "./harness.mjs";
 
 // The part that holds the dialog's markup.
 const PART = "wb-add-project-dialog.part.html";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 function fixture(name) {
   return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));

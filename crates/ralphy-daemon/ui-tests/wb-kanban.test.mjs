@@ -7,11 +7,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 const FIXTURE = JSON.parse(
   readFileSync(join(HERE, "..", "..", "ralphy-core", "tests", "fixtures", "graph-parity.json"), "utf8"),
 );

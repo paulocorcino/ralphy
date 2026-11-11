@@ -118,7 +118,7 @@ test("below the width floor the split is unavailable, whatever the slot says", (
   const { resolve, available, MIN_WIDTH } = load();
   assert.equal(available(MIN_WIDTH), true);
   assert.equal(available(MIN_WIDTH - 1), false);
-  assert.equal(available(undefined), false);
+  assert.equal(available(), false);
   assert.deepEqual(resolve(base({ slot: { kind: "pin", id: B }, width: 800 })), {
     left: A,
     right: null,

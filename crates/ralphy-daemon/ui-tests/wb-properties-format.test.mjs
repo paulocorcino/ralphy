@@ -35,7 +35,7 @@ test("a time reads as day, month, year and the time of day, in the zone it is gi
 });
 
 test("a time the system does not keep reads Unknown", () => {
-  assert.equal(modifiedText(undefined), "Unknown");
+  assert.equal(modifiedText(), "Unknown");
   assert.equal(modifiedText(Date.UTC(2026, 9, 15, 19, 48)).startsWith("15 Oct 2026"), true);
 });
 
@@ -53,7 +53,7 @@ test("the type of a file is what the workbench would do with it", () => {
 });
 
 test("a yes or no fact reads Yes only for true", () => {
-  assert.deepEqual([yesNo(true), yesNo(false), yesNo(undefined)], ["Yes", "No", "No"]);
+  assert.deepEqual([yesNo(true), yesNo(false), yesNo()], ["Yes", "No", "No"]);
 });
 
 test("a folder size is a minimum when the count stopped early", () => {

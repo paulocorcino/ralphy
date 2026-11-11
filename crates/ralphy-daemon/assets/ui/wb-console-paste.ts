@@ -114,8 +114,9 @@ export function wirePaste(deps: PasteDeps) {
         items.map((i) => i.type),
         file,
       )
-    )
+    ) {
       e.preventDefault();
+    }
   });
 
   // OSC 52 — "put this on the clipboard". xterm's core does not implement
@@ -145,7 +146,7 @@ export function wirePaste(deps: PasteDeps) {
     let text: string;
     try {
       const bin = atob(payload);
-      text = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+      text = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.codePointAt(0) ?? 0));
     } catch {
       // base64url or bad padding: `atob` THROWS into xterm's parser.
       return true;

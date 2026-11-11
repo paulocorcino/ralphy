@@ -73,8 +73,9 @@ function addTo(buckets: Map<string, DbmlTable[]>, label: string, tables: DbmlTab
 }
 
 function byLabel(a: { label: string }, b: { label: string }) {
-  if (a.label === OTHER_TABLES || b.label === OTHER_TABLES)
+  if (a.label === OTHER_TABLES || b.label === OTHER_TABLES) {
     return Number(a.label === OTHER_TABLES) - Number(b.label === OTHER_TABLES);
+  }
   return byLower(a.label, b.label);
 }
 

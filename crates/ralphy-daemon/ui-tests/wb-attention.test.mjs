@@ -5,15 +5,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { bindingNames, partMarkup } from "./harness.mjs";
 import { LINK_BEAT_MS, LINK_TRIES, ageText, wbAttention } from "../assets/ui/wb-attention.ts";
 import { WBNotify } from "../assets/ui/wb-notify.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 // The part that holds the rail button and its panel.
 const PART = "wb-attention.part.html";
@@ -42,7 +41,7 @@ function fromPeer(request) {
 // test files share one process, so `t.after` puts the globals back.
 const GLOBALS = ["window", "document", "WBConsole", "fetch", "Notification", "localStorage"];
 
-function page(t, { replies = [], sessions = [], projects = [], tabOf = () => undefined } = {}) {
+function page(t, { replies = [], sessions = [], projects = [], tabOf = () => {} } = {}) {
   const saved = GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]);
   t.after(() => {
     for (const [name, d] of saved) {

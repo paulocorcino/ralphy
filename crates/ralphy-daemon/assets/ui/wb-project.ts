@@ -182,10 +182,10 @@ function worktreeCreateRow(
 // taken name) stays with `worktreeNameProblem`, checked on submit.
 function maskWorktreeName(raw: string) {
   return String(raw || "")
-    .replace(/[\s\u0000-\u001f\u007f/\\~^:?*[]/g, "")
+    .replaceAll(/[\s\u0000-\u001F\u007F/\\~^:?*[]/gu, "")
     .replace(/^[-.]+/, "")
-    .replace(/\.{2,}/g, ".")
-    .replace(/@\{+/g, "@");
+    .replaceAll(/\.{2,}/gu, ".")
+    .replaceAll(/@\{+/gu, "@");
 }
 
 // Why the daemon would refuse `name` as a new worktree, or "" when it would
@@ -201,9 +201,9 @@ function worktreeNameProblem(listing: Pick<Listing, "worktrees"> | null | undefi
 // Which characters of `name` the daemon would refuse.
 function charProblem(name: string) {
   if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
-  const bad = name.match(/[\u0000-\u001f\u007f/\\~^:?*[]/);
+  const bad = name.match(/[\u0000-\u001F\u007F/\\~^:?*[]/u);
   if (!bad) return "";
-  return /[\u0000-\u001f\u007f]/.test(bad[0])
+  return /[\u0000-\u001F\u007F]/u.test(bad[0])
     ? "The name cannot contain control characters."
     : `The name cannot contain “${bad[0]}”.`;
 }
@@ -314,8 +314,9 @@ function agentDotOf(block: AgentStateBlock | null | undefined): {
   detail?: string;
 } {
   if (!block) return { state: null };
-  if (block.source === "silent" || block.source === "none")
+  if (block.source === "silent" || block.source === "none") {
     return { state: "silent", detail: block.reason };
+  }
   return { state: block.state ?? null, detail: block.detail };
 }
 

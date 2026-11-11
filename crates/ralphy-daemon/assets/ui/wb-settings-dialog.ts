@@ -59,8 +59,9 @@ type DeskRow = ReturnType<typeof WBDeskHistory.rows>[number];
 // what was used.
 function saveClientSetting(settings: Record<string, unknown>, key: string, value: unknown) {
   // "unset" is the ABSENCE of a preference: written as null.
-  if (key === "consoles.key_bar")
+  if (key === "consoles.key_bar") {
     window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
+  }
   // Held to the range the key bar steps through; an emptied field is
   // the default size. `setFont` writes the store and refits every console.
   if (key === "consoles.font_size") {

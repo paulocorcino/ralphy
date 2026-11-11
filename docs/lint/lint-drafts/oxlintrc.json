@@ -107,7 +107,7 @@
     "no-implicit-coercion": "error",
     "curly": [
       "error",
-      "all"
+      "multi-line"
     ],
     "default-case-last": "error",
     "radix": "error",

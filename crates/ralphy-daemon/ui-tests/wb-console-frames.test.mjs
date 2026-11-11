@@ -7,10 +7,9 @@ import { DECODE_DEADLINE_MS, frameQueue, readSocketEvent } from "../assets/ui/wb
 import { TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 // A reply a Rust test wrote to `fixtures/` (ADR-0070 Compliance, shared replies).
 function fixture(name) {

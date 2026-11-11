@@ -39,7 +39,7 @@ export { parseDbml } from "./wb-dbml-read.ts";
 
 /** The key of one column in the sets that `matchSchema` and `sameColumns` return. */
 export function colKey(table: string, column: string) {
-  return `${table}\u001f${column}`;
+  return `${table}\u001F${column}`;
 }
 
 /**
@@ -52,8 +52,9 @@ export function matchSchema(
   term: string,
 ): { tables: Set<string>; columns: Set<string> } {
   const needle = term.toLowerCase();
-  if (needle === "")
+  if (needle === "") {
     return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
+  }
   const tables = new Set<string>();
   const columns = new Set<string>();
   for (const table of schema.tables) {
@@ -92,8 +93,9 @@ export function sameColumns(schema: DbmlSchema, table: string, column: string): 
   const bare = clicked && !clicked.pk ? withoutPrefix(column) : null;
   const same = new Set<string>();
   for (const t of schema.tables) {
-    for (const c of t.columns.filter((x) => sameName(x, column, bare)))
+    for (const c of t.columns.filter((x) => sameName(x, column, bare))) {
       same.add(colKey(t.name, c.name));
+    }
   }
   same.delete(self);
   return same;
@@ -133,12 +135,15 @@ export const DRAW_LIMIT = 12;
 // A word of the `erDiagram` grammar: space is removed, any character outside
 // `A-Za-z0-9_()[]-` becomes `_`, and the word starts with a letter or `_`.
 function mermaidWord(raw: string) {
-  const word = raw.replace(/\s+/g, "").replace(/[^A-Za-z0-9_()[\]-]/g, "_");
+  const word = raw
+    .replaceAll(/\s+/gu, "")
+    // One `_` per UTF-16 unit, as the pattern had no `u` flag.
+    .replaceAll(/[^A-Za-z0-9_()[\]-]/gu, (c) => "_".repeat(c.length));
   return /^[A-Za-z_]/.test(word) ? word : `_${word}`;
 }
 
 function entityLines(id: string, table: DbmlTable) {
-  const label = table.name.replace(/"/g, "'");
+  const label = table.name.replaceAll('"', "'");
   if (table.columns.length === 0) return [`  ${id}["${label}"]`];
   const rows = table.columns.map(
     (c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`,
@@ -167,8 +172,9 @@ export function toMermaidEr(schema: DbmlSchema, names: string[]): string {
   for (const ref of schema.refs) {
     const from = ids.get(ref.from.table);
     const to = ids.get(ref.to.table);
-    if (from && to)
+    if (from !== undefined && to !== undefined) {
       lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
+    }
   }
   return lines.join("\n");
 }

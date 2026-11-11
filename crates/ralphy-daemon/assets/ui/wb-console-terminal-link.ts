@@ -298,7 +298,7 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
         case "end":
           s.announced = event.reason;
           s.refusal = event.message;
-          return;
+          break;
         case "other":
           return;
         default: {
@@ -474,9 +474,9 @@ export function createLink(s: TerminalLinkState, env: TerminalLinkEnv) {
 
   // The window's first connect, or a hold when its peer is down.
   function start() {
-    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold")
+    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") {
       hold(peerGroup());
-    else connect(opts);
+    } else connect(opts);
   }
 
   return { start, inputWhileDown, resume, takeOver, peerRefresh, leave, closeSocket };

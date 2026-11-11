@@ -175,7 +175,7 @@ test("planBelongsTo answers the question the panel actually asks", () => {
   assert.equal(wb.planBelongsTo("# Plan for #72\n", 72), false);
   // No issue to compare against is not a match either (never "belongs to null").
   assert.equal(wb.planBelongsTo(md, null), false);
-  assert.equal(wb.planBelongsTo(md, undefined), false);
+  assert.equal(wb.planBelongsTo(md), false);
 });
 
 test("planBelongsTo compares by VALUE, so a string issue number still matches", () => {
@@ -261,7 +261,7 @@ test("isBundleReason keys on the literal word, case-insensitively", () => {
   assert.equal(wb.isBundleReason("This BUNDLES two tasks"), true);
   assert.equal(wb.isBundleReason("under-specified: no acceptance criteria"), false);
   assert.equal(wb.isBundleReason(""), false);
-  assert.equal(wb.isBundleReason(undefined), false);
+  assert.equal(wb.isBundleReason(), false);
 });
 
 test("a missing Feasible section yields no reason rather than a wrong one", () => {
@@ -277,7 +277,7 @@ test("a missing Feasible section yields no reason rather than a wrong one", () =
 // read as infeasible, on a file the operator could see was full of steps.
 test("steps survive CRLF line endings", () => {
   const wb = load();
-  const crlf = FEASIBLE_PLAN.replace(/\n/g, "\r\n");
+  const crlf = FEASIBLE_PLAN.replaceAll('\n', "\r\n");
   assert.deepEqual(
     wb.parseSteps(crlf).map((s) => s.status),
     ["checked", "open"],
@@ -294,7 +294,7 @@ test("steps survive CRLF line endings", () => {
 
 test("a CRLF plan's sections come back with LF bodies", () => {
   const wb = load();
-  const crlf = "## Notes\nfirst\nsecond\n\n## Steps\n- [ ] a\n".replace(/\n/g, "\r\n");
+  const crlf = "## Notes\nfirst\nsecond\n\n## Steps\n- [ ] a\n".replaceAll('\n', "\r\n");
   assert.equal(wb.section(crlf, "Notes"), "first\nsecond");
 });
 

@@ -15,7 +15,7 @@ function mediaQueries() {
     .map((name) => ({ file: `styles/${name}`, text: readFileSync(join(UI, "styles", name), "utf8") }));
   sources.push({ file: "detached-fence.html", text: readFileSync(join(UI, "detached-fence.html"), "utf8") });
   return sources.flatMap(({ file, text }) =>
-    [...text.matchAll(/@media\s+([^{]+)\{/g)].map((m) => ({ file, query: m[1].replace(/\s+/g, " ").trim() })),
+    [...text.matchAll(/@media\s+([^{]+)\{/gu)].map((m) => ({ file, query: m[1].replaceAll(/\s+/gu, " ").trim() })),
   );
 }
 

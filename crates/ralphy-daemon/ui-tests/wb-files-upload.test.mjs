@@ -101,7 +101,7 @@ test("Upload gives the files to the uploads store and closes", async () => {
 });
 
 test("the limit is read as the daemon reads it", () => {
-  assert.equal(limitMb(undefined), 25);
+  assert.equal(limitMb(), 25);
   assert.equal(limitMb(0), 25);
   assert.equal(limitMb(3), 3);
   assert.equal(limitMb(5000), 1024);

@@ -10,6 +10,12 @@ import { assembledPage, bindingNames, loadComponent, loadShell, partMarkup, with
 // The part that holds the board's markup.
 const PART = "wb-board.part.html";
 
+// A template literal's text is not code: only its `${…}` parts are read.
+const code = (value) =>
+  value.replaceAll(/`([^`]*)`/gu, (_, t) =>
+    Array.from(t.matchAll(/\$\{([^}]*)\}/gu), (m) => m[1]).join(", "),
+  );
+
 // `init()` starts the backstop on the global timer; here it never ticks.
 // Returns the intervals it asked for.
 function initQuietly(scope) {
@@ -72,8 +78,6 @@ test("every name the markup of wbBoard reads is its own or in its uses list", ()
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // The `x-for` loop variables of the board, the issue view and the label menu.
   const loopVars = new Set(["col", "s", "iss", "l", "b", "c", "idx"]);
-  // A template literal's text is not code: only its `${…}` parts are read.
-  const code = (value) => value.replace(/`([^`]*)`/g, (_, t) => Array.from(t.matchAll(/\$\{([^}]*)\}/g), (m) => m[1]).join(", "));
   let read = 0;
   for (const [, attr, value] of attrs) {
     // `x-data` names the component.

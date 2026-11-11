@@ -191,8 +191,9 @@ export function createSpawn(deps: SpawnDeps) {
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
-    if (termOpts.id == null && !termOpts.console)
+    if (termOpts.id == null && termOpts.console !== true) {
       termOpts = { ...termOpts, name: win._deskConsoleName };
+    }
     termOpts = launchRecord(termOpts, win);
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;

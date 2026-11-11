@@ -50,8 +50,7 @@ export function liveNode(files: ReconcileFiles, node: WunderbaumNode, rel: strin
   const raw = files.rawTree();
   const live =
     rel === "" ? raw?.root : raw?.findFirst((n: WunderbaumNode) => files.relPath(n) === rel);
-  if (!live || live.isLoading?.()) return undefined;
-  return live;
+  return live && !live.isLoading() ? live : undefined;
 }
 
 // Read AFTER the fetch, right before the teardown: read before it, the

@@ -9,8 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 
 // No global at all: the module exports its namespace. Compare with the loader
@@ -22,7 +21,7 @@ function load() {
 }
 
 function fixture(name) {
-  const here = dirname(fileURLToPath(import.meta.url));
+  const here = import.meta.dirname;
   return JSON.parse(readFileSync(join(here, "fixtures", name + ".json"), "utf8"));
 }
 
@@ -1019,7 +1018,7 @@ test("slideEase runs 0 to 1, fast first, and clamps its clock", () => {
 
 test("bboxOf wraps every rect, and an empty list is the zero box at the origin", () => {
   assert.deepEqual(WBGeometry.bboxOf([]), { left: 0, top: 0, width: 0, height: 0 });
-  assert.deepEqual(WBGeometry.bboxOf(undefined), { left: 0, top: 0, width: 0, height: 0 });
+  assert.deepEqual(WBGeometry.bboxOf(), { left: 0, top: 0, width: 0, height: 0 });
   assert.deepEqual(
     WBGeometry.bboxOf([
       { left: 100, top: 50, width: 200, height: 100 },
@@ -1049,7 +1048,7 @@ test("stageExtent of no rects and no viewport is the margin on both sides", () =
 
 test("rectHolds of a missing rect holds nothing, not even the origin", () => {
   assert.equal(load().rectHolds(null, { x: 0, y: 0 }), false);
-  assert.equal(load().rectHolds(undefined, undefined), false);
+  assert.equal(load().rectHolds(), false);
 });
 
 test("panNudge with no band and no step is the call with 48 and 24", () => {

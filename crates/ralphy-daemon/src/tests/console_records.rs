@@ -296,7 +296,7 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
     let guard = &body[body[..set]
         .rfind("if(")
         .expect("the name is sent under a guard")..set];
-    for condition in ["termOpts.id==null", "!termOpts.console"] {
+    for condition in ["termOpts.id==null", "termOpts.console!==true"] {
         assert!(
             guard.contains(condition),
             "spawnWindow must send the console name with a new agent launch only (#480): {guard}"

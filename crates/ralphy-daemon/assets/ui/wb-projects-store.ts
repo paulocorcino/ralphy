@@ -153,8 +153,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // A peer reads no git fact: the change set and the branch have their own
     // triggers.
     peerTick() {
-      if (!window.Alpine.store("connection").tabHidden() && this.fleetPeers.length)
+      if (!window.Alpine.store("connection").tabHidden() && this.fleetPeers.length > 0) {
         void this.loadRepos({ git: false });
+      }
     },
     PEER_READ_MS: 30000,
     _peerTick: null as Timer,
@@ -243,8 +244,9 @@ export function projectsStore(deps: ProjectsStoreDeps) {
         // answered: the live dots and the console menu come from them.
         void this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
-        if (git && this.openSlug)
+        if (git && this.openSlug !== null) {
           sendWindow(window, "workbench:changes-read", { ref: this.openSlug });
+        }
       }
     },
 

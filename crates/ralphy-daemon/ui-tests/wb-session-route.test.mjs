@@ -364,7 +364,7 @@ test("unanswered reads the peers a session list did not hear from", () => {
   assert.equal(UNANSWERED_HEADER, "x-ralphy-unanswered");
   // No header: every peer answered.
   assert.deepEqual([...unanswered(null)], []);
-  assert.deepEqual([...unanswered(undefined)], []);
+  assert.deepEqual([...unanswered()], []);
   assert.deepEqual([...unanswered("")], []);
   assert.deepEqual([...unanswered("01ARZ3NDEKTSV4RRFFQ69G5FAZ")], ["01ARZ3NDEKTSV4RRFFQ69G5FAZ"]);
   assert.deepEqual(

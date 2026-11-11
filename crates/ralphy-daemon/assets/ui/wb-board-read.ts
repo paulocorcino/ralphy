@@ -66,7 +66,8 @@ export function rowToIssue(row: BoardRow) {
 
 // The issue of an `issue.show` reply, or null when the reply carries none.
 export function shownIssue(reply: ReplyOf<"issue.show">) {
-  if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object")
+  if (reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
     return null;
+  }
   return reply.issue;
 }

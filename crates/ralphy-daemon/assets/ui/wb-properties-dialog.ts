@@ -57,8 +57,9 @@ const closedProps = (): Props => ({
 /** The words of a refusal. An older daemon does not know the verb, and a second
  * count is refused while one runs. */
 function refusal(reply: DaemonReply | null, fallback: string) {
-  if (reply?.message === "unknown verb")
+  if (reply?.message === "unknown verb") {
     return "This host runs an older daemon. Update it to see properties.";
+  }
   if (reply?.reason === "busy") return "Another size is being calculated. Try again.";
   return WBFail.failed(reply, fallback);
 }
@@ -180,24 +181,27 @@ export function wbPropertiesDialog() {
     // numbers; a lower bound says so; a refusal says why and offers a new try.
     propsSizeRows(): Row[] {
       const { size, sizePending, sizeError } = this.props;
-      if (sizePending)
+      if (sizePending) {
         return ["Size", "Contains"].map((label) => ({
           label,
           value: "Calculating…",
           pending: true,
         }));
-      if (sizeError || !size)
+      }
+      if (sizeError || !size) {
         return [{ label: "Size", value: sizeError || "Unknown", retry: true }];
+      }
       const rows: Row[] = [
         { label: "Size", value: folderSize(size) },
         { label: "Contains", value: folderContents(size) },
         { label: "Ignored contents", value: formatBytes(size.ignored_bytes ?? 0) },
       ];
-      if (size.truncated)
+      if (size.truncated === true) {
         rows.push({
           label: "Note",
           value: "The count stopped after 5 s, so these numbers are a minimum.",
         });
+      }
       return rows;
     },
 

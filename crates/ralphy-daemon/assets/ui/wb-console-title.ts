@@ -340,7 +340,7 @@ export function createTitle(deps: TitleDeps) {
       danger: !ended,
     });
     if (!ok) return;
-    endLiveThen(win, () => win._relaunchIn?.(undefined));
+    endLiveThen(win, () => win._relaunchIn?.());
   }
 
   return {

@@ -253,7 +253,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     // The LAST one, if a desk somehow carries two: it is the one whose record
     // was written most recently, and exactly one window can usefully be on top.
     const all = st.querySelectorAll<HTMLElement>(".session-window.maximized");
-    const win = all[all.length - 1];
+    const win = Array.from(all).at(-1);
     if (win) focusWin(win);
   }
 

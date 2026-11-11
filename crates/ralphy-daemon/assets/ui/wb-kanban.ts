@@ -376,7 +376,6 @@ export const WBKanban = {
         return a.sort((x, y) => (y.updated || "").localeCompare(x.updated || ""));
       case "title":
         return a.sort((x, y) => (x.title || "").localeCompare(y.title || ""));
-      case "num-desc":
       default:
         return a.sort((x, y) => y.number - x.number);
     }

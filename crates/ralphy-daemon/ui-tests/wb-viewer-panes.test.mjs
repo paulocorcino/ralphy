@@ -30,7 +30,7 @@ test("the active pane goes to column 1 and the pinned one to column 3", () => {
   assert.deepEqual(paneLayout("a", "a", false, "b"), { on: true, display: "flex", gridColumn: "" });
   assert.deepEqual(paneLayout("b", "a", false, "b"), { on: false, display: "none", gridColumn: "" });
   // Nothing on screen: every pane is hidden.
-  assert.deepEqual(paneLayout("a", null, false, undefined), { on: false, display: "none", gridColumn: "" });
+  assert.deepEqual(paneLayout("a", null, false), { on: false, display: "none", gridColumn: "" });
 });
 
 test("a focused mirror gets the mirror's editor; a focused pin gets its pane's editor", () => {

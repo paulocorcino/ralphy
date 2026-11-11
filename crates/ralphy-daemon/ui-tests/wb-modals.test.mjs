@@ -250,7 +250,7 @@ test("every dialog in the document is marked modal", () => {
   );
   assert.equal(dialogs.length, 14);
   for (const tag of dialogs) {
-    assert.match(tag, /\baria-modal="true"/, tag.replace(/\s+/g, " "));
+    assert.match(tag, /\baria-modal="true"/u, tag.replaceAll(/\s+/gu, " "));
   }
 });
 

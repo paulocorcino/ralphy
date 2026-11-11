@@ -47,7 +47,8 @@ export function peerFold(
 // state alike.
 function tickFold(same: PeerState, at: number | undefined, windowMs: number): PeerOut {
   if (same.seen == null || typeof at !== "number") return { state: same, effects: [] };
-  if (at - same.seen > windowMs)
+  if (at - same.seen > windowMs) {
     return { state: { seen: same.seen, lost: true }, effects: [{ type: "peer-lost" }] };
+  }
   return { state: same, effects: [] };
 }

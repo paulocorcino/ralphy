@@ -118,8 +118,10 @@ function withVersion(name: string, version: string | null) {
 export function deviceName(d: Device) {
   const parts = [];
   if (d.os) parts.push(withVersion(OS_NAMES[d.os] || "Other system", d.os_version));
-  if (d.browser)
-    parts.push(withVersion(BROWSER_NAMES[d.browser] || "Other browser", d.browser_version));
+  const browser = d.browser ?? "";
+  if (browser !== "") {
+    parts.push(withVersion(BROWSER_NAMES[browser] ?? "Other browser", d.browser_version));
+  }
   if (d.form) parts.push(FORM_NAMES[d.form] || d.form);
   return parts.length ? parts.join(" · ") : "A device that sent no facts yet";
 }
@@ -158,7 +160,7 @@ export function eventLine(e: AuditEvent) {
     case "device_profile_changed":
       return (
         `Its device facts changed: ` +
-        `${(e.changed || []).map((c: string) => CHANGED_NAMES[c] || c).join(", ")}`
+        (e.changed ?? []).map((c: string) => CHANGED_NAMES[c] ?? c).join(", ")
       );
     case "action":
       return actionLine(e as ActionEvent);
@@ -183,7 +185,7 @@ export function eventRows(reply: { events?: AuditEvent[] }, formatAt: (at: strin
   for (const e of reply.events || []) {
     const text = eventLine(e);
     const ip = e.ip || (e.server && e.server.real_ip) || "";
-    const last = out[out.length - 1];
+    const last = out.at(-1);
     if (last && last.line === text && last.ip === ip) {
       last.count += 1;
       last.text = `${text} · ${last.count} times`;

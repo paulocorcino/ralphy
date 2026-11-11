@@ -112,12 +112,12 @@ export function titleFieldOf(markdown: string | null | undefined) {
     if (!raw.startsWith('"')) return raw;
     return raw
       .slice(1, raw.endsWith('"') && raw.length > 1 ? -1 : undefined)
-      .replace(/\\(["\\])/g, "$1");
+      .replaceAll(/\\(["\\])/gu, "$1");
   }
   return null;
 }
 export function titleYaml(name: string) {
-  return '"' + String(name).replace(/[\\"]/g, "\\$&") + '"';
+  return '"' + name.replaceAll(/[\\"]/gu, "\\$&") + '"';
 }
 
 // The whole look of the card, defaulted: the ground's tone, how much of it
@@ -145,7 +145,7 @@ export function withHeader(
   veiled?: boolean,
 ) {
   const name = String(title || "")
-    .replace(/[\r\n]+/g, " ")
+    .replaceAll(/[\r\n]+/gu, " ")
     .trim();
   const lines: string[] = [];
   if (name) lines.push(`title: ${titleYaml(name)}`);
@@ -198,7 +198,7 @@ export function withVeil(markdown: string | null | undefined, veiled: boolean) {
 // — opening a note rewrites nothing.
 export function withTitle(markdown: string | null | undefined, title: string | null | undefined) {
   const name = String(title || "")
-    .replace(/[\r\n]+/g, " ")
+    .replaceAll(/[\r\n]+/gu, " ")
     .trim();
   const body = bodyOf(markdown);
   const legacy = legacyTitleOf(body);

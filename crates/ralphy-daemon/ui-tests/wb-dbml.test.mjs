@@ -5,12 +5,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { colKey, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMermaidEr } from "../assets/ui/wb-dbml.ts";
 import { groupTables } from "../assets/ui/wb-dbml-groups.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 const fixture = (name) => readFileSync(join(HERE, "fixtures", "dbml", name), "utf8");
 
 const col = (name, type, over = {}) => ({
@@ -105,7 +104,7 @@ test("parseDbml reads refs and never throws", () => {
     "Table t {\n  id int\n",
     "}\n}\n",
     "",
-    "\u0000\u0001\u0002 �� binary-like \u007f}{][)(",
+    "\u0000\u0001\u0002 �� binary-like \u007F}{][)(",
     `Table ${"x".repeat(1000)} {\n  ${"c".repeat(1000)} ${"t".repeat(1000)} [${"n".repeat(1000)}\n}\n`,
     "// only a comment\n/* and another */\n",
   ];

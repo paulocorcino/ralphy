@@ -142,14 +142,14 @@ export function flingStep(velocity: number, ms: number) {
 // A `Map`: a plain literal answers `"toString"` with a function, and the name
 // comes off a `data-key` attribute — a string from the DOM.
 const KEY_BYTES = new Map<string, string>([
-  ["esc", "\x1b"],
+  ["esc", "\u001B"],
   ["tab", "\t"],
   // CR, what a real Return key sends. Lets a menu be answered with the bar
   // alone, without opening the virtual keyboard.
   ["enter", "\r"],
   // Opens an agent's command menu without the virtual keyboard.
   ["slash", "/"],
-  ["ctrl-c", "\x03"],
+  ["ctrl-c", "\u0003"],
 ]);
 const ARROW_FINAL = new Map<string, string>([
   ["up", "A"],
@@ -162,13 +162,17 @@ const ARROW_FINAL = new Map<string, string>([
 // modifier parameter 2 in both cursor modes. Esc, Enter, / and ^C have no
 // Shift form here, so they are sent unchanged.
 export function keySequence(name: string, appCursor: boolean, shift: boolean) {
-  if (shift && name === "tab") return "\x1b[Z";
+  if (shift && name === "tab") {
+    return "\u001B[Z";
+  }
   const literal = KEY_BYTES.get(name);
   if (literal !== undefined) return literal;
   const final = ARROW_FINAL.get(name);
   if (final === undefined) return "";
-  if (shift) return "\x1b[1;2" + final;
-  return (appCursor ? "\x1bO" : "\x1b[") + final;
+  if (shift) {
+    return "\u001B[1;2" + final;
+  }
+  return (appCursor ? "\u001BO" : "\u001B[") + final;
 }
 
 // One key-bar tap under the Shift latch. `shift` toggles the latch and sends
@@ -186,9 +190,10 @@ export function barKey(name: string, appCursor: boolean, latched: boolean) {
 // would corrupt it. Anything else passes through WITH the latch still set.
 export function applyCtrlLatch(latched: boolean, d: string) {
   if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
-  const code = d.toUpperCase().charCodeAt(0);
+  // `d` has one UTF-16 unit, so its uppercase form is never empty: the `?? 0` is not reached.
+  const code = d.toUpperCase().codePointAt(0) ?? 0;
   if (code < 0x40 || code > 0x5f) return { out: d, latched };
-  return { out: String.fromCharCode(code & 0x1f), latched: false };
+  return { out: String.fromCodePoint(code & 0x1f), latched: false };
 }
 
 // Whether `d` is one of the answers xterm writes back for a terminal
@@ -200,8 +205,8 @@ export function applyCtrlLatch(latched: boolean, d: string) {
 // replays. A modified F3 (`CSI 1;5R`) has the same bytes as a cursor answer;
 // the replay lasts a moment, so that collision is accepted.
 const CSI_REPLY = /\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)/;
-const DCS_REPLY = /P[\s\S]*\x1b\\/;
-const OSC_REPLY = /\]\d+;[\s\S]*(?:\x07|\x1b\\)/;
+const DCS_REPLY = /P[\s\S]*\u001B\\/u;
+const OSC_REPLY = /\]\d+;[\s\S]*(?:\u0007|\u001B\\)/u;
 const TERMINAL_REPLY = new RegExp(
   `^\\x1b(?:${CSI_REPLY.source}|${DCS_REPLY.source}|${OSC_REPLY.source})$`,
 );
@@ -389,7 +394,7 @@ export function pasteDecision({ types, size, watching }: PasteInput) {
 // so the source carries no control-character escapes of its own.
 export function scrubClipboard(text: string) {
   let out = "";
-  for (const ch of text.replace(/\r\n/g, "\n")) {
+  for (const ch of text.replaceAll("\r\n", "\n")) {
     // A `for…of` over a string yields non-empty code points.
     const c = ch.codePointAt(0) ?? 0;
     // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.

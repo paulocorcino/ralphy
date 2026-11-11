@@ -181,8 +181,9 @@ export const WBSessionRoute = (function () {
   function reattachFields(opts: ReattachOpts): SessionPayload {
     const out: SessionPayload = { id: opts.id };
     if (opts.repo) out.repo = opts.repo;
-    if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0)
+    if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) {
       out.since = opts.since;
+    }
     if (opts.takeover) out.takeover = 1;
     // A watcher claims nothing, so it names no holder.
     if (opts.watch) return { ...out, watch: 1 };
@@ -214,11 +215,13 @@ export const WBSessionRoute = (function () {
     const out: SessionPayload = {};
     if (!link) return out;
     const { effectiveType, rtt, downlink } = link;
-    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType))
+    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType)) {
       out.net = effectiveType;
+    }
     if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) out.net_rtt = String(rtt);
-    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0)
+    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0) {
       out.net_down = String(downlink);
+    }
     return out;
   }
 
@@ -250,7 +253,7 @@ export const WBSessionRoute = (function () {
     since?: number,
   ): SessionOpenOpts {
     const repo = req.repo ?? undefined;
-    if (req.id != null)
+    if (req.id != null) {
       return {
         id: req.id,
         since,
@@ -261,7 +264,8 @@ export const WBSessionRoute = (function () {
         gzip,
         attempt,
       };
-    if (req.console)
+    }
+    if (req.console === true) {
       return {
         console: true,
         repo,
@@ -271,6 +275,7 @@ export const WBSessionRoute = (function () {
         gzip,
         attempt,
       };
+    }
     const { agent, checkout, name, record } = req;
     return {
       repo: req.repo ?? "",
@@ -293,8 +298,9 @@ export const WBSessionRoute = (function () {
   // The attempt rides only with a holder: it orders the claims of one holder.
   function holderFields(h: string | undefined, attempt?: number): SessionPayload {
     if (typeof h !== "string" || !HOLDER_RE.test(h)) return {};
-    if (Number.isSafeInteger(attempt) && attempt != null && attempt >= 0)
+    if (Number.isSafeInteger(attempt) && attempt != null && attempt >= 0) {
       return { holder: h, attempt };
+    }
     return { holder: h };
   }
 

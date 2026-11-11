@@ -129,9 +129,9 @@ test("windowCheckout lets the daemon's announcement beat the request beat the re
 
   const unannounced = initWindow({}, { _deskCheckout: "wt/recorded" });
   assert.equal(windowCheckout(unannounced, "wt/asked"), "wt/asked");
-  assert.equal(windowCheckout(unannounced, undefined), "wt/recorded");
+  assert.equal(windowCheckout(unannounced), "wt/recorded");
 
-  assert.equal(windowCheckout(initWindow({}), undefined), null);
+  assert.equal(windowCheckout(initWindow({})), null);
 });
 
 // The primary worktree is `null`, not a name, and `null` from the daemon is an
@@ -142,8 +142,8 @@ test("windowCheckout does not treat the primary worktree as an unanswered questi
   const win = initWindow({}, { _sessionCheckout: null, _deskCheckout: "wt/stale" });
   // `_sessionCheckout` is null (its default) — indistinguishable from "never
   // announced", which is why the DESK mirror is overwritten on announcement too.
-  assert.equal(windowCheckout(win, undefined), "wt/stale");
+  assert.equal(windowCheckout(win), "wt/stale");
   // What the announcement actually does: it writes both, and then they agree.
   win._deskCheckout = null;
-  assert.equal(windowCheckout(win, undefined), null);
+  assert.equal(windowCheckout(win), null);
 });

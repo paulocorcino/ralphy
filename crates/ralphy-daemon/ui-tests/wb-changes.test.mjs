@@ -519,7 +519,7 @@ test("groupPaths never sends a rename's old path on the STAGE direction (#318)",
 test("groupPaths can only name paths it was given (#318)", () => {
   const groupPaths = load().groupPaths;
   assert.deepEqual(groupPaths([]), []);
-  assert.deepEqual(groupPaths(undefined), []);
+  assert.deepEqual(groupPaths(), []);
   assert.deepEqual(groupPaths(null), []);
   // Nothing is synthesised: no "." , no "*", no "-A".
   assert.deepEqual(groupPaths([{ path: "a.txt", originalPath: null }]), ["a.txt"]);
@@ -570,7 +570,7 @@ test("pullBlocked closes Pull only for a branch with no upstream", () => {
 test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   const writeLockReason = load().writeLockReason;
   assert.equal(writeLockReason([]), "");
-  assert.equal(writeLockReason(undefined), "");
+  assert.equal(writeLockReason(), "");
   assert.equal(writeLockReason(null), "");
   assert.equal(writeLockReason("nope"), "");
   // The subject is a parameter because the same lock closes the board's label
@@ -629,7 +629,7 @@ test("groupDiscardNote states what each group's discard removes (#319)", () => {
   assert.match(unstaged, /Staged changes are kept/);
   assert.match(staged, /Unstage first/);
   assert.equal(groupDiscardNote("nope"), "");
-  assert.equal(groupDiscardNote(undefined), "");
+  assert.equal(groupDiscardNote(), "");
 });
 
 test("the folds are pure: they never mutate what they are given (#316, #319)", () => {
@@ -667,6 +667,6 @@ test("the folds are pure: they never mutate what they are given (#316, #319)", (
     assert.deepEqual(input, before, `${name} stays pure`);
   }
   // …and no input at all is answered, never thrown on.
-  assert.equal(typeof m.discardConfirm(undefined).message, "string");
+  assert.equal(typeof m.discardConfirm().message, "string");
 });
 

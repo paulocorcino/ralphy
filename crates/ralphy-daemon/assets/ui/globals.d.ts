@@ -487,10 +487,11 @@ interface DocumentEventMap {
 }
 
 // The page instances that modules name bare.
-declare var WBConsole: Window["WBConsole"];
-declare var WBDaemon: Window["WBDaemon"];
-declare var WBViewer: Window["WBViewer"];
-declare var WB: Window["WB"];
+// oxlint-disable-next-line eslint/no-var -- a global `var` is a window property; `let` is not
+declare var WBConsole: Window["WBConsole"],
+  WBDaemon: Window["WBDaemon"],
+  WBViewer: Window["WBViewer"],
+  WB: Window["WB"];
 
 // Clearing a `null` timer does nothing: the HTML timer API turns `null` into 0.
 declare function clearTimeout(id: number | null | undefined): void;

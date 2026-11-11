@@ -304,8 +304,9 @@ export function securityDialog() {
     // present: an absent field is a 400, never a clear.
     passwordBody(pw: string) {
       const p = new URLSearchParams({ password: pw });
-      if (this.$store.connection.security.passwordSet)
+      if (this.$store.connection.security.passwordSet) {
         p.set("current", this.securityForm.passwordCurrent);
+      }
       return p.toString();
     },
     async savePassword() {
@@ -381,8 +382,9 @@ export function securityDialog() {
       } catch {
         return;
       }
-      if (this.$store.connection.security.policy === "session")
+      if (this.$store.connection.security.policy === "session") {
         void this.$store.connection.logOff();
+      }
     },
 
     async toggleRequireLogin(ev?: CheckboxChange) {

@@ -71,15 +71,16 @@ const isSentence = (s: string) => /^[A-Z]/.test(s) && s.endsWith(".") && !s.incl
 // One line of text from the CLI's output: the error line and its causes,
 // or every line when there is no `Error: ` line.
 function oneLine(text: string) {
-  let lines = text.replace(/\r/g, "").split("\n");
+  let lines = text.replaceAll("\r", "").split("\n");
   const trace = lines.findIndex((l) => /^\s*Stack backtrace:/.test(l));
   if (trace >= 0) lines = lines.slice(0, trace);
   const errorLine = lines.find((l) => l.startsWith("Error: "));
-  if (errorLine === undefined)
+  if (errorLine === undefined) {
     return lines
       .map((l) => l.trim())
       .filter(Boolean)
       .join(" ");
+  }
   const pieces = [errorLine.slice("Error: ".length).trim()];
   for (const l of lines.slice(lines.indexOf(errorLine) + 1)) {
     const t = l.trim().replace(/^\d+: /, "");

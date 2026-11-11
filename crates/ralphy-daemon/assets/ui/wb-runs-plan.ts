@@ -30,7 +30,8 @@ export function parseSteps(md: string | null | undefined) {
     const [, mark, text] = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/) ?? [];
     if (mark === undefined || text === undefined) return;
     const status = stepStatus(mark);
-    out.push({ text: text.replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
+    const plain = text.replaceAll(/[*_`]/gu, "").trim().replaceAll(/\s+/gu, " ");
+    out.push({ text: plain, status });
   });
   return out;
 }
