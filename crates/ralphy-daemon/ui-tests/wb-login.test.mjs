@@ -39,7 +39,7 @@ test("wbLogin lists only shell() names in uses, and its members left shell()", (
 test("every name the markup of wbLogin reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbLogin");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // The `x-for` loop variable of the digit boxes.
   const loopVars = new Set(["i"]);
   let read = 0;
@@ -61,7 +61,7 @@ test("nothing outside the login gate names its state", () => {
   // "login" in other places.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   const read = new Set();
-  for (const m of outside.matchAll(/\s(?:x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
+  for (const m of outside.matchAll(/\s(?:x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
     for (const n of bindingNames(m[1])) read.add(n);
   }
   for (const name of ["login", "submitLogin", "otpInput", "otpKeydown", "otpPaste", "loginBody", "rehydrateAfterAuth"]) {

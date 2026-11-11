@@ -73,7 +73,7 @@ test("wbChanges lists only shell() names in uses, and its members left shell()",
 test("every name the markup of wbChanges reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbChanges");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // The `x-for` loop variable of the two groups of rows, and a global.
   const loopVars = new Set(["c", "Boolean"]);
   let read = 0;
@@ -93,7 +93,7 @@ test("nothing outside the Changes view element names its state", () => {
   // The page without the Changes part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["changesError", "changesReadError", "changesStaged", "changesUnstaged", "syncByProject", "syncBusy", "commitMsg", "loadChanges", "loadSync", "stagePaths", "discardRow", "commitStaged", "syncPush", "pullBlocked", "rowActTitle"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 
@@ -331,7 +331,7 @@ test("a failed change-set read after a good one keeps the groups, marked not cur
   await state.loadChanges("o/r");
   assert.equal(shell.$store.checkouts.changesCount["o/r"], before);
   assert.equal(state.changesRead["o/r"].current, false);
-  assert.match(state.changesReadError["o/r"], /Not current: git exited 128/);
+  assert.match(state.changesReadError["o/r"], /Not current: git exited 128/u);
 });
 
 // ADR-0070 D3: a write acts on what the page shows, so it is locked while that
@@ -343,7 +343,7 @@ test("writes are locked while the change set is not current", async () => {
   assert.equal(shell.$store.connection.writeLocked(), false, "a good read locks nothing");
   await changes.loadChanges("o/r");
   assert.equal(shell.$store.connection.writeLocked(), true);
-  assert.match(shell.$store.connection.writeLockReason(), /not current/);
+  assert.match(shell.$store.connection.writeLockReason(), /not current/u);
 });
 
 // NEGATIVE CONTROL: two good reads lock nothing.
@@ -358,10 +358,10 @@ test("two good change-set reads lock no write", async () => {
 test("a failed first change-set or branch read says why", async () => {
   const { changes } = observedPage([{ status: "error", message: "git exited 128" }]);
   await changes.loadChanges("o/r");
-  assert.match(changes.changesReadError["o/r"], /Could not read the changes: git exited 128/);
+  assert.match(changes.changesReadError["o/r"], /Could not read the changes: git exited 128/u);
   const { changes: sync } = observedPage([{ status: "error", message: "not a git repository" }]);
   await sync.loadSync("o/r");
-  assert.match(sync.syncByProject["o/r"].note, /not a git repository/);
+  assert.match(sync.syncByProject["o/r"].note, /not a git repository/u);
 });
 
 // ADR-0070 D3: each write action asks the lock itself, not only its button.

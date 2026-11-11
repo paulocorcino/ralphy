@@ -54,11 +54,13 @@ test("a maximized console shows the list button as Switch on a phone and as Slic
   const phone = paint({ width: 400 });
   assert.equal(phone.hidden, false, "the button shows on a phone");
   assert.deepEqual([phone.title, phone.getAttribute("aria-label")], ["Switch", "Switch"]);
-  assert.match(phone.innerHTML, /bi-arrow-down-up/);
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
+  assert.match(phone.innerHTML, /bi-arrow-down-up/u);
   const wide = paint({ width: 1200 });
   assert.equal(wide.hidden, false);
   assert.deepEqual([wide.title, wide.getAttribute("aria-label")], ["Slice", "Slice"]);
-  assert.match(wide.innerHTML, /bi-arrows-expand-vertical/);
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
+  assert.match(wide.innerHTML, /bi-arrows-expand-vertical/u);
 });
 
 test("the detached-fence popup never shows the list button", () => {

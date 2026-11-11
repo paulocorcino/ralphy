@@ -416,7 +416,7 @@ test("phoneBleed is maximize AND a phone-width viewport", () => {
   // The breakpoint is the workbench's phone breakpoint: 01-base.css gates the
   // phone layout on the same number, so a drift between the two fails here.
   const css = readFileSync(join(UI, "styles/01-base.css"), "utf8");
-  const phone = css.match(/@media \(max-width: (\d+)px\) \{/);
+  const phone = css.match(/@media \(max-width: (\d+)px\) \{/u);
   assert.ok(phone, "01-base.css has a phone-width @media block");
   assert.equal(PHONE_MAX_WIDTH, Number(phone[1]));
   assert.equal(phoneBleed(true, 390), true);

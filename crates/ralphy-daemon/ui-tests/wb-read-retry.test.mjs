@@ -24,12 +24,12 @@ test("a read lost without a reply is asked again and the caller gets the answer"
 
 test("a reply that said no is not asked again", async () => {
   const { read, calls } = flaky(5, new Refused("not found"));
-  await assert.rejects(patiently(read, async () => {}), /not found/);
+  await assert.rejects(patiently(read, async () => {}), /not found/u);
   assert.equal(calls.n, 1);
 });
 
 test("a read that never lands gives up with its last error after ATTEMPTS tries", async () => {
   const { read, calls } = flaky(99, new Error("gone"));
-  await assert.rejects(patiently(read, async () => {}), /gone/);
+  await assert.rejects(patiently(read, async () => {}), /gone/u);
   assert.equal(calls.n, ATTEMPTS);
 });

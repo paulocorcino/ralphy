@@ -552,7 +552,7 @@ test("commitTarget refuses to name a detached HEAD as a branch (#318)", () => {
 test("pushAct offers to publish a branch with no upstream", () => {
   const pushAct = load().pushAct;
   assert.equal(pushAct({ state: "no-upstream", branch: "feat/x" }).label, "Publish branch");
-  assert.match(pushAct({ state: "no-upstream", branch: "feat/x" }).title, /track it/);
+  assert.match(pushAct({ state: "no-upstream", branch: "feat/x" }).title, /track it/u);
   for (const s of [{ state: "tracking", branch: "main" }, { state: "detached" }, { state: "unknown" }, null, undefined]) {
     assert.equal(pushAct(s).label, "Push");
     assert.equal(pushAct(s).title, "Push this branch to the remote");
@@ -561,7 +561,7 @@ test("pushAct offers to publish a branch with no upstream", () => {
 
 test("pullBlocked closes Pull only for a branch with no upstream", () => {
   const pullBlocked = load().pullBlocked;
-  assert.match(pullBlocked({ state: "no-upstream", branch: "feat/x" }), /no upstream/);
+  assert.match(pullBlocked({ state: "no-upstream", branch: "feat/x" }), /no upstream/u);
   for (const s of [{ state: "tracking", branch: "main" }, { state: "detached" }, { state: "unknown" }, null, undefined]) {
     assert.equal(pullBlocked(s), "");
   }
@@ -577,32 +577,32 @@ test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   // editor, which needs the same sentence about a different control.
   assert.match(
     writeLockReason([{ runid: "x" }], "You can edit labels again when it finishes."),
-    /^A run is active in this project\. You can edit labels again when it finishes\.$/,
+    /^A run is active in this project\. You can edit labels again when it finishes\.$/u,
   );
   assert.equal(writeLockReason([], "You can edit labels again when it finishes."), "");
   const held = writeLockReason([{ runid: "x" }]);
-  assert.match(held, /A run is active in this project/);
+  assert.match(held, /A run is active in this project/u);
   assert.equal(writeLockReason([{ runid: "x" }, { runid: "y" }]), held);
 });
 
 test("discardConfirm names the file in a tracked discard (#319)", () => {
   const discardConfirm = load().discardConfirm;
   const c = discardConfirm({ path: "src/app.js", name: "app.js", status: "modified" });
-  assert.match(c.message, /app\.js/);
+  assert.match(c.message, /app\.js/u);
   assert.equal(c.danger, true);
   assert.equal(c.unrecoverable, false);
   // A tracked discard keeps the staged blob and the commits, so it must NOT
   // borrow the untracked case's unrecoverability.
-  assert.doesNotMatch(c.message, /no commit and no reflog/);
-  assert.match(c.message, /Staged changes for this file are kept/);
+  assert.doesNotMatch(c.message, /no commit and no reflog/u);
+  assert.match(c.message, /Staged changes for this file are kept/u);
 });
 
 test("discardConfirm is more emphatic for the untracked case (#319)", () => {
   const discardConfirm = load().discardConfirm;
   const tracked = discardConfirm({ path: "a.txt", name: "a.txt", status: "modified" });
   const loose = discardConfirm({ path: "fresh.txt", name: "fresh.txt", status: "untracked" });
-  assert.match(loose.message, /fresh\.txt/);
-  assert.match(loose.message, /never committed and cannot be recovered/);
+  assert.match(loose.message, /fresh\.txt/u);
+  assert.match(loose.message, /never committed and cannot be recovered/u);
   assert.equal(loose.unrecoverable, true);
   // The emphasis is a RELATION between the two dialogs, not a literal look: a
   // build that collapsed them into one wording would red here.
@@ -616,8 +616,8 @@ test("discardConfirm names an untracked directory entry (#319)", () => {
   // git reports an untracked DIRECTORY as ONE entry `newdir/`, whose split name
   // is the empty string — the dialog must still name something.
   const c = discardConfirm({ path: "newdir/", name: "", status: "untracked" });
-  assert.match(c.message, /newdir\//);
-  assert.match(c.message, /never committed and cannot be recovered/);
+  assert.match(c.message, /newdir\//u);
+  assert.match(c.message, /never committed and cannot be recovered/u);
 });
 
 test("groupDiscardNote states what each group's discard removes (#319)", () => {
@@ -626,8 +626,8 @@ test("groupDiscardNote states what each group's discard removes (#319)", () => {
   const staged = groupDiscardNote("staged");
   assert.ok(unstaged.length > 0 && staged.length > 0);
   assert.notEqual(unstaged, staged);
-  assert.match(unstaged, /Staged changes are kept/);
-  assert.match(staged, /Unstage first/);
+  assert.match(unstaged, /Staged changes are kept/u);
+  assert.match(staged, /Unstage first/u);
   assert.equal(groupDiscardNote("nope"), "");
   assert.equal(groupDiscardNote(), "");
 });

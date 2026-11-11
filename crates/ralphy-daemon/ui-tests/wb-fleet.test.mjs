@@ -56,7 +56,7 @@ test("an unreachable peer's group still carries its rows", () => {
   assert.ok(peerGroup, "the peer must still be a group");
   assert.equal(peerGroup.state, "unreachable");
   assert.equal(peerGroup.rows.length, 1, "its repos stay listed");
-  assert.match(peerGroup.diagnosis, /WSL: Ubuntu-22\.04/);
+  assert.match(peerGroup.diagnosis, /WSL: Ubuntu-22\.04/u);
 });
 
 test("a peer that contributed no rows is still a group", () => {
@@ -329,7 +329,7 @@ test("every group header shows its system's icon and the group label, and has no
   const labelAt = html.indexOf('class="env-label"', start);
   const head = html.slice(start, html.indexOf(">", labelAt) + 1);
   // The icon is drawn for every group, not only a tunnel peer's.
-  assert.doesNotMatch(head, /g\.tunnel/, head);
+  assert.doesNotMatch(head, /g\.tunnel/u, head);
   for (const os of ["windows", "macos", "linux", "other"]) {
     assert.ok(head.includes(`$store.projects.osOf(g) === '${os}'`), os);
   }
@@ -339,7 +339,7 @@ test("every group header shows its system's icon and the group label, and has no
   assert.ok(label.includes('x-text="$store.projects.groupHost(g) ?'), label);
   assert.ok(label.includes('x-text="$store.projects.groupLabel(g)"'), label);
   const header = html.slice(start, html.indexOf('<template x-for="p in g.rows"', start));
-  assert.doesNotMatch(header, /group-menu|contextmenu|showGroupMenu/);
+  assert.doesNotMatch(header, /group-menu|contextmenu|showGroupMenu/u);
 });
 
 test("a group's system comes from its OS, whatever its label says", () => {

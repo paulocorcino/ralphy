@@ -800,7 +800,7 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
   assert.equal(seen, true, "marked before the take-down");
   assert.equal(isRelaunching("w-a"), true, "still marked until the respawn");
   assert.equal(isRelaunching("w-b"), false);
-  assert.throws(() => markRelaunch("w-b", () => { throw new Error("gone"); }), /gone/);
+  assert.throws(() => markRelaunch("w-b", () => { throw new Error("gone"); }), /gone/u);
   assert.equal(isRelaunching("w-b"), false, "a take-down that throws clears the mark");
 });
 
@@ -808,7 +808,7 @@ test("markRelaunch marks the id, and a take-down that throws clears the mark", (
 // same id; the shell's columns wait for an id marked in between. These paths
 // need a real DOM, so the wiring is pinned on the source.
 test("a restart and a placeholder's Launch mark the console as relaunching", () => {
-  assert.match(SRC, /markRelaunch\(carry\.id, discard\);/);
+  assert.match(SRC, /markRelaunch\(carry\.id, discard\);/u);
   assert.match(SRC, /markRelaunch\(carry\.id, \(\) => \{\s*drop\(true\);\s*\}\);/u);
   assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\.id\);/u);
 });
@@ -819,9 +819,9 @@ test("the torn-off fence window paints its columns without persist", () => {
   // The page and its page script module.
   const html =
     readFileSync(join(UI, "detached-fence.html"), "utf8") + readFileSync(join(UI, "wb-detached-fence.ts"), "utf8");
-  const calls = html.match(/WBConsole\.applyColumns\([^;]*;/g) || [];
+  const calls = html.match(/WBConsole\.applyColumns\([^;]*;/gu) || [];
   assert.equal(calls.length, 1, calls.join("\n"));
-  assert.ok(!/\bpersist\b/.test(html), "the torn-off fence window names persist");
+  assert.ok(!/\bpersist\b/u.test(html), "the torn-off fence window names persist");
 });
 
 // The torn-off fence window paints its own grid and never stores it
@@ -1114,7 +1114,7 @@ test("start a new desk fails with the status on any other refusal", async () => 
   try {
     const c = load();
     await c.whenDeskLoaded();
-    await assert.rejects(c.startNewDesk(), /the daemon answered 500/);
+    await assert.rejects(c.startNewDesk(), /the daemon answered 500/u);
   } finally {
     globalThis.fetch = realFetch;
   }

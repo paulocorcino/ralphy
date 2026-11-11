@@ -270,7 +270,7 @@ test("tabAttempt raises the tab's counter on every call", () => {
 test("tabHolder mints one well-formed holder per document and keeps it", () => {
   const { tabHolder } = load();
   const first = tabHolder();
-  assert.match(first, /^[0-9a-f]{32}$/);
+  assert.match(first, /^[0-9a-f]{32}$/u);
   assert.equal(tabHolder(), first, "every console of the tab claims as the same holder");
 });
 

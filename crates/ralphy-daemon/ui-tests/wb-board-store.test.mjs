@@ -44,8 +44,8 @@ test("a failed read after a good read keeps the cards, marked not current", () =
   store.boardReadOk("o/r", [row(7)], new Map());
   store.boardReadFailed("o/r", "gh not authed");
   assert.deepEqual(store.boardIssues["o/r"], [row(7)], "the cards stay");
-  assert.match(store.boardError["o/r"], /Not current/);
-  assert.match(store.boardError["o/r"], /14:02/);
+  assert.match(store.boardError["o/r"], /Not current/u);
+  assert.match(store.boardError["o/r"], /14:02/u);
   assert.equal(store.boardRead["o/r"].current, false);
 });
 

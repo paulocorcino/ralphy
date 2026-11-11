@@ -163,7 +163,7 @@ test("a save carries the pane's encoding and bom, and the ack clears the pane", 
   assert.equal(written[1].payload.bom, true);
   assert.deepEqual(acks[0], { ok: false, reason: "unencodable", char_index: 4 });
   assert.equal(asked.length, 1);
-  assert.match(asked[0].message, /Character 5 is not representable in windows-1252/);
+  assert.match(asked[0].message, /Character 5 is not representable in windows-1252/u);
   assert.deepEqual(set, [["UTF-8", false]], "the pane's encoding flips before the resend");
   assert.equal(written.length, 3, "the text was re-sent");
   assert.equal(written[2].payload.encoding, "utf-8");

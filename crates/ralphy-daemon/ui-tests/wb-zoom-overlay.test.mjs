@@ -21,13 +21,13 @@ class FakeEl {
     Object.assign(this, props);
   }
   get classes() {
-    return this.className.split(/\s+/).filter(Boolean);
+    return this.className.split(/\s+/u).filter(Boolean);
   }
   matches(sel) {
     return sel.split(",").some((part) => {
       const s = part.trim();
       if (s.startsWith(".")) return this.classes.includes(s.slice(1));
-      const data = s.match(/^\[data-zoom(?:="(.*)")?\]$/);
+      const data = s.match(/^\[data-zoom(?:="(.*)")?\]$/u);
       if (data) return this.dataset.zoom !== undefined && (data[1] === undefined || this.dataset.zoom === data[1]);
       return this.tag === s;
     });
@@ -213,7 +213,7 @@ test("Escape closes the view, stops there, and gives the focus back to the butto
 });
 
 const stageOf = (overlay) => overlay.querySelector(".zoom-stage");
-const scaleOf = (overlay) => Number(/scale\(([\d.]+)\)/.exec(stageOf(overlay).style.transform)[1]);
+const scaleOf = (overlay) => Number(/scale\(([\d.]+)\)/u.exec(stageOf(overlay).style.transform)[1]);
 
 test("the view opens fitted, and the + and - keys zoom around its middle", () => {
   const doc = makeDocument();

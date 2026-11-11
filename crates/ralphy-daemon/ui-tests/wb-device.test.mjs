@@ -82,7 +82,7 @@ test("report: a 401 before login waits for the login action, then sends once", a
   assert.equal(bodies.length, 1, "another action sends nothing");
   onAction({ detail: { action: "login" } });
   await until(() => bodies.length === 2, "the send after login");
-  assert.match(bodies[0].holder, /^[A-Za-z0-9_-]{1,64}$/, "the facts name the tab's holder");
+  assert.match(bodies[0].holder, /^[A-Za-z0-9_-]{1,64}$/u, "the facts name the tab's holder");
   assert.equal(bodies[1].holder, bodies[0].holder);
   await settle();
   onAction({ detail: { action: "login" } });

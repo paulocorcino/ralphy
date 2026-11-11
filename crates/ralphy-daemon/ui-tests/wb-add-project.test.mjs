@@ -108,7 +108,7 @@ test("a subfolder of a repo adds the repo root, and says so", () => {
   };
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/home/me/fincal/src"), inside);
   assert.deepEqual(P.primary(s), { label: "Add fincal", disabled: false });
-  assert.match(P.help(s), /^Part of fincal\. Ralphy adds all of fincal\.$/);
+  assert.match(P.help(s), /^Part of fincal\. Ralphy adds all of fincal\.$/u);
 
   // The same folder when its repo is already added.
   const added = Object.assign({}, inside, { dir: Object.assign({}, inside.dir, { added: true }) });
@@ -198,7 +198,7 @@ test("a peer with an older Ralphy says to update it and hides the Folder field",
   let s = P.next(P.next(P.initial(), { type: "open", daemon: WSL_ID }), { type: "sent", seq: 1 });
   assert.equal(P.listable(s), true);
   s = P.next(s, { type: "reply", seq: 1, reply: { status: "error", message: "unknown verb" } });
-  assert.match(P.help(s), /^Update Ralphy on this computer/);
+  assert.match(P.help(s), /^Update Ralphy on this computer/u);
   assert.equal(P.listable(s), false);
   assert.equal(P.listable(P.next(s, { type: "where", daemon: "" })), true, "another Where brings the field back");
 });
@@ -219,7 +219,7 @@ test("a WSL path with no peer says to add the host first, and adds nothing", () 
   const s = typed(P, P.next(P.initial(), { type: "open" }), "\\\\wsl.localhost\\Debian\\home");
   assert.equal(s.daemon, "");
   assert.equal(s.wslMissing, "Debian");
-  assert.match(P.help(s), /^Add Debian \(WSL\) as a host first\.$/);
+  assert.match(P.help(s), /^Add Debian \(WSL\) as a host first\.$/u);
   assert.equal(P.primary(s).disabled, true);
 });
 

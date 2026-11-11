@@ -724,7 +724,7 @@ test("a console opens a channel with its resume fields", () => {
     page.dropSocket();
     const { repo, id, since, holder } = page.channels[1].payload;
     assert.deepEqual({ repo, id, since }, { repo: "o/r", id: 5, since: 104 });
-    assert.match(holder, /^[A-Za-z0-9_-]{1,64}$/);
+    assert.match(holder, /^[A-Za-z0-9_-]{1,64}$/u);
     handle.dispose();
   } finally {
     page.restore();

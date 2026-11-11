@@ -205,7 +205,7 @@ test("dialog: a failed install keeps the offer and runs no checks", async () => 
   await state.addHostNext();
   state.addHostInstall();
   assert.equal(calls.filter((c) => c.verb === "host.check").length, 1);
-  assert.match(state.addHost.failure.message, /^The copy on svrapp/);
+  assert.match(state.addHost.failure.message, /^The copy on svrapp/u);
 });
 
 test("dialog: Connect adds the host and reloads the tree with no page reload", async () => {
@@ -320,10 +320,10 @@ test("dialog: Back from the checks keeps the fields; it waits while a command ru
   assert.equal(state.addHost.step, "connection");
   assert.equal(state.addHost.address, "10.1.1.4");
   const html = readFileSync(join(UI, PART), "utf8");
-  assert.match(html, /@click="addHostBack\(\)"[^>]*>Back</);
-  assert.match(html, /@click="addHostNext\(\)"[^>]*>Connect</);
-  assert.match(html, /'Save' : 'Add host'/);
-  assert.match(html, /@click="closeAddHost\(\)">Done</);
+  assert.match(html, /@click="addHostBack\(\)"[^>]*>Back</u);
+  assert.match(html, /@click="addHostNext\(\)"[^>]*>Connect</u);
+  assert.match(html, /'Save' : 'Add host'/u);
+  assert.match(html, /@click="closeAddHost\(\)">Done</u);
 });
 
 test("dialog: a removed host leaves the list before the fleet read answers", () => {
@@ -355,7 +355,7 @@ test("dialog: a failed Remove host stays open with the line to remove by hand", 
   assert.equal(state.removeHost.open, true);
   assert.equal(state.removeHost.busy, false);
   assert.deepEqual(state.removeHost.lines, ["Forgot vps on this computer."]);
-  assert.match(state.removeHost.failure.message, /key line remains/);
+  assert.match(state.removeHost.failure.message, /key line remains/u);
 });
 
 test("dialog: Hosts opens on the list when a host is paired over SSH, else on the form", () => {
@@ -454,18 +454,18 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // `x-data` names the component; `x-for` adds its loop variables.
   const loopVars = new Set();
   for (const [, attr, value] of attrs) {
     if (attr !== "x-for") continue;
-    const [left] = value.split(/\s+in\s+/);
+    const [left] = value.split(/\s+in\s+/u);
     for (const v of bindingNames(left)) loopVars.add(v);
   }
   let read = 0;
   for (const [, attr, value] of attrs) {
     if (attr === "x-data") continue;
-    const expr = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const expr = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const name of bindingNames(expr)) {
       if (loopVars.has(name) || name.startsWith("$")) continue;
       assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
@@ -479,24 +479,24 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
 test("the dialog's scope refuses a shell() name outside uses, and any shell() write", () => {
   const { state, shell } = dialog();
   assert.ok("toggle" in shell);
-  assert.throws(() => state.toggle, /reads toggle/);
+  assert.throws(() => state.toggle, /reads toggle/u);
   assert.throws(() => {
     state.projectQuery = "x";
-  }, /assigns projectQuery/);
+  }, /assigns projectQuery/u);
   assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
 test("the sidebar button asks the dialog to open with workbench:hosts-open", () => {
   // The page without the dialog's part: the shell and the other components.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  const opener = outside.match(/<button class="side-refresh side-add-host"[^>]*>/)[0];
-  assert.match(opener, /@click="\$dispatch\('workbench:hosts-open'\)"/);
+  const opener = outside.match(/<button class="side-refresh side-add-host"[^>]*>/u)[0];
+  assert.match(opener, /@click="\$dispatch\('workbench:hosts-open'\)"/u);
   assert.match(
     partMarkup(PART),
-    /<div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open\.window="openAddHost\(\)">/,
+    /<div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open\.window="openAddHost\(\)">/u,
   );
   // Nothing outside the component names its state.
   for (const name of ["addHost", "removeHost", "hostSecretShown", "openAddHost"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });

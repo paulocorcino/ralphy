@@ -46,7 +46,7 @@ test("a failed runs read after a good one keeps the runs, marked not current", a
   await store.hydrateRuns();
   assert.deepEqual(store.runsByProject["o/r"], [{ runid: "r1" }]);
   assert.equal(store.runsRead["o/r"].current, false);
-  assert.match(store.runsError, /Not current: the run store is locked/);
+  assert.match(store.runsError, /Not current: the run store is locked/u);
 });
 
 test("a failed first runs read shows the words for a daemon code, never the code", async () => {

@@ -51,7 +51,8 @@ test("the file window with no opener says so and asks nobody", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const p = page({ opener: false });
   wireDetached(p.window, p.document);
-  assert.match(p.viewers.innerHTML, /Nothing to show\. Open a file in the workbench, then detach it\./);
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
+  assert.match(p.viewers.innerHTML, /Nothing to show\. Open a file in the workbench, then detach it\./u);
   assert.ok(!p.log.some(([kind, type]) => kind === "window" && type === "message"), JSON.stringify(p.log));
 });
 

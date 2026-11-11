@@ -49,7 +49,7 @@ test("the daemon sink PUTs the body to /api/desk — the control the null sink i
     const sink = load().daemon();
     await sink.put(BODY);
     assert.equal(spy.calls.length, 1);
-    assert.match(spy.calls[0].url, /^\/api\/desk\?tab=/);
+    assert.match(spy.calls[0].url, /^\/api\/desk\?tab=/u);
     assert.equal(spy.calls[0].init.method, "PUT");
     assert.equal(spy.calls[0].init.body, BODY);
     assert.equal(spy.calls[0].init.headers["Content-Type"], "application/json");

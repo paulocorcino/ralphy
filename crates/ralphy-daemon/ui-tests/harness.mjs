@@ -430,7 +430,7 @@ export function partMarkup(part) {
 }
 
 // A line that holds only `<!-- part: <name>.part.html -->`.
-const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/;
+const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/u;
 
 // The page `page` with each marker line replaced by the text of its part, and
 // the part named by `skip` left out. `build/ui.rs` is the only code that puts
@@ -438,7 +438,7 @@ const PART_MARKER = /^\s*<!-- part:\s*(\S+\.part\.html)\s*-->\s*$/;
 // whole page, in document order, or the page outside one component.
 export function assembledPage(page, { skip } = {}) {
   let text = "";
-  for (const line of readFileSync(join(UI, page), "utf8").split(/(?<=\n)/)) {
+  for (const line of readFileSync(join(UI, page), "utf8").split(/(?<=\n)/u)) {
     text += partLine(line, skip);
   }
   return text;
@@ -462,11 +462,11 @@ export function bindingNames(expr) {
     .replaceAll('&amp;', "&")
     .replaceAll(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/gu, "''");
   const names = new Set();
-  for (const m of code.matchAll(/[A-Za-z_$][\w$]*/g)) {
+  for (const m of code.matchAll(/[A-Za-z_$][\w$]*/gu)) {
     const before = code.slice(0, m.index);
     const after = code.slice(m.index + m[0].length);
-    if (/\.\s*$/.test(before)) continue;
-    if (/[{,]\s*$/.test(before) && /^\s*:/.test(after)) continue;
+    if (/\.\s*$/u.test(before)) continue;
+    if (/[{,]\s*$/u.test(before) && /^\s*:/u.test(after)) continue;
     if (["true", "false", "null", "undefined", "in", "of", "typeof"].includes(m[0])) continue;
     names.add(m[0]);
   }

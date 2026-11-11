@@ -94,9 +94,9 @@ test("a notice shows the device and what it did", async (t) => {
   assert.equal(data.deviceOf({ ...notice, device: null, facts: null }), "A device that sent no facts");
   // The markup shows both lines, and each name it reads is the component's.
   const markup = partMarkup(PART);
-  assert.match(markup, /x-text="deviceOf\(n\)"/);
-  assert.match(markup, /x-text="didOf\(n\)"/);
-  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
+  assert.match(markup, /x-text="deviceOf\(n\)"/u);
+  assert.match(markup, /x-text="didOf\(n\)"/u);
+  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
     if (attr === "x-data" || attr === "x-for") continue;
     for (const n of bindingNames(value)) {
       if (n.startsWith("$") || n === "n") continue;
@@ -116,13 +116,13 @@ test("revoke ends that login and closes the notice", async (t) => {
   // A refusal keeps the notice and says the act failed.
   await data.revoke(notice);
   assert.equal(data.notices.length, 3);
-  assert.match(data.failureOf(notice), /^Could not end this login: /);
+  assert.match(data.failureOf(notice), /^Could not end this login: /u);
   await data.revoke(notice);
   assert.deepEqual(sent[1], ["POST", "/api/security/logins/revoke", `login=${notice.login}`]);
   // Every notice of that login goes; another login's stays.
   assert.deepEqual(data.notices, [other]);
   assert.equal(data.failureOf(notice), "");
-  assert.match(partMarkup(PART), /@click="revoke\(n\)"[^>]*>End this login</);
+  assert.match(partMarkup(PART), /@click="revoke\(n\)"[^>]*>End this login</u);
 });
 
 test("this was me closes the notice", async (t) => {
@@ -144,18 +144,18 @@ test("this was me closes the notice", async (t) => {
   await data.dismiss(bare);
   assert.deepEqual(sent[1], ["POST", "/api/audit/logins/dismiss", `login=${notice.login}&device=`]);
   assert.deepEqual(data.notices, []);
-  assert.match(partMarkup(PART), /@click="dismiss\(n\)"[^>]*>This was me</);
+  assert.match(partMarkup(PART), /@click="dismiss\(n\)"[^>]*>This was me</u);
 });
 
 test("a notice of this device has no This was me action", () => {
   // The daemon refuses a dismiss from the device the notice names, so the
   // button shows only when `here` is false, and a line shows in its place.
   const markup = partMarkup(PART);
-  const dismiss = markup.match(/<button[^>]*@click="dismiss\(n\)"[^>]*>/);
+  const dismiss = markup.match(/<button[^>]*@click="dismiss\(n\)"[^>]*>/u);
   assert.ok(dismiss, "a This was me button");
-  assert.match(dismiss[0], /x-show="!n\.here"/);
-  assert.match(markup, /x-show="n\.here"[^>]*>Dismiss this from the device you signed in on\.</);
-  assert.match(markup, /<button[^>]*@click="revoke\(n\)"(?![^>]*x-show)[^>]*>End this login</);
+  assert.match(dismiss[0], /x-show="!n\.here"/u);
+  assert.match(markup, /x-show="n\.here"[^>]*>Dismiss this from the device you signed in on\.</u);
+  assert.match(markup, /<button[^>]*@click="revoke\(n\)"(?![^>]*x-show)[^>]*>End this login</u);
 });
 
 test("a logins push reads the notices again", (t) => {

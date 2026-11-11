@@ -122,7 +122,7 @@ test("a console tab takes the new name of the console that names it, and of no o
   page.names.w1 = "build";
   tabs.syncConsoleTabs();
   const title = tabs.tabOf("w1").title;
-  assert.match(title, /build/);
+  assert.match(title, /build/u);
   assert.equal(stored().consoleTabs[0].title, title);
   tabs.leaveTab("w1");
   assert.equal(tabs.tabOf("w2").title, "tests (codex)", "the console left in the tab names it");

@@ -99,11 +99,11 @@ test("password bodies always carry the field and add `current` once enrolled", (
 test("step-up refusals name the throttle's wait and a rejected code", () => {
   const { state } = dialog();
   state.noteStepUpRefusal({ status: 429, headers: { get: () => "17" } });
-  assert.match(state.securityForm.stepUpError, /wait 17 s/);
+  assert.match(state.securityForm.stepUpError, /wait 17 s/u);
   state.noteStepUpRefusal({ status: 401 });
-  assert.match(state.securityForm.stepUpError, /Code rejected/);
+  assert.match(state.securityForm.stepUpError, /Code rejected/u);
   state.notePasswordRefusal({ status: 401 });
-  assert.match(state.securityForm.stepUpError, /Current password rejected/);
+  assert.match(state.securityForm.stepUpError, /Current password rejected/u);
 });
 
 // The security fact is the Alpine store `connection`, because the boot, the
@@ -119,7 +119,7 @@ test("the dialog reads the security fact from the store connection", () => {
     () => {
       state.$store.connection.security.passwordSet = true;
     },
-    (e) => e instanceof TypeError && /wbSecurityDialog/.test(e.message) && /security\.passwordSet/.test(e.message),
+    (e) => e instanceof TypeError && /wbSecurityDialog/u.test(e.message) && /security\.passwordSet/u.test(e.message),
   );
   assert.throws(() => {
     delete state.$store.connection.security.policy;
@@ -191,7 +191,7 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   let read = 0;
   for (const [attr, value] of attrs.map((m) => [m[1], m[2]])) {
     if (attr === "x-data") continue;
@@ -208,8 +208,8 @@ test("the account menu closes itself and asks the dialog to open with workbench:
   const html = withoutComments(assembledPage("index.html"));
   const at = html.indexOf("Security settings</span>");
   const opener = html.slice(html.lastIndexOf("<button", at), html.indexOf(">", html.lastIndexOf("<button", at)) + 1);
-  const click = opener.match(/@click="([^"]*)"/)[1];
-  assert.match(wrapperTag(), /@workbench:security-open\.window="openSecurity\(\)"/);
+  const click = opener.match(/@click="([^"]*)"/u)[1];
+  assert.match(wrapperTag(), /@workbench:security-open\.window="openSecurity\(\)"/u);
 
   // The opener runs in the account menu's scope: it closes the menu and sends
   // the event.
@@ -224,7 +224,7 @@ test("the account menu closes itself and asks the dialog to open with workbench:
   assert.deepEqual(sent, ["workbench:security-open"]);
 
   // The dialog's element hears it and opens.
-  const handler = wrapperTag().match(/@workbench:security-open\.window="([^"]*)"/)[1];
+  const handler = wrapperTag().match(/@workbench:security-open\.window="([^"]*)"/u)[1];
   await withFetch({ "/api/security/state": { ok: false, status: 401 } }, () => {
     evalIn(state, handler);
   });
@@ -233,7 +233,7 @@ test("the account menu closes itself and asks the dialog to open with workbench:
   // Nothing outside the component names its state.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["securityOpen", "securityForm", "stepUp", "openSecurity", "closeSecurity"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 
@@ -246,7 +246,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
   const ev = sent.find((e) => e.type === "workbench:log-off");
   assert.ok(ev, `log off sends workbench:log-off on the window; sent ${sent.map((e) => e.type)}`);
 
-  const handler = wrapperTag().match(/@workbench:log-off\.window="([^"]*)"/)[1];
+  const handler = wrapperTag().match(/@workbench:log-off\.window="([^"]*)"/u)[1];
   evalIn(state, handler);
   assert.equal(state.securityOpen, false);
 });
@@ -255,7 +255,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Security dialog gives to scrim()", () => {
   const markup = partMarkup(PART);
-  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
+  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
   assert.deepEqual(paths, ["securityOpen"]);
   assert.equal(WBSecurityDialog.openFlag, paths[0]);
 });

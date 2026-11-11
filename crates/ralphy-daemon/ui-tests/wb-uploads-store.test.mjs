@@ -49,7 +49,7 @@ test("a file larger than one part goes in parts, in order, and lands at its fold
     ],
   );
   assert.equal(sent[0].id, sent[1].id, "one id for one file");
-  assert.match(sent[0].id, /^[0-9a-f]{32}$/);
+  assert.match(sent[0].id, /^[0-9a-f]{32}$/u);
   assert.equal("on_conflict" in sent[0], false, "only the last part names the choice");
   assert.equal(sent[1].on_conflict, "keep_both");
   assert.deepEqual(decode(sent[1]), bytes(PART_BYTES + 3).subarray(PART_BYTES));
@@ -96,7 +96,7 @@ test("a failed request stops the file, and Try again goes on from the confirmed 
   const [item] = s.items;
   assert.equal(item.state, "failed");
   assert.equal(item.sent, PART_BYTES);
-  assert.match(item.error, /Try again/);
+  assert.match(item.error, /Try again/u);
 
   down = false;
   await s.retry(item.key);
@@ -155,10 +155,10 @@ test("a name the daemon chose is said in a flash", async () => {
 });
 
 test("an older daemon, a limit and a conflict each have their own sentence", () => {
-  assert.match(refusalText({ status: "error", message: "unknown verb" }), /older daemon/);
-  assert.match(refusalText({ status: "error", reason: "too large" }), /upload limit/);
-  assert.match(refusalText({ status: "error", reason: "conflict" }), /exists now/);
-  assert.match(refusalText(null), /did not answer/);
+  assert.match(refusalText({ status: "error", message: "unknown verb" }), /older daemon/u);
+  assert.match(refusalText({ status: "error", reason: "too large" }), /upload limit/u);
+  assert.match(refusalText({ status: "error", reason: "conflict" }), /exists now/u);
+  assert.match(refusalText(null), /did not answer/u);
 });
 
 test("toBase64 matches the base64 of the bytes past one slice", () => {

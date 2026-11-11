@@ -68,11 +68,11 @@ test("wbPropertiesDialog lists only shell() names in uses, and its members left 
 test("every name the markup of wbPropertiesDialog reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbPropertiesDialog");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   let read = 0;
   for (const [, attr, value] of attrs) {
     if (attr === "x-data") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const n of bindingNames(raw)) {
       // `r` is the row of the `x-for`.
       if (n.startsWith("$") || n === "r") continue;
@@ -84,10 +84,10 @@ test("every name the markup of wbPropertiesDialog reads is its own or in its use
   // The files open it with this event; nothing outside names its state.
   assert.match(
     partMarkup(PART),
-    /<div class="properties-dialog" x-data="wbPropertiesDialog" @workbench:properties-open\.window="openProperties\(\$event\.detail\)">/,
+    /<div class="properties-dialog" x-data="wbPropertiesDialog" @workbench:properties-open\.window="openProperties\(\$event\.detail\)">/u,
   );
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
-  assert.doesNotMatch(outside, /\bprops\.open|\bpropsRows\b/);
+  assert.doesNotMatch(outside, /\bprops\.open|\bpropsRows\b/u);
 });
 
 test("a file is asked once, in the checkout of the tree, and shows its facts", async () => {
@@ -109,7 +109,7 @@ test("a file is asked once, in the checkout of the tree, and shows its facts", a
     { label: "Read-only", value: "No" },
     { label: "Ignored by git", value: "No" },
   ]);
-  assert.match(valueOf(state, "Modified"), /^\d{2} Oct 2026, \d{2}:\d{2}$/);
+  assert.match(valueOf(state, "Modified"), /^\d{2} Oct 2026, \d{2}:\d{2}$/u);
 });
 
 test("the dialog reads the replies the daemon wrote: the facts of a file and the size of a folder", async () => {

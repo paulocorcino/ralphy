@@ -17,7 +17,7 @@ const HTML = withoutComments(assembledPage("index.html"));
 
 // The index of the `</div>` that closes the `<div` at `from`.
 const divEnd = (from) => {
-  const tags = /<div\b|<\/div>/g;
+  const tags = /<div\b|<\/div>/gu;
   tags.lastIndex = from;
   let depth = 0;
   for (let t = tags.exec(HTML); t; t = tags.exec(HTML)) {
@@ -29,7 +29,7 @@ const divEnd = (from) => {
 
 // Each element that holds a component nested in `shell()`, and the text it spans.
 // One element may hold several scrims (wbReleaseDialogs holds two).
-const COMPONENTS = Array.from(HTML.matchAll(/<div [^<>]*x-data="(wb\w+)"/g), (m) => ({
+const COMPONENTS = Array.from(HTML.matchAll(/<div [^<>]*x-data="(wb\w+)"/gu), (m) => ({
   name: m[1],
   start: m.index,
   end: divEnd(m.index),
@@ -39,7 +39,7 @@ const COMPONENTS = Array.from(HTML.matchAll(/<div [^<>]*x-data="(wb\w+)"/g), (m)
 // window listeners in. `component` is the innermost Alpine component whose
 // `x-data` element holds the scrim, or null for a scrim of `shell()`.
 const SCRIMS = Array.from(
-  HTML.matchAll(/<div class="modal-scrim" x-cloak x-bind="(\$store\.modals\.scrim\('([^']+)'[^"]*)">/g),
+  HTML.matchAll(/<div class="modal-scrim" x-cloak x-bind="(\$store\.modals\.scrim\('([^']+)'[^"]*)">/gu),
   (m) => ({
     expr: m[1],
     path: m[2],
@@ -188,12 +188,12 @@ test("one Escape closes only the top modal", async () => {
 // listener to their scrim.
 test("a click outside a modal does not close it", () => {
   for (const s of bindAll(page())) {
-    const pointer = Object.keys(s.b).filter((k) => /^(@|x-on:)(click|mousedown|pointerdown)/.test(k));
+    const pointer = Object.keys(s.b).filter((k) => /^(@|x-on:)(click|mousedown|pointerdown)/u.test(k));
     assert.deepEqual(pointer, [], `${s.path}: the scrim must not close on a click`);
   }
   for (const file of ["wb-console.ts", "wb-notes.ts"]) {
     const src = readFileSync(join(UI, file), "utf8");
-    assert.doesNotMatch(src, /\bscrim\.(addEventListener\(|on\w+\s*=)/, `${file}: a scrim with a listener`);
+    assert.doesNotMatch(src, /\bscrim\.(addEventListener\(|on\w+\s*=)/u, `${file}: a scrim with a listener`);
   }
 });
 
@@ -245,8 +245,8 @@ test("a modal focuses its first control on open and gives focus back on close", 
 });
 
 test("every dialog in the document is marked modal", () => {
-  const dialogs = Array.from(HTML.matchAll(/<div\b(?:[^>"]|"[^"]*")*>/g), (m) => m[0]).filter((t) =>
-    /\brole="(?:alert)?dialog"/.test(t),
+  const dialogs = Array.from(HTML.matchAll(/<div\b(?:[^>"]|"[^"]*")*>/gu), (m) => m[0]).filter((t) =>
+    /\brole="(?:alert)?dialog"/u.test(t),
   );
   assert.equal(dialogs.length, 14);
   for (const tag of dialogs) {
@@ -288,6 +288,6 @@ test("a page put together from its parts", () => {
   assert.equal(SCRIMS.length, 14);
   assert.equal(SCRIMS.at(-1).path, "addHost.open");
   assert.equal(SCRIMS.at(-1).component, "wbHostsDialog");
-  assert.equal((HTML.match(/\brole="(?:alert)?dialog"/g) || []).length, 14);
-  assert.doesNotMatch(assembledPage("index.html"), /<!-- part:/, "a marker is left in the page");
+  assert.equal((HTML.match(/\brole="(?:alert)?dialog"/gu) || []).length, 14);
+  assert.doesNotMatch(assembledPage("index.html"), /<!-- part:/u, "a marker is left in the page");
 });

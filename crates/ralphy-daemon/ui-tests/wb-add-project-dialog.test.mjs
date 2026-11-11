@@ -139,8 +139,8 @@ test("dialog: a pick by touch does not focus the field; by mouse or key it does"
   assert.equal(focused, 2);
 
   const html = partMarkup(PART);
-  assert.match(html, /id="add-project-list"[^>]*@pointerdown="_addProjectTouch = \$event\.pointerType !== 'mouse'"/);
-  assert.match(html, /@click="addProjectPick\(e, \$event\)"/);
+  assert.match(html, /id="add-project-list"[^>]*@pointerdown="_addProjectTouch = \$event\.pointerType !== 'mouse'"/u);
+  assert.match(html, /@click="addProjectPick\(e, \$event\)"/u);
 });
 
 test("dialog: the places come from the fleet of the store projects", () => {
@@ -159,24 +159,24 @@ test("the Add a project button comes before Hosts, after refresh", () => {
   const hosts = HTML.indexOf(`@click="$dispatch('workbench:hosts-open')"`);
   assert.ok(refresh > 0 && refresh < add && add < hosts, `${refresh} < ${add} < ${hosts}`);
   const tag = HTML.slice(HTML.lastIndexOf("<button", add), HTML.indexOf(">", add));
-  assert.match(tag, /title="Add a project"/);
-  assert.match(tag, /aria-label="Add a project"/);
-  assert.match(HTML.slice(add, HTML.indexOf("</button>", add)), /x-icon="'folder-plus'"/);
+  assert.match(tag, /title="Add a project"/u);
+  assert.match(tag, /aria-label="Add a project"/u);
+  assert.match(HTML.slice(add, HTML.indexOf("</button>", add)), /x-icon="'folder-plus'"/u);
 });
 
 test("the empty state offers Add a project", () => {
   const at = HTML.indexOf('class="side-empty projects-empty"');
   const block = HTML.slice(at, HTML.indexOf("</div>", at));
-  assert.match(block, /x-show="!\$store\.projects\.projects\.length && !\$store\.projects\.reposError && !\$store\.projects\.reposLoading"/);
-  assert.match(block, /No projects yet/);
-  assert.match(block, /@click="\$dispatch\('workbench:add-project-open'\)"/);
+  assert.match(block, /x-show="!\$store\.projects\.projects\.length && !\$store\.projects\.reposError && !\$store\.projects\.reposLoading"/u);
+  assert.match(block, /No projects yet/u);
+  assert.match(block, /@click="\$dispatch\('workbench:add-project-open'\)"/u);
 });
 
 test("the dialog shows folder names and errors as text only", () => {
   const dialogHtml = partMarkup(PART);
   assert.ok(dialogHtml.length > 0);
-  assert.doesNotMatch(dialogHtml, /x-html/);
-  assert.match(dialogHtml, /role="alert" x-show="addProject.error" x-text="addProject.error"/);
+  assert.doesNotMatch(dialogHtml, /x-html/u);
+  assert.match(dialogHtml, /role="alert" x-show="addProject.error" x-text="addProject.error"/u);
 });
 
 test("the dialog lists at most 12 shell() names, and shell() has each one", () => {
@@ -192,19 +192,19 @@ test("the dialog lists at most 12 shell() names, and shell() has each one", () =
 test("every name the dialog's markup reads is its own or in its uses list", () => {
   const { state } = dialog();
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // `x-data` names the component; `x-for` adds its loop variables.
   const loopVars = new Set();
   for (const [, attr, value] of attrs) {
     if (attr !== "x-for") continue;
-    const [left] = value.split(/\s+in\s+/);
+    const [left] = value.split(/\s+in\s+/u);
     for (const v of bindingNames(left)) loopVars.add(v);
   }
   let read = 0;
   for (const [, attr, value] of attrs) {
     // `x-ref` names a ref, not an expression.
     if (attr === "x-data" || attr === "x-ref") continue;
-    const expr = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const expr = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const name of bindingNames(expr)) {
       if (loopVars.has(name) || name.startsWith("$")) continue;
       assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
@@ -217,29 +217,29 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
 test("the dialog's scope refuses a shell() name outside uses, and any shell() write", () => {
   const { state, shell } = dialog();
   assert.ok("sideView" in shell);
-  assert.throws(() => state.sideView, /reads sideView/);
+  assert.throws(() => state.sideView, /reads sideView/u);
   assert.throws(() => {
     state.projectQuery = "x";
-  }, /assigns projectQuery/);
+  }, /assigns projectQuery/u);
   assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
 test("both openers ask the dialog to open with workbench:add-project-open", () => {
   const html = withoutComments(assembledPage("index.html"));
   for (const opener of [
-    html.match(/<button class="side-refresh side-add-project"[^>]*>/)[0],
-    html.match(/<button class="btn accent"[^>]*workbench:add-project-open[^>]*>/)[0],
+    html.match(/<button class="side-refresh side-add-project"[^>]*>/u)[0],
+    html.match(/<button class="btn accent"[^>]*workbench:add-project-open[^>]*>/u)[0],
   ]) {
-    assert.match(opener, /@click="\$dispatch\('workbench:add-project-open'\)"/);
+    assert.match(opener, /@click="\$dispatch\('workbench:add-project-open'\)"/u);
   }
   assert.match(
     html,
-    /<div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open\.window="openAddProject\(\)">/,
+    /<div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open\.window="openAddProject\(\)">/u,
   );
   // Nothing outside the component names its state.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["addProject", "_addProjectTouch", "openAddProject", "closeAddProject"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

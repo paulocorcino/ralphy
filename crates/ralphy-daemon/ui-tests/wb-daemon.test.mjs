@@ -234,7 +234,7 @@ test("observe fans out an unknown checkout to the registered listeners, after th
 test("observe rejects a command the daemon answers with an HTTP error", async () => {
   const { d, restore } = loadWithFetch(() => new Response("boom", { status: 500 }));
   try {
-    await assert.rejects(d.observe("tree.list", { repo: "r", path: "" }), /HTTP 500/);
+    await assert.rejects(d.observe("tree.list", { repo: "r", path: "" }), /HTTP 500/u);
   } finally {
     restore();
   }

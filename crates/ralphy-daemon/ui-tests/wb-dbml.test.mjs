@@ -288,7 +288,7 @@ test("toMermaidEr draws the selected tables and the refs between them", () => {
     ].join("\n"),
   );
   // The order given is the order of the entities.
-  assert.match(toMermaidEr(schema, ["users", "order items"]), /^erDiagram\n {2}t0\["users"\] \{/);
+  assert.match(toMermaidEr(schema, ["users", "order items"]), /^erDiagram\n {2}t0\["users"\] \{/u);
 });
 
 test("toMermaidEr keeps only the refs inside the selection", () => {

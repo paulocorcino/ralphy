@@ -229,7 +229,7 @@ function fakeEl(tag) {
     },
     set className(v) {
       classes.clear();
-      for (const c of String(v).split(/\s+/).filter(Boolean)) classes.add(c);
+      for (const c of String(v).split(/\s+/u).filter(Boolean)) classes.add(c);
     },
     classList: {
       add: (...cs) => cs.forEach((c) => classes.add(c)),
@@ -259,7 +259,7 @@ function fakeEl(tag) {
       el.parent = null;
     },
     querySelectorAll(sel) {
-      const cls = sel.replace(/^\./, "");
+      const cls = sel.replace(/^\./u, "");
       const out = [];
       const walk = (n) => {
         for (const k of n.children) {
@@ -433,7 +433,7 @@ test("a note whose file cannot be read stays on the stage and says why beside it
   for (let i = 0; i < 5; i++) await new Promise((r) => { setImmediate(r); });
   const card = notes.cardEl("m");
   assert.equal(card.classList.contains("missing"), true);
-  assert.match(card.querySelector(".note-state").title, /^gone\.note — /);
+  assert.match(card.querySelector(".note-state").title, /^gone\.note — /u);
   assert.deepEqual(document.events, []);
 });
 

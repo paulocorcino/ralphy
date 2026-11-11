@@ -53,7 +53,8 @@ test("the fence window with no opener says so and asks nobody", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const p = page({ opener: false });
   wireDetachedFence(p.window, p.document);
-  assert.match(p.stage.innerHTML, /Nothing to show\. Detach a fence from the workbench first\./);
+  // oxlint-disable-next-line no-restricted-properties -- reads a fake element; the rule is for writes
+  assert.match(p.stage.innerHTML, /Nothing to show\. Detach a fence from the workbench first\./u);
   assert.deepEqual(p.log, []);
 });
 

@@ -109,12 +109,12 @@ test("wbFiles lists only shell() names in uses, and its members left shell()", (
 test("every name the markup of wbFiles reads is its own or in its uses list", () => {
   const { scope: state } = loadComponent("wbFiles");
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   let read = 0;
   for (const [, attr, value] of attrs) {
     // `x-data` names the component; `x-ref` names an element.
     if (attr === "x-data" || attr === "x-ref") continue;
-    const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
     for (const n of bindingNames(raw)) {
       // `u` is the row of the upload card's `x-for`.
       if (n.startsWith("$") || n === "u") continue;
@@ -128,7 +128,7 @@ test("every name the markup of wbFiles reads is its own or in its uses list", ()
 test("nothing outside the files element names their state", () => {
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["fileSearch", "treeStale", "treeError", "treeNotLive", "treeLoading", "openPeerDown", "createHere", "toggleFileSearch"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 

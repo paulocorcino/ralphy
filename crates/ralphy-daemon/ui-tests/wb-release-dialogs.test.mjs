@@ -32,7 +32,7 @@ const wrapperTag = () => {
   const at = html.indexOf('x-data="wbReleaseDialogs"');
   return html.slice(html.lastIndexOf("<div", at), html.indexOf(">", at) + 1);
 };
-const handlerOf = (event) => wrapperTag().match(new RegExp(`@${event}\\.window="([^"]*)"`))[1];
+const handlerOf = (event) => wrapperTag().match(new RegExp(`@${event}\\.window="([^"]*)"`, "u"))[1];
 
 // The account menu row whose text ends with `label`, up to its `>`.
 const menuRow = (label) => {
@@ -47,9 +47,9 @@ test("the What's new panel warns that the update closes the open consoles", () =
   shell.$store.projects.liveSessions = [];
   assert.equal(state.releaseConsoleWarning, "", "no console, no warning");
   shell.$store.projects.liveSessions = [{ id: "a" }];
-  assert.match(state.releaseConsoleWarning, /^1 console is open\. The update closes it/);
+  assert.match(state.releaseConsoleWarning, /^1 console is open\. The update closes it/u);
   shell.$store.projects.liveSessions = [{ id: "a" }, { id: "b" }, { id: "c" }];
-  assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/);
+  assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/u);
 });
 
 test("opening What's new counts the consoles again", () => {
@@ -82,7 +82,7 @@ test("the question names the WSL peers the update takes after this daemon", asyn
   assert.equal(state.relUpdate.phase, "confirm");
   assert.deepEqual(state.relUpdate.peers, ["Ubuntu"], "only a peer reached through wsl.exe is updated");
   assert.deepEqual(state.relUpdate.consoles, ["app #1"], "only this daemon's consoles close for sure");
-  assert.match(state.updatePeerText, /If it takes a new version, its 2 consoles close as well\.$/);
+  assert.match(state.updatePeerText, /If it takes a new version, its 2 consoles close as well\.$/u);
 });
 
 // `ralphy update` in a terminal restarts only this daemon, so a peer's
@@ -91,7 +91,7 @@ test("the console warning counts only the consoles this daemon hosts", () => {
   const { state, shell } = dialogs();
   shell.$store.projects.fleetPeers = [{ daemon_id: "wsl-id", nudgeable: true }];
   shell.$store.projects.liveSessions = [{ daemon_id: "here" }, { daemon_id: "wsl-id" }, { daemon_id: "wsl-id" }];
-  assert.match(state.releaseConsoleWarning, /^1 console is open\./);
+  assert.match(state.releaseConsoleWarning, /^1 console is open\./u);
 });
 
 test("a refused update keeps the question open and says why", async () => {
@@ -100,7 +100,7 @@ test("a refused update keeps the question open and says why", async () => {
   WBRelease.update = () => Promise.resolve({ ok: false, status: 401, message: "invalid credentials" });
   await state.confirmUpdate();
   assert.equal(state.relUpdate.phase, "confirm");
-  assert.match(state.relUpdate.error, /Code rejected/);
+  assert.match(state.relUpdate.error, /Code rejected/u);
   assert.equal(state.relUpdate.code, "", "a rejected code is not offered again");
 
   WBRelease.update = () => Promise.resolve({ ok: false, status: 500, message: "Error: checksum mismatch" });
@@ -118,7 +118,7 @@ test("the same build after a gap is a rollback, and a new build reloads the page
   Object.defineProperty(window, "location", { value: { reload: () => (reloaded = true) }, configurable: true });
   await state.awaitNewBuild("v0.1.0-rc.30", 0);
   assert.equal(state.relUpdate.phase, "error");
-  assert.match(state.relUpdate.error, /did not start/);
+  assert.match(state.relUpdate.error, /did not start/u);
   assert.equal(reloaded, false);
 
   reads = [view("v0.1.0-rc.30"), null, view("v0.1.0-rc.31")];
@@ -138,7 +138,7 @@ test("the dialogs change the release fact only through markReleaseSeen and relea
     () => {
       state.$store.release.release.disabled = true;
     },
-    (e) => e instanceof TypeError && /wbReleaseDialogs/.test(e.message) && /release\.release\.disabled/.test(e.message),
+    (e) => e instanceof TypeError && /wbReleaseDialogs/u.test(e.message) && /release\.release\.disabled/u.test(e.message),
   );
   assert.throws(() => {
     state.$store.release.releaseSeen = true;
@@ -179,7 +179,7 @@ test("the dialogs list at most 12 shell() names, and shell() has each one", () =
 test("every name the dialogs' markup reads is their own or in their uses list", () => {
   const { state } = dialogs();
   const markup = partMarkup(PART);
-  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+  const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
   // `x-for="entry in …"` names the loop's own variable.
   const loop = new Set(attrs.filter((m) => m[1] === "x-for").flatMap((m) => bindingNames(m[2].split(" in ")[0])));
   let names = 0;
@@ -203,7 +203,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
     ["<span x-text=\"$store.release.releaseSummary\"></span>", "workbench:whats-new-open", "whatsNewOpen"],
     ["<span>About</span>", "workbench:about-open", "aboutOpen"],
   ]) {
-    const click = menuRow(label).match(/@click="([^"]*)"/)[1];
+    const click = menuRow(label).match(/@click="([^"]*)"/u)[1];
     // The opener runs in the account menu's scope: it closes the menu and
     // sends the event.
     const sent = [];
@@ -227,7 +227,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
   // Nothing outside the component names its state.
   const outside = withoutComments(assembledPage("index.html", { skip: PART }));
   for (const name of ["whatsNewOpen", "aboutOpen", "relUpdate", "openWhatsNew", "openAbout", "about"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b(?!-)`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b(?!-)`, "u"), name);
   }
 });
 
@@ -235,7 +235,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
 // gives to `scrim()`, or the shortcuts would never see the panel open.
 test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {
   const markup = partMarkup(PART);
-  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
+  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/gu)].map((m) => m[1]);
   assert.deepEqual(paths, ["whatsNewOpen", "aboutOpen"]);
   assert.equal(WBReleaseDialogs.whatsNewFlag, paths[0]);
 });

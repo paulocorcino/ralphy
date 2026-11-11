@@ -298,21 +298,21 @@ for (const name of ["wbConsoleMenus", "wbColumns"]) {
   test(`every name the markup of ${name} reads is its own or in its uses list`, () => {
     const { scope: state } = loadComponent(name);
     const markup = partMarkup(PARTS[name]);
-    const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
+    const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)];
     // `x-data` names the component; `x-for` adds its loop variables.
     const loopVars = new Set();
     for (const [, attr, value] of attrs) {
       if (attr !== "x-for") continue;
-      const [left] = value.split(/\s+in\s+/);
+      const [left] = value.split(/\s+in\s+/u);
       for (const v of bindingNames(left)) loopVars.add(v);
     }
     let read = 0;
     for (const [, attr, value] of attrs) {
       // `x-ref` names an element, not a scope member.
       if (attr === "x-data" || attr === "x-ref") continue;
-      const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+      const raw = attr === "x-for" ? value.split(/\s+in\s+/u)[1] : value;
       // A template literal reads only the names in its `${…}` holes.
-      const expr = raw.startsWith("`") ? [...raw.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1]).join(";") : raw;
+      const expr = raw.startsWith("`") ? [...raw.matchAll(/\$\{([^}]*)\}/gu)].map((m) => m[1]).join(";") : raw;
       for (const n of bindingNames(expr)) {
         // `window` is the page's global, not a name of any scope.
         if (loopVars.has(n) || n.startsWith("$") || n === "window") continue;
@@ -332,7 +332,7 @@ test("nothing outside the two components names their state", () => {
   assert.ok(html.includes(columns), "the page holds the columns part");
   const outside = withoutComments(html.replace(columns, ""));
   for (const name of ["agentMenu", "toggleAgentMenu", "consoleRunText", "fenceItems", "noteItems", "columnMenu", "columnView", "consoleCount", "stageW"]) {
-    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
+    assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`, "u"), name);
   }
 });
 
@@ -427,17 +427,17 @@ test("the menu head and the columns list name a project without its path- key or
 // renderer, and the first frame on return paints stretched text.
 test("the Consoles tab and the console tabs' pane hide without display:none, so their consoles keep their renderer", () => {
   const html = withoutComments(HTML);
-  const open = html.match(/<section class="consoles-tab"[^>]*>/);
+  const open = html.match(/<section class="consoles-tab"[^>]*>/u);
   assert.ok(open, "index.html must keep the consoles tab");
-  assert.doesNotMatch(open[0], /x-show/);
-  assert.match(open[0], /'tab-hidden': !\$store\.tabs\.stageShown\(\)/);
-  const pane = html.match(/<section id="console-tabs-pane"[^>]*>/);
+  assert.doesNotMatch(open[0], /x-show/u);
+  assert.match(open[0], /'tab-hidden': !\$store\.tabs\.stageShown\(\)/u);
+  const pane = html.match(/<section id="console-tabs-pane"[^>]*>/u);
   assert.ok(pane, "index.html must keep the pane of the console tabs");
-  assert.doesNotMatch(pane[0], /x-show/);
-  assert.match(pane[0], /'tab-hidden': !\$store\.tabs\.consoleTabShown\(\)/);
+  assert.doesNotMatch(pane[0], /x-show/u);
+  assert.match(pane[0], /'tab-hidden': !\$store\.tabs\.consoleTabShown\(\)/u);
   const css = readFileSync(join(UI, "styles", "05-workspace.css"), "utf8");
-  assert.match(css, /\.consoles-tab\.tab-hidden \{\s*visibility: hidden;\s*\}/);
-  assert.match(css, /\.console-tabs-pane\.tab-hidden \{\s*visibility: hidden;\s*\}/);
+  assert.match(css, /\.consoles-tab\.tab-hidden \{\s*visibility: hidden;\s*\}/u);
+  assert.match(css, /\.console-tabs-pane\.tab-hidden \{\s*visibility: hidden;\s*\}/u);
 });
 
 // `paintColumns` on a stage of `wins` (`[id, maximized]`), with the console

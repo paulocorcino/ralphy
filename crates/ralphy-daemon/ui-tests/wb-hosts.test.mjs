@@ -149,7 +149,7 @@ test("an install event offers the install until the checks run again", () => {
   assert.equal(H.needsInstall(s), true);
   assert.equal(H.installText(s), "Ralphy v0.1.0-rc.30 for linux-x64, downloaded from its release, into ~/.ralphy/bin on the host.");
   const local = H.next(s, { type: "event", event: { event: "install", version: "v1", target: "t", source: "this-computer", folder: "f" } });
-  assert.match(H.installText(local), /from this computer/);
+  assert.match(H.installText(local), /from this computer/u);
   const again = H.next(H.next(s, { type: "check-again" }), {
     type: "event",
     event: { event: "check", id: "ralphy", status: "copy", command: "download Ralphy by hand" },
@@ -184,7 +184,7 @@ test("add exit 0 shows the last step; any other code keeps the checks with a fai
   assert.equal(s.open, true);
   assert.equal(s.failure.message, "No");
   const silent = H.next(open, { type: "exit", verb: "host.add", code: 2 });
-  assert.match(silent.failure.message, /code 2/);
+  assert.match(silent.failure.message, /code 2/u);
 });
 
 test("an exit with no code says the command stopped before it finished", () => {
@@ -222,15 +222,15 @@ test("the help panel has a tab per system with the commands that work", () => {
   assert.ok(commands("windows").includes("Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0"));
   assert.ok(commands("windows").includes("Get-NetFirewallRule -Name OpenSSH-Server-In-TCP"));
   assert.ok(commands("windows").includes("whoami"));
-  assert.match(texts("windows"), /PIN/);
-  assert.match(texts("macos"), /Remote Login/);
-  assert.match(texts("macos"), /System Settings/);
-  assert.match(texts("macos"), /System Preferences/);
+  assert.match(texts("windows"), /PIN/u);
+  assert.match(texts("macos"), /Remote Login/u);
+  assert.match(texts("macos"), /System Settings/u);
+  assert.match(texts("macos"), /System Preferences/u);
   assert.ok(commands("linux").some((c) => c.includes("openssh-server")));
-  assert.doesNotMatch(JSON.stringify(tabs), /launchctl/);
+  assert.doesNotMatch(JSON.stringify(tabs), /launchctl/u);
   const wrong = JSON.stringify(H.WRONG_ADDRESS);
-  assert.match(wrong, /refused/);
-  assert.match(wrong, /ipconfig getifaddr en0/);
+  assert.match(wrong, /refused/u);
+  assert.match(wrong, /ipconfig getifaddr en0/u);
   assert.equal(H.next(H.initial(), { type: "help-tab", tab: "linux" }).helpTab, "linux");
 });
 
@@ -283,12 +283,12 @@ test("each row of Your hosts has Edit and Remove, and Remove asks in that row", 
   const end = html.indexOf("</ul>", start);
   assert.ok(start > 0 && end > start);
   const list = html.slice(start, end);
-  assert.match(list, /x-for="h in sshHosts\(\)"/);
-  assert.match(list, /@click="addHostEdit\(h\)"[^>]*>Edit</);
-  assert.match(list, /@click="openRemoveHost\(h\)"[^>]*>Remove</);
-  assert.match(list, /x-show="removeHost\.open && removeHost\.daemon === h\.daemon_id"/);
-  assert.match(list, /@click="confirmRemoveHost\(\)"/);
-  assert.doesNotMatch(assembledPage("index.html"), /scrim\('removeHost\.open'/, "no second dialog for Remove");
+  assert.match(list, /x-for="h in sshHosts\(\)"/u);
+  assert.match(list, /@click="addHostEdit\(h\)"[^>]*>Edit</u);
+  assert.match(list, /@click="openRemoveHost\(h\)"[^>]*>Remove</u);
+  assert.match(list, /x-show="removeHost\.open && removeHost\.daemon === h\.daemon_id"/u);
+  assert.match(list, /@click="confirmRemoveHost\(\)"/u);
+  assert.doesNotMatch(assembledPage("index.html"), /scrim\('removeHost\.open'/u, "no second dialog for Remove");
 });
 
 test("the Hosts dialog renders host text with x-text only", () => {
@@ -297,7 +297,7 @@ test("the Hosts dialog renders host text with x-text only", () => {
   assert.ok(start > 0);
   const block = html.slice(start);
   assert.ok(block.includes('class="host-list"'), "the list is in the block");
-  assert.doesNotMatch(block, /x-html|innerHTML/);
+  assert.doesNotMatch(block, /x-html|innerHTML/u);
 });
 
 test("fields reads back the form that built a destination", () => {
@@ -406,9 +406,9 @@ test("the connection fields are never offered to autofill or a password manager"
   const end = html.indexOf("<!-- 2. Host identity", start);
   assert.ok(start > 0 && end > start);
   const block = html.slice(start, end);
-  const inputs = (block.match(/<input\b[^>]*>/g) || []).filter((i) => !/type="checkbox"/.test(i));
+  const inputs = (block.match(/<input\b[^>]*>/gu) || []).filter((i) => !/type="checkbox"/u.test(i));
   assert.equal(inputs.length, 5, "host, port, user, password, key file");
-  for (const input of inputs) assert.match(input, /autocomplete="off"/, input);
-  assert.doesNotMatch(block, /type="password"/, "the type comes from hostSecretType()");
-  assert.doesNotMatch(block, /type="radio"/);
+  for (const input of inputs) assert.match(input, /autocomplete="off"/u, input);
+  assert.doesNotMatch(block, /type="password"/u, "the type comes from hostSecretType()");
+  assert.doesNotMatch(block, /type="radio"/u);
 });

@@ -158,7 +158,7 @@ test("a failed project read after a good one keeps the list, marked not current"
   }
   assert.equal(state.projects.length, 1);
   assert.equal(state.projects[0].slug, "a/b");
-  assert.match(state.reposError, /Not current: the daemon answered 500/);
+  assert.match(state.reposError, /Not current: the daemon answered 500/u);
 });
 
 test("a failed first project read is empty and says why", async () => {
@@ -193,7 +193,7 @@ test("a failed fleet read after a good one keeps the peers and their rows", asyn
   }
   assert.equal(state.fleetPeers.length, 1);
   assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
-  assert.match(state.fleetError, /Not current: the daemon answered 502/);
+  assert.match(state.fleetError, /Not current: the daemon answered 502/u);
 });
 
 test("the fleet row marked local stamps its environment, os and name on the local rows", async () => {
@@ -266,7 +266,7 @@ test("a failed session read after a good one keeps the list, marked not current"
     restore();
   }
   assert.equal(state.liveSessions.length, 1);
-  assert.match(state.sessionsError(), /Not current/);
+  assert.match(state.sessionsError(), /Not current/u);
 });
 
 test("two fleet reads close together list each peer row once", async () => {

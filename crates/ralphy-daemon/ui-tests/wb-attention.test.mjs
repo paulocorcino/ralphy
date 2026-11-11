@@ -136,8 +136,8 @@ test("a run's row opens the run, and a console's row goes to the console", (t) =
   }
   // The row is one button: its click does the action, its tooltip names it.
   const markup = partMarkup(PART);
-  assert.match(markup, /class="attention-main"[^>]*:disabled="actionOf\(r\) === 'none'"/);
-  assert.match(markup, /class="attention-main"[^>]*:title="actionTitle\(r\)" @click="act\(r\)"/);
+  assert.match(markup, /class="attention-main"[^>]*:disabled="actionOf\(r\) === 'none'"/u);
+  assert.match(markup, /class="attention-main"[^>]*:title="actionTitle\(r\)" @click="act\(r\)"/u);
   assert.equal(data.actionTitle(run), "Open the run");
   assert.equal(data.actionTitle({ ...run, kind: "console-waiting" }), "Go to the console");
 });
@@ -166,7 +166,7 @@ test("the dot of a row says its kind", (t) => {
   assert.equal(dot("console-silent"), "silent");
   assert.equal(dot("console-done"), "done");
   assert.equal(dot("run-finished"), "");
-  assert.match(partMarkup(PART), /<span class="dot" :class="dotOf\(r\)"><\/span>/);
+  assert.match(partMarkup(PART), /<span class="dot" :class="dotOf\(r\)"><\/span>/u);
 });
 
 test("the age of a request is short", () => {
@@ -196,7 +196,7 @@ test("only a finished run can be dismissed", async (t) => {
   assert.equal(data.actionOf(finished[0]), "none", "a finished run is no longer in the Runs panel");
   assert.equal(data.kindOf(finished[0]), "Run stopped on this issue");
   const markup = partMarkup(PART);
-  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)"\s+title="Dismiss"/);
+  assert.match(markup, /x-show="canDismiss\(r\)" @click="dismiss\(r\)"\s+title="Dismiss"/u);
 
   // "Dismiss" posts the id, then reads the list again.
   const sent = [];
@@ -226,7 +226,7 @@ test("every name the markup of wbAttention reads is its own", (t) => {
   const { data } = page(t);
   const markup = partMarkup(PART);
   let read = 0;
-  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)) {
+  for (const [, attr, value] of markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/gu)) {
     if (attr === "x-data" || attr === "x-for" || attr === ":key") continue;
     for (const n of bindingNames(value)) {
       if (n.startsWith("$") || n === "r") continue;
@@ -270,7 +270,7 @@ test("the notification is off by default", async (t) => {
   assert.deepEqual(asked, [], "no permission is asked before the switch");
   assert.equal(stored.size, 0);
   assert.deepEqual(shown, []);
-  assert.doesNotMatch(partMarkup(PART), /Notify me/, "the switch is in Settings, not in the panel");
+  assert.doesNotMatch(partMarkup(PART), /Notify me/u, "the switch is in Settings, not in the panel");
 
   assert.equal(await WBNotify.turn(true), true);
   assert.equal(asked.length, 1, "turning it on asks once");
