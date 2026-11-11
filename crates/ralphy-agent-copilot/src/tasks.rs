@@ -272,7 +272,7 @@ mod tests {
         let calls = |needle: &str| -> Vec<usize> {
             code.match_indices(needle)
                 .map(|(i, _)| i)
-                .filter(|&i| !code[..i].ends_with("fn"))
+                .filter(|&i| !code.split_at(i).0.ends_with("fn"))
                 .collect()
         };
         let preflights = calls(concat!("preflight_or", "_bail("));

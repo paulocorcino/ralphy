@@ -208,7 +208,7 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
             .then(b.tokens.cmp(&a.tokens))
             .then(a_issue.cmp(b_issue))
     });
-    let truncated = ordered.len().saturating_sub(MAX_ROWS) as u64;
+    let truncated = u64::try_from(ordered.len().saturating_sub(MAX_ROWS)).unwrap_or(u64::MAX);
     let rows = ordered
         .into_iter()
         .take(MAX_ROWS)
@@ -271,6 +271,11 @@ fn kpis(classified: &Classified, deliveries: &BTreeMap<u64, Accum>) -> Kpis {
     costs.sort_by(f64::total_cmp);
     let cost_floor = deliveries.values().any(|a| a.floor);
     let median = median(&costs);
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "a count of deliveries is far below 2^53, so it converts exactly"
+    )]
     let mean = (!costs.is_empty()).then(|| costs.iter().sum::<f64>() / costs.len() as f64);
 
     // Ledger only, both sides of the ratio: an interactive session is not a
@@ -310,7 +315,7 @@ fn kpis(classified: &Classified, deliveries: &BTreeMap<u64, Accum>) -> Kpis {
     let cache_hit_share = (prompt > 0).then(|| share_of(cached, prompt));
 
     Kpis {
-        deliveries: deliveries.len() as u64,
+        deliveries: u64::try_from(deliveries.len()).unwrap_or(u64::MAX),
         cost_per_delivery_median: median,
         cost_per_delivery_median_label: fmt_total(median, cost_floor),
         cost_per_delivery_mean: mean,

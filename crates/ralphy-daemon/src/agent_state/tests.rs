@@ -13,7 +13,7 @@ fn the_start_check_runs_in_the_background_and_logs_one_line() {
     let start = serve
         .find(call)
         .expect("serve starts the check with spawn_blocking");
-    let statement = serve[start..].split(';').next().unwrap_or("");
+    let statement = serve.split_at(start).1.split(';').next().unwrap_or("");
     assert!(
         !statement.contains(".await"),
         "the check is not awaited: {statement}"
@@ -284,9 +284,13 @@ fn every_agent_has_a_state_source() {
         );
     }
     let src = include_str!("../agent_state.rs");
-    let start = src.find("pub fn state_source(").unwrap();
-    let end = start + src[start..].find("\n}").unwrap();
-    let body = &src[start..end];
+    let (_, from_start) = src
+        .split_once("pub fn state_source(")
+        .expect("agent_state.rs defines state_source");
+    let body = from_start
+        .split_once("\n}")
+        .expect("state_source must end")
+        .0;
     assert!(!body.contains("_ =>"), "the match must name every agent");
 }
 

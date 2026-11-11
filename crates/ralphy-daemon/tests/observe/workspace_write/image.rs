@@ -150,7 +150,8 @@ async fn image_write_takes_no_path_from_the_client() {
 async fn a_4_mib_image_paste_still_replies() {
     let (port, slug, root) = serve_repo().await;
     let mut png = PNG_BYTES.to_vec();
-    png.resize(ralphy_daemon::tree::MAX_IMAGE_BYTES as usize, 0);
+    let max = usize::try_from(ralphy_daemon::tree::MAX_IMAGE_BYTES).expect("4 MiB fits usize");
+    png.resize(max, 0);
     let (replies, _) = round_trip(
         port,
         40,

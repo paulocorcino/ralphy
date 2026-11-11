@@ -393,6 +393,10 @@ fn write_sgr(cell: &Cell, flags: Flags, underline: Option<Color>, out: &mut Stri
 fn write_color(color: Color, base: u32, out: &mut String) {
     match color {
         Color::Named(name) => {
+            #[expect(
+                clippy::as_conversions,
+                reason = "a named color has no From; its discriminant is its index"
+            )]
             let index = name as u32;
             let code = match index {
                 0..=7 => base + index,
@@ -409,6 +413,10 @@ fn write_color(color: Color, base: u32, out: &mut String) {
 
 /// The underline color (SGR 58). It has no short form for the 16 named
 /// colors, so they are written by index.
+#[expect(
+    clippy::as_conversions,
+    reason = "a named color has no From; its discriminant is its index"
+)]
 fn write_underline_color(color: Color, out: &mut String) {
     match color {
         Color::Named(name) if (name as u32) < 16 => {

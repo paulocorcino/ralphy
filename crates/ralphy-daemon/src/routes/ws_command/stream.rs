@@ -184,7 +184,11 @@ fn drain(mut reader: impl Read, tx: mpsc::Sender<String>) {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                let text = decode_utf8(&mut carry, &buf[..n]);
+                let text = decode_utf8(
+                    &mut carry,
+                    buf.get(..n)
+                        .expect("read returns at most the buffer length"),
+                );
                 if open && !text.is_empty() && tx.blocking_send(text).is_err() {
                     open = false;
                 }
@@ -218,15 +222,15 @@ fn send_rest(carry: &[u8], tx: &mpsc::Sender<String>) {
 fn decode_utf8(carry: &mut Vec<u8>, bytes: &[u8]) -> String {
     carry.extend_from_slice(bytes);
     let split = carry.len() - incomplete_tail(carry);
-    let text = String::from_utf8_lossy(&carry[..split]).into_owned();
-    carry.drain(..split);
+    let rest = carry.split_off(split);
+    let text = String::from_utf8_lossy(carry).into_owned();
+    *carry = rest;
     text
 }
 
 /// The length of an incomplete UTF-8 sequence at the end of `b` (0 to 3).
 fn incomplete_tail(b: &[u8]) -> usize {
-    for back in 1..=b.len().min(3) {
-        let byte = b[b.len() - back];
+    for (back, &byte) in (1..=3).zip(b.iter().rev()) {
         if byte & 0xC0 == 0x80 {
             continue;
         }

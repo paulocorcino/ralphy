@@ -119,8 +119,8 @@ fn ui_literals(js: &str) -> BTreeSet<String> {
     let table =
         Regex::new(r"const (?:CAUSE|REFUSAL_TEXT)(?::[^=\n]*)? = \{").expect("a valid regex");
     for found in table.find_iter(js) {
-        let body = &js[found.end()..];
-        let body = &body[..body.find("};").unwrap_or(body.len())];
+        let body = js.split_at(found.end()).1;
+        let body = body.split_at(body.find("};").unwrap_or(body.len())).0;
         for line in body.lines() {
             if let Some(c) = key.captures(line) {
                 let k = c.get(1).or_else(|| c.get(2)).expect("one group matched");
@@ -149,10 +149,12 @@ fn missing_literals(found: &[(String, String)], corpus: &str) -> Vec<String> {
 fn ui_sources(root: &Path) -> Vec<(String, String)> {
     let dir = root.join("crates/ralphy-daemon/assets/ui");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+        .map_err(|e| format!("reading {}: {e}", dir.display()))
+        .expect("this test needs the call to succeed")
         .map(|entry| {
             entry
-                .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+                .map_err(|e| format!("reading an entry of {}: {e}", dir.display()))
+                .expect("this test needs the call to succeed")
                 .path()
         })
         .filter(|p| {

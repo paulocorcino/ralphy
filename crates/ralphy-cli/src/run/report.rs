@@ -48,12 +48,12 @@ pub(crate) fn maybe_consolidate_knowledge(
     if notes.is_empty() {
         return ralphy_core::Usage::default();
     }
-    ralphy_core::emit::knowledge_consolidating(notes.len() as u64);
+    ralphy_core::emit::knowledge_consolidating(u64::try_from(notes.len()).unwrap_or(u64::MAX));
     let run_dir = ws.run_dir(stamp);
     let (model, effort) = crate::consolidate_defaults(agent);
     match crate::run_consolidation(agent, ws, &run_dir, model, effort, 30, &notes) {
         Ok((archived, usage)) => {
-            ralphy_core::emit::knowledge_consolidated(archived as u64);
+            ralphy_core::emit::knowledge_consolidated(u64::try_from(archived).unwrap_or(u64::MAX));
             // Record the invocation as a run-level ledger line (best-effort, and a
             // no-op on a zero-token usage) using the same git identity the runner's
             // per-issue lines carry (ADR-0008 D7).

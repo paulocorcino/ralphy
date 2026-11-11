@@ -119,16 +119,17 @@ fn opencode_config(skills_dir: Option<&Path>, plugin: Option<&Path>) -> String {
         bash.insert(format!("{command} *"), "deny".into());
         bash.insert(command, "deny".into());
     }
-    let mut config = serde_json::json!({ "permission": { "bash": bash } });
+    let mut config = serde_json::Map::new();
+    config.insert("permission".into(), serde_json::json!({ "bash": bash }));
     if let Some(dir) = skills_dir {
         // Canonicalized for robustness; on failure the path is used as-is.
         let abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-        config["skills"] = serde_json::json!({ "paths": [abs] });
+        config.insert("skills".into(), serde_json::json!({ "paths": [abs] }));
     }
     if let Some(plugin) = plugin {
-        config["plugin"] = serde_json::json!([plugin_entry(plugin)]);
+        config.insert("plugin".into(), serde_json::json!([plugin_entry(plugin)]));
     }
-    config.to_string()
+    serde_json::Value::Object(config).to_string()
 }
 
 #[cfg(test)]
@@ -315,7 +316,7 @@ mod tests {
                 rest.char_indices()
                     .map(|(i, _)| i)
                     .chain([rest.len()])
-                    .any(|i| glob(tail, &rest[i..]))
+                    .any(|i| glob(tail, rest.split_at(i).1))
             }
         }
     }

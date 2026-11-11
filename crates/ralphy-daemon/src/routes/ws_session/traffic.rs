@@ -240,12 +240,12 @@ impl Traffic {
 
     /// Count a replay frame: `wire` bytes sent, `raw` bytes before a gzip.
     pub(crate) fn replay(&mut self, wire: usize, raw: usize) {
-        self.replay_bytes += wire as u64;
-        self.replay_raw_bytes += raw as u64;
+        self.replay_bytes += u64::try_from(wire).unwrap_or(u64::MAX);
+        self.replay_raw_bytes += u64::try_from(raw).unwrap_or(u64::MAX);
     }
 
     pub(crate) fn live(&mut self, bytes: usize) {
-        self.live_bytes += bytes as u64;
+        self.live_bytes += u64::try_from(bytes).unwrap_or(u64::MAX);
         self.live_frames += 1;
     }
 
@@ -314,7 +314,7 @@ impl Traffic {
     }
 
     pub(crate) fn inbound(&mut self, bytes: usize) {
-        self.in_bytes += bytes as u64;
+        self.in_bytes += u64::try_from(bytes).unwrap_or(u64::MAX);
     }
 
     /// Read a command the page sent, for the log only: a `detach` names the

@@ -237,7 +237,10 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         .find("trash.addEventListener(\"click\", (e) => {")
         .expect("the trash has a click handler");
     assert!(
-        console_js[trash_click..trash_click + 200].contains("e.stopPropagation();"),
+        console_js
+            .get(trash_click..trash_click + 200)
+            .expect("the 200 bytes after the trash handler are ASCII source")
+            .contains("e.stopPropagation();"),
         "the remove action must stop the row's selecting click"
     );
     let html = INDEX_HTML;
@@ -254,7 +257,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     let remove = app_js
         .find("async removeWorktree(slug: string, w: CheckoutRow) {")
         .expect("removeWorktree exists");
-    let body = &app_js[remove..];
+    let body = app_js.split_at(remove).1;
     let ask = body
         .find("await this.$store.modals.askConfirm({")
         .expect("a worktree remove asks the operator first");
@@ -263,7 +266,9 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         .expect("removeWorktree sends worktree.remove");
     assert!(ask < call, "the confirm comes before the daemon call");
     assert!(
-        body[ask..call].contains("if (!ok || this._removing(slug, w.name)) return;"),
+        body.get(ask..call)
+            .expect("both ends start a found needle")
+            .contains("if (!ok || this._removing(slug, w.name)) return;"),
         "a cancel makes no daemon call"
     );
     assert!(

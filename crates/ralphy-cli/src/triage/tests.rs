@@ -397,10 +397,10 @@ fn interactive_triage_does_not_hold() {
         .map(|(at, _)| at)
         .collect();
     assert_eq!(calls.len(), 1);
-    let before = &src[..calls[0]];
+    let before = src.split_at(calls[0]).0;
     let branch = before.rfind("if args.yes {").expect("no --yes branch");
     assert!(
-        !before[branch..].contains('}'),
+        !before.split_at(branch).1.contains('}'),
         "the hold is called outside the `--yes` branch"
     );
 }

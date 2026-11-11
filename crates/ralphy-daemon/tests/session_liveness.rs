@@ -79,7 +79,8 @@ async fn read_until(ws: &mut Ws, needle: &str) -> String {
         acc
     })
     .await
-    .unwrap_or_else(|_| panic!("timed out (10s) waiting for {needle:?}"))
+    .map_err(|elapsed| format!("timed out (10s) waiting for {needle:?} ({elapsed})"))
+    .expect("this test needs the call to succeed")
 }
 
 async fn start_daemon(dir: &std::path::Path) -> (u16, tokio::sync::watch::Sender<bool>) {
@@ -168,15 +169,18 @@ async fn attach(port: u16, id: u64) -> Option<Ws> {
     let first = tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             match ws.next().await {
-                Some(Ok(Message::Binary(_))) => return true,
-                Some(Ok(Message::Close(_))) | None => return false,
+                Some(Ok(Message::Binary(_))) => return Ok(true),
+                Some(Ok(Message::Close(_))) | None => return Ok(false),
                 Some(Ok(_)) => continue,
-                Some(Err(error)) => panic!("the reattach failed on the socket: {error:?}"),
+                Some(Err(error)) => {
+                    return Err(format!("the reattach failed on the socket: {error:?}"))
+                }
             }
         }
     })
     .await
-    .expect("the daemon answers a reattach within 10s");
+    .expect("the daemon answers a reattach within 10s")
+    .expect("this test needs the socket to read");
     if first {
         return Some(ws);
     }

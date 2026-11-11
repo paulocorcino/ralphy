@@ -57,7 +57,12 @@ fn a_console_can_take_the_whole_screen() {
             .split_once(name)
             .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
-        squeeze(&after[..after.find("\n  }").expect("the function must close")])
+        squeeze(
+            after
+                .split_once("\n  }")
+                .expect("the function must close")
+                .0,
+        )
     };
     assert!(
         fn_body("function restoreRect(").contains("!isFull(win)"),
@@ -76,9 +81,9 @@ fn a_console_can_take_the_whole_screen() {
         .split_once("function toggleFull(")
         .expect("toggleFull must exist")
         .1;
-    let body = &body[..body
-        .find("\n  // The fullscreen control's LOOK")
-        .unwrap_or(body.len())];
+    let body = body
+        .split_once("\n  // The fullscreen control's LOOK")
+        .map_or(body, |(body, _)| body);
     assert!(
         !body.contains("bi-fullscreen-exit"),
         "toggleFull must not write the control's icon — syncFullState derives it"
@@ -90,7 +95,11 @@ fn a_console_can_take_the_whole_screen() {
             .split_once(head)
             .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
             .1;
-        after[..after.find('}').expect("the rule must close")].to_string()
+        after
+            .split_once('}')
+            .expect("the rule must close")
+            .0
+            .to_owned()
     };
     // The touch target IS the exit on a tablet. 44px is Apple's HIG floor;
     // the 22px resting chrome is a mouse-only size.

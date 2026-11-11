@@ -250,7 +250,7 @@ impl RunState {
         stop_before: Option<u64>,
         issues: &serde_json::Value,
     ) {
-        self.total = count as usize;
+        self.total = usize::try_from(count).unwrap_or(usize::MAX);
         self.order = order;
         self.stop_before = stop_before;
         // Seed the light queue scope from the enriched snapshot (tolerating

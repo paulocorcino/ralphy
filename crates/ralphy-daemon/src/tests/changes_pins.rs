@@ -242,12 +242,14 @@ fn the_discard_control_is_pinned_in_the_markup() {
     let staged_from = html
         .find(r"'s:' + c.path")
         .expect("index.html must keep the staged group's x-for key");
-    let staged_block = &html[staged_from..];
-    let staged_end = staged_block
-        .find("</ul>")
-        .expect("the staged group's list must close");
+    let staged_block = html
+        .split_at(staged_from)
+        .1
+        .split_once("</ul>")
+        .expect("the staged group's list must close")
+        .0;
     assert!(
-        !staged_block[..staged_end].contains(r#"data-act="discard""#),
+        !staged_block.contains(r#"data-act="discard""#),
         "the staged group must carry NO discard control — unstage comes first (#319)"
     );
 }
@@ -286,7 +288,11 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
     let ticks: Vec<&str> = app
         .split("this._clockTick = setInterval(")
         .skip(1)
-        .map(|tick| &tick[..tick.find("}, 1000);").expect("the clock tick must close")])
+        .map(|tick| {
+            tick.split_once("}, 1000);")
+                .expect("the clock tick must close")
+                .0
+        })
         .collect();
     assert!(!ticks.is_empty(), "the shell must keep its clock tick");
     assert!(

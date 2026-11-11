@@ -16,7 +16,7 @@ pub(crate) fn production_text(src: &str) -> &str {
                 .find(|next| !next.trim().is_empty())
                 .is_some_and(|next| next.trim_start().starts_with("mod "))
         {
-            return &src[..offset];
+            return src.split_at(offset).0;
         }
         offset += line.len();
     }
@@ -39,15 +39,15 @@ pub(crate) fn fn_body<'a>(code: &'a str, header: &str) -> &'a str {
     let start = code
         .find(header)
         .unwrap_or_else(|| panic!("no function starts with {header:?}"));
-    let open = start + code[start..].find('{').expect("a function body");
+    let open = start + code.split_at(start).1.find('{').expect("a function body");
     let mut depth = 0;
-    for (i, c) in code[open..].char_indices() {
+    for (i, c) in code.split_at(open).1.char_indices() {
         match c {
             '{' => depth += 1,
             '}' => {
                 depth -= 1;
                 if depth == 0 {
-                    return &code[open..=open + i];
+                    return code.get(open..=open + i).expect("`}` is one byte");
                 }
             }
             _ => {}
@@ -226,7 +226,7 @@ fn method_body(src: &str, sig: &str) -> String {
         .find(sig)
         .unwrap_or_else(|| panic!("`{sig}` is not in the source"));
     let mut body = String::new();
-    for line in src[start..].split_inclusive('\n') {
+    for line in src.split_at(start).1.split_inclusive('\n') {
         body.push_str(line);
         if line.trim_end() == "    }" {
             break;

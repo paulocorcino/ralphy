@@ -471,11 +471,10 @@ async fn consoles_tab_is_fixed_and_named() {
     let at = code
         .find(r#"id:"consoles""#)
         .unwrap_or_else(|| panic!("no object in wb-tabs-store.ts sets id: \"consoles\""));
-    let open = code[..at]
-        .rfind('{')
-        .expect("the id sits in an object literal");
-    let close = at + code[at..].find('}').expect("the object literal closes");
-    let tab = &code[open..close];
+    let (before, after) = code.split_at(at);
+    let open = before.rfind('{').expect("the id sits in an object literal");
+    let tail = after.split_once('}').expect("the object literal closes").0;
+    let tab = format!("{}{tail}", before.split_at(open).1);
     assert!(
         tab.contains(r#"title:"Consoles""#),
         "the object setting id: \"consoles\" must also set title: \"Consoles\"; got: {tab}"

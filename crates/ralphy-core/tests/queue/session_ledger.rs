@@ -53,11 +53,13 @@ fn execute_line_after_resume(stamp: &str, sessions: [Option<String>; 2]) -> Stri
     let slug = ralphy_core::git::project_slug(&repo);
     let file = usage_dir.join(format!("{}.jsonl", slug.replace('/', "-")));
     let content = fs::read_to_string(&file)
-        .unwrap_or_else(|e| panic!("ledger file {} unreadable: {e}", file.display()));
+        .map_err(|e| format!("ledger file {} unreadable: {e}", file.display()))
+        .expect("this test needs the call to succeed");
     let line = content
         .lines()
         .find(|l| l.contains("\"phase\":\"execute\""))
-        .unwrap_or_else(|| panic!("no execute line: {content}"))
+        .ok_or_else(|| format!("no execute line: {content}"))
+        .expect("this test needs the value")
         .to_owned();
 
     remove_scratch(&repo);

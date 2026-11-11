@@ -154,13 +154,16 @@ async fn http_request(port: u16, method: &str, path: &str) -> (u16, String) {
 
 async fn sessions(port: u16) -> Vec<serde_json::Value> {
     let (_, body) = http_request(port, "GET", "/api/sessions?local=1").await;
-    serde_json::from_str(&body).unwrap_or_else(|e| panic!("sessions body {body:?}: {e}"))
+    serde_json::from_str(&body)
+        .map_err(|e| format!("sessions body {body:?}: {e}"))
+        .expect("this test needs the call to succeed")
 }
 
 fn message(reply: &serde_json::Value) -> String {
     reply["message"]
         .as_str()
-        .unwrap_or_else(|| panic!("an error message string; got {reply}"))
+        .ok_or_else(|| format!("an error message string; got {reply}"))
+        .expect("this test needs the value")
         .to_owned()
 }
 

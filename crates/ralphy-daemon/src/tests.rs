@@ -277,8 +277,8 @@ fn static_imports(js: &str) -> Vec<&str> {
                 .find(" from \"")
                 .map(|i| i + " from \"".len())
                 .or_else(|| l.strip_prefix("import \"").map(|_| "import \"".len()))?;
-            let rest = &l[from..];
-            rest.find('"').map(|end| &rest[..end])
+            let rest = l.split_at(from).1;
+            rest.split_once('"').map(|(path, _)| path)
         })
         .collect()
 }
@@ -297,12 +297,9 @@ fn tag_references(html: &str) -> Vec<String> {
     // loads, which is the precise failure they exist to catch.
     let mut live = String::with_capacity(html.len());
     let mut rest = html;
-    while let Some(at) = rest.find("<!--") {
-        live.push_str(&rest[..at]);
-        rest = match rest[at + 4..].find("-->") {
-            Some(end) => &rest[at + 4 + end + 3..],
-            None => "",
-        };
+    while let Some((before, comment)) = rest.split_once("<!--") {
+        live.push_str(before);
+        rest = comment.split_once("-->").map_or("", |(_, after)| after);
     }
     live.push_str(rest);
     let html = live.as_str();
@@ -310,14 +307,14 @@ fn tag_references(html: &str) -> Vec<String> {
     let mut out = Vec::new();
     for (open, attr) in [("<script", "src=\""), ("<link", "href=\"")] {
         let mut rest = html;
-        while let Some(at) = rest.find(open) {
-            rest = &rest[at + open.len()..];
-            let Some(end) = rest.find('>') else { break };
-            let tag = &rest[..end];
-            if let Some(from) = tag.find(attr) {
-                let value = &tag[from + attr.len()..];
-                if let Some(to) = value.find('"') {
-                    out.push(value[..to].to_string());
+        while let Some((_, after_open)) = rest.split_once(open) {
+            rest = after_open;
+            let Some((tag, _)) = rest.split_once('>') else {
+                break;
+            };
+            if let Some((_, value)) = tag.split_once(attr) {
+                if let Some((value, _)) = value.split_once('"') {
+                    out.push(value.to_owned());
                 }
             }
         }

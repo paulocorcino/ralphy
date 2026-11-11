@@ -115,14 +115,16 @@ fn workspace_graph() -> Vec<(String, Vec<String>)> {
         .arg("--manifest-path")
         .arg(&manifest)
         .output()
-        .unwrap_or_else(|e| panic!("running cargo metadata: {e}"));
+        .map_err(|e| format!("running cargo metadata: {e}"))
+        .expect("this test needs the call to succeed");
     assert!(
         output.status.success(),
         "cargo metadata failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let metadata: Value = serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|e| panic!("parsing cargo metadata: {e}"));
+        .map_err(|e| format!("parsing cargo metadata: {e}"))
+        .expect("this test needs the call to succeed");
     let packages = metadata["packages"]
         .as_array()
         .expect("cargo metadata always has a packages array");

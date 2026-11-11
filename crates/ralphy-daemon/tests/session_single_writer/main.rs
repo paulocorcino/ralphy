@@ -112,7 +112,8 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> String {
         acc
     })
     .await
-    .unwrap_or_else(|_| panic!("timed out (10s) waiting for {needle:?}"))
+    .map_err(|elapsed| format!("timed out (10s) waiting for {needle:?} ({elapsed})"))
+    .expect("this test needs the call to succeed")
 }
 
 /// Boot a router on an ephemeral loopback port with `dir` registered as
@@ -209,7 +210,8 @@ async fn refused(port: u16, fields: serde_json::Value, why: &str) {
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("{why}: the daemon ends the attach within 10s"));
+    .map_err(|elapsed| format!("{why}: the daemon ends the attach within 10s ({elapsed})"))
+    .expect("this test needs the call to succeed");
     assert!(
         frames.is_empty(),
         "{why}: a refused attach sends no frame: {frames:?}"

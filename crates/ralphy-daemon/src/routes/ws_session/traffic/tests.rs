@@ -169,10 +169,20 @@ fn a_relayed_replay_is_counted_as_replay_and_names_the_session() {
     t.peer_frame(&terminal_frame(10));
     let s = t.summary();
     assert_eq!(t.keys.session, Some(4));
-    assert_eq!(s.replay_bytes, replay.len() as u64);
-    assert_eq!(s.replay_raw_bytes, replay.len() as u64, "a raw replay");
+    assert_eq!(
+        s.replay_bytes,
+        u64::try_from(replay.len()).expect("a length fits u64")
+    );
+    assert_eq!(
+        s.replay_raw_bytes,
+        u64::try_from(replay.len()).expect("a length fits u64"),
+        "a raw replay"
+    );
     assert_eq!(s.live_frames, 1, "the open frame is not counted");
-    assert_eq!(s.live_bytes, terminal_frame(10).len() as u64);
+    assert_eq!(
+        s.live_bytes,
+        u64::try_from(terminal_frame(10).len()).expect("a length fits u64")
+    );
 }
 
 /// A peer that gzips its replay sends a `session-size` frame between the
@@ -200,8 +210,14 @@ fn a_relayed_gzip_replay_is_counted_on_the_wire_and_raw() {
     t.peer_frame(&replay);
     t.peer_frame(&terminal_frame(10));
     let s = t.summary();
-    assert_eq!(s.replay_bytes, replay.len() as u64);
-    assert_eq!(s.replay_raw_bytes, terminal_frame(5000).len() as u64);
+    assert_eq!(
+        s.replay_bytes,
+        u64::try_from(replay.len()).expect("a length fits u64")
+    );
+    assert_eq!(
+        s.replay_raw_bytes,
+        u64::try_from(terminal_frame(5000).len()).expect("a length fits u64")
+    );
     assert_eq!(s.live_frames, 2, "the size frame and the live frame");
 }
 
@@ -218,11 +234,15 @@ fn a_relayed_resync_counts_its_snapshot_as_replay() {
     let s = t.summary();
     assert_eq!(
         s.replay_bytes,
-        (terminal_frame(1000).len() + terminal_frame(2000).len()) as u64
+        u64::try_from(terminal_frame(1000).len() + terminal_frame(2000).len())
+            .expect("a length fits u64")
     );
     assert_eq!(
         (s.live_frames, s.live_bytes),
-        (1, terminal_frame(10).len() as u64)
+        (
+            1,
+            u64::try_from(terminal_frame(10).len()).expect("a length fits u64")
+        )
     );
 }
 

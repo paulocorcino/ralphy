@@ -48,7 +48,10 @@ pub(crate) fn is_first_party(family: &str) -> bool {
 /// The vendor's two `--model` refusals, verbatim. Both are answered on stderr
 /// before any paid call, and both leave a run with zero records and exit 1 — the
 /// same shape as a truncation, which is why they must be recognized by text.
-const REFUSALS: &[&str] = &["Cannot use this model:", "Named models unavailable"];
+const REFUSALS: &[&str] = &[MODEL_REFUSED, NAMED_UNAVAILABLE];
+const MODEL_REFUSED: &str = "Cannot use this model:";
+/// The entitlement refusal, whose claim about the Free plan is wrong.
+const NAMED_UNAVAILABLE: &str = "Named models unavailable";
 
 /// The vendor prefixes the entitlement refusal with its own error class. It also
 /// prefixes a bare-stderr QUOTA stop with the same class (`outcome::bare_limit_prose`
@@ -76,7 +79,7 @@ pub(crate) fn model_refusal_stop(log: &str, requested: Option<&str>) -> Option<a
             .map(|m| (l, *m))
     })?;
     let mut msg = format!("cursor refused the model `{pinned}`: {line}");
-    if marker == REFUSALS[1] {
+    if marker == NAMED_UNAVAILABLE {
         let family = model_family(pinned);
         msg.push_str(
             "\nnote: a Free plan CAN name the first-party `composer-*` family — \

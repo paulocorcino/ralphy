@@ -12,6 +12,7 @@ use clap::{Args, ValueEnum};
 use ralphy_core::{
     git, read_project_rows, session_model_map_path, SessionModelMap, Usage, UsageRow,
 };
+use ralphy_pricing::fmt_tokens;
 use ralphy_usage_scan::{resolve_models, RecoveryCandidate, RecoveryStores};
 
 use crate::pricing::fetch::{
@@ -134,17 +135,6 @@ fn fmt_usd(usd: Option<f64>, partial: bool) -> String {
         (Some(usd), true) => format!("~${usd:.2}+?"),
         (Some(usd), false) => format!("~${usd:.2}"),
         (None, false) => "~$0.00".to_owned(),
-    }
-}
-
-/// Format a token count compactly: `1.2M`, `8.4k`, or a bare count.
-fn fmt_tokens(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
     }
 }
 

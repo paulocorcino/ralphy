@@ -161,7 +161,7 @@ fn is_separator(c: char) -> bool {
 /// Split the typed text into the folder to list and the name prefix.
 fn split(text: &str) -> (&str, &str) {
     match text.rfind(is_separator) {
-        Some(i) => (&text[..=i], &text[i + 1..]),
+        Some(i) => text.split_at(i + 1),
         None => (text, ""),
     }
 }

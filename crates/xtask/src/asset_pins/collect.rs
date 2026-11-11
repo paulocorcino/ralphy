@@ -280,13 +280,13 @@ fn asset_after(line: &str, marker: &str) -> Option<String> {
     // The `include_str!` marker also matches an embed outside the UI
     // (`../vendor-build/…`), so every match on the line is tried.
     line.match_indices(marker).find_map(|(at, _)| {
-        let mut rest = &line[at + marker.len()..];
+        let mut rest = line.split_at(at + marker.len()).1;
         if marker.starts_with("include_str!") {
             rest = rest
                 .trim_start_matches("../")
                 .strip_prefix(EMBEDDED_ASSET_DIR)?;
         }
-        let named = &rest[..rest.find('"')?];
+        let (named, _) = rest.split_once('"')?;
         named.contains('.').then(|| named.to_owned())
     })
 }
@@ -296,8 +296,8 @@ fn built_page_on(line: &str) -> Option<&'static str> {
     BUILT_PAGES.iter().find_map(|&(constant, page)| {
         line.match_indices(constant)
             .any(|(at, _)| {
-                let before = line[..at].chars().next_back();
-                let after = line[at + constant.len()..].chars().next();
+                let before = line.split_at(at).0.chars().next_back();
+                let after = line.split_at(at + constant.len()).1.chars().next();
                 let part_of_name = |c: char| c.is_alphanumeric() || c == '_';
                 !before.is_some_and(part_of_name) && !after.is_some_and(part_of_name)
             })

@@ -459,12 +459,13 @@ fn stdin_arrives_before_the_argv_prompt() {
     assert!(
         text.starts_with("RALPHY_CHARTER_HEAD_9F2A"),
         "stdin must come FIRST: {:?}",
-        &text[..text.len().min(120)]
+        text.get(..text.len().min(120)).expect("ASCII markers")
     );
     assert!(
         text.ends_with("RALPHY_ARGV_TAIL_51CD"),
         "the argv prompt must come LAST: {:?}",
-        &text[text.len().saturating_sub(120)..]
+        text.get(text.len().saturating_sub(120)..)
+            .expect("ASCII markers")
     );
     // Exactly one blank line joins the two, and the astral-plane payload
     // planted just before the stdin tail marker survived the round trip.

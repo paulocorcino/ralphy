@@ -123,7 +123,7 @@ fn code_now() -> String {
     let mut mac = Hmac::<sha1::Sha1>::new_from_slice(SEED).expect("key the HMAC");
     mac.update(&(now / 30).to_be_bytes());
     let hs = mac.finalize().into_bytes();
-    let off = (hs[hs.len() - 1] & 0x0f) as usize;
+    let off = usize::from(hs.last().expect("a SHA-1 digest is 20 bytes") & 0x0f);
     let [b0, b1, b2, b3] = *hs
         .get(off..)
         .and_then(<[u8]>::first_chunk::<4>)
@@ -176,7 +176,8 @@ async fn sign_in(port: u16) -> String {
         .filter(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
         .map(|(_, value)| value.trim())
         .find(|value| value.starts_with("ralphy_session="))
-        .unwrap_or_else(|| panic!("a session cookie in {reply}"))
+        .ok_or_else(|| format!("a session cookie in {reply}"))
+        .expect("this test needs the value")
         .split(';')
         .next()
         .expect("a cookie pair")

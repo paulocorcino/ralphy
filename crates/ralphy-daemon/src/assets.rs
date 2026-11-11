@@ -316,7 +316,7 @@ mod tests {
     fn prepare_skips_gzip_when_it_would_not_shrink() {
         // Random-looking bytes deflate to MORE than themselves plus the header.
         let noise: Vec<u8> = (0..64u32)
-            .map(|i| (i.wrapping_mul(2654435761) >> 24) as u8)
+            .map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).expect("below 256"))
             .collect();
         let p = prepare(&noise, true);
         assert!(p.gzip.is_none(), "an incompressible body serves identity");

@@ -334,7 +334,9 @@ impl Child for ProcessChild {
     }
 
     fn take_output(&mut self) -> Option<Box<dyn Read + Send>> {
-        self.output.take().map(|r| Box::new(r) as _)
+        self.output
+            .take()
+            .map(|r| -> Box<dyn Read + Send> { Box::new(r) })
     }
 }
 

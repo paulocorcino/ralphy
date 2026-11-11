@@ -13,6 +13,8 @@
 //! `--session-id` (`usage`, ADR-0041 D10). Skills are materialized into
 //! `.agents/skills` and their load receipt asserted by `skills` (ADR-0041 D9).
 //! The one-shot `init`/`triage`/`consolidate` flows go through `tasks`.
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::{Path, PathBuf};

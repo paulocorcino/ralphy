@@ -329,12 +329,14 @@ fn assert_second_execute_limit_stops_the_run(
         vec![number, number],
         "the first execute, then the one that hit the limit"
     );
-    match report.stop {
-        Some(StopReason::Limit { number: n, reset }) => {
-            assert_eq!(n, number);
-            assert_eq!(reset, reset_text("15:00"));
-        }
-        other => panic!("expected a Limit stop, got {other:?}"),
+    let stop = report.stop.as_ref();
+    assert!(
+        matches!(stop, Some(StopReason::Limit { .. })),
+        "expected a Limit stop, got {stop:?}"
+    );
+    if let Some(StopReason::Limit { number: n, reset }) = stop {
+        assert_eq!(*n, number);
+        assert_eq!(*reset, reset_text("15:00"));
     }
     assert_eq!(report.worked.len(), 1);
     let worked = &report.worked[0];

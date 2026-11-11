@@ -226,7 +226,8 @@ fn peer_row(fleet: &serde_json::Value, id: &str) -> serde_json::Value {
         .iter()
         .find(|p| p["daemon_id"] == id)
         .cloned()
-        .unwrap_or_else(|| panic!("no peer {id} in {fleet}"))
+        .ok_or_else(|| format!("no peer {id} in {fleet}"))
+        .expect("this test needs the value")
 }
 
 /// A loopback port with nothing listening on it.

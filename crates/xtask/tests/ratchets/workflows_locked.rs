@@ -69,12 +69,15 @@ const LOCKED_SUBCOMMANDS: &str = "build|test|nextest|clippy|doc|run|install|deny
 /// `&&`, `||`, `|` or `;`, so the flags of a later command are not its flags.
 /// The separator that the match began with is dropped.
 fn command_at(text: &str, start: usize) -> &str {
-    let tail = text[start..].trim_start_matches(|c: char| c.is_whitespace() || ";&|(".contains(c));
+    let tail = text
+        .split_at(start)
+        .1
+        .trim_start_matches(|c: char| c.is_whitespace() || ";&|(".contains(c));
     let end = [tail.find("&&"), tail.find('|'), tail.find(';')]
         .into_iter()
         .flatten()
         .min();
-    tail[..end.unwrap_or(tail.len())].trim_end()
+    tail.split_at(end.unwrap_or(tail.len())).0.trim_end()
 }
 
 /// `(line, command)` of each cargo command in `commands` that has no

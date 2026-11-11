@@ -35,5 +35,6 @@
 {"date": "2026-11-11", "kind": "note", "text": "Phase 2: let_underscore_untyped, let_underscore_drop and mem_forget are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 15: markdownlint MD001, MD022, MD024, MD025, MD026, MD028, MD029, MD032, MD033, MD036, MD040, MD041 and MD056 are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 15: yamllint, html-validate, stylelint, taplo, lychee and editorconfig-checker are errors in the gate"}
+{"date": "2026-11-11", "kind": "note", "text": "Phase 3: panic, string_slice, as_conversions, undocumented_unsafe_blocks, cast_possible_truncation, cast_precision_loss, cast_sign_loss and cast_possible_wrap are errors"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 14: jscpd at minTokens 75 and minLines 5 is an error, with a clone count ratchet (42) and a jscpd ignore marker ratchet (22)"}
 {"date": "2026-11-11", "kind": "note", "text": "Phase 10: no-confusing-void-expression, strict-void-return, consistent-return, require-await, no-promise-executor-return, promise/always-return and promise/no-callback-in-promise are errors in the workbench and the ui-tests"}

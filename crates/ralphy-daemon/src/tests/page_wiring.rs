@@ -161,11 +161,14 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
         // unmatched close is the face's own. Equal counts mean the face is
         // still open when the button arrives, which is the bug's exact shape.
         let inner = {
-            let after_tag = row[face..]
+            let after_tag = row
+                .split_at(face)
+                .1
                 .find('>')
                 .map(|gt| face + gt + 1)
                 .expect("the .chg-face opening tag must close");
-            &row[after_tag..act]
+            row.get(after_tag..act)
+                .expect("both ends follow an ASCII needle, and the face closes before the action")
         };
         let opens = inner.matches("<span").count();
         let closes = inner.matches("</span>").count();

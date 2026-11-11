@@ -57,8 +57,8 @@ fn raw_string(bytes: &[char], at: usize) -> Option<(String, usize)> {
         .chain(std::iter::repeat_n('#', hashes))
         .collect();
     let rest: String = bytes[quote + 1..].iter().collect();
-    let end = rest.find(&close)?;
-    Some((rest[..end].to_string(), quote + 1 + end + close.len()))
+    let (body, _) = rest.split_once(close.as_str())?;
+    Some((body.to_owned(), quote + 1 + body.len() + close.len()))
 }
 
 /// The number of `#` after the `r` at `at`, and the index of the quote that

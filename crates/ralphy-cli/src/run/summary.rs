@@ -44,12 +44,16 @@ impl RunSummary {
             .worked
             .iter()
             .filter(|r| r.outcome == Some(Outcome::Done))
-            .count() as u64;
+            .count()
+            .try_into()
+            .unwrap_or(u64::MAX);
         let blocked = report
             .worked
             .iter()
             .filter(|r| r.outcome.is_some() && r.outcome != Some(Outcome::Done))
-            .count() as u64;
+            .count()
+            .try_into()
+            .unwrap_or(u64::MAX);
         // Issues stalled on a human gate in their path (ADR-0014) get their own
         // bucket and are kept out of the generic skipped tally, mirroring how the
         // live card gives them a distinct status.
@@ -57,12 +61,16 @@ impl RunSummary {
             .worked
             .iter()
             .filter(|r| r.outcome.is_none() && !r.human_blockers.is_empty())
-            .count() as u64;
+            .count()
+            .try_into()
+            .unwrap_or(u64::MAX);
         let skipped = report
             .worked
             .iter()
             .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
-            .count() as u64;
+            .count()
+            .try_into()
+            .unwrap_or(u64::MAX);
         // The one home of the review-debt predicate: the renderer receives issue
         // numbers only, so it structurally cannot re-derive it (PRD #218).
         let review_only_issues: Vec<u64> = report
@@ -78,7 +86,7 @@ impl RunSummary {
             blocked,
             skipped,
             hitl,
-            total: queue_len as u64,
+            total: u64::try_from(queue_len).unwrap_or(u64::MAX),
             issues: report
                 .worked
                 .iter()

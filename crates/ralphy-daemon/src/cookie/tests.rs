@@ -60,7 +60,10 @@ fn a_v4_cookie_matches_an_independent_hmac() {
 #[test]
 fn a_login_id_is_written_in_base64url() {
     let id = LoginId::parse("AAECAwQFBgcICQoLDA0ODw").expect("a valid ID");
-    assert_eq!(id.0, core::array::from_fn::<u8, 16, _>(|i| i as u8));
+    assert_eq!(
+        id.0,
+        core::array::from_fn::<u8, 16, _>(|i| u8::try_from(i).expect("i < 16"))
+    );
     assert_eq!(id.to_string(), "AAECAwQFBgcICQoLDA0ODw");
 }
 

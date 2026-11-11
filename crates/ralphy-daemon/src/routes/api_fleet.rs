@@ -223,7 +223,11 @@ async fn collect_probes(
     let mut probed: Vec<Option<Probed>> = (0..len).map(|_| None).collect();
     while let Some(joined) = set.join_next().await {
         match joined {
-            Ok((index, found)) => probed[index] = Some(found),
+            Ok((index, found)) => {
+                *probed
+                    .get_mut(index)
+                    .expect("each probe index is below the peer count") = Some(found);
+            }
             Err(e) => tracing::warn!(error = %e, "a peer probe task failed"),
         }
     }

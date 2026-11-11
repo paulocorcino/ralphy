@@ -105,7 +105,7 @@ impl WallClock {
         let Some(d) = self.deadline else {
             return false;
         };
-        let until_target = (target - Local::now()).num_milliseconds().max(0) as u64;
+        let until_target = u64::try_from((target - Local::now()).num_milliseconds()).unwrap_or(0);
         Instant::now() + Duration::from_millis(until_target) >= d
     }
 

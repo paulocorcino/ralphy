@@ -96,7 +96,9 @@ async fn next_piece(client: &mut Client) -> (u32, bool, Vec<u8>) {
 }
 
 fn pattern(len: usize, seed: u8) -> Vec<u8> {
-    (0..len).map(|i| (i % 251) as u8 ^ seed).collect()
+    (0..len)
+        .map(|i| u8::try_from(i % 251).expect("below 251") ^ seed)
+        .collect()
 }
 
 /// A 1 MiB frame is 64 pieces. When a 10-byte frame of another channel is

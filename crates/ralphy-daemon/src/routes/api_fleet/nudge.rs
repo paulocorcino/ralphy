@@ -120,7 +120,7 @@ fn ready_body(
     Json(serde_json::json!({
         "nudged": true,
         "ready": ready,
-        "waited_ms": waited.as_millis() as u64,
+        "waited_ms": u64::try_from(waited.as_millis()).unwrap_or(u64::MAX),
         "state": last.state(),
         "diagnosis": last.diagnosis(environment),
     }))

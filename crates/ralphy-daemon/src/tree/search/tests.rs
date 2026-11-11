@@ -148,7 +148,8 @@ fn grep_is_literal_not_a_pattern() {
 fn grep_skips_an_oversized_file() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("small.txt"), "needle\n").unwrap();
-    let big = "needle".repeat((MAX_READ_BYTES as usize / 6) + 1);
+    let max = usize::try_from(MAX_READ_BYTES).expect("2 MiB fits usize");
+    let big = "needle".repeat((max / 6) + 1);
     fs::write(dir.path().join("big.txt"), big).unwrap();
     let reply = grep(dir.path(), "needle", &SearchBudget::default()).unwrap();
     assert_eq!(paths(&reply, |h| h.path.as_str()), vec!["small.txt"]);

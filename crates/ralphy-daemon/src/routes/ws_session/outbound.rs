@@ -192,24 +192,27 @@ pub(super) fn open(
     traffic: &mut Traffic,
 ) {
     let replay = Replay::of(std::mem::take(&mut attach.snapshot), opening.gzip);
-    let mut payload = opening.fields.clone();
+    let mut fields = opening.fields.clone();
+    let payload = fields
+        .as_object_mut()
+        .expect("the opening fields are built as an object");
     // A replay follows. A relaying daemon reads it for its traffic summary;
     // the page reads it to tell the replay from the live frames.
-    payload["replay"] = (!replay.data.is_empty()).into();
+    payload.insert("replay".into(), (!replay.data.is_empty()).into());
     // The count of the session's output bytes at the end of the replay; the
     // page adds each live frame to it and sends it back as `since`.
-    payload["offset"] = attach.offset.into();
+    payload.insert("offset".into(), attach.offset.into());
     // The replay is only the bytes after the tab's `since`: the page keeps
     // its terminal. `false`: it resets it (ADR-0079 D8).
-    payload["resume"] = attach.resume.into();
+    payload.insert("resume".into(), attach.resume.into());
     // Absent when the replay is raw, as from a daemon that never gzips.
     if replay.gzipped {
-        payload["replay_encoding"] = GZIP.into();
+        payload.insert("replay_encoding".into(), GZIP.into());
     }
     let open = Frame::Command(Command {
         id,
         verb: SESSION_OPEN.to_owned(),
-        payload,
+        payload: fields,
     });
     outbox.frame(protocol::encode(&open));
     // The size the snapshot below was written at: a watcher paints at it. A

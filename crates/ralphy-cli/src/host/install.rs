@@ -312,6 +312,11 @@ fn send_binary<S: HostShell>(
     let dest = s.dest;
     let bytes = fetch.binary(&offer.source, offer.target)?;
     let expected = format!("{:x}", Sha256::digest(&bytes));
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "a size shown in MB with one decimal; a loss above 2^53 bytes is far below it"
+    )]
     out.note(&format!(
         "Sending Ralphy {} for {} from {} to {dest} ({:.1} MB).",
         offer.version,

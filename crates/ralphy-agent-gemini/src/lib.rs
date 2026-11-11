@@ -17,6 +17,8 @@
 //! - `command` scrubs every inherited authentication variable outside an
 //!   explicit allowlist, so unrelated cloud tooling cannot redirect the run to
 //!   another account (D7).
+// D7 of the lint plan: production code here parses outside data; indexing must not panic.
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -112,15 +112,18 @@ async fn next_push(ws: &mut Ws, verb: &str) -> serde_json::Value {
             };
             if let Ok(Frame::Command(c)) = protocol::decode(&bytes) {
                 if c.verb == verb {
-                    return c.payload;
+                    return Some(c.payload);
                 }
             }
         }
-        panic!("the presence socket closed before {verb}");
+        None
     };
     tokio::time::timeout(Duration::from_secs(10), read)
         .await
-        .unwrap_or_else(|_| panic!("no {verb} within 10 s"))
+        .map_err(|elapsed| format!("no {verb} within 10 s ({elapsed})"))
+        .expect("this test needs the call to succeed")
+        .ok_or_else(|| format!("the presence socket closed before {verb}"))
+        .expect("this test needs the value")
 }
 
 fn append(status: &Path, line: &str) {
@@ -203,13 +206,18 @@ async fn claude_console(port: u16, bearer: Option<&str>) -> page::Channel {
         .expect("the daemon opens the console within 10 s")
         .expect("the console channel yields a frame")
         .expect("the page socket reads");
-    let tokio_tungstenite::tungstenite::Message::Binary(bytes) = first else {
-        panic!("the first message of a console is a frame: {first:?}");
+    let bytes = if let tokio_tungstenite::tungstenite::Message::Binary(bytes) = first {
+        Ok(bytes)
+    } else {
+        Err(format!(
+            "the first message of a console is a frame: {first:?}"
+        ))
     };
-    match protocol::decode(&bytes) {
-        Ok(Frame::Command(open)) => assert_eq!(open.verb, "session-open", "{open:?}"),
-        other => panic!("the first frame of a console is session-open: {other:?}"),
-    }
+    let frame = protocol::decode(&bytes.expect("this test needs a frame"));
+    assert!(
+        matches!(&frame, Ok(Frame::Command(open)) if open.verb == "session-open"),
+        "the first frame of a console is session-open: {frame:?}"
+    );
     console
 }
 

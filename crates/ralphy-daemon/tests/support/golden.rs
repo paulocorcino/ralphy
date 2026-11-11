@@ -24,7 +24,8 @@ fn check_in(dir: &Path, name: &str, mut reply: Value, volatile: &[&str]) {
         let marker = format!("<{}>", pointer.rsplit('/').next().unwrap_or(pointer));
         let slot = reply
             .pointer_mut(pointer)
-            .unwrap_or_else(|| panic!("volatile pointer {pointer} is not in the {name} reply"));
+            .ok_or_else(|| format!("volatile pointer {pointer} is not in the {name} reply"))
+            .expect("this test needs the value");
         *slot = Value::String(marker);
     }
     let path = dir.join(format!("{name}.json"));
@@ -32,18 +33,22 @@ fn check_in(dir: &Path, name: &str, mut reply: Value, volatile: &[&str]) {
         std::fs::create_dir_all(dir).expect("creating the fixtures directory");
         let text = serde_json::to_string_pretty(&reply).expect("a Value always serializes");
         std::fs::write(&path, text + "\n")
-            .unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
+            .map_err(|e| format!("writing {}: {e}", path.display()))
+            .expect("this test needs the call to succeed");
         return;
     }
-    let text = match std::fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            panic!("no shared reply {name}: run the test with UPDATE_GOLDEN=1")
-        }
-        Err(e) => panic!("reading {}: {e}", path.display()),
-    };
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                format!("no shared reply {name}: run the test with UPDATE_GOLDEN=1")
+            } else {
+                format!("reading {}: {e}", path.display())
+            }
+        })
+        .expect("this test needs the shared reply");
     let golden: Value = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()));
+        .map_err(|e| format!("{} is not JSON: {e}", path.display()))
+        .expect("this test needs the call to succeed");
     assert_eq!(
         reply,
         golden,

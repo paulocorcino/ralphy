@@ -111,12 +111,13 @@ fn the_version_is_read_once_per_binary_change() {
 const EXEC_VERSION: Option<&str> = Some("2.1.139 (Claude Code)");
 
 fn cause(got: HookCheck) -> String {
-    match got {
-        HookCheck::Failed { cause } => cause,
+    let cause = match got {
+        HookCheck::Failed { cause } => Ok(cause),
         other @ (HookCheck::Ok | HookCheck::NotChecked { .. }) => {
-            panic!("expected a failed check, got {other:?}")
+            Err(format!("expected a failed check, got {other:?}"))
         }
-    }
+    };
+    cause.expect("this test needs a failed check")
 }
 
 #[test]

@@ -33,14 +33,14 @@ fn every_arm_passes_each_translated_effort_to_the_adapter() {
     let arm = |name: &str| -> &str {
         let head = format!("CliAgent::{name}=>");
         let start = code.find(&head).unwrap_or_else(|| panic!("no {name} arm")) + head.len();
-        let rest = &code[start..];
+        let rest = code.split_at(start).1;
         let end = arms
             .iter()
             .filter_map(|other| rest.find(&format!("CliAgent::{other}=>")))
             .chain(rest.find("fnresolve_plan_agent("))
             .min()
             .unwrap_or(rest.len());
-        &rest[..end]
+        rest.split_at(end).0
     };
     let setters: &[&str] = &[
         ".with_plan_effort(plan_effort)",
@@ -197,12 +197,12 @@ fn preflight_agents_probes_cursor_with_its_adapter_locator() {
     let start = source
         .find("pub(crate) fn preflight_agents(")
         .expect("preflight_agents is defined");
-    let rest = &source[start..];
+    let rest = source.split_at(start).1;
     // A free fn: its closing brace is the first line that starts with `}`.
     let end = rest
         .find("\n}")
         .expect("preflight_agents has a closing brace");
-    let body: String = rest[..end].split_whitespace().collect();
+    let body: String = rest.split_at(end).0.split_whitespace().collect();
     assert!(
         body.contains("CliAgent::Cursor=>ralphy_agent_cursor::locate_cursor().is_some(),"),
         "preflight_agents must probe Cursor with `locate_cursor`: {body}"

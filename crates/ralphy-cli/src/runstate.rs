@@ -57,7 +57,9 @@ pub(crate) fn header_face(seed: &str) -> &'static str {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    HEADER_FACES[(h as usize) % HEADER_FACES.len()]
+    let faces = u64::try_from(HEADER_FACES.len()).unwrap_or(u64::MAX);
+    let face = usize::try_from(h % faces).unwrap_or(0);
+    HEADER_FACES.get(face).copied().unwrap_or_default()
 }
 
 /// The shared branding header used by both the console and the Telegram card:

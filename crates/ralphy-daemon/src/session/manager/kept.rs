@@ -65,7 +65,7 @@ impl KeptOutput {
 
     pub(super) fn push(&mut self, chunk: &[u8]) {
         push_capped(&mut self.ring, chunk, SCROLLBACK_CAP_BYTES);
-        self.written += chunk.len() as u64;
+        self.written += u64::try_from(chunk.len()).unwrap_or(u64::MAX);
         self.on_screen(|screen| screen.feed(chunk));
     }
 
@@ -106,7 +106,9 @@ impl KeptOutput {
     /// The ring bytes after the byte count `since`, or `None` when they are
     /// not all in the ring or were not all written at the current size.
     fn tail_after(&self, since: u64) -> Option<Vec<u8>> {
-        let start = self.written.saturating_sub(self.ring.len() as u64);
+        let start = self
+            .written
+            .saturating_sub(u64::try_from(self.ring.len()).unwrap_or(u64::MAX));
         if since < start || since < self.resized_at || since > self.written {
             return None;
         }

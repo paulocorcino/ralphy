@@ -103,7 +103,9 @@ pub(crate) fn settings_document(auth_type: Option<&str>) -> Value {
         } }
     });
     if let Some(t) = auth_type {
-        doc["security"] = json!({ "auth": { "selectedType": t } });
+        doc.as_object_mut()
+            .expect("the settings document is built as an object")
+            .insert("security".into(), json!({ "auth": { "selectedType": t } }));
     }
     doc
 }

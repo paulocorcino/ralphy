@@ -56,12 +56,14 @@ fn the_destructive_console_clicks_confirm_first() {
             .match_indices(title)
             .map(|(at, _)| {
                 assert!(
-                    js[..at].trim_end().ends_with("askConfirm({"),
+                    js.split_at(at).0.trim_end().ends_with("askConfirm({"),
                     "{title} must be the first key of an askConfirm call"
                 );
-                let rest = &js[at..];
-                let close = rest.find("});").expect("the askConfirm call must close");
-                rest[close + 3..]
+                js.split_at(at)
+                    .1
+                    .split_once("});")
+                    .expect("the askConfirm call must close")
+                    .1
                     .trim_start()
                     .lines()
                     .next()
@@ -82,7 +84,11 @@ fn the_destructive_console_clicks_confirm_first() {
         .expect("wb-console.ts must keep removeFence")
         .1;
     assert!(
-        !verb[..verb.find("\n  }").expect("removeFence must close")].contains("askConfirm"),
+        !verb
+            .split_once("\n  }")
+            .expect("removeFence must close")
+            .0
+            .contains("askConfirm"),
         "the verb must not ask — only the button does"
     );
     // The dialog wears the shell's own modal classes, so the popup (which
@@ -207,24 +213,20 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     // and each item's own text carries its `readonly` flag.
     let mut checked = 0;
     for (i, _) in schema.match_indices("scope: \"") {
-        let rest = &schema[i + "scope: \"".len()..];
-        let scope = &rest[..rest.find('"').expect("unterminated scope")];
+        let rest = schema.split_at(i + "scope: \"".len()).1;
+        let scope = rest.split_once('"').expect("unterminated scope").0;
         // Everything up to the NEXT section's scope belongs to this one.
-        let section = match rest.find("scope: \"") {
-            Some(end) => &rest[..end],
-            None => rest,
-        };
+        let section = rest
+            .split_once("scope: \"")
+            .map_or(rest, |(section, _)| section);
         if scope != "project" {
             continue;
         }
         for (j, _) in section.match_indices("key: \"") {
-            let tail = &section[j + "key: \"".len()..];
-            let key = &tail[..tail.find('"').expect("unterminated key")];
+            let tail = section.split_at(j + "key: \"".len()).1;
+            let key = tail.split_once('"').expect("unterminated key").0;
             // The item runs to the next key, or to the end of the section.
-            let item = match tail.find("key: \"") {
-                Some(end) => &tail[..end],
-                None => tail,
-            };
+            let item = tail.split_once("key: \"").map_or(tail, |(item, _)| item);
             assert!(
                 supported.contains(&format!("\"{key}\"")),
                 "the panel offers {key} but `ralphy config set` refuses it — \
@@ -251,11 +253,12 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
         let Some(at) = schema.find(&format!("key: \"{key}\"")) else {
             continue;
         };
-        let tail = &schema[at..];
-        let item = match tail[1..].find("key: \"") {
-            Some(end) => &tail[..end],
-            None => tail,
-        };
+        let tail = schema.split_at(at).1;
+        let item = tail
+            .split_at(1)
+            .1
+            .find("key: \"")
+            .map_or(tail, |end| tail.split_at(end + 1).0);
         assert!(
             item.contains("readonly: true"),
             "{key} is denied at the daemon boundary but the panel offers it editable"

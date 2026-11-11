@@ -56,7 +56,9 @@ async fn http_get(port: u16, path: &str) -> String {
 
 async fn sessions(port: u16) -> Vec<serde_json::Value> {
     let body = http_get(port, "/api/sessions?local=1").await;
-    serde_json::from_str(&body).unwrap_or_else(|e| panic!("sessions body {body:?}: {e}"))
+    serde_json::from_str(&body)
+        .map_err(|e| format!("sessions body {body:?}: {e}"))
+        .expect("this test needs the call to succeed")
 }
 
 /// The PTY wraps and reflows, so every path comparison runs on a separator-
@@ -117,10 +119,12 @@ fn cwd_line(text: &str) -> String {
     let flat = flatten(text);
     let (_, rest) = flat
         .split_once("CWD:")
-        .unwrap_or_else(|| panic!("a CWD: line in the child's output; got {text:?}"));
+        .ok_or_else(|| format!("a CWD: line in the child's output; got {text:?}"))
+        .expect("this test needs the value");
     let (path, _) = rest
         .split_once("READY")
-        .unwrap_or_else(|| panic!("READY after the CWD: line; got {text:?}"));
+        .ok_or_else(|| format!("READY after the CWD: line; got {text:?}"))
+        .expect("this test needs the value");
     path.to_owned()
 }
 

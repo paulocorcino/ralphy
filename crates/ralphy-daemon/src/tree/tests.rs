@@ -16,7 +16,8 @@ fn max_command_bytes_is_derived_from_the_image_cap() {
         (4 * 1024 * 1024usize).div_ceil(3) * 4 + 65_536
     );
     assert_eq!(MAX_COMMAND_BYTES, 5_657_944);
-    assert!(MAX_COMMAND_BYTES > (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 4096);
+    let max = usize::try_from(MAX_IMAGE_BYTES).expect("4 MiB fits usize");
+    assert!(MAX_COMMAND_BYTES > max.div_ceil(3) * 4 + 4096);
 }
 
 use super::*;
@@ -115,7 +116,7 @@ fn refusal_reasons_are_the_wire_vocabulary() {
 #[test]
 fn read_refuses_oversized() {
     let root = tempfile::tempdir().unwrap();
-    let big = vec![b'a'; (MAX_READ_BYTES + 1) as usize];
+    let big = vec![b'a'; usize::try_from(MAX_READ_BYTES + 1).expect("2 MiB fits usize")];
     fs::write(root.path().join("big.txt"), &big).unwrap();
     assert_eq!(read(root.path(), "big.txt"), Err(ReadError::TooLarge));
 }
@@ -257,7 +258,10 @@ fn read_image_refuses_html_and_an_unterminated_prologue_as_svg() {
 fn read_image_refuses_oversized() {
     let root = tempfile::tempdir().unwrap();
     let mut big = magic(ImageType::Png);
-    big.resize((MAX_IMAGE_BYTES + 1) as usize, 0);
+    big.resize(
+        usize::try_from(MAX_IMAGE_BYTES + 1).expect("4 MiB fits usize"),
+        0,
+    );
     fs::write(root.path().join("big.png"), &big).unwrap();
     assert_eq!(read_image(root.path(), "big.png"), Err(ReadError::TooLarge));
 }

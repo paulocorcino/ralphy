@@ -207,7 +207,7 @@ mod tests {
         let dir = init_repo("too-large");
         std::fs::write(
             dir.join("big.txt"),
-            vec![b'a'; (MAX_BLOB_BYTES + 1) as usize],
+            vec![b'a'; usize::try_from(MAX_BLOB_BYTES + 1).expect("2 MiB fits usize")],
         )
         .unwrap();
         commit_all(&dir);

@@ -17,12 +17,13 @@ use tokio::sync::mpsc::UnboundedReceiver;
 /// the wire shape in both directions.
 fn through_codec(data: Vec<u8>) -> Vec<u8> {
     let framed = protocol::encode(&Frame::Terminal { session: 1, data });
-    match protocol::decode(&framed).expect("terminal frame decodes") {
-        Frame::Terminal { data, .. } => data,
+    let data = match protocol::decode(&framed).expect("terminal frame decodes") {
+        Frame::Terminal { data, .. } => Ok(data),
         frame @ (Frame::Command(_) | Frame::Presence(_) | Frame::Channel { .. }) => {
-            panic!("expected a terminal frame, got {frame:?}")
+            Err(format!("expected a terminal frame, got {frame:?}"))
         }
-    }
+    };
+    data.expect("this test needs a terminal frame")
 }
 
 /// Accumulate decoded output until it contains `needle`, bounded to 5s so a

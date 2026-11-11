@@ -157,6 +157,16 @@ impl fmt::Debug for LoginId {
 }
 
 /// `bytes` in base64url without padding.
+/// The `BASE64URL` character of the low 6 bits of `acc`.
+fn sextet(acc: u32) -> char {
+    let index = usize::try_from(acc & 63).expect("6 bits fit usize");
+    char::from(
+        *BASE64URL
+            .get(index)
+            .expect("the alphabet has 64 characters"),
+    )
+}
+
 fn to_base64url(bytes: &[u8]) -> String {
     let mut out = String::with_capacity((bytes.len() * 8).div_ceil(6));
     let mut acc: u32 = 0;
@@ -166,11 +176,11 @@ fn to_base64url(bytes: &[u8]) -> String {
         bits += 8;
         while bits >= 6 {
             bits -= 6;
-            out.push(char::from(BASE64URL[((acc >> bits) & 63) as usize]));
+            out.push(sextet(acc >> bits));
         }
     }
     if bits > 0 {
-        out.push(char::from(BASE64URL[((acc << (6 - bits)) & 63) as usize]));
+        out.push(sextet(acc << (6 - bits)));
     }
     out
 }
@@ -184,11 +194,11 @@ fn from_base64url(text: &str) -> Option<[u8; 16]> {
     let mut bits = 0;
     for c in text.bytes() {
         let value = BASE64URL.iter().position(|&a| a == c)?;
-        acc = ((acc << 6) | value as u32) & 0xfff;
+        acc = ((acc << 6) | u32::try_from(value).ok()?) & 0xfff;
         bits += 6;
         if bits >= 8 {
             bits -= 8;
-            *out.get_mut(len)? = (acc >> bits) as u8;
+            *out.get_mut(len)? = u8::try_from((acc >> bits) & 0xff).ok()?;
             len += 1;
         }
     }

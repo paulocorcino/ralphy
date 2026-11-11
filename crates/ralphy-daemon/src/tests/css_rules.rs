@@ -14,7 +14,8 @@ fn css_block<'a>(css: &'a str, name: &str) -> &'a str {
     let end = css
         .find(&close)
         .unwrap_or_else(|| panic!("styles.css must keep the {name} closing marker"));
-    &css[start..end]
+    css.get(start..end)
+        .expect("both markers are ASCII and the closing one follows the opening one")
 }
 
 /// Each marked block of new chrome speaks the shell's token language
@@ -72,7 +73,7 @@ fn the_runs_feed_is_bounded_and_wraps() {
         .find("@media (max-width: 560px)")
         .expect("the phone width is a criterion — keep the (max-width: 560px) rule");
     assert!(
-        block[narrow..].contains("max-height: 22vh"),
+        block.split_at(narrow).1.contains("max-height: 22vh"),
         "the narrow-width rule must still cap the feed"
     );
 }

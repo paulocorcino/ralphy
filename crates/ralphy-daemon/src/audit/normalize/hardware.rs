@@ -61,6 +61,12 @@ pub(super) fn ratio(dpr: f64) -> String {
 /// The iPhones that share one screen size and pixel ratio. Apple gives a page
 /// no model, so this is the closest a line can say.
 pub(super) fn iphone_family((short, long, dpr): (u32, u32, f64)) -> Option<&'static str> {
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a float-to-int `as` saturates; a ratio out of range matches no iPhone"
+    )]
     let dpr = dpr.round() as u32;
     Some(match (short, long, dpr) {
         (375, 667, 2) => "iPhone 6/7/8/SE",

@@ -54,7 +54,7 @@ pub(crate) fn truncate_to_width(s: &str, max: usize) -> String {
 /// column so a line never sits exactly on the last cell (some terminals,
 /// conhost included, auto-wrap there anyway). Floors at 1.
 pub(crate) fn terminal_width() -> usize {
-    (console::Term::stderr().size().1 as usize)
+    usize::from(console::Term::stderr().size().1)
         .saturating_sub(1)
         .max(1)
 }

@@ -235,7 +235,10 @@ mod tests {
         Release {
             tag_name: tag.to_owned(),
             name: None,
-            published_at: Some(format!("2026-09-0{}T10:00:00Z", &tag[tag.len() - 1..])),
+            published_at: Some(format!(
+                "2026-09-0{}T10:00:00Z",
+                tag.split_at(tag.len() - 1).1
+            )),
             html_url: format!("https://example.invalid/{tag}"),
             prerelease: true,
             draft: false,

@@ -103,7 +103,9 @@ fn bare_utf16_shape(window: &[u8]) -> Option<&'static Encoding> {
     }
     let shaped = |nul: usize, text: usize| {
         let with_nul = pairs.iter().filter(|p| p[nul] == 0).count();
-        let share = with_nul as f32 / pairs.len() as f32;
+        // The window is at most SNIFF_BYTES, so both counts fit u16.
+        let count = |n: usize| f32::from(u16::try_from(n).unwrap_or(u16::MAX));
+        let share = count(with_nul) / count(pairs.len());
         share >= UTF16_NUL_PAIR_SHARE
             && pairs.iter().all(|p| p[text] != 0)
             && pairs
@@ -177,7 +179,7 @@ fn encode_legacy(text: &str, encoding: &'static Encoding) -> Result<Vec<u8>, usi
         }
         // `read` counts the unmappable char as consumed (encoding_rs docs), so
         // the offender is the last char before `read`, not the first after it.
-        encoding_rs::EncoderResult::Unmappable(_) => Err(text[..read].chars().count() - 1),
+        encoding_rs::EncoderResult::Unmappable(_) => Err(text.split_at(read).0.chars().count() - 1),
         // The buffer was sized by `max_buffer_length_*` for the whole input:
         // running out is a violated invariant of encoding_rs, not a data case.
         encoding_rs::EncoderResult::OutputFull => {

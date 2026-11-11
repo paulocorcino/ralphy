@@ -244,9 +244,11 @@ fn plan_and_execute_use_the_resolved_effort_helpers() {
         let start = prod
             .find(header)
             .unwrap_or_else(|| panic!("no {header:?} in lib.rs"));
-        let open = start + prod[start..].find('{').expect("a body");
+        let open = start + prod.split_at(start).1.find('{').expect("a body");
         let mut depth = 0;
-        let end = prod[open..]
+        let end = prod
+            .split_at(open)
+            .1
             .char_indices()
             .find_map(|(i, c)| {
                 match c {
@@ -257,7 +259,7 @@ fn plan_and_execute_use_the_resolved_effort_helpers() {
                 (depth == 0).then_some(open + i)
             })
             .expect("a balanced body");
-        &prod[open..=end]
+        prod.get(open..=end).expect("`}` is one byte")
     };
     assert!(
         body("fnplan(").contains("self.resolved_plan_effort()"),

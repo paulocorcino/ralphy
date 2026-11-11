@@ -67,13 +67,14 @@ async fn launch(port: u16, record: &str, holder: &str) -> (Ws, serde_json::Value
             };
             if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
                 assert_eq!(cmd.verb, "session-open", "the first command: {cmd:?}");
-                return cmd.payload;
+                return Some(cmd.payload);
             }
         }
-        panic!("the socket closed before session-open");
+        None
     })
     .await
-    .expect("a session-open within 10s");
+    .expect("a session-open within 10s")
+    .expect("the socket closed before session-open");
     (ws, open)
 }
 
